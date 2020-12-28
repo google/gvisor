@@ -72,8 +72,6 @@ type igmpState struct {
 	// The IPv4 endpoint this igmpState is for.
 	ep *endpoint
 
-	enabled bool
-
 	genericMulticastProtocol ip.GenericMulticastProtocolState
 
 	// igmpV1Present is for maintaining compatibility with IGMPv1 Routers, from
@@ -93,6 +91,13 @@ type igmpState struct {
 	// message, upon expiration the igmpV1Present flag is cleared.
 	// igmpV1Job may not be nil once igmpState is initialized.
 	igmpV1Job *tcpip.Job
+}
+
+// Enabled implements ip.MulticastGroupProtocol.
+func (igmp *igmpState) Enabled() bool {
+	// No need to perform IGMP on loopback interfaces since they don't have
+	// neighbouring nodes.
+	return igmp.ep.protocol.options.IGMP.Enabled && !igmp.ep.nic.IsLoopback() && igmp.ep.Enabled()
 }
 
 // SendReport implements ip.MulticastGroupProtocol.
@@ -127,11 +132,7 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 // Must only be called once for the lifetime of igmp.
 func (igmp *igmpState) init(ep *endpoint) {
 	igmp.ep = ep
-	// No need to perform IGMP on loopback interfaces since they don't have
-	// neighbouring nodes.
-	igmp.enabled = ep.protocol.options.IGMP.Enabled && !igmp.ep.nic.IsLoopback()
 	igmp.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
-		Enabled:                   igmp.enabled,
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  igmp,
@@ -223,7 +224,7 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
 	// schedule the query received Job.
-	if igmp.enabled && maxRespTime == 0 {
+	if maxRespTime == 0 && igmp.Enabled() {
 		igmp.igmpV1Job.Cancel()
 		igmp.igmpV1Job.Schedule(v1RouterPresentTimeout)
 		igmp.setV1Present(true)
@@ -296,7 +297,7 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 //
 // Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) {
-	igmp.genericMulticastProtocol.JoinGroupLocked(groupAddress, !igmp.ep.Enabled() /* dontInitialize */)
+	igmp.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.

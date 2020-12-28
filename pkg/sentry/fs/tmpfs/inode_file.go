@@ -148,6 +148,10 @@ func (*fileInodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldPare
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (f *fileInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	if fs.IsSocket(d.Inode.StableAttr) {
+		return nil, syserror.ENXIO
+	}
+
 	if flags.Write {
 		fsmetric.TmpfsOpensW.Increment()
 	} else if flags.Read {

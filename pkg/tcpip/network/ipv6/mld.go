@@ -58,6 +58,13 @@ type mldState struct {
 	genericMulticastProtocol ip.GenericMulticastProtocolState
 }
 
+// Enabled implements ip.MulticastGroupProtocol.
+func (mld *mldState) Enabled() bool {
+	// No need to perform MLD on loopback interfaces since they don't have
+	// neighbouring nodes.
+	return mld.ep.protocol.options.MLD.Enabled && !mld.ep.nic.IsLoopback() && mld.ep.Enabled()
+}
+
 // SendReport implements ip.MulticastGroupProtocol.
 //
 // Precondition: mld.ep.mu must be read locked.
@@ -80,9 +87,6 @@ func (mld *mldState) SendLeave(groupAddress tcpip.Address) *tcpip.Error {
 func (mld *mldState) init(ep *endpoint) {
 	mld.ep = ep
 	mld.genericMulticastProtocol.Init(&ep.mu.RWMutex, ip.GenericMulticastProtocolOptions{
-		// No need to perform MLD on loopback interfaces since they don't have
-		// neighbouring nodes.
-		Enabled:                   ep.protocol.options.MLD.Enabled && !mld.ep.nic.IsLoopback(),
 		Rand:                      ep.protocol.stack.Rand(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  mld,
@@ -112,7 +116,7 @@ func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
 //
 // Precondition: mld.ep.mu must be locked.
 func (mld *mldState) joinGroup(groupAddress tcpip.Address) {
-	mld.genericMulticastProtocol.JoinGroupLocked(groupAddress, !mld.ep.Enabled() /* dontInitialize */)
+	mld.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.

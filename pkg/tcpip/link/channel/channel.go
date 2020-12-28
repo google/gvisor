@@ -31,7 +31,7 @@ type PacketInfo struct {
 	Pkt   *stack.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
 	GSO   *stack.GSO
-	Route *stack.Route
+	Route stack.RouteInfo
 }
 
 // Notification is the interface for receiving notification from the packet
@@ -230,15 +230,11 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 
 // WritePacket stores outbound packets into the channel.
 func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	// Clone r then release its resource so we only get the relevant fields from
-	// stack.Route without holding a reference to a NIC's endpoint.
-	route := r.Clone()
-	route.Release()
 	p := PacketInfo{
 		Pkt:   pkt,
 		Proto: protocol,
 		GSO:   gso,
-		Route: route,
+		Route: r.GetFields(),
 	}
 
 	e.q.Write(p)
@@ -248,17 +244,13 @@ func (e *Endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 
 // WritePackets stores outbound packets into the channel.
 func (e *Endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	// Clone r then release its resource so we only get the relevant fields from
-	// stack.Route without holding a reference to a NIC's endpoint.
-	route := r.Clone()
-	route.Release()
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		p := PacketInfo{
 			Pkt:   pkt,
 			Proto: protocol,
 			GSO:   gso,
-			Route: route,
+			Route: r.GetFields(),
 		}
 
 		if !e.q.Write(p) {

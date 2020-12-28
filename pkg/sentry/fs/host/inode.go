@@ -276,6 +276,10 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) transport.
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	if fs.IsSocket(d.Inode.StableAttr) {
+		return nil, syserror.ENXIO
+	}
+
 	return newFile(ctx, d, flags, i), nil
 }
 

@@ -752,11 +752,6 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr usermem.Addr, fla
 		return 0, err
 	}
 
-	// FIXME(b/63594852): Pretend we have an empty error queue.
-	if flags&linux.MSG_ERRQUEUE != 0 {
-		return 0, syserror.EAGAIN
-	}
-
 	// Fast path when no control message nor name buffers are provided.
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
 		n, mflags, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)

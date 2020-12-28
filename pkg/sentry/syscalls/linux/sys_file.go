@@ -175,6 +175,12 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 			}
 		}
 
+		file, err := d.Inode.GetFile(t, d, fileFlags)
+		if err != nil {
+			return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+		}
+		defer file.DecRef(t)
+
 		// Truncate is called when O_TRUNC is specified for any kind of
 		// existing Dirent. Behavior is delegated to the entry's Truncate
 		// implementation.
@@ -183,12 +189,6 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 				return err
 			}
 		}
-
-		file, err := d.Inode.GetFile(t, d, fileFlags)
-		if err != nil {
-			return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
-		}
-		defer file.DecRef(t)
 
 		// Success.
 		newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{

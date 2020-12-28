@@ -109,7 +109,6 @@ type endpoint struct {
 	multicastAddr  tcpip.Address
 	multicastNICID tcpip.NICID
 	portFlags      ports.Flags
-	bindToDevice   tcpip.NICID
 
 	lastErrorMu sync.Mutex   `state:"nosave"`
 	lastError   *tcpip.Error `state:".(string)"`
@@ -224,6 +223,13 @@ func (e *endpoint) LastError() *tcpip.Error {
 	err := e.lastError
 	e.lastError = nil
 	return err
+}
+
+// UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
+func (e *endpoint) UpdateLastError(err *tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
 }
 
 // Abort implements stack.TransportEndpoint.Abort.
@@ -511,6 +517,20 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
+		so := e.SocketOptions()
+		if so.GetRecvError() {
+			so.QueueLocalErr(
+				tcpip.ErrMessageTooLong,
+				route.NetProto,
+				header.UDPMaximumPacketSize,
+				tcpip.FullAddress{
+					NIC:  route.NICID(),
+					Addr: route.RemoteAddress,
+					Port: dstPort,
+				},
+				v,
+			)
+		}
 		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
@@ -638,6 +658,10 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	return nil
 }
 
+func (e *endpoint) HasNIC(id int32) bool {
+	return id == 0 || e.stack.HasNIC(tcpip.NICID(id))
+}
+
 // SetSockOpt implements tcpip.Endpoint.SetSockOpt.
 func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 	switch v := opt.(type) {
@@ -754,15 +778,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 		delete(e.multicastMemberships, memToRemove)
 
-	case *tcpip.BindToDeviceOption:
-		id := tcpip.NICID(*v)
-		if id != 0 && !e.stack.HasNIC(id) {
-			return tcpip.ErrUnknownDevice
-		}
-		e.mu.Lock()
-		e.bindToDevice = id
-		e.mu.Unlock()
-
 	case *tcpip.SocketDetachFilterOption:
 		return nil
 	}
@@ -837,11 +852,6 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 			e.multicastAddr,
 		}
 		e.mu.Unlock()
-
-	case *tcpip.BindToDeviceOption:
-		e.mu.RLock()
-		*o = tcpip.BindToDeviceOption(e.bindToDevice)
-		e.mu.RUnlock()
 
 	default:
 		return tcpip.ErrUnknownProtocolOption
@@ -996,7 +1006,6 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	if err != nil {
 		return err
 	}
-	defer r.Release()
 
 	id := stack.TransportEndpointID{
 		LocalAddress:  e.ID.LocalAddress,
@@ -1024,6 +1033,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	id, btd, err := e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
+		r.Release()
 		return err
 	}
 
@@ -1034,7 +1044,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	e.ID = id
 	e.boundBindToDevice = btd
-	e.route = r.Clone()
+	e.route = r
 	e.dstPort = addr.Port
 	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos
@@ -1092,21 +1102,22 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *tcp
 }
 
 func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.NICID, *tcpip.Error) {
+	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
 	if e.ID.LocalPort == 0 {
-		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.portFlags, e.bindToDevice, tcpip.FullAddress{}, nil /* testPort */)
+		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.portFlags, bindToDevice, tcpip.FullAddress{}, nil /* testPort */)
 		if err != nil {
-			return id, e.bindToDevice, err
+			return id, bindToDevice, err
 		}
 		id.LocalPort = port
 	}
 	e.boundPortFlags = e.portFlags
 
-	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.boundPortFlags, e.bindToDevice)
+	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.boundPortFlags, bindToDevice)
 	if err != nil {
-		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.boundPortFlags, e.bindToDevice, tcpip.FullAddress{})
+		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.boundPortFlags, bindToDevice, tcpip.FullAddress{})
 		e.boundPortFlags = ports.Flags{}
 	}
-	return id, e.bindToDevice, err
+	return id, bindToDevice, err
 }
 
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
@@ -1259,6 +1270,7 @@ func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().View())
 	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
 		// Malformed packet.
@@ -1266,10 +1278,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
-
-	// TODO(gvisor.dev/issues/5033): We should mirror the Network layer and cap
-	// packets at "Parse" instead of when handling a packet.
-	pkt.Data.CapLength(int(hdr.PayloadLength()))
 
 	if !verifyChecksum(hdr, pkt) {
 		// Checksum Error.
@@ -1304,7 +1312,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		senderAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,
-			Port: hdr.SourcePort(),
+			Port: header.UDP(hdr).SourcePort(),
 		},
 		destinationAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
@@ -1341,15 +1349,63 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
+func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+	// Update last error first.
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+
+	// Update the error queue if IP_RECVERR is enabled.
+	if e.SocketOptions().GetRecvError() {
+		// Linux passes the payload without the UDP header.
+		var payload []byte
+		udp := header.UDP(pkt.Data.ToView())
+		if len(udp) >= header.UDPMinimumSize {
+			payload = udp.Payload()
+		}
+
+		e.SocketOptions().QueueErr(&tcpip.SockError{
+			Err:       err,
+			ErrOrigin: header.ICMPOriginFromNetProto(pkt.NetworkProtocolNumber),
+			ErrType:   errType,
+			ErrCode:   errCode,
+			ErrInfo:   extra,
+			Payload:   payload,
+			Dst: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.RemoteAddress,
+				Port: id.RemotePort,
+			},
+			Offender: tcpip.FullAddress{
+				NIC:  pkt.NICID,
+				Addr: id.LocalAddress,
+				Port: id.LocalPort,
+			},
+			NetProto: pkt.NetworkProtocolNumber,
+		})
+	}
+
+	// Notify of the error.
+	e.waiterQueue.Notify(waiter.EventErr)
+}
+
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		if e.EndpointState() == StateConnected {
-			e.lastErrorMu.Lock()
-			e.lastError = tcpip.ErrConnectionRefused
-			e.lastErrorMu.Unlock()
-
-			e.waiterQueue.Notify(waiter.EventErr)
+			var errType byte
+			var errCode byte
+			switch pkt.NetworkProtocolNumber {
+			case header.IPv4ProtocolNumber:
+				errType = byte(header.ICMPv4DstUnreachable)
+				errCode = byte(header.ICMPv4PortUnreachable)
+			case header.IPv6ProtocolNumber:
+				errType = byte(header.ICMPv6DstUnreachable)
+				errCode = byte(header.ICMPv6PortUnreachable)
+			default:
+				panic(fmt.Sprintf("unsupported net proto for infering ICMP type and code: %d", pkt.NetworkProtocolNumber))
+			}
+			e.onICMPError(tcpip.ErrConnectionRefused, id, errType, errCode, extra, pkt)
 			return
 		}
 	}

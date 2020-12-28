@@ -36,3 +36,14 @@ package cpuid
 // On arm64, features are numbered according to the ELF HWCAP definition.
 // arch/arm64/include/uapi/asm/hwcap.h
 type Feature int
+
+// ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
+// subset of the host feature set.
+type ErrIncompatible struct {
+	message string
+}
+
+// Error implements error.
+func (e ErrIncompatible) Error() string {
+	return e.message
+}

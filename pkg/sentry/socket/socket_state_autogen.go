@@ -23,6 +23,7 @@ func (i *IPControlMessages) StateFields() []string {
 		"HasIPPacketInfo",
 		"PacketInfo",
 		"OriginalDstAddress",
+		"SockErr",
 	}
 }
 
@@ -41,6 +42,7 @@ func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.HasIPPacketInfo)
 	stateSinkObject.Save(9, &i.PacketInfo)
 	stateSinkObject.Save(10, &i.OriginalDstAddress)
+	stateSinkObject.Save(11, &i.SockErr)
 }
 
 func (i *IPControlMessages) afterLoad() {}
@@ -57,6 +59,7 @@ func (i *IPControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &i.HasIPPacketInfo)
 	stateSourceObject.Load(9, &i.PacketInfo)
 	stateSourceObject.Load(10, &i.OriginalDstAddress)
+	stateSourceObject.Load(11, &i.SockErr)
 }
 
 func (to *SendReceiveTimeout) StateTypeName() string {

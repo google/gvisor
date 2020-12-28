@@ -17,7 +17,6 @@ package stack
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -799,19 +798,26 @@ type LinkAddressCache interface {
 	// AddLinkAddress adds a link address to the cache.
 	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
 
-	// GetLinkAddress looks up the cache to translate address to link address (e.g. IP -> MAC).
-	// If the LinkEndpoint requests address resolution and there is a LinkAddressResolver
-	// registered with the network protocol, the cache attempts to resolve the address
-	// and returns ErrWouldBlock. Waker is notified when address resolution is
-	// complete (success or not).
+	// GetLinkAddress finds the link address corresponding to the remote address
+	// (e.g. IP -> MAC).
 	//
-	// If address resolution is required, ErrNoLinkAddress and a notification channel is
-	// returned for the top level caller to block. Channel is closed once address resolution
-	// is complete (success or not).
-	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
-
-	// RemoveWaker removes a waker that has been added in GetLinkAddress().
-	RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
+	// Returns a link address for the remote address, if readily available.
+	//
+	// Returns ErrWouldBlock if the link address is not readily available, along
+	// with a notification channel for the caller to block on. Triggers address
+	// resolution asynchronously.
+	//
+	// If onResolve is provided, it will be called either immediately, if
+	// resolution is not required, or when address resolution is complete, with
+	// the resolved link address and whether resolution succeeded. After any
+	// callbacks have been called, the returned notification channel is closed.
+	//
+	// If specified, the local address must be an address local to the interface
+	// the neighbor cache belongs to. The local address is the source address of
+	// a packet prompting NUD/link address resolution.
+	//
+	// TODO(gvisor.dev/issue/5151): Don't return the link address.
+	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
 }
 
 // RawFactory produces endpoints for writing various types of raw packets.

@@ -53,11 +53,17 @@ func IsCanonical(addr uint64) bool {
 	return addr <= 0x0000ffffffffffff || addr > 0xffff000000000000
 }
 
+// SwitchToUser performs an eret.
+//
+// The return value is the exception vector.
+//
+// +checkescape:all
+//
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	storeAppASID(uintptr(switchOpts.UserASID))
 	if switchOpts.Flush {
-		FlushTlbAll()
+		FlushTlbByASID(uintptr(switchOpts.UserASID))
 	}
 
 	regs := switchOpts.Registers

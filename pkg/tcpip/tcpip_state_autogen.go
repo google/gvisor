@@ -6,6 +6,58 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (l *sockErrorList) StateTypeName() string {
+	return "pkg/tcpip.sockErrorList"
+}
+
+func (l *sockErrorList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *sockErrorList) beforeSave() {}
+
+func (l *sockErrorList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *sockErrorList) afterLoad() {}
+
+func (l *sockErrorList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *sockErrorEntry) StateTypeName() string {
+	return "pkg/tcpip.sockErrorEntry"
+}
+
+func (e *sockErrorEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *sockErrorEntry) beforeSave() {}
+
+func (e *sockErrorEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *sockErrorEntry) afterLoad() {}
+
+func (e *sockErrorEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
 func (so *SocketOptions) StateTypeName() string {
 	return "pkg/tcpip.SocketOptions"
 }
@@ -29,6 +81,9 @@ func (so *SocketOptions) StateFields() []string {
 		"delayOptionEnabled",
 		"corkOptionEnabled",
 		"receiveOriginalDstAddress",
+		"recvErrEnabled",
+		"errQueue",
+		"bindToDevice",
 		"linger",
 	}
 }
@@ -54,7 +109,10 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &so.delayOptionEnabled)
 	stateSinkObject.Save(15, &so.corkOptionEnabled)
 	stateSinkObject.Save(16, &so.receiveOriginalDstAddress)
-	stateSinkObject.Save(17, &so.linger)
+	stateSinkObject.Save(17, &so.recvErrEnabled)
+	stateSinkObject.Save(18, &so.errQueue)
+	stateSinkObject.Save(19, &so.bindToDevice)
+	stateSinkObject.Save(20, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -77,7 +135,60 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &so.delayOptionEnabled)
 	stateSourceObject.Load(15, &so.corkOptionEnabled)
 	stateSourceObject.Load(16, &so.receiveOriginalDstAddress)
-	stateSourceObject.Load(17, &so.linger)
+	stateSourceObject.Load(17, &so.recvErrEnabled)
+	stateSourceObject.Load(18, &so.errQueue)
+	stateSourceObject.Load(19, &so.bindToDevice)
+	stateSourceObject.Load(20, &so.linger)
+}
+
+func (s *SockError) StateTypeName() string {
+	return "pkg/tcpip.SockError"
+}
+
+func (s *SockError) StateFields() []string {
+	return []string{
+		"sockErrorEntry",
+		"Err",
+		"ErrOrigin",
+		"ErrType",
+		"ErrCode",
+		"ErrInfo",
+		"Payload",
+		"Dst",
+		"Offender",
+		"NetProto",
+	}
+}
+
+func (s *SockError) beforeSave() {}
+
+func (s *SockError) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.sockErrorEntry)
+	stateSinkObject.Save(1, &s.Err)
+	stateSinkObject.Save(2, &s.ErrOrigin)
+	stateSinkObject.Save(3, &s.ErrType)
+	stateSinkObject.Save(4, &s.ErrCode)
+	stateSinkObject.Save(5, &s.ErrInfo)
+	stateSinkObject.Save(6, &s.Payload)
+	stateSinkObject.Save(7, &s.Dst)
+	stateSinkObject.Save(8, &s.Offender)
+	stateSinkObject.Save(9, &s.NetProto)
+}
+
+func (s *SockError) afterLoad() {}
+
+func (s *SockError) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.sockErrorEntry)
+	stateSourceObject.Load(1, &s.Err)
+	stateSourceObject.Load(2, &s.ErrOrigin)
+	stateSourceObject.Load(3, &s.ErrType)
+	stateSourceObject.Load(4, &s.ErrCode)
+	stateSourceObject.Load(5, &s.ErrInfo)
+	stateSourceObject.Load(6, &s.Payload)
+	stateSourceObject.Load(7, &s.Dst)
+	stateSourceObject.Load(8, &s.Offender)
+	stateSourceObject.Load(9, &s.NetProto)
 }
 
 func (e *Error) StateTypeName() string {
@@ -153,6 +264,7 @@ func (c *ControlMessages) StateFields() []string {
 		"PacketInfo",
 		"HasOriginalDstAddress",
 		"OriginalDstAddress",
+		"SockErr",
 	}
 }
 
@@ -172,6 +284,7 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &c.PacketInfo)
 	stateSinkObject.Save(10, &c.HasOriginalDstAddress)
 	stateSinkObject.Save(11, &c.OriginalDstAddress)
+	stateSinkObject.Save(12, &c.SockErr)
 }
 
 func (c *ControlMessages) afterLoad() {}
@@ -189,6 +302,7 @@ func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &c.PacketInfo)
 	stateSourceObject.Load(10, &c.HasOriginalDstAddress)
 	stateSourceObject.Load(11, &c.OriginalDstAddress)
+	stateSourceObject.Load(12, &c.SockErr)
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {
@@ -273,7 +387,10 @@ func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*sockErrorList)(nil))
+	state.Register((*sockErrorEntry)(nil))
 	state.Register((*SocketOptions)(nil))
+	state.Register((*SockError)(nil))
 	state.Register((*Error)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
