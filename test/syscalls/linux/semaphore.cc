@@ -600,7 +600,7 @@ TEST(SemaphoreTest, SemopGetzcnt) {
   buf.sem_num = 0;
   buf.sem_op = 0;
   constexpr size_t kLoops = 10;
-  for (auto i = 0; i < kLoops; i++) {
+  for (size_t i = 0; i < kLoops; i++) {
     auto child_pid = fork();
     if (child_pid == 0) {
       TEST_PCHECK(RetryEINTR(semop)(sem.get(), &buf, 1) == 0);
@@ -707,7 +707,7 @@ TEST(SemaphoreTest, SemopGetncnt) {
   buf.sem_num = 0;
   buf.sem_op = -1;
   constexpr size_t kLoops = 10;
-  for (auto i = 0; i < kLoops; i++) {
+  for (size_t i = 0; i < kLoops; i++) {
     auto child_pid = fork();
     if (child_pid == 0) {
       TEST_PCHECK(RetryEINTR(semop)(sem.get(), &buf, 1) == 0);
