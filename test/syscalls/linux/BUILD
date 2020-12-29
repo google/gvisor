@@ -21,6 +21,7 @@ exports_files(
         "socket_ip_unbound.cc",
         "socket_ipv4_udp_unbound_external_networking_test.cc",
         "socket_ipv4_udp_unbound_loopback.cc",
+        "socket_ipv6_udp_unbound_loopback.cc",
         "socket_ipv4_udp_unbound_loopback_nogotsan.cc",
         "tcp_socket.cc",
         "udp_bind.cc",
