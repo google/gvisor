@@ -17,6 +17,7 @@ package dockerutil
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,52 +26,60 @@ import (
 
 type testCase struct {
 	name          string
-	pprof         Pprof
+	profile       profile
 	expectedFiles []string
 }
 
-func TestPprof(t *testing.T) {
+func TestProfile(t *testing.T) {
 	// Basepath and expected file names for each type of profile.
-	basePath := "/tmp/test/profile"
+	tmpDir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatalf("unable to create temporary directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// All expected names.
+	basePath := tmpDir
 	block := "block.pprof"
 	cpu := "cpu.pprof"
-	goprofle := "go.pprof"
 	heap := "heap.pprof"
 	mutex := "mutex.pprof"
 
 	testCases := []testCase{
 		{
-			name: "Cpu",
-			pprof: Pprof{
-				BasePath:   basePath,
-				CPUProfile: true,
-				Duration:   2 * time.Second,
+			name: "One",
+			profile: profile{
+				BasePath: basePath,
+				Types:    []string{"cpu"},
+				Duration: 2 * time.Second,
 			},
 			expectedFiles: []string{cpu},
 		},
 		{
 			name: "All",
-			pprof: Pprof{
-				BasePath:     basePath,
-				BlockProfile: true,
-				CPUProfile:   true,
-				HeapProfile:  true,
-				MutexProfile: true,
-				Duration:     2 * time.Second,
+			profile: profile{
+				BasePath: basePath,
+				Types:    []string{"block", "cpu", "heap", "mutex"},
+				Duration: 2 * time.Second,
 			},
-			expectedFiles: []string{block, cpu, goprofle, heap, mutex},
+			expectedFiles: []string{block, cpu, heap, mutex},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			c := MakeContainer(ctx, t)
+
 			// Set basepath to include the container name so there are no conflicts.
-			tc.pprof.BasePath = filepath.Join(tc.pprof.BasePath, c.Name)
-			c.AddProfile(&tc.pprof)
+			localProfile := tc.profile // Copy it.
+			localProfile.BasePath = filepath.Join(localProfile.BasePath, tc.name)
+
+			// Set directly on the container, to avoid flags.
+			c.profile = &localProfile
 
 			func() {
 				defer c.CleanUp(ctx)
+
 				// Start a container.
 				if err := c.Spawn(ctx, RunOpts{
 					Image: "basic/alpine",
@@ -83,24 +92,24 @@ func TestPprof(t *testing.T) {
 				}
 
 				// End early if the expected files exist and have data.
-				for start := time.Now(); time.Since(start) < tc.pprof.Duration; time.Sleep(500 * time.Millisecond) {
-					if err := checkFiles(tc); err == nil {
+				for start := time.Now(); time.Since(start) < localProfile.Duration; time.Sleep(100 * time.Millisecond) {
+					if err := checkFiles(localProfile.BasePath, tc.expectedFiles); err == nil {
 						break
 					}
 				}
 			}()
 
 			// Check all expected files exist and have data.
-			if err := checkFiles(tc); err != nil {
+			if err := checkFiles(localProfile.BasePath, tc.expectedFiles); err != nil {
 				t.Fatalf(err.Error())
 			}
 		})
 	}
 }
 
-func checkFiles(tc testCase) error {
-	for _, file := range tc.expectedFiles {
-		stat, err := os.Stat(filepath.Join(tc.pprof.BasePath, file))
+func checkFiles(basePath string, expectedFiles []string) error {
+	for _, file := range expectedFiles {
+		stat, err := os.Stat(filepath.Join(basePath, file))
 		if err != nil {
 			return fmt.Errorf("stat failed with: %v", err)
 		} else if stat.Size() < 1 {

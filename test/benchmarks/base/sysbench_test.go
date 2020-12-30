@@ -23,8 +23,6 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var testHarness harness.Harness
-
 type testCase struct {
 	name string
 	test tools.Sysbench
@@ -32,42 +30,34 @@ type testCase struct {
 
 // BenchmarSysbench runs sysbench on the runtime.
 func BenchmarkSysbench(b *testing.B) {
-
 	testCases := []testCase{
 		testCase{
 			name: "CPU",
 			test: &tools.SysbenchCPU{
-				Base: tools.SysbenchBase{
+				SysbenchBase: tools.SysbenchBase{
 					Threads: 1,
-					Time:    5,
 				},
-				MaxPrime: 50000,
 			},
 		},
 		testCase{
 			name: "Memory",
 			test: &tools.SysbenchMemory{
-				Base: tools.SysbenchBase{
+				SysbenchBase: tools.SysbenchBase{
 					Threads: 1,
 				},
-				BlockSize: "1M",
-				TotalSize: "500G",
 			},
 		},
 		testCase{
 			name: "Mutex",
 			test: &tools.SysbenchMutex{
-				Base: tools.SysbenchBase{
+				SysbenchBase: tools.SysbenchBase{
 					Threads: 8,
 				},
-				Loops: 1,
-				Locks: 10000000,
-				Num:   4,
 			},
 		},
 	}
 
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
@@ -87,12 +77,15 @@ func BenchmarkSysbench(b *testing.B) {
 			sysbench := machine.GetContainer(ctx, b)
 			defer sysbench.CleanUp(ctx)
 
+			cmd := tc.test.MakeCmd(b)
+			b.ResetTimer()
 			out, err := sysbench.Run(ctx, dockerutil.RunOpts{
 				Image: "benchmarks/sysbench",
-			}, tc.test.MakeCmd()...)
+			}, cmd...)
 			if err != nil {
 				b.Fatalf("failed to run sysbench: %v: logs:%s", err, out)
 			}
+			b.StopTimer()
 			tc.test.Report(b, out)
 		})
 	}

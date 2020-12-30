@@ -26,8 +26,6 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 // BenchmarkRuby runs requests using 'hey' against a ruby application server.
 // On start, ruby app generates some random data and pushes it to a redis
 // instance. On a request, the app grabs for random entries from the redis
@@ -43,14 +41,9 @@ func BenchmarkRuby(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to parse parameters: %v", err)
 		}
-		requests := b.N
-		if requests < c {
-			b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
-			requests = c
-		}
 		b.Run(name, func(b *testing.B) {
 			hey := &tools.Hey{
-				Requests:    requests,
+				Requests:    b.N,
 				Concurrency: c,
 			}
 			runRuby(b, hey)
@@ -61,14 +54,14 @@ func BenchmarkRuby(b *testing.B) {
 // runRuby runs the test for a given # of requests and concurrency.
 func runRuby(b *testing.B, hey *tools.Hey) {
 	// The machine to hold Redis and the Ruby Server.
-	serverMachine, err := h.GetMachine()
+	serverMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
 	defer serverMachine.CleanUp()
 
 	// The machine to run 'hey'.
-	clientMachine, err := h.GetMachine()
+	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -130,10 +123,9 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 		b.Fatalf("failed to wait until  serving: %v", err)
 	}
 	heyCmd := hey.MakeCmd(servingIP, servingPort)
-	rubyApp.RestartProfiles()
-	b.ResetTimer()
 
 	// the client should run on Native.
+	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
 	out, err := client.Run(ctx, dockerutil.RunOpts{
@@ -142,14 +134,11 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	if err != nil {
 		b.Fatalf("hey container failed: %v logs: %s", err, out)
 	}
-
-	// Stop the timer to parse the data and report stats.
 	b.StopTimer()
 	hey.Report(b, out)
-	b.StartTimer()
 }
 
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

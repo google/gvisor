@@ -23,8 +23,6 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 // see Dockerfile '//images/benchmarks/httpd'.
 var httpdDocs = map[string]string{
 	"notfound": "notfound",
@@ -38,13 +36,7 @@ var httpdDocs = map[string]string{
 // BenchmarkHttpd iterates over different sized payloads and concurrency, testing
 // how well the runtime handles sending different payload sizes.
 func BenchmarkHttpd(b *testing.B) {
-	benchmarkHttpdDocSize(b, false /* reverse */)
-}
-
-// BenchmarkReverseHttpd iterates over different sized payloads, testing
-// how well the runtime handles receiving different payload sizes.
-func BenchmarkReverseHttpd(b *testing.B) {
-	benchmarkHttpdDocSize(b, true /* reverse */)
+	benchmarkHttpdDocSize(b)
 }
 
 // BenchmarkContinuousHttpd runs specific benchmarks for continous jobs.
@@ -52,20 +44,12 @@ func BenchmarkReverseHttpd(b *testing.B) {
 func BenchmarkContinuousHttpd(b *testing.B) {
 	sizes := []string{"10Kb", "100Kb", "1Mb"}
 	threads := []int{1, 25, 100, 1000}
-	benchmarkHttpdContinuous(b, threads, sizes, false /*reverse*/)
-}
-
-// BenchmarkContinuousHttpdReverse runs specific benchmarks for continous jobs.
-// The runtime under test is the client downloading from a runc server.
-func BenchmarkContinuousHttpdReverse(b *testing.B) {
-	sizes := []string{"10Kb", "100Kb", "1Mb"}
-	threads := []int{1, 25, 100, 1000}
-	benchmarkHttpdContinuous(b, threads, sizes, true /*reverse*/)
+	benchmarkHttpdContinuous(b, threads, sizes)
 }
 
 // benchmarkHttpdDocSize iterates through all doc sizes, running subbenchmarks
 // for each size.
-func benchmarkHttpdDocSize(b *testing.B, reverse bool) {
+func benchmarkHttpdDocSize(b *testing.B) {
 	b.Helper()
 	for size, filename := range httpdDocs {
 		concurrency := []int{1, 25, 50, 100, 1000}
@@ -82,25 +66,20 @@ func benchmarkHttpdDocSize(b *testing.B, reverse bool) {
 			if err != nil {
 				b.Fatalf("Failed to parse parameters: %v", err)
 			}
-			requests := b.N
-			if requests < c {
-				b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
-				requests = c
-			}
 			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
-					Requests:    requests,
+					Requests:    b.N,
 					Concurrency: c,
 					Doc:         filename,
 				}
-				runHttpd(b, hey, reverse)
+				runHttpd(b, hey)
 			})
 		}
 	}
 }
 
 // benchmarkHttpdContinuous iterates through given sizes and concurrencies.
-func benchmarkHttpdContinuous(b *testing.B, concurrency []int, sizes []string, reverse bool) {
+func benchmarkHttpdContinuous(b *testing.B, concurrency []int, sizes []string) {
 	for _, size := range sizes {
 		filename := httpdDocs[size]
 		for _, c := range concurrency {
@@ -118,26 +97,20 @@ func benchmarkHttpdContinuous(b *testing.B, concurrency []int, sizes []string, r
 			if err != nil {
 				b.Fatalf("Failed to parse parameters: %v", err)
 			}
-
-			requests := b.N
-			if requests < c {
-				b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
-				requests = c
-			}
 			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
-					Requests:    requests,
+					Requests:    b.N,
 					Concurrency: c,
 					Doc:         filename,
 				}
-				runHttpd(b, hey, reverse)
+				runHttpd(b, hey)
 			})
 		}
 	}
 }
 
 // runHttpd configures the static serving methods to run httpd.
-func runHttpd(b *testing.B, hey *tools.Hey, reverse bool) {
+func runHttpd(b *testing.B, hey *tools.Hey) {
 	// httpd runs on port 80.
 	port := 80
 	httpdRunOpts := dockerutil.RunOpts{
@@ -153,10 +126,10 @@ func runHttpd(b *testing.B, hey *tools.Hey, reverse bool) {
 		},
 	}
 	httpdCmd := []string{"sh", "-c", "mkdir -p /tmp/html; cp -r /local/* /tmp/html/.; apache2 -X"}
-	runStaticServer(b, h, httpdRunOpts, httpdCmd, port, hey, reverse)
+	runStaticServer(b, httpdRunOpts, httpdCmd, port, hey)
 }
 
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

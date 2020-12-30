@@ -19,7 +19,6 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -33,13 +32,25 @@ func (r *Redis) MakeCmd(ip net.IP, port, requests int) []string {
 	// There is no -t PING_BULK for redis-benchmark, so adjust the command in that case.
 	// Note that "ping" will run both PING_INLINE and PING_BULK.
 	if r.Operation == "PING_BULK" {
-		return strings.Split(
-			fmt.Sprintf("redis-benchmark --csv -t ping -h %s -p %d -n %d", ip, port, requests), " ")
+		return []string{
+			"redis-benchmark",
+			"--csv",
+			"-t", "ping",
+			"-h", ip.String(),
+			"-p", fmt.Sprintf("%d", port),
+			"-n", fmt.Sprintf("%d", requests),
+		}
 	}
 
 	// runs redis-benchmark -t operation for 100K requests against server.
-	return strings.Split(
-		fmt.Sprintf("redis-benchmark --csv -t %s -h %s -p %d -n %d", r.Operation, ip, port, requests), " ")
+	return []string{
+		"redis-benchmark",
+		"--csv",
+		"-t", r.Operation,
+		"-h", ip.String(),
+		"-p", fmt.Sprintf("%d", port),
+		"-n", fmt.Sprintf("%d", requests),
+	}
 }
 
 // Report parses output from redis-benchmark client and reports metrics.

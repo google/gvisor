@@ -19,7 +19,6 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -32,8 +31,16 @@ type Hey struct {
 
 // MakeCmd returns a 'hey' command.
 func (h *Hey) MakeCmd(ip net.IP, port int) []string {
-	return strings.Split(fmt.Sprintf("hey -n %d -c %d http://%s:%d/%s",
-		h.Requests, h.Concurrency, ip, port, h.Doc), " ")
+	c := h.Concurrency
+	if c > h.Requests {
+		c = h.Requests
+	}
+	return []string{
+		"hey",
+		"-n", fmt.Sprintf("%d", h.Requests),
+		"-c", fmt.Sprintf("%d", c),
+		fmt.Sprintf("http://%s:%d/%s", ip.String(), port, h.Doc),
+	}
 }
 
 // Report parses output from 'hey' and reports metrics.

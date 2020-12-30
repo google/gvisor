@@ -24,20 +24,18 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 func BenchmarkIperf(b *testing.B) {
 	iperf := tools.Iperf{
-		Time: b.N, // time in seconds to run client.
+		Num: b.N,
 	}
 
-	clientMachine, err := h.GetMachine()
+	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer clientMachine.CleanUp()
 
-	serverMachine, err := h.GetMachine()
+	serverMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
@@ -94,12 +92,9 @@ func BenchmarkIperf(b *testing.B) {
 			if err := harness.WaitUntilServing(ctx, clientMachine, ip, servingPort); err != nil {
 				b.Fatalf("failed to wait for server: %v", err)
 			}
+
 			// Run the client.
 			b.ResetTimer()
-
-			// Restart the server profiles. If the server isn't being profiled
-			// this does nothing.
-			server.RestartProfiles()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
 				Image: "benchmarks/iperf",
 			}, iperf.MakeCmd(ip, servingPort)...)
@@ -113,6 +108,6 @@ func BenchmarkIperf(b *testing.B) {
 }
 
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

@@ -55,11 +55,8 @@ type Container struct {
 	copyErr  error
 	cleanups []func()
 
-	// Profiles are profiles added to this container. They contain methods
-	// that are run after Creation, Start, and Cleanup of this Container, along
-	// a handle to restart the profile. Generally, tests/benchmarks using
-	// profiles need to run as root.
-	profiles []Profile
+	// profile is the profiling hook associated with this container.
+	profile *profile
 }
 
 // RunOpts are options for running a container.
@@ -105,22 +102,7 @@ type RunOpts struct {
 	Links []string
 }
 
-// MakeContainer sets up the struct for a Docker container.
-//
-// Names of containers will be unique.
-// Containers will check flags for profiling requests.
-func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
-	c := MakeNativeContainer(ctx, logger)
-	c.runtime = *runtime
-	if p := MakePprofFromFlags(c); p != nil {
-		c.AddProfile(p)
-	}
-	return c
-}
-
-// MakeNativeContainer sets up the struct for a DockerContainer using runc. Native
-// containers aren't profiled.
-func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
+func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
 	// Slashes are not allowed in container names.
 	name := testutil.RandomID(logger.Name())
 	name = strings.ReplaceAll(name, "/", "-")
@@ -132,24 +114,29 @@ func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container
 	return &Container{
 		logger:  logger,
 		Name:    name,
-		runtime: "",
+		runtime: runtime,
 		client:  client,
 	}
 }
 
-// AddProfile adds a profile to this container.
-func (c *Container) AddProfile(p Profile) {
-	c.profiles = append(c.profiles, p)
+// MakeContainer constructs a suitable Container object.
+//
+// The runtime used is determined by the runtime flag.
+//
+// Containers will check flags for profiling requests.
+func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	c := makeContainer(ctx, logger, *runtime)
+	c.profileInit()
+	return c
 }
 
-// RestartProfiles calls Restart on all profiles for this container.
-func (c *Container) RestartProfiles() error {
-	for _, profile := range c.profiles {
-		if err := profile.Restart(c); err != nil {
-			return err
-		}
-	}
-	return nil
+// MakeNativeContainer constructs a suitable Container object.
+//
+// The runtime used will be the system default.
+//
+// Native containers aren't profiled.
+func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	return makeContainer(ctx, logger, "" /*runtime*/)
 }
 
 // Spawn is analogous to 'docker run -d'.
@@ -206,6 +193,8 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 		return "", err
 	}
 
+	c.stopProfiling()
+
 	return c.Logs(ctx)
 }
 
@@ -236,11 +225,6 @@ func (c *Container) create(ctx context.Context, conf *container.Config, hostconf
 		return err
 	}
 	c.id = cont.ID
-	for _, profile := range c.profiles {
-		if err := profile.OnCreate(c); err != nil {
-			return fmt.Errorf("OnCreate method failed with: %v", err)
-		}
-	}
 	return nil
 }
 
@@ -286,11 +270,13 @@ func (c *Container) Start(ctx context.Context) error {
 	if err := c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("ContainerStart failed: %v", err)
 	}
-	for _, profile := range c.profiles {
-		if err := profile.OnStart(c); err != nil {
-			return fmt.Errorf("OnStart method failed: %v", err)
+
+	if c.profile != nil {
+		if err := c.profile.Start(c); err != nil {
+			c.logger.Logf("profile.Start failed: %v", err)
 		}
 	}
+
 	return nil
 }
 
@@ -499,8 +485,18 @@ func (c *Container) WaitForOutputSubmatch(ctx context.Context, pattern string, t
 	}
 }
 
+// stopProfiling stops profiling.
+func (c *Container) stopProfiling() {
+	if c.profile != nil {
+		if err := c.profile.Stop(c); err != nil {
+			c.logger.Logf("profile.Stop failed: %v", err)
+		}
+	}
+}
+
 // Kill kills the container.
 func (c *Container) Kill(ctx context.Context) error {
+	c.stopProfiling()
 	return c.client.ContainerKill(ctx, c.id, "")
 }
 
@@ -517,14 +513,6 @@ func (c *Container) Remove(ctx context.Context) error {
 
 // CleanUp kills and deletes the container (best effort).
 func (c *Container) CleanUp(ctx context.Context) {
-	// Execute profile cleanups before the container goes down.
-	for _, profile := range c.profiles {
-		profile.OnCleanUp(c)
-	}
-
-	// Forget profiles.
-	c.profiles = nil
-
 	// Execute all cleanups. We execute cleanups here to close any
 	// open connections to the container before closing. Open connections
 	// can cause Kill and Remove to hang.
@@ -538,10 +526,12 @@ func (c *Container) CleanUp(ctx context.Context) {
 		// Just log; can't do anything here.
 		c.logger.Logf("error killing container %q: %v", c.Name, err)
 	}
+
 	// Remove the image.
 	if err := c.Remove(ctx); err != nil {
 		c.logger.Logf("error removing container %q: %v", c.Name, err)
 	}
+
 	// Forget all mounts.
 	c.mounts = nil
 }

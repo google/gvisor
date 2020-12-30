@@ -28,12 +28,8 @@ var (
 	debug = flag.Bool("debug", false, "turns on debug messages for individual benchmarks")
 )
 
-// Harness is a handle for managing state in benchmark runs.
-type Harness struct {
-}
-
 // Init performs any harness initilialization before runs.
-func (h *Harness) Init() error {
+func Init() error {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s -- --test.bench=<regex>\n", os.Args[0])
 		flag.PrintDefaults()
@@ -47,7 +43,15 @@ func (h *Harness) Init() error {
 	return nil
 }
 
+// SetFixedBenchmarks causes all benchmarks to run once.
+//
+// This must be set if they cannot scale with N. Note that this uses 1ns
+// instead of 1x due to https://github.com/golang/go/issues/32051.
+func SetFixedBenchmarks() {
+	flag.Set("test.benchtime", "1ns")
+}
+
 // GetMachine returns this run's implementation of machine.
-func (h *Harness) GetMachine() (Machine, error) {
+func GetMachine() (Machine, error) {
 	return &localMachine{}, nil
 }
