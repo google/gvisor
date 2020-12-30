@@ -61,6 +61,7 @@ DOCKER_CONFIG := /etc/docker
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
 STARTUP_OPTIONS :=
+BAZEL_OPTIONS   :=
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
 TEST_OPTIONS := $(BASE_OPTIONS) \
@@ -155,7 +156,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
 	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
 	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
-	  sh -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
+	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
@@ -170,7 +171,7 @@ bazel-server: bazel-image ## Ensures that the server exists.
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
-	  sh -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null" >&2
+	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null" >&2
 else
 bazel-server:
 	@
@@ -187,7 +188,7 @@ endif
 # The last line is used to prevent terminal shenanigans.
 build_paths = \
   (set -euo pipefail; \
-  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(1)) 2>&1 \
+  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) 2>&1 \
   | tee /proc/self/fd/2 \
   | sed -n -e '/^Target/,$$p' \
   | sed -n -e '/^  \($(subst /,\/,$(subst $(SPACE),\|,$(BUILD_ROOTS)))\)/p' \
