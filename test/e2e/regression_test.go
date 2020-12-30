@@ -35,7 +35,7 @@ func TestBindOverlay(t *testing.T) {
 	// Run the container.
 	got, err := d.Run(ctx, dockerutil.RunOpts{
 		Image: "basic/ubuntu",
-	}, "bash", "-c", "nc -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -U /var/run/sock && wait $p")
+	}, "bash", "-c", "nc -q -1 -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -q 0 -U /var/run/sock && wait $p")
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
