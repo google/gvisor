@@ -505,6 +505,18 @@ TEST_F(OpenTest, OpenNonDirectoryWithTrailingSlash) {
   EXPECT_THAT(open(bad_path.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOTDIR));
 }
 
+TEST_F(OpenTest, OpenWithStrangeFlags) {
+  // VFS1 incorrectly allows read/write operations on such file descriptors.
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY | O_RDWR));
+  EXPECT_THAT(write(fd.get(), "x", 1), SyscallFailsWithErrno(EBADF));
+  char c;
+  EXPECT_THAT(read(fd.get(), &c, 1), SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing
