@@ -89,8 +89,14 @@ git merge --no-commit --strategy ours "${head}" || \
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
-# Sync the entire gopath_dir.
-rsync --recursive --delete --exclude .git -L "${gopath_dir}/" .
+# Sync the entire gopath_dir. Note that we exclude auto-generated source
+# files that will change here. Otherwise, it adds a tremendous amount of noise
+# to commits. If this file disappears in the future, then presumably we will
+# still delete the underlying directory.
+rsync --recursive --delete \
+  --exclude .git \
+  --exclude webhook/pkg/injector/certs.go \
+  -L "${gopath_dir}/" .
 
 # Add additional files.
 for file in "${othersrc[@]}"; do
