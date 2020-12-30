@@ -132,3 +132,18 @@ steps:
     command: make python3.7.3-runtime-tests
     parallelism: 10
     if: build.message =~ /VFS1/ || build.branch == "master"
+
+  # The final step here will aggregate data uploaded by all other steps into an
+  # annotation that will appear at the top of the build, with useful information.
+  #
+  # See .buildkite/summarize.sh and .buildkite/hooks/post-command for more.
+  - wait
+  - <<: *common
+    label: ":yawning_face: Wait"
+    command: "true"
+    key: "wait"
+  - <<: *common
+    label: ":thisisfine: Summarize"
+    command: .buildkite/summarize.sh
+    allow_dependency_failure: true
+    depends_on: "wait"

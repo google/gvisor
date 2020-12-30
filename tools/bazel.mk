@@ -160,8 +160,8 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
 	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
 	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
-	  sh -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi"
-	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder
+	  sh -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
+	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
 ifneq (true,$(shell $(wrapper echo true)))
@@ -175,7 +175,7 @@ bazel-server: bazel-image ## Ensures that the server exists.
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
-	  sh -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
+	  sh -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null" >&2
 else
 bazel-server:
 	@
@@ -191,6 +191,7 @@ endif
 #
 # The last line is used to prevent terminal shenanigans.
 build_paths = \
+  (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(1)) 2>&1 \
   | tee /proc/self/fd/2 \
   | grep -A1 -E '^Target' \
@@ -199,7 +200,7 @@ build_paths = \
   | strings -n 10 \
   | awk '{$$1=$$1};1' \
   | xargs -n 1 -I {} readlink -f "{}" \
-  | xargs -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)'
+  | xargs -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
@@ -215,7 +216,7 @@ clean: ## Cleans the bazel cache.
 testlogs: ## Returns the most recent set of test logs.
 	@if test -f .build_events.json; then \
 	  cat .build_events.json | jq -r \
-	    'select(.testSummary?.overallStatus? | tostring | test("(FAILED|FLAKY|TIMEOUT)")) | .testSummary.failed | .[] | .uri' | \
-	    awk -Ffile:// '{print $$2;}'; \
+	    'select(.testSummary?.overallStatus? | tostring | test("(FAILED|FLAKY|TIMEOUT)")) | "\(.id.testSummary.label) \(.testSummary.failed[].uri)"' | \
+	    sed -e 's|file://||'; \
 	fi
 .PHONY: testlogs
