@@ -18,58 +18,46 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 )
 
-var warmup = "sysbench --threads=8 --memory-total-size=5G memory run > /dev/null &&"
-
 // Sysbench represents a 'sysbench' command.
 type Sysbench interface {
-	MakeCmd() []string // Makes a sysbench command.
-	flags() []string
-	Report(*testing.B, string) // Reports results contained in string.
+	// MakeCmd constructs the relevant command line.
+	MakeCmd(*testing.B) []string
+
+	// Report reports relevant custom metrics.
+	Report(*testing.B, string)
 }
 
 // SysbenchBase is the top level struct for sysbench and holds top-level arguments
 // for sysbench. See: 'sysbench --help'
 type SysbenchBase struct {
-	Threads int // number of Threads for the test.
-	Time    int // time limit for test in seconds.
+	// Threads is the number of threads for the test.
+	Threads int
 }
 
 // baseFlags returns top level flags.
-func (s *SysbenchBase) baseFlags() []string {
+func (s *SysbenchBase) baseFlags(b *testing.B) []string {
 	var ret []string
 	if s.Threads > 0 {
 		ret = append(ret, fmt.Sprintf("--threads=%d", s.Threads))
 	}
-	if s.Time > 0 {
-		ret = append(ret, fmt.Sprintf("--time=%d", s.Time))
-	}
+	ret = append(ret, "--time=0") // Ensure events is used.
+	ret = append(ret, fmt.Sprintf("--events=%d", b.N))
 	return ret
 }
 
 // SysbenchCPU is for 'sysbench [flags] cpu run' and holds CPU specific arguments.
 type SysbenchCPU struct {
-	Base     SysbenchBase
-	MaxPrime int // upper limit for primes generator [10000].
+	SysbenchBase
 }
 
 // MakeCmd makes commands for SysbenchCPU.
-func (s *SysbenchCPU) MakeCmd() []string {
-	cmd := []string{warmup, "sysbench"}
-	cmd = append(cmd, s.flags()...)
-	cmd = append(cmd, "cpu run")
-	return []string{"sh", "-c", strings.Join(cmd, " ")}
-}
-
-// flags makes flags for SysbenchCPU cmds.
-func (s *SysbenchCPU) flags() []string {
-	cmd := s.Base.baseFlags()
-	if s.MaxPrime > 0 {
-		return append(cmd, fmt.Sprintf("--cpu-max-prime=%d", s.MaxPrime))
-	}
+func (s *SysbenchCPU) MakeCmd(b *testing.B) []string {
+	cmd := []string{"sysbench"}
+	cmd = append(cmd, s.baseFlags(b)...)
+	cmd = append(cmd, "cpu", "run")
 	return cmd
 }
 
@@ -96,9 +84,9 @@ func (s *SysbenchCPU) parseEvents(data string) (float64, error) {
 
 // SysbenchMemory is for 'sysbench [FLAGS] memory run' and holds Memory specific arguments.
 type SysbenchMemory struct {
-	Base          SysbenchBase
-	BlockSize     string // size of test memory block [1K].
-	TotalSize     string // size of data to transfer [100G].
+	SysbenchBase
+	BlockSize     int    // size of test memory block in megabytes [1].
+	TotalSize     int    // size of data to transfer in gigabytes [100].
 	Scope         string // memory access scope {global, local} [global].
 	HugeTLB       bool   // allocate memory from HugeTLB [off].
 	OperationType string // type of memory ops {read, write, none} [write].
@@ -106,21 +94,21 @@ type SysbenchMemory struct {
 }
 
 // MakeCmd makes commands for SysbenchMemory.
-func (s *SysbenchMemory) MakeCmd() []string {
-	cmd := []string{warmup, "sysbench"}
-	cmd = append(cmd, s.flags()...)
-	cmd = append(cmd, "memory run")
-	return []string{"sh", "-c", strings.Join(cmd, " ")}
+func (s *SysbenchMemory) MakeCmd(b *testing.B) []string {
+	cmd := []string{"sysbench"}
+	cmd = append(cmd, s.flags(b)...)
+	cmd = append(cmd, "memory", "run")
+	return cmd
 }
 
 // flags makes flags for SysbenchMemory cmds.
-func (s *SysbenchMemory) flags() []string {
-	cmd := s.Base.baseFlags()
-	if s.BlockSize != "" {
-		cmd = append(cmd, fmt.Sprintf("--memory-block-size=%s", s.BlockSize))
+func (s *SysbenchMemory) flags(b *testing.B) []string {
+	cmd := s.baseFlags(b)
+	if s.BlockSize != 0 {
+		cmd = append(cmd, fmt.Sprintf("--memory-block-size=%dM", s.BlockSize))
 	}
-	if s.TotalSize != "" {
-		cmd = append(cmd, fmt.Sprintf("--memory-total-size=%s", s.TotalSize))
+	if s.TotalSize != 0 {
+		cmd = append(cmd, fmt.Sprintf("--memory-total-size=%dG", s.TotalSize))
 	}
 	if s.Scope != "" {
 		cmd = append(cmd, fmt.Sprintf("--memory-scope=%s", s.Scope))
@@ -147,7 +135,7 @@ func (s *SysbenchMemory) Report(b *testing.B, output string) {
 	ReportCustomMetric(b, result, "memory_operations" /*metric name*/, "ops_per_second" /*unit*/)
 }
 
-var memoryOperationsRE = regexp.MustCompile(`Total\soperations:\s+\d*\s*\((\d*\.\d*)\sper\ssecond\)`)
+var memoryOperationsRE = regexp.MustCompile(`Total\s+operations:\s+\d+\s+\((\s*\d+\.\d+\s*)\s+per\s+second\)`)
 
 // parseOperations parses memory operations per second form sysbench memory ouput.
 func (s *SysbenchMemory) parseOperations(data string) (float64, error) {
@@ -160,24 +148,24 @@ func (s *SysbenchMemory) parseOperations(data string) (float64, error) {
 
 // SysbenchMutex is for 'sysbench [FLAGS] mutex run' and holds Mutex specific arguments.
 type SysbenchMutex struct {
-	Base  SysbenchBase
+	SysbenchBase
 	Num   int // total size of mutex array [4096].
-	Locks int // number of mutex locks per thread [50K].
-	Loops int // number of loops to do outside mutex lock [10K].
+	Locks int // number of mutex locks per thread [50000].
+	Loops int // number of loops to do outside mutex lock [10000].
 }
 
 // MakeCmd makes commands for SysbenchMutex.
-func (s *SysbenchMutex) MakeCmd() []string {
-	cmd := []string{warmup, "sysbench"}
-	cmd = append(cmd, s.flags()...)
-	cmd = append(cmd, "mutex run")
-	return []string{"sh", "-c", strings.Join(cmd, " ")}
+func (s *SysbenchMutex) MakeCmd(b *testing.B) []string {
+	cmd := []string{"sysbench"}
+	cmd = append(cmd, s.flags(b)...)
+	cmd = append(cmd, "mutex", "run")
+	return cmd
 }
 
 // flags makes flags for SysbenchMutex commands.
-func (s *SysbenchMutex) flags() []string {
+func (s *SysbenchMutex) flags(b *testing.B) []string {
 	var cmd []string
-	cmd = append(cmd, s.Base.baseFlags()...)
+	cmd = append(cmd, s.baseFlags(b)...)
 	if s.Num > 0 {
 		cmd = append(cmd, fmt.Sprintf("--mutex-num=%d", s.Num))
 	}

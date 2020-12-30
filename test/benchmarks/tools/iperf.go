@@ -19,19 +19,27 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 )
 
+const length = 64 * 1024
+
 // Iperf is for the client side of `iperf`.
 type Iperf struct {
-	Time int
+	Num int
 }
 
 // MakeCmd returns a iperf client command.
 func (i *Iperf) MakeCmd(ip net.IP, port int) []string {
-	// iperf report in Kb realtime
-	return strings.Split(fmt.Sprintf("iperf -f K --realtime --time %d --client %s --port %d", i.Time, ip, port), " ")
+	return []string{
+		"iperf",
+		"--format", "K", // Output in KBytes.
+		"--realtime", // Measured in realtime.
+		"--num", fmt.Sprintf("%d", i.Num),
+		"--length", fmt.Sprintf("%d", length),
+		"--client", ip.String(),
+		"--port", fmt.Sprintf("%d", port),
+	}
 }
 
 // Report parses output from iperf client and reports metrics.
@@ -42,6 +50,7 @@ func (i *Iperf) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse bandwitdth from %s: %v", output, err)
 	}
+	b.SetBytes(length) // Measure Bytes/sec for b.N, although below is iperf output.
 	ReportCustomMetric(b, bW*1024, "bandwidth" /*metric name*/, "bytes_per_second" /*unit*/)
 }
 

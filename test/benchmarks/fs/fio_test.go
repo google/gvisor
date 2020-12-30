@@ -27,42 +27,50 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 // BenchmarkFio runs fio on the runtime under test. There are 4 basic test
 // cases each run on a tmpfs mount and a bind mount. Fio requires root so that
 // caches can be dropped.
 func BenchmarkFio(b *testing.B) {
 	testCases := []tools.Fio{
 		tools.Fio{
-			Test:      "write",
-			Size:      "5G",
-			Blocksize: "1M",
-			Iodepth:   4,
+			Test:      "write4K",
+			Size:      b.N,
+			BlockSize: 4,
+			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "read",
-			Size:      "5G",
-			Blocksize: "1M",
-			Iodepth:   4,
+			Test:      "write1M",
+			Size:      b.N,
+			BlockSize: 1024,
+			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "randwrite",
-			Size:      "5G",
-			Blocksize: "4K",
-			Iodepth:   4,
-			Time:      30,
+			Test:      "read4K",
+			Size:      b.N,
+			BlockSize: 4,
+			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "randread",
-			Size:      "5G",
-			Blocksize: "4K",
-			Iodepth:   4,
-			Time:      30,
+			Test:      "read1M",
+			Size:      b.N,
+			BlockSize: 1024,
+			IODepth:   4,
+		},
+		tools.Fio{
+			Test:      "randwrite4K",
+			Size:      b.N,
+			BlockSize: 4,
+			IODepth:   4,
+		},
+		tools.Fio{
+			Test:      "randread4K",
+			Size:      b.N,
+			BlockSize: 4,
+			IODepth:   4,
 		},
 	}
 
-	machine, err := h.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -116,7 +124,7 @@ func BenchmarkFio(b *testing.B) {
 
 				// For reads, we need a file to read so make one inside the container.
 				if strings.Contains(tc.Test, "read") {
-					fallocateCmd := fmt.Sprintf("fallocate -l %s %s", tc.Size, outfile)
+					fallocateCmd := fmt.Sprintf("fallocate -l %dK %s", tc.Size, outfile)
 					if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 						strings.Split(fallocateCmd, " ")...); err != nil {
 						b.Fatalf("failed to create readable file on mount: %v, %s", err, out)
@@ -128,22 +136,24 @@ func BenchmarkFio(b *testing.B) {
 					b.Skipf("failed to drop caches with %v. You probably need root.", err)
 				}
 				cmd := tc.MakeCmd(outfile)
-				container.RestartProfiles()
+
 				b.ResetTimer()
+				b.StopTimer()
+
 				for i := 0; i < b.N; i++ {
+					if err := harness.DropCaches(machine); err != nil {
+						b.Fatalf("failed to drop caches: %v", err)
+					}
+
 					// Run fio.
+					b.StartTimer()
 					data, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
 					if err != nil {
 						b.Fatalf("failed to run cmd %v: %v", cmd, err)
 					}
 					b.StopTimer()
+					b.SetBytes(1024 * 1024) // Bytes for go reporting (Size is in megabytes).
 					tc.Report(b, data)
-					// If b.N is used (i.e. we run for an hour), we should drop caches
-					// after each run.
-					if err := harness.DropCaches(machine); err != nil {
-						b.Fatalf("failed to drop caches: %v", err)
-					}
-					b.StartTimer()
 				}
 			})
 		}
@@ -185,6 +195,6 @@ func makeMount(machine harness.Machine, mountType mount.Type, target string) (mo
 
 // TestMain is the main method for package fs.
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

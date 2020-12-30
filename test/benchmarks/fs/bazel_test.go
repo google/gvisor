@@ -25,8 +25,6 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 // Note: CleanCache versions of this test require running with root permissions.
 func BenchmarkBuildABSL(b *testing.B) {
 	runBuildBenchmark(b, "benchmarks/absl", "/abseil-cpp", "absl/base/...")
@@ -41,7 +39,7 @@ func BenchmarkBuildRunsc(b *testing.B) {
 func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 	b.Helper()
 	// Get a machine from the Harness on which to run.
-	machine, err := h.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
@@ -102,21 +100,20 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 				prefix = "/tmp"
 			}
 
-			// Restart profiles after the copy.
-			container.RestartProfiles()
 			b.ResetTimer()
+			b.StopTimer()
+
 			// Drop Caches and bazel clean should happen inside the loop as we may use
 			// time options with b.N. (e.g. Run for an hour.)
 			for i := 0; i < b.N; i++ {
-				b.StopTimer()
 				// Drop Caches for clear cache runs.
 				if bm.clearCache {
 					if err := harness.DropCaches(machine); err != nil {
 						b.Skipf("failed to drop caches: %v. You probably need root.", err)
 					}
 				}
-				b.StartTimer()
 
+				b.StartTimer()
 				got, err := container.Exec(ctx, dockerutil.ExecOpts{
 					WorkDir: prefix + workdir,
 				}, "bazel", "build", "-c", "opt", target)
@@ -138,7 +135,6 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 						b.Fatalf("build failed with: %v", err)
 					}
 				}
-				b.StartTimer()
 			}
 		})
 	}
@@ -146,6 +142,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 
 // TestMain is the main method for package fs.
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
+	harness.SetFixedBenchmarks()
 	os.Exit(m.Run())
 }

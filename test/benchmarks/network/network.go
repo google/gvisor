@@ -25,33 +25,26 @@ import (
 )
 
 // runStaticServer runs static serving workloads (httpd, nginx).
-func runStaticServer(b *testing.B, h harness.Harness, serverOpts dockerutil.RunOpts, serverCmd []string, port int, hey *tools.Hey, reverse bool) {
+func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []string, port int, hey *tools.Hey) {
 	ctx := context.Background()
 
 	// Get two machines: a client and server.
-	clientMachine, err := h.GetMachine()
+	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer clientMachine.CleanUp()
 
-	serverMachine, err := h.GetMachine()
+	serverMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer serverMachine.CleanUp()
 
-	// Make the containers. 'reverse=true' specifies that the client should use the
-	// runtime under test.
-	var client, server *dockerutil.Container
-	if reverse {
-		client = clientMachine.GetContainer(ctx, b)
-		server = serverMachine.GetNativeContainer(ctx, b)
-	} else {
-		client = clientMachine.GetNativeContainer(ctx, b)
-		server = serverMachine.GetContainer(ctx, b)
-	}
+	// Make the containers.
+	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
+	server := serverMachine.GetContainer(ctx, b)
 	defer server.CleanUp(ctx)
 
 	// Start the server.
@@ -73,16 +66,15 @@ func runStaticServer(b *testing.B, h harness.Harness, serverOpts dockerutil.RunO
 
 	// Make sure the server is serving.
 	harness.WaitUntilServing(ctx, clientMachine, ip, servingPort)
+
+	// Run the client.
 	b.ResetTimer()
-	server.RestartProfiles()
 	out, err := client.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/hey",
 	}, hey.MakeCmd(ip, servingPort)...)
 	if err != nil {
 		b.Fatalf("run failed with: %v", err)
 	}
-
 	b.StopTimer()
 	hey.Report(b, out)
-	b.StartTimer()
 }

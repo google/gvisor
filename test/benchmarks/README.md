@@ -81,11 +81,8 @@ benchmarks.
 In general, benchmarks should look like this:
 
 ```golang
-
-var h harness.Harness
-
 func BenchmarkMyCoolOne(b *testing.B) {
-  machine, err := h.GetMachine()
+  machine, err := harness.GetMachine()
   // check err
   defer machine.CleanUp()
 
@@ -95,14 +92,14 @@ func BenchmarkMyCoolOne(b *testing.B) {
 
   b.ResetTimer()
 
-  //Respect b.N.
+  // Respect b.N.
   for i := 0; i < b.N; i++ {
     out, err := container.Run(ctx, dockerutil.RunOpts{
       Image: "benchmarks/my-cool-image",
       Env: []string{"MY_VAR=awesome"},
       other options...see dockerutil
     }, "sh", "-c", "echo MY_VAR")
-    //check err
+    // check err...
     b.StopTimer()
 
     // Do parsing and reporting outside of the timer.
@@ -114,16 +111,13 @@ func BenchmarkMyCoolOne(b *testing.B) {
 }
 
 func TestMain(m *testing.M) {
-    h.Init()
+    harness.Init()
     os.Exit(m.Run())
 }
 ```
 
 Some notes on the above:
 
-*   The harness is initiated in the TestMain method and made global to test
-    module. The harness will handle any presetup that needs to happen with
-    flags, remote virtual machines (eventually), and other services.
 *   Respect `b.N` in that users of the benchmark may want to "run for an hour"
     or something of the sort.
 *   Use the `b.ReportMetric()` method to report custom metrics.

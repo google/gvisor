@@ -17,72 +17,57 @@ package dockerutil
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
-// Profile represents profile-like operations on a container,
-// such as running perf or pprof. It is meant to be added to containers
-// such that the container type calls the Profile during its lifecycle.
-type Profile interface {
-	// OnCreate is called just after the container is created when the container
-	// has a valid ID (e.g. c.ID()).
-	OnCreate(c *Container) error
+// profile represents profile-like operations on a container.
+//
+// It is meant to be added to containers such that the container type calls
+// the profile during its lifecycle. Standard implementations are below.
 
-	// OnStart is called just after the container is started when the container
-	// has a valid Pid (e.g. c.SandboxPid()).
-	OnStart(c *Container) error
-
-	// Restart restarts the Profile on request.
-	Restart(c *Container) error
-
-	// OnCleanUp is called during the container's cleanup method.
-	// Cleanups should just log errors if they have them.
-	OnCleanUp(c *Container) error
+// profile is for running profiles with 'runsc debug'.
+type profile struct {
+	BasePath string
+	Types    []string
+	Duration time.Duration
+	cmd      *exec.Cmd
 }
 
-// Pprof is for running profiles with 'runsc debug'. Pprof workloads
-// should be run as root and ONLY against runsc sandboxes. The runtime
-// should have --profile set as an option in /etc/docker/daemon.json in
-// order for profiling to work with Pprof.
-type Pprof struct {
-	BasePath     string // path to put profiles
-	BlockProfile bool
-	CPUProfile   bool
-	HeapProfile  bool
-	MutexProfile bool
-	Duration     time.Duration // duration to run profiler e.g. '10s' or '1m'.
-	shouldRun    bool
-	cmd          *exec.Cmd
-	stdout       io.ReadCloser
-	stderr       io.ReadCloser
-}
-
-// MakePprofFromFlags makes a Pprof profile from flags.
-func MakePprofFromFlags(c *Container) *Pprof {
-	if !(*pprofBlock || *pprofCPU || *pprofHeap || *pprofMutex) {
-		return nil
+// profileInit initializes a profile object, if required.
+func (c *Container) profileInit() {
+	if !*pprofBlock && !*pprofCPU && !*pprofMutex && !*pprofHeap {
+		return // Nothing to do.
 	}
-	return &Pprof{
-		BasePath:     filepath.Join(*pprofBaseDir, c.runtime, c.Name),
-		BlockProfile: *pprofBlock,
-		CPUProfile:   *pprofCPU,
-		HeapProfile:  *pprofHeap,
-		MutexProfile: *pprofMutex,
-		Duration:     *duration,
+	c.profile = &profile{
+		BasePath: filepath.Join(*pprofBaseDir, c.runtime, c.Name),
+		Duration: *pprofDuration,
+	}
+	if *pprofCPU {
+		c.profile.Types = append(c.profile.Types, "cpu")
+	}
+	if *pprofHeap {
+		c.profile.Types = append(c.profile.Types, "heap")
+	}
+	if *pprofMutex {
+		c.profile.Types = append(c.profile.Types, "mutex")
+	}
+	if *pprofBlock {
+		c.profile.Types = append(c.profile.Types, "block")
 	}
 }
 
-// OnCreate implements Profile.OnCreate.
-func (p *Pprof) OnCreate(c *Container) error {
-	return os.MkdirAll(p.BasePath, 0755)
-}
+// createProcess creates the collection process.
+func (p *profile) createProcess(c *Container) error {
+	// Ensure our directory exists.
+	if err := os.MkdirAll(p.BasePath, 0755); err != nil {
+		return err
+	}
 
-// OnStart implements Profile.OnStart.
-func (p *Pprof) OnStart(c *Container) error {
+	// Find the runtime to invoke.
 	path, err := RuntimePath()
 	if err != nil {
 		return fmt.Errorf("failed to get runtime path: %v", err)
@@ -90,58 +75,66 @@ func (p *Pprof) OnStart(c *Container) error {
 
 	// The root directory of this container's runtime.
 	root := fmt.Sprintf("--root=/var/run/docker/runtime-%s/moby", c.runtime)
-	// Format is `runsc --root=rootdir debug --profile-*=file --duration=* containerID`.
+
+	// Format is `runsc --root=rootdir debug --profile-*=file --duration=24h containerID`.
 	args := []string{root, "debug"}
-	args = append(args, p.makeProfileArgs(c)...)
+	for _, profileArg := range p.Types {
+		outputPath := filepath.Join(p.BasePath, fmt.Sprintf("%s.pprof", profileArg))
+		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))
+	}
+	args = append(args, fmt.Sprintf("--duration=%s", p.Duration)) // Or until container exits.
 	args = append(args, c.ID())
 
 	// Best effort wait until container is running.
 	for now := time.Now(); time.Since(now) < 5*time.Second; {
 		if status, err := c.Status(context.Background()); err != nil {
 			return fmt.Errorf("failed to get status with: %v", err)
-
 		} else if status.Running {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	p.cmd = exec.Command(path, args...)
+	p.cmd.Stderr = os.Stderr // Pass through errors.
 	if err := p.cmd.Start(); err != nil {
-		return fmt.Errorf("process failed: %v", err)
+		return fmt.Errorf("start process failed: %v", err)
+	}
+
+	return nil
+}
+
+// killProcess kills the process, if running.
+//
+// Precondition: mu must be held.
+func (p *profile) killProcess() error {
+	if p.cmd != nil && p.cmd.Process != nil {
+		return p.cmd.Process.Signal(syscall.SIGTERM)
 	}
 	return nil
 }
 
-// Restart implements Profile.Restart.
-func (p *Pprof) Restart(c *Container) error {
-	p.OnCleanUp(c)
-	return p.OnStart(c)
-}
-
-// OnCleanUp implements Profile.OnCleanup
-func (p *Pprof) OnCleanUp(c *Container) error {
+// waitProcess waits for the process, if running.
+//
+// Precondition: mu must be held.
+func (p *profile) waitProcess() error {
 	defer func() { p.cmd = nil }()
-	if p.cmd != nil && p.cmd.Process != nil && p.cmd.ProcessState != nil && !p.cmd.ProcessState.Exited() {
-		return p.cmd.Process.Kill()
+	if p.cmd != nil {
+		return p.cmd.Wait()
 	}
 	return nil
 }
 
-// makeProfileArgs turns Pprof fields into runsc debug flags.
-func (p *Pprof) makeProfileArgs(c *Container) []string {
-	var ret []string
-	if p.BlockProfile {
-		ret = append(ret, fmt.Sprintf("--profile-block=%s", filepath.Join(p.BasePath, "block.pprof")))
+// Start is called when profiling is started.
+func (p *profile) Start(c *Container) error {
+	return p.createProcess(c)
+}
+
+// Stop is called when profiling is started.
+func (p *profile) Stop(c *Container) error {
+	killErr := p.killProcess()
+	waitErr := p.waitProcess()
+	if waitErr != nil && killErr != nil {
+		return killErr
 	}
-	if p.CPUProfile {
-		ret = append(ret, fmt.Sprintf("--profile-cpu=%s", filepath.Join(p.BasePath, "cpu.pprof")))
-	}
-	if p.HeapProfile {
-		ret = append(ret, fmt.Sprintf("--profile-heap=%s", filepath.Join(p.BasePath, "heap.pprof")))
-	}
-	if p.MutexProfile {
-		ret = append(ret, fmt.Sprintf("--profile-mutex=%s", filepath.Join(p.BasePath, "mutex.pprof")))
-	}
-	ret = append(ret, fmt.Sprintf("--duration=%s", p.Duration))
-	return ret
+	return waitErr // Ignore okay wait, err kill.
 }

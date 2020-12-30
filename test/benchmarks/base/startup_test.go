@@ -25,11 +25,9 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
-var testHarness harness.Harness
-
 // BenchmarkStartEmpty times startup time for an empty container.
 func BenchmarkStartupEmpty(b *testing.B) {
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
@@ -53,7 +51,7 @@ func BenchmarkStartupEmpty(b *testing.B) {
 // Time is measured from start until the first request is served.
 func BenchmarkStartupNginx(b *testing.B) {
 	// The machine to hold Nginx and the Node Server.
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -76,7 +74,7 @@ func BenchmarkStartupNginx(b *testing.B) {
 // Time is measured from start until the first request is served.
 // Note that the Node app connects to a Redis instance before serving.
 func BenchmarkStartupNode(b *testing.B) {
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -126,8 +124,8 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 				return fmt.Errorf("failed to get ip from server: %v", err)
 			}
 
-			harness.DebugLog(b, "Waiting for container to start.")
 			// Wait until the Client sees the server as up.
+			harness.DebugLog(b, "Waiting for container to start.")
 			if err := harness.WaitUntilServing(ctx, args.Machine, servingIP, args.Port); err != nil {
 				return fmt.Errorf("failed to wait for serving: %v", err)
 			}
@@ -141,6 +139,6 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 
 // TestMain is the main method for package network.
 func TestMain(m *testing.M) {
-	testHarness.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

@@ -23,8 +23,6 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var h harness.Harness
-
 // see Dockerfile '//images/benchmarks/nginx'.
 var nginxDocs = map[string]string{
 	"notfound": "notfound",
@@ -38,14 +36,8 @@ var nginxDocs = map[string]string{
 // BenchmarkNginxDocSize iterates over different sized payloads, testing how
 // well the runtime handles sending different payload sizes.
 func BenchmarkNginxDocSize(b *testing.B) {
-	benchmarkNginxDocSize(b, false /* reverse */, true /* tmpfs */)
-	benchmarkNginxDocSize(b, false /* reverse */, false /* tmpfs */)
-}
-
-// BenchmarkReverseNginxDocSize iterates over different sized payloads, testing
-// how well the runtime handles receiving different payload sizes.
-func BenchmarkReverseNginxDocSize(b *testing.B) {
-	benchmarkNginxDocSize(b, true /* reverse */, true /* tmpfs */)
+	benchmarkNginxDocSize(b, true /* tmpfs */)
+	benchmarkNginxDocSize(b, false /* tmpfs */)
 }
 
 // BenchmarkContinuousNginx runs specific benchmarks for continous jobs.
@@ -53,20 +45,12 @@ func BenchmarkReverseNginxDocSize(b *testing.B) {
 func BenchmarkContinuousNginx(b *testing.B) {
 	sizes := []string{"10Kb", "100Kb", "1Mb"}
 	threads := []int{1, 25, 100, 1000}
-	benchmarkNginxContinuous(b, threads, sizes, false /*reverse*/)
-}
-
-// BenchmarkContinuousNginxReverse runs specific benchmarks for continous jobs.
-// The runtime under test is the client downloading from a runc server.
-func BenchmarkContinuousNginxReverse(b *testing.B) {
-	sizes := []string{"10Kb", "100Kb", "1Mb"}
-	threads := []int{1, 25, 100, 1000}
-	benchmarkNginxContinuous(b, threads, sizes, true /*reverse*/)
+	benchmarkNginxContinuous(b, threads, sizes)
 }
 
 // benchmarkNginxDocSize iterates through all doc sizes, running subbenchmarks
 // for each size.
-func benchmarkNginxDocSize(b *testing.B, reverse, tmpfs bool) {
+func benchmarkNginxDocSize(b *testing.B, tmpfs bool) {
 	for size, filename := range nginxDocs {
 		concurrency := []int{1, 25, 50, 100, 1000}
 		for _, c := range concurrency {
@@ -91,26 +75,20 @@ func benchmarkNginxDocSize(b *testing.B, reverse, tmpfs bool) {
 			if err != nil {
 				b.Fatalf("Failed to parse parameters: %v", err)
 			}
-
-			requests := b.N
-			if requests < c {
-				b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
-				requests = c
-			}
 			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
-					Requests:    requests,
+					Requests:    b.N,
 					Concurrency: c,
 					Doc:         filename,
 				}
-				runNginx(b, hey, reverse, tmpfs)
+				runNginx(b, hey, tmpfs)
 			})
 		}
 	}
 }
 
 // benchmarkNginxContinuous iterates through given sizes and concurrencies on a tmpfs mount.
-func benchmarkNginxContinuous(b *testing.B, concurrency []int, sizes []string, reverse bool) {
+func benchmarkNginxContinuous(b *testing.B, concurrency []int, sizes []string) {
 	for _, size := range sizes {
 		filename := nginxDocs[size]
 		for _, c := range concurrency {
@@ -133,25 +111,20 @@ func benchmarkNginxContinuous(b *testing.B, concurrency []int, sizes []string, r
 			if err != nil {
 				b.Fatalf("Failed to parse parameters: %v", err)
 			}
-			requests := b.N
-			if requests < c {
-				b.Logf("b.N is %d must be greater than threads %d. Consider running with --test.benchtime=Nx where N >= %d", b.N, c, c)
-				requests = c
-			}
 			b.Run(name, func(b *testing.B) {
 				hey := &tools.Hey{
-					Requests:    requests,
+					Requests:    b.N,
 					Concurrency: c,
 					Doc:         filename,
 				}
-				runNginx(b, hey, reverse, true /*tmpfs*/)
+				runNginx(b, hey, true /*tmpfs*/)
 			})
 		}
 	}
 }
 
 // runNginx configures the static serving methods to run httpd.
-func runNginx(b *testing.B, hey *tools.Hey, reverse, tmpfs bool) {
+func runNginx(b *testing.B, hey *tools.Hey, tmpfs bool) {
 	// nginx runs on port 80.
 	port := 80
 	nginxRunOpts := dockerutil.RunOpts{
@@ -165,10 +138,10 @@ func runNginx(b *testing.B, hey *tools.Hey, reverse, tmpfs bool) {
 	}
 
 	// Command copies nginxDocs to tmpfs serving directory and runs nginx.
-	runStaticServer(b, h, nginxRunOpts, nginxCmd, port, hey, reverse)
+	runStaticServer(b, nginxRunOpts, nginxCmd, port, hey)
 }
 
 func TestMain(m *testing.M) {
-	h.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

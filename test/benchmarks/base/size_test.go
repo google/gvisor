@@ -26,12 +26,10 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-var testHarness harness.Harness
-
 // BenchmarkSizeEmpty creates N empty containers and reads memory usage from
 // /proc/meminfo.
 func BenchmarkSizeEmpty(b *testing.B) {
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
@@ -81,7 +79,7 @@ func BenchmarkSizeEmpty(b *testing.B) {
 // BenchmarkSizeNginx starts N containers running Nginx, checks that they're
 // serving, and checks memory used based on /proc/meminfo.
 func BenchmarkSizeNginx(b *testing.B) {
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -126,7 +124,7 @@ func BenchmarkSizeNginx(b *testing.B) {
 // BenchmarkSizeNode starts N containers running a Node app, checks that
 // they're serving, and checks memory used based on /proc/meminfo.
 func BenchmarkSizeNode(b *testing.B) {
-	machine, err := testHarness.GetMachine()
+	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
 	}
@@ -178,6 +176,6 @@ func BenchmarkSizeNode(b *testing.B) {
 
 // TestMain is the main method for package network.
 func TestMain(m *testing.M) {
-	testHarness.Init()
+	harness.Init()
 	os.Exit(m.Run())
 }

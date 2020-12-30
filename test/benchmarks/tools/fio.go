@@ -25,25 +25,20 @@ import (
 // Fio makes 'fio' commands and parses their output.
 type Fio struct {
 	Test      string // test to run: read, write, randread, randwrite.
-	Size      string // total size to be read/written of format N[GMK] (e.g. 5G).
-	Blocksize string // blocksize to be read/write of format N[GMK] (e.g. 4K).
-	Iodepth   int    // iodepth for reads/writes.
-	Time      int    // time to run the test in seconds, usually for rand(read/write).
+	Size      int    // total size to be read/written in megabytes.
+	BlockSize int    // block size to be read/written in kilobytes.
+	IODepth   int    // I/O depth for reads/writes.
 }
 
 // MakeCmd makes a 'fio' command.
 func (f *Fio) MakeCmd(filename string) []string {
 	cmd := []string{"fio", "--output-format=json", "--ioengine=sync"}
 	cmd = append(cmd, fmt.Sprintf("--name=%s", f.Test))
-	cmd = append(cmd, fmt.Sprintf("--size=%s", f.Size))
-	cmd = append(cmd, fmt.Sprintf("--blocksize=%s", f.Blocksize))
+	cmd = append(cmd, fmt.Sprintf("--size=%dM", f.Size))
+	cmd = append(cmd, fmt.Sprintf("--blocksize=%dK", f.BlockSize))
 	cmd = append(cmd, fmt.Sprintf("--filename=%s", filename))
-	cmd = append(cmd, fmt.Sprintf("--iodepth=%d", f.Iodepth))
+	cmd = append(cmd, fmt.Sprintf("--iodepth=%d", f.IODepth))
 	cmd = append(cmd, fmt.Sprintf("--rw=%s", f.Test))
-	if f.Time != 0 {
-		cmd = append(cmd, "--time_based")
-		cmd = append(cmd, fmt.Sprintf("--runtime=%d", f.Time))
-	}
 	return cmd
 }
 
