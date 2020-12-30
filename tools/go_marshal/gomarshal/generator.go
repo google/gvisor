@@ -447,7 +447,15 @@ func (g *Generator) Run() error {
 	for i, a := range asts {
 		// Collect type declarations marked for code generation and generate
 		// Marshallable interfaces.
+		var sortedTypes []*marshallableType
 		for _, t := range g.collectMarshallableTypes(a, fsets[i]) {
+			sortedTypes = append(sortedTypes, t)
+		}
+		sort.Slice(sortedTypes, func(x, y int) bool {
+			// Sort by type name, which should be unique within a package.
+			return sortedTypes[x].spec.Name.String() < sortedTypes[y].spec.Name.String()
+		})
+		for _, t := range sortedTypes {
 			impl := g.generateOne(t, fsets[i])
 			// Collect Marshallable types referenced by the generated code.
 			for ref := range impl.ms {
