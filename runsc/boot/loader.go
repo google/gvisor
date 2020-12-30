@@ -598,7 +598,6 @@ func (l *Loader) run() error {
 		if err != nil {
 			return err
 		}
-
 	}
 
 	ep.tg = l.k.GlobalInit()
@@ -1045,9 +1044,10 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	// Wait for container.
 	l.k.WaitExited()
 
-	// Cleanup
+	// Stop the control server.
 	l.ctrl.stop()
 
+	// Check all references.
 	refs.OnExit()
 
 	return l.k.GlobalInit().ExitStatus()

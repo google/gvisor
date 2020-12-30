@@ -283,12 +283,10 @@ func (s *Server) handleOne(client *unet.Socket) error {
 		// Client is dead.
 		return err
 	}
+	if s.afterRPCCallback != nil {
+		defer s.afterRPCCallback()
+	}
 
-	defer func() {
-		if s.afterRPCCallback != nil {
-			s.afterRPCCallback()
-		}
-	}()
 	// Explicitly close all these files after the call.
 	//
 	// This is also explicitly a reference to the files after the call,

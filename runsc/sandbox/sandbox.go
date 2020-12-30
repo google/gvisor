@@ -999,54 +999,30 @@ func (s *Sandbox) HeapProfile(f *os.File) error {
 	}
 	defer conn.Close()
 
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
+	opts := control.HeapProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 	}
-	if err := conn.Call(boot.HeapProfile, &opts, nil); err != nil {
-		return fmt.Errorf("getting sandbox %q heap profile: %v", s.ID, err)
-	}
-	return nil
+	return conn.Call(boot.HeapProfile, &opts, nil)
 }
 
-// StartCPUProfile start CPU profile writing to the given file.
-func (s *Sandbox) StartCPUProfile(f *os.File) error {
-	log.Debugf("CPU profile start %q", s.ID)
+// CPUProfile collects a CPU profile.
+func (s *Sandbox) CPUProfile(f *os.File, duration time.Duration) error {
+	log.Debugf("CPU profile %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
+	opts := control.CPUProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+		Duration:    duration,
 	}
-	if err := conn.Call(boot.StartCPUProfile, &opts, nil); err != nil {
-		return fmt.Errorf("starting sandbox %q CPU profile: %v", s.ID, err)
-	}
-	return nil
-}
-
-// StopCPUProfile stops a previously started CPU profile.
-func (s *Sandbox) StopCPUProfile() error {
-	log.Debugf("CPU profile stop %q", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if err := conn.Call(boot.StopCPUProfile, nil, nil); err != nil {
-		return fmt.Errorf("stopping sandbox %q CPU profile: %v", s.ID, err)
-	}
-	return nil
+	return conn.Call(boot.CPUProfile, &opts, nil)
 }
 
 // BlockProfile writes a block profile to the given file.
-func (s *Sandbox) BlockProfile(f *os.File) error {
+func (s *Sandbox) BlockProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("Block profile %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -1054,19 +1030,15 @@ func (s *Sandbox) BlockProfile(f *os.File) error {
 	}
 	defer conn.Close()
 
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
+	opts := control.BlockProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+		Duration:    duration,
 	}
-	if err := conn.Call(boot.BlockProfile, &opts, nil); err != nil {
-		return fmt.Errorf("getting sandbox %q block profile: %v", s.ID, err)
-	}
-	return nil
+	return conn.Call(boot.BlockProfile, &opts, nil)
 }
 
 // MutexProfile writes a mutex profile to the given file.
-func (s *Sandbox) MutexProfile(f *os.File) error {
+func (s *Sandbox) MutexProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("Mutex profile %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -1074,50 +1046,27 @@ func (s *Sandbox) MutexProfile(f *os.File) error {
 	}
 	defer conn.Close()
 
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
+	opts := control.MutexProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+		Duration:    duration,
 	}
-	if err := conn.Call(boot.MutexProfile, &opts, nil); err != nil {
-		return fmt.Errorf("getting sandbox %q mutex profile: %v", s.ID, err)
-	}
-	return nil
+	return conn.Call(boot.MutexProfile, &opts, nil)
 }
 
-// StartTrace start trace  writing to the given file.
-func (s *Sandbox) StartTrace(f *os.File) error {
-	log.Debugf("Trace start %q", s.ID)
+// Trace collects an execution trace.
+func (s *Sandbox) Trace(f *os.File, duration time.Duration) error {
+	log.Debugf("Trace %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	opts := control.ProfileOpts{
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
-		},
+	opts := control.TraceProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+		Duration:    duration,
 	}
-	if err := conn.Call(boot.StartTrace, &opts, nil); err != nil {
-		return fmt.Errorf("starting sandbox %q trace: %v", s.ID, err)
-	}
-	return nil
-}
-
-// StopTrace stops a previously started trace.
-func (s *Sandbox) StopTrace() error {
-	log.Debugf("Trace stop %q", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if err := conn.Call(boot.StopTrace, nil, nil); err != nil {
-		return fmt.Errorf("stopping sandbox %q trace: %v", s.ID, err)
-	}
-	return nil
+	return conn.Call(boot.Trace, &opts, nil)
 }
 
 // ChangeLogging changes logging options.
