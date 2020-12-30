@@ -15,10 +15,10 @@
 package control
 
 import (
-	"errors"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -26,184 +26,253 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
-var errNoOutput = errors.New("no output writer provided")
+// Profile includes profile-related RPC stubs. It provides a way to
+// control the built-in runtime profiling facilities.
+//
+// The profile object must be instantied via NewProfile.
+type Profile struct {
+	// kernel is the kernel under profile. It's immutable.
+	kernel *kernel.Kernel
 
-// ProfileOpts contains options for the StartCPUProfile/Goroutine RPC call.
-type ProfileOpts struct {
-	// File is the filesystem path for the profile.
-	File string `json:"path"`
+	// cpuMu protects CPU profiling.
+	cpuMu sync.Mutex
 
+	// blockMu protects block profiling.
+	blockMu sync.Mutex
+
+	// mutexMu protects mutex profiling.
+	mutexMu sync.Mutex
+
+	// traceMu protects trace profiling.
+	traceMu sync.Mutex
+
+	// done is closed when profiling is done.
+	done chan struct{}
+}
+
+// NewProfile returns a new Profile object, and a stop callback.
+//
+// The stop callback should be used at most once.
+func NewProfile(k *kernel.Kernel) (*Profile, func()) {
+	p := &Profile{
+		kernel: k,
+		done:   make(chan struct{}),
+	}
+	return p, func() {
+		close(p.done)
+	}
+}
+
+// CPUProfileOpts contains options specifically for CPU profiles.
+type CPUProfileOpts struct {
+	// FilePayload is the destination for the profiling output.
+	urpc.FilePayload
+
+	// Duration is the duration of the profile.
+	Duration time.Duration `json:"duration"`
+
+	// Hz is the rate, which may be zero.
+	Hz int `json:"hz"`
+}
+
+// CPU is an RPC stub which collects a CPU profile.
+func (p *Profile) CPU(o *CPUProfileOpts, _ *struct{}) error {
+	if len(o.FilePayload.Files) < 1 {
+		return nil // Allowed.
+	}
+
+	output, err := fd.NewFromFile(o.FilePayload.Files[0])
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	p.cpuMu.Lock()
+	defer p.cpuMu.Unlock()
+
+	// Returns an error if profiling is already started.
+	if o.Hz != 0 {
+		runtime.SetCPUProfileRate(o.Hz)
+	}
+	if err := pprof.StartCPUProfile(output); err != nil {
+		return err
+	}
+	defer pprof.StopCPUProfile()
+
+	// Collect the profile.
+	select {
+	case <-time.After(o.Duration):
+	case <-p.done:
+	}
+
+	return nil
+}
+
+// HeapProfileOpts contains options specifically for heap profiles.
+type HeapProfileOpts struct {
 	// FilePayload is the destination for the profiling output.
 	urpc.FilePayload
 }
 
-// Profile includes profile-related RPC stubs. It provides a way to
-// control the built-in pprof facility in sentry via sentryctl.
-//
-// The following options to sentryctl are added:
-//
-// - collect CPU profile on-demand.
-//   sentryctl -pid <pid> pprof-cpu-start
-//   sentryctl -pid <pid> pprof-cpu-stop
-//
-// - dump out the stack trace of current go routines.
-//   sentryctl -pid <pid> pprof-goroutine
-type Profile struct {
-	// Kernel is the kernel under profile. It's immutable.
-	Kernel *kernel.Kernel
-
-	// mu protects the fields below.
-	mu sync.Mutex
-
-	// cpuFile is the current CPU profile output file.
-	cpuFile *fd.FD
-
-	// traceFile is the current execution trace output file.
-	traceFile *fd.FD
-}
-
-// StartCPUProfile is an RPC stub which starts recording the CPU profile in a
-// file.
-func (p *Profile) StartCPUProfile(o *ProfileOpts, _ *struct{}) error {
+// Heap generates a heap profile.
+func (p *Profile) Heap(o *HeapProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
+		return nil // Allowed.
 	}
 
-	output, err := fd.NewFromFile(o.FilePayload.Files[0])
-	if err != nil {
-		return err
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Returns an error if profiling is already started.
-	if err := pprof.StartCPUProfile(output); err != nil {
-		output.Close()
-		return err
-	}
-
-	p.cpuFile = output
-	return nil
-}
-
-// StopCPUProfile is an RPC stub which stops the CPU profiling and flush out the
-// profile data. It takes no argument.
-func (p *Profile) StopCPUProfile(_, _ *struct{}) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.cpuFile == nil {
-		return errors.New("CPU profiling not started")
-	}
-
-	pprof.StopCPUProfile()
-	p.cpuFile.Close()
-	p.cpuFile = nil
-	return nil
-}
-
-// HeapProfile generates a heap profile for the sentry.
-func (p *Profile) HeapProfile(o *ProfileOpts, _ *struct{}) error {
-	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
-	}
 	output := o.FilePayload.Files[0]
 	defer output.Close()
+
 	runtime.GC() // Get up-to-date statistics.
-	if err := pprof.WriteHeapProfile(output); err != nil {
-		return err
-	}
-	return nil
+	return pprof.WriteHeapProfile(output)
 }
 
-// GoroutineProfile is an RPC stub which dumps out the stack trace for all
-// running goroutines.
-func (p *Profile) GoroutineProfile(o *ProfileOpts, _ *struct{}) error {
+// GoroutineProfileOpts contains options specifically for goroutine profiles.
+type GoroutineProfileOpts struct {
+	// FilePayload is the destination for the profiling output.
+	urpc.FilePayload
+}
+
+// Goroutine dumps out the stack trace for all running goroutines.
+func (p *Profile) Goroutine(o *GoroutineProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
+		return nil // Allowed.
 	}
+
 	output := o.FilePayload.Files[0]
 	defer output.Close()
-	if err := pprof.Lookup("goroutine").WriteTo(output, 2); err != nil {
-		return err
-	}
-	return nil
+
+	return pprof.Lookup("goroutine").WriteTo(output, 2)
 }
 
-// BlockProfile is an RPC stub which dumps out the stack trace that led to
-// blocking on synchronization primitives.
-func (p *Profile) BlockProfile(o *ProfileOpts, _ *struct{}) error {
+// BlockProfileOpts contains options specifically for block profiles.
+type BlockProfileOpts struct {
+	// FilePayload is the destination for the profiling output.
+	urpc.FilePayload
+
+	// Duration is the duration of the profile.
+	Duration time.Duration `json:"duration"`
+
+	// Rate is the block profile rate.
+	Rate int `json:"rate"`
+}
+
+// Block dumps a blocking profile.
+func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
+		return nil // Allowed.
 	}
+
 	output := o.FilePayload.Files[0]
 	defer output.Close()
-	if err := pprof.Lookup("block").WriteTo(output, 0); err != nil {
-		return err
+
+	p.blockMu.Lock()
+	defer p.blockMu.Unlock()
+
+	// Always set the rate. We then wait to collect a profile at this rate,
+	// and disable when we're done.
+	rate := 1
+	if o.Rate != 0 {
+		rate = o.Rate
 	}
-	return nil
+	runtime.SetBlockProfileRate(rate)
+	defer runtime.SetBlockProfileRate(0)
+
+	// Collect the profile.
+	select {
+	case <-time.After(o.Duration):
+	case <-p.done:
+	}
+
+	return pprof.Lookup("block").WriteTo(output, 0)
 }
 
-// MutexProfile is an RPC stub which dumps out the stack trace of holders of
-// contended mutexes.
-func (p *Profile) MutexProfile(o *ProfileOpts, _ *struct{}) error {
+// MutexProfileOpts contains options specifically for mutex profiles.
+type MutexProfileOpts struct {
+	// FilePayload is the destination for the profiling output.
+	urpc.FilePayload
+
+	// Duration is the duration of the profile.
+	Duration time.Duration `json:"duration"`
+
+	// Fraction is the mutex profile fraction.
+	Fraction int `json:"fraction"`
+}
+
+// Mutex dumps a mutex profile.
+func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
+		return nil // Allowed.
 	}
+
 	output := o.FilePayload.Files[0]
 	defer output.Close()
-	if err := pprof.Lookup("mutex").WriteTo(output, 0); err != nil {
-		return err
+
+	p.mutexMu.Lock()
+	defer p.mutexMu.Unlock()
+
+	// Always set the fraction.
+	fraction := 1
+	if o.Fraction != 0 {
+		fraction = o.Fraction
 	}
-	return nil
+	runtime.SetMutexProfileFraction(fraction)
+	defer runtime.SetMutexProfileFraction(0)
+
+	// Collect the profile.
+	select {
+	case <-time.After(o.Duration):
+	case <-p.done:
+	}
+
+	return pprof.Lookup("mutex").WriteTo(output, 0)
 }
 
-// StartTrace is an RPC stub which starts collection of an execution trace.
-func (p *Profile) StartTrace(o *ProfileOpts, _ *struct{}) error {
+// TraceProfileOpts contains options specifically for traces.
+type TraceProfileOpts struct {
+	// FilePayload is the destination for the profiling output.
+	urpc.FilePayload
+
+	// Duration is the duration of the profile.
+	Duration time.Duration `json:"duration"`
+}
+
+// Trace is an RPC stub which starts collection of an execution trace.
+func (p *Profile) Trace(o *TraceProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
-		return errNoOutput
+		return nil // Allowed.
 	}
 
 	output, err := fd.NewFromFile(o.FilePayload.Files[0])
 	if err != nil {
 		return err
 	}
+	defer output.Close()
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.traceMu.Lock()
+	defer p.traceMu.Unlock()
 
 	// Returns an error if profiling is already started.
 	if err := trace.Start(output); err != nil {
 		output.Close()
 		return err
 	}
+	defer trace.Stop()
 
 	// Ensure all trace contexts are registered.
-	p.Kernel.RebuildTraceContexts()
+	p.kernel.RebuildTraceContexts()
 
-	p.traceFile = output
-	return nil
-}
-
-// StopTrace is an RPC stub which stops collection of an ongoing execution
-// trace and flushes the trace data. It takes no argument.
-func (p *Profile) StopTrace(_, _ *struct{}) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.traceFile == nil {
-		return errors.New("execution tracing not started")
+	// Wait for the trace.
+	select {
+	case <-time.After(o.Duration):
+	case <-p.done:
 	}
 
 	// Similarly to the case above, if tasks have not ended traces, we will
 	// lose information. Thus we need to rebuild the tasks in order to have
 	// complete information. This will not lose information if multiple
 	// traces are overlapping.
-	p.Kernel.RebuildTraceContexts()
+	p.kernel.RebuildTraceContexts()
 
-	trace.Stop()
-	p.traceFile.Close()
-	p.traceFile = nil
 	return nil
 }
