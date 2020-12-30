@@ -124,7 +124,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 
-	if c.IsSandboxRunning() {
+	if !c.IsSandboxRunning() {
 		return Errorf("container sandbox is not running")
 	}
 	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
