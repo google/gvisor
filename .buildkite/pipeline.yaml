@@ -23,6 +23,12 @@ _templates:
       BENCHMARKS_UPLOAD: true
 
 steps:
+  # ARM tests.
+  - <<: *common
+    label: ":mechanical_arm: ARM"
+    command: make arm-qemu-smoke-test 
+  - wait
+
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
     label: ":fire: Smoke tests"

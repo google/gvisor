@@ -9,7 +9,7 @@ RUN dnf install -y bazel3
 # Install gcloud. Note that while this is "x86_64", it doesn't actually matter.
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-289.0.0-linux-x86_64.tar.gz | \
     tar zxf - google-cloud-sdk && \
-    google-cloud-sdk/install.sh && \
+    google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 
 # Install Docker client for the website build.

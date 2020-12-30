@@ -152,20 +152,20 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 .PHONY: bazel-alias
 
 bazel-image: load-default ## Ensures that the local builder exists.
-	@$(call header,DOCKER BUILD)
-	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
-	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
+	$(call header,DOCKER BUILD)
+	docker rm -f $(BUILDER_NAME) 2>/dev/null || true
+	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
 	  sh -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
-	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
+	docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
-	@$(call header,DOCKER RUN)
-	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
-	@mkdir -p $(GCLOUD_CONFIG)
-	@mkdir -p $(BAZEL_CACHE)
-	@docker run -d --rm --name $(DOCKER_NAME) \
+	$(call header,DOCKER RUN)
+	docker rm -f $(DOCKER_NAME) 2>/dev/null || true
+	mkdir -p $(GCLOUD_CONFIG)
+	mkdir -p $(BAZEL_CACHE)
+	docker run -d --rm --name $(DOCKER_NAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \

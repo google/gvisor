@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -x -e
+
+/bin/busybox mkdir -p /usr/bin /usr/sbin /proc /sys /dev /tmp
+
+/bin/busybox --install -s
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+mount -t proc -o noexec,nosuid,nodev proc /proc
+mount -t sysfs -o noexec,nosuid,nodev sysfs /sys
+mount -t devtmpfs -o exec,nosuid,mode=0755,size=2M devtmpfs /dev
+
+uname -a
+/runsc --TESTONLY-unsafe-nonroot --rootless --network none --debug --alsologtostderr do uname -a
+echo "runsc exited with code $?"
+reboot -f
+exit 1
