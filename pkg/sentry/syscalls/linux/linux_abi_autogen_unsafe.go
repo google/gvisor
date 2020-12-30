@@ -23,82 +23,6 @@ var _ marshal.Marshallable = (*rlimit64)(nil)
 var _ marshal.Marshallable = (*userSockFprog)(nil)
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
-func (d *direntHdr) SizeBytes() int {
-    return 1 +
-        (*oldDirentHdr)(nil).SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (d *direntHdr) MarshalBytes(dst []byte) {
-    d.OldHdr.MarshalBytes(dst[:d.OldHdr.SizeBytes()])
-    dst = dst[d.OldHdr.SizeBytes():]
-    dst[0] = byte(d.Typ)
-    dst = dst[1:]
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (d *direntHdr) UnmarshalBytes(src []byte) {
-    d.OldHdr.UnmarshalBytes(src[:d.OldHdr.SizeBytes()])
-    src = src[d.OldHdr.SizeBytes():]
-    d.Typ = uint8(src[0])
-    src = src[1:]
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (d *direntHdr) Packed() bool {
-    return false
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (d *direntHdr) MarshalUnsafe(dst []byte) {
-    // Type direntHdr doesn't have a packed layout in memory, fallback to MarshalBytes.
-    d.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (d *direntHdr) UnmarshalUnsafe(src []byte) {
-    // Type direntHdr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    d.UnmarshalBytes(src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-//go:nosplit
-func (d *direntHdr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-    // Type direntHdr doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
-    d.MarshalBytes(buf) // escapes: fallback.
-    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-//go:nosplit
-func (d *direntHdr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    return d.CopyOutN(cc, addr, d.SizeBytes())
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-//go:nosplit
-func (d *direntHdr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-    // Type direntHdr doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
-    // Unmarshal unconditionally. If we had a short copy-in, this results in a
-    // partially unmarshalled struct.
-    d.UnmarshalBytes(buf) // escapes: fallback.
-    return length, err
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (d *direntHdr) WriteTo(writer io.Writer) (int64, error) {
-    // Type direntHdr doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := make([]byte, d.SizeBytes())
-    d.MarshalBytes(buf)
-    length, err := writer.Write(buf)
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (o *oldDirentHdr) SizeBytes() int {
     return 18
 }
@@ -173,6 +97,82 @@ func (o *oldDirentHdr) WriteTo(writer io.Writer) (int64, error) {
     // Type oldDirentHdr doesn't have a packed layout in memory, fall back to MarshalBytes.
     buf := make([]byte, o.SizeBytes())
     o.MarshalBytes(buf)
+    length, err := writer.Write(buf)
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (d *direntHdr) SizeBytes() int {
+    return 1 +
+        (*oldDirentHdr)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (d *direntHdr) MarshalBytes(dst []byte) {
+    d.OldHdr.MarshalBytes(dst[:d.OldHdr.SizeBytes()])
+    dst = dst[d.OldHdr.SizeBytes():]
+    dst[0] = byte(d.Typ)
+    dst = dst[1:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (d *direntHdr) UnmarshalBytes(src []byte) {
+    d.OldHdr.UnmarshalBytes(src[:d.OldHdr.SizeBytes()])
+    src = src[d.OldHdr.SizeBytes():]
+    d.Typ = uint8(src[0])
+    src = src[1:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (d *direntHdr) Packed() bool {
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (d *direntHdr) MarshalUnsafe(dst []byte) {
+    // Type direntHdr doesn't have a packed layout in memory, fallback to MarshalBytes.
+    d.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (d *direntHdr) UnmarshalUnsafe(src []byte) {
+    // Type direntHdr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    d.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (d *direntHdr) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Type direntHdr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
+    d.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (d *direntHdr) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return d.CopyOutN(cc, addr, d.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (d *direntHdr) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Type direntHdr doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    d.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (d *direntHdr) WriteTo(writer io.Writer) (int64, error) {
+    // Type direntHdr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, d.SizeBytes())
+    d.MarshalBytes(buf)
     length, err := writer.Write(buf)
     return int64(length), err
 }
