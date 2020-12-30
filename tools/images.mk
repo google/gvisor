@@ -108,9 +108,9 @@ $(foreach image, $(ALL_IMAGES), $(eval $(call tag_expand_rule,$(image))))
 # ensure that caching works as expected, as well as the "latest" tag that is
 # used by the tests.
 local_tag = \
-  docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1))
+  docker tag $(call remote_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):$(call tag,$(1)) >&2
 latest_tag = \
-  docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1))
+  docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)) >&2
 tag-%: ## Tag a local image.
 	@$(call header,TAG $*)
 	@$(call local_tag,$*) && $(call latest_tag,$*)
@@ -118,7 +118,7 @@ tag-%: ## Tag a local image.
 # pull forces the image to be pulled.
 pull = \
   $(call header,PULL $(1)) && \
-  docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) && \
+  docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
   $(call local_tag,$(1)) && \
   $(call latest_tag,$(1))
 pull-%: register-cross ## Force a repull of the image.
@@ -131,11 +131,11 @@ pull-%: register-cross ## Force a repull of the image.
 rebuild = \
   $(call header,REBUILD $(1)) && \
   (T=$$(mktemp -d) && cp -a $(call path,$(1))/* $$T && \
-  $(foreach image,$(shell grep FROM "$(call path,$(1))/$(call dockerfile,$(1))" 2>/dev/null | cut -d' ' -f2),docker pull $(DOCKER_PLATFORM_ARGS) $(image) &&) \
+  $(foreach image,$(shell grep FROM "$(call path,$(1))/$(call dockerfile,$(1))" 2>/dev/null | cut -d' ' -f2),docker pull $(DOCKER_PLATFORM_ARGS) $(image) >&2 &&) \
   docker build $(DOCKER_PLATFORM_ARGS) \
     -f "$$T/$(call dockerfile,$(1))" \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
-    $$T && \
+    $$T >&2 && \
   rm -rf $$T) && \
   $(call local_tag,$(1)) && \
   $(call latest_tag,$(1))
@@ -152,7 +152,7 @@ load-%: register-cross ## Pull or build an image locally.
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
-	@docker push $(call remote_image,$*):$(call tag,$*)
+	@docker push $(call remote_image,$*):$(call tag,$*) >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
@@ -160,7 +160,7 @@ push-%: load-% ## Push a given image.
 register-cross:
 ifneq ($(ARCH),$(shell uname -m))
 ifeq (,$(wildcard /proc/sys/fs/binfmt_misc/qemu-*))
-	@docker run --rm --privileged multiarch/qemu-user-static --reset --persistent yes
+	@docker run --rm --privileged multiarch/qemu-user-static --reset --persistent yes >&2
 else
 	@
 endif

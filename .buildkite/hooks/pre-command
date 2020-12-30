@@ -1,3 +1,15 @@
+# Install packages we need. Docker must be installed and configured,
+# as should Go itself. We just install some extra bits and pieces.
+function install_pkgs() {
+  while true; do
+    if sudo apt-get update && sudo apt-get install -y "$@"; then
+      break
+    fi
+  done
+}
+install_pkgs graphviz jq curl binutils gnupg gnupg-agent linux-libc-dev \
+  apt-transport-https ca-certificates software-properties-common
+
 # Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
 export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
 PARTITION=$((${PARTITION}+1)) # 1-indexed, but PARALLEL_JOB is 0-indexed.
@@ -8,4 +20,11 @@ EXPERIMENTAL=$(sudo docker version --format='{{.Server.Experimental}}')
 if test "${EXPERIMENTAL}" != "true"; then
   make sudo TARGETS=//runsc:runsc ARGS="install --experimental=true"
   sudo systemctl restart docker
+fi
+
+# Helper for benchmarks, based on the branch.
+if test "${BUILDKITE_BRANCH}" = "master"; then
+  export BENCHMARKS_OFFICIAL=true
+else
+  export BENCHMARKS_OFFICIAL=false
 fi

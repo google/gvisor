@@ -23,6 +23,7 @@ header = echo --- $(1) >&2
 # Make hacks.
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
+SHELL = /bin/bash
 
 ## usage: make <target>
 ##         or
@@ -59,7 +60,7 @@ build: ## Builds the given $(TARGETS) with the given $(OPTIONS). E.g. make build
 .PHONY: build
 
 test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TARGETS=pkg/buffer:buffer_test
-	@$(call build,$(OPTIONS) $(TARGETS))
+	@$(call test,$(OPTIONS) $(TARGETS))
 .PHONY: test
 
 copy: ## Copies the given $(TARGETS) to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
@@ -129,10 +130,10 @@ reload_docker = \
 configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker)
 
 # Helpers for above. Requires $(RUNTIME_BIN) dependency.
-install_runtime = $(call configure,$(RUNTIME),$(1) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
+install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
 # Don't use cached results, otherwise multiple runs using different runtimes
-# are skipped.
-test_runtime = $(call test,--test_arg=--runtime=$(RUNTIME) --nocache_test_results $(PARTITIONS) $(1))
+# may be skipped, if all other inputs are the same.
+test_runtime = $(call test,--test_arg=--runtime=$(1) --nocache_test_results $(PARTITIONS) $(2))
 
 refresh: $(RUNTIME_BIN) ## Updates the runtime binary.
 .PHONY: refresh
@@ -218,12 +219,12 @@ syscall-tests: ## Run all system call tests.
 	@$(call test,$(PARTITIONS) test/syscalls/...)
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,) # Ensure flags are cleared.
-	@$(call test_runtime,--test_timeout=10800 //test/runtimes:$*)
+	@$(call install_runtime,$(RUNTIME),) # Ensure flags are cleared.
+	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
 
 %-runtime-tests_vfs2: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,--vfs2)
-	@$(call test_runtime,--test_timeout=10800 //test/runtimes:$*)
+	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
 
 do-tests:
 	@$(call run,//runsc,--rootless do true)
@@ -238,58 +239,58 @@ simple-tests: unit-tests # Compatibility target.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,) # Clear flags.
-	@$(call test_runtime,$(INTEGRATION_TARGETS))
-	@$(call install_runtime,--vfs2)
-	@$(call test_runtime,$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
 overlay-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,--overlay)
-	@$(call test_runtime,$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--overlay)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 
 swgso-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,--software-gso=true --gso=false)
-	@$(call test_runtime,$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--software-gso=true --gso=false)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: swgso-tests
 
 hostnet-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,--network=host)
-	@$(call test_runtime,--test_arg=-checkpoint=false  --test_arg=-hostnet=true $(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--network=host)
+	@$(call test_runtime,$(RUNTIME),--test_arg=-checkpoint=false  --test_arg=-hostnet=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic $(RUNTIME_BIN)
 	@(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 	@if ! test -w /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
 	@$(call test,//pkg/sentry/platform/kvm:kvm_test)
-	@$(call install_runtime,--platform=kvm)
-	@$(call test_runtime,$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--platform=kvm)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
 iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
 	@$(call test,--test_arg=-runtime=runc $(PARTITIONS) //test/iptables:iptables_test)
-	@$(call install_runtime,--net-raw)
-	@$(call test_runtime,//test/iptables:iptables_test)
+	@$(call install_runtime,$(RUNTIME),--net-raw)
+	@$(call test_runtime,$(RUNTIME),//test/iptables:iptables_test)
 .PHONY: iptables-tests
 
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
-	@$(call install_runtime,) # Clear flags.
-	@$(call test_runtime,//test/packetdrill:all_tests)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call test_runtime,$(RUNTIME),//test/packetdrill:all_tests)
 .PHONY: packetdrill-tests
 
 packetimpact-tests: load-packetimpact $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter
-	@$(call install_runtime,) # Clear flags.
-	@$(call test_runtime,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call test_runtime,$(RUNTIME),--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
 .PHONY: packetimpact-tests
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
-	@$(call install_runtime,) # Clear flags.
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call sudo,tools/installers:containerd,$*)
 	@$(call sudo,tools/installers:shim)
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
@@ -310,25 +311,27 @@ containerd-tests: containerd-test-1.4.3
 ## Targets to run benchmarks. See //test/benchmarks for details.
 ##
 ##   common arguments:
-##     RUNTIME_ARGS - arguments to runsc placed in /etc/docker/daemon.json
-##       e.g. "--platform=ptrace"
-##     BENCHMARKS_PROJECT - BigQuery project to which to send data.
-##     BENCHMARKS_DATASET - BigQuery dataset to which to send data.
-##     BENCHMARKS_TABLE - BigQuery table to which to send data.
-##     BENCHMARKS_SUITE - name of the benchmark suite. See //tools/bigquery/bigquery.go.
-##     BENCHMARKS_UPLOAD - if true, upload benchmark data from the run.
-##     BENCHMARKS_OFFICIAL - marks the data as official.
+##     BENCHMARKS_PROJECT   - BigQuery project to which to send data.
+##     BENCHMARKS_DATASET   - BigQuery dataset to which to send data.
+##     BENCHMARKS_TABLE     - BigQuery table to which to send data.
+##     BENCHMARKS_SUITE     - name of the benchmark suite. See //tools/bigquery/bigquery.go.
+##     BENCHMARKS_UPLOAD    - if true, upload benchmark data from the run.
+##     BENCHMARKS_OFFICIAL  - marks the data as official.
 ##     BENCHMARKS_PLATFORMS - platforms to run benchmarks (e.g. ptrace kvm).
+##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
+##     BENCHMARKS_OPTIONS   - options to be passed to the test.
 ##
-BENCHMARKS_PROJECT   := gvisor-benchmarks
-BENCHMARKS_DATASET   := kokoro
-BENCHMARKS_TABLE     := benchmarks
-BENCHMARKS_SUITE     := start
-BENCHMARKS_UPLOAD    := false
-BENCHMARKS_OFFICIAL  := false
-BENCHMARKS_PLATFORMS := ptrace
-BENCHMARKS_TARGETS   := //test/benchmarks/base:startup_test
-BENCHMARKS_ARGS      := -test.bench=. -pprof-cpu -pprof-heap -pprof-heap -pprof-block
+BENCHMARKS_PROJECT   ?= gvisor-benchmarks
+BENCHMARKS_DATASET   ?= kokoro
+BENCHMARKS_TABLE     ?= benchmarks
+BENCHMARKS_SUITE     ?= ffmpeg
+BENCHMARKS_UPLOAD    ?= false
+BENCHMARKS_OFFICIAL  ?= false
+BENCHMARKS_PLATFORMS ?= ptrace
+BENCHMARKS_TARGETS   := //test/benchmarks/media:ffmpeg_test
+BENCHMARKS_FILTER    := .
+BENCHMARKS_OPTIONS   := -test.benchtime=10s
+BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex $(BENCHMARKS_OPTIONS)
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -336,27 +339,25 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 
 # $(1) is the runtime name, $(2) are the arguments.
 run_benchmark = \
-  $(call header,BENCHMARK $(1) $(2)); \
-  if test "$(1)" != "runc"; then $(call install_runtime,--profile $(2)); fi \
-  @T=$$(mktemp --tmpdir logs.$(RUNTIME).XXXXXX); \
-  $(call sudo,$(BENCHMARKS_TARGETS) --runtime=$(RUNTIME) $(BENCHMARKS_ARGS) | tee $$T); \
-  rc=$$?; \
-  if test $$rc -eq 0 && test "$(BENCHMARKS_UPLOAD)" == "true"; then \
-    $(call run,tools/parsers:parser parse --debug --file=$$T --runtime=$(RUNTIME) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+  ($(call header,BENCHMARK $(1) $(2)); \
+  set -euo pipefail; \
+  if test "$(1)" != "runc"; then $(call install_runtime,$(1),--profile $(2)); fi; \
+  export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
+  $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; \
+  if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
+    $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
   fi; \
-  rm -rf $$T; \
-  exit $$rc
+  rm -rf $$T)
 
-benchmark-platforms: load-benchmarks ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
+benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
 	@$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-	  $(call run_benchmark,$(RUNTIME)+vfs2,$(BENCHMARK_ARGS) --platform=$(PLATFORM) --vfs2) && \
-	  $(call run_benchmark,$(RUNTIME),$(BENCHMARK_ARGS) --platform=$(PLATFORM)) && \
-	) \
-	$(call run-benchmark,runc)
+	  $(call run_benchmark,$(PLATFORM),--platform=$(PLATFORM) --vfs2)  && \
+	) true
+	@$(call run-benchmark,runc)
 .PHONY: benchmark-platforms
 
-run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
-	@$(call run_benchmark,$(RUNTIME),$(BENCHMARK_ARGS))
+run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
+	@$(call run_benchmark,$(RUNTIME),)
 .PHONY: run-benchmark
 
 ##
