@@ -58,16 +58,11 @@ DOCKER_CONFIG := /etc/docker
 ##   Bazel will be run with standard flags. You can specify the following flags
 ##   to control which flags are passed:
 ##
-##     STARTUP_OPTIONS  - Startup options passed to Bazel.
-##     BAZEL_CONFIG     - A bazel config file.
+##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
 STARTUP_OPTIONS :=
-BAZEL_CONFIG    :=
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
-ifneq (,$(BAZEL_CONFIG))
-BASE_OPTIONS += --config=$(BAZEL_CONFIG)
-endif
 TEST_OPTIONS := $(BASE_OPTIONS) \
   --test_output=errors \
   --keep_going \
