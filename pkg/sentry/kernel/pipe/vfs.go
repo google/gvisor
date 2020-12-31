@@ -63,10 +63,19 @@ func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
 // ReaderWriterPair returns read-only and write-only FDs for vp.
 //
 // Preconditions: statusFlags should not contain an open access mode.
-func (vp *VFSPipe) ReaderWriterPair(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) (*vfs.FileDescription, *vfs.FileDescription) {
+func (vp *VFSPipe) ReaderWriterPair(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32) (*vfs.FileDescription, *vfs.FileDescription, error) {
 	// Connected pipes share the same locks.
 	locks := &vfs.FileLocks{}
-	return vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks), vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks)
+	r, err := vp.newFD(mnt, vfsd, linux.O_RDONLY|statusFlags, locks)
+	if err != nil {
+		return nil, nil, err
+	}
+	w, err := vp.newFD(mnt, vfsd, linux.O_WRONLY|statusFlags, locks)
+	if err != nil {
+		r.DecRef(ctx)
+		return nil, nil, err
+	}
+	return r, w, nil
 }
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
@@ -85,7 +94,10 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		return nil, syserror.EINVAL
 	}
 
-	fd := vp.newFD(mnt, vfsd, statusFlags, locks)
+	fd, err := vp.newFD(mnt, vfsd, statusFlags, locks)
+	if err != nil {
+		return nil, err
+	}
 
 	// Named pipes have special blocking semantics during open:
 	//
@@ -137,16 +149,18 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 }
 
 // Preconditions: vp.mu must be held.
-func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks) *vfs.FileDescription {
+func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
 	fd := &VFSPipeFD{
 		pipe: &vp.pipe,
 	}
 	fd.LockFD.Init(locks)
-	fd.vfsfd.Init(fd, statusFlags, mnt, vfsd, &vfs.FileDescriptionOptions{
+	if err := fd.vfsfd.Init(fd, statusFlags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		DenyPRead:         true,
 		DenyPWrite:        true,
 		UseDentryMetadata: true,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	switch {
 	case fd.vfsfd.IsReadable() && fd.vfsfd.IsWritable():
@@ -160,7 +174,7 @@ func (vp *VFSPipe) newFD(mnt *vfs.Mount, vfsd *vfs.Dentry, statusFlags uint32, l
 		panic("invalid pipe flags: must be readable, writable, or both")
 	}
 
-	return &fd.vfsfd
+	return &fd.vfsfd, nil
 }
 
 // VFSPipeFD implements vfs.FileDescriptionImpl for pipes. It also implements
