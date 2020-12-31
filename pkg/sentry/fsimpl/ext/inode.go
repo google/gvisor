@@ -200,7 +200,9 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 		}
 		var fd symlinkFD
 		fd.LockFD.Init(&in.locks)
-		fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{})
+		if err := fd.vfsfd.Init(&fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
 		return &fd.vfsfd, nil
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", in.impl))
