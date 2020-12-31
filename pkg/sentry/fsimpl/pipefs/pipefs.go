@@ -164,11 +164,11 @@ func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, e
 // and write ends of a newly-created pipe, as for pipe(2) and pipe2(2).
 //
 // Preconditions: mnt.Filesystem() must have been returned by NewFilesystem().
-func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, *vfs.FileDescription) {
+func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, *vfs.FileDescription, error) {
 	fs := mnt.Filesystem().Impl().(*filesystem)
 	inode := newInode(ctx, fs)
 	var d kernfs.Dentry
 	d.Init(&fs.Filesystem, inode)
 	defer d.DecRef(ctx)
-	return inode.pipe.ReaderWriterPair(mnt, d.VFSDentry(), flags)
+	return inode.pipe.ReaderWriterPair(ctx, mnt, d.VFSDentry(), flags)
 }
