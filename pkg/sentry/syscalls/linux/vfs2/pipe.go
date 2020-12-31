@@ -42,7 +42,10 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
 		return syserror.EINVAL
 	}
-	r, w := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
+	r, w, err := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
+	if err != nil {
+		return err
+	}
 	defer r.DecRef(t)
 	defer w.DecRef(t)
 
