@@ -129,6 +129,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, syserror.EINVAL
 	}
 	fuseFDGeneric := kernelTask.GetFileVFS2(int32(deviceDescriptor))
+	if fuseFDGeneric == nil {
+		return nil, nil, syserror.EINVAL
+	}
 	defer fuseFDGeneric.DecRef(ctx)
 	fuseFD, ok := fuseFDGeneric.Impl().(*DeviceFD)
 	if !ok {

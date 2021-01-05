@@ -235,6 +235,7 @@ cc_binary(
     srcs = ["mount_test.cc"],
     deps = [
         gtest,
+        "//test/util:mount_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
