@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +45,7 @@ type Debug struct {
 	strace       string
 	logLevel     string
 	logPackets   string
+	delay        time.Duration
 	duration     time.Duration
 	ps           bool
 }
@@ -71,7 +73,8 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
 	f.StringVar(&d.profileBlock, "profile-block", "", "writes block profile to the given file.")
 	f.StringVar(&d.profileMutex, "profile-mutex", "", "writes mutex profile to the given file.")
-	f.DurationVar(&d.duration, "duration", time.Second, "amount of time to wait for CPU and trace profiles.")
+	f.DurationVar(&d.delay, "delay", time.Hour, "amount of time to delay for collecting heap and goroutine profiles.")
+	f.DurationVar(&d.duration, "duration", time.Hour, "amount of time to wait for CPU and trace profiles.")
 	f.StringVar(&d.trace, "trace", "", "writes an execution trace to the given file.")
 	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
 	f.StringVar(&d.strace, "strace", "", `A comma separated list of syscalls to trace. "all" enables all traces, "off" disables all.`)
@@ -144,16 +147,6 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 		log.Infof("     *** Stack dump ***\n%s", stacks)
 	}
-	if d.profileHeap != "" {
-		f, err := os.OpenFile(d.profileHeap, os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			return Errorf("error opening heap profile output: %v", err)
-		}
-		defer f.Close()
-		if err := c.Sandbox.HeapProfile(f); err != nil {
-			return Errorf("error collecting heap profile: %v", err)
-		}
-	}
 	if d.strace != "" || len(d.logLevel) != 0 || len(d.logPackets) != 0 {
 		args := control.LoggingArgs{}
 		switch strings.ToLower(d.strace) {
@@ -224,13 +217,22 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// Open profiling files.
 	var (
+		heapFile  *os.File
 		cpuFile   *os.File
 		traceFile *os.File
 		blockFile *os.File
 		mutexFile *os.File
 	)
+	if d.profileHeap != "" {
+		f, err := os.OpenFile(d.profileHeap, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return Errorf("error opening heap profile output: %v", err)
+		}
+		defer f.Close()
+		heapFile = f
+	}
 	if d.profileCPU != "" {
-		f, err := os.OpenFile(d.profileCPU, os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.OpenFile(d.profileCPU, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return Errorf("error opening cpu profile output: %v", err)
 		}
@@ -238,14 +240,14 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		cpuFile = f
 	}
 	if d.trace != "" {
-		f, err := os.OpenFile(d.trace, os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.OpenFile(d.trace, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return Errorf("error opening trace profile output: %v", err)
 		}
 		traceFile = f
 	}
 	if d.profileBlock != "" {
-		f, err := os.OpenFile(d.profileBlock, os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.OpenFile(d.profileBlock, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return Errorf("error opening blocking profile output: %v", err)
 		}
@@ -253,7 +255,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		blockFile = f
 	}
 	if d.profileMutex != "" {
-		f, err := os.OpenFile(d.profileMutex, os.O_CREATE|os.O_TRUNC, 0644)
+		f, err := os.OpenFile(d.profileMutex, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return Errorf("error opening mutex profile output: %v", err)
 		}
@@ -264,11 +266,19 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Collect profiles.
 	var (
 		wg       sync.WaitGroup
+		heapErr  error
 		cpuErr   error
 		traceErr error
 		blockErr error
 		mutexErr error
 	)
+	if heapFile != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			heapErr = c.Sandbox.HeapProfile(heapFile, d.delay)
+		}()
+	}
 	if cpuFile != nil {
 		wg.Add(1)
 		go func() {
@@ -298,20 +308,61 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}()
 	}
 
-	wg.Wait()
+	// Before sleeping, allow us to catch signals and try to exit
+	// gracefully before just exiting. If we can't wait for wg, then
+	// we will not be able to read the errors below safely.
+	readyChan := make(chan struct{})
+	go func() {
+		defer close(readyChan)
+		wg.Wait()
+	}()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	select {
+	case <-readyChan:
+		break // Safe to proceed.
+	case <-signals:
+		log.Infof("caught signal, waiting at most one more second.")
+		select {
+		case <-signals:
+			log.Infof("caught second signal, exiting immediately.")
+			os.Exit(1) // Not finished.
+		case <-time.After(time.Second):
+			log.Infof("timeout, exiting.")
+			os.Exit(1) // Not finished.
+		case <-readyChan:
+			break // Safe to proceed.
+		}
+	}
+
+	// Collect all errors.
 	errorCount := 0
+	if heapErr != nil {
+		errorCount++
+		log.Infof("error collecting heap profile: %v", heapErr)
+		os.Remove(heapFile.Name())
+	}
 	if cpuErr != nil {
+		errorCount++
 		log.Infof("error collecting cpu profile: %v", cpuErr)
+		os.Remove(cpuFile.Name())
 	}
 	if traceErr != nil {
+		errorCount++
 		log.Infof("error collecting trace profile: %v", traceErr)
+		os.Remove(traceFile.Name())
 	}
 	if blockErr != nil {
+		errorCount++
 		log.Infof("error collecting block profile: %v", blockErr)
+		os.Remove(blockFile.Name())
 	}
 	if mutexErr != nil {
+		errorCount++
 		log.Infof("error collecting mutex profile: %v", mutexErr)
+		os.Remove(mutexFile.Name())
 	}
+
 	if errorCount > 0 {
 		return subcommands.ExitFailure
 	}

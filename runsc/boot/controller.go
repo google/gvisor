@@ -129,14 +129,6 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
-
-	// pprof holds the profile instance if enabled. It may be nil.
-	pprof *control.Profile
-
-	// stopProfiling has the callback to stop profiling calls. As
-	// this may be executed only once at most, it will be set to nil
-	// after it is executed for the first time.
-	stopProfiling func()
 }
 
 // newController creates a new controller. The caller must call
@@ -167,18 +159,14 @@ func newController(fd int, l *Loader) (*controller, error) {
 	ctrl.srv.Register(&control.Logging{})
 
 	if l.root.conf.ProfileEnable {
-		ctrl.pprof, ctrl.stopProfiling = control.NewProfile(l.k)
-		ctrl.srv.Register(ctrl.pprof)
+		ctrl.srv.Register(control.NewProfile(l.k))
 	}
 
 	return ctrl, nil
 }
 
 func (c *controller) stop() {
-	if c.stopProfiling != nil {
-		c.stopProfiling()
-		c.stopProfiling = nil
-	}
+	c.srv.Stop()
 }
 
 // containerManager manages sandbox containers.
