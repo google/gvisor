@@ -1,7 +1,7 @@
 # The stale workflow closes stale issues and pull requests, unless specific
 # tags have been applied in order to keep them open.
 name: "Close stale issues"
-on:
+"on":
   schedule:
   - cron: "0 0 * * *"
 

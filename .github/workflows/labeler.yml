@@ -1,6 +1,6 @@
 # Labeler labels incoming pull requests.
 name: "Labeler"
-on:
+"on":
 - pull_request
 
 jobs:

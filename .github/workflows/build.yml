@@ -6,7 +6,7 @@
 # This workflow also generates the build badge that is referred to by
 # the main README.
 name: "Build"
-on:
+"on":
   push:
     branches:
       - master

@@ -1,4 +1,4 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 # Bazel/starlark utilities.
@@ -174,6 +174,19 @@ http_archive(
         "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.5.0.tar.gz",
         "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
     ],
+)
+
+# Schemas for testing.
+http_file(
+    name = "buildkite_pipeline_schema",
+    sha256 = "3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1",
+    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json"],
+)
+
+http_file(
+    name = "github_workflow_schema",
+    sha256 = "2c375bb43dbc8b32b1bed46c290d0b70a8fa2aca7a5484dfca1b6e9c38cf9e7a",
+    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/27612065234778feaac216ce14dd47846fe0a2dd/src/schemas/json/github-workflow.json"],
 )
 
 # External Go repositories.
@@ -1390,4 +1403,25 @@ go_repository(
     importpath = "k8s.io/utils",
     sum = "h1:+ySTxfHnfzZb9ys375PXNlLhkJPLKgHajBU0N62BDvE=",
     version = "v0.0.0-20190801114015-581e00157fb1",
+)
+
+go_repository(
+    name = "com_github_xeipuuv_gojsonpointer",
+    importpath = "github.com/xeipuuv/gojsonpointer",
+    sum = "h1:zGWFAtiMcyryUHoUjUJX0/lt1H2+i2Ka2n+D3DImSNo=",
+    version = "v0.0.0-20190905194746-02993c407bfb",
+)
+
+go_repository(
+    name = "com_github_xeipuuv_gojsonreference",
+    importpath = "github.com/xeipuuv/gojsonreference",
+    sum = "h1:EzJWgHovont7NscjpAxXsDA8S8BMYve8Y5+7cuRE7R0=",
+    version = "v0.0.0-20180127040603-bd5ef7bd5415",
+)
+
+go_repository(
+    name = "com_github_xeipuuv_gojsonschema",
+    importpath = "github.com/xeipuuv/gojsonschema",
+    sum = "h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17UxZ74=",
+    version = "v1.2.0",
 )
