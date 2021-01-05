@@ -50,17 +50,17 @@ type Profile struct {
 	done chan struct{}
 }
 
-// NewProfile returns a new Profile object, and a stop callback.
-//
-// The stop callback should be used at most once.
-func NewProfile(k *kernel.Kernel) (*Profile, func()) {
-	p := &Profile{
+// NewProfile returns a new Profile object.
+func NewProfile(k *kernel.Kernel) *Profile {
+	return &Profile{
 		kernel: k,
 		done:   make(chan struct{}),
 	}
-	return p, func() {
-		close(p.done)
-	}
+}
+
+// Stop implements urpc.Stopper.Stop.
+func (p *Profile) Stop() {
+	close(p.done)
 }
 
 // CPUProfileOpts contains options specifically for CPU profiles.
@@ -70,9 +70,6 @@ type CPUProfileOpts struct {
 
 	// Duration is the duration of the profile.
 	Duration time.Duration `json:"duration"`
-
-	// Hz is the rate, which may be zero.
-	Hz int `json:"hz"`
 }
 
 // CPU is an RPC stub which collects a CPU profile.
@@ -81,19 +78,13 @@ func (p *Profile) CPU(o *CPUProfileOpts, _ *struct{}) error {
 		return nil // Allowed.
 	}
 
-	output, err := fd.NewFromFile(o.FilePayload.Files[0])
-	if err != nil {
-		return err
-	}
+	output := o.FilePayload.Files[0]
 	defer output.Close()
 
 	p.cpuMu.Lock()
 	defer p.cpuMu.Unlock()
 
 	// Returns an error if profiling is already started.
-	if o.Hz != 0 {
-		runtime.SetCPUProfileRate(o.Hz)
-	}
 	if err := pprof.StartCPUProfile(output); err != nil {
 		return err
 	}
@@ -112,6 +103,11 @@ func (p *Profile) CPU(o *CPUProfileOpts, _ *struct{}) error {
 type HeapProfileOpts struct {
 	// FilePayload is the destination for the profiling output.
 	urpc.FilePayload
+
+	// Delay is the sleep time, similar to Duration. This may
+	// not affect the data collected however, as the heap will
+	// continue only the memory associated with the last alloc.
+	Delay time.Duration `json:"delay"`
 }
 
 // Heap generates a heap profile.
@@ -123,7 +119,16 @@ func (p *Profile) Heap(o *HeapProfileOpts, _ *struct{}) error {
 	output := o.FilePayload.Files[0]
 	defer output.Close()
 
-	runtime.GC() // Get up-to-date statistics.
+	// Wait for the given delay.
+	select {
+	case <-time.After(o.Delay):
+	case <-p.done:
+	}
+
+	// Get up-to-date statistics.
+	runtime.GC()
+
+	// Write the given profile.
 	return pprof.WriteHeapProfile(output)
 }
 
@@ -170,8 +175,12 @@ func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
 	defer p.blockMu.Unlock()
 
 	// Always set the rate. We then wait to collect a profile at this rate,
-	// and disable when we're done.
-	rate := 1
+	// and disable when we're done. Note that the default here is 10%, which
+	// will record a stacktrace 10% of the time when blocking occurs. Since
+	// these events should not be super frequent, we expect this to achieve
+	// a reasonable balance between collecting the data we need and imposing
+	// a high performance cost (e.g. skewing even the CPU profile).
+	rate := 10
 	if o.Rate != 0 {
 		rate = o.Rate
 	}
@@ -211,8 +220,9 @@ func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
 	p.mutexMu.Lock()
 	defer p.mutexMu.Unlock()
 
-	// Always set the fraction.
-	fraction := 1
+	// Always set the fraction. Like the block rate above, we use
+	// a default rate of 10% for the same reasons.
+	fraction := 10
 	if o.Fraction != 0 {
 		fraction = o.Fraction
 	}

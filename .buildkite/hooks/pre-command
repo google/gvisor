@@ -28,3 +28,6 @@ if test "${BUILDKITE_BRANCH}" = "master"; then
 else
   export BENCHMARKS_OFFICIAL=false
 fi
+
+# Clear existing profiles.
+sudo rm -rf /tmp/profile

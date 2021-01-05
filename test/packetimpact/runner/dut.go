@@ -551,7 +551,7 @@ func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerut
 	hostconf.AutoRemove = true
 	hostconf.Sysctls = map[string]string{"net.ipv6.conf.all.disable_ipv6": "0"}
 
-	if err := c.CreateFrom(ctx, conf, hostconf, nil); err != nil {
+	if err := c.CreateFrom(ctx, runOpts.Image, conf, hostconf, nil); err != nil {
 		return fmt.Errorf("unable to create container %s: %w", c.Name, err)
 	}
 

@@ -125,9 +125,7 @@ func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) 
 //
 // Containers will check flags for profiling requests.
 func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
-	c := makeContainer(ctx, logger, *runtime)
-	c.profileInit()
-	return c
+	return makeContainer(ctx, logger, *runtime)
 }
 
 // MakeNativeContainer constructs a suitable Container object.
@@ -141,7 +139,7 @@ func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container
 
 // Spawn is analogous to 'docker run -d'.
 func (c *Container) Spawn(ctx context.Context, r RunOpts, args ...string) error {
-	if err := c.create(ctx, c.config(r, args), c.hostConfig(r), nil); err != nil {
+	if err := c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil); err != nil {
 		return err
 	}
 	return c.Start(ctx)
@@ -154,7 +152,7 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 	config.Tty = true
 	config.OpenStdin = true
 
-	if err := c.CreateFrom(ctx, config, hostconf, netconf); err != nil {
+	if err := c.CreateFrom(ctx, r.Image, config, hostconf, netconf); err != nil {
 		return Process{}, err
 	}
 
@@ -181,7 +179,7 @@ func (c *Container) SpawnProcess(ctx context.Context, r RunOpts, args ...string)
 
 // Run is analogous to 'docker run'.
 func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string, error) {
-	if err := c.create(ctx, c.config(r, args), c.hostConfig(r), nil); err != nil {
+	if err := c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil); err != nil {
 		return "", err
 	}
 
@@ -192,8 +190,6 @@ func (c *Container) Run(ctx context.Context, r RunOpts, args ...string) (string,
 	if err := c.Wait(ctx); err != nil {
 		return "", err
 	}
-
-	c.stopProfiling()
 
 	return c.Logs(ctx)
 }
@@ -210,16 +206,21 @@ func (c *Container) MakeLink(target string) string {
 }
 
 // CreateFrom creates a container from the given configs.
-func (c *Container) CreateFrom(ctx context.Context, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
-	return c.create(ctx, conf, hostconf, netconf)
+func (c *Container) CreateFrom(ctx context.Context, profileImage string, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
+	return c.create(ctx, profileImage, conf, hostconf, netconf)
 }
 
 // Create is analogous to 'docker create'.
 func (c *Container) Create(ctx context.Context, r RunOpts, args ...string) error {
-	return c.create(ctx, c.config(r, args), c.hostConfig(r), nil)
+	return c.create(ctx, r.Image, c.config(r, args), c.hostConfig(r), nil)
 }
 
-func (c *Container) create(ctx context.Context, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
+func (c *Container) create(ctx context.Context, profileImage string, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
+	if c.runtime != "" {
+		// Use the image name as provided here; which normally represents the
+		// unmodified "basic/alpine" image name. This should be easy to grok.
+		c.profileInit(profileImage)
+	}
 	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, c.Name)
 	if err != nil {
 		return err
@@ -428,6 +429,7 @@ func (c *Container) Status(ctx context.Context) (types.ContainerState, error) {
 
 // Wait waits for the container to exit.
 func (c *Container) Wait(ctx context.Context) error {
+	defer c.stopProfiling()
 	statusChan, errChan := c.client.ContainerWait(ctx, c.id, container.WaitConditionNotRunning)
 	select {
 	case err := <-errChan:
@@ -489,14 +491,16 @@ func (c *Container) WaitForOutputSubmatch(ctx context.Context, pattern string, t
 func (c *Container) stopProfiling() {
 	if c.profile != nil {
 		if err := c.profile.Stop(c); err != nil {
-			c.logger.Logf("profile.Stop failed: %v", err)
+			// This most likely means that the runtime for the container
+			// was too short to connect and actually get a profile.
+			c.logger.Logf("warning: profile.Stop failed: %v", err)
 		}
 	}
 }
 
 // Kill kills the container.
 func (c *Container) Kill(ctx context.Context) error {
-	c.stopProfiling()
+	defer c.stopProfiling()
 	return c.client.ContainerKill(ctx, c.id, "")
 }
 

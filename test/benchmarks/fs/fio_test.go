@@ -33,37 +33,37 @@ import (
 func BenchmarkFio(b *testing.B) {
 	testCases := []tools.Fio{
 		tools.Fio{
-			Test:      "write4K",
+			Test:      "write",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "write1M",
+			Test:      "write",
 			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "read4K",
+			Test:      "read",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "read1M",
+			Test:      "read",
 			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "randwrite4K",
+			Test:      "randwrite",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		tools.Fio{
-			Test:      "randread4K",
+			Test:      "randread",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
@@ -82,11 +82,15 @@ func BenchmarkFio(b *testing.B) {
 				Name:  "operation",
 				Value: tc.Test,
 			}
+			blockSize := tools.Parameter{
+				Name:  "blockSize",
+				Value: fmt.Sprintf("%dK", tc.BlockSize),
+			}
 			filesystem := tools.Parameter{
 				Name:  "filesystem",
 				Value: string(fsType),
 			}
-			name, err := tools.ParametersToName(operation, filesystem)
+			name, err := tools.ParametersToName(operation, blockSize, filesystem)
 			if err != nil {
 				b.Fatalf("Failed to parser paramters: %v", err)
 			}

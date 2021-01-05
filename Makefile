@@ -330,7 +330,7 @@ BENCHMARKS_OFFICIAL  ?= false
 BENCHMARKS_PLATFORMS ?= ptrace
 BENCHMARKS_TARGETS   := //test/benchmarks/media:ffmpeg_test
 BENCHMARKS_FILTER    := .
-BENCHMARKS_OPTIONS   := -test.benchtime=10s
+BENCHMARKS_OPTIONS   := -test.benchtime=30s
 BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex $(BENCHMARKS_OPTIONS)
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
