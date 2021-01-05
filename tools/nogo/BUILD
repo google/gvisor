@@ -3,6 +3,8 @@ load("//tools/nogo:defs.bzl", "nogo_objdump_tool", "nogo_stdlib", "nogo_target")
 
 package(licenses = ["notice"])
 
+exports_files(["config-schema.json"])
+
 nogo_target(
     name = "target",
     goarch = select_goarch(),

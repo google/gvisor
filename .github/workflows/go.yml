@@ -3,7 +3,7 @@
 # workflow simply generates and pushes the branch, as long as appropriate
 # permissions are available.
 name: "Go"
-on:
+"on":
   push:
     branches:
       - master

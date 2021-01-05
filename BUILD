@@ -1,5 +1,6 @@
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
 load("//tools/nogo:defs.bzl", "nogo_config")
+load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
 
 package(licenses = ["notice"])
@@ -48,6 +49,24 @@ doc(
     subcategory = "Community",
     visibility = ["//website:__pkg__"],
     weight = "99",
+)
+
+yaml_test(
+    name = "nogo_config_test",
+    srcs = glob(["nogo*.yaml"]),
+    schema = "//tools/nogo:config-schema.json",
+)
+
+yaml_test(
+    name = "github_workflows_test",
+    srcs = glob([".github/workflows/*.yml"]),
+    schema = "@github_workflow_schema//file",
+)
+
+yaml_test(
+    name = "buildkite_pipelines_test",
+    srcs = glob([".buildkite/*.yaml"]),
+    schema = "@buildkite_pipeline_schema//file",
 )
 
 # The sandbox filegroup is used for sandbox-internal dependencies.
