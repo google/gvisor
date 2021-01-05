@@ -2,9 +2,6 @@
 # posts them to GitHub, if applicable. This leverages the fact that the
 # workflow token has appropriate permissions to do so, and attempts to
 # leverage the GitHub workflow caches.
-#
-# This workflow also generates the build badge that is referred to by
-# the main README.
 name: "Build"
 "on":
   push:

@@ -1,6 +1,6 @@
 ![gVisor](g3doc/logo.png)
 
-![](https://github.com/google/gvisor/workflows/Build/badge.svg)
+[![Build status](https://badge.buildkite.com/3b159f20b9830461a71112566c4171c0bdfd2f980a8e4c0ae6.svg?branch=master)](https://buildkite.com/gvisor/pipeline)
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
 [![code search](https://img.shields.io/badge/code-search-blue)](https://cs.opensource.google/gvisor/gvisor)
 
