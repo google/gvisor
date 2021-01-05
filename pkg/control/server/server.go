@@ -67,9 +67,10 @@ func (s *Server) Wait() {
 // and the server should not be used afterwards.
 func (s *Server) Stop() {
 	s.socket.Close()
-	s.wg.Wait()
+	s.Wait()
 
-	// This will cause existing clients to be terminated safely.
+	// This will cause existing clients to be terminated safely. If the
+	// registered handlers have a Stop callback, it will be called.
 	s.server.Stop()
 }
 

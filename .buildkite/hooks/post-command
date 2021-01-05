@@ -1,70 +1,52 @@
-# Upload test logs on failure, if there are any.
+# Upload all relevant test failures.
+make -s testlogs 2>/dev/null | grep // | sort | uniq | (
+  declare log_count=0
+  while read target log; do
+    if test -z "${target}"; then
+      continue
+    fi
+
+    # N.B. If *all* tests fail due to some common cause, then we will
+    # end up spending way too much time uploading logs. Instead, we just
+    # upload the first 10 and stop. That is hopefully enough to debug.
+    #
+    # We include this test in the metadata, but note that we cannot
+    # upload the actual test logs. The user should rerun locally.
+    log_count=$((${log_count}+1))
+    if test "${log_count}" -ge 10; then
+      echo " * ${target} (no upload)" | \
+        buildkite-agent annotate --style error --context failures --append
+    else
+      buildkite-agent artifact upload "${log}"
+      echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
+        buildkite-agent annotate --style error --context failures --append
+    fi
+  done
+)
+
+# Upload all profiles, and include in an annotation.
+declare profile_output=$(mktemp --tmpdir)
+for file in $(find /tmp/profile -name \*.pprof -print 2>/dev/null | sort); do
+  # Generate a link to the profile file at the top.
+  profile_name="${file#/tmp/profile/}"
+  buildkite-agent artifact upload "${file}"
+  echo "<li><a href='artifact://${file#/}'>${profile_name}</a></li>" >> "${profile_output}"
+done
+
+# Upload if we had outputs.
+if test -s "${profile_output}"; then
+  # Make the list a collapsible section in markdown.
+  sed -i "1s|^|<details><summary>${BUILDKITE_LABEL}</summary><ul>\n|" "${profile_output}"
+  echo "</ul></details>" >> "${profile_output}"
+  cat "${profile_output}" | buildkite-agent annotate --style info --context profiles --append
+fi
+rm -rf "${profile_output}"
+
+# Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
-  # Generate a metafile that ends with .output, and contains all the
-  # test failures that have been uploaded. These will all be sorted and
-  # aggregated by a failure stage in the build pipeline.
-  declare output=$(mktemp "${BUILDKITE_JOB_ID}".XXXXXX.output)
-  make -s testlogs 2>/dev/null | grep // | sort | uniq | (
-    declare log_count=0
-    while read target log; do
-      if test -z "${target}"; then
-        continue
-      fi
-
-      # N.B. If *all* tests fail due to some common cause, then we will
-      # end up spending way too much time uploading logs. Instead, we just
-      # upload the first 10 and stop. That is hopefully enough to debug.
-      #
-      # We include this test in the metadata, but note that we cannot
-      # upload the actual test logs. The user should rerun locally.
-      log_count=$((${log_count}+1))
-      if test "${log_count}" -ge 10; then
-        echo " * ${target} (no upload)" | tee -a "${output}"
-      else
-        buildkite-agent artifact upload "${log}"
-        echo " * [${target}](artifact://${log#/})" | tee -a "${output}"
-      fi
-    done
-  )
-
-  # Upload if we had outputs.
-  if test -s "${output}"; then
-    buildkite-agent artifact upload "${output}"
-  fi
-  rm -rf "${output}"
-
   # Attempt to clear the cache and shut down.
   make clean || echo "make clean failed with code $?"
   make bazel-shutdown || echo "make bazel-shutdown failed with code $?"
-fi
-
-# Upload all profiles, and include in an annotation.
-if test -d /tmp/profile; then
-  # Same as above.
-  declare profile_output=$(mktemp "${BUILDKITE_JOB_ID}".XXXXXX.profile_output)
-  for file in $(find /tmp/profile -name \*.pprof -print 2>/dev/null | sort); do
-    # Generate a link to speedscope, with a URL-encoded link to the BuildKite
-    # artifact location. Note that we use do a fixed URL encode below, since
-    # the link can be uniquely determined. If the storage location changes,
-    # this schema may break and these links may stop working. The artifacts
-    # uploaded however, will still work just fine.
-    profile_name="${file#/tmp/profile/}"
-    public_url="https://storage.googleapis.com/gvisor-buildkite/${BUILDKITE_BUILD_ID}/${BUILDKITE_JOB_ID}/${file#/}"
-    encoded_url=$(jq -rn --arg x "${public_url}" '$x|@uri')
-    encoded_title=$(jq -rn --arg x "${profile_name}" '$x|@uri')
-    profile_url="https://speedscope.app/#profileURL=${encoded_url}&title=${encoded_title}"
-    buildkite-agent artifact upload "${file}"
-    echo " * [${profile_name}](${profile_url}) ([pprof](artifact://${file#/}))" | tee -a "${profile_output}"
-  done
-
-  # Upload if we had outputs.
-  if test -s "${profile_output}"; then
-    buildkite-agent artifact upload "${profile_output}"
-  fi
-  rm -rf "${profile_output}"
-
-  # Remove stale profiles, which may be owned by root.
-  sudo rm -rf /tmp/profile
 fi
 
 # Kill any running containers (clear state).

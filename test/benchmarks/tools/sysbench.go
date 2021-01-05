@@ -38,13 +38,15 @@ type SysbenchBase struct {
 }
 
 // baseFlags returns top level flags.
-func (s *SysbenchBase) baseFlags(b *testing.B) []string {
+func (s *SysbenchBase) baseFlags(b *testing.B, useEvents bool) []string {
 	var ret []string
 	if s.Threads > 0 {
 		ret = append(ret, fmt.Sprintf("--threads=%d", s.Threads))
 	}
-	ret = append(ret, "--time=0") // Ensure events is used.
-	ret = append(ret, fmt.Sprintf("--events=%d", b.N))
+	ret = append(ret, "--time=0") // Ensure other mechanism is used.
+	if useEvents {
+		ret = append(ret, fmt.Sprintf("--events=%d", b.N))
+	}
 	return ret
 }
 
@@ -56,7 +58,7 @@ type SysbenchCPU struct {
 // MakeCmd makes commands for SysbenchCPU.
 func (s *SysbenchCPU) MakeCmd(b *testing.B) []string {
 	cmd := []string{"sysbench"}
-	cmd = append(cmd, s.baseFlags(b)...)
+	cmd = append(cmd, s.baseFlags(b, true /* useEvents */)...)
 	cmd = append(cmd, "cpu", "run")
 	return cmd
 }
@@ -86,7 +88,6 @@ func (s *SysbenchCPU) parseEvents(data string) (float64, error) {
 type SysbenchMemory struct {
 	SysbenchBase
 	BlockSize     int    // size of test memory block in megabytes [1].
-	TotalSize     int    // size of data to transfer in gigabytes [100].
 	Scope         string // memory access scope {global, local} [global].
 	HugeTLB       bool   // allocate memory from HugeTLB [off].
 	OperationType string // type of memory ops {read, write, none} [write].
@@ -103,12 +104,9 @@ func (s *SysbenchMemory) MakeCmd(b *testing.B) []string {
 
 // flags makes flags for SysbenchMemory cmds.
 func (s *SysbenchMemory) flags(b *testing.B) []string {
-	cmd := s.baseFlags(b)
+	cmd := s.baseFlags(b, false /* useEvents */)
 	if s.BlockSize != 0 {
 		cmd = append(cmd, fmt.Sprintf("--memory-block-size=%dM", s.BlockSize))
-	}
-	if s.TotalSize != 0 {
-		cmd = append(cmd, fmt.Sprintf("--memory-total-size=%dG", s.TotalSize))
 	}
 	if s.Scope != "" {
 		cmd = append(cmd, fmt.Sprintf("--memory-scope=%s", s.Scope))
@@ -122,6 +120,10 @@ func (s *SysbenchMemory) flags(b *testing.B) []string {
 	if s.AccessMode != "" {
 		cmd = append(cmd, fmt.Sprintf("--memory-access-mode=%s", s.AccessMode))
 	}
+	// Sysbench ignores events for memory tests, and uses the total
+	// size parameter to determine when the test is done. We scale
+	// with this instead.
+	cmd = append(cmd, fmt.Sprintf("--memory-total-size=%dG", b.N))
 	return cmd
 }
 
@@ -150,7 +152,6 @@ func (s *SysbenchMemory) parseOperations(data string) (float64, error) {
 type SysbenchMutex struct {
 	SysbenchBase
 	Num   int // total size of mutex array [4096].
-	Locks int // number of mutex locks per thread [50000].
 	Loops int // number of loops to do outside mutex lock [10000].
 }
 
@@ -165,16 +166,18 @@ func (s *SysbenchMutex) MakeCmd(b *testing.B) []string {
 // flags makes flags for SysbenchMutex commands.
 func (s *SysbenchMutex) flags(b *testing.B) []string {
 	var cmd []string
-	cmd = append(cmd, s.baseFlags(b)...)
+	cmd = append(cmd, s.baseFlags(b, false /* useEvents */)...)
 	if s.Num > 0 {
 		cmd = append(cmd, fmt.Sprintf("--mutex-num=%d", s.Num))
-	}
-	if s.Locks > 0 {
-		cmd = append(cmd, fmt.Sprintf("--mutex-locks=%d", s.Locks))
 	}
 	if s.Loops > 0 {
 		cmd = append(cmd, fmt.Sprintf("--mutex-loops=%d", s.Loops))
 	}
+	// Sysbench does not respect --events for mutex tests. From [1]:
+	// "Here --time or --events are completely ignored. Sysbench always
+	// runs one event per thread."
+	// [1] https://tomfern.com/posts/sysbench-guide-1
+	cmd = append(cmd, fmt.Sprintf("--mutex-locks=%d", b.N))
 	return cmd
 }
 

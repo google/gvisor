@@ -249,12 +249,11 @@ func TestCgroup(t *testing.T) {
 		case "pids-limit":
 			val := attr.value
 			hostconf.Resources.PidsLimit = &val
-
 		}
 	}
 
 	// Create container.
-	if err := d.CreateFrom(ctx, conf, hostconf, nil); err != nil {
+	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
 		t.Fatalf("create failed with: %v", err)
 	}
 
@@ -323,7 +322,7 @@ func TestCgroupParent(t *testing.T) {
 	}, "sleep", "10000")
 	hostconf.Resources.CgroupParent = parent
 
-	if err := d.CreateFrom(ctx, conf, hostconf, nil); err != nil {
+	if err := d.CreateFrom(ctx, "basic/alpine", conf, hostconf, nil); err != nil {
 		t.Fatalf("create failed with: %v", err)
 	}
 

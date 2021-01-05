@@ -38,12 +38,19 @@ type profile struct {
 }
 
 // profileInit initializes a profile object, if required.
-func (c *Container) profileInit() {
+//
+// N.B. The profiling filename initialized here will use the *image*
+// name, and not the unique container name. This is intentional. Most
+// of the time, profiling will be used for benchmarks. Benchmarks will
+// be run iteratively until a sufficiently large N is reached. It is
+// useful in this context to overwrite previous runs, and generate a
+// single profile result for the final test.
+func (c *Container) profileInit(image string) {
 	if !*pprofBlock && !*pprofCPU && !*pprofMutex && !*pprofHeap {
 		return // Nothing to do.
 	}
 	c.profile = &profile{
-		BasePath: filepath.Join(*pprofBaseDir, c.runtime, c.Name),
+		BasePath: filepath.Join(*pprofBaseDir, c.runtime, c.logger.Name(), image),
 		Duration: *pprofDuration,
 	}
 	if *pprofCPU {
@@ -83,6 +90,7 @@ func (p *profile) createProcess(c *Container) error {
 		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))
 	}
 	args = append(args, fmt.Sprintf("--duration=%s", p.Duration)) // Or until container exits.
+	args = append(args, fmt.Sprintf("--delay=%s", p.Duration))    // Ditto.
 	args = append(args, c.ID())
 
 	// Best effort wait until container is running.
@@ -104,8 +112,6 @@ func (p *profile) createProcess(c *Container) error {
 }
 
 // killProcess kills the process, if running.
-//
-// Precondition: mu must be held.
 func (p *profile) killProcess() error {
 	if p.cmd != nil && p.cmd.Process != nil {
 		return p.cmd.Process.Signal(syscall.SIGTERM)
@@ -114,8 +120,6 @@ func (p *profile) killProcess() error {
 }
 
 // waitProcess waits for the process, if running.
-//
-// Precondition: mu must be held.
 func (p *profile) waitProcess() error {
 	defer func() { p.cmd = nil }()
 	if p.cmd != nil {
