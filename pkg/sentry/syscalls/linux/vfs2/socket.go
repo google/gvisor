@@ -1033,7 +1033,7 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 		return 0, err
 	}
 
-	controlMessages, err := control.Parse(t, s, controlData)
+	controlMessages, err := control.Parse(t, s, controlData, t.Arch().Width())
 	if err != nil {
 		return 0, err
 	}
