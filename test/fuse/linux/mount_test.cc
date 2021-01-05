@@ -17,6 +17,7 @@
 #include <sys/mount.h>
 
 #include "gtest/gtest.h"
+#include "test/util/mount_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -25,6 +26,17 @@ namespace testing {
 
 namespace {
 
+TEST(FuseMount, Success) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));
+  std::string mopts = absl::StrCat("fd=", std::to_string(fd.get()));
+
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const auto mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "fuse", 0, mopts, 0));
+}
+
 TEST(FuseMount, FDNotParsable) {
   int devfd;
   EXPECT_THAT(devfd = open("/dev/fuse", O_RDWR), SyscallSucceeds());
@@ -32,6 +44,36 @@ TEST(FuseMount, FDNotParsable) {
   TempPath mount_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(mount("fuse", mount_dir.path().c_str(), "fuse",
                     MS_NODEV | MS_NOSUID, mount_opts.c_str()),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FuseMount, NoDevice) {
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, ""),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FuseMount, ClosedFD) {
+  FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_WRONLY));
+  int fd = f.release();
+  close(fd);
+  std::string mopts = absl::StrCat("fd=", std::to_string(fd));
+
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, mopts.c_str()),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FuseMount, BadFD) {
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  std::string mopts = absl::StrCat("fd=", std::to_string(fd.get()));
+
+  EXPECT_THAT(mount("", dir.path().c_str(), "fuse", 0, mopts.c_str()),
               SyscallFailsWithErrno(EINVAL));
 }
 
