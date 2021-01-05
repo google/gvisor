@@ -991,7 +991,7 @@ func (s *Sandbox) Stacks() (string, error) {
 }
 
 // HeapProfile writes a heap profile to the given file.
-func (s *Sandbox) HeapProfile(f *os.File) error {
+func (s *Sandbox) HeapProfile(f *os.File, delay time.Duration) error {
 	log.Debugf("Heap profile %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -1001,6 +1001,7 @@ func (s *Sandbox) HeapProfile(f *os.File) error {
 
 	opts := control.HeapProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+		Delay:       delay,
 	}
 	return conn.Call(boot.HeapProfile, &opts, nil)
 }

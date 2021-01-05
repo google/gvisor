@@ -170,6 +170,9 @@ type Server struct {
 	// methods is the set of server methods.
 	methods map[string]registeredMethod
 
+	// stoppers are all registered stoppers.
+	stoppers []Stopper
+
 	// clients is a map of clients.
 	clients map[*unet.Socket]clientState
 
@@ -195,6 +198,12 @@ func NewServerWithCallback(afterRPCCallback func()) *Server {
 	}
 }
 
+// Stopper is an optional interface, that when implemented, allows an object
+// to have a callback executed when the server is shutting down.
+type Stopper interface {
+	Stop()
+}
+
 // Register registers the given object as an RPC receiver.
 //
 // This functions is the same way as the built-in RPC package, but it does not
@@ -206,6 +215,7 @@ func (s *Server) Register(obj interface{}) {
 	defer s.mu.Unlock()
 
 	typ := reflect.TypeOf(obj)
+	stopper, hasStop := obj.(Stopper)
 
 	// If we got a pointer, deref it to the underlying object. We need this to
 	// obtain the name of the underlying type.
@@ -220,6 +230,10 @@ func (s *Server) Register(obj interface{}) {
 		if typDeref.Name() == "" {
 			// Can't be anonymous.
 			panic("type not named.")
+		}
+		if hasStop && method.Name == "Stop" {
+			s.stoppers = append(s.stoppers, stopper)
+			continue // Legal stop method.
 		}
 
 		prettyName := typDeref.Name() + "." + method.Name
@@ -447,6 +461,11 @@ func (s *Server) StartHandling(client *unet.Socket) {
 func (s *Server) Stop() {
 	// Wait for all outstanding requests.
 	defer s.wg.Wait()
+
+	// Call any Stop callbacks.
+	for _, stopper := range s.stoppers {
+		stopper.Stop()
+	}
 
 	// Close all known clients.
 	s.mu.Lock()
