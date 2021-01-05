@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -24,5 +24,19 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/syserror",
         "//pkg/usermem",
+    ],
+)
+
+go_test(
+    name = "control_test",
+    size = "small",
+    srcs = ["control_test.go"],
+    library = ":control",
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/binary",
+        "//pkg/sentry/socket",
+        "//pkg/usermem",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
