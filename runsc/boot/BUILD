@@ -33,6 +33,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/eventchannel",
         "//pkg/fd",
+        "//pkg/flipcall",
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/memutil",
