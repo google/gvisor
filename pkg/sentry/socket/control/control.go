@@ -463,7 +463,7 @@ func CmsgsSpace(t *kernel.Task, cmsgs socket.ControlMessages) int {
 }
 
 // Parse parses a raw socket control message into portable objects.
-func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.ControlMessages, error) {
+func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint) (socket.ControlMessages, error) {
 	var (
 		cmsgs socket.ControlMessages
 		fds   linux.ControlMessageRights
@@ -486,10 +486,6 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 
 		i += linux.SizeOfControlMessageHeader
 		length := int(h.Length) - linux.SizeOfControlMessageHeader
-
-		// The use of t.Arch().Width() is analogous to Linux's use of
-		// sizeof(long) in CMSG_ALIGN.
-		width := t.Arch().Width()
 
 		switch h.Level {
 		case linux.SOL_SOCKET:
@@ -526,8 +522,10 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (socket.Con
 				if length < linux.SizeOfTimeval {
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
+				var ts linux.Timeval
+				binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &ts)
+				cmsgs.IP.Timestamp = ts.ToNsecCapped()
 				cmsgs.IP.HasTimestamp = true
-				binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &cmsgs.IP.Timestamp)
 				i += binary.AlignUp(length, width)
 
 			default:

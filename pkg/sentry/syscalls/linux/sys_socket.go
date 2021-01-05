@@ -1030,7 +1030,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 		return 0, err
 	}
 
-	controlMessages, err := control.Parse(t, s, controlData)
+	controlMessages, err := control.Parse(t, s, controlData, t.Arch().Width())
 	if err != nil {
 		return 0, err
 	}
