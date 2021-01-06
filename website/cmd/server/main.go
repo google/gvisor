@@ -21,8 +21,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strings"
+
+	"github.com/google/pprof/driver"
 )
 
 var redirects = map[string]string{
@@ -170,26 +173,153 @@ func redirectHandler(target string) http.Handler {
 
 // redirectRedirects registers redirect http handlers.
 func registerRedirects(mux *http.ServeMux) {
-	if mux == nil {
-		mux = http.DefaultServeMux
-	}
-
 	for prefix, baseURL := range prefixHelpers {
 		p := "/" + prefix + "/"
 		mux.Handle(p, hostRedirectHandler(wrappedHandler(prefixRedirectHandler(p, baseURL))))
 	}
-
 	for path, redirect := range redirects {
 		mux.Handle(path, hostRedirectHandler(wrappedHandler(redirectHandler(redirect))))
 	}
 }
 
-// registerStatic registers static file handlers
+// registerStatic registers static file handlers.
 func registerStatic(mux *http.ServeMux, staticDir string) {
-	if mux == nil {
-		mux = http.DefaultServeMux
-	}
 	mux.Handle("/", hostRedirectHandler(wrappedHandler(http.FileServer(http.Dir(staticDir)))))
+}
+
+// profileMeta implements synthetic flags for pprof.
+type profileMeta struct {
+	// Mux is the mux to register on.
+	Mux *http.ServeMux
+
+	// SourceURL is the source of the profile.
+	SourceURL string
+}
+
+func (*profileMeta) ExtraUsage() string                                   { return "" }
+func (*profileMeta) AddExtraUsage(string)                                 {}
+func (*profileMeta) Bool(_ string, def bool, _ string) *bool              { return &def }
+func (*profileMeta) Int(_ string, def int, _ string) *int                 { return &def }
+func (*profileMeta) Float64(_ string, def float64, _ string) *float64     { return &def }
+func (*profileMeta) StringList(_ string, def string, _ string) *[]*string { return new([]*string) }
+func (*profileMeta) String(option string, def string, _ string) *string {
+	switch option {
+	case "http":
+		// Only http is specified. Other options may be accessible via
+		// the web interface, so we just need to spoof a valid option
+		// here. The server is actually bound by HTTPServer, below.
+		value := "localhost:80"
+		return &value
+	case "symbolize":
+		// Don't attempt symbolization. Most profiles should come with
+		// mappings built-in to the profile itself.
+		value := "none"
+		return &value
+	default:
+		return &def // Default.
+	}
+}
+
+// Parse implements plugin.FlagSet.Parse.
+func (p *profileMeta) Parse(usage func()) []string {
+	// Just return the SourceURL. This is interpreted as the profile to
+	// download. We validate that the URL corresponds to a Google Cloud
+	// Storage URL below.
+	return []string{p.SourceURL}
+}
+
+// pprofFixedPrefix is used to limit the exposure to SSRF.
+//
+// See registerProfile below.
+const pprofFixedPrefix = "https://storage.googleapis.com/"
+
+// Target returns the URL target.
+func (p *profileMeta) Target() string {
+	return fmt.Sprintf("/profile/%s/", p.SourceURL[len(pprofFixedPrefix):])
+}
+
+// HTTPServer is a function passed to driver.PProf.
+func (p *profileMeta) HTTPServer(args *driver.HTTPServerArgs) error {
+	target := p.Target()
+	for subpath, handler := range args.Handlers {
+		handlerPath := path.Join(target, subpath)
+		if len(handlerPath) < len(target) {
+			// Don't clean the target, match only as the literal
+			// directory path in order to keep relative links
+			// working in the profile. E.g. /profile/foo/ is the
+			// base URL for the profile at https://.../foo.
+			handlerPath = target
+		}
+		p.Mux.Handle(handlerPath, handler)
+	}
+	return nil
+}
+
+// registerProfile registers the profile handler.
+//
+// Note that this has a security surface worth considering.
+//
+// We are passed effectively a URL, which we fetch and parse,
+// then display the profile output. We limit the possibility of
+// SSRF by interpreting the URL strictly as a part to an object
+// in Google Cloud Storage, but we allow the user to specify any
+// bucket (since this may change with the CI system).
+//
+// We additionally must consider the possibility that users may
+// craft malicious profile objects (somehow) and pass those URLs
+// here as well. It seems feasible that we could parse a profile
+// that causes a crash (DOS), but this would be automatically
+// handled without a blip. It seems unlikely that we could parse a
+// profile that gives full code execution, but even so there is
+// nothing in this image except this code and CA certs. At worst,
+// code execution would enable someone to serve up content under the
+// web domain. This would be ephemeral with the specific instance,
+// and persisting such an attack would require constantly crashing
+// instances in whatever way gives remote code execution. Even if
+// this were possible, it's unlikely that exploiting such a crash
+// could be done so constantly and consistently.
+//
+// The user can also fill the "disk" of this container instance,
+// causing an OOM and a crash. This has similar semantics to the
+// DOS scenario above, and would just be handled by Cloud Run.
+//
+// Finally, a malicious user could cause us to repeatedly fetch
+// extremely large objects. However, since we fetch objects via
+// the unauthenticated URL, such accesses would always be charged
+// to the object owner. Downloading large objects can lead to the
+// filling of the "disk" scenario above, but this is similarly a
+// minor issue and immediately mitigated.
+func registerProfile(mux *http.ServeMux) {
+	const urlPrefix = "/profile/"
+	mux.Handle(urlPrefix, hostRedirectHandler(wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract the URL; this is everything except the final /.
+		parts := strings.Split(r.URL.Path[len(urlPrefix):], "/")
+		url := pprofFixedPrefix + strings.Join(parts[:len(parts)-1], "/")
+		if url == pprofFixedPrefix {
+			http.Error(w, "Invalid URL: no path provided.", http.StatusNotFound)
+			return
+		}
+
+		// Set up the meta handler. This will modify the original mux
+		// accordingly, and we ultimately return a redirect that
+		// includes all the original arguments. This means that if we
+		// ever hit a server that does not have this profile loaded, it
+		// will load and redirect again.
+		meta := &profileMeta{
+			Mux:       mux,
+			SourceURL: url,
+		}
+		if err := driver.PProf(&driver.Options{
+			Flagset:    meta,
+			HTTPServer: meta.HTTPServer,
+		}); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid profile: %v", err), http.StatusNotImplemented)
+			return
+		}
+
+		// Serve the path directly.
+		mux.ServeHTTP(w, r)
+	}))))
 }
 
 func envFlagString(name, def string) string {
@@ -211,8 +341,9 @@ var (
 func main() {
 	flag.Parse()
 
-	registerRedirects(nil)
-	registerStatic(nil, *staticDir)
+	registerRedirects(http.DefaultServeMux)
+	registerStatic(http.DefaultServeMux, *staticDir)
+	registerProfile(http.DefaultServeMux)
 
 	log.Printf("Listening on %s...", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))

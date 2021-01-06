@@ -389,7 +389,7 @@ website-push: website-build ## Push a new image and update the service.
 .PHONY: website-push
 
 website-deploy: website-push ## Deploy a new version of the website.
-	@gcloud run deploy $(WEBSITE_SERVICE) --platform=managed --region=$(WEBSITE_REGION) --project=$(WEBSITE_PROJECT) --image=$(WEBSITE_IMAGE)
+	@gcloud run deploy $(WEBSITE_SERVICE) --platform=managed --region=$(WEBSITE_REGION) --project=$(WEBSITE_PROJECT) --image=$(WEBSITE_IMAGE) --memory 1Gi
 .PHONY: website-deploy
 
 ##
