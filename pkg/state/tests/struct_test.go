@@ -17,8 +17,6 @@ package tests
 import (
 	"math/rand"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/state"
 )
 
 func TestEmptyStruct(t *testing.T) {
@@ -56,15 +54,6 @@ func TestEmptyStruct(t *testing.T) {
 		es,
 		[]emptyStructPointer{es, es}, // Same pointer.
 	})
-}
-
-func TestRegisterTypeOnlyStruct(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("Register did not panic")
-		}
-	}()
-	state.Register((*typeOnlyEmptyStruct)(nil))
 }
 
 func TestEmbeddedPointers(t *testing.T) {

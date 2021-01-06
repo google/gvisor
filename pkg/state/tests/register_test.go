@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build race
+
 package tests
 
 import (
@@ -164,4 +166,13 @@ func TestRegisterBad(t *testing.T) {
 		})
 
 	}
+}
+
+func TestRegisterTypeOnlyStruct(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Register did not panic")
+		}
+	}()
+	state.Register((*typeOnlyEmptyStruct)(nil))
 }
