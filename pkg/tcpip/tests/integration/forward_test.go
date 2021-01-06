@@ -21,7 +21,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
+	"gvisor.dev/gvisor/pkg/tcpip/link/nested"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -30,6 +32,33 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+var _ stack.NetworkDispatcher = (*endpointWithDestinationCheck)(nil)
+var _ stack.LinkEndpoint = (*endpointWithDestinationCheck)(nil)
+
+// newEthernetEndpoint returns an ethernet link endpoint that wraps an inner
+// link endpoint and checks the destination link address before delivering
+// network packets to the network dispatcher.
+//
+// See ethernet.Endpoint for more details.
+func newEthernetEndpoint(ep stack.LinkEndpoint) *endpointWithDestinationCheck {
+	var e endpointWithDestinationCheck
+	e.Endpoint.Init(ethernet.New(ep), &e)
+	return &e
+}
+
+// endpointWithDestinationCheck is a link endpoint that checks the destination
+// link address before delivering network packets to the network dispatcher.
+type endpointWithDestinationCheck struct {
+	nested.Endpoint
+}
+
+// DeliverNetworkPacket implements stack.NetworkDispatcher.
+func (e *endpointWithDestinationCheck) DeliverNetworkPacket(src, dst tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+	if dst == e.Endpoint.LinkAddress() || dst == header.EthernetBroadcastAddress || header.IsMulticastEthernetAddress(dst) {
+		e.Endpoint.DeliverNetworkPacket(src, dst, proto, pkt)
+	}
+}
 
 func TestForwarding(t *testing.T) {
 	const (
@@ -209,16 +238,16 @@ func TestForwarding(t *testing.T) {
 			host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
 			routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
 
-			if err := host1Stack.CreateNIC(host1NICID, ethernet.New(host1NIC)); err != nil {
+			if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
 				t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
 			}
-			if err := routerStack.CreateNIC(routerNICID1, ethernet.New(routerNIC1)); err != nil {
+			if err := routerStack.CreateNIC(routerNICID1, newEthernetEndpoint(routerNIC1)); err != nil {
 				t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID1, err)
 			}
-			if err := routerStack.CreateNIC(routerNICID2, ethernet.New(routerNIC2)); err != nil {
+			if err := routerStack.CreateNIC(routerNICID2, newEthernetEndpoint(routerNIC2)); err != nil {
 				t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID2, err)
 			}
-			if err := host2Stack.CreateNIC(host2NICID, ethernet.New(host2NIC)); err != nil {
+			if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
 				t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
 			}
 
