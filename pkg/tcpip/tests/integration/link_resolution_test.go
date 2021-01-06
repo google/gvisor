@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -133,10 +132,10 @@ func TestPing(t *testing.T) {
 
 			host1NIC, host2NIC := pipe.New(linkAddr1, linkAddr2)
 
-			if err := host1Stack.CreateNIC(host1NICID, ethernet.New(host1NIC)); err != nil {
+			if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
 				t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
 			}
-			if err := host2Stack.CreateNIC(host2NICID, ethernet.New(host2NIC)); err != nil {
+			if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
 				t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
 			}
 
