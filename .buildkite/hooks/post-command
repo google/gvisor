@@ -27,10 +27,14 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
 # Upload all profiles, and include in an annotation.
 declare profile_output=$(mktemp --tmpdir)
 for file in $(find /tmp/profile -name \*.pprof -print 2>/dev/null | sort); do
-  # Generate a link to the profile file at the top.
+  # Generate a link to the profile parsing function in gvisor.dev, which
+  # implicitly uses a prefix of https://storage.googleapis.com. Note that
+  # this relies on the specific BuildKite bucket location, and will break if
+  # this changes (although the artifacts will still exist and be just fine).
   profile_name="${file#/tmp/profile/}"
+  profile_url="https://gvisor.dev/profile/gvisor-buildkite/${BUILDKITE_BUILD_ID}/${BUILDKITE_JOB_ID}/${file#/}/"
   buildkite-agent artifact upload "${file}"
-  echo "<li><a href='artifact://${file#/}'>${profile_name}</a></li>" >> "${profile_output}"
+  echo "<li><a href='${profile_url}'>${profile_name}</a></li>" >> "${profile_output}"
 done
 
 # Upload if we had outputs.

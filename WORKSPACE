@@ -866,8 +866,8 @@ go_repository(
 go_repository(
     name = "com_github_google_pprof",
     importpath = "github.com/google/pprof",
-    sum = "h1:DLpL8pWq0v4JYoRpEhDfsJhhJyGKCcQM2WPW2TJs31c=",
-    version = "v0.0.0-20191218002539-d4f498aebedc",
+    sum = "h1:LR89qFljJ48s990kEKGsk213yIJDPI4205OKOzbURK8=",
+    version = "v0.0.0-20201218002935-b9804c9f04c2",
 )
 
 go_repository(

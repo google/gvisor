@@ -7,4 +7,7 @@ go_binary(
     srcs = ["main.go"],
     pure = True,
     visibility = ["//website:__pkg__"],
+    deps = [
+        "@com_github_google_pprof//driver:go_default_library",
+    ],
 )
