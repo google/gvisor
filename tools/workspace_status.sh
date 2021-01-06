@@ -15,4 +15,4 @@
 # limitations under the License.
 
 # The STABLE_ prefix will trigger a re-link if it changes.
-echo STABLE_VERSION $(git describe --always --tags --abbrev=12 --dirty || echo 0.0.0)
+echo STABLE_VERSION "$(git describe --always --tags --abbrev=12 --dirty 2>/dev/null || echo 0.0.0)"

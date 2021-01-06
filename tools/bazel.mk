@@ -189,13 +189,13 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(1)) 2>&1 \
   | tee /proc/self/fd/2 \
-  | grep -A1 -E '^Target' \
-  | grep -E '^  ($(subst $(SPACE),|,$(BUILD_ROOTS)))' \
-  | sed "s/ /\n/g" \
-  | strings -n 10 \
+  | sed -n -e '/^Target/,$$p' \
+  | sed -n -e '/^  \($(subst /,\/,$(subst $(SPACE),\|,$(BUILD_ROOTS)))\)/p' \
+  | sed -e 's/ /\n/g' \
   | awk '{$$1=$$1};1' \
-  | xargs -n 1 -I {} readlink -f "{}" \
-  | xargs -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
+  | strings \
+  | xargs -r -n 1 -I {} readlink -f "{}" \
+  | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
