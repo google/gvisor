@@ -708,14 +708,9 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 		nicID := v.NIC
 
-		// The interface address is considered not-set if it is empty or contains
-		// all-zeros. The former represent the zero-value in golang, the latter the
-		// same in a setsockopt(IP_ADD_MEMBERSHIP, &ip_mreqn) syscall.
-		allZeros := header.IPv4Any
-		if len(v.InterfaceAddr) == 0 || v.InterfaceAddr == allZeros {
+		if v.InterfaceAddr.Unspecified() {
 			if nicID == 0 {
-				r, err := e.stack.FindRoute(0, "", v.MulticastAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
-				if err == nil {
+				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}
@@ -748,10 +743,9 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		}
 
 		nicID := v.NIC
-		if v.InterfaceAddr == header.IPv4Any {
+		if v.InterfaceAddr.Unspecified() {
 			if nicID == 0 {
-				r, err := e.stack.FindRoute(0, "", v.MulticastAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
-				if err == nil {
+				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
 					nicID = r.NICID()
 					r.Release()
 				}
