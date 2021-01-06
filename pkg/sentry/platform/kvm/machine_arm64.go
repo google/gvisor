@@ -54,7 +54,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 		pageTable.Map(
 			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
 			pr.length,
-			pagetables.MapOpts{AccessType: usermem.AnyAccess},
+			pagetables.MapOpts{AccessType: usermem.AnyAccess, Global: true},
 			pr.physical)
 
 		return true // Keep iterating.
