@@ -618,12 +618,12 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 
 // run performs the analysis.
 func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
-	calls, err := loadObjdump()
-	if err != nil {
+	calls, callsErr := loadObjdump()
+	if callsErr != nil {
 		// Note that if this analysis fails, then we don't actually
 		// fail the analyzer itself. We simply report every possible
 		// escape. In most cases this will work just fine.
-		log.Printf("WARNING: unable to load objdump: %v", err)
+		log.Printf("WARNING: unable to load objdump: %v", callsErr)
 	}
 	allEscapes := make(map[string][]Escapes)
 	mergedEscapes := make(map[string]Escapes)
@@ -645,10 +645,10 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 	}
 	hasCall := func(inst poser) (string, bool) {
 		p := linePosition(inst, nil)
-		if calls == nil {
+		if callsErr != nil {
 			// See above: we don't have access to the binary
 			// itself, so need to include every possible call.
-			return "(possible)", true
+			return fmt.Sprintf("(possible, unable to load objdump: %v)", callsErr), true
 		}
 		s, ok := calls[p.Simplified()]
 		if !ok {
