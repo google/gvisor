@@ -14,23 +14,6 @@
 
 #include "test/syscalls/linux/socket_ipv4_udp_unbound_external_networking.h"
 
-#include <arpa/inet.h>
-#include <ifaddrs.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
-#include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
-#include "test/util/test_util.h"
-
 namespace gvisor {
 namespace testing {
 
@@ -39,41 +22,6 @@ TestAddress V4EmptyAddress() {
   t.addr.ss_family = AF_INET;
   t.addr_len = sizeof(sockaddr_in);
   return t;
-}
-
-void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
-  // FIXME(b/137899561): Linux instance for syscall tests sometimes misses its
-  // IPv4 address on eth0.
-  found_net_interfaces_ = false;
-
-  // Get interface list.
-  ASSERT_NO_ERRNO(if_helper_.Load());
-  std::vector<std::string> if_names = if_helper_.InterfaceList(AF_INET);
-  if (if_names.size() != 2) {
-    return;
-  }
-
-  // Figure out which interface is where.
-  std::string lo = if_names[0];
-  std::string eth = if_names[1];
-  if (lo != "lo") std::swap(lo, eth);
-  if (lo != "lo") return;
-
-  lo_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(lo));
-  auto lo_if_addr = if_helper_.GetAddr(AF_INET, lo);
-  if (lo_if_addr == nullptr) {
-    return;
-  }
-  lo_if_addr_ = *reinterpret_cast<const sockaddr_in*>(lo_if_addr);
-
-  eth_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(eth));
-  auto eth_if_addr = if_helper_.GetAddr(AF_INET, eth);
-  if (eth_if_addr == nullptr) {
-    return;
-  }
-  eth_if_addr_ = *reinterpret_cast<const sockaddr_in*>(eth_if_addr);
-
-  found_net_interfaces_ = true;
 }
 
 // Verifies that a broadcast UDP packet will arrive at all UDP sockets with

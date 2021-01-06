@@ -502,6 +502,7 @@ TestAddress V4MappedLoopback();
 TestAddress V4Multicast();
 TestAddress V6Any();
 TestAddress V6Loopback();
+TestAddress V6Multicast();
 
 // Compute the internet checksum of an IP header.
 uint16_t IPChecksum(struct iphdr ip);

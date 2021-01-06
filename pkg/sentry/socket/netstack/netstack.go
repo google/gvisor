@@ -2091,9 +2091,29 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		ep.SocketOptions().SetV6Only(v != 0)
 		return nil
 
-	case linux.IPV6_ADD_MEMBERSHIP,
-		linux.IPV6_DROP_MEMBERSHIP,
-		linux.IPV6_IPSEC_POLICY,
+	case linux.IPV6_ADD_MEMBERSHIP:
+		req, err := copyInMulticastV6Request(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.AddMembershipOption{
+			NIC:           tcpip.NICID(req.InterfaceIndex),
+			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
+		}))
+
+	case linux.IPV6_DROP_MEMBERSHIP:
+		req, err := copyInMulticastV6Request(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.RemoveMembershipOption{
+			NIC:           tcpip.NICID(req.InterfaceIndex),
+			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
+		}))
+
+	case linux.IPV6_IPSEC_POLICY,
 		linux.IPV6_JOIN_ANYCAST,
 		linux.IPV6_LEAVE_ANYCAST,
 		// TODO(b/148887420): Add support for IPV6_PKTINFO.
@@ -2181,6 +2201,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 var (
 	inetMulticastRequestSize        = int(binary.Size(linux.InetMulticastRequest{}))
 	inetMulticastRequestWithNICSize = int(binary.Size(linux.InetMulticastRequestWithNIC{}))
+	inet6MulticastRequestSize       = int(binary.Size(linux.Inet6MulticastRequest{}))
 )
 
 // copyInMulticastRequest copies in a variable-size multicast request. The
@@ -2211,6 +2232,16 @@ func copyInMulticastRequest(optVal []byte, allowAddr bool) (linux.InetMulticastR
 
 	var req linux.InetMulticastRequestWithNIC
 	binary.Unmarshal(optVal[:inetMulticastRequestSize], usermem.ByteOrder, &req.InetMulticastRequest)
+	return req, nil
+}
+
+func copyInMulticastV6Request(optVal []byte) (linux.Inet6MulticastRequest, *syserr.Error) {
+	if len(optVal) < inet6MulticastRequestSize {
+		return linux.Inet6MulticastRequest{}, syserr.ErrInvalidArgument
+	}
+
+	var req linux.Inet6MulticastRequest
+	binary.Unmarshal(optVal[:inet6MulticastRequestSize], usermem.ByteOrder, &req)
 	return req, nil
 }
 

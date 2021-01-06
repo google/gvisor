@@ -860,6 +860,17 @@ TestAddress V6Loopback() {
   return t;
 }
 
+TestAddress V6Multicast() {
+  TestAddress t("V6Multicast");
+  t.addr.ss_family = AF_INET6;
+  t.addr_len = sizeof(sockaddr_in6);
+  EXPECT_EQ(
+      1,
+      inet_pton(AF_INET6, "ff05::1234",
+                reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr));
+  return t;
+}
+
 // Checksum computes the internet checksum of a buffer.
 uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
   // Add up the 16-bit values in the buffer.
