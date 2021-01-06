@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
-#define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
+#include "test/syscalls/linux/socket_ipv6_udp_unbound_external_networking.h"
 
-#include "test/syscalls/linux/socket_ip_udp_unbound_external_networking.h"
+#include <vector>
+
+#include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
+namespace {
 
-// Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
-// with external networking support.
-using IPv4UDPUnboundExternalNetworkingSocketTest =
-    IPUDPUnboundExternalNetworkingSocketTest;
+std::vector<SocketKind> GetSockets() {
+  return ApplyVec<SocketKind>(
+      IPv6UDPUnboundSocket,
+      AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK}));
+}
 
+INSTANTIATE_TEST_SUITE_P(IPv6UDPUnboundSockets,
+                         IPv6UDPUnboundExternalNetworkingSocketTest,
+                         ::testing::ValuesIn(GetSockets()));
+
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor
-
-#endif  // GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_

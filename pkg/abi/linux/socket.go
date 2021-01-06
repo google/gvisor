@@ -250,6 +250,12 @@ type SockAddrInet struct {
 	_      [8]uint8 // pad to sizeof(struct sockaddr).
 }
 
+// Inet6MulticastRequest is struct ipv6_mreq, from uapi/linux/in6.h.
+type Inet6MulticastRequest struct {
+	MulticastAddr  Inet6Addr
+	InterfaceIndex int32
+}
+
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
 type InetMulticastRequest struct {
 	MulticastAddr InetAddr
