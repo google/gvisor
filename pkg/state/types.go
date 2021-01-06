@@ -329,47 +329,48 @@ var reverseTypeDatabase = map[reflect.Type]string{}
 // This must be called on init and only done once.
 func Register(t Type) {
 	name := t.StateTypeName()
-	fields := t.StateFields()
-	assertValidType(name, fields)
-	// Register must always be called on pointers.
 	typ := reflect.TypeOf(t)
-	if typ.Kind() != reflect.Ptr {
-		Failf("Register must be called on pointers")
+	if raceEnabled {
+		assertValidType(name, t.StateFields())
+		// Register must always be called on pointers.
+		if typ.Kind() != reflect.Ptr {
+			Failf("Register must be called on pointers")
+		}
 	}
 	typ = typ.Elem()
-	if typ.Kind() == reflect.Struct {
-		// All registered structs must implement SaverLoader. We allow
-		// the registration is non-struct types with just the Type
-		// interface, but we need to call StateSave/StateLoad methods
-		// on aggregate types.
-		if _, ok := t.(SaverLoader); !ok {
-			Failf("struct %T does not implement SaverLoader", t)
-		}
-	} else {
-		// Non-structs must not have any fields. We don't support
-		// calling StateSave/StateLoad methods on any non-struct types.
-		// If custom behavior is required, these types should be
-		// wrapped in a structure of some kind.
-		if len(fields) != 0 {
-			Failf("non-struct %T has non-zero fields %v", t, fields)
-		}
-		// We don't allow non-structs to implement StateSave/StateLoad
-		// methods, because they won't be called and it's confusing.
-		if _, ok := t.(SaverLoader); ok {
-			Failf("non-struct %T implements SaverLoader", t)
-		}
-	}
-	if _, ok := primitiveTypeDatabase[name]; ok {
-		Failf("conflicting primitiveTypeDatabase entry for %T: used by primitive", t)
-	}
-	if _, ok := globalTypeDatabase[name]; ok {
-		Failf("conflicting globalTypeDatabase entries for %T: name conflict", t)
-	}
-	if name == interfaceType {
-		Failf("conflicting name for %T: matches interfaceType", t)
-	}
-	globalTypeDatabase[name] = typ
 	if raceEnabled {
+		if typ.Kind() == reflect.Struct {
+			// All registered structs must implement SaverLoader. We allow
+			// the registration is non-struct types with just the Type
+			// interface, but we need to call StateSave/StateLoad methods
+			// on aggregate types.
+			if _, ok := t.(SaverLoader); !ok {
+				Failf("struct %T does not implement SaverLoader", t)
+			}
+		} else {
+			// Non-structs must not have any fields. We don't support
+			// calling StateSave/StateLoad methods on any non-struct types.
+			// If custom behavior is required, these types should be
+			// wrapped in a structure of some kind.
+			if fields := t.StateFields(); len(fields) != 0 {
+				Failf("non-struct %T has non-zero fields %v", t, fields)
+			}
+			// We don't allow non-structs to implement StateSave/StateLoad
+			// methods, because they won't be called and it's confusing.
+			if _, ok := t.(SaverLoader); ok {
+				Failf("non-struct %T implements SaverLoader", t)
+			}
+		}
+		if _, ok := primitiveTypeDatabase[name]; ok {
+			Failf("conflicting primitiveTypeDatabase entry for %T: used by primitive", t)
+		}
+		if _, ok := globalTypeDatabase[name]; ok {
+			Failf("conflicting globalTypeDatabase entries for %T: name conflict", t)
+		}
+		if name == interfaceType {
+			Failf("conflicting name for %T: matches interfaceType", t)
+		}
 		reverseTypeDatabase[typ] = name
 	}
+	globalTypeDatabase[name] = typ
 }
