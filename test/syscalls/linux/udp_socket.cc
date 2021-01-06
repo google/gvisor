@@ -835,7 +835,12 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
 
   // Check the contents of msg.
   EXPECT_EQ(memcmp(got, buf, sizeof(buf)), 0);  // iovec check
-  EXPECT_NE(msg.msg_flags & MSG_ERRQUEUE, 0);
+  // TODO(b/176251997): The next check fails on the gvisor platform due to the
+  // kernel bug.
+  if (!IsRunningWithHostinet() || GvisorPlatform() == Platform::kPtrace ||
+      GvisorPlatform() == Platform::kKVM ||
+      GvisorPlatform() == Platform::kNative)
+    EXPECT_NE(msg.msg_flags & MSG_ERRQUEUE, 0);
   EXPECT_EQ(memcmp(&remote, bind_addr_, addrlen_), 0);
 
   // Check the contents of the control message.
