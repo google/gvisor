@@ -171,7 +171,7 @@ func redirectHandler(target string) http.Handler {
 	})
 }
 
-// redirectRedirects registers redirect http handlers.
+// registerRedirects registers redirect http handlers.
 func registerRedirects(mux *http.ServeMux) {
 	for prefix, baseURL := range prefixHelpers {
 		p := "/" + prefix + "/"
@@ -180,6 +180,17 @@ func registerRedirects(mux *http.ServeMux) {
 	for path, redirect := range redirects {
 		mux.Handle(path, hostRedirectHandler(wrappedHandler(redirectHandler(redirect))))
 	}
+	registerModuleDocRedirects(http.DefaultServeMux)
+}
+
+// registerModuleDocs registers redirect http handlers to redirect module paths
+// directly to their docs on pkg.go.dev.
+func registerModuleDocRedirects(mux *http.ServeMux) {
+	const prefix = "/gvisor/"
+	mux.Handle(prefix, hostRedirectHandler(wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pkg := r.URL.Path[len(prefix):]
+		redirectWithQuery(w, r, fmt.Sprintf("https://pkg.go.dev/gvisor.dev/gvisor/%s", pkg))
+	}))))
 }
 
 // registerStatic registers static file handlers.
