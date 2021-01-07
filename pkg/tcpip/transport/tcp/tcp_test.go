@@ -17,10 +17,12 @@ package tcp_test
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -39,6 +41,64 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// endpointTester provides helper functions to test a tcpip.Endpoint.
+type endpointTester struct {
+	ep tcpip.Endpoint
+}
+
+// CheckReadError issues a read to the endpoint and checking for an error.
+func (e *endpointTester) CheckReadError(t *testing.T, want *tcpip.Error) {
+	t.Helper()
+	res, got := e.ep.Read(ioutil.Discard, 1, tcpip.ReadOptions{})
+	if got != want {
+		t.Fatalf("ep.Read = %s, want %s", got, want)
+	}
+	if diff := cmp.Diff(tcpip.ReadResult{}, res); diff != "" {
+		t.Errorf("ep.Read: unexpected non-zero result (-want +got):\n%s", diff)
+	}
+}
+
+// CheckRead issues a read to the endpoint and checking for a success, returning
+// the data read.
+func (e *endpointTester) CheckRead(t *testing.T, count int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	res, err := e.ep.Read(&buf, count, tcpip.ReadOptions{})
+	if err != nil {
+		t.Fatalf("ep.Read = _, %s; want _, nil", err)
+	}
+	if diff := cmp.Diff(tcpip.ReadResult{
+		Count: buf.Len(),
+		Total: buf.Len(),
+	}, res, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+		t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+	}
+	return buf.Bytes()
+}
+
+// CheckReadFull reads from the endpoint for exactly count bytes.
+func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-chan struct{}, timeout time.Duration) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	var done int
+	for done < count {
+		res, err := e.ep.Read(&buf, count-done, tcpip.ReadOptions{})
+		if err == tcpip.ErrWouldBlock {
+			// Wait for receive to be notified.
+			select {
+			case <-notifyRead:
+			case <-time.After(timeout):
+				t.Fatalf("Timed out waiting for data to arrive")
+			}
+			continue
+		} else if err != nil {
+			t.Fatalf("ep.Read = _, %s; want _, nil", err)
+		}
+		done += res.Count
+	}
+	return buf.Bytes()
+}
 
 const (
 	// defaultMTU is the MTU, in bytes, used throughout the tests, except
@@ -740,9 +800,7 @@ func TestSimpleReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -762,11 +820,7 @@ func TestSimpleReceive(t *testing.T) {
 	}
 
 	// Receive data.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %s", err)
-	}
-
+	v := ept.CheckRead(t, defaultMTU)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
@@ -1492,14 +1546,11 @@ func TestSynSent(t *testing.T) {
 				t.Fatal("timed out waiting for packet to arrive")
 			}
 
+			ept := endpointTester{c.EP}
 			if test.reset {
-				if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionRefused {
-					t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionRefused)
-				}
+				ept.CheckReadError(t, tcpip.ErrConnectionRefused)
 			} else {
-				if _, _, err := c.EP.Read(nil); err != tcpip.ErrAborted {
-					t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrAborted)
-				}
+				ept.CheckReadError(t, tcpip.ErrAborted)
 			}
 
 			if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
@@ -1524,9 +1575,8 @@ func TestOutOfOrderReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send second half of data first, with seqnum 3 ahead of expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1551,9 +1601,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 
 	// Wait 200ms and check that no data has been received.
 	time.Sleep(200 * time.Millisecond)
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send the first 3 bytes now.
 	c.SendPacket(data[:3], &context.Headers{
@@ -1566,24 +1614,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	})
 
 	// Receive data.
-	read := make([]byte, 0, 6)
-	for len(read) < len(data) {
-		v, _, err := c.EP.Read(nil)
-		if err != nil {
-			if err == tcpip.ErrWouldBlock {
-				// Wait for receive to be notified.
-				select {
-				case <-ch:
-				case <-time.After(5 * time.Second):
-					t.Fatalf("Timed out waiting for data to arrive")
-				}
-				continue
-			}
-			t.Fatalf("Read failed: %s", err)
-		}
-
-		read = append(read, v...)
-	}
+	read := ept.CheckReadFull(t, 6, ch, 5*time.Second)
 
 	// Check that we received the data in proper order.
 	if !bytes.Equal(data, read) {
@@ -1608,9 +1639,8 @@ func TestOutOfOrderFlood(t *testing.T) {
 	rcvBufSz := math.MaxUint16
 	c.CreateConnected(789, 30000, rcvBufSz)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send 100 packets before the actual one that is expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1685,9 +1715,8 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -1754,9 +1783,8 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -1837,17 +1865,14 @@ func TestShutdownRead(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
 		t.Fatalf("Shutdown failed: %s", err)
 	}
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrClosedForReceive)
-	}
+	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
 	var want uint64 = 1
 	if got := c.EP.Stats().(*tcp.Stats).ReadErrors.ReadClosed.Value(); got != want {
 		t.Fatalf("got EP stats Stats.ReadErrors.ReadClosed got %d want %d", got, want)
@@ -1865,10 +1890,8 @@ func TestFullWindowReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	_, _, err := c.EP.Read(nil)
-	if err != tcpip.ErrWouldBlock {
-		t.Fatalf("Read failed: %s", err)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Fill up the window w/ tcp.SegOverheadFactor*rcvBufSz as netstack multiplies
 	// the provided buffer value by tcp.SegOverheadFactor to calculate the actual
@@ -1905,11 +1928,7 @@ func TestFullWindowReceive(t *testing.T) {
 	)
 
 	// Receive data and check it.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %s", err)
-	}
-
+	v := ept.CheckRead(t, defaultMTU)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
@@ -1991,8 +2010,9 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 
 	// Read the data so that the subsequent ACK from the endpoint
 	// grows the right edge of the window.
-	if _, _, err := c.EP.Read(nil); err != nil {
-		t.Fatalf("got Read(nil) = %s", err)
+	var buf bytes.Buffer
+	if _, err := c.EP.Read(&buf, math.MaxUint16, tcpip.ReadOptions{}); err != nil {
+		t.Fatalf("c.EP.Read: %s", err)
 	}
 
 	// Check if we have received max uint16 as our advertised
@@ -2027,9 +2047,9 @@ func TestNoWindowShrinking(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+
 	// Send a 1 byte payload so that we can record the current receive window.
 	// Send a payload of half the size of rcvBufSize.
 	seqNum := iss.Add(1)
@@ -2051,11 +2071,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	}
 
 	// Read the 1 byte payload we just sent.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %s", err)
-	}
-	if got, want := payload, v; !bytes.Equal(got, want) {
+	if got, want := payload, ept.CheckRead(t, 1); !bytes.Equal(got, want) {
 		t.Fatalf("got data: %v, want: %v", got, want)
 	}
 
@@ -2128,24 +2144,8 @@ func TestNoWindowShrinking(t *testing.T) {
 		),
 	)
 
-	// Wait for receive to be notified.
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("Timed out waiting for data to arrive")
-	}
-
 	// Receive data and check it.
-	read := make([]byte, 0, rcvBufSize)
-	for len(read) < len(data) {
-		v, _, err := c.EP.Read(nil)
-		if err != nil {
-			t.Fatalf("Read failed: %s", err)
-		}
-
-		read = append(read, v...)
-	}
-
+	read := ept.CheckReadFull(t, len(data), ch, 5*time.Second)
 	if !bytes.Equal(data, read) {
 		t.Fatalf("got data = %v, want = %v", read, data)
 	}
@@ -2569,11 +2569,11 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	// we need to read at 3 packets.
 	sz := 0
 	for sz < defaultMTU*2 {
-		v, _, err := c.EP.Read(nil)
+		res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
 		if err != nil {
 			t.Fatalf("Read failed: %s", err)
 		}
-		sz += len(v)
+		sz += res.Count
 	}
 
 	checker.IPv4(t, c.GetPacket(),
@@ -3268,13 +3268,13 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 loop:
 	for {
-		switch _, _, err := c.EP.Read(nil); err {
+		switch _, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{}); err {
 		case tcpip.ErrWouldBlock:
 			select {
 			case <-ch:
 				// Expect the state to be StateError and subsequent Reads to fail with HardError.
-				if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
-					t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionReset)
+				if _, err := c.EP.Read(ioutil.Discard, math.MaxUint16, tcpip.ReadOptions{}); err != tcpip.ErrConnectionReset {
+					t.Fatalf("got c.EP.Read() = %s, want = %s", err, tcpip.ErrConnectionReset)
 				}
 				break loop
 			case <-time.After(1 * time.Second):
@@ -4164,9 +4164,8 @@ func TestReadAfterClosedState(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Shutdown immediately for write, check that we get a FIN.
 	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
@@ -4224,35 +4223,31 @@ func TestReadAfterClosedState(t *testing.T) {
 	}
 
 	// Check that peek works.
-	peekBuf := make([]byte, 10)
-	n, err := c.EP.Peek([][]byte{peekBuf})
+	var peekBuf bytes.Buffer
+	res, err := c.EP.Read(&peekBuf, 10, tcpip.ReadOptions{Peek: true})
 	if err != nil {
 		t.Fatalf("Peek failed: %s", err)
 	}
 
-	peekBuf = peekBuf[:n]
-	if !bytes.Equal(data, peekBuf) {
-		t.Fatalf("got data = %v, want = %v", peekBuf, data)
+	if got, want := res.Count, len(data); got != want {
+		t.Fatalf("res.Count = %d, want %d", got, want)
+	}
+	if !bytes.Equal(data, peekBuf.Bytes()) {
+		t.Fatalf("got data = %v, want = %v", peekBuf.Bytes(), data)
 	}
 
 	// Receive data.
-	v, _, err := c.EP.Read(nil)
-	if err != nil {
-		t.Fatalf("Read failed: %s", err)
-	}
-
+	v := ept.CheckRead(t, defaultMTU)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
 
 	// Now that we drained the queue, check that functions fail with the
 	// right error code.
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrClosedForReceive)
-	}
-
-	if _, err := c.EP.Peek([][]byte{peekBuf}); err != tcpip.ErrClosedForReceive {
-		t.Fatalf("got c.EP.Peek(...) = %s, want = %s", err, tcpip.ErrClosedForReceive)
+	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
+	var buf bytes.Buffer
+	if _, err := c.EP.Read(&buf, 1, tcpip.ReadOptions{Peek: true}); err != tcpip.ErrClosedForReceive {
+		t.Fatalf("c.EP.Read(_, _, {Peek: true}) = %v, %s; want _, %s", res, err, tcpip.ErrClosedForReceive)
 	}
 }
 
@@ -4619,17 +4614,8 @@ func TestSelfConnect(t *testing.T) {
 	// Read back what was written.
 	wq.EventUnregister(&waitEntry)
 	wq.EventRegister(&waitEntry, waiter.EventIn)
-	rd, _, err := ep.Read(nil)
-	if err != nil {
-		if err != tcpip.ErrWouldBlock {
-			t.Fatalf("Read failed: %s", err)
-		}
-		<-notifyCh
-		rd, _, err = ep.Read(nil)
-		if err != nil {
-			t.Fatalf("Read failed: %s", err)
-		}
-	}
+	ept := endpointTester{ep}
+	rd := ept.CheckReadFull(t, len(data), notifyCh, 5*time.Second)
 
 	if !bytes.Equal(data, rd) {
 		t.Fatalf("got data = %v, want = %v", rd, data)
@@ -5082,9 +5068,8 @@ func TestKeepalive(t *testing.T) {
 	}
 
 	// Check that the connection is still alive.
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Send some data and wait before ACKing it. Keepalives should be disabled
 	// during this period.
@@ -5173,9 +5158,7 @@ func TestKeepalive(t *testing.T) {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %d, want = 1", got)
 	}
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrTimeout)
-	}
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
@@ -6070,9 +6053,8 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
 
-	if _, _, err := ep.Read(nil); err != tcpip.ErrNotConnected {
-		t.Errorf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrNotConnected)
-	}
+	ept := endpointTester{ep}
+	ept.CheckReadError(t, tcpip.ErrNotConnected)
 	if got := ep.Stats().(*tcp.Stats).ReadErrors.NotConnected.Value(); got != 1 {
 		t.Errorf("got EP stats Stats.ReadErrors.NotConnected got %d want %d", got, 1)
 	}
@@ -6227,7 +6209,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// Now read all the data from the endpoint and verify that advertised
 	// window increases to the full available buffer size.
 	for {
-		_, _, err := c.EP.Read(nil)
+		_, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
 		if err == tcpip.ErrWouldBlock {
 			break
 		}
@@ -6351,11 +6333,11 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		// to happen before we measure the new window.
 		totalCopied := 0
 		for {
-			b, _, err := c.EP.Read(nil)
+			res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
 			if err == tcpip.ErrWouldBlock {
 				break
 			}
-			totalCopied += len(b)
+			totalCopied += res.Count
 		}
 
 		// Invoke the moderation API. This is required for auto-tuning
@@ -7272,9 +7254,8 @@ func TestTCPUserTimeout(t *testing.T) {
 		),
 	)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrTimeout)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
@@ -7317,9 +7298,8 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 	}
 
 	// Check that the connection is still alive.
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
-	}
+	ept := endpointTester{c.EP}
+	ept.CheckReadError(t, tcpip.ErrWouldBlock)
 
 	// Now receive 1 keepalives, but don't ACK it.
 	b := c.GetPacket()
@@ -7358,9 +7338,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		),
 	)
 
-	if _, _, err := c.EP.Read(nil); err != tcpip.ErrTimeout {
-		t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrTimeout)
-	}
+	ept.CheckReadError(t, tcpip.ErrTimeout)
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
 	}
@@ -7417,11 +7395,11 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 	// defaultMTU is a good enough estimate for the MSS used for this
 	// connection.
 	for read < defaultMTU*2 {
-		v, _, err := c.EP.Read(nil)
+		res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
 		if err != nil {
 			t.Fatalf("Read failed: %s", err)
 		}
-		read += len(v)
+		read += res.Count
 	}
 
 	// After reading > MSS worth of data, we surely crossed MSS. See the ack:

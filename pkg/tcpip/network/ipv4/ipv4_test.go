@@ -15,9 +15,11 @@
 package ipv4_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net"
 	"testing"
@@ -2408,18 +2410,26 @@ func TestReceiveFragments(t *testing.T) {
 				t.Errorf("got UDP Rx Packets = %d, want = %d", got, want)
 			}
 
+			const rcvSize = 65536 // Account for reassembled packets.
 			for i, expectedPayload := range test.expectedPayloads {
-				gotPayload, _, err := ep.Read(nil)
+				var buf bytes.Buffer
+				result, err := ep.Read(&buf, rcvSize, tcpip.ReadOptions{})
 				if err != nil {
-					t.Fatalf("(i=%d) Read(nil): %s", i, err)
+					t.Fatalf("(i=%d) Read: %s", i, err)
 				}
-				if diff := cmp.Diff(buffer.View(expectedPayload), gotPayload); diff != "" {
+				if diff := cmp.Diff(tcpip.ReadResult{
+					Count: len(expectedPayload),
+					Total: len(expectedPayload),
+				}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+					t.Errorf("(i=%d) ep.Read: unexpected result (-want +got):\n%s", i, diff)
+				}
+				if diff := cmp.Diff(expectedPayload, buf.Bytes()); diff != "" {
 					t.Errorf("(i=%d) got UDP payload mismatch (-want +got):\n%s", i, diff)
 				}
 			}
 
-			if gotPayload, _, err := ep.Read(nil); err != tcpip.ErrWouldBlock {
-				t.Fatalf("(last) got Read(nil) = (%x, _, %v), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
+			if res, err := ep.Read(ioutil.Discard, rcvSize, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})
 	}

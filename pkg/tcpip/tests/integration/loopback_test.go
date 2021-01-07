@@ -15,12 +15,14 @@
 package integration_test
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -238,21 +240,28 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				t.Fatalf("got sep.Write(_, _) = (%d, _, nil), want = (%d, _, nil)", n, want)
 			}
 
-			var addr tcpip.FullAddress
-			if gotPayload, _, err := rep.Read(&addr); test.expectRx {
+			var buf bytes.Buffer
+			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
+			if res, err := rep.Read(&buf, len(data), opts); test.expectRx {
 				if err != nil {
-					t.Fatalf("reep.Read(_): %s", err)
+					t.Fatalf("rep.Read(_, %d, %#v): %s", len(data), opts, err)
 				}
-				if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
+				if diff := cmp.Diff(tcpip.ReadResult{
+					Count: buf.Len(),
+					Total: buf.Len(),
+					RemoteAddr: tcpip.FullAddress{
+						Addr: test.addAddress.AddressWithPrefix.Address,
+					},
+				}, res,
+					checker.IgnoreCmpPath("ControlMessages", "RemoteAddr.NIC", "RemoteAddr.Port"),
+				); diff != "" {
+					t.Errorf("rep.Read: unexpected result (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
 				}
-				if addr.Addr != test.addAddress.AddressWithPrefix.Address {
-					t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Address)
-				}
-			} else {
-				if err != tcpip.ErrWouldBlock {
-					t.Fatalf("got rep.Read(nil) = (%x, _, %s), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
-				}
+			} else if err != tcpip.ErrWouldBlock {
+				t.Fatalf("got rep.Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), tcpip.ErrWouldBlock)
 			}
 		})
 	}

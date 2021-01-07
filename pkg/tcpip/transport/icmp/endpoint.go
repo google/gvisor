@@ -15,6 +15,8 @@
 package icmp
 
 import (
+	"io"
+
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -151,9 +153,8 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
-// Read reads data from the endpoint. This method does not block if
-// there is no data pending.
-func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// Read implements tcpip.Endpoint.Read.
+func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
@@ -163,20 +164,34 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
-		return buffer.View{}, tcpip.ControlMessages{}, err
+		return tcpip.ReadResult{}, err
 	}
 
 	p := e.rcvList.Front()
-	e.rcvList.Remove(p)
-	e.rcvBufSize -= p.data.Size()
+	if !opts.Peek {
+		e.rcvList.Remove(p)
+		e.rcvBufSize -= p.data.Size()
+	}
 
 	e.rcvMu.Unlock()
 
-	if addr != nil {
-		*addr = p.senderAddress
+	res := tcpip.ReadResult{
+		Total: p.data.Size(),
+		ControlMessages: tcpip.ControlMessages{
+			HasTimestamp: true,
+			Timestamp:    p.timestamp,
+		},
+	}
+	if opts.NeedRemoteAddr {
+		res.RemoteAddr = p.senderAddress
 	}
 
-	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
+	n, err := p.data.ReadTo(dst, count, opts.Peek)
+	if n == 0 && err != nil {
+		return res, tcpip.ErrBadBuffer
+	}
+	res.Count = n
+	return res, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -327,11 +342,6 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	return int64(len(v)), nil, nil
-}
-
-// Peek only returns data from a single datagram, so do nothing here.
-func (e *endpoint) Peek([][]byte) (int64, *tcpip.Error) {
-	return 0, nil
 }
 
 // SetSockOpt sets a socket option.

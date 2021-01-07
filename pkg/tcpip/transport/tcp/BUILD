@@ -112,6 +112,7 @@ go_test(
         "//pkg/tcpip/transport/tcp/testing/context",
         "//pkg/test/testutil",
         "//pkg/waiter",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
 

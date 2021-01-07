@@ -20,8 +20,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -54,7 +56,8 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	defer wq.EventUnregister(&waitEntry)
 
 	for {
-		v, _, err := ep.Read(nil)
+		var buf bytes.Buffer
+		_, err := ep.Read(&buf, math.MaxUint16, tcpip.ReadOptions{})
 		if err != nil {
 			if err == tcpip.ErrWouldBlock {
 				<-notifyCh
@@ -64,7 +67,7 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 			return
 		}
 
-		ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
+		ep.Write(tcpip.SlicePayload(buf.Bytes()), tcpip.WriteOptions{})
 	}
 }
 

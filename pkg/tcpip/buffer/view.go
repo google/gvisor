@@ -105,18 +105,18 @@ func (vv *VectorisedView) TrimFront(count int) {
 }
 
 // Read implements io.Reader.
-func (vv *VectorisedView) Read(v View) (copied int, err error) {
-	count := len(v)
+func (vv *VectorisedView) Read(b []byte) (copied int, err error) {
+	count := len(b)
 	for count > 0 && len(vv.views) > 0 {
 		if count < len(vv.views[0]) {
 			vv.size -= count
-			copy(v[copied:], vv.views[0][:count])
+			copy(b[copied:], vv.views[0][:count])
 			vv.views[0].TrimFront(count)
 			copied += count
 			return copied, nil
 		}
 		count -= len(vv.views[0])
-		copy(v[copied:], vv.views[0])
+		copy(b[copied:], vv.views[0])
 		copied += len(vv.views[0])
 		vv.removeFirst()
 	}
@@ -143,6 +143,35 @@ func (vv *VectorisedView) ReadToVV(dstVV *VectorisedView, count int) (copied int
 		vv.removeFirst()
 	}
 	return copied
+}
+
+// ReadTo reads up to count bytes from vv to dst. It also removes them from vv
+// unless peek is true.
+func (vv *VectorisedView) ReadTo(dst io.Writer, count int, peek bool) (int, error) {
+	var err error
+	done := 0
+	for _, v := range vv.Views() {
+		remaining := count - done
+		if remaining <= 0 {
+			break
+		}
+		if len(v) > remaining {
+			v = v[:remaining]
+		}
+
+		var n int
+		n, err = dst.Write(v)
+		if n > 0 {
+			done += n
+		}
+		if err != nil {
+			break
+		}
+	}
+	if !peek {
+		vv.TrimFront(done)
+	}
+	return done, err
 }
 
 // CapLength irreversibly reduces the length of the vectorised view.

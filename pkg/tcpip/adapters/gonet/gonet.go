@@ -286,45 +286,47 @@ type opErrorer interface {
 
 // commonRead implements the common logic between net.Conn.Read and
 // net.PacketConn.ReadFrom.
-func commonRead(ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer, dontWait bool) ([]byte, error) {
+func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
 	select {
 	case <-deadline:
-		return nil, errorer.newOpError("read", &timeoutError{})
+		return 0, errorer.newOpError("read", &timeoutError{})
 	default:
 	}
 
-	read, _, err := ep.Read(addr)
+	w := tcpip.SliceWriter(b)
+	opts := tcpip.ReadOptions{NeedRemoteAddr: addr != nil}
+	res, err := ep.Read(&w, len(b), opts)
 
 	if err == tcpip.ErrWouldBlock {
-		if dontWait {
-			return nil, errWouldBlock
-		}
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 		wq.EventRegister(&waitEntry, waiter.EventIn)
 		defer wq.EventUnregister(&waitEntry)
 		for {
-			read, _, err = ep.Read(addr)
+			res, err = ep.Read(&w, len(b), opts)
 			if err != tcpip.ErrWouldBlock {
 				break
 			}
 			select {
 			case <-deadline:
-				return nil, errorer.newOpError("read", &timeoutError{})
+				return 0, errorer.newOpError("read", &timeoutError{})
 			case <-notifyCh:
 			}
 		}
 	}
 
 	if err == tcpip.ErrClosedForReceive {
-		return nil, io.EOF
+		return 0, io.EOF
 	}
 
 	if err != nil {
-		return nil, errorer.newOpError("read", errors.New(err.String()))
+		return 0, errorer.newOpError("read", errors.New(err.String()))
 	}
 
-	return read, nil
+	if addr != nil {
+		*addr = res.RemoteAddr
+	}
+	return res.Count, nil
 }
 
 // Read implements net.Conn.Read.
@@ -334,31 +336,11 @@ func (c *TCPConn) Read(b []byte) (int, error) {
 
 	deadline := c.readCancel()
 
-	numRead := 0
-	defer func() {
-		if numRead != 0 {
-			c.ep.ModerateRecvBuf(numRead)
-		}
-	}()
-	for numRead != len(b) {
-		if len(c.read) == 0 {
-			var err error
-			c.read, err = commonRead(c.ep, c.wq, deadline, nil, c, numRead != 0)
-			if err != nil {
-				if numRead != 0 {
-					return numRead, nil
-				}
-				return numRead, err
-			}
-		}
-		n := copy(b[numRead:], c.read)
-		c.read.TrimFront(n)
-		numRead += n
-		if len(c.read) == 0 {
-			c.read = nil
-		}
+	n, err := commonRead(b, c.ep, c.wq, deadline, nil, c)
+	if n != 0 {
+		c.ep.ModerateRecvBuf(n)
 	}
-	return numRead, nil
+	return n, err
 }
 
 // Write implements net.Conn.Write.
@@ -652,12 +634,11 @@ func (c *UDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	deadline := c.readCancel()
 
 	var addr tcpip.FullAddress
-	read, err := commonRead(c.ep, c.wq, deadline, &addr, c, false)
+	n, err := commonRead(b, c.ep, c.wq, deadline, &addr, c)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	return copy(b, read), fullToUDPAddr(addr), nil
+	return n, fullToUDPAddr(addr), nil
 }
 
 func (c *UDPConn) Write(b []byte) (int, error) {

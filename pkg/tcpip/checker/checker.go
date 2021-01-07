@@ -1603,3 +1603,15 @@ func IPv6RouterAlert(want header.IPv6RouterAlertValue) IPv6ExtHdrOptionChecker {
 		}
 	}
 }
+
+// IgnoreCmpPath returns a cmp.Option that ignores listed field paths.
+func IgnoreCmpPath(paths ...string) cmp.Option {
+	ignores := map[string]struct{}{}
+	for _, path := range paths {
+		ignores[path] = struct{}{}
+	}
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		_, ok := ignores[path.String()]
+		return ok
+	}, cmp.Ignore())
+}

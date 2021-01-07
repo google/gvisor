@@ -44,6 +44,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -200,7 +201,7 @@ func main() {
 	// connection from its side.
 	wq.EventRegister(&waitEntry, waiter.EventIn)
 	for {
-		v, _, err := ep.Read(nil)
+		_, err := ep.Read(os.Stdout, math.MaxUint16, tcpip.ReadOptions{})
 		if err != nil {
 			if err == tcpip.ErrClosedForReceive {
 				break
@@ -213,8 +214,6 @@ func main() {
 
 			log.Fatal("Read() failed:", err)
 		}
-
-		os.Stdout.Write(v)
 	}
 	wq.EventUnregister(&waitEntry)
 

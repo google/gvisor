@@ -27,6 +27,7 @@ package raw
 
 import (
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -190,7 +191,7 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 }
 
 // Read implements tcpip.Endpoint.Read.
-func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	e.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -202,20 +203,34 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
-		return buffer.View{}, tcpip.ControlMessages{}, err
+		return tcpip.ReadResult{}, err
 	}
 
 	pkt := e.rcvList.Front()
-	e.rcvList.Remove(pkt)
-	e.rcvBufSize -= pkt.data.Size()
+	if !opts.Peek {
+		e.rcvList.Remove(pkt)
+		e.rcvBufSize -= pkt.data.Size()
+	}
 
 	e.rcvMu.Unlock()
 
-	if addr != nil {
-		*addr = pkt.senderAddr
+	res := tcpip.ReadResult{
+		Total: pkt.data.Size(),
+		ControlMessages: tcpip.ControlMessages{
+			HasTimestamp: true,
+			Timestamp:    pkt.timestampNS,
+		},
+	}
+	if opts.NeedRemoteAddr {
+		res.RemoteAddr = pkt.senderAddr
 	}
 
-	return pkt.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: pkt.timestampNS}, nil
+	n, err := pkt.data.ReadTo(dst, count, opts.Peek)
+	if n == 0 && err != nil {
+		return res, tcpip.ErrBadBuffer
+	}
+	res.Count = n
+	return res, nil
 }
 
 // Write implements tcpip.Endpoint.Write.
@@ -361,11 +376,6 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	}
 
 	return int64(len(payloadBytes)), nil, nil
-}
-
-// Peek implements tcpip.Endpoint.Peek.
-func (e *endpoint) Peek([][]byte) (int64, *tcpip.Error) {
-	return 0, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.

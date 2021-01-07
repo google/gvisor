@@ -15,6 +15,7 @@
 package stack_test
 
 import (
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"testing"
@@ -351,7 +352,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}
 
 						ep := <-pollChannel
-						if _, _, err := ep.Read(nil); err != nil {
+						if _, err := ep.Read(ioutil.Discard, math.MaxUint16, tcpip.ReadOptions{}); err != nil {
 							t.Fatalf("Read on endpoint %d failed: %s", eps[ep], err)
 						}
 						stats[ep]++

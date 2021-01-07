@@ -25,7 +25,6 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
-        "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",

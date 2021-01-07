@@ -15,12 +15,13 @@
 package integration_test
 
 import (
+	"bytes"
 	"net"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -86,21 +87,21 @@ func TestPing(t *testing.T) {
 		transProto tcpip.TransportProtocolNumber
 		netProto   tcpip.NetworkProtocolNumber
 		remoteAddr tcpip.Address
-		icmpBuf    func(*testing.T) buffer.View
+		icmpBuf    func(*testing.T) []byte
 	}{
 		{
 			name:       "IPv4 Ping",
 			transProto: icmp.ProtocolNumber4,
 			netProto:   ipv4.ProtocolNumber,
 			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
-			icmpBuf: func(t *testing.T) buffer.View {
+			icmpBuf: func(t *testing.T) []byte {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv4(make([]byte, header.ICMPv4MinimumSize+len(data)))
 				hdr.SetType(header.ICMPv4Echo)
 				if n := copy(hdr.Payload(), data[:]); n != len(data) {
 					t.Fatalf("copied %d bytes but expected to copy %d bytes", n, len(data))
 				}
-				return buffer.View(hdr)
+				return hdr
 			},
 		},
 		{
@@ -108,14 +109,14 @@ func TestPing(t *testing.T) {
 			transProto: icmp.ProtocolNumber6,
 			netProto:   ipv6.ProtocolNumber,
 			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
-			icmpBuf: func(t *testing.T) buffer.View {
+			icmpBuf: func(t *testing.T) []byte {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv6(make([]byte, header.ICMPv6MinimumSize+len(data)))
 				hdr.SetType(header.ICMPv6EchoRequest)
 				if n := copy(hdr.Payload(), data[:]); n != len(data) {
 					t.Fatalf("copied %d bytes but expected to copy %d bytes", n, len(data))
 				}
-				return buffer.View(hdr)
+				return hdr
 			},
 		},
 	}
@@ -200,16 +201,25 @@ func TestPing(t *testing.T) {
 			// Wait for the endpoint to be readable.
 			<-waiterCH
 
-			var addr tcpip.FullAddress
-			v, _, err := ep.Read(&addr)
+			var buf bytes.Buffer
+			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
+			res, err := ep.Read(&buf, len(icmpBuf), opts)
 			if err != nil {
-				t.Fatalf("ep.Read(_): %s", err)
+				t.Fatalf("ep.Read(_, %d, %#v): %s", len(icmpBuf), opts, err)
 			}
-			if diff := cmp.Diff(v[icmpDataOffset:], icmpBuf[icmpDataOffset:]); diff != "" {
+			if diff := cmp.Diff(tcpip.ReadResult{
+				Count:      buf.Len(),
+				Total:      buf.Len(),
+				RemoteAddr: tcpip.FullAddress{Addr: test.remoteAddr},
+			}, res, checker.IgnoreCmpPath(
+				"ControlMessages",
+				"RemoteAddr.NIC",
+				"RemoteAddr.Port",
+			)); diff != "" {
+				t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(buf.Bytes()[icmpDataOffset:], icmpBuf[icmpDataOffset:]); diff != "" {
 				t.Errorf("received data mismatch (-want +got):\n%s", diff)
-			}
-			if addr.Addr != test.remoteAddr {
-				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.remoteAddr)
 			}
 		})
 	}

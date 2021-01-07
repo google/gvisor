@@ -15,11 +15,14 @@
 package integration_test
 
 import (
+	"bytes"
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -203,16 +206,25 @@ func TestLocalPing(t *testing.T) {
 			// Wait for the endpoint to become readable.
 			<-ch
 
-			var addr tcpip.FullAddress
-			v, _, err := ep.Read(&addr)
+			var buf bytes.Buffer
+			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
+			res, err := ep.Read(&buf, math.MaxUint16, opts)
 			if err != nil {
-				t.Fatalf("ep.Read(_): %s", err)
+				t.Fatalf("ep.Read(_, %d, %#v): %s", math.MaxUint16, opts, err)
 			}
-			if diff := cmp.Diff(v[icmpDataOffset:], buffer.View(payload[icmpDataOffset:])); diff != "" {
+			if diff := cmp.Diff(tcpip.ReadResult{
+				Count:      buf.Len(),
+				Total:      buf.Len(),
+				RemoteAddr: tcpip.FullAddress{Addr: test.localAddr},
+			}, res, checker.IgnoreCmpPath(
+				"ControlMessages",
+				"RemoteAddr.NIC",
+				"RemoteAddr.Port",
+			)); diff != "" {
+				t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(buf.Bytes()[icmpDataOffset:], []byte(payload[icmpDataOffset:])); diff != "" {
 				t.Errorf("received data mismatch (-want +got):\n%s", diff)
-			}
-			if addr.Addr != test.localAddr {
-				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.localAddr)
 			}
 
 			test.checkLinkEndpoint(t, e)
@@ -338,14 +350,27 @@ func TestLocalUDP(t *testing.T) {
 					<-serverCH
 
 					var clientAddr tcpip.FullAddress
-					if v, _, err := server.Read(&clientAddr); err != nil {
+					var readBuf bytes.Buffer
+					if read, err := server.Read(&readBuf, math.MaxUint16, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
 						t.Fatalf("server.Read(_): %s", err)
 					} else {
-						if diff := cmp.Diff(buffer.View(clientPayload), v); diff != "" {
-							t.Errorf("server read clientPayload mismatch (-want +got):\n%s", diff)
+						clientAddr = read.RemoteAddr
+
+						if diff := cmp.Diff(tcpip.ReadResult{
+							Count: readBuf.Len(),
+							Total: readBuf.Len(),
+							RemoteAddr: tcpip.FullAddress{
+								Addr: test.canBePrimaryAddr.AddressWithPrefix.Address,
+							},
+						}, read, checker.IgnoreCmpPath(
+							"ControlMessages",
+							"RemoteAddr.NIC",
+							"RemoteAddr.Port",
+						)); diff != "" {
+							t.Errorf("server.Read: unexpected result (-want +got):\n%s", diff)
 						}
-						if clientAddr.Addr != test.canBePrimaryAddr.AddressWithPrefix.Address {
-							t.Errorf("got clientAddr.Addr = %s, want = %s", clientAddr.Addr, test.canBePrimaryAddr.AddressWithPrefix.Address)
+						if diff := cmp.Diff(buffer.View(clientPayload), buffer.View(readBuf.Bytes())); diff != "" {
+							t.Errorf("server read clientPayload mismatch (-want +got):\n%s", diff)
 						}
 						if t.Failed() {
 							t.FailNow()
@@ -367,15 +392,23 @@ func TestLocalUDP(t *testing.T) {
 					// Wait for the client endpoint to become readable.
 					<-clientCH
 
-					var gotServerAddr tcpip.FullAddress
-					if v, _, err := client.Read(&gotServerAddr); err != nil {
+					readBuf.Reset()
+					if read, err := client.Read(&readBuf, math.MaxUint16, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
 						t.Fatalf("client.Read(_): %s", err)
 					} else {
-						if diff := cmp.Diff(buffer.View(serverPayload), v); diff != "" {
-							t.Errorf("client read serverPayload mismatch (-want +got):\n%s", diff)
+						if diff := cmp.Diff(tcpip.ReadResult{
+							Count:      readBuf.Len(),
+							Total:      readBuf.Len(),
+							RemoteAddr: tcpip.FullAddress{Addr: serverAddr.Addr},
+						}, read, checker.IgnoreCmpPath(
+							"ControlMessages",
+							"RemoteAddr.NIC",
+							"RemoteAddr.Port",
+						)); diff != "" {
+							t.Errorf("client.Read: unexpected result (-want +got):\n%s", diff)
 						}
-						if gotServerAddr.Addr != serverAddr.Addr {
-							t.Errorf("got gotServerAddr.Addr = %s, want = %s", gotServerAddr.Addr, serverAddr.Addr)
+						if diff := cmp.Diff(buffer.View(serverPayload), buffer.View(readBuf.Bytes())); diff != "" {
+							t.Errorf("client read serverPayload mismatch (-want +got):\n%s", diff)
 						}
 						if t.Failed() {
 							t.FailNow()
