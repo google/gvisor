@@ -26,6 +26,7 @@ package packet
 
 import (
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -160,8 +161,8 @@ func (ep *endpoint) Close() {
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
 func (ep *endpoint) ModerateRecvBuf(copied int) {}
 
-// Read implements tcpip.PacketEndpoint.ReadPacket.
-func (ep *endpoint) ReadPacket(addr *tcpip.FullAddress, info *tcpip.LinkPacketInfo) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// Read implements tcpip.Endpoint.Read.
+func (ep *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	ep.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -173,39 +174,42 @@ func (ep *endpoint) ReadPacket(addr *tcpip.FullAddress, info *tcpip.LinkPacketIn
 			err = tcpip.ErrClosedForReceive
 		}
 		ep.rcvMu.Unlock()
-		return buffer.View{}, tcpip.ControlMessages{}, err
+		return tcpip.ReadResult{}, err
 	}
 
 	packet := ep.rcvList.Front()
-	ep.rcvList.Remove(packet)
-	ep.rcvBufSize -= packet.data.Size()
+	if !opts.Peek {
+		ep.rcvList.Remove(packet)
+		ep.rcvBufSize -= packet.data.Size()
+	}
 
 	ep.rcvMu.Unlock()
 
-	if addr != nil {
-		*addr = packet.senderAddr
+	res := tcpip.ReadResult{
+		Total: packet.data.Size(),
+		ControlMessages: tcpip.ControlMessages{
+			HasTimestamp: true,
+			Timestamp:    packet.timestampNS,
+		},
+	}
+	if opts.NeedRemoteAddr {
+		res.RemoteAddr = packet.senderAddr
+	}
+	if opts.NeedLinkPacketInfo {
+		res.LinkPacketInfo = packet.packetInfo
 	}
 
-	if info != nil {
-		*info = packet.packetInfo
+	n, err := packet.data.ReadTo(dst, count, opts.Peek)
+	if n == 0 && err != nil {
+		return res, tcpip.ErrBadBuffer
 	}
-
-	return packet.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: packet.timestampNS}, nil
-}
-
-// Read implements tcpip.Endpoint.Read.
-func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
-	return ep.ReadPacket(addr, nil)
+	res.Count = n
+	return res, nil
 }
 
 func (*endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, nil, tcpip.ErrInvalidOptionValue
-}
-
-// Peek implements tcpip.Endpoint.Peek.
-func (*endpoint) Peek([][]byte) (int64, *tcpip.Error) {
-	return 0, nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be
