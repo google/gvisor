@@ -162,12 +162,19 @@ TEST(TuntapStaticTest, NetTunExists) {
 
 class TuntapTest : public ::testing::Test {
  protected:
+  void SetUp() override {
+    have_net_admin_cap_ =
+        ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN));
+  }
+
   void TearDown() override {
-    if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+    if (have_net_admin_cap_) {
       // Bring back capability if we had dropped it in test case.
       ASSERT_NO_ERRNO(SetCapability(CAP_NET_ADMIN, true));
     }
   }
+
+  bool have_net_admin_cap_;
 };
 
 TEST_F(TuntapTest, CreateInterfaceNoCap) {
