@@ -31,6 +31,7 @@ package tcpip
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math/bits"
 	"reflect"
 	"strconv"
@@ -39,7 +40,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -113,6 +113,7 @@ var (
 	ErrNotPermitted              = &Error{msg: "operation not permitted"}
 	ErrAddressFamilyNotSupported = &Error{msg: "address family not supported by protocol"}
 	ErrMalformedHeader           = &Error{msg: "header is malformed"}
+	ErrBadBuffer                 = &Error{msg: "bad buffer"}
 )
 
 var messageToError map[string]*Error
@@ -162,6 +163,7 @@ func StringToError(s string) *Error {
 			ErrNotPermitted,
 			ErrAddressFamilyNotSupported,
 			ErrMalformedHeader,
+			ErrBadBuffer,
 		}
 
 		messageToError = make(map[string]*Error)
@@ -496,6 +498,21 @@ func (s SlicePayload) Payload(size int) ([]byte, *Error) {
 	return s[:size], nil
 }
 
+var _ io.Writer = (*SliceWriter)(nil)
+
+// SliceWriter implements io.Writer for slices.
+type SliceWriter []byte
+
+// Write implements io.Writer.Write.
+func (s *SliceWriter) Write(b []byte) (int, error) {
+	n := copy(*s, b)
+	*s = (*s)[n:]
+	if n < len(b) {
+		return n, io.ErrShortWrite
+	}
+	return n, nil
+}
+
 // A ControlMessages contains socket control messages for IP sockets.
 //
 // +stateify savable
@@ -552,6 +569,40 @@ type PacketOwner interface {
 	GID() uint32
 }
 
+// ReadOptions contains options for Endpoint.Read.
+type ReadOptions struct {
+	// Peek indicates whether this read is a peek.
+	Peek bool
+
+	// NeedRemoteAddr indicates whether to return the remote address, if
+	// supported.
+	NeedRemoteAddr bool
+
+	// NeedLinkPacketInfo indicates whether to return the link-layer information,
+	// if supported.
+	NeedLinkPacketInfo bool
+}
+
+// ReadResult represents result for a successful Endpoint.Read.
+type ReadResult struct {
+	// Count is the number of bytes received and written to the buffer.
+	Count int
+
+	// Total is the number of bytes of the received packet. This can be used to
+	// determine whether the read is truncated.
+	Total int
+
+	// ControlMessages is the control messages received.
+	ControlMessages ControlMessages
+
+	// RemoteAddr is the remote address if ReadOptions.NeedAddr is true.
+	RemoteAddr FullAddress
+
+	// LinkPacketInfo is the link-layer information of the received packet if
+	// ReadOptions.NeedLinkPacketInfo is true.
+	LinkPacketInfo LinkPacketInfo
+}
+
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
 // that exposes functionality like read, write, connect, etc. to users of the
 // networking stack.
@@ -566,11 +617,15 @@ type Endpoint interface {
 	// Abort is best effort; implementing Abort with Close is acceptable.
 	Abort()
 
-	// Read reads data from the endpoint and optionally returns the sender.
+	// Read reads data from the endpoint and optionally writes to dst.
 	//
-	// This method does not block if there is no data pending. It will also
-	// either return an error or data, never both.
-	Read(*FullAddress) (buffer.View, ControlMessages, *Error)
+	// This method does not block if there is no data pending; in this case,
+	// ErrWouldBlock is returned.
+	//
+	// If non-zero number of bytes are successfully read and written to dst, err
+	// must be nil. Otherwise, if dst failed to write anything, ErrBadBuffer
+	// should be returned.
+	Read(dst io.Writer, count int, opts ReadOptions) (res ReadResult, err *Error)
 
 	// Write writes data to the endpoint's peer. This method does not block if
 	// the data cannot be written.
@@ -591,11 +646,6 @@ type Endpoint interface {
 	// block. Channel is closed once address resolution is complete (success or
 	// not). The channel is only non-nil in this case.
 	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
-
-	// Peek reads data without consuming it from the endpoint.
-	//
-	// This method does not block if there is no data pending.
-	Peek([][]byte) (int64, *Error)
 
 	// Connect connects the endpoint to its peer. Specifying a NIC is
 	// optional.
@@ -701,17 +751,6 @@ type LinkPacketInfo struct {
 
 	// PktType is used to indicate the destination of the packet.
 	PktType PacketType
-}
-
-// PacketEndpoint are additional methods that are only implemented by Packet
-// endpoints.
-type PacketEndpoint interface {
-	// ReadPacket reads a datagram/packet from the endpoint and optionally
-	// returns the sender and additional LinkPacketInfo.
-	//
-	// This method does not block if there is no data pending. It will also
-	// either return an error or data, never both.
-	ReadPacket(*FullAddress, *LinkPacketInfo) (buffer.View, ControlMessages, *Error)
 }
 
 // EndpointInfo is the interface implemented by each endpoint info struct.
