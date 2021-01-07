@@ -12,7 +12,7 @@ _templates:
     retry:
       automatic: false
     soft_fail: true
-    if: build.message =~ /benchmarks/ || build.branch == "master"
+    if: build.branch == "master"
     env:
       # BENCHMARKS_OFFICIAL is set from hooks/pre-command, based
       # on whether this is executing on the master branch.
@@ -152,7 +152,7 @@ steps:
     label: ":fire: Benchmarks smoke test"
     command: make benchmark-platforms
     # Use the opposite of the benchmarks filter.
-    if: build.message !~ /benchmarks/ && build.branch != "master"
+    if: build.branch != "master"
 
   # Run all benchmarks.
   - <<: *benchmarks
