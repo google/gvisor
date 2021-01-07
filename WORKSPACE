@@ -1,6 +1,17 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
+# Root certificates.
+#
+# Note that the sha256 hash is ommitted here intentionally. This should not be
+# used in any part of the build other than as certificates present in images.
+http_file(
+    name = "google_root_pem",
+    urls = [
+        "https://pki.goog/roots.pem"
+    ],
+)
+
 # Bazel/starlark utilities.
 http_archive(
     name = "bazel_skylib",

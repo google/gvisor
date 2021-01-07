@@ -244,6 +244,14 @@ func (p *profileMeta) Parse(usage func()) []string {
 // See registerProfile below.
 const pprofFixedPrefix = "https://storage.googleapis.com/"
 
+// allowedBuckets enforces constraints on the pprof target.
+//
+// If the continuous integration system is changed in the future to use
+// additional buckets, they may be whitelisted here. See registerProfile.
+var allowedBuckets = map[string]bool{
+	"gvisor-buildkite": true,
+}
+
 // Target returns the URL target.
 func (p *profileMeta) Target() string {
 	return fmt.Sprintf("/profile/%s/", p.SourceURL[len(pprofFixedPrefix):])
@@ -259,7 +267,14 @@ func (p *profileMeta) HTTPServer(args *driver.HTTPServerArgs) error {
 			// directory path in order to keep relative links
 			// working in the profile. E.g. /profile/foo/ is the
 			// base URL for the profile at https://.../foo.
+			//
+			// The base target typically shows the dot-based graph,
+			// which will not work in the image (due to the lack of
+			// a dot binary to execute). Therefore, we redirect to
+			// the flamegraph handler. Everything should otherwise
+			// work the exact same way, except the "Graph" link.
 			handlerPath = target
+			handler = redirectHandler(path.Join(handlerPath, "flamegraph"))
 		}
 		p.Mux.Handle(handlerPath, handler)
 	}
@@ -273,10 +288,11 @@ func (p *profileMeta) HTTPServer(args *driver.HTTPServerArgs) error {
 // We are passed effectively a URL, which we fetch and parse,
 // then display the profile output. We limit the possibility of
 // SSRF by interpreting the URL strictly as a part to an object
-// in Google Cloud Storage, but we allow the user to specify any
-// bucket (since this may change with the CI system).
+// in Google Cloud Storage, and further limit the buckets that
+// may be used. This contains the vast majority of concerns,
+// since objects must at least be uploaded by our CI system.
 //
-// We additionally must consider the possibility that users may
+// However, we additionally consider the possibility that users
 // craft malicious profile objects (somehow) and pass those URLs
 // here as well. It seems feasible that we could parse a profile
 // that causes a crash (DOS), but this would be automatically
@@ -294,17 +310,22 @@ func (p *profileMeta) HTTPServer(args *driver.HTTPServerArgs) error {
 // causing an OOM and a crash. This has similar semantics to the
 // DOS scenario above, and would just be handled by Cloud Run.
 //
-// Finally, a malicious user could cause us to repeatedly fetch
-// extremely large objects. However, since we fetch objects via
-// the unauthenticated URL, such accesses would always be charged
-// to the object owner. Downloading large objects can lead to the
-// filling of the "disk" scenario above, but this is similarly a
-// minor issue and immediately mitigated.
+// Note that all of the above scenarios would require uploading
+// malicious profiles to controller buckets, and a clear audit
+// trail would exist in those cases.
 func registerProfile(mux *http.ServeMux) {
 	const urlPrefix = "/profile/"
 	mux.Handle(urlPrefix, hostRedirectHandler(wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Extract the URL; this is everything except the final /.
 		parts := strings.Split(r.URL.Path[len(urlPrefix):], "/")
+		if len(parts) == 0 {
+			http.Error(w, "Invalid URL: no bucket provided.", http.StatusNotFound)
+			return
+		}
+		if !allowedBuckets[parts[0]] {
+			http.Error(w, fmt.Sprintf("Invalid URL: not an allowed bucket (%s).", parts[0]), http.StatusNotFound)
+			return
+		}
 		url := pprofFixedPrefix + strings.Join(parts[:len(parts)-1], "/")
 		if url == pprofFixedPrefix {
 			http.Error(w, "Invalid URL: no path provided.", http.StatusNotFound)

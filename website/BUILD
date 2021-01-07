@@ -38,6 +38,7 @@ genrule(
         ":syscallmd",
         "//website/blog:posts",
         "//website/cmd/server",
+        "@google_root_pem//file",
     ],
     outs = ["files.tgz"],
     cmd = "set -x; " +
@@ -61,6 +62,8 @@ genrule(
           "ruby /checks.rb " +
           "/output && " +
           "cp $(location //website/cmd/server) $$T/output/server && " +
+          "mkdir -p $$T/output/etc/ssl && " +
+          "cp $(location @google_root_pem//file) $$T/output/etc/ssl/cert.pem && " +
           "tar -zcf $@ -C $$T/output . && " +
           "rm -rf $$T",
     tags = [
