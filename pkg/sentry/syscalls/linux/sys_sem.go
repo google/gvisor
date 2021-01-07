@@ -48,6 +48,15 @@ func Semget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return uintptr(set.ID), nil, nil
 }
 
+// Semtimedop handles: semop(int semid, struct sembuf *sops, size_t nsops, const struct timespec *timeout)
+func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// TODO(gvisor.dev/issue/137): A non-zero timeout isn't supported.
+	if args[3].Pointer() != 0 {
+		return 0, nil, syserror.ENOSYS
+	}
+	return Semop(t, args)
+}
+
 // Semop handles: semop(int semid, struct sembuf *sops, size_t nsops)
 func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := args[0].Int()
