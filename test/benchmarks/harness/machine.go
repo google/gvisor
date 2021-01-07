@@ -16,6 +16,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os/exec"
 
@@ -66,14 +67,19 @@ func (l *localMachine) RunCommand(cmd string, args ...string) (string, error) {
 
 // IPAddress implements Machine.IPAddress.
 func (l *localMachine) IPAddress() (net.IP, error) {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		return nil, err
+		return net.IP{}, err
 	}
-	defer conn.Close()
-
-	addr := conn.LocalAddr().(*net.UDPAddr)
-	return addr.IP, nil
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP, nil
+			}
+		}
+	}
+	// Unable to locate non-loopback address.
+	return nil, errors.New("no IPAddress available")
 }
 
 // CleanUp implements Machine.CleanUp and does nothing for localMachine.

@@ -351,9 +351,9 @@ run_benchmark = \
 
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
 	@$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-	  $(call run_benchmark,$(PLATFORM),--platform=$(PLATFORM) --vfs2)  && \
+	  $(call run_benchmark,$(PLATFORM),--platform=$(PLATFORM) --vfs2) && \
 	) true
-	@$(call run-benchmark,runc)
+	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
 
 run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
