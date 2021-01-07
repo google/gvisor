@@ -241,3 +241,9 @@ func TestEmulateIDExtended(t *testing.T) {
 		t.Errorf("extended feature emulation failed, got feature bits %x want %x", dx, testFeatures.blockMask(6))
 	}
 }
+
+func BenchmarkHostFeatureSet(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		generateHostFeatureSet()
+	}
+}

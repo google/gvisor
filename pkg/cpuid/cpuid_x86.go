@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -960,13 +961,26 @@ func (fs *FeatureSet) UseXsaveopt() bool {
 // HostID executes a native CPUID instruction.
 func HostID(axArg, cxArg uint32) (ax, bx, cx, dx uint32)
 
+var hostFeatureSetOnce sync.Once
+var hostFeatureSet *FeatureSet
+
 // HostFeatureSet uses cpuid to get host values and construct a feature set
-// that matches that of the host machine. Note that there are several places
-// where there appear to be some unnecessary assignments between register names
-// (ax, bx, cx, or dx) and featureBlockN variables. This is to explicitly show
-// where the different feature blocks come from, to make the code easier to
-// inspect and read.
+// that matches that of the host machine.
 func HostFeatureSet() *FeatureSet {
+	// generateHostFeatureSet is fairly expensive (~10us), so memoize it.
+	hostFeatureSetOnce.Do(func() {
+		hostFeatureSet = generateHostFeatureSet()
+	})
+	return hostFeatureSet
+}
+
+func generateHostFeatureSet() *FeatureSet {
+	// Note that there are several places where there appear to be some
+	// unnecessary assignments between register names (ax, bx, cx, or dx)
+	// and featureBlockN variables. This is to explicitly show where the
+	// different feature blocks come from, to make the code easier to
+	// inspect and read.
+
 	// eax=0 gets max supported feature and vendor ID.
 	_, bx, cx, dx := HostID(0, 0)
 	vendorID := vendorIDFromRegs(bx, cx, dx)
