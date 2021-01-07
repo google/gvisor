@@ -159,6 +159,9 @@ steps:
     label: ":bazel: ABSL build benchmarks"
     command: make benchmark-platforms BENCHMARKS_FILTER="ABSL/page_cache.clean" BENCHMARKS_SUITE=absl BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
   - <<: *benchmarks
+    label: ":go: runsc build benchmarks"
+    command: make benchmark-platforms BENCHMARKS_FILTER="Runsc/page_cache.clean/filesystem.bind" BENCHMARKS_SUITE=runsc BENCHMARKS_TARGETS=test/benchmarks/fs:bazel_test
+  - <<: *benchmarks
     label: ":metal: FFMPEG benchmarks"
     command: make benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
   - <<: *benchmarks
