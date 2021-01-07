@@ -235,14 +235,16 @@ func TestToClone(t *testing.T) {
 	}
 }
 
-func TestVVReadToVV(t *testing.T) {
-	testCases := []struct {
-		comment     string
-		vv          VectorisedView
-		bytesToRead int
-		wantBytes   string
-		leftVV      VectorisedView
-	}{
+type readToTestCases struct {
+	comment     string
+	vv          VectorisedView
+	bytesToRead int
+	wantBytes   string
+	leftVV      VectorisedView
+}
+
+func createReadToTestCases() []readToTestCases {
+	return []readToTestCases{
 		{
 			comment:     "large VV, short read",
 			vv:          vv(30, "012345678901234567890123456789"),
@@ -279,8 +281,10 @@ func TestVVReadToVV(t *testing.T) {
 			leftVV:      vv(0, ""),
 		},
 	}
+}
 
-	for _, tc := range testCases {
+func TestVVReadToVV(t *testing.T) {
+	for _, tc := range createReadToTestCases() {
 		t.Run(tc.comment, func(t *testing.T) {
 			var readTo VectorisedView
 			inSize := tc.vv.Size()
@@ -296,6 +300,52 @@ func TestVVReadToVV(t *testing.T) {
 			}
 			if got, want := string(tc.vv.ToView()), string(tc.leftVV.ToView()); got != want {
 				t.Errorf("unexpected data left in vv after read got: %+v, want: %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestVVReadTo(t *testing.T) {
+	for _, tc := range createReadToTestCases() {
+		t.Run(tc.comment, func(t *testing.T) {
+			var dst bytes.Buffer
+			origSize := tc.vv.Size()
+			copied, err := tc.vv.ReadTo(&dst, tc.bytesToRead, false /* peek */)
+			if got, want := copied, len(tc.wantBytes); err != nil || got != want {
+				t.Errorf("got ReadTo(&dst, %d, false) = %d, %v; want %d, nil", tc.bytesToRead, got, err, want)
+			}
+			if got, want := string(dst.Bytes()), tc.wantBytes; got != want {
+				t.Errorf("got dst = %q, want %q", got, want)
+			}
+			if got, want := tc.vv.Size(), origSize-copied; got != want {
+				t.Errorf("got after-read tc.vv.Size() = %d, want %d", got, want)
+			}
+			if got, want := string(tc.vv.ToView()), string(tc.leftVV.ToView()); got != want {
+				t.Errorf("got after-read data in tc.vv = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestVVReadToPeek(t *testing.T) {
+	for _, tc := range createReadToTestCases() {
+		t.Run(tc.comment, func(t *testing.T) {
+			var dst bytes.Buffer
+			origSize := tc.vv.Size()
+			origData := string(tc.vv.ToView())
+			copied, err := tc.vv.ReadTo(&dst, tc.bytesToRead, true /* peek */)
+			if got, want := copied, len(tc.wantBytes); err != nil || got != want {
+				t.Errorf("got ReadTo(&dst, %d, false) = %d, %v; want %d, nil", tc.bytesToRead, got, err, want)
+			}
+			if got, want := string(dst.Bytes()), tc.wantBytes; got != want {
+				t.Errorf("got dst = %q, want %q", got, want)
+			}
+			// Expect tc.vv is unchanged.
+			if got, want := tc.vv.Size(), origSize; got != want {
+				t.Errorf("got after-read tc.vv.Size() = %d, want %d", got, want)
+			}
+			if got, want := string(tc.vv.ToView()), origData; got != want {
+				t.Errorf("got after-read data in tc.vv = %q, want %q", got, want)
 			}
 		})
 	}

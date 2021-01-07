@@ -43,6 +43,15 @@ TEST_P(AllSocketPairTest, BasicReadWrite) {
   EXPECT_EQ(data, absl::string_view(buf, 3));
 }
 
+TEST_P(AllSocketPairTest, BasicReadWriteBadBuffer) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const std::string data = "abc";
+  ASSERT_THAT(WriteFd(sockets->first_fd(), data.c_str(), 3),
+              SyscallSucceedsWithValue(3));
+  ASSERT_THAT(ReadFd(sockets->second_fd(), nullptr, 3),
+              SyscallFailsWithErrno(EFAULT));
+}
+
 TEST_P(AllSocketPairTest, BasicSendRecv) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char sent_data[512];

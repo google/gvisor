@@ -15,12 +15,14 @@
 package integration_test
 
 import (
+	"bytes"
 	"net"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -462,17 +464,23 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			}
 
 			test.rxUDP(e, test.remoteAddr, test.dstAddr, data)
-			if gotPayload, _, err := ep.Read(nil); test.expectRx {
+			var buf bytes.Buffer
+			var opts tcpip.ReadOptions
+			if res, err := ep.Read(&buf, len(data), opts); test.expectRx {
 				if err != nil {
-					t.Fatalf("Read(nil): %s", err)
+					t.Fatalf("ep.Read(_, %d, %#v): %s", len(data), opts, err)
 				}
-				if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
+				if diff := cmp.Diff(tcpip.ReadResult{
+					Count: buf.Len(),
+					Total: buf.Len(),
+				}, res, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+					t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
 				}
-			} else {
-				if err != tcpip.ErrWouldBlock {
-					t.Fatalf("got Read(nil) = (%x, _, %s), want = (_, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
-				}
+			} else if err != tcpip.ErrWouldBlock {
+				t.Fatalf("got Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), tcpip.ErrWouldBlock)
 			}
 		})
 	}
@@ -589,9 +597,19 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					// Wait for the endpoint to become readable.
 					<-rep.ch
 
-					if gotPayload, _, err := rep.ep.Read(nil); err != nil {
-						t.Errorf("(eps[%d] write) eps[%d].Read(nil): %s", i, j, err)
-					} else if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
+					var buf bytes.Buffer
+					result, err := rep.ep.Read(&buf, len(data), tcpip.ReadOptions{})
+					if err != nil {
+						t.Errorf("(eps[%d] write) eps[%d].Read: %s", i, j, err)
+						continue
+					}
+					if diff := cmp.Diff(tcpip.ReadResult{
+						Count: buf.Len(),
+						Total: buf.Len(),
+					}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+						t.Errorf("(eps[%d] write) eps[%d].Read: unexpected result (-want +got):\n%s", i, j, diff)
+					}
+					if diff := cmp.Diff([]byte(data), buf.Bytes()); diff != "" {
 						t.Errorf("(eps[%d] write) got UDP payload from eps[%d] mismatch (-want +got):\n%s", i, j, diff)
 					}
 				}
@@ -719,10 +737,20 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 						t.Fatalf("ep.SetSockOpt(&%#v): %s", addOpt, err)
 					}
 					test.rxUDP(e, test.remoteAddr, test.multicastAddr, data)
-					if gotPayload, _, err := ep.Read(nil); err != nil {
-						t.Fatalf("ep.Read(nil): %s", err)
-					} else if diff := cmp.Diff(buffer.View(data), gotPayload); diff != "" {
-						t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
+					var buf bytes.Buffer
+					result, err := ep.Read(&buf, len(data), tcpip.ReadOptions{})
+					if err != nil {
+						t.Fatalf("ep.Read: %s", err)
+					} else {
+						if diff := cmp.Diff(tcpip.ReadResult{
+							Count: buf.Len(),
+							Total: buf.Len(),
+						}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+							t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+						}
+						if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
+							t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
+						}
 					}
 
 					// We should not receive UDP packets to the group once we leave
@@ -731,8 +759,8 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					if err := ep.SetSockOpt(&removeOpt); err != nil {
 						t.Fatalf("ep.SetSockOpt(&%#v): %s", removeOpt, err)
 					}
-					if gotPayload, _, err := ep.Read(nil); err != tcpip.ErrWouldBlock {
-						t.Fatalf("got ep.Read(nil) = (%x, _, %s), want = (nil, _, %s)", gotPayload, err, tcpip.ErrWouldBlock)
+					if _, err := ep.Read(&buf, 1, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+						t.Fatalf("got ep.Read = (_, %s), want = (_, %s)", err, tcpip.ErrWouldBlock)
 					}
 				})
 			}

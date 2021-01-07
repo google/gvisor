@@ -1507,7 +1507,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
   }
 
   ScopedThread connecting_thread([&connector, &conn_addr]() {
-    for (int i = 0; i < kConnectAttempts; i++) {
+    for (int32_t i = 0; i < kConnectAttempts; i++) {
       const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
       ASSERT_THAT(
@@ -1515,22 +1515,8 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
                               connector.addr_len),
           SyscallSucceeds());
 
-      // Do two separate sends to ensure two segments are received. This is
-      // required for netstack where read is incorrectly assuming a whole
-      // segment is read when endpoint.Read() is called which is technically
-      // incorrect as the syscall that invoked endpoint.Read() may only
-      // consume it partially. This results in a case where a close() of
-      // such a socket does not trigger a RST in netstack due to the
-      // endpoint assuming that the endpoint has no unread data.
       EXPECT_THAT(RetryEINTR(send)(fd.get(), &i, sizeof(i), 0),
                   SyscallSucceedsWithValue(sizeof(i)));
-
-      // TODO(gvisor.dev/issue/1449): Remove this block once netstack correctly
-      //   generates a RST.
-      if (IsRunningOnGvisor()) {
-        EXPECT_THAT(RetryEINTR(send)(fd.get(), &i, sizeof(i), 0),
-                    SyscallSucceedsWithValue(sizeof(i)));
-      }
     }
   });
 
