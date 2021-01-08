@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -61,19 +62,37 @@ var redirects = map[string]string{
 
 	// Deprecated, but links continue to work.
 	"/cl": "https://gvisor-review.googlesource.com",
+
+	// Access package documentation.
+	"/gvisor": "https://pkg.go.dev/gvisor.dev/gvisor",
+
+	// Code search root.
+	"/cs": "https://cs.opensource.google/gvisor/gvisor",
 }
 
-var prefixHelpers = map[string]string{
-	"change": "https://github.com/google/gvisor/commit/%s",
-	"issue":  "https://github.com/google/gvisor/issues/%s",
-	"issues": "https://github.com/google/gvisor/issues/%s",
-	"pr":     "https://github.com/google/gvisor/pull/%s",
+type prefixInfo struct {
+	baseURL      string
+	checkValidID bool
+	queryEscape  bool
+}
+
+var prefixHelpers = map[string]prefixInfo{
+	"change": {baseURL: "https://github.com/google/gvisor/commit/%s", checkValidID: true},
+	"issue":  {baseURL: "https://github.com/google/gvisor/issues/%s", checkValidID: true},
+	"issues": {baseURL: "https://github.com/google/gvisor/issues/%s", checkValidID: true},
+	"pr":     {baseURL: "https://github.com/google/gvisor/pull/%s", checkValidID: true},
 
 	// Redirects to compatibility docs.
-	"c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/#%s",
+	"c/linux/amd64": {baseURL: "/docs/user_guide/compatibility/linux/amd64/#%s", checkValidID: true},
 
 	// Deprecated, but links continue to work.
-	"cl": "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
+	"cl": {baseURL: "https://gvisor-review.googlesource.com/c/gvisor/+/%s", checkValidID: true},
+
+	// Redirect to source documentation.
+	"gvisor": {baseURL: "https://pkg.go.dev/gvisor.dev/gvisor/%s"},
+
+	// Redirect to code search, with the path as the query.
+	"cs": {baseURL: "https://cs.opensource.google/search?q=%s&ss=gvisor", queryEscape: true},
 }
 
 var (
@@ -147,7 +166,7 @@ func hostRedirectHandler(h http.Handler) http.Handler {
 }
 
 // prefixRedirectHandler returns a handler that redirects to the given formated url.
-func prefixRedirectHandler(prefix, baseURL string) http.Handler {
+func prefixRedirectHandler(prefix string, info prefixInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.URL.Path; p == prefix {
 			// Redirect /prefix/ to /prefix.
@@ -155,11 +174,14 @@ func prefixRedirectHandler(prefix, baseURL string) http.Handler {
 			return
 		}
 		id := r.URL.Path[len(prefix):]
-		if !validID.MatchString(id) {
+		if info.checkValidID && !validID.MatchString(id) {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
-		target := fmt.Sprintf(baseURL, id)
+		if info.queryEscape {
+			id = url.QueryEscape(id)
+		}
+		target := fmt.Sprintf(info.baseURL, id)
 		redirectWithQuery(w, r, target)
 	})
 }
@@ -173,24 +195,13 @@ func redirectHandler(target string) http.Handler {
 
 // registerRedirects registers redirect http handlers.
 func registerRedirects(mux *http.ServeMux) {
-	for prefix, baseURL := range prefixHelpers {
+	for prefix, info := range prefixHelpers {
 		p := "/" + prefix + "/"
-		mux.Handle(p, hostRedirectHandler(wrappedHandler(prefixRedirectHandler(p, baseURL))))
+		mux.Handle(p, hostRedirectHandler(wrappedHandler(prefixRedirectHandler(p, info))))
 	}
 	for path, redirect := range redirects {
 		mux.Handle(path, hostRedirectHandler(wrappedHandler(redirectHandler(redirect))))
 	}
-	registerModuleDocRedirects(http.DefaultServeMux)
-}
-
-// registerModuleDocs registers redirect http handlers to redirect module paths
-// directly to their docs on pkg.go.dev.
-func registerModuleDocRedirects(mux *http.ServeMux) {
-	const prefix = "/gvisor/"
-	mux.Handle(prefix, hostRedirectHandler(wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pkg := r.URL.Path[len(prefix):]
-		redirectWithQuery(w, r, fmt.Sprintf("https://pkg.go.dev/gvisor.dev/gvisor/%s", pkg))
-	}))))
 }
 
 // registerStatic registers static file handlers.
