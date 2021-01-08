@@ -10,5 +10,5 @@ index 17516ad7..76b6c68c 100644
 -        # Disable symbol table and DWARF generation for test binaries.
 -        test_gc_linkopts.extend(["-s", "-w"])
  
-     # Now compile the test binary itself
-     test_library = GoLibrary(
+     # Link in the run_dir global for bzltestutil
+     test_gc_linkopts.extend(["-X", "github.com/bazelbuild/rules_go/go/tools/bzltestutil.RunDir=" + run_dir])

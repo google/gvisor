@@ -8,7 +8,7 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 http_file(
     name = "google_root_pem",
     urls = [
-        "https://pki.goog/roots.pem"
+        "https://pki.goog/roots.pem",
     ],
 )
 
@@ -40,10 +40,10 @@ http_archive(
         # binaries of symbols, which we don't want.
         "//tools:rules_go.patch",
     ],
-    sha256 = "b725e6497741d7fc2d55fcc29a276627d10e43fa5d0bb692692890ae30d98d00",
+    sha256 = "7904dbecbaffd068651916dce77ff3437679f9d20e1a7956bff43826e7645fcc",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.3/rules_go-v0.24.3.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.24.3/rules_go-v0.24.3.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.25.1/rules_go-v0.25.1.tar.gz",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.25.1/rules_go-v0.25.1.tar.gz",
     ],
 )
 
@@ -55,10 +55,10 @@ http_archive(
         # logs. Strip this message in this case. Does not affect control flow.
         "//tools:bazel_gazelle.patch",
     ],
-    sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
+    sha256 = "222e49f034ca7a1d1231422cdb67066b885819885c356673cb1f72f748a3c9d4",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.2/bazel-gazelle-v0.22.2.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.3/bazel-gazelle-v0.22.3.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.3/bazel-gazelle-v0.22.3.tar.gz",
     ],
 )
 
@@ -66,7 +66,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_depe
 
 go_rules_dependencies()
 
-go_register_toolchains(go_version = "1.15.2")
+go_register_toolchains(go_version = "1.15.6")
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
@@ -129,11 +129,11 @@ rules_proto_toolchains()
 # See releases at https://releases.bazel.build/bazel-toolchains.html
 http_archive(
     name = "bazel_toolchains",
-    sha256 = "144290c4166bd67e76a54f96cd504ed86416ca3ca82030282760f0823c10be48",
-    strip_prefix = "bazel-toolchains-3.1.1",
+    sha256 = "1caf8584434d3e31be674067996be787cfa511fda2a0f05811131b588886477f",
+    strip_prefix = "bazel-toolchains-3.7.2",
     urls = [
-        "https://github.com/bazelbuild/bazel-toolchains/releases/download/3.1.1/bazel-toolchains-3.1.1.tar.gz",
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/releases/download/3.1.1/bazel-toolchains-3.1.1.tar.gz",
+        "https://github.com/bazelbuild/bazel-toolchains/releases/download/3.7.2/bazel-toolchains-3.7.2.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/releases/download/3.7.2/bazel-toolchains-3.7.2.tar.gz",
     ],
 )
 
