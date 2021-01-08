@@ -192,7 +192,7 @@ fuse-tests:
 .PHONY: fuse-tests
 
 unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
-	@$(call test,pkg/... runsc/... tools/...)
+	@$(call test,//:all pkg/... runsc/... tools/...)
 .PHONY: unit-tests
 
 tests: ## Runs all unit tests and syscall tests.
