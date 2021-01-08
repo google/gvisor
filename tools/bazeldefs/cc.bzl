@@ -1,11 +1,9 @@
 """C++ rules."""
 
-load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", _cc_flags_supplier = "cc_flags_supplier")
 load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
 
 cc_library = _cc_library
-cc_flags_supplier = _cc_flags_supplier
 cc_proto_library = _cc_proto_library
 cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
@@ -13,6 +11,16 @@ gtest = "@com_google_googletest//:gtest"
 gbenchmark = "@com_google_benchmark//:benchmark"
 grpcpp = "@com_github_grpc_grpc//:grpc++"
 vdso_linker_option = "-fuse-ld=gold "
+
+def _cc_flags_supplier_impl(ctx):
+    variables = platform_common.TemplateVariableInfo({
+        "CC_FLAGS": "",
+    })
+    return [variables]
+
+cc_flags_supplier = rule(
+    implementation = _cc_flags_supplier_impl,
+)
 
 def cc_grpc_library(name, **kwargs):
     _cc_grpc_library(name = name, grpc_only = True, **kwargs)

@@ -232,6 +232,14 @@ do-tests:
 	@$(call sudo,//runsc,do true)
 .PHONY: do-tests
 
+arm-qemu-smoke-test: BAZEL_OPTIONS=--config=cross-aarch64
+arm-qemu-smoke-test: load-arm-qemu
+	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
+	mkdir -p $$T/bin/arm64/ && \
+	$(call copy,//runsc:runsc,$$T/bin/arm64) && \
+	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc gvisor.dev/images/arm-qemu
+.PHONY: arm-qemu-smoke-test
+
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 

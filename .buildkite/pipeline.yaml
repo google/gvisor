@@ -147,6 +147,11 @@ steps:
     parallelism: 10
     if: build.message =~ /VFS1/ || build.branch == "master"
 
+  # ARM tests.
+  - <<: *common
+    label: ":mechanical_arm: ARM"
+    command: make arm-qemu-smoke-test
+
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
     label: ":fire: Benchmarks smoke test"

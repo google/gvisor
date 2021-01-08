@@ -272,7 +272,7 @@ var AMD64 = &kernel.SyscallTable{
 		217: syscalls.Supported("getdents64", Getdents64),
 		218: syscalls.Supported("set_tid_address", SetTidAddress),
 		219: syscalls.Supported("restart_syscall", RestartSyscall),
-		220: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}),
+		220: syscalls.PartiallySupported("semtimedop", Semtimedop, "A non-zero timeout argument isn't supported.", []string{"gvisor.dev/issue/137"}),
 		221: syscalls.PartiallySupported("fadvise64", Fadvise64, "Not all options are supported.", nil),
 		222: syscalls.Supported("timer_create", TimerCreate),
 		223: syscalls.Supported("timer_settime", TimerSettime),
@@ -620,7 +620,7 @@ var ARM64 = &kernel.SyscallTable{
 		189: syscalls.ErrorWithEvent("msgsnd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
 		190: syscalls.Supported("semget", Semget),
 		191: syscalls.PartiallySupported("semctl", Semctl, "Options SEM_STAT_ANY not supported.", nil),
-		192: syscalls.ErrorWithEvent("semtimedop", syserror.ENOSYS, "", []string{"gvisor.dev/issue/137"}),
+		192: syscalls.PartiallySupported("semtimedop", Semtimedop, "A non-zero timeout argument isn't supported.", []string{"gvisor.dev/issue/137"}),
 		193: syscalls.PartiallySupported("semop", Semop, "Option SEM_UNDO not supported.", nil),
 		194: syscalls.PartiallySupported("shmget", Shmget, "Option SHM_HUGETLB is not supported.", nil),
 		195: syscalls.PartiallySupported("shmctl", Shmctl, "Options SHM_LOCK, SHM_UNLOCK are not supported.", nil),
