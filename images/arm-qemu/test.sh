@@ -1,4 +1,6 @@
-# Copyright 2019 The gVisor Authors.
+#!/bin/bash
+
+# Copyright 2020 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Ensure a strong hash function.
-startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
+set -xeuo pipefail -m
 
-# Build with C++17.
-build --cxxopt=-std=c++17
+cd initramfs
+find . | cpio -v -o -c -R root:root | gzip -9 >> ../initramfs-lts
+cd ..
 
-# Display the current git revision in the info block.
-build --stamp --workspace_status_command tools/workspace_status.sh
+qemu-system-aarch64  -M virt -m 512M -cpu cortex-a57 \
+  -kernel vmlinuz-lts -initrd initramfs-lts \
+  -append "console=ttyAMA0 panic=-1" -nographic -no-reboot \
+  | tee /dev/stderr | grep "runsc exited with code 0"
 
-# Set flags for aarch64.
-build:cross-aarch64 --crosstool_top=@crosstool//:toolchains --compiler=gcc
-build:cross-aarch64 --cpu=aarch64
-build:cross-aarch64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
+echo "PASS"

@@ -94,6 +94,20 @@ http_archive(
     ],
 )
 
+# Load C++ cross-compilation toolchains.
+http_archive(
+    name = "coral_crosstool",
+    sha256 = "088ef98b19a45d7224be13636487e3af57b1564880b67df7be8b3b7eee4a1bfc",
+    strip_prefix = "crosstool-142e930ac6bf1295ff3ba7ba2b5b6324dfb42839",
+    urls = [
+        "https://github.com/google-coral/crosstool/archive/142e930ac6bf1295ff3ba7ba2b5b6324dfb42839.tar.gz",
+    ],
+)
+
+load("@coral_crosstool//:configure.bzl", "cc_crosstool")
+
+cc_crosstool(name = "crosstool")
+
 # Load protobuf dependencies.
 http_archive(
     name = "rules_proto",
