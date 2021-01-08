@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "metric",
-    srcs = ["metric.go"],
+    srcs = [
+        "metric.go",
+        "runtime.go",
+    ],
     visibility = ["//:sandbox"],
     deps = [
         ":metric_go_proto",
