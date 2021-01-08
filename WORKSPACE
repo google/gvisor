@@ -210,7 +210,7 @@ http_file(
 
 http_file(
     name = "github_workflow_schema",
-    sha256 = "2c375bb43dbc8b32b1bed46c290d0b70a8fa2aca7a5484dfca1b6e9c38cf9e7a",
+    sha256 = "60603d1095b11d136e04a8b95be83a23ad8044169e46f82f925c320c1cf47a49",
     urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/27612065234778feaac216ce14dd47846fe0a2dd/src/schemas/json/github-workflow.json"],
 )
 
