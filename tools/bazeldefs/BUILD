@@ -37,3 +37,11 @@ config_setting(
     },
     visibility = ["//visibility:private"],
 )
+
+genrule(
+    name = "version",
+    outs = ["version.txt"],
+    cmd = "cat bazel-out/stable-status.txt | grep STABLE_VERSION | cut -d' ' -f2- >$@",
+    stamp = True,
+    visibility = ["//:sandbox"],
+)

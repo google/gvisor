@@ -18,9 +18,16 @@ if [[ "$#" -le 3 ]]; then
   echo "usage: $0 <private-key> <suite> <root> <packages...>"
   exit 1
 fi
-declare -r private_key=$(readlink -e "$1"); shift
-declare -r suite="$1"; shift
-declare -r root="$1"; shift
+declare private_key
+declare suite
+declare root
+private_key="$(readlink -e "$1")"
+suite="$2"
+root="$(readlink -m "$3")"
+readonly private_key
+readonly suite
+readonly root
+shift; shift; shift # For "$@" below.
 
 # Ensure that we have the correct packages installed.
 function apt_install() {
@@ -56,9 +63,15 @@ mkdir -p "${release}"
 # Create a temporary keyring, and ensure it is cleaned up.
 # Using separate homedir allows us to install apt repositories multiple times
 # using the same key. This is a limitation in GnuPG pre-2.1.
-declare -r keyring=$(mktemp /tmp/keyringXXXXXX.gpg)
-declare -r homedir=$(mktemp -d /tmp/homedirXXXXXX)
-declare -r gpg_opts=("--no-default-keyring" "--secret-keyring" "${keyring}" "--homedir" "${homedir}")
+declare keyring
+declare homedir
+declare gpg_opts
+keyring="$(mktemp /tmp/keyringXXXXXX.gpg)"
+homedir="$(mktemp -d /tmp/homedirXXXXXX)"
+gpg_opts=("--no-default-keyring" "--secret-keyring" "${keyring}" "--homedir" "${homedir}")
+readonly keyring
+readonly homedir
+readonly gpg_opts
 cleanup() {
   rm -rf "${keyring}" "${homedir}"
 }
@@ -73,40 +86,29 @@ gpg "${gpg_opts[@]}" --import "${private_key}" || \
 
 # Copy the packages into the root.
 for pkg in "$@"; do
+  if ! [[ -f "${pkg}" ]]; then
+    continue
+  fi
   ext=${pkg##*.}
-  name=$(basename "${pkg}" ".${ext}")
-  arch=${name##*_}
-  if [[ "${name}" == "${arch}" ]]; then
-    continue # Not a regular package.
-  fi
-  if [[ "${pkg}" =~ ^.*\.deb$ ]]; then
-    # Extract from the debian file.
-    version=$(dpkg --info "${pkg}" | grep -E 'Version:' | cut -d':' -f2)
-  elif [[ "${pkg}" =~ ^.*\.changes$ ]]; then
-    # Extract from the changes file.
-    version=$(grep -E 'Version:' "${pkg}" | cut -d':' -f2)
-  else
-    # Unsupported file type.
-    echo "Unknown file type: ${pkg}"
-    exit 1
-  fi
-
-  # The package may already exist, in which case we leave it alone.
-  version=${version// /} # Trim whitespace.
-  destdir="${root}/pool/${version}/binary-${arch}"
-  target="${destdir}/${name}.${ext}"
-  if [[ -f "${target}" ]]; then
+  if [[ "${ext}" != "deb" ]]; then
     continue
   fi
 
+  # Extract package information.
+  name=$(basename "${pkg}" ".${ext}")
+  arch=$(dpkg --info "${pkg}" | grep 'Architecture:' | cut -d':' -f2)
+  version=$(dpkg --info "${pkg}" | grep 'Version:' | cut -d':' -f2)
+  arch=${arch// /} # Trim whitespace.
+  version=${version// /} # Ditto.
+  destdir="${root}/pool/${version}/binary-${arch}"
+
   # Copy & sign the package.
   mkdir -p "${destdir}"
-  cp -a "${pkg}" "${target}"
-  chmod 0644 "${target}"
-  if [[ "${ext}" == "deb" ]]; then
-    # We use [*] here to expand the gpg_opts array into a single shell-word.
-    dpkg-sig -g "${gpg_opts[*]}" --sign builder "${target}"
-  fi
+  cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
+  cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+  chmod 0644 "${destdir}"/"${name}".*
+  # We use [*] here to expand the gpg_opts array into a single shell-word.
+  dpkg-sig -g "${gpg_opts[*]}" --sign builder "${destdir}/${name}.deb"
 done
 
 # Build the package list.

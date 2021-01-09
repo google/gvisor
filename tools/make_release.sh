@@ -38,12 +38,13 @@ done
 
 # install_raw installs raw artifacts.
 install_raw() {
-  mkdir -p "${root}/$1"
   for binary in "${binaries[@]}"; do
-    # Copy the raw file & generate a sha512sum.
+    # Copy the raw file & generate a sha512sum, sorted by architecture.
+    arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
     name=$(basename "${binary}")
-    cp -f "${binary}" "${root}/$1"
-    (cd "${root}/$1" && sha512sum "${name}" > "${name}.sha512")
+    mkdir -p "${root}/$1/${arch}"
+    cp -f "${binary}" "${root}/$1/${arch}"
+    (cd "${root}/$1/${arch}" && sha512sum "${name}" > "${name}.sha512")
   done
 }
 

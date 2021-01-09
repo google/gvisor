@@ -7,6 +7,7 @@ build_test = _build_test
 bzl_library = _bzl_library
 more_shards = 4
 most_shards = 8
+version = "//tools/bazeldefs:version"
 
 def short_path(path):
     return path
