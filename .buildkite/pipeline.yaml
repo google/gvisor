@@ -40,7 +40,10 @@ steps:
   # Release workflow.
   - <<: *common
     label: ":ship: Release tests"
-    commands: make release
+    commands:
+      - make artifacts/x86_64
+      - make BAZEL_OPTIONS=--config=cross-aarch64 artifacts/aarch64
+      - make release
 
   # Basic unit tests.
   - <<: *common

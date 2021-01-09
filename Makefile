@@ -404,20 +404,22 @@ website-deploy: website-push ## Deploy a new version of the website.
 ## Repository builders.
 ##
 ##   This builds a local apt repository. The following variables may be set:
-##     RELEASE_ROOT    - The repository root (default: "repo" directory).
-##     RELEASE_KEY     - The repository GPG private key file (default: dummy key is created).
-##     RELEASE_NIGHTLY - Set to true if a nightly release (default: false).
-##     RELEASE_COMMIT  - The commit or Change-Id for the release (needed for tag).
-##     RELEASE_NAME    - The name of the release in the proper format (needed for tag).
-##     RELEASE_NOTES   - The file containing release notes (needed for tag).
+##     RELEASE_ROOT      - The repository root (default: "repo" directory).
+##     RELEASE_KEY       - The repository GPG private key file (default: dummy key is created).
+##     RELEASE_ARTIFACTS - The release artifacts directory. May contain multiple.
+##     RELEASE_NIGHTLY   - Set to true if a nightly release (default: false).
+##     RELEASE_COMMIT    - The commit or Change-Id for the release (needed for tag).
+##     RELEASE_NAME      - The name of the release in the proper format (needed for tag).
+##     RELEASE_NOTES     - The file containing release notes (needed for tag).
 ##
-RELEASE_ROOT     := $(CURDIR)/repo
-RELEASE_KEY      := repo.key
-RELEASE_NIGHTLY  := false
-RELEASE_COMMIT   :=
-RELEASE_NAME     :=
-RELEASE_NOTES    :=
-GPG_TEST_OPTIONS := $(shell if gpg --pinentry-mode loopback --version >/dev/null 2>&1; then echo --pinentry-mode loopback; fi)
+RELEASE_ROOT      := repo
+RELEASE_KEY       := repo.key
+RELEASE_ARTIFACTS := artifacts
+RELEASE_NIGHTLY   := false
+RELEASE_COMMIT    :=
+RELEASE_NAME      :=
+RELEASE_NOTES     :=
+GPG_TEST_OPTIONS  := $(shell if gpg --pinentry-mode loopback --version >/dev/null 2>&1; then echo --pinentry-mode loopback; fi)
 
 $(RELEASE_KEY):
 	@echo "WARNING: Generating a key for testing ($@); don't use this."
@@ -433,15 +435,16 @@ $(RELEASE_KEY):
 	gpg --batch $(GPG_TEST_OPTIONS) --export-secret-keys --no-default-keyring --secret-keyring $$T > $@; \
 	rc=$$?; rm -f $$T $$C; exit $$rc
 
-release: $(RELEASE_KEY) ## Builds a release.
-	@mkdir -p $(RELEASE_ROOT)
-	@export T=$$(mktemp -d --tmpdir release.XXXXXX); \
-	  $(call copy,//runsc:runsc,$$T) && \
-	  $(call copy,//shim/v1:gvisor-containerd-shim,$$T) && \
-	  $(call copy,//shim/v2:containerd-shim-runsc-v1,$$T) && \
-	  $(call copy,//debian:debian,$$T) && \
-	  NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$T/*; \
-	rc=$$?; rm -rf $$T; exit $$rc
+$(RELEASE_ARTIFACTS)/%:
+	@mkdir -p $@
+	@$(call copy,//runsc:runsc,$@)
+	@$(call copy,//shim/v1:gvisor-containerd-shim,$@)
+	@$(call copy,//shim/v2:containerd-shim-runsc-v1,$@)
+	@$(call copy,//debian:debian,$@)
+
+release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
+	@rm -rf $(RELEASE_ROOT) && mkdir -p $(RELEASE_ROOT)
+	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
 .PHONY: release
 
 tag: ## Creates and pushes a release tag.

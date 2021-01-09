@@ -160,6 +160,12 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
+# Note: when starting the bazel server, we tie the life of the container to the
+# bazel server's life, so that the container disappears naturally. We also call
+# bazel shutdown prior to startup, to ensure that any existing bazel instance in
+# the workspace (perhaps of a different architecture) stops. If the instance is
+# compatible and the container is already running, then the wrapper if statement
+# here will succeed, and we wouldn't have needed a new server at all.
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
 	@$(call header,DOCKER RUN)
@@ -171,7 +177,7 @@ bazel-server: bazel-image ## Ensures that the server exists.
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
-	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null" >&2
+	  bash -c "set -x;  $(BAZEL) shutdown; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
 else
 bazel-server:
 	@

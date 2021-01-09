@@ -12,7 +12,8 @@ To download and install the latest release manually follow these steps:
 ```bash
 (
   set -e
-  URL=https://storage.googleapis.com/gvisor/releases/release/latest
+  ARCH=$(uname -m)
+  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
   wget ${URL}/runsc ${URL}/runsc.sha512 \
     ${URL}/gvisor-containerd-shim ${URL}/gvisor-containerd-shim.sha512 \
     ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
@@ -29,7 +30,7 @@ To install gVisor as a Docker runtime, run the following commands:
 
 ```bash
 /usr/local/bin/runsc install
-sudo systemctl restart docker
+sudo systemctl reload docker
 docker run --rm --runtime=runsc hello-world
 ```
 
@@ -81,13 +82,15 @@ latest release is recommended.
 After selecting an appropriate release channel from the options below, proceed
 to the preferred installation mechanism: manual or from an `apt` repository.
 
+> Note: Older releases are still available but may not have an `${ARCH}`
+> component in the URL. These release were available for `x86_64` only.
+
 ### HEAD
 
 Binaries are available for every commit on the `master` branch, and are
 available at the following URL:
 
-`https://storage.googleapis.com/gvisor/releases/master/latest/runsc`
-`https://storage.googleapis.com/gvisor/releases/master/latest/runsc.sha512`
+`https://storage.googleapis.com/gvisor/releases/master/latest/${ARCH}`
 
 You can use this link with the steps described in
 [Install latest release](#install-latest).
@@ -103,15 +106,14 @@ sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases mast
 Nightly releases are built most nights from the master branch, and are available
 at the following URL:
 
-`https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc`
-`https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512`
+`https://storage.googleapis.com/gvisor/releases/nightly/latest/${ARCH}`
 
 You can use this link with the steps described in
 [Install latest release](#install-latest).
 
 Specific nightly releases can be found at:
 
-`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc`
+`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/${ARCH}`
 
 Note that a release may not be available for every day.
 
@@ -125,7 +127,7 @@ sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases nigh
 
 The latest official release is available at the following URL:
 
-`https://storage.googleapis.com/gvisor/releases/release/latest`
+`https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}`
 
 You can use this link with the steps described in
 [Install latest release](#install-latest).
@@ -140,7 +142,7 @@ sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases rele
 
 A given release release is available at the following URL:
 
-`https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}`
+`https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}/${ARCH}`
 
 You can use this link with the steps described in
 [Install latest release](#install-latest).
@@ -161,7 +163,7 @@ sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases yyyy
 
 A given point release is available at the following URL:
 
-`https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}`
+`https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}/${ARCH}`
 
 You can use this link with the steps described in
 [Install latest release](#install-latest).
