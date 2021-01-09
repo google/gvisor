@@ -95,6 +95,7 @@ const (
 	El0SyncSpPc
 	El0SyncUndef
 	El0SyncDbg
+	El0SyncWfx
 	El0SyncInv
 
 	El0ErrNMI

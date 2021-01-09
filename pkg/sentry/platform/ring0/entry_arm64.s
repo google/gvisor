@@ -576,26 +576,26 @@ TEXT ·El1_error_invalid(SB),NOSPLIT,$0
 // El1_sync is the handler for El1_sync.
 TEXT ·El1_sync(SB),NOSPLIT,$0
 	KERNEL_ENTRY_FROM_EL1
-	WORD $0xd5385219        // MRS ESR_EL1, R25
-	LSR  $ESR_ELx_EC_SHIFT, R25, R24
+	MRS ESR_EL1, R25                  // read the syndrome register
+	LSR  $ESR_ELx_EC_SHIFT, R25, R24  // exception class
 	CMP $ESR_ELx_EC_DABT_CUR, R24
-	BEQ el1_da
+	BEQ el1_da                        // data abort in EL1
 	CMP $ESR_ELx_EC_IABT_CUR, R24
-	BEQ el1_ia
-	CMP $ESR_ELx_EC_SYS64, R24
-	BEQ el1_undef
+	BEQ el1_ia                        // instruction abort in EL1
 	CMP $ESR_ELx_EC_SP_ALIGN, R24
-	BEQ el1_sp_pc
+	BEQ el1_sp_pc                     // stack alignment exception
 	CMP $ESR_ELx_EC_PC_ALIGN, R24
-	BEQ el1_sp_pc
+	BEQ el1_sp_pc                     // pc alignment exception
 	CMP $ESR_ELx_EC_UNKNOWN, R24
-	BEQ el1_undef
+	BEQ el1_undef                     // unknown exception in EL1
 	CMP $ESR_ELx_EC_SVC64, R24
-	BEQ el1_svc
+	BEQ el1_svc                       // SVC in 64-bit state
 	CMP $ESR_ELx_EC_BREAKPT_CUR, R24
-	BGE el1_dbg
+	BEQ el1_dbg                       // debug exception in EL1
 	CMP $ESR_ELx_EC_FP_ASIMD, R24
-	BEQ el1_fpsimd_acc
+	BEQ el1_fpsimd_acc                // FP/ASIMD access
+	CMP $ESR_ELx_EC_SVE, R24
+	BEQ el1_sve_acc                   // SVE access
 	B el1_invalid
 
 el1_da:
@@ -611,6 +611,7 @@ el1_svc:
 el1_dbg:
 	EXCEPTION_EL1(El1SyncDbg)
 el1_fpsimd_acc:
+el1_sve_acc:
 	VFP_ENABLE
 	B ·kernelExitToEl1(SB)  // Resume.
 el1_invalid:
@@ -631,28 +632,32 @@ TEXT ·El1_error(SB),NOSPLIT,$0
 // El0_sync is the handler for El0_sync.
 TEXT ·El0_sync(SB),NOSPLIT,$0
 	KERNEL_ENTRY_FROM_EL0
-	WORD $0xd5385219	// MRS ESR_EL1, R25
-	LSR  $ESR_ELx_EC_SHIFT, R25, R24
+	MRS ESR_EL1, R25                  // read the syndrome register
+	LSR  $ESR_ELx_EC_SHIFT, R25, R24  // exception class
 	CMP $ESR_ELx_EC_SVC64, R24
-	BEQ el0_svc
+	BEQ el0_svc                       // SVC in 64-bit state
 	CMP $ESR_ELx_EC_DABT_LOW, R24
-	BEQ el0_da
+	BEQ el0_da                        // data abort in EL0
 	CMP $ESR_ELx_EC_IABT_LOW, R24
-	BEQ el0_ia
+	BEQ el0_ia                        // instruction abort in EL0
 	CMP $ESR_ELx_EC_FP_ASIMD, R24
-	BEQ el0_fpsimd_acc
+	BEQ el0_fpsimd_acc                // FP/ASIMD access
 	CMP $ESR_ELx_EC_SVE, R24
-	BEQ el0_sve_acc
+	BEQ el0_sve_acc                   // SVE access
 	CMP $ESR_ELx_EC_FP_EXC64, R24
-	BEQ el0_fpsimd_exc
+	BEQ el0_fpsimd_exc                // FP/ASIMD exception
 	CMP $ESR_ELx_EC_SP_ALIGN, R24
-	BEQ el0_sp_pc
+	BEQ el0_sp_pc                     // stack alignment exception
 	CMP $ESR_ELx_EC_PC_ALIGN, R24
-	BEQ el0_sp_pc
+	BEQ el0_sp_pc                     // pc alignment exception
 	CMP $ESR_ELx_EC_UNKNOWN, R24
-	BEQ el0_undef
+	BEQ el0_undef                     // unknown exception in EL0
 	CMP $ESR_ELx_EC_BREAKPT_LOW, R24
-	BGE el0_dbg
+	BEQ el0_dbg                       // debug exception in EL0
+	CMP $ESR_ELx_EC_SYS64, R24
+	BEQ el0_sys                       // configurable trap
+	CMP $ESR_ELx_EC_WFx, R24
+	BEQ el0_wfx                       // WFX trap
 	B   el0_invalid
 
 el0_svc:
@@ -683,6 +688,10 @@ el0_undef:
 	EXCEPTION_EL0(El0SyncUndef)
 el0_dbg:
 	EXCEPTION_EL0(El0SyncDbg)
+el0_sys:
+	EXCEPTION_EL0(El0SyncSys)
+el0_wfx:
+	EXCEPTION_EL0(El0SyncWfx)
 el0_invalid:
 	EXCEPTION_EL0(El0SyncInv)
 
@@ -699,36 +708,11 @@ TEXT ·El0_error(SB),NOSPLIT,$0
 	CMP $ESR_ELx_SERR_NMI, R24
 	BEQ el0_nmi
 	B el0_bounce
+
 el0_nmi:
-        WORD $0xd538d092     //MRS   TPIDR_EL1, R18
-        WORD $0xd538601a     //MRS   FAR_EL1, R26
-
-        MOVD R26, CPU_FAULT_ADDR(RSV_REG)
-
-        MOVD $1, R3
-        MOVD R3, CPU_ERROR_TYPE(RSV_REG) // Set error type to user.
-
-        MOVD $El0ErrNMI, R3
-        MOVD R3, CPU_VECTOR_CODE(RSV_REG)
-
-        MRS ESR_EL1, R3
-        MOVD R3, CPU_ERROR_CODE(RSV_REG)
-
-        B ·kernelExitToEl1(SB)
-
+	EXCEPTION_EL0(El0ErrNMI)
 el0_bounce:
-	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
-	WORD $0xd538601a     //MRS   FAR_EL1, R26
-
-	MOVD R26, CPU_FAULT_ADDR(RSV_REG)
-
-	MOVD $1, R3
-	MOVD R3, CPU_ERROR_TYPE(RSV_REG) // Set error type to user.
-
-	MOVD $VirtualizationException, R3
-	MOVD R3, CPU_VECTOR_CODE(RSV_REG)
-
-	B ·kernelExitToEl1(SB)
+	EXCEPTION_EL0(VirtualizationException)
 
 TEXT ·El0_sync_invalid(SB),NOSPLIT,$0
 	B ·Shutdown(SB)
