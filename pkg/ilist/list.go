@@ -72,16 +72,22 @@ func (l *List) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *List) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *List) Front() Element {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *List) Back() Element {
 	return l.tail
 }
@@ -89,6 +95,8 @@ func (l *List) Back() Element {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *List) Len() (count int) {
 	for e := l.Front(); e != nil; e = (ElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -97,6 +105,8 @@ func (l *List) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *List) PushFront(e Element) {
 	linker := ElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -111,6 +121,8 @@ func (l *List) PushFront(e Element) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *List) PushBack(e Element) {
 	linker := ElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -125,6 +137,8 @@ func (l *List) PushBack(e Element) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *List) PushBackList(m *List) {
 	if l.head == nil {
 		l.head = m.head
@@ -140,6 +154,8 @@ func (l *List) PushBackList(m *List) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *List) InsertAfter(b, e Element) {
 	bLinker := ElementMapper{}.linkerFor(b)
 	eLinker := ElementMapper{}.linkerFor(e)
@@ -158,6 +174,8 @@ func (l *List) InsertAfter(b, e Element) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *List) InsertBefore(a, e Element) {
 	aLinker := ElementMapper{}.linkerFor(a)
 	eLinker := ElementMapper{}.linkerFor(e)
@@ -175,6 +193,8 @@ func (l *List) InsertBefore(a, e Element) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *List) Remove(e Element) {
 	linker := ElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -207,21 +227,29 @@ type Entry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *Entry) Next() Element {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *Entry) Prev() Element {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *Entry) SetNext(elem Element) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *Entry) SetPrev(elem Element) {
 	e.prev = elem
 }
