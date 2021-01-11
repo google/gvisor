@@ -612,13 +612,15 @@ func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.
 // Pause the container.
 func (s *service) Pause(ctx context.Context, r *taskAPI.PauseRequest) (*types.Empty, error) {
 	log.L.Debugf("Pause, id: %s", r.ID)
-	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
+	err := s.task.Runtime().Pause(ctx, r.ID)
+	return empty, err
 }
 
 // Resume the container.
 func (s *service) Resume(ctx context.Context, r *taskAPI.ResumeRequest) (*types.Empty, error) {
 	log.L.Debugf("Resume, id: %s", r.ID)
-	return empty, errdefs.ToGRPC(errdefs.ErrNotImplemented)
+	err := s.task.Runtime().Resume(ctx, r.ID)
+	return empty, err
 }
 
 // Kill a process with the provided signal.
