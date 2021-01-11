@@ -38,16 +38,22 @@ func (l *bufferList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *bufferList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *bufferList) Front() *buffer {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *bufferList) Back() *buffer {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *bufferList) Back() *buffer {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *bufferList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (bufferElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *bufferList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *bufferList) PushFront(e *buffer) {
 	linker := bufferElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *bufferList) PushFront(e *buffer) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *bufferList) PushBack(e *buffer) {
 	linker := bufferElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *bufferList) PushBack(e *buffer) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *bufferList) PushBackList(m *bufferList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *bufferList) PushBackList(m *bufferList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *bufferList) InsertAfter(b, e *buffer) {
 	bLinker := bufferElementMapper{}.linkerFor(b)
 	eLinker := bufferElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *bufferList) InsertAfter(b, e *buffer) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *bufferList) InsertBefore(a, e *buffer) {
 	aLinker := bufferElementMapper{}.linkerFor(a)
 	eLinker := bufferElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *bufferList) InsertBefore(a, e *buffer) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *bufferList) Remove(e *buffer) {
 	linker := bufferElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type bufferEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *bufferEntry) Next() *buffer {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *bufferEntry) Prev() *buffer {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *bufferEntry) SetNext(elem *buffer) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *bufferEntry) SetPrev(elem *buffer) {
 	e.prev = elem
 }

@@ -38,16 +38,22 @@ func (l *processGroupList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *processGroupList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *processGroupList) Front() *ProcessGroup {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *processGroupList) Back() *ProcessGroup {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *processGroupList) Back() *ProcessGroup {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *processGroupList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (processGroupElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *processGroupList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *processGroupList) PushFront(e *ProcessGroup) {
 	linker := processGroupElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *processGroupList) PushFront(e *ProcessGroup) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *processGroupList) PushBack(e *ProcessGroup) {
 	linker := processGroupElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *processGroupList) PushBack(e *ProcessGroup) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *processGroupList) PushBackList(m *processGroupList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *processGroupList) PushBackList(m *processGroupList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *processGroupList) InsertAfter(b, e *ProcessGroup) {
 	bLinker := processGroupElementMapper{}.linkerFor(b)
 	eLinker := processGroupElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *processGroupList) InsertAfter(b, e *ProcessGroup) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *processGroupList) InsertBefore(a, e *ProcessGroup) {
 	aLinker := processGroupElementMapper{}.linkerFor(a)
 	eLinker := processGroupElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *processGroupList) InsertBefore(a, e *ProcessGroup) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *processGroupList) Remove(e *ProcessGroup) {
 	linker := processGroupElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type processGroupEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *processGroupEntry) Next() *ProcessGroup {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *processGroupEntry) Prev() *ProcessGroup {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *processGroupEntry) SetNext(elem *ProcessGroup) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *processGroupEntry) SetPrev(elem *ProcessGroup) {
 	e.prev = elem
 }

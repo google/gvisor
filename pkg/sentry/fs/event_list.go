@@ -38,16 +38,22 @@ func (l *eventList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *eventList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *eventList) Front() *Event {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *eventList) Back() *Event {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *eventList) Back() *Event {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *eventList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (eventElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *eventList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *eventList) PushFront(e *Event) {
 	linker := eventElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *eventList) PushFront(e *Event) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *eventList) PushBack(e *Event) {
 	linker := eventElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *eventList) PushBack(e *Event) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *eventList) PushBackList(m *eventList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *eventList) PushBackList(m *eventList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *eventList) InsertAfter(b, e *Event) {
 	bLinker := eventElementMapper{}.linkerFor(b)
 	eLinker := eventElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *eventList) InsertAfter(b, e *Event) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *eventList) InsertBefore(a, e *Event) {
 	aLinker := eventElementMapper{}.linkerFor(a)
 	eLinker := eventElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *eventList) InsertBefore(a, e *Event) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *eventList) Remove(e *Event) {
 	linker := eventElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type eventEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *eventEntry) Next() *Event {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *eventEntry) Prev() *Event {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *eventEntry) SetNext(elem *Event) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *eventEntry) SetPrev(elem *Event) {
 	e.prev = elem
 }

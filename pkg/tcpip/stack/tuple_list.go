@@ -38,16 +38,22 @@ func (l *tupleList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *tupleList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *tupleList) Front() *tuple {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *tupleList) Back() *tuple {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *tupleList) Back() *tuple {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *tupleList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (tupleElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *tupleList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *tupleList) PushFront(e *tuple) {
 	linker := tupleElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *tupleList) PushFront(e *tuple) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *tupleList) PushBack(e *tuple) {
 	linker := tupleElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *tupleList) PushBack(e *tuple) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *tupleList) PushBackList(m *tupleList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *tupleList) PushBackList(m *tupleList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *tupleList) InsertAfter(b, e *tuple) {
 	bLinker := tupleElementMapper{}.linkerFor(b)
 	eLinker := tupleElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *tupleList) InsertAfter(b, e *tuple) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *tupleList) InsertBefore(a, e *tuple) {
 	aLinker := tupleElementMapper{}.linkerFor(a)
 	eLinker := tupleElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *tupleList) InsertBefore(a, e *tuple) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *tupleList) Remove(e *tuple) {
 	linker := tupleElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type tupleEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *tupleEntry) Next() *tuple {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *tupleEntry) Prev() *tuple {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *tupleEntry) SetNext(elem *tuple) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *tupleEntry) SetPrev(elem *tuple) {
 	e.prev = elem
 }

@@ -38,16 +38,22 @@ func (l *packetList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *packetList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *packetList) Front() *packet {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *packetList) Back() *packet {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *packetList) Back() *packet {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *packetList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (packetElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *packetList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *packetList) PushFront(e *packet) {
 	linker := packetElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *packetList) PushFront(e *packet) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *packetList) PushBack(e *packet) {
 	linker := packetElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *packetList) PushBack(e *packet) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *packetList) PushBackList(m *packetList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *packetList) PushBackList(m *packetList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *packetList) InsertAfter(b, e *packet) {
 	bLinker := packetElementMapper{}.linkerFor(b)
 	eLinker := packetElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *packetList) InsertAfter(b, e *packet) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *packetList) InsertBefore(a, e *packet) {
 	aLinker := packetElementMapper{}.linkerFor(a)
 	eLinker := packetElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *packetList) InsertBefore(a, e *packet) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *packetList) Remove(e *packet) {
 	linker := packetElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type packetEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *packetEntry) Next() *packet {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *packetEntry) Prev() *packet {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *packetEntry) SetNext(elem *packet) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *packetEntry) SetPrev(elem *packet) {
 	e.prev = elem
 }

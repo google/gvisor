@@ -38,16 +38,22 @@ func (l *dentryList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *dentryList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *dentryList) Front() *Dentry {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *dentryList) Back() *Dentry {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *dentryList) Back() *Dentry {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *dentryList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (dentryElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *dentryList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *dentryList) PushFront(e *Dentry) {
 	linker := dentryElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *dentryList) PushFront(e *Dentry) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *dentryList) PushBack(e *Dentry) {
 	linker := dentryElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *dentryList) PushBack(e *Dentry) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *dentryList) PushBackList(m *dentryList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *dentryList) PushBackList(m *dentryList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *dentryList) InsertAfter(b, e *Dentry) {
 	bLinker := dentryElementMapper{}.linkerFor(b)
 	eLinker := dentryElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *dentryList) InsertAfter(b, e *Dentry) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *dentryList) InsertBefore(a, e *Dentry) {
 	aLinker := dentryElementMapper{}.linkerFor(a)
 	eLinker := dentryElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *dentryList) InsertBefore(a, e *Dentry) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *dentryList) Remove(e *Dentry) {
 	linker := dentryElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type dentryEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *dentryEntry) Next() *Dentry {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *dentryEntry) Prev() *Dentry {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *dentryEntry) SetNext(elem *Dentry) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *dentryEntry) SetPrev(elem *Dentry) {
 	e.prev = elem
 }

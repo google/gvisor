@@ -38,16 +38,22 @@ func (l *reassemblerList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *reassemblerList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *reassemblerList) Front() *reassembler {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *reassemblerList) Back() *reassembler {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *reassemblerList) Back() *reassembler {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *reassemblerList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (reassemblerElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *reassemblerList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *reassemblerList) PushFront(e *reassembler) {
 	linker := reassemblerElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *reassemblerList) PushFront(e *reassembler) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *reassemblerList) PushBack(e *reassembler) {
 	linker := reassemblerElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *reassemblerList) PushBack(e *reassembler) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *reassemblerList) PushBackList(m *reassemblerList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *reassemblerList) PushBackList(m *reassemblerList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *reassemblerList) InsertAfter(b, e *reassembler) {
 	bLinker := reassemblerElementMapper{}.linkerFor(b)
 	eLinker := reassemblerElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *reassemblerList) InsertAfter(b, e *reassembler) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *reassemblerList) InsertBefore(a, e *reassembler) {
 	aLinker := reassemblerElementMapper{}.linkerFor(a)
 	eLinker := reassemblerElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *reassemblerList) InsertBefore(a, e *reassembler) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *reassemblerList) Remove(e *reassembler) {
 	linker := reassemblerElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type reassemblerEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *reassemblerEntry) Next() *reassembler {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *reassemblerEntry) Prev() *reassembler {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *reassemblerEntry) SetNext(elem *reassembler) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *reassemblerEntry) SetPrev(elem *reassembler) {
 	e.prev = elem
 }

@@ -38,16 +38,22 @@ func (l *sessionList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *sessionList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *sessionList) Front() *Session {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *sessionList) Back() *Session {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *sessionList) Back() *Session {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *sessionList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (sessionElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *sessionList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *sessionList) PushFront(e *Session) {
 	linker := sessionElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *sessionList) PushFront(e *Session) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *sessionList) PushBack(e *Session) {
 	linker := sessionElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *sessionList) PushBack(e *Session) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *sessionList) PushBackList(m *sessionList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *sessionList) PushBackList(m *sessionList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *sessionList) InsertAfter(b, e *Session) {
 	bLinker := sessionElementMapper{}.linkerFor(b)
 	eLinker := sessionElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *sessionList) InsertAfter(b, e *Session) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *sessionList) InsertBefore(a, e *Session) {
 	aLinker := sessionElementMapper{}.linkerFor(a)
 	eLinker := sessionElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *sessionList) InsertBefore(a, e *Session) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *sessionList) Remove(e *Session) {
 	linker := sessionElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type sessionEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *sessionEntry) Next() *Session {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *sessionEntry) Prev() *Session {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *sessionEntry) SetNext(elem *Session) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *sessionEntry) SetPrev(elem *Session) {
 	e.prev = elem
 }

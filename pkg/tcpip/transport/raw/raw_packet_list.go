@@ -38,16 +38,22 @@ func (l *rawPacketList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *rawPacketList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *rawPacketList) Front() *rawPacket {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *rawPacketList) Back() *rawPacket {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *rawPacketList) Back() *rawPacket {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *rawPacketList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (rawPacketElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *rawPacketList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *rawPacketList) PushFront(e *rawPacket) {
 	linker := rawPacketElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *rawPacketList) PushFront(e *rawPacket) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *rawPacketList) PushBack(e *rawPacket) {
 	linker := rawPacketElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *rawPacketList) PushBack(e *rawPacket) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *rawPacketList) PushBackList(m *rawPacketList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *rawPacketList) PushBackList(m *rawPacketList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *rawPacketList) InsertAfter(b, e *rawPacket) {
 	bLinker := rawPacketElementMapper{}.linkerFor(b)
 	eLinker := rawPacketElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *rawPacketList) InsertAfter(b, e *rawPacket) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *rawPacketList) InsertBefore(a, e *rawPacket) {
 	aLinker := rawPacketElementMapper{}.linkerFor(a)
 	eLinker := rawPacketElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *rawPacketList) InsertBefore(a, e *rawPacket) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *rawPacketList) Remove(e *rawPacket) {
 	linker := rawPacketElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type rawPacketEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *rawPacketEntry) Next() *rawPacket {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *rawPacketEntry) Prev() *rawPacket {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *rawPacketEntry) SetNext(elem *rawPacket) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *rawPacketEntry) SetPrev(elem *rawPacket) {
 	e.prev = elem
 }
