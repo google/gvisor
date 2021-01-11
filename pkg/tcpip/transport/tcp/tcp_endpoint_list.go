@@ -38,16 +38,22 @@ func (l *endpointList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *endpointList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *endpointList) Front() *endpoint {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *endpointList) Back() *endpoint {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *endpointList) Back() *endpoint {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *endpointList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (endpointElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *endpointList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *endpointList) PushFront(e *endpoint) {
 	linker := endpointElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *endpointList) PushFront(e *endpoint) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *endpointList) PushBack(e *endpoint) {
 	linker := endpointElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *endpointList) PushBack(e *endpoint) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *endpointList) PushBackList(m *endpointList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *endpointList) PushBackList(m *endpointList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *endpointList) InsertAfter(b, e *endpoint) {
 	bLinker := endpointElementMapper{}.linkerFor(b)
 	eLinker := endpointElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *endpointList) InsertAfter(b, e *endpoint) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *endpointList) InsertBefore(a, e *endpoint) {
 	aLinker := endpointElementMapper{}.linkerFor(a)
 	eLinker := endpointElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *endpointList) InsertBefore(a, e *endpoint) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *endpointList) Remove(e *endpoint) {
 	linker := endpointElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type endpointEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *endpointEntry) Next() *endpoint {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *endpointEntry) Prev() *endpoint {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *endpointEntry) SetNext(elem *endpoint) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *endpointEntry) SetPrev(elem *endpoint) {
 	e.prev = elem
 }

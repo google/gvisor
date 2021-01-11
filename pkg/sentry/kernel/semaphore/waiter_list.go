@@ -38,16 +38,22 @@ func (l *waiterList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *waiterList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *waiterList) Front() *waiter {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *waiterList) Back() *waiter {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *waiterList) Back() *waiter {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *waiterList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (waiterElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *waiterList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *waiterList) PushFront(e *waiter) {
 	linker := waiterElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *waiterList) PushFront(e *waiter) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *waiterList) PushBack(e *waiter) {
 	linker := waiterElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *waiterList) PushBack(e *waiter) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *waiterList) PushBackList(m *waiterList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *waiterList) PushBackList(m *waiterList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *waiterList) InsertAfter(b, e *waiter) {
 	bLinker := waiterElementMapper{}.linkerFor(b)
 	eLinker := waiterElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *waiterList) InsertAfter(b, e *waiter) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *waiterList) InsertBefore(a, e *waiter) {
 	aLinker := waiterElementMapper{}.linkerFor(a)
 	eLinker := waiterElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *waiterList) InsertBefore(a, e *waiter) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *waiterList) Remove(e *waiter) {
 	linker := waiterElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type waiterEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *waiterEntry) Next() *waiter {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *waiterEntry) Prev() *waiter {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *waiterEntry) SetNext(elem *waiter) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *waiterEntry) SetPrev(elem *waiter) {
 	e.prev = elem
 }

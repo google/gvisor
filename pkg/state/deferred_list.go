@@ -23,16 +23,22 @@ func (l *deferredList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *deferredList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *deferredList) Front() *objectEncodeState {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *deferredList) Back() *objectEncodeState {
 	return l.tail
 }
@@ -40,6 +46,8 @@ func (l *deferredList) Back() *objectEncodeState {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *deferredList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (deferredMapper{}.linkerFor(e)).Next() {
 		count++
@@ -48,6 +56,8 @@ func (l *deferredList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *deferredList) PushFront(e *objectEncodeState) {
 	linker := deferredMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -62,6 +72,8 @@ func (l *deferredList) PushFront(e *objectEncodeState) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *deferredList) PushBack(e *objectEncodeState) {
 	linker := deferredMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -76,6 +88,8 @@ func (l *deferredList) PushBack(e *objectEncodeState) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *deferredList) PushBackList(m *deferredList) {
 	if l.head == nil {
 		l.head = m.head
@@ -91,6 +105,8 @@ func (l *deferredList) PushBackList(m *deferredList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *deferredList) InsertAfter(b, e *objectEncodeState) {
 	bLinker := deferredMapper{}.linkerFor(b)
 	eLinker := deferredMapper{}.linkerFor(e)
@@ -109,6 +125,8 @@ func (l *deferredList) InsertAfter(b, e *objectEncodeState) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *deferredList) InsertBefore(a, e *objectEncodeState) {
 	aLinker := deferredMapper{}.linkerFor(a)
 	eLinker := deferredMapper{}.linkerFor(e)
@@ -126,6 +144,8 @@ func (l *deferredList) InsertBefore(a, e *objectEncodeState) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *deferredList) Remove(e *objectEncodeState) {
 	linker := deferredMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -158,21 +178,29 @@ type deferredEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *deferredEntry) Next() *objectEncodeState {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *deferredEntry) Prev() *objectEncodeState {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *deferredEntry) SetNext(elem *objectEncodeState) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *deferredEntry) SetPrev(elem *objectEncodeState) {
 	e.prev = elem
 }

@@ -38,16 +38,22 @@ func (l *segmentList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *segmentList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *segmentList) Front() *segment {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *segmentList) Back() *segment {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *segmentList) Back() *segment {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *segmentList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (segmentElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *segmentList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *segmentList) PushFront(e *segment) {
 	linker := segmentElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *segmentList) PushFront(e *segment) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *segmentList) PushBack(e *segment) {
 	linker := segmentElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *segmentList) PushBack(e *segment) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *segmentList) PushBackList(m *segmentList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *segmentList) PushBackList(m *segmentList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *segmentList) InsertAfter(b, e *segment) {
 	bLinker := segmentElementMapper{}.linkerFor(b)
 	eLinker := segmentElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *segmentList) InsertAfter(b, e *segment) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *segmentList) InsertBefore(a, e *segment) {
 	aLinker := segmentElementMapper{}.linkerFor(a)
 	eLinker := segmentElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *segmentList) InsertBefore(a, e *segment) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *segmentList) Remove(e *segment) {
 	linker := segmentElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type segmentEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *segmentEntry) Next() *segment {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *segmentEntry) Prev() *segment {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *segmentEntry) SetNext(elem *segment) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *segmentEntry) SetPrev(elem *segment) {
 	e.prev = elem
 }

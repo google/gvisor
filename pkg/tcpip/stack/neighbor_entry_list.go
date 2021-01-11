@@ -38,16 +38,22 @@ func (l *neighborEntryList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *neighborEntryList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *neighborEntryList) Front() *neighborEntry {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *neighborEntryList) Back() *neighborEntry {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *neighborEntryList) Back() *neighborEntry {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *neighborEntryList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (neighborEntryElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *neighborEntryList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *neighborEntryList) PushFront(e *neighborEntry) {
 	linker := neighborEntryElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *neighborEntryList) PushFront(e *neighborEntry) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *neighborEntryList) PushBack(e *neighborEntry) {
 	linker := neighborEntryElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *neighborEntryList) PushBack(e *neighborEntry) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *neighborEntryList) PushBackList(m *neighborEntryList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *neighborEntryList) PushBackList(m *neighborEntryList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *neighborEntryList) InsertAfter(b, e *neighborEntry) {
 	bLinker := neighborEntryElementMapper{}.linkerFor(b)
 	eLinker := neighborEntryElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *neighborEntryList) InsertAfter(b, e *neighborEntry) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *neighborEntryList) InsertBefore(a, e *neighborEntry) {
 	aLinker := neighborEntryElementMapper{}.linkerFor(a)
 	eLinker := neighborEntryElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *neighborEntryList) InsertBefore(a, e *neighborEntry) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *neighborEntryList) Remove(e *neighborEntry) {
 	linker := neighborEntryElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type neighborEntryEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *neighborEntryEntry) Next() *neighborEntry {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *neighborEntryEntry) Prev() *neighborEntry {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *neighborEntryEntry) SetNext(elem *neighborEntry) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *neighborEntryEntry) SetPrev(elem *neighborEntry) {
 	e.prev = elem
 }

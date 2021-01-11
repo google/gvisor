@@ -38,16 +38,22 @@ func (l *slotList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *slotList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *slotList) Front() *slot {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *slotList) Back() *slot {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *slotList) Back() *slot {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *slotList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (slotElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *slotList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *slotList) PushFront(e *slot) {
 	linker := slotElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *slotList) PushFront(e *slot) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *slotList) PushBack(e *slot) {
 	linker := slotElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *slotList) PushBack(e *slot) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *slotList) PushBackList(m *slotList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *slotList) PushBackList(m *slotList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *slotList) InsertAfter(b, e *slot) {
 	bLinker := slotElementMapper{}.linkerFor(b)
 	eLinker := slotElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *slotList) InsertAfter(b, e *slot) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *slotList) InsertBefore(a, e *slot) {
 	aLinker := slotElementMapper{}.linkerFor(a)
 	eLinker := slotElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *slotList) InsertBefore(a, e *slot) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *slotList) Remove(e *slot) {
 	linker := slotElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type slotEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *slotEntry) Next() *slot {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *slotEntry) Prev() *slot {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *slotEntry) SetNext(elem *slot) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *slotEntry) SetPrev(elem *slot) {
 	e.prev = elem
 }

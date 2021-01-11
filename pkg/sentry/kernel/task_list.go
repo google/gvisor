@@ -38,16 +38,22 @@ func (l *taskList) Reset() {
 }
 
 // Empty returns true iff the list is empty.
+//
+//go:nosplit
 func (l *taskList) Empty() bool {
 	return l.head == nil
 }
 
 // Front returns the first element of list l or nil.
+//
+//go:nosplit
 func (l *taskList) Front() *Task {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
+//
+//go:nosplit
 func (l *taskList) Back() *Task {
 	return l.tail
 }
@@ -55,6 +61,8 @@ func (l *taskList) Back() *Task {
 // Len returns the number of elements in the list.
 //
 // NOTE: This is an O(n) operation.
+//
+//go:nosplit
 func (l *taskList) Len() (count int) {
 	for e := l.Front(); e != nil; e = (taskElementMapper{}.linkerFor(e)).Next() {
 		count++
@@ -63,6 +71,8 @@ func (l *taskList) Len() (count int) {
 }
 
 // PushFront inserts the element e at the front of list l.
+//
+//go:nosplit
 func (l *taskList) PushFront(e *Task) {
 	linker := taskElementMapper{}.linkerFor(e)
 	linker.SetNext(l.head)
@@ -77,6 +87,8 @@ func (l *taskList) PushFront(e *Task) {
 }
 
 // PushBack inserts the element e at the back of list l.
+//
+//go:nosplit
 func (l *taskList) PushBack(e *Task) {
 	linker := taskElementMapper{}.linkerFor(e)
 	linker.SetNext(nil)
@@ -91,6 +103,8 @@ func (l *taskList) PushBack(e *Task) {
 }
 
 // PushBackList inserts list m at the end of list l, emptying m.
+//
+//go:nosplit
 func (l *taskList) PushBackList(m *taskList) {
 	if l.head == nil {
 		l.head = m.head
@@ -106,6 +120,8 @@ func (l *taskList) PushBackList(m *taskList) {
 }
 
 // InsertAfter inserts e after b.
+//
+//go:nosplit
 func (l *taskList) InsertAfter(b, e *Task) {
 	bLinker := taskElementMapper{}.linkerFor(b)
 	eLinker := taskElementMapper{}.linkerFor(e)
@@ -124,6 +140,8 @@ func (l *taskList) InsertAfter(b, e *Task) {
 }
 
 // InsertBefore inserts e before a.
+//
+//go:nosplit
 func (l *taskList) InsertBefore(a, e *Task) {
 	aLinker := taskElementMapper{}.linkerFor(a)
 	eLinker := taskElementMapper{}.linkerFor(e)
@@ -141,6 +159,8 @@ func (l *taskList) InsertBefore(a, e *Task) {
 }
 
 // Remove removes e from l.
+//
+//go:nosplit
 func (l *taskList) Remove(e *Task) {
 	linker := taskElementMapper{}.linkerFor(e)
 	prev := linker.Prev()
@@ -173,21 +193,29 @@ type taskEntry struct {
 }
 
 // Next returns the entry that follows e in the list.
+//
+//go:nosplit
 func (e *taskEntry) Next() *Task {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *taskEntry) Prev() *Task {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
+//
+//go:nosplit
 func (e *taskEntry) SetNext(elem *Task) {
 	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
+//
+//go:nosplit
 func (e *taskEntry) SetPrev(elem *Task) {
 	e.prev = elem
 }
