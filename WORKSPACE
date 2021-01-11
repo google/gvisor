@@ -40,7 +40,7 @@ http_archive(
         # binaries of symbols, which we don't want.
         "//tools:rules_go.patch",
     ],
-    sha256 = "a515569b4903776eae90ac2696b34ee1dd45600cf9dfd7d16475e2df32867521",
+    sha256 = "8e9434015ff8f3d6962cb8f016230ea7acc1ac402b760a8d66ff54dc11673ca6",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.10/rules_go-v0.24.10.tar.gz",
         "https://github.com/bazelbuild/rules_go/releases/download/v0.24.10/rules_go-v0.24.10.tar.gz",
