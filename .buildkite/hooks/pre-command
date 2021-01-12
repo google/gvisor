@@ -7,7 +7,8 @@ function install_pkgs() {
     fi
   done
 }
-install_pkgs graphviz jq curl binutils gnupg gnupg-agent linux-libc-dev \
+install_pkgs make "linux-headers-$(uname -r)" linux-libc-dev \
+  graphviz jq curl binutils gnupg gnupg-agent golang-go \
   apt-transport-https ca-certificates software-properties-common
 
 # Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
