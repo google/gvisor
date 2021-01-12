@@ -1095,7 +1095,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					seen[a] = false
 				}
 
-				for i, _ := range test.multicastAddrs {
+				for i := range test.multicastAddrs {
 					p, ok := e.Read()
 					if !ok {
 						t.Fatalf("expected (%d-th) leave message to be sent", i)
@@ -1122,7 +1122,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					seen[a] = false
 				}
 
-				for i, _ := range test.multicastAddrs {
+				for i := range test.multicastAddrs {
 					p, ok := e.Read()
 					if !ok {
 						t.Fatalf("expected (%d-th) report message to be sent", i)
@@ -1143,7 +1143,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			if got := sentLeaveStat.Value(); got != leaveCounter {
 				t.Errorf("got sentLeaveStat.Value() = %d, want = %d", got, leaveCounter)
 			}
-			for i, _ := range test.multicastAddrs {
+			for i := range test.multicastAddrs {
 				if _, ok := e.Read(); !ok {
 					t.Fatalf("expected (%d-th) leave message to be sent", i)
 				}

@@ -65,6 +65,7 @@ func (k *Kernel) init(maxCPUs int) {
 	}
 }
 
+// EntryRegions returns the set of kernel entry regions (must be mapped).
 func (k *Kernel) EntryRegions() map[uintptr]uintptr {
 	regions := make(map[uintptr]uintptr)
 

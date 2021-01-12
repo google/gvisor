@@ -89,7 +89,7 @@ func (fds *fdSender) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 
 	w := s.Writer(true)
 	w.ControlMessage.PackFDs(int(fileToSend.Fd()))
-	if _, err := w.WriteVec([][]byte{[]byte{'a'}}); err != nil {
+	if _, err := w.WriteVec([][]byte{{'a'}}); err != nil {
 		log.Fatalf("Error sending FD %q over socket %q: %v", fileToSend.Fd(), fds.socketPath, err)
 	}
 

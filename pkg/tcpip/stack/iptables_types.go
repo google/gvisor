@@ -56,7 +56,7 @@ const (
 	// Postrouting happens just before a packet goes out on the wire.
 	Postrouting
 
-	// The total number of hooks.
+	// NumHooks is the total number of hooks.
 	NumHooks
 )
 
@@ -273,14 +273,12 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, nicName string) boo
 			return true
 		}
 
-		// If the interface name ends with '+', any interface which begins
-		// with the name should be matched.
+		// If the interface name ends with '+', any interface which
+		// begins with the name should be matched.
 		ifName := fl.OutputInterface
-		matches := true
+		matches := nicName == ifName
 		if strings.HasSuffix(ifName, "+") {
 			matches = strings.HasPrefix(nicName, ifName[:n-1])
-		} else {
-			matches = nicName == ifName
 		}
 		return fl.OutputInterfaceInvert != matches
 	}

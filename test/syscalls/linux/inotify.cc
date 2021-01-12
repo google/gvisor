@@ -1703,6 +1703,45 @@ TEST(Inotify, Fallocate) {
   EXPECT_THAT(events, Are({Event(IN_MODIFY, wd)}));
 }
 
+TEST(Inotify, Utimensat) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
+
+  // Just update the access time.
+  struct timespec times[2] = {};
+  times[0].tv_nsec = UTIME_NOW;
+  times[1].tv_nsec = UTIME_OMIT;
+  ASSERT_THAT(RetryEINTR(utimensat)(AT_FDCWD, file.path().c_str(), times, 0),
+              SyscallSucceeds());
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ACCESS, wd)}));
+
+  // Just the modify time.
+  times[0].tv_nsec = UTIME_OMIT;
+  times[1].tv_nsec = UTIME_NOW;
+  ASSERT_THAT(utimensat(AT_FDCWD, file.path().c_str(), times, 0),
+              SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_MODIFY, wd)}));
+
+  // Both together.
+  times[0].tv_nsec = UTIME_NOW;
+  times[1].tv_nsec = UTIME_NOW;
+  ASSERT_THAT(utimensat(AT_FDCWD, file.path().c_str(), times, 0),
+              SyscallSucceeds());
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({Event(IN_ATTRIB, wd)}));
+}
+
 TEST(Inotify, Sendfile) {
   SKIP_IF(IsRunningWithVFS1());
 

@@ -125,6 +125,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	//
 	// It should be safe to skipped this flag while nobody uses
 	// SYNC_FILE_RANGE_WAIT_BEFORE.
+	_ = nbytes
 
 	// SYNC_FILE_RANGE_WAIT_AFTER waits upon write-out of all pages in the
 	// range after performing any write.

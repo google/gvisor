@@ -38,7 +38,7 @@ func (g *interfaceGenerator) areFieldsPackedExpression() (string, bool) {
 	}
 
 	cs := make([]string, 0, len(g.as))
-	for accessor, _ := range g.as {
+	for accessor := range g.as {
 		cs = append(cs, fmt.Sprintf("%s.Packed()", accessor))
 	}
 	// Sort expressions for determinstic build outputs.

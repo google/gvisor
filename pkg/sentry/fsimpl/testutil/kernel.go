@@ -114,7 +114,7 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, err
 	}
 	tg := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
-	k.TestOnly_SetGlobalInit(tg)
+	k.TestOnlySetGlobalInit(tg)
 
 	return k, nil
 }

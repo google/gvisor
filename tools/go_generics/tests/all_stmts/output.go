@@ -116,8 +116,10 @@ R:
 		_ = v
 	} else if T := Q(0); T != 1 {
 		T++
+		_ = T
 	} else {
 		T--
+		_ = T
 	}
 
 	if a := Q(0); a != Q(1) {

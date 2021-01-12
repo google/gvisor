@@ -154,21 +154,21 @@ func TestPing(t *testing.T) {
 			}
 
 			host1Stack.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: ipv4Addr1.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: ipv6Addr1.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
 			})
 			host2Stack.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: ipv4Addr2.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: ipv6Addr2.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},

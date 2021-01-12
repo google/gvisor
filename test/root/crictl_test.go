@@ -128,22 +128,22 @@ func TestCrictlSanity(t *testing.T) {
 // mounts.
 var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]interface{}{
 	"mounts": []map[string]interface{}{
-		map[string]interface{}{
+		{
 			"container_path": "/var/run/secrets/kubernetes.io/serviceaccount",
 			"host_path":      "/var/lib/kubelet/pods/82bae206-cdf5-11e8-b245-8cdcd43ac064/volumes/kubernetes.io~secret/default-token-2rpfx",
 			"readonly":       true,
 		},
-		map[string]interface{}{
+		{
 			"container_path": "/etc/hosts",
 			"host_path":      "/var/lib/kubelet/pods/82bae206-cdf5-11e8-b245-8cdcd43ac064/etc-hosts",
 			"readonly":       false,
 		},
-		map[string]interface{}{
+		{
 			"container_path": "/dev/termination-log",
 			"host_path":      "/var/lib/kubelet/pods/82bae206-cdf5-11e8-b245-8cdcd43ac064/containers/httpd/d1709580",
 			"readonly":       false,
 		},
-		map[string]interface{}{
+		{
 			"container_path": "/usr/local/apache2/htdocs/test",
 			"host_path":      "/var/lib/kubelet/pods/82bae206-cdf5-11e8-b245-8cdcd43ac064",
 			"readonly":       true,

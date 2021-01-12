@@ -932,7 +932,7 @@ func TestRandom(t *testing.T) {
 
 	t.Logf("Testing filters: %v", syscallRules)
 	instrs, err := BuildProgram([]RuleSet{
-		RuleSet{
+		{
 			Rules:  syscallRules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},

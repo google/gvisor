@@ -3461,7 +3461,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
 				),
 			)
-			idSet := map[uint16]struct{}{header.IPv4(pkt).ID(): struct{}{}}
+			idSet := map[uint16]struct{}{header.IPv4(pkt).ID(): {}}
 			// Expect two retransmitted packets, and that all packets received have
 			// unique IPv4 ID values.
 			for i := 0; i <= 2; i++ {
@@ -5698,16 +5698,14 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 		t.Fatalf("Bind failed: %s", err)
 	}
 
-	// Test acceptance.
 	// Start listening.
 	listenBacklog := 1
-	portOffset := uint16(0)
 	if err := c.EP.Listen(listenBacklog); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
-	executeHandshake(t, c, context.TestPort+portOffset, false)
-	portOffset++
+	executeHandshake(t, c, context.TestPort, false)
+
 	// Wait for this to be delivered to the accept queue.
 	time.Sleep(50 * time.Millisecond)
 

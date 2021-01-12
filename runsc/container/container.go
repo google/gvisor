@@ -983,6 +983,7 @@ func (c *Container) changeStatus(s Status) {
 	c.Status = s
 }
 
+// IsSandboxRunning returns true if the sandbox exists and is running.
 func (c *Container) IsSandboxRunning() bool {
 	return c.Sandbox != nil && c.Sandbox.IsRunning()
 }

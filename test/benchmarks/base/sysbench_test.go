@@ -31,7 +31,7 @@ type testCase struct {
 // BenchmarSysbench runs sysbench on the runtime.
 func BenchmarkSysbench(b *testing.B) {
 	testCases := []testCase{
-		testCase{
+		{
 			name: "CPU",
 			test: &tools.SysbenchCPU{
 				SysbenchBase: tools.SysbenchBase{
@@ -39,7 +39,7 @@ func BenchmarkSysbench(b *testing.B) {
 				},
 			},
 		},
-		testCase{
+		{
 			name: "Memory",
 			test: &tools.SysbenchMemory{
 				SysbenchBase: tools.SysbenchBase{
@@ -47,7 +47,7 @@ func BenchmarkSysbench(b *testing.B) {
 				},
 			},
 		},
-		testCase{
+		{
 			name: "Mutex",
 			test: &tools.SysbenchMutex{
 				SysbenchBase: tools.SysbenchBase{

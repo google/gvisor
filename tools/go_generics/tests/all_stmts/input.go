@@ -118,8 +118,10 @@ R:
 		_ = v
 	} else if T := T(0); T != 1 {
 		T++
+		_ = T
 	} else {
 		T--
+		_ = T
 	}
 
 	if a := T(0); a != T(1) {

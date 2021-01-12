@@ -220,12 +220,12 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 			wantErrno := wantErrno(connect, icmpErr)
 
 			for _, errDetect := range []errorDetection{
-				errorDetection{"SendTo", false, testSendTo},
+				{"SendTo", false, testSendTo},
 				// Send to an address that's different from the one that caused an ICMP
 				// error to be returned.
-				errorDetection{"SendToValid", true, testSendTo},
-				errorDetection{"Recv", false, testRecv},
-				errorDetection{"SockOpt", false, testSockOpt},
+				{"SendToValid", true, testSendTo},
+				{"Recv", false, testRecv},
+				{"SockOpt", false, testSockOpt},
 			} {
 				t.Run(fmt.Sprintf("%s/%s/%s", connect, icmpErr, errDetect.name), func(t *testing.T) {
 					dut := testbench.NewDUT(t)

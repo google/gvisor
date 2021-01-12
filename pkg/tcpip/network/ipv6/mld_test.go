@@ -267,7 +267,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					globalMulticastAddr: false,
 					linkLocalAddrSNMC:   false,
 				}
-				for _ = range addrs {
+				for range addrs {
 					p, ok := e.Read()
 					if !ok {
 						t.Fatalf("expected MLD report for %s and %s; addrs = %#v", globalMulticastAddr, linkLocalAddrSNMC, addrs)

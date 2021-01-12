@@ -288,6 +288,7 @@ type IP6TIP struct {
 	_ [3]byte
 }
 
+// SizeOfIP6TIP is the size of an IP6 header.
 const SizeOfIP6TIP = 136
 
 // Flags in IP6TIP.Flags. Corresponding constants are in
