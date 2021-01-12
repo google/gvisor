@@ -84,7 +84,7 @@ func (p *FindingsPoster) Walk(paths []string) error {
 func (p *FindingsPoster) Post() error {
 	// Just show results?
 	if p.dryRun {
-		for finding, _ := range p.findings {
+		for finding := range p.findings {
 			// Pretty print, so that this is useful for debugging.
 			fmt.Printf("%s: (%s+%d) %s\n", finding.Category, finding.Position.Filename, finding.Position.Line, finding.Message)
 		}
@@ -114,7 +114,7 @@ func (p *FindingsPoster) Post() error {
 		},
 	}
 	annotationLevel := "failure" // Always.
-	for finding, _ := range p.findings {
+	for finding := range p.findings {
 		title := string(finding.Category)
 		opts.Output.Annotations = append(opts.Output.Annotations, &github.CheckRunAnnotation{
 			Path:            &finding.Position.Filename,

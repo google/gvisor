@@ -148,7 +148,7 @@ func (g *Generator) writeTypeChecks(ms map[string]struct{}) error {
 	}
 
 	msl := make([]string, 0, len(ms))
-	for m, _ := range ms {
+	for m := range ms {
 		msl = append(msl, m)
 	}
 	sort.Strings(msl)

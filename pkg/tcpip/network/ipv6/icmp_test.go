@@ -1535,7 +1535,7 @@ func TestPacketQueing(t *testing.T) {
 			}
 
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
 					NIC:         nicID,
 				},

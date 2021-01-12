@@ -32,37 +32,37 @@ import (
 // caches can be dropped.
 func BenchmarkFio(b *testing.B) {
 	testCases := []tools.Fio{
-		tools.Fio{
+		{
 			Test:      "write",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
-		tools.Fio{
+		{
 			Test:      "write",
 			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
-		tools.Fio{
+		{
 			Test:      "read",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
-		tools.Fio{
+		{
 			Test:      "read",
 			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
-		tools.Fio{
+		{
 			Test:      "randwrite",
 			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
-		tools.Fio{
+		{
 			Test:      "randread",
 			Size:      b.N,
 			BlockSize: 4,

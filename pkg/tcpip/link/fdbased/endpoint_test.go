@@ -501,7 +501,7 @@ func TestRecvMMsgDispatcherCapLength(t *testing.T) {
 			msgHdrs: make([]rawfile.MMsgHdr, 1),
 		}
 
-		for i, _ := range d.views {
+		for i := range d.views {
 			d.views[i] = make([]buffer.View, len(c.config))
 		}
 		for i := range d.iovecs {

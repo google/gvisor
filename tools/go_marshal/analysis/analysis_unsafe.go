@@ -81,7 +81,7 @@ func RandomizeValue(x interface{}) {
 // This is used for zeroing padding fields after calling RandomizeValue.
 func reflectZeroPaddingFields(r reflect.Type, data []byte, zero bool) {
 	if zero {
-		for i, _ := range data {
+		for i := range data {
 			data[i] = 0
 		}
 	}

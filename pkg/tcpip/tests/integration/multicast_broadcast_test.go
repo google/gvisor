@@ -166,11 +166,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			// Default routes for IPv4 and IPv6 so ICMP can find a route to the remote
 			// node when attempting to send the ICMP Echo Reply.
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: header.IPv6EmptySubnet,
 					NIC:         nicID,
 				},
-				tcpip.Route{
+				{
 					Destination: header.IPv4EmptySubnet,
 					NIC:         nicID,
 				},
@@ -530,7 +530,7 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 			}
 
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					// We use the empty subnet instead of just the loopback subnet so we
 					// also have a route to the IPv4 Broadcast address.
 					Destination: header.IPv4EmptySubnet,
@@ -699,11 +699,11 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					// routable to the multicast address when the NIC isn't specified.
 					if !subTest.specifyNICID && !subTest.specifyNICAddr {
 						s.SetRouteTable([]tcpip.Route{
-							tcpip.Route{
+							{
 								Destination: header.IPv6EmptySubnet,
 								NIC:         nicID,
 							},
-							tcpip.Route{
+							{
 								Destination: header.IPv4EmptySubnet,
 								NIC:         nicID,
 							},

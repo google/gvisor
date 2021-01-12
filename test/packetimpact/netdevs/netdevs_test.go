@@ -63,7 +63,7 @@ func TestParseDevices(t *testing.T) {
   inet6 fe80::42:daff:fe33:130a/64 scope link tentative
     valid_lft forever preferred_lft forever`,
 			want: map[string]DeviceInfo{
-				"lo": DeviceInfo{
+				"lo": {
 					ID:       1,
 					MAC:      mustParseMAC("00:00:00:00:00:00"),
 					IPv4Addr: net.IPv4(127, 0, 0, 1),
@@ -77,7 +77,7 @@ func TestParseDevices(t *testing.T) {
 						Mask: net.CIDRMask(128, 128),
 					},
 				},
-				"eth0": DeviceInfo{
+				"eth0": {
 					ID:       2613,
 					MAC:      mustParseMAC("02:42:c0:a8:09:02"),
 					IPv4Addr: net.IPv4(192, 168, 9, 2),
@@ -91,7 +91,7 @@ func TestParseDevices(t *testing.T) {
 						Mask: net.CIDRMask(64, 128),
 					},
 				},
-				"eth1": DeviceInfo{
+				"eth1": {
 					ID:       2617,
 					MAC:      mustParseMAC("02:42:da:33:13:0a"),
 					IPv4Addr: net.IPv4(218, 51, 19, 10),
@@ -105,7 +105,7 @@ func TestParseDevices(t *testing.T) {
 						Mask: net.CIDRMask(64, 128),
 					},
 				},
-				"eth2": DeviceInfo{
+				"eth2": {
 					ID:       2615,
 					MAC:      mustParseMAC("02:42:df:f5:e1:0a"),
 					IPv4Addr: net.IPv4(223, 245, 225, 10),
@@ -129,7 +129,7 @@ func TestParseDevices(t *testing.T) {
   inet 192.168.9.2/24 brd 192.168.9.255 scope global eth0
     valid_lft forever preferred_lft forever`,
 			want: map[string]DeviceInfo{
-				"eth0": DeviceInfo{
+				"eth0": {
 					ID:       2613,
 					MAC:      mustParseMAC("02:42:c0:a8:09:02"),
 					IPv4Addr: net.IPv4(192, 168, 9, 2),
@@ -148,7 +148,7 @@ func TestParseDevices(t *testing.T) {
   inet6 fe80::42:dfff:fef5:e10a/64 scope link tentative
     valid_lft forever preferred_lft forever`,
 			want: map[string]DeviceInfo{
-				"eth2": DeviceInfo{
+				"eth2": {
 					ID:       2615,
 					MAC:      mustParseMAC("02:42:df:f5:e1:0a"),
 					IPv6Addr: net.ParseIP("fe80::42:dfff:fef5:e10a"),

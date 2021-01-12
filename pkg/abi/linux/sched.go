@@ -29,6 +29,7 @@ const (
 	SCHED_RESET_ON_FORK = 0x40000000
 )
 
+// Scheduling priority group selectors.
 const (
 	PRIO_PGRP    = 0x1
 	PRIO_PROCESS = 0x0

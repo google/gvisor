@@ -510,6 +510,7 @@ func (InodeDenyWriteChecker) Check(ctx context.Context, inode *fs.Inode, p fs.Pe
 //InodeNotAllocatable can be used by Inodes that do not support Allocate().
 type InodeNotAllocatable struct{}
 
+// Allocate implements fs.InodeOperations.Allocate.
 func (InodeNotAllocatable) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
 	return syserror.EOPNOTSUPP
 }

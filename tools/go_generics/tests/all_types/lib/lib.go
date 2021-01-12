@@ -14,4 +14,5 @@
 
 package lib
 
+// T is a test type.
 type T int32

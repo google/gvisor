@@ -328,6 +328,7 @@ func (FilterInputRequireProtocolUDP) ContainerAction(ctx context.Context, ip net
 	return nil
 }
 
+// LocalAction implements TestCase.LocalAction.
 func (FilterInputRequireProtocolUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// No-op.
 	return nil

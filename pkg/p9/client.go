@@ -241,7 +241,7 @@ func (c *Client) watch(socket *unet.Socket) {
 	defer c.closedWg.Done()
 
 	events := []unix.PollFd{
-		unix.PollFd{
+		{
 			Fd:     int32(socket.FD()),
 			Events: unix.POLLHUP | unix.POLLRDHUP,
 		},

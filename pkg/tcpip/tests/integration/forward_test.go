@@ -285,58 +285,58 @@ func TestForwarding(t *testing.T) {
 			}
 
 			host1Stack.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
 					NIC:         host1NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
 					Gateway:     routerNIC1IPv4Addr.AddressWithPrefix.Address,
 					NIC:         host1NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
 					Gateway:     routerNIC1IPv6Addr.AddressWithPrefix.Address,
 					NIC:         host1NICID,
 				},
 			})
 			routerStack.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: routerNIC1IPv4Addr.AddressWithPrefix.Subnet(),
 					NIC:         routerNICID1,
 				},
-				tcpip.Route{
+				{
 					Destination: routerNIC1IPv6Addr.AddressWithPrefix.Subnet(),
 					NIC:         routerNICID1,
 				},
-				tcpip.Route{
+				{
 					Destination: routerNIC2IPv4Addr.AddressWithPrefix.Subnet(),
 					NIC:         routerNICID2,
 				},
-				tcpip.Route{
+				{
 					Destination: routerNIC2IPv6Addr.AddressWithPrefix.Subnet(),
 					NIC:         routerNICID2,
 				},
 			})
 			host2Stack.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
 					NIC:         host2NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
 					Gateway:     routerNIC2IPv4Addr.AddressWithPrefix.Address,
 					NIC:         host2NICID,
 				},
-				tcpip.Route{
+				{
 					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
 					Gateway:     routerNIC2IPv6Addr.AddressWithPrefix.Address,
 					NIC:         host2NICID,

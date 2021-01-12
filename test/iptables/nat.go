@@ -621,24 +621,24 @@ func listenForRedirectedConn(ctx context.Context, ipv6 bool, originalDsts []net.
 			}
 		}
 		return fmt.Errorf("SO_ORIGINAL_DST returned %+v, but wanted one of %+v (note: port numbers are in network byte order)", got, originalDsts)
-	} else {
-		got, err := originalDestination4(connFD)
-		if err != nil {
-			return err
-		}
-		// The original destination could be any of our IPs.
-		for _, dst := range originalDsts {
-			want := syscall.RawSockaddrInet4{
-				Family: syscall.AF_INET,
-				Port:   htons(dropPort),
-			}
-			copy(want.Addr[:], dst.To4())
-			if got == want {
-				return nil
-			}
-		}
-		return fmt.Errorf("SO_ORIGINAL_DST returned %+v, but wanted one of %+v (note: port numbers are in network byte order)", got, originalDsts)
 	}
+
+	got, err := originalDestination4(connFD)
+	if err != nil {
+		return err
+	}
+	// The original destination could be any of our IPs.
+	for _, dst := range originalDsts {
+		want := syscall.RawSockaddrInet4{
+			Family: syscall.AF_INET,
+			Port:   htons(dropPort),
+		}
+		copy(want.Addr[:], dst.To4())
+		if got == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("SO_ORIGINAL_DST returned %+v, but wanted one of %+v (note: port numbers are in network byte order)", got, originalDsts)
 }
 
 // loopbackTests runs an iptables rule and ensures that packets sent to

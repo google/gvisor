@@ -198,11 +198,11 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, test.addAddress, err)
 			}
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: header.IPv4EmptySubnet,
 					NIC:         nicID,
 				},
-				tcpip.Route{
+				{
 					Destination: header.IPv6EmptySubnet,
 					NIC:         nicID,
 				},
@@ -291,7 +291,7 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
 	}
 	s.SetRouteTable([]tcpip.Route{
-		tcpip.Route{
+		{
 			Destination: header.IPv4EmptySubnet,
 			NIC:         nicID,
 		},
@@ -429,11 +429,11 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, test.addAddress, err)
 			}
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: header.IPv4EmptySubnet,
 					NIC:         nicID,
 				},
-				tcpip.Route{
+				{
 					Destination: header.IPv6EmptySubnet,
 					NIC:         nicID,
 				},

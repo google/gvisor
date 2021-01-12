@@ -14,8 +14,9 @@
 
 package linux
 
-// Control commands used with semctl, shmctl, and msgctl. Source:
-// include/uapi/linux/ipc.h.
+// Control commands used with semctl, shmctl, and msgctl.
+//
+// Source: include/uapi/linux/ipc.h.
 const (
 	IPC_RMID = 0
 	IPC_SET  = 1
@@ -23,14 +24,19 @@ const (
 	IPC_INFO = 3
 )
 
-// resource get request flags. Source: include/uapi/linux/ipc.h
+// Resource get request flags.
+//
+// Source: include/uapi/linux/ipc.h
 const (
 	IPC_CREAT  = 00001000
 	IPC_EXCL   = 00002000
 	IPC_NOWAIT = 00004000
 )
 
-const IPC_PRIVATE = 0
+// IPC flags.
+const (
+	IPC_PRIVATE = 0
+)
 
 // In Linux, amd64 does not enable CONFIG_ARCH_WANT_IPC_PARSE_VERSION, so SysV
 // IPC unconditionally uses the "new" 64-bit structures that are needed for
