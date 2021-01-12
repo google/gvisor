@@ -1803,3 +1803,91 @@ func TestMultiContainerEvent(t *testing.T) {
 		}
 	}
 }
+
+// Tests that duplicate variables in the spec are merged into a single one.
+func TestDuplicateEnvVariable(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	// Create files to dump `env` output.
+	files := [3]*os.File{}
+	for i := 0; i < len(files); i++ {
+		var err error
+		files[i], err = ioutil.TempFile(testutil.TmpDir(), "env-var-test")
+		if err != nil {
+			t.Fatalf("creating temp file: %v", err)
+		}
+		defer files[i].Close()
+		defer os.Remove(files[i].Name())
+	}
+
+	// Setup the containers. Use root container to test exec too.
+	cmd1 := fmt.Sprintf("env > %q; sleep 1000", files[0].Name())
+	cmd2 := fmt.Sprintf("env > %q", files[1].Name())
+	cmdExec := fmt.Sprintf("env > %q", files[2].Name())
+	testSpecs, ids := createSpecs([]string{"/bin/bash", "-c", cmd1}, []string{"/bin/bash", "-c", cmd2})
+	testSpecs[0].Process.Env = append(testSpecs[0].Process.Env, "VAR=foo", "VAR=bar")
+	testSpecs[1].Process.Env = append(testSpecs[1].Process.Env, "VAR=foo", "VAR=bar")
+
+	containers, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Wait for the `env` from the root container to finish.
+	expectedPL := []*control.Process{
+		newProcessBuilder().Cmd("bash").Process(),
+		newProcessBuilder().Cmd("sleep").Process(),
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		t.Errorf("failed to wait for sleep to start: %v", err)
+	}
+	if ws, err := containers[1].Wait(); err != nil {
+		t.Errorf("failed to wait container 1: %v", err)
+	} else if es := ws.ExitStatus(); es != 0 {
+		t.Errorf("container %s exited with non-zero status: %v", containers[1].ID, es)
+	}
+
+	execArgs := &control.ExecArgs{
+		Filename: "/bin/bash",
+		Argv:     []string{"/bin/bash", "-c", cmdExec},
+		Envv:     []string{"VAR=foo", "VAR=bar"},
+	}
+	if ws, err := containers[0].executeSync(execArgs); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+	}
+
+	// Now read and check that none of the env has repeated values.
+	for _, file := range files {
+		out, err := ioutil.ReadAll(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("Checking env %q:\n%s", file.Name(), out)
+		envs := make(map[string]string)
+		for _, line := range strings.Split(string(out), "\n") {
+			if len(line) == 0 {
+				continue
+			}
+			envVar := strings.SplitN(line, "=", 2)
+			if len(envVar) != 2 {
+				t.Fatalf("invalid env variable: %s", line)
+			}
+			key := envVar[0]
+			if val, ok := envs[key]; ok {
+				t.Errorf("env variable %q is duplicated: %q and %q", key, val, envVar[1])
+			}
+			envs[key] = envVar[1]
+		}
+		if _, ok := envs["VAR"]; !ok {
+			t.Errorf("variable VAR missing: %v", envs)
+		}
+	}
+}
