@@ -22,10 +22,12 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+
+	"gvisor.dev/gvisor/tools/tags"
 )
 
 var (
@@ -132,10 +134,17 @@ func main() {
 	// Write the output file.
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, f); err != nil {
-		fatalf("%v\n", err)
+		fatalf("fomatting: %v\n", err)
 	}
-
-	if err := ioutil.WriteFile(*output, buf.Bytes(), 0644); err != nil {
-		fatalf("%v\n", err)
+	outf, err := os.OpenFile(*output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fatalf("opening output: %v\n", err)
+	}
+	defer outf.Close()
+	if t := tags.Aggregate(flag.Args()); len(t) > 0 {
+		fmt.Fprintf(outf, "%s\n\n", strings.Join(t.Lines(), "\n"))
+	}
+	if _, err := outf.Write(buf.Bytes()); err != nil {
+		fatalf("write: %v\n", err)
 	}
 }

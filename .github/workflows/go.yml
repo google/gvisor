@@ -43,7 +43,7 @@ jobs:
         key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
         restore-keys: |
           ${{ runner.os }}-bazel-
-    - run: make go
+    - run: tools/go_branch.sh
     - run: |
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go

@@ -1,74 +1,38 @@
-load("//tools:defs.bzl", "go_library", "go_test", "select_arch")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
 
-go_template(
-    name = "generic_walker",
-    srcs = select_arch(
-        amd64 = ["walker_amd64.go"],
-        arm64 = ["walker_arm64.go"],
-    ),
-    opt_types = [
-        "Visitor",
-    ],
-    visibility = [":__pkg__"],
-)
+[
+    # These files are tagged with relevant build architectures. We can always
+    # build all the input files, which will be included only in the relevant
+    # architecture builds.
+    go_template(
+        name = "generic_walker_%s" % arch,
+        srcs = ["walker_%s.go" % arch],
+        opt_types = [
+            "Visitor",
+        ],
+        visibility = [":__pkg__"],
+    )
+    for arch in ("amd64", "arm64")
+]
 
-go_template_instance(
-    name = "walker_map",
-    out = "walker_map.go",
-    package = "pagetables",
-    prefix = "map",
-    template = ":generic_walker",
-    types = {
-        "Visitor": "mapVisitor",
-    },
-)
-
-go_template_instance(
-    name = "walker_unmap",
-    out = "walker_unmap.go",
-    package = "pagetables",
-    prefix = "unmap",
-    template = ":generic_walker",
-    types = {
-        "Visitor": "unmapVisitor",
-    },
-)
-
-go_template_instance(
-    name = "walker_lookup",
-    out = "walker_lookup.go",
-    package = "pagetables",
-    prefix = "lookup",
-    template = ":generic_walker",
-    types = {
-        "Visitor": "lookupVisitor",
-    },
-)
-
-go_template_instance(
-    name = "walker_empty",
-    out = "walker_empty.go",
-    package = "pagetables",
-    prefix = "empty",
-    template = ":generic_walker",
-    types = {
-        "Visitor": "emptyVisitor",
-    },
-)
-
-go_template_instance(
-    name = "walker_check",
-    out = "walker_check.go",
-    package = "pagetables",
-    prefix = "check",
-    template = ":generic_walker",
-    types = {
-        "Visitor": "checkVisitor",
-    },
-)
+[
+    # See above.
+    go_template_instance(
+        name = "walker_%s_%s" % (op, arch),
+        out = "walker_%s_%s.go" % (op, arch),
+        package = "pagetables",
+        prefix = op,
+        template = ":generic_walker_%s" % arch,
+        types = {
+            "Visitor": "%sVisitor" % op,
+        },
+    )
+    for op in ("map", "unmap", "lookup", "empty", "check")
+    for arch in ("amd64", "arm64")
+]
 
 go_library(
     name = "pagetables",
@@ -86,10 +50,14 @@ go_library(
         "pcids_x86.go",
         "walker_amd64.go",
         "walker_arm64.go",
-        "walker_empty.go",
-        "walker_lookup.go",
-        "walker_map.go",
-        "walker_unmap.go",
+        ":walker_empty_amd64",
+        ":walker_empty_arm64",
+        ":walker_lookup_amd64",
+        ":walker_lookup_arm64",
+        ":walker_map_amd64",
+        ":walker_map_arm64",
+        ":walker_unmap_amd64",
+        ":walker_unmap_arm64",
     ],
     visibility = [
         "//pkg/sentry/platform/kvm:__subpackages__",
@@ -108,7 +76,8 @@ go_test(
         "pagetables_amd64_test.go",
         "pagetables_arm64_test.go",
         "pagetables_test.go",
-        "walker_check.go",
+        ":walker_check_amd64",
+        ":walker_check_arm64",
     ],
     library = ":pagetables",
     deps = ["//pkg/usermem"],

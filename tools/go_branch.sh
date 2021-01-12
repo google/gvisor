@@ -16,23 +16,6 @@
 
 set -xeou pipefail
 
-# Discovery the package name from the go.mod file.
-declare module origpwd othersrc
-module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
-origpwd=$(pwd)
-othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
-readonly module origpwd othersrc
-
-
-# Check that gopath has been built.
-declare gopath_dir
-gopath_dir="$(pwd)/bazel-bin/gopath/src/${module}"
-readonly gopath_dir
-if ! [[ -d "${gopath_dir}" ]]; then
-  echo "No gopath directory found; build the :gopath target." >&2
-  exit 1
-fi
-
 # Create a temporary working directory, and ensure that this directory and all
 # subdirectories are cleaned up upon exit.
 declare tmp_dir
@@ -43,6 +26,51 @@ finish() {
   rm -rf "${tmp_dir}"
 }
 trap finish EXIT
+
+# Discover the package name from the go.mod file.
+declare module origpwd othersrc
+module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
+origpwd=$(pwd)
+othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
+readonly module origpwd othersrc
+
+# Build an amd64 & arm64 gopath.
+declare -r go_amd64="${tmp_dir}/amd64"
+declare -r go_arm64="${tmp_dir}/arm64"
+rm -rf bazel-bin/gopath
+make build BAZEL_OPTIONS="" TARGETS="//:gopath"
+rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_amd64}"
+rm -rf bazel-bin/gopath
+make build BAZEL_OPTIONS=--config=cross-aarch64 TARGETS="//:gopath"
+rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_arm64}"
+
+# Strip irrelevant files, i.e. use only arm64 files from the arm64 build.
+# This is because bazel may generate incorrect files for non-target platforms
+# as a workaround. See pkg/sentry/loader/vdsodata as an example.
+find "${go_amd64}/src/${module}" -name '*_arm64*.go' -exec rm -f {} \;
+find "${go_amd64}/src/${module}" -name '*_arm64*.s' -exec rm -f {} \;
+find "${go_arm64}/src/${module}" -name '*_amd64*.go' -exec rm -f {} \;
+find "${go_arm64}/src/${module}" -name '*_amd64*.s' -exec rm -f {} \;
+
+# See below. The certs.go file is pseudo-random, and therefore will also
+# differ between the branches. Since we merge, it only has to come from one.
+# We arbitrarily keep the one from the amd64 branch, and drop the arm64 one.
+rm -f "${go_arm64}/src/${module}/webhook/pkg/injector/certs.go"
+
+# Check that all files are compatible. This means that if the files exist in
+# both architectures, then they must be identical. The only ones that we expect
+# to exist in a single architecture (due to binary builds) may be different.
+function cross_check() {
+  (cd "${1}" && find "src/${module}" -type f | \
+    xargs -n 1 -I {} sh -c "diff '${1}/{}' '${2}/{}' 2>/dev/null; test \$? -ne 1")
+}
+cross_check "${go_arm64}" "${go_amd64}"
+cross_check "${go_amd64}" "${go_arm64}"
+
+# Merge the two for a complete set of source files.
+declare -r go_merged="${tmp_dir}/merged"
+rsync --recursive --update "${go_amd64}/" "${go_merged}"
+rsync --recursive --update "${go_arm64}/" "${go_merged}"
 
 # Record the current working commit.
 declare head
@@ -89,14 +117,15 @@ git merge --no-commit --strategy ours "${head}" || \
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
-# Sync the entire gopath_dir. Note that we exclude auto-generated source
-# files that will change here. Otherwise, it adds a tremendous amount of noise
-# to commits. If this file disappears in the future, then presumably we will
-# still delete the underlying directory.
+# Sync the entire gopath. Note that we exclude auto-generated source files that
+# will change here. Otherwise, it adds a tremendous amount of noise to commits.
+# If this file disappears in the future, then presumably we will still delete
+# the underlying directory.
+declare -r gopath="${go_merged}/src/${module}"
 rsync --recursive --delete \
   --exclude .git \
   --exclude webhook/pkg/injector/certs.go \
-  -L "${gopath_dir}/" .
+  "${gopath}/" .
 
 # Add additional files.
 for file in "${othersrc[@]}"; do
