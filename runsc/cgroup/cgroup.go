@@ -41,22 +41,22 @@ const (
 )
 
 var controllers = map[string]config{
-	"blkio":    config{ctrlr: &blockIO{}},
-	"cpu":      config{ctrlr: &cpu{}},
-	"cpuset":   config{ctrlr: &cpuSet{}},
-	"hugetlb":  config{ctrlr: &hugeTLB{}, optional: true},
-	"memory":   config{ctrlr: &memory{}},
-	"net_cls":  config{ctrlr: &networkClass{}},
-	"net_prio": config{ctrlr: &networkPrio{}},
-	"pids":     config{ctrlr: &pids{}},
+	"blkio":    {ctrlr: &blockIO{}},
+	"cpu":      {ctrlr: &cpu{}},
+	"cpuset":   {ctrlr: &cpuSet{}},
+	"hugetlb":  {ctrlr: &hugeTLB{}, optional: true},
+	"memory":   {ctrlr: &memory{}},
+	"net_cls":  {ctrlr: &networkClass{}},
+	"net_prio": {ctrlr: &networkPrio{}},
+	"pids":     {ctrlr: &pids{}},
 
 	// These controllers either don't have anything in the OCI spec or is
 	// irrelevant for a sandbox.
-	"devices":    config{ctrlr: &noop{}},
-	"freezer":    config{ctrlr: &noop{}},
-	"perf_event": config{ctrlr: &noop{}},
-	"rdma":       config{ctrlr: &noop{}, optional: true},
-	"systemd":    config{ctrlr: &noop{}},
+	"devices":    {ctrlr: &noop{}},
+	"freezer":    {ctrlr: &noop{}},
+	"perf_event": {ctrlr: &noop{}},
+	"rdma":       {ctrlr: &noop{}, optional: true},
+	"systemd":    {ctrlr: &noop{}},
 }
 
 func setOptionalValueInt(path, name string, val *int64) error {
@@ -371,6 +371,7 @@ func (c *Cgroup) Join() (func(), error) {
 	return undo, nil
 }
 
+// CPUQuota returns the CFS CPU quota.
 func (c *Cgroup) CPUQuota() (float64, error) {
 	path := c.makePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")

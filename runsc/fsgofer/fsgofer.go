@@ -758,15 +758,15 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 			// name.
-			parent, err := unix.Open(path.Dir(l.hostPath), openFlags|unix.O_PATH, 0)
-			if err != nil {
-				return extractErrno(err)
+			parent, oErr := unix.Open(path.Dir(l.hostPath), openFlags|unix.O_PATH, 0)
+			if oErr != nil {
+				return extractErrno(oErr)
 			}
 			defer unix.Close(parent)
 
-			if terr := utimensat(parent, path.Base(l.hostPath), utimes, linux.AT_SYMLINK_NOFOLLOW); terr != nil {
-				log.Debugf("SetAttr utimens failed %q, err: %v", l.hostPath, terr)
-				err = extractErrno(terr)
+			if tErr := utimensat(parent, path.Base(l.hostPath), utimes, linux.AT_SYMLINK_NOFOLLOW); tErr != nil {
+				log.Debugf("SetAttr utimens failed %q, err: %v", l.hostPath, tErr)
+				err = extractErrno(tErr)
 			}
 		} else {
 			// Directories and regular files can operate directly on the fd
@@ -787,9 +787,9 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if valid.GID {
 			gid = int(attr.GID)
 		}
-		if oerr := unix.Fchownat(f.FD(), "", uid, gid, linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW); oerr != nil {
-			log.Debugf("SetAttr fchownat failed %q, err: %v", l.hostPath, oerr)
-			err = extractErrno(oerr)
+		if oErr := unix.Fchownat(f.FD(), "", uid, gid, linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW); oErr != nil {
+			log.Debugf("SetAttr fchownat failed %q, err: %v", l.hostPath, oErr)
+			err = extractErrno(oErr)
 		}
 	}
 

@@ -738,7 +738,7 @@ func InotifyEventFromStatMask(mask uint32) uint32 {
 	} else if mask&linux.STATX_ATIME != 0 {
 		ev |= linux.IN_ACCESS
 	} else if mask&linux.STATX_MTIME != 0 {
-		mask |= linux.IN_MODIFY
+		ev |= linux.IN_MODIFY
 	}
 	return ev
 }

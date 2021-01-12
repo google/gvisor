@@ -267,7 +267,7 @@ func (fs *FeatureSet) UseXsave() bool {
 // FlagsString prints out supported CPU "flags" field in /proc/cpuinfo.
 func (fs *FeatureSet) FlagsString() string {
 	var s []string
-	for f, _ := range arm64FeatureStrings {
+	for f := range arm64FeatureStrings {
 		if fs.Set[f] {
 			if fstr := f.flagString(); fstr != "" {
 				s = append(s, fstr)
@@ -296,7 +296,7 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu uint, b *bytes.Buffer) {
 func HostFeatureSet() *FeatureSet {
 	s := make(map[Feature]bool)
 
-	for f, _ := range arm64FeatureStrings {
+	for f := range arm64FeatureStrings {
 		if hwCap&(1<<f) != 0 {
 			s[f] = true
 		}

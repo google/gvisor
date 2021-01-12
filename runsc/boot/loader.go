@@ -75,12 +75,14 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 
-	// Include supported socket providers.
+	// Top-level inet providers.
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
+
+	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 

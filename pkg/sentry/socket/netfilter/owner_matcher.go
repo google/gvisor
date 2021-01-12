@@ -96,6 +96,7 @@ func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.
 	return &owner, nil
 }
 
+// OwnerMatcher matches against a UID and/or GID.
 type OwnerMatcher struct {
 	uid       uint32
 	gid       uint32

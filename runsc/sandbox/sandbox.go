@@ -719,6 +719,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		nextFD++
 	}
 
+	_ = nextFD // All FD assignment is finished.
+
 	if args.Attached {
 		// Kill sandbox if parent process exits in attached mode.
 		cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL

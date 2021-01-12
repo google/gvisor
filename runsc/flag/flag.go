@@ -19,8 +19,10 @@ import (
 	"flag"
 )
 
+// FlagSet is an alias for flag.FlagSet.
 type FlagSet = flag.FlagSet
 
+// Aliases for flag functions.
 var (
 	Bool        = flag.Bool
 	CommandLine = flag.CommandLine
@@ -32,6 +34,7 @@ var (
 	Var         = flag.Var
 )
 
+// ContinueOnError is an alias for flag.ContinueOnError.
 const ContinueOnError = flag.ContinueOnError
 
 // Get returns the flag's underlying object.

@@ -49,7 +49,10 @@ const (
 	SEMUSZ = 20
 )
 
-const SEM_UNDO = 0x1000
+// Semaphore flags.
+const (
+	SEM_UNDO = 0x1000
+)
 
 // Sembuf is equivalent to struct sembuf.
 //
