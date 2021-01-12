@@ -499,7 +499,13 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
   // Check initial value is set to 1.
   EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(to_write) + 1));
-  EXPECT_EQ(strcmp(buf, "1\n"), 0);
+  if (IsRunningOnGvisor()) {
+    // TODO(gvisor.dev/issue/5243): TCPRACKLossDetection = 1 should be turned on
+    // by default.
+    EXPECT_EQ(strcmp(buf, "0\n"), 0);
+  } else {
+    EXPECT_EQ(strcmp(buf, "1\n"), 0);
+  }
 
   // Set tcp_recovery to one of the allowed constants.
   EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
