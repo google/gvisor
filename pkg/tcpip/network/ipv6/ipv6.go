@@ -163,6 +163,7 @@ func getLabel(addr tcpip.Address) uint8 {
 	panic(fmt.Sprintf("should have a label for address = %s", addr))
 }
 
+var _ stack.LinkResolvableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
@@ -222,6 +223,12 @@ type OpaqueInterfaceIdentifierOptions struct {
 	// May be nil, but a nil value is highly discouraged to maintain
 	// some level of randomness between nodes.
 	SecretKey []byte
+}
+
+// HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
+func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
+	pkt.NICID = e.nic.ID()
+	e.handleControl(stack.ControlNoRoute, 0, pkt)
 }
 
 // onAddressAssignedLocked handles an address being assigned.

@@ -587,10 +587,10 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					},
 				}
 				data := tcpip.SlicePayload([]byte{byte(i), 2, 3, 4})
-				if n, _, err := wep.ep.Write(data, writeOpts); err != nil {
+				if n, err := wep.ep.Write(data, writeOpts); err != nil {
 					t.Fatalf("eps[%d].Write(_, _): %s", i, err)
 				} else if want := int64(len(data)); n != want {
-					t.Fatalf("got eps[%d].Write(_, _) = (%d, nil, nil), want = (%d, nil, nil)", i, n, want)
+					t.Fatalf("got eps[%d].Write(_, _) = (%d, nil), want = (%d, nil)", i, n, want)
 				}
 
 				for j, rep := range eps {

@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 const (
@@ -105,6 +106,12 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
 			} else if p.route.IsResolutionRequired() {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+
+				if linkResolvableEP, ok := p.route.outgoingNIC.getNetworkEndpoint(p.route.NetProto).(LinkResolvableNetworkEndpoint); ok {
+					linkResolvableEP.HandleLinkResolutionFailure(NewPacketBuffer(PacketBufferOptions{
+						Data: buffer.NewVectorisedView(p.pkt.Size(), p.pkt.Views()),
+					}))
+				}
 			} else {
 				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
 			}

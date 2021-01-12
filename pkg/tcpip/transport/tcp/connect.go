@@ -460,66 +460,9 @@ func (h *handshake) processSegments() *tcpip.Error {
 	return nil
 }
 
-func (h *handshake) resolveRoute() *tcpip.Error {
-	// Set up the wakers.
-	var s sleep.Sleeper
-	resolutionWaker := &sleep.Waker{}
-	s.AddWaker(resolutionWaker, wakerForResolution)
-	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
-	defer s.Done()
-
-	// Initial action is to resolve route.
-	index := wakerForResolution
-	attemptedResolution := false
-	for {
-		switch index {
-		case wakerForResolution:
-			if _, err := h.ep.route.Resolve(resolutionWaker.Assert); err != tcpip.ErrWouldBlock {
-				if err != nil {
-					h.ep.stats.SendErrors.NoRoute.Increment()
-				}
-				// Either success (err == nil) or failure.
-				return err
-			}
-			if attemptedResolution {
-				h.ep.stats.SendErrors.NoLinkAddr.Increment()
-				return tcpip.ErrNoLinkAddress
-			}
-			attemptedResolution = true
-			// Resolution not completed. Keep trying...
-
-		case wakerForNotification:
-			n := h.ep.fetchNotifications()
-			if n&notifyClose != 0 {
-				return tcpip.ErrAborted
-			}
-			if n&notifyDrain != 0 {
-				close(h.ep.drainDone)
-				h.ep.mu.Unlock()
-				<-h.ep.undrain
-				h.ep.mu.Lock()
-			}
-			if n&notifyError != 0 {
-				return h.ep.lastErrorLocked()
-			}
-		}
-
-		// Wait for notification.
-		h.ep.mu.Unlock()
-		index, _ = s.Fetch(true /* block */)
-		h.ep.mu.Lock()
-	}
-}
-
 // start resolves the route if necessary and sends the first
 // SYN/SYN-ACK.
 func (h *handshake) start() *tcpip.Error {
-	if h.ep.route.IsResolutionRequired() {
-		if err := h.resolveRoute(); err != nil {
-			return err
-		}
-	}
-
 	h.startTime = time.Now()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 	var sackEnabled tcpip.TCPSACKEnabled

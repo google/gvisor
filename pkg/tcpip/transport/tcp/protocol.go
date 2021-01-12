@@ -222,7 +222,6 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) *tcpip.Error
 		return err
 	}
 	defer route.Release()
-	route.ResolveWith(s.remoteLinkAddr)
 
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)

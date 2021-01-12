@@ -1502,7 +1502,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
-func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -1515,7 +1515,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.sndBufMu.Unlock()
 		e.UnlockUser()
 		e.stats.WriteErrors.WriteClosed.Increment()
-		return 0, nil, err
+		return 0, err
 	}
 
 	// We can release locks while copying data.
@@ -1536,10 +1536,10 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			e.sndBufMu.Unlock()
 			e.UnlockUser()
 		}
-		return 0, nil, perr
+		return 0, perr
 	}
 
-	queueAndSend := func() (int64, <-chan struct{}, *tcpip.Error) {
+	queueAndSend := func() (int64, *tcpip.Error) {
 		// Add data to the send queue.
 		s := newOutgoingSegment(e.ID, v)
 		e.sndBufUsed += len(v)
@@ -1550,7 +1550,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// Do the work inline.
 		e.handleWrite()
 		e.UnlockUser()
-		return int64(len(v)), nil, nil
+		return int64(len(v)), nil
 	}
 
 	if opts.Atomic {
@@ -1568,7 +1568,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.sndBufMu.Unlock()
 		e.UnlockUser()
 		e.stats.WriteErrors.WriteClosed.Increment()
-		return 0, nil, err
+		return 0, err
 	}
 
 	// Discard any excess data copied in due to avail being reduced due
@@ -2731,7 +2731,7 @@ func (e *endpoint) enqueueSegment(s *segment) bool {
 	return true
 }
 
-func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err *tcpip.Error, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -2750,13 +2750,13 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 			Payload: pkt.Data.ToView(),
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.RemoteAddress,
-				Port: id.RemotePort,
+				Addr: e.ID.RemoteAddress,
+				Port: e.ID.RemotePort,
 			},
 			Offender: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.LocalAddress,
-				Port: id.LocalPort,
+				Addr: e.ID.LocalAddress,
+				Port: e.ID.LocalPort,
 			},
 			NetProto: pkt.NetworkProtocolNumber,
 		})
@@ -2767,7 +2767,7 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	switch typ {
 	case stack.ControlPacketTooBig:
 		e.sndBufMu.Lock()
@@ -2780,10 +2780,10 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 		e.notifyProtocolGoroutine(notifyMTUChanged)
 
 	case stack.ControlNoRoute:
-		e.onICMPError(tcpip.ErrNoRoute, id, byte(header.ICMPv4DstUnreachable), byte(header.ICMPv4HostUnreachable), extra, pkt)
+		e.onICMPError(tcpip.ErrNoRoute, byte(header.ICMPv4DstUnreachable), byte(header.ICMPv4HostUnreachable), extra, pkt)
 
 	case stack.ControlNetworkUnreachable:
-		e.onICMPError(tcpip.ErrNetworkUnreachable, id, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6NetworkUnreachable), extra, pkt)
+		e.onICMPError(tcpip.ErrNetworkUnreachable, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6NetworkUnreachable), extra, pkt)
 	}
 }
 

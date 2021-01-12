@@ -83,7 +83,7 @@ func getBlocking(c *linkAddrCache, addr tcpip.FullAddress, linkRes LinkAddressRe
 		got, ch, err := c.get(addr, linkRes, "", nil, nil)
 		if err == tcpip.ErrWouldBlock {
 			if attemptedResolution {
-				return got, tcpip.ErrNoLinkAddress
+				return got, tcpip.ErrTimeout
 			}
 			attemptedResolution = true
 			<-ch
@@ -253,8 +253,8 @@ func TestCacheResolutionFailed(t *testing.T) {
 	before := atomic.LoadUint32(&requestCount)
 
 	e.addr.Addr += "2"
-	if _, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrNoLinkAddress {
-		t.Errorf("c.get(%q), got error: %v, want: error ErrNoLinkAddress", string(e.addr.Addr), err)
+	if a, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrTimeout {
+		t.Errorf("got getBlockinng(_, %#v, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
 	}
 
 	if got, want := int(atomic.LoadUint32(&requestCount)-before), c.resolutionAttempts; got != want {
@@ -269,8 +269,8 @@ func TestCacheResolutionTimeout(t *testing.T) {
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
 	e := testAddrs[0]
-	if _, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrNoLinkAddress {
-		t.Errorf("c.get(%q), got error: %v, want: error ErrNoLinkAddress", string(e.addr.Addr), err)
+	if a, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrTimeout {
+		t.Errorf("got getBlockinng(_, %#v, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
 	}
 }
 

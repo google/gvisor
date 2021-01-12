@@ -18,7 +18,6 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/amutex",
         "//pkg/binary",
         "//pkg/context",
         "//pkg/log",

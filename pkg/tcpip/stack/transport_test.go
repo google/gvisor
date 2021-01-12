@@ -90,14 +90,14 @@ func (*fakeTransportEndpoint) Read(io.Writer, int, tcpip.ReadOptions) (tcpip.Rea
 	return tcpip.ReadResult{}, nil
 }
 
-func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	if len(f.route.RemoteAddress) == 0 {
-		return 0, nil, tcpip.ErrNoRoute
+		return 0, tcpip.ErrNoRoute
 	}
 
 	v, err := p.FullPayload()
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
@@ -105,10 +105,10 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 	})
 	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
 	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	return int64(len(v)), nil, nil
+	return int64(len(v)), nil
 }
 
 // SetSockOpt sets a socket option. Currently not supported.
@@ -222,7 +222,6 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 	if err != nil {
 		return
 	}
-	route.ResolveWith(pkt.SourceLinkAddress())
 
 	ep := &fakeTransportEndpoint{
 		TransportEndpointInfo: stack.TransportEndpointInfo{
@@ -237,7 +236,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
-func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, *stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandleControlPacket(stack.ControlType, uint32, *stack.PacketBuffer) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }
@@ -522,8 +521,7 @@ func TestTransportSend(t *testing.T) {
 
 	// Create buffer that will hold the payload.
 	view := buffer.NewView(30)
-	_, _, err = ep.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{})
-	if err != nil {
+	if _, err := ep.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
 

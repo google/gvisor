@@ -417,8 +417,8 @@ func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netPr
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
-	n, ch, err := e.write(p, opts)
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
+	n, err := e.write(p, opts)
 	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
@@ -428,8 +428,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.stats.WriteErrors.WriteClosed.Increment()
 	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case tcpip.ErrNoLinkAddress:
-		e.stats.SendErrors.NoLinkAddr.Increment()
 	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
@@ -437,17 +435,17 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// For all other errors when writing to the network layer.
 		e.stats.SendErrors.SendToNetworkFailed.Increment()
 	}
-	return n, ch, err
+	return n, err
 }
 
-func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	if err := e.LastError(); err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
-		return 0, nil, tcpip.ErrInvalidOptionValue
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	to := opts.To
@@ -463,14 +461,14 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
-		return 0, nil, tcpip.ErrClosedForSend
+		return 0, tcpip.ErrClosedForSend
 	}
 
 	// Prepare for write.
 	for {
 		retry, err := e.prepareForWrite(to)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 
 		if !retry {
@@ -486,7 +484,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		nicID := to.NIC
 		if e.BindNICID != 0 {
 			if nicID != 0 && nicID != e.BindNICID {
-				return 0, nil, tcpip.ErrNoRoute
+				return 0, tcpip.ErrNoRoute
 			}
 
 			nicID = e.BindNICID
@@ -494,17 +492,17 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 		if to.Port == 0 {
 			// Port 0 is an invalid port to send to.
-			return 0, nil, tcpip.ErrInvalidEndpointState
+			return 0, tcpip.ErrInvalidEndpointState
 		}
 
 		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 
 		r, _, err := e.connectRoute(nicID, dst, netProto)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 		defer r.Release()
 
@@ -513,21 +511,12 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
-		return 0, nil, tcpip.ErrBroadcastDisabled
-	}
-
-	if route.IsResolutionRequired() {
-		if ch, err := route.Resolve(nil); err != nil {
-			if err == tcpip.ErrWouldBlock {
-				return 0, ch, tcpip.ErrNoLinkAddress
-			}
-			return 0, nil, err
-		}
+		return 0, tcpip.ErrBroadcastDisabled
 	}
 
 	v, err := p.FullPayload()
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
@@ -545,7 +534,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 				v,
 			)
 		}
-		return 0, nil, tcpip.ErrMessageTooLong
+		return 0, tcpip.ErrMessageTooLong
 	}
 
 	ttl := e.ttl
@@ -575,9 +564,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	// See: https://golang.org/pkg/sync/#RWMutex for details on why recursive read
 	// locking is prohibited.
 	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), localPort, dstPort, ttl, useDefaultTTL, sendTOS, owner, noChecksum); err != nil {
-		return 0, nil, err
+		return 0, err
 	}
-	return int64(len(v)), nil, nil
+	return int64(len(v)), nil
 }
 
 // OnReuseAddressSet implements tcpip.SocketOptionsHandler.OnReuseAddressSet.
@@ -1352,7 +1341,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
-func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err *tcpip.Error, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -1376,13 +1365,13 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 			Payload:   payload,
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.RemoteAddress,
-				Port: id.RemotePort,
+				Addr: e.ID.RemoteAddress,
+				Port: e.ID.RemotePort,
 			},
 			Offender: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.LocalAddress,
-				Port: id.LocalPort,
+				Addr: e.ID.LocalAddress,
+				Port: e.ID.LocalPort,
 			},
 			NetProto: pkt.NetworkProtocolNumber,
 		})
@@ -1393,7 +1382,7 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		if e.EndpointState() == StateConnected {
 			var errType byte
@@ -1408,7 +1397,7 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 			default:
 				panic(fmt.Sprintf("unsupported net proto for infering ICMP type and code: %d", pkt.NetworkProtocolNumber))
 			}
-			e.onICMPError(tcpip.ErrConnectionRefused, id, errType, errCode, extra, pkt)
+			e.onICMPError(tcpip.ErrConnectionRefused, errType, errCode, extra, pkt)
 			return
 		}
 	}
