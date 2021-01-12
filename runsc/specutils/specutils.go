@@ -493,6 +493,31 @@ func EnvVar(env []string, name string) (string, bool) {
 	return "", false
 }
 
+// ResolveEnvs transforms lists of environment variables into a single list of
+// environment variables. If a variable is defined multiple times, the last
+// value is used.
+func ResolveEnvs(envs ...[]string) ([]string, error) {
+	// First create a map of variable names to values. This removes any
+	// duplicates.
+	envMap := make(map[string]string)
+	for _, env := range envs {
+		for _, str := range env {
+			parts := strings.SplitN(str, "=", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid variable: %s", str)
+			}
+			envMap[parts[0]] = parts[1]
+		}
+	}
+	// Reassemble envMap into a list of environment variables of the form
+	// NAME=VALUE.
+	env := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	return env, nil
+}
+
 // FaqErrorMsg returns an error message pointing to the FAQ.
 func FaqErrorMsg(anchor, msg string) string {
 	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
