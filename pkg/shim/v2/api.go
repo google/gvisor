@@ -19,4 +19,5 @@ import (
 	"github.com/containerd/containerd/api/events"
 )
 
+// TaskOOM is an alias for events.TaskOOM.
 type TaskOOM = events.TaskOOM

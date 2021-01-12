@@ -14,6 +14,7 @@
 
 package linux
 
+// Fadvise constants.
 const (
 	POSIX_FADV_NORMAL     = 0
 	POSIX_FADV_RANDOM     = 1

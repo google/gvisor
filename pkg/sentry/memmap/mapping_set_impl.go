@@ -1556,8 +1556,8 @@ type MappingSegmentDataSlices struct {
 	Values []MappingsOfRange
 }
 
-// ExportSortedSlice returns a copy of all segments in the given set, in ascending
-// key order.
+// ExportSortedSlices returns a copy of all segments in the given set, in
+// ascending key order.
 func (s *MappingSet) ExportSortedSlices() *MappingSegmentDataSlices {
 	var sds MappingSegmentDataSlices
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
@@ -1571,7 +1571,7 @@ func (s *MappingSet) ExportSortedSlices() *MappingSegmentDataSlices {
 	return &sds
 }
 
-// ImportSortedSlice initializes the given set from the given slice.
+// ImportSortedSlices initializes the given set from the given slice.
 //
 // Preconditions:
 // * s must be empty.

@@ -471,7 +471,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	if len(to) > 0 {
 		switch s.stype {
 		case linux.SOCK_SEQPACKET:
-			to = nil
+			// to is ignored.
 		case linux.SOCK_STREAM:
 			if s.State() == linux.SS_CONNECTED {
 				return 0, syserr.ErrAlreadyConnected

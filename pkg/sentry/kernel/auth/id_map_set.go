@@ -1556,8 +1556,8 @@ type idMapSegmentDataSlices struct {
 	Values []uint32
 }
 
-// ExportSortedSlice returns a copy of all segments in the given set, in ascending
-// key order.
+// ExportSortedSlices returns a copy of all segments in the given set, in
+// ascending key order.
 func (s *idMapSet) ExportSortedSlices() *idMapSegmentDataSlices {
 	var sds idMapSegmentDataSlices
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
@@ -1571,7 +1571,7 @@ func (s *idMapSet) ExportSortedSlices() *idMapSegmentDataSlices {
 	return &sds
 }
 
-// ImportSortedSlice initializes the given set from the given slice.
+// ImportSortedSlices initializes the given set from the given slice.
 //
 // Preconditions:
 // * s must be empty.

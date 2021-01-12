@@ -30,8 +30,10 @@ const (
 	SECCOMP_GET_ACTION_AVAIL  = 2
 )
 
+// BPFAction is an action for a BPF filter.
 type BPFAction uint32
 
+// BPFAction definitions.
 const (
 	SECCOMP_RET_KILL_PROCESS BPFAction = 0x80000000
 	SECCOMP_RET_KILL_THREAD  BPFAction = 0x00000000

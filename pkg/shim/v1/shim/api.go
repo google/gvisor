@@ -19,10 +19,23 @@ import (
 	"github.com/containerd/containerd/api/events"
 )
 
+// TaskCreate is an alias for events.TaskCreate.
 type TaskCreate = events.TaskCreate
+
+// TaskStart is an alias for events.TaskStart.
 type TaskStart = events.TaskStart
+
+// TaskOOM is an alias for events.TaskOOM.
 type TaskOOM = events.TaskOOM
+
+// TaskExit is an alias for events.TaskExit.
 type TaskExit = events.TaskExit
+
+// TaskDelete is an alias for events.TaskDelete.
 type TaskDelete = events.TaskDelete
+
+// TaskExecAdded is an alias for events.TaskExecAdded.
 type TaskExecAdded = events.TaskExecAdded
+
+// TaskExecStarted is an alias for events.TaskExecStarted.
 type TaskExecStarted = events.TaskExecStarted

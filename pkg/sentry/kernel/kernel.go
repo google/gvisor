@@ -1433,8 +1433,8 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 	return k.globalInit
 }
 
-// TestOnly_SetGlobalInit sets the thread group with ID 1 in the root PID namespace.
-func (k *Kernel) TestOnly_SetGlobalInit(tg *ThreadGroup) {
+// TestOnlySetGlobalInit sets the thread group with ID 1 in the root PID namespace.
+func (k *Kernel) TestOnlySetGlobalInit(tg *ThreadGroup) {
 	k.globalInit = tg
 }
 

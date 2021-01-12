@@ -367,6 +367,7 @@ func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
 	return i.InodeOperations.Truncate(ctx, i, size)
 }
 
+// Allocate calls i.InodeOperations.Allocate with i as the Inode.
 func (i *Inode) Allocate(ctx context.Context, d *Dirent, offset int64, length int64) error {
 	if i.overlay != nil {
 		return overlayAllocate(ctx, i.overlay, d, offset, length)

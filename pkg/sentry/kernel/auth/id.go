@@ -62,18 +62,28 @@ const (
 	// field is displayed as 4294967295 (-1 as an unsigned integer);" -
 	// user_namespaces(7)
 	OverflowUID = UID(65534)
+
+	// OverflowGID is the group equivalent to OverflowUID.
 	OverflowGID = GID(65534)
 
 	// NobodyKUID is the user ID usually reserved for the least privileged user
 	// "nobody".
 	NobodyKUID = KUID(65534)
+
+	// NobodyKGID is the group equivalent to NobodyKUID.
 	NobodyKGID = KGID(65534)
 
 	// RootKUID is the user ID usually used for the most privileged user "root".
 	RootKUID = KUID(0)
+
+	// RootKGID is the group equivalent to RootKUID.
 	RootKGID = KGID(0)
-	RootUID  = UID(0)
-	RootGID  = GID(0)
+
+	// RootUID is the root user.
+	RootUID = UID(0)
+
+	// RootGID is the root group.
+	RootGID = GID(0)
 )
 
 // Ok returns true if uid is not -1.

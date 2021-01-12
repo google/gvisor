@@ -142,19 +142,19 @@ func (cn *conn) timedOut(now time.Time) bool {
 
 // update the connection tracking state.
 //
-// Precondition: ct.mu must be held.
-func (ct *conn) updateLocked(tcpHeader header.TCP, hook Hook) {
+// Precondition: cn.mu must be held.
+func (cn *conn) updateLocked(tcpHeader header.TCP, hook Hook) {
 	// Update the state of tcb. tcb assumes it's always initialized on the
 	// client. However, we only need to know whether the connection is
 	// established or not, so the client/server distinction isn't important.
 	// TODO(gvisor.dev/issue/170): Add support in tcpconntrack to handle
 	// other tcp states.
-	if ct.tcb.IsEmpty() {
-		ct.tcb.Init(tcpHeader)
-	} else if hook == ct.tcbHook {
-		ct.tcb.UpdateStateOutbound(tcpHeader)
+	if cn.tcb.IsEmpty() {
+		cn.tcb.Init(tcpHeader)
+	} else if hook == cn.tcbHook {
+		cn.tcb.UpdateStateOutbound(tcpHeader)
 	} else {
-		ct.tcb.UpdateStateInbound(tcpHeader)
+		cn.tcb.UpdateStateInbound(tcpHeader)
 	}
 }
 

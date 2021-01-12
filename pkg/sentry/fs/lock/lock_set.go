@@ -1556,8 +1556,8 @@ type LockSegmentDataSlices struct {
 	Values []Lock
 }
 
-// ExportSortedSlice returns a copy of all segments in the given set, in ascending
-// key order.
+// ExportSortedSlices returns a copy of all segments in the given set, in
+// ascending key order.
 func (s *LockSet) ExportSortedSlices() *LockSegmentDataSlices {
 	var sds LockSegmentDataSlices
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
@@ -1571,7 +1571,7 @@ func (s *LockSet) ExportSortedSlices() *LockSegmentDataSlices {
 	return &sds
 }
 
-// ImportSortedSlice initializes the given set from the given slice.
+// ImportSortedSlices initializes the given set from the given slice.
 //
 // Preconditions:
 // * s must be empty.
