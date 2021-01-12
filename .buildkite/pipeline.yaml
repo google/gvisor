@@ -33,7 +33,7 @@ steps:
   - <<: *common
     label: ":golang: Go branch"
     commands:
-      - make go
+      - tools/go_branch.sh
       - git checkout go && git clean -f
       - go build ./...
 

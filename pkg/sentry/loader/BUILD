@@ -1,13 +1,6 @@
-load("//tools:defs.bzl", "go_embed_data", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 package(licenses = ["notice"])
-
-go_embed_data(
-    name = "vdso_bin",
-    src = "//vdso:vdso.so",
-    package = "loader",
-    var = "vdsoBin",
-)
 
 go_library(
     name = "loader",
@@ -17,7 +10,6 @@ go_library(
         "loader.go",
         "vdso.go",
         "vdso_state.go",
-        ":vdso_bin",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -33,6 +25,7 @@ go_library(
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/limits",
+        "//pkg/sentry/loader/vdsodata",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
