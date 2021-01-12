@@ -440,6 +440,10 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 	if err != nil {
 		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %v", err)
 	}
+	env, err := specutils.ResolveEnvs(spec.Process.Env)
+	if err != nil {
+		return kernel.CreateProcessArgs{}, fmt.Errorf("resolving env: %w", err)
+	}
 
 	wd := spec.Process.Cwd
 	if wd == "" {
@@ -449,7 +453,7 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
 		Argv:                    spec.Process.Args,
-		Envv:                    spec.Process.Env,
+		Envv:                    env,
 		WorkingDirectory:        wd,
 		Credentials:             creds,
 		Umask:                   0022,
@@ -931,6 +935,11 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		if !reffed {
 			return 0, fmt.Errorf("container %q has stopped", args.ContainerID)
 		}
+	}
+
+	args.Envv, err = specutils.ResolveEnvs(args.Envv)
+	if err != nil {
+		return 0, fmt.Errorf("resolving env: %w", err)
 	}
 
 	// Add the HOME environment variable if it is not already set.

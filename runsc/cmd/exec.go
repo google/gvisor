@@ -118,14 +118,14 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	log.Debugf("Exec arguments: %+v", e)
-	log.Debugf("Exec capablities: %+v", e.Capabilities)
+	log.Debugf("Exec capabilities: %+v", e.Capabilities)
 
 	// Replace empty settings with defaults from container.
 	if e.WorkingDirectory == "" {
 		e.WorkingDirectory = c.Spec.Process.Cwd
 	}
 	if e.Envv == nil {
-		e.Envv, err = resolveEnvs(c.Spec.Process.Env, ex.env)
+		e.Envv, err = specutils.ResolveEnvs(c.Spec.Process.Env, ex.env)
 		if err != nil {
 			Fatalf("getting environment variables: %v", err)
 		}
@@ -380,31 +380,6 @@ func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error
 		StdioIsPty:       p.Terminal,
 		FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
 	}, nil
-}
-
-// resolveEnvs transforms lists of environment variables into a single list of
-// environment variables. If a variable is defined multiple times, the last
-// value is used.
-func resolveEnvs(envs ...[]string) ([]string, error) {
-	// First create a map of variable names to values. This removes any
-	// duplicates.
-	envMap := make(map[string]string)
-	for _, env := range envs {
-		for _, str := range env {
-			parts := strings.SplitN(str, "=", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid variable: %s", str)
-			}
-			envMap[parts[0]] = parts[1]
-		}
-	}
-	// Reassemble envMap into a list of environment variables of the form
-	// NAME=VALUE.
-	env := make([]string, 0, len(envMap))
-	for k, v := range envMap {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env, nil
 }
 
 // capabilities takes a list of capabilities as strings and returns an
