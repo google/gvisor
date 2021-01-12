@@ -27,3 +27,8 @@ func (rc *rackControl) saveXmitTime() unixTime {
 func (rc *rackControl) loadXmitTime(unix unixTime) {
 	rc.xmitTime = time.Unix(unix.second, unix.nano)
 }
+
+// afterLoad is invoked by stateify.
+func (rc *rackControl) afterLoad() {
+	rc.probeTimer.init(&rc.probeWaker)
+}

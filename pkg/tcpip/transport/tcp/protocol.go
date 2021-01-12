@@ -405,7 +405,7 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) *tcpip.E
 
 	case *tcpip.TCPRecovery:
 		p.mu.RLock()
-		*v = tcpip.TCPRecovery(p.recovery)
+		*v = p.recovery
 		p.mu.RUnlock()
 		return nil
 
@@ -543,7 +543,8 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		minRTO:                     MinRTO,
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
-		recovery:                   tcpip.TCPRACKLossDetection,
+		// TODO(gvisor.dev/issue/5243): Set recovery to tcpip.TCPRACKLossDetection.
+		recovery: 0,
 	}
 	p.dispatcher.init(runtime.GOMAXPROCS(0))
 	return &p
