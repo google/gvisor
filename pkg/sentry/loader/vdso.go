@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/loader/vdsodata"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -177,7 +178,7 @@ type VDSO struct {
 
 // getSymbolValueFromVDSO returns the specific symbol value in vdso.so.
 func getSymbolValueFromVDSO(symbol string) (uint64, error) {
-	f, err := elf.NewFile(bytes.NewReader(vdsoBin))
+	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
 	if err != nil {
 		return 0, err
 	}
@@ -199,19 +200,19 @@ func getSymbolValueFromVDSO(symbol string) (uint64, error) {
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
 func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
-	vdsoFile := &byteFullReader{data: vdsoBin}
+	vdsoFile := &byteFullReader{data: vdsodata.Binary}
 
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.
-	info, err := validateVDSO(nil, vdsoFile, uint64(len(vdsoBin)))
+	info, err := validateVDSO(nil, vdsoFile, uint64(len(vdsodata.Binary)))
 	if err != nil {
 		return nil, err
 	}
 
 	// Then copy it into a VDSO mapping.
-	size, ok := usermem.Addr(len(vdsoBin)).RoundUp()
+	size, ok := usermem.Addr(len(vdsodata.Binary)).RoundUp()
 	if !ok {
-		return nil, fmt.Errorf("VDSO size overflows? %#x", len(vdsoBin))
+		return nil, fmt.Errorf("VDSO size overflows? %#x", len(vdsodata.Binary))
 	}
 
 	mf := mfp.MemoryFile()
@@ -226,7 +227,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 		return nil, fmt.Errorf("unable to map VDSO memory: %v", err)
 	}
 
-	_, err = safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(vdsoBin)))
+	_, err = safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(vdsodata.Binary)))
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to copy VDSO into memory: %v", err)
