@@ -7,6 +7,10 @@ name: "Go"
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
+      - "feature/**"
 
 jobs:
   generate:
@@ -19,31 +23,42 @@ jobs:
         else
           echo ::set-output name=has_token::false
         fi
+    - run: |
+        jq -nc '{"state": "pending", "context": "go tests"}' | \
+        curl -sL -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"
+      if: github.event_name == 'pull_request'
     - uses: actions/checkout@v2
-      if: steps.setup.outputs.has_token == 'true'
+      if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
       with:
         fetch-depth: 0
         token: '${{ secrets.GO_TOKEN }}'
     - uses: actions/checkout@v2
-      if: steps.setup.outputs.has_token != 'true'
+      if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
       with:
         fetch-depth: 0
     - uses: actions/setup-go@v2
       with:
-        go-version: 1.14
-    - uses: actions/cache@v1
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-    - uses: actions/cache@v1
-      with:
-        path: ~/.cache/bazel
-        key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
-        restore-keys: |
-          ${{ runner.os }}-bazel-
+        go-version: 1.15
     - run: tools/go_branch.sh
-    - run: |
+    - run: git checkout go && git clean -xf . && go build ./...
+    - if: github.event_name == 'push'
+      run: |
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go
+    - if: ${{ success() && github.event_name == 'pull_request' }}
+      run: |
+        jq -nc '{"state": "success", "context": "go tests"}' | \
+        curl -sL  -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"
+    - if: ${{ failure() && github.event_name == 'pull_request' }}
+      run: |
+        jq -nc '{"state": "failure", "context": "go tests"}' | \
+        curl -sL  -X POST -d @- \
+            -H "Content-Type: application/json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.statuses_url }}"

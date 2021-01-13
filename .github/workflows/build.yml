@@ -9,19 +9,14 @@ name: "Build"
       - master
   pull_request:
     branches:
-      - "**"
+      - master
+      - "feature/**"
 
 jobs:
   default:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v1
-      with:
-        path: ~/.cache/bazel
-        key: ${{ runner.os }}-bazel-${{ hashFiles('WORKSPACE') }}
-        restore-keys: |
-          ${{ runner.os }}-bazel-
     - run: make
     - run: make build OPTIONS="--build_tag_filters nogo" TARGETS="//..."
     - run: make run TARGETS="//tools/github" ARGS="-path=bazel-bin/ -path=bazel-out/ nogo"
