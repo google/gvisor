@@ -433,7 +433,7 @@ $(RELEASE_ARTIFACTS)/%:
 	@$(call copy,//debian:debian,$@)
 
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
-	@rm -rf $(RELEASE_ROOT) && mkdir -p $(RELEASE_ROOT)
+	@mkdir -p $(RELEASE_ROOT)
 	@NIGHTLY=$(RELEASE_NIGHTLY) tools/make_release.sh $(RELEASE_KEY) $(RELEASE_ROOT) $$(find $(RELEASE_ARTIFACTS) -type f)
 .PHONY: release
 
