@@ -18,7 +18,7 @@ From the root directory:
 
 *   Download images: `make load-all-images`
 *   Install runsc suitable for benchmarking, which should probably not have
-    strace or debug logs enabled. For example:`make configure RUNTIME=myrunsc
+    strace or debug logs enabled. For example: `make configure RUNTIME=myrunsc
     ARGS=--platform=kvm`.
 *   Restart docker: `sudo service docker restart`
 
@@ -46,7 +46,7 @@ Given the runtime above runtime `myrunsc`, run benchmarks with the following:
 
 ```
 make sudo TARGETS=//path/to:target ARGS="--runtime=myrunsc -test.v \
-  -test.bench=." OPTIONS="-c opt
+  -test.bench=." OPTIONS="-c opt"
 ```
 
 For example, to run only the Iperf tests:
