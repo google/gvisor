@@ -111,6 +111,30 @@ func (d DefaultLogger) Logf(fmt string, args ...interface{}) {
 	log.Printf(fmt, args...)
 }
 
+// multiLogger logs to multiple Loggers.
+type multiLogger []Logger
+
+// Name implements Logger.Name.
+func (m multiLogger) Name() string {
+	names := make([]string, len(m))
+	for i, l := range m {
+		names[i] = l.Name()
+	}
+	return strings.Join(names, "+")
+}
+
+// Logf implements Logger.Logf.
+func (m multiLogger) Logf(fmt string, args ...interface{}) {
+	for _, l := range m {
+		l.Logf(fmt, args...)
+	}
+}
+
+// NewMultiLogger returns a new Logger that logs on multiple Loggers.
+func NewMultiLogger(loggers ...Logger) Logger {
+	return multiLogger(loggers)
+}
+
 // Cmd is a simple wrapper.
 type Cmd struct {
 	logger Logger
