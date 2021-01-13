@@ -1352,7 +1352,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
-func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err *tcpip.Error, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -1376,13 +1376,13 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 			Payload:   payload,
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.RemoteAddress,
-				Port: id.RemotePort,
+				Addr: e.ID.RemoteAddress,
+				Port: e.ID.RemotePort,
 			},
 			Offender: tcpip.FullAddress{
 				NIC:  pkt.NICID,
-				Addr: id.LocalAddress,
-				Port: id.LocalPort,
+				Addr: e.ID.LocalAddress,
+				Port: e.ID.LocalPort,
 			},
 			NetProto: pkt.NetworkProtocolNumber,
 		})
@@ -1393,7 +1393,7 @@ func (e *endpoint) onICMPError(err *tcpip.Error, id stack.TransportEndpointID, e
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
 	if typ == stack.ControlPortUnreachable {
 		if e.EndpointState() == StateConnected {
 			var errType byte
@@ -1408,7 +1408,7 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 			default:
 				panic(fmt.Sprintf("unsupported net proto for infering ICMP type and code: %d", pkt.NetworkProtocolNumber))
 			}
-			e.onICMPError(tcpip.ErrConnectionRefused, id, errType, errCode, extra, pkt)
+			e.onICMPError(tcpip.ErrConnectionRefused, errType, errCode, extra, pkt)
 			return
 		}
 	}
