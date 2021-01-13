@@ -34,7 +34,7 @@ steps:
     label: ":golang: Go branch"
     commands:
       - tools/go_branch.sh
-      - git checkout go && git clean -f
+      - git checkout go && git clean -xf .
       - go build ./...
 
   # Release workflow.

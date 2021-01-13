@@ -37,11 +37,9 @@ readonly module origpwd othersrc
 # Build an amd64 & arm64 gopath.
 declare -r go_amd64="${tmp_dir}/amd64"
 declare -r go_arm64="${tmp_dir}/arm64"
-rm -rf bazel-bin/gopath
-make build BAZEL_OPTIONS="" TARGETS="//:gopath"
+make build BAZEL_OPTIONS="" TARGETS="//:gopath" 2>/dev/null
 rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_amd64}"
-rm -rf bazel-bin/gopath
-make build BAZEL_OPTIONS=--config=cross-aarch64 TARGETS="//:gopath"
+make build BAZEL_OPTIONS=--config=cross-aarch64 TARGETS="//:gopath" 2>/dev/null
 rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_arm64}"
 
 # Strip irrelevant files, i.e. use only arm64 files from the arm64 build.
@@ -69,8 +67,8 @@ cross_check "${go_amd64}" "${go_arm64}"
 
 # Merge the two for a complete set of source files.
 declare -r go_merged="${tmp_dir}/merged"
-rsync --recursive --update "${go_amd64}/" "${go_merged}"
-rsync --recursive --update "${go_arm64}/" "${go_merged}"
+rsync --recursive "${go_amd64}/" "${go_merged}"
+rsync --recursive "${go_arm64}/" "${go_merged}"
 
 # Record the current working commit.
 declare head
@@ -161,7 +159,7 @@ find . -type d -exec chmod 0755 {} \;
 # branch, then we have nothing to commit here. So allow empty commit. This can
 # occur when this script is run parallely (via pull_request and push events)
 # and the push workflow finishes before the pull_request workflow can run this.
-git add . && git commit --allow-empty -m "Merge ${head} (automated)"
+git add --all && git commit --allow-empty -m "Merge ${head} (automated)"
 
 # Push the branch back to the original repository.
 git remote add orig "${repo_orig}" && git push -f orig go:go
