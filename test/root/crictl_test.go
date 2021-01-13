@@ -353,8 +353,8 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	// because the shims will be installed there, and containerd may infer
 	// the binary name and search the PATH.
 	runtimeDir := path.Dir(runtime)
-	modifiedPath := os.Getenv("PATH")
-	if modifiedPath != "" {
+	modifiedPath, ok := os.LookupEnv("PATH")
+	if ok {
 		modifiedPath = ":" + modifiedPath // We prepend below.
 	}
 	modifiedPath = path.Dir(getContainerd()) + modifiedPath
