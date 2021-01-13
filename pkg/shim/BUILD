@@ -3,7 +3,7 @@ load("//tools:defs.bzl", "go_library")
 package(licenses = ["notice"])
 
 go_library(
-    name = "v2",
+    name = "shim",
     srcs = [
         "api.go",
         "epoll.go",
@@ -15,10 +15,10 @@ go_library(
     visibility = ["//shim:__subpackages__"],
     deps = [
         "//pkg/cleanup",
+        "//pkg/shim/proc",
         "//pkg/shim/runsc",
-        "//pkg/shim/v1/proc",
-        "//pkg/shim/v1/utils",
-        "//pkg/shim/v2/runtimeoptions",
+        "//pkg/shim/runtimeoptions",
+        "//pkg/shim/utils",
         "//runsc/specutils",
         "@com_github_burntsushi_toml//:go_default_library",
         "@com_github_containerd_cgroups//:go_default_library",

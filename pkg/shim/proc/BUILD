@@ -11,7 +11,7 @@ go_library(
         "init.go",
         "init_state.go",
         "io.go",
-        "process.go",
+        "proc.go",
         "types.go",
         "utils.go",
     ],

@@ -75,14 +75,11 @@ install_helper github.com/containerd/containerd "v${CONTAINERD_VERSION}" "${GOPA
 install_helper github.com/kubernetes-sigs/cri-tools "v${CRITOOLS_VERSION}" "${GOPATH}"
 
 # Configure containerd-shim.
-#
-# Note that for versions <= 1.1 the legacy shim must be installed in /usr/bin,
-# which should align with the installer script in head.sh (or master.sh).
-if [[ "${CONTAINERD_MAJOR}" -le 1 ]] && [[ "${CONTAINERD_MINOR}" -lt 2 ]]; then
-  declare -r shim_config_path=/etc/containerd/gvisor-containerd-shim.toml
-  mkdir -p $(dirname ${shim_config_path})
-  cat > ${shim_config_path} <<-EOF
-    runc_shim = "/usr/bin/containerd-shim"
+declare -r shim_config_path=/etc/containerd/runsc/config.toml
+mkdir -p $(dirname ${shim_config_path})
+cat > ${shim_config_path} <<-EOF
+log_path = "/tmp/shim-logs/"
+log_level = "debug"
 
 [runsc_config]
     debug = "true"
@@ -90,7 +87,6 @@ if [[ "${CONTAINERD_MAJOR}" -le 1 ]] && [[ "${CONTAINERD_MINOR}" -lt 2 ]]; then
     strace = "true"
     file-access = "shared"
 EOF
-fi
 
 # Configure CNI.
 (cd "${GOPATH}" && src/github.com/containerd/containerd/script/setup/install-cni)

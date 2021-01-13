@@ -1,5 +1,5 @@
 // Copyright 2018 The containerd Authors.
-// Copyright 2019 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,16 +13,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cli defines the command line interface for the V2 shim.
-package cli
+// Package proc is responsible to manage the communication between the shim and
+// the sandbox process running the container.
+package proc
 
 import (
-	"github.com/containerd/containerd/runtime/v2/shim"
-
-	"gvisor.dev/gvisor/pkg/shim/v2"
+	"fmt"
 )
 
-// Main is the main entrypoint.
-func Main() {
-	shim.Run("io.containerd.runsc.v1", v2.New)
+// RunscRoot is the path to the root runsc state directory.
+const RunscRoot = "/run/containerd/runsc"
+
+func stateName(v interface{}) string {
+	switch v.(type) {
+	case *runningState, *execRunningState:
+		return "running"
+	case *createdState, *execCreatedState:
+		return "created"
+	case *deletedState:
+		return "deleted"
+	case *stoppedState:
+		return "stopped"
+	}
+	panic(fmt.Errorf("invalid state %v", v))
 }

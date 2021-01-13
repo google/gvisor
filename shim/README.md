@@ -1,10 +1,8 @@
 # Shim Overview
 
-Integration with containerd is done via a [shim][shims]. There are various shims
-supported for different versions of [containerd][containerd].
-
--   [Containerd 1.2+ (shim v2)](https://gvisor.dev/docs/user_guide/containerd/quick_start/)
--   [Containerd 1.1 (shim v1)](https://gvisor.dev/docs/user_guide/containerd/containerd_11/)
+Integration with containerd is done via a [shim][shims]. The shim implements
+[containerd][containerd] shim v2 and is supported with containerd 1.3 and newer.
+[Here is how to get started](https://gvisor.dev/docs/user_guide/containerd/quick_start/)
 
 [containerd]: https://github.com/containerd/containerd
 [shims]: https://iximiuz.com/en/posts/implementing-container-runtime-shim/
