@@ -13,12 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package cli defines the command line interface for the V2 shim.
 package cli
 
 import (
-	shim "github.com/containerd/containerd/runtime/v1/shim/v1"
+	containerdshim "github.com/containerd/containerd/runtime/v2/shim"
+
+	"gvisor.dev/gvisor/pkg/shim"
 )
 
-type KillRequest = shim.KillRequest
-
-var registerShimService = shim.RegisterShimService
+// Main is the main entrypoint.
+func Main() {
+	containerdshim.Run("io.containerd.runsc.v1", shim.New)
+}

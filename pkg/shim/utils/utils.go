@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package utils contains utility functions.
+// Package utils container miscellaneous utility function used by the shim.
 package utils
 
 import (

@@ -39,9 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
 
-// InitPidFile name of the file that contains the init pid.
-const InitPidFile = "init.pid"
-
 // Init represents an initial process for a container.
 type Init struct {
 	wg        sync.WaitGroup
@@ -122,7 +119,8 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 			return fmt.Errorf("failed to create OCI runtime io pipes: %w", err)
 		}
 	}
-	pidFile := filepath.Join(p.Bundle, InitPidFile)
+	// pidFile is the file that will contain the sandbox pid.
+	pidFile := filepath.Join(p.Bundle, "init.pid")
 	opts := &runsc.CreateOpts{
 		PidFile: pidFile,
 	}
