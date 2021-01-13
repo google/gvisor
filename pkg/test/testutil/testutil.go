@@ -83,11 +83,10 @@ func ConfigureExePath() error {
 // TmpDir returns the absolute path to a writable directory that can be used as
 // scratch by the test.
 func TmpDir() string {
-	dir := os.Getenv("TEST_TMPDIR")
-	if dir == "" {
-		dir = "/tmp"
+	if dir, ok := os.LookupEnv("TEST_TMPDIR"); ok {
+		return dir
 	}
-	return dir
+	return "/tmp"
 }
 
 // Logger is a simple logging wrapper.
@@ -543,7 +542,7 @@ func IsStatic(filename string) (bool, error) {
 //
 // See https://docs.bazel.build/versions/master/test-encyclopedia.html#role-of-the-test-runner.
 func TouchShardStatusFile() error {
-	if statusFile := os.Getenv("TEST_SHARD_STATUS_FILE"); statusFile != "" {
+	if statusFile, ok := os.LookupEnv("TEST_SHARD_STATUS_FILE"); ok {
 		cmd := exec.Command("touch", statusFile)
 		if b, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("touch %q failed:\n output: %s\n error: %s", statusFile, string(b), err.Error())
@@ -565,8 +564,9 @@ func TestIndicesForShard(numTests int) ([]int, error) {
 		shardTotal = 1
 	)
 
-	indexStr, totalStr := os.Getenv("TEST_SHARD_INDEX"), os.Getenv("TEST_TOTAL_SHARDS")
-	if indexStr != "" && totalStr != "" {
+	indexStr, indexOk := os.LookupEnv("TEST_SHARD_INDEX")
+	totalStr, totalOk := os.LookupEnv("TEST_TOTAL_SHARDS")
+	if indexOk && totalOk {
 		// Parse index and total to ints.
 		var err error
 		shardIndex, err = strconv.Atoi(indexStr)

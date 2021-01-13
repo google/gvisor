@@ -24,11 +24,10 @@ import (
 )
 
 func tmpDir() string {
-	dir := os.Getenv("TEST_TMPDIR")
-	if dir == "" {
-		dir = "/tmp"
+	if dir, ok := os.LookupEnv("TEST_TMPDIR"); ok {
+		return dir
 	}
-	return dir
+	return "/tmp"
 }
 
 type dir struct {

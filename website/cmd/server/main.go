@@ -366,7 +366,7 @@ func registerProfile(mux *http.ServeMux) {
 }
 
 func envFlagString(name, def string) string {
-	if val := os.Getenv(name); val != "" {
+	if val, ok := os.LookupEnv(name); ok {
 		return val
 	}
 	return def

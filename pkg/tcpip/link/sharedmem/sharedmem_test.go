@@ -191,8 +191,8 @@ func shuffle(b []int) {
 }
 
 func createFile(t *testing.T, size int64, initQueue bool) int {
-	tmpDir := os.Getenv("TEST_TMPDIR")
-	if tmpDir == "" {
+	tmpDir, ok := os.LookupEnv("TEST_TMPDIR")
+	if !ok {
 		tmpDir = os.Getenv("TMPDIR")
 	}
 	f, err := ioutil.TempFile(tmpDir, "sharedmem_test")
