@@ -67,6 +67,14 @@ type rackControl struct {
 	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
 	probeTimer timer       `state:"nosave"`
 	probeWaker sleep.Waker `state:"nosave"`
+
+	// tlpRxtOut indicates whether there is an unacknowledged
+	// TLP retransmission.
+	tlpRxtOut bool
+
+	// tlpHighRxt the value of sender.sndNxt at the time of sending
+	// a TLP retransmission.
+	tlpHighRxt seqnum.Value
 }
 
 // init initializes RACK specific fields.
@@ -202,4 +210,41 @@ func (s *sender) probeTimerExpired() *tcpip.Error {
 	//  If FlightSize != 0:
 	//  				Arm RTO timer only.
 	return nil
+}
+
+// detectTLPRecovery detects if recovery was accomplished by the loss probes
+// and updates TLP state accordingly.
+// See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.3.
+func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
+	if !(s.ep.sackPermitted && s.rc.tlpRxtOut) {
+		return
+	}
+
+	// Step 1.
+	if s.isDupAck(rcvdSeg) && ack == s.rc.tlpHighRxt {
+		var sbAboveTLPHighRxt bool
+		for _, sb := range rcvdSeg.parsedOptions.SACKBlocks {
+			if s.rc.tlpHighRxt.LessThan(sb.End) {
+				sbAboveTLPHighRxt = true
+				break
+			}
+		}
+		if !sbAboveTLPHighRxt {
+			// TLP episode is complete.
+			s.rc.tlpRxtOut = false
+		}
+	}
+
+	if s.rc.tlpRxtOut && s.rc.tlpHighRxt.LessThanEq(ack) {
+		// TLP episode is complete.
+		s.rc.tlpRxtOut = false
+		if !checkDSACK(rcvdSeg) {
+			// Step 2. Either the original packet or the retransmission (in the
+			// form of a probe) was lost. Invoke a congestion control response
+			// equivalent to fast recovery.
+			s.cc.HandleNDupAcks()
+			s.enterRecovery()
+			s.leaveRecovery()
+		}
+	}
 }
