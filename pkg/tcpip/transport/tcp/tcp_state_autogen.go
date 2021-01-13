@@ -403,6 +403,8 @@ func (rc *rackControl) StateFields() []string {
 		"rtt",
 		"reorderSeen",
 		"xmitTime",
+		"tlpRxtOut",
+		"tlpHighRxt",
 	}
 }
 
@@ -418,6 +420,8 @@ func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &rc.minRTT)
 	stateSinkObject.Save(4, &rc.rtt)
 	stateSinkObject.Save(5, &rc.reorderSeen)
+	stateSinkObject.Save(7, &rc.tlpRxtOut)
+	stateSinkObject.Save(8, &rc.tlpHighRxt)
 }
 
 func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
@@ -427,6 +431,8 @@ func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &rc.minRTT)
 	stateSourceObject.Load(4, &rc.rtt)
 	stateSourceObject.Load(5, &rc.reorderSeen)
+	stateSourceObject.Load(7, &rc.tlpRxtOut)
+	stateSourceObject.Load(8, &rc.tlpHighRxt)
 	stateSourceObject.LoadValue(6, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
 	stateSourceObject.AfterLoad(rc.afterLoad)
 }

@@ -533,6 +533,10 @@ func (s *sender) retransmitTimerExpired() bool {
 	s.ep.stack.Stats().TCP.Timeouts.Increment()
 	s.ep.stats.SendErrors.Timeouts.Increment()
 
+	// Set TLPRxtOut to false according to
+	// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.1.
+	s.rc.tlpRxtOut = false
+
 	// Give up if we've waited more than a minute since the last resend or
 	// if a user time out is set and we have exceeded the user specified
 	// timeout since the first retransmission.
@@ -1060,6 +1064,9 @@ func (s *sender) enterRecovery() {
 	if s.ep.sackPermitted {
 		s.state = SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
+		// Set TLPRxtOut to false according to
+		// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.1.
+		s.rc.tlpRxtOut = false
 		return
 	}
 	s.state = FastRecovery
@@ -1143,19 +1150,11 @@ func (s *sender) SetPipe() {
 // detected. It manages the state related to duplicate acks and determines if
 // a retransmit is needed according to the rules in RFC 6582 (NewReno).
 func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
-	ack := seg.ackNumber
+	// We're not in fast recovery yet.
 
-	// We're not in fast recovery yet. A segment is considered a duplicate
-	// only if it doesn't carry any data and doesn't update the send window,
-	// because if it does, it wasn't sent in response to an out-of-order
-	// segment. If SACK is enabled then we have an additional check to see
-	// if the segment carries new SACK information. If it does then it is
-	// considered a duplicate ACK as per RFC6675.
-	if ack != s.sndUna || seg.logicalLen() != 0 || s.sndWnd != seg.window || ack == s.sndNxt {
-		if !s.ep.sackPermitted || !seg.hasNewSACKInfo {
-			s.dupAckCount = 0
-			return false
-		}
+	if !s.isDupAck(seg) {
+		s.dupAckCount = 0
+		return false
 	}
 
 	s.dupAckCount++
@@ -1186,6 +1185,31 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	return true
 }
 
+// isDupAck determines if seg is a duplicate ack as defined in
+// https://tools.ietf.org/html/rfc5681#section-2.
+func (s *sender) isDupAck(seg *segment) bool {
+	// A TCP that utilizes selective acknowledgments (SACKs) [RFC2018, RFC2883]
+	// can leverage the SACK information to determine when an incoming ACK is a
+	// "duplicate" (e.g., if the ACK contains previously unknown SACK
+	// information).
+	if s.ep.sackPermitted && !seg.hasNewSACKInfo {
+		return false
+	}
+
+	// (a) The receiver of the ACK has outstanding data.
+	return s.sndUna != s.sndNxt &&
+		// (b) The incoming acknowledgment carries no data.
+		seg.logicalLen() == 0 &&
+		// (c) The SYN and FIN bits are both off.
+		!seg.flagIsSet(header.TCPFlagFin) && !seg.flagIsSet(header.TCPFlagSyn) &&
+		// (d) the ACK number is equal to the greatest acknowledgment received on
+		// the given connection (TCP.UNA from RFC793).
+		seg.ackNumber == s.sndUna &&
+		// (e) the advertised window in the incoming acknowledgment equals the
+		// advertised window in the last incoming acknowledgment.
+		s.sndWnd == seg.window
+}
+
 // Iterate the writeList and update RACK for each segment which is newly acked
 // either cumulatively or selectively. Loop through the segments which are
 // sacked, and update the RACK related variables and check for reordering.
@@ -1196,7 +1220,7 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 	// Look for DSACK block.
 	idx := 0
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
-	if s.checkDSACK(rcvdSeg) {
+	if checkDSACK(rcvdSeg) {
 		s.rc.setDSACKSeen()
 		idx = 1
 		n--
@@ -1228,8 +1252,8 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 	}
 }
 
-// checkDSACK checks if a DSACK is reported and updates it in RACK.
-func (s *sender) checkDSACK(rcvdSeg *segment) bool {
+// checkDSACK checks if a DSACK is reported.
+func checkDSACK(rcvdSeg *segment) bool {
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
 	if n == 0 {
 		return false
@@ -1337,6 +1361,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// Detect loss by counting the duplicates and enter recovery.
 		fastRetransmit = s.detectLoss(rcvdSeg)
 	}
+
+	// See if TLP based recovery was successful.
+	s.detectTLPRecovery(ack, rcvdSeg)
 
 	// Stash away the current window size.
 	s.sndWnd = rcvdSeg.window
