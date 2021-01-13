@@ -17,8 +17,17 @@ package tcp
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
+
+// wcDelayedACKTimeout is the recommended maximum delayed ACK timer value as
+// defined in https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.
+// It stands for worst case delayed ACK timer (WCDelAckT). When FlightSize is
+// 1, PTO is inflated by WCDelAckT time to compensate for a potential long
+// delayed ACK timer at the receiver.
+const wcDelayedACKTimeout = 200 * time.Millisecond
 
 // RACK is a loss detection algorithm used in TCP to detect packet loss and
 // reordering using transmission timestamp of the packets instead of packet or
@@ -54,6 +63,15 @@ type rackControl struct {
 
 	// xmitTime is the latest transmission timestamp of rackControl.seg.
 	xmitTime time.Time `state:".(unixTime)"`
+
+	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
+	probeTimer timer       `state:"nosave"`
+	probeWaker sleep.Waker `state:"nosave"`
+}
+
+// init initializes RACK specific fields.
+func (rc *rackControl) init() {
+	rc.probeTimer.init(&rc.probeWaker)
 }
 
 // update will update the RACK related fields when an ACK has been received.
@@ -126,4 +144,62 @@ func (rc *rackControl) detectReorder(seg *segment) {
 // setDSACKSeen updates rack control if duplicate SACK is seen by the connection.
 func (rc *rackControl) setDSACKSeen() {
 	rc.dsackSeen = true
+}
+
+// shouldSchedulePTO dictates whether we should schedule a PTO or not.
+// See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+func (s *sender) shouldSchedulePTO() bool {
+	// Schedule PTO only if RACK loss detection is enabled.
+	return s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 &&
+		// The connection supports SACK.
+		s.ep.sackPermitted &&
+		// The connection is not in loss recovery.
+		(s.state != RTORecovery && s.state != SACKRecovery) &&
+		// The connection has no SACKed sequences in the SACK scoreboard.
+		s.ep.scoreboard.Sacked() == 0
+}
+
+// schedulePTO schedules the probe timeout as defined in
+// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+func (s *sender) schedulePTO() {
+	pto := time.Second
+	s.rtt.Lock()
+	if s.rtt.srttInited && s.rtt.srtt > 0 {
+		pto = s.rtt.srtt * 2
+		if s.outstanding == 1 {
+			pto += wcDelayedACKTimeout
+		}
+	}
+	s.rtt.Unlock()
+
+	now := time.Now()
+	if s.resendTimer.enabled() {
+		if now.Add(pto).After(s.resendTimer.target) {
+			pto = s.resendTimer.target.Sub(now)
+		}
+		s.resendTimer.disable()
+	}
+
+	s.rc.probeTimer.enable(pto)
+}
+
+// probeTimerExpired is the same as TLP_send_probe() as defined in
+// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.2.
+func (s *sender) probeTimerExpired() *tcpip.Error {
+	if !s.rc.probeTimer.checkExpiration() {
+		return nil
+	}
+	// TODO(gvisor.dev/issue/5084): Implement this pseudo algorithm.
+	// 	If an unsent segment exists AND
+	// 			the receive window allows new data to be sent:
+	// 					Transmit the lowest-sequence unsent segment of up to SMSS
+	// 					Increment FlightSize by the size of the newly-sent segment
+	// 	Else if TLPRxtOut is not set:
+	// 					Retransmit the highest-sequence segment sent so far
+	// 					TLPRxtOut = true
+	// 					TLPHighRxt = SND.NXT
+	// 	The cwnd remains unchanged
+	//  If FlightSize != 0:
+	//  				Arm RTO timer only.
+	return nil
 }

@@ -286,6 +286,8 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		gso: ep.gso != nil,
 	}
 
+	s.rc.init()
+
 	if s.gso {
 		s.ep.gso.MSS = uint16(maxPayloadSize)
 	}
@@ -1455,6 +1457,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// Reset firstRetransmittedSegXmitTime to the zero value.
 			s.firstRetransmittedSegXmitTime = time.Time{}
 			s.resendTimer.disable()
+			s.rc.probeTimer.disable()
 		}
 	}
 
