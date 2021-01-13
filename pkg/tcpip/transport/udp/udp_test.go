@@ -1560,31 +1560,15 @@ func TestNoChecksum(t *testing.T) {
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
-	stack.NetworkLinkEndpoint
+	stack.NetworkInterface
 }
 
 func (*testInterface) ID() tcpip.NICID {
 	return 0
 }
 
-func (*testInterface) IsLoopback() bool {
-	return false
-}
-
-func (*testInterface) Name() string {
-	return ""
-}
-
 func (*testInterface) Enabled() bool {
 	return true
-}
-
-func (*testInterface) Promiscuous() bool {
-	return false
-}
-
-func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) *tcpip.Error {
-	return tcpip.ErrNotSupported
 }
 
 func TestTTL(t *testing.T) {
