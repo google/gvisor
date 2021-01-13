@@ -186,12 +186,16 @@ fuse-tests:
 	@$(call test,--test_tag_filters=fuse $(PARTITIONS) test/fuse/...)
 .PHONY: fuse-tests
 
-unit-tests: ## Local package unit tests in pkg/..., runsc/, tools/.., etc.
-	@$(call test,//:all pkg/... runsc/... tools/...)
+unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
+	@$(call test,//:all pkg/... tools/...)
 .PHONY: unit-tests
 
+runsc-tests: ## Run all tests in runsc/...
+	@$(call test,runsc/...)
+.PHONY: runsc-tests
+
 tests: ## Runs all unit tests and syscall tests.
-tests: unit-tests syscall-tests
+tests: unit-tests runsc-tests syscall-tests
 .PHONY: tests
 
 integration-tests: ## Run all standard integration tests.
