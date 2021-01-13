@@ -15,7 +15,7 @@
 
 // +build linux
 
-package v2
+package shim
 
 import (
 	"context"

@@ -1,5 +1,4 @@
-// Copyright 2018 The containerd Authors.
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,5 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package shim contains the core containerd shim implementation.
-package shim
+// Binary containerd-shim-runsc-v1 is the v2 containerd shim (implementing the formal v1 API).
+package main
+
+import (
+	"gvisor.dev/gvisor/shim/cli"
+)
+
+func main() {
+	cli.Main()
+}

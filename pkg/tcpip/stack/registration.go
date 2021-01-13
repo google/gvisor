@@ -84,7 +84,7 @@ type TransportEndpoint interface {
 	// HandleControlPacket is called by the stack when new control (e.g.
 	// ICMP) packets arrive to this transport endpoint.
 	// HandleControlPacket takes ownership of pkt.
-	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, pkt *PacketBuffer)
+	HandleControlPacket(typ ControlType, extra uint32, pkt *PacketBuffer)
 
 	// Abort initiates an expedited endpoint teardown. It puts the endpoint
 	// in a closed state and frees all resources associated with it. This

@@ -41,9 +41,6 @@ func (s *socketOpsCommon) StateFields() []string {
 		"Endpoint",
 		"skType",
 		"protocol",
-		"readCM",
-		"sender",
-		"linkPacketInfo",
 		"sockOptTimestamp",
 		"timestampValid",
 		"timestampNS",
@@ -61,13 +58,10 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.Endpoint)
 	stateSinkObject.Save(4, &s.skType)
 	stateSinkObject.Save(5, &s.protocol)
-	stateSinkObject.Save(6, &s.readCM)
-	stateSinkObject.Save(7, &s.sender)
-	stateSinkObject.Save(8, &s.linkPacketInfo)
-	stateSinkObject.Save(9, &s.sockOptTimestamp)
-	stateSinkObject.Save(10, &s.timestampValid)
-	stateSinkObject.Save(11, &s.timestampNS)
-	stateSinkObject.Save(12, &s.sockOptInq)
+	stateSinkObject.Save(6, &s.sockOptTimestamp)
+	stateSinkObject.Save(7, &s.timestampValid)
+	stateSinkObject.Save(8, &s.timestampNS)
+	stateSinkObject.Save(9, &s.sockOptInq)
 }
 
 func (s *socketOpsCommon) afterLoad() {}
@@ -79,13 +73,10 @@ func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &s.Endpoint)
 	stateSourceObject.Load(4, &s.skType)
 	stateSourceObject.Load(5, &s.protocol)
-	stateSourceObject.Load(6, &s.readCM)
-	stateSourceObject.Load(7, &s.sender)
-	stateSourceObject.Load(8, &s.linkPacketInfo)
-	stateSourceObject.Load(9, &s.sockOptTimestamp)
-	stateSourceObject.Load(10, &s.timestampValid)
-	stateSourceObject.Load(11, &s.timestampNS)
-	stateSourceObject.Load(12, &s.sockOptInq)
+	stateSourceObject.Load(6, &s.sockOptTimestamp)
+	stateSourceObject.Load(7, &s.timestampValid)
+	stateSourceObject.Load(8, &s.timestampNS)
+	stateSourceObject.Load(9, &s.sockOptInq)
 }
 
 func (s *SocketVFS2) StateTypeName() string {

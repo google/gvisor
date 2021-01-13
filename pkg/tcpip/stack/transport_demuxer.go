@@ -182,7 +182,8 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *Packet
 	epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
-// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
+// handleControlPacket delivers a control packet to the transport endpoint
+// identified by id.
 func (epsByNIC *endpointsByNIC) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt *PacketBuffer) {
 	epsByNIC.mu.RLock()
 	defer epsByNIC.mu.RUnlock()
@@ -199,7 +200,7 @@ func (epsByNIC *endpointsByNIC) handleControlPacket(n *NIC, id TransportEndpoint
 	// broadcast like we are doing with handlePacket above?
 
 	// multiPortEndpoints are guaranteed to have at least one element.
-	selectEndpoint(id, mpep, epsByNIC.seed).HandleControlPacket(id, typ, extra, pkt)
+	selectEndpoint(id, mpep, epsByNIC.seed).HandleControlPacket(typ, extra, pkt)
 }
 
 // registerEndpoint returns true if it succeeds. It fails and returns

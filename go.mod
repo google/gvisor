@@ -15,7 +15,6 @@ require (
 	github.com/containerd/continuity v0.0.0-20200928162600-f2cc35102c2a // indirect
 	github.com/containerd/fifo v0.0.0-20191213151349-ff969a566b00 // indirect
 	github.com/containerd/go-runc v0.0.0-20200220073739-7016d3ce2328 // indirect
-	github.com/containerd/ttrpc v0.0.0-20200121165050-0be804eadb15 // indirect
 	github.com/containerd/typeurl v0.0.0-20200205145503-b45ef1f1f737 // indirect
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
 	github.com/coreos/go-systemd/v22 v22.0.0 // indirect
