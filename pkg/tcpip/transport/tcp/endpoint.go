@@ -1544,46 +1544,38 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		return 0, nil, perr
 	}
 
-	queueAndSend := func() (int64, <-chan struct{}, *tcpip.Error) {
-		// Add data to the send queue.
-		s := newOutgoingSegment(e.ID, v)
-		e.sndBufUsed += len(v)
-		e.sndBufInQueue += seqnum.Size(len(v))
-		e.sndQueue.PushBack(s)
-		e.sndBufMu.Unlock()
+	if !opts.Atomic {
+		// Since we released locks in between it's possible that the
+		// endpoint transitioned to a CLOSED/ERROR states so make
+		// sure endpoint is still writable before trying to write.
+		e.LockUser()
+		e.sndBufMu.Lock()
+		avail, err := e.isEndpointWritableLocked()
+		if err != nil {
+			e.sndBufMu.Unlock()
+			e.UnlockUser()
+			e.stats.WriteErrors.WriteClosed.Increment()
+			return 0, nil, err
+		}
 
-		// Do the work inline.
-		e.handleWrite()
-		e.UnlockUser()
-		return int64(len(v)), nil, nil
+		// Discard any excess data copied in due to avail being reduced due
+		// to a simultaneous write call to the socket.
+		if avail < len(v) {
+			v = v[:avail]
+		}
 	}
 
-	if opts.Atomic {
-		// Locks released in queueAndSend()
-		return queueAndSend()
-	}
+	// Add data to the send queue.
+	s := newOutgoingSegment(e.ID, v)
+	e.sndBufUsed += len(v)
+	e.sndBufInQueue += seqnum.Size(len(v))
+	e.sndQueue.PushBack(s)
+	e.sndBufMu.Unlock()
 
-	// Since we released locks in between it's possible that the
-	// endpoint transitioned to a CLOSED/ERROR states so make
-	// sure endpoint is still writable before trying to write.
-	e.LockUser()
-	e.sndBufMu.Lock()
-	avail, err = e.isEndpointWritableLocked()
-	if err != nil {
-		e.sndBufMu.Unlock()
-		e.UnlockUser()
-		e.stats.WriteErrors.WriteClosed.Increment()
-		return 0, nil, err
-	}
-
-	// Discard any excess data copied in due to avail being reduced due
-	// to a simultaneous write call to the socket.
-	if avail < len(v) {
-		v = v[:avail]
-	}
-
-	// Locks released in queueAndSend()
-	return queueAndSend()
+	// Do the work inline.
+	e.handleWrite()
+	e.UnlockUser()
+	return int64(len(v)), nil, nil
 }
 
 // selectWindowLocked returns the new window without checking for shrinking or scaling
