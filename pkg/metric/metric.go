@@ -18,6 +18,7 @@ package metric
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/eventchannel"
@@ -139,7 +140,8 @@ func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, descript
 	}
 }
 
-// NewUint64Metric creates and registers a new cumulative metric with the given name.
+// NewUint64Metric creates and registers a new cumulative metric with the given
+// name.
 //
 // Metrics must be statically defined (i.e., at init).
 func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string) (*Uint64Metric, error) {
@@ -147,7 +149,8 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value)
 }
 
-// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an error.
+// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an
+// error.
 func MustCreateNewUint64Metric(name string, sync bool, description string) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description)
 	if err != nil {
@@ -156,7 +159,8 @@ func MustCreateNewUint64Metric(name string, sync bool, description string) *Uint
 	return m
 }
 
-// MustCreateNewUint64NanosecondsMetric calls NewUint64Metric and panics if it returns an error.
+// MustCreateNewUint64NanosecondsMetric calls NewUint64Metric and panics if it
+// returns an error.
 func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description string) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NANOSECONDS, description)
 	if err != nil {
@@ -245,6 +249,15 @@ func EmitMetricUpdate() {
 		return
 	}
 
-	log.Debugf("Emitting metrics: %v", &m)
+	if log.IsLogging(log.Debug) {
+		sort.Slice(m.Metrics, func(i, j int) bool {
+			return m.Metrics[i].Name < m.Metrics[j].Name
+		})
+		log.Debugf("Emitting metrics:")
+		for _, metric := range m.Metrics {
+			log.Debugf("%s: %+v", metric.Name, metric.Value)
+		}
+	}
+
 	eventchannel.Emit(&m)
 }
