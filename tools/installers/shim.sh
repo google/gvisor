@@ -30,4 +30,3 @@ if [[ -d "$0.runfiles" ]]; then
   runfiles="$0.runfiles"
 fi
 find -L "${runfiles}" -executable -type f -name containerd-shim-runsc-v1 -exec cp -L {} "${containerd_install_dir}" \;
-find -L "${runfiles}" -executable -type f -name gvisor-containerd-shim -exec cp -L {} "${containerd_install_dir}" \;

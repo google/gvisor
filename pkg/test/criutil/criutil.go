@@ -36,7 +36,6 @@ import (
 type Crictl struct {
 	logger   testutil.Logger
 	endpoint string
-	runpArgs []string
 	cleanup  []func()
 }
 
@@ -72,14 +71,13 @@ func ResolvePath(executable string) string {
 
 // NewCrictl returns a Crictl configured with a timeout and an endpoint over
 // which it will talk to containerd.
-func NewCrictl(logger testutil.Logger, endpoint string, runpArgs []string) *Crictl {
+func NewCrictl(logger testutil.Logger, endpoint string) *Crictl {
 	// Attempt to find the executable, but don't bother propagating the
 	// error at this point. The first command executed will return with a
 	// binary not found error.
 	return &Crictl{
 		logger:   logger,
 		endpoint: endpoint,
-		runpArgs: runpArgs,
 	}
 }
 

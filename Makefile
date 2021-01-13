@@ -298,13 +298,9 @@ containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-b
 	@$(call sudo,tools/installers:shim)
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
-# Note that we can't run containerd-test-1.1.8 tests here.
-#
-# Containerd 1.1.8 should work, but because of a bug in loading images locally
-# (https://github.com/kubernetes-sigs/cri-tools/issues/421), we are unable to
-# actually drive the tests. The v1 API is tested exclusively through 1.2.13.
+# The shim builds with containerd 1.3.9 and it's not backward compatible. Test
+# with 1.3.9 and newer versions.
 containerd-tests: ## Runs all supported containerd version tests.
-containerd-tests: containerd-test-1.2.13
 containerd-tests: containerd-test-1.3.9
 containerd-tests: containerd-test-1.4.3
 
@@ -433,8 +429,7 @@ $(RELEASE_KEY):
 $(RELEASE_ARTIFACTS)/%:
 	@mkdir -p $@
 	@$(call copy,//runsc:runsc,$@)
-	@$(call copy,//shim/v1:gvisor-containerd-shim,$@)
-	@$(call copy,//shim/v2:containerd-shim-runsc-v1,$@)
+	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
 	@$(call copy,//debian:debian,$@)
 
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)

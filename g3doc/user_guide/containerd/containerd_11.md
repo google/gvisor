@@ -1,5 +1,9 @@
 # Older Versions (containerd 1.1)
 
+**WARNING: containerd 1.1 and shim v1 is no longer supported. The instructions
+below is kept just for reference in case you're dealing with an old version.
+It's highly recommended upgrading to the latest version.**
+
 This document describes how to install and run the `gvisor-containerd-shim`
 using the untrusted workload CRI extension. This requires `containerd` 1.1 or
 later.

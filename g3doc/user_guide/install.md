@@ -15,14 +15,12 @@ To download and install the latest release manually follow these steps:
   ARCH=$(uname -m)
   URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
   wget ${URL}/runsc ${URL}/runsc.sha512 \
-    ${URL}/gvisor-containerd-shim ${URL}/gvisor-containerd-shim.sha512 \
     ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
   sha512sum -c runsc.sha512 \
-    -c gvisor-containerd-shim.sha512 \
     -c containerd-shim-runsc-v1.sha512
   rm -f *.sha512
-  chmod a+rx runsc gvisor-containerd-shim containerd-shim-runsc-v1
-  sudo mv runsc gvisor-containerd-shim containerd-shim-runsc-v1 /usr/local/bin
+  chmod a+rx runsc containerd-shim-runsc-v1
+  sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin
 )
 ```
 

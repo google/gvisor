@@ -1,6 +1,16 @@
-load("//tools:defs.bzl", "pkg_tar")
+load("//tools:defs.bzl", "go_binary", "pkg_tar")
 
 package(licenses = ["notice"])
+
+go_binary(
+    name = "containerd-shim-runsc-v1",
+    srcs = ["main.go"],
+    static = True,
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = ["//shim/cli"],
+)
 
 pkg_tar(
     name = "config",

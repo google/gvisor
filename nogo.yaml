@@ -57,7 +57,7 @@ global:
       - "should not use underscores in Go names"
     exclude:
       # Generated: exempt all.
-      - pkg/shim/v2/runtimeoptions/runtimeoptions_cri.go
+      - pkg/shim/runtimeoptions/runtimeoptions_cri.go
 analyzers:
   asmdecl:
     external: # Enabled.

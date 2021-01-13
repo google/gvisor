@@ -93,11 +93,10 @@ GO111MODULE=on go get gvisor.dev/gvisor/runsc@go
 CGO_ENABLED=0 GO111MODULE=on sudo -E go build -o /usr/local/bin/runsc gvisor.dev/gvisor/runsc
 ```
 
-Subsequently, you can build and install the shim binaries for `containerd`:
+Subsequently, you can build and install the shim binary for `containerd`:
 
 ```sh
-GO111MODULE=on sudo -E go build -o /usr/local/bin/gvisor-containerd-shim gvisor.dev/gvisor/shim/v1
-GO111MODULE=on sudo -E go build -o /usr/local/bin/containerd-shim-runsc-v1 gvisor.dev/gvisor/shim/v2
+GO111MODULE=on sudo -E go build -o /usr/local/bin/containerd-shim-runsc-v1 gvisor.dev/gvisor/shim
 ```
 
 Note that this branch is supported in a best effort capacity, and direct

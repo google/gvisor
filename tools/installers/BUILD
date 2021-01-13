@@ -27,7 +27,6 @@ sh_binary(
     name = "shim",
     srcs = ["shim.sh"],
     data = [
-        "//shim/v1:gvisor-containerd-shim",
-        "//shim/v2:containerd-shim-runsc-v1",
+        "//shim:containerd-shim-runsc-v1",
     ],
 )

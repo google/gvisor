@@ -6,8 +6,7 @@ pkg_tar(
     name = "debian-bin",
     srcs = [
         "//runsc",
-        "//shim/v1:gvisor-containerd-shim",
-        "//shim/v2:containerd-shim-runsc-v1",
+        "//shim:containerd-shim-runsc-v1",
     ],
     mode = "0755",
     package_dir = "/usr/bin",

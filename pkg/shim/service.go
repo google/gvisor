@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package v2 implements Containerd Shim v2 interface.
-package v2
+// Package shim implements Containerd Shim v2 interface.
+package shim
 
 import (
 	"context"
@@ -49,10 +49,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 
+	"gvisor.dev/gvisor/pkg/shim/proc"
 	"gvisor.dev/gvisor/pkg/shim/runsc"
-	"gvisor.dev/gvisor/pkg/shim/v1/proc"
-	"gvisor.dev/gvisor/pkg/shim/v1/utils"
-	"gvisor.dev/gvisor/pkg/shim/v2/runtimeoptions"
+	"gvisor.dev/gvisor/pkg/shim/runtimeoptions"
+	"gvisor.dev/gvisor/pkg/shim/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

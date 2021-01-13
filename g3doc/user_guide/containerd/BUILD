@@ -27,7 +27,7 @@ doc(
     name = "containerd_11",
     src = "containerd_11.md",
     category = "User Guide",
+    include_in_menu = False,
     permalink = "/docs/user_guide/containerd/containerd_11/",
     subcategory = "Containerd",
-    weight = "99",
 )

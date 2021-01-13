@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v2
+package shim
 
 const optionsType = "io.containerd.runsc.v1.options"
 
