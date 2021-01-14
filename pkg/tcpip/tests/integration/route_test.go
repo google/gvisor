@@ -197,10 +197,10 @@ func TestLocalPing(t *testing.T) {
 
 			payload := tcpip.SlicePayload(test.icmpBuf(t))
 			var wOpts tcpip.WriteOptions
-			if n, _, err := ep.Write(payload, wOpts); err != nil {
+			if n, err := ep.Write(payload, wOpts); err != nil {
 				t.Fatalf("ep.Write(%#v, %#v): %s", payload, wOpts, err)
 			} else if n != int64(len(payload)) {
-				t.Fatalf("got ep.Write(%#v, %#v) = (%d, _, nil), want = (%d, _, nil)", payload, wOpts, n, len(payload))
+				t.Fatalf("got ep.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", payload, wOpts, n, len(payload))
 			}
 
 			// Wait for the endpoint to become readable.
@@ -335,14 +335,14 @@ func TestLocalUDP(t *testing.T) {
 						wOpts := tcpip.WriteOptions{
 							To: &serverAddr,
 						}
-						if n, _, err := client.Write(clientPayload, wOpts); err != subTest.expectedWriteErr {
-							t.Fatalf("got client.Write(%#v, %#v) = (%d, _, %s_), want = (_, _, %s)", clientPayload, wOpts, n, err, subTest.expectedWriteErr)
+						if n, err := client.Write(clientPayload, wOpts); err != subTest.expectedWriteErr {
+							t.Fatalf("got client.Write(%#v, %#v) = (%d, %s), want = (_, %s)", clientPayload, wOpts, n, err, subTest.expectedWriteErr)
 						} else if subTest.expectedWriteErr != nil {
 							// Nothing else to test if we expected not to be able to send the
 							// UDP packet.
 							return
 						} else if n != int64(len(clientPayload)) {
-							t.Fatalf("got client.Write(%#v, %#v) = (%d, _, nil), want = (%d, _, nil)", clientPayload, wOpts, n, len(clientPayload))
+							t.Fatalf("got client.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", clientPayload, wOpts, n, len(clientPayload))
 						}
 					}
 
@@ -382,10 +382,10 @@ func TestLocalUDP(t *testing.T) {
 						wOpts := tcpip.WriteOptions{
 							To: &clientAddr,
 						}
-						if n, _, err := server.Write(serverPayload, wOpts); err != nil {
+						if n, err := server.Write(serverPayload, wOpts); err != nil {
 							t.Fatalf("server.Write(%#v, %#v): %s", serverPayload, wOpts, err)
 						} else if n != int64(len(serverPayload)) {
-							t.Fatalf("got server.Write(%#v, %#v) = (%d, _, nil), want = (%d, _, nil)", serverPayload, wOpts, n, len(serverPayload))
+							t.Fatalf("got server.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", serverPayload, wOpts, n, len(serverPayload))
 						}
 					}
 

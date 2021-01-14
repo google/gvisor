@@ -64,6 +64,7 @@ const (
 
 var ipv4BroadcastAddr = header.IPv4Broadcast.WithPrefix()
 
+var _ stack.LinkResolvableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
@@ -85,6 +86,21 @@ type endpoint struct {
 		addressableEndpointState stack.AddressableEndpointState
 		igmp                     igmpState
 	}
+}
+
+// HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
+func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
+	// handleControl expects the entire offending packet to be in the packet
+	// buffer's data field.
+	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+	})
+	pkt.NICID = e.nic.ID()
+	pkt.NetworkProtocolNumber = ProtocolNumber
+	// Use the same control type as an ICMPv4 destination host unreachable error
+	// since the host is considered unreachable if we cannot resolve the link
+	// address to the next hop.
+	e.handleControl(stack.ControlNoRoute, 0, pkt)
 }
 
 // NewEndpoint creates a new ipv4 endpoint.

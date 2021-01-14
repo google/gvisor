@@ -75,7 +75,6 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	if err != nil {
 		return nil, err
 	}
-	route.ResolveWith(r.pkt.SourceLinkAddress())
 
 	ep := newEndpoint(r.stack, r.pkt.NetworkProtocolNumber, queue)
 	if err := r.stack.RegisterTransportEndpoint(r.pkt.NICID, []tcpip.NetworkProtocolNumber{r.pkt.NetworkProtocolNumber}, ProtocolNumber, r.id, ep, ep.portFlags, tcpip.NICID(ep.ops.GetBindToDevice())); err != nil {
