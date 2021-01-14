@@ -17,6 +17,7 @@ package buffer
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 )
 
@@ -166,6 +167,9 @@ func (vv *VectorisedView) ReadTo(dst io.Writer, count int, peek bool) (int, erro
 		}
 		if err != nil {
 			break
+		}
+		if n != len(v) {
+			panic(fmt.Sprintf("io.Writer.Write succeeded with incomplete write: %d != %d", n, len(v)))
 		}
 	}
 	if !peek {
