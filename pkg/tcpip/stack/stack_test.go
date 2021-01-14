@@ -4305,3 +4305,55 @@ func TestWritePacketToRemote(t *testing.T) {
 		}
 	})
 }
+
+func TestClearNeighborCacheOnNICDisable(t *testing.T) {
+	const (
+		nicID = 1
+
+		ipv4Addr = tcpip.Address("\x01\x02\x03\x04")
+		ipv6Addr = tcpip.Address("\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04")
+		linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	)
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+		UseNeighborCache: true,
+	})
+	e := channel.New(0, 0, "")
+	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	if err := s.AddStaticNeighbor(nicID, ipv4Addr, linkAddr); err != nil {
+		t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, ipv4Addr, linkAddr, err)
+	}
+	if err := s.AddStaticNeighbor(nicID, ipv6Addr, linkAddr); err != nil {
+		t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, ipv6Addr, linkAddr, err)
+	}
+	if neighbors, err := s.Neighbors(nicID); err != nil {
+		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+	} else if len(neighbors) != 2 {
+		t.Fatalf("got len(neighbors) = %d, want = 2; neighbors = %#v", len(neighbors), neighbors)
+	}
+
+	// Disabling the NIC should clear the neighbor table.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	if neighbors, err := s.Neighbors(nicID); err != nil {
+		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+	} else if len(neighbors) != 0 {
+		t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+	}
+
+	// Enabling the NIC should have an empty neighbor table.
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if neighbors, err := s.Neighbors(nicID); err != nil {
+		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+	} else if len(neighbors) != 0 {
+		t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+	}
+}
