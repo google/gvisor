@@ -480,7 +480,10 @@ nogo_test = rule(
             default = "//tools/nogo:target",
             cfg = "target",
         ),
-        "_filter": attr.label(default = "//tools/nogo/filter:filter"),
+        "_filter": attr.label(
+            default = "//tools/nogo/filter:filter",
+            cfg = "host",
+        ),
     },
     test = True,
 )
