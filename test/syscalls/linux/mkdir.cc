@@ -82,6 +82,39 @@ TEST_F(MkdirTest, FailsOnDirWithoutWritePerms) {
               SyscallFailsWithErrno(EACCES));
 }
 
+TEST_F(MkdirTest, DirAlreadyExists) {
+  // Drop capabilities that allow us to override file and directory permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+
+  ASSERT_THAT(mkdir(dirname_.c_str(), 0777), SyscallSucceeds());
+  auto dir = JoinPath(dirname_.c_str(), "foo");
+  EXPECT_THAT(mkdir(dir.c_str(), 0777), SyscallSucceeds());
+
+  struct {
+    int mode;
+    int err;
+  } tests[] = {
+      {.mode = 0000, .err = EACCES},  // No perm
+      {.mode = 0100, .err = EEXIST},  // Exec only
+      {.mode = 0200, .err = EACCES},  // Write only
+      {.mode = 0300, .err = EEXIST},  // Write+exec
+      {.mode = 0400, .err = EACCES},  // Read only
+      {.mode = 0500, .err = EEXIST},  // Read+exec
+      {.mode = 0600, .err = EACCES},  // Read+write
+      {.mode = 0700, .err = EEXIST},  // All
+  };
+  for (const auto& t : tests) {
+    printf("mode: 0%o\n", t.mode);
+    EXPECT_THAT(chmod(dirname_.c_str(), t.mode), SyscallSucceeds());
+    EXPECT_THAT(mkdir(dir.c_str(), 0777), SyscallFailsWithErrno(t.err));
+  }
+
+  // Clean up.
+  EXPECT_THAT(chmod(dirname_.c_str(), 0777), SyscallSucceeds());
+  ASSERT_THAT(rmdir(dir.c_str()), SyscallSucceeds());
+}
+
 TEST_F(MkdirTest, MkdirAtEmptyPath) {
   ASSERT_THAT(mkdir(dirname_.c_str(), 0777), SyscallSucceeds());
   auto fd =
