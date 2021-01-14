@@ -240,6 +240,10 @@ func TestDirectRequest(t *testing.T) {
 
 	for i, address := range []tcpip.Address{stackAddr, remoteAddr} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			expectedPacketsReceived := c.s.Stats().ARP.PacketsReceived.Value() + 1
+			expectedRequestsReceived := c.s.Stats().ARP.RequestsReceived.Value() + 1
+			expectedRepliesSent := c.s.Stats().ARP.OutgoingRepliesSent.Value() + 1
+
 			inject(address)
 			pi, _ := c.linkEP.ReadContext(context.Background())
 			if pi.Proto != arp.ProtocolNumber {
@@ -248,6 +252,9 @@ func TestDirectRequest(t *testing.T) {
 			rep := header.ARP(pi.Pkt.NetworkHeader().View())
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
+			}
+			if got := rep.Op(); got != header.ARPReply {
+				t.Fatalf("got Op = %d, want = %d", got, header.ARPReply)
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
@@ -261,6 +268,16 @@ func TestDirectRequest(t *testing.T) {
 			if got, want := tcpip.Address(rep.ProtocolAddressTarget()), tcpip.Address(h.ProtocolAddressSender()); got != want {
 				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, want)
 			}
+
+			if got := c.s.Stats().ARP.PacketsReceived.Value(); got != expectedPacketsReceived {
+				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, expectedPacketsReceived)
+			}
+			if got := c.s.Stats().ARP.RequestsReceived.Value(); got != expectedRequestsReceived {
+				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, expectedRequestsReceived)
+			}
+			if got := c.s.Stats().ARP.OutgoingRepliesSent.Value(); got != expectedRepliesSent {
+				t.Errorf("got c.s.Stats().ARP.OutgoingRepliesSent.Value() = %d, want = %d", got, expectedRepliesSent)
+			}
 		})
 	}
 
@@ -272,6 +289,84 @@ func TestDirectRequest(t *testing.T) {
 	defer cancel()
 	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
+	}
+	if got := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.RequestsReceivedUnKnownTargetAddress.Value() = %d, want = 1", got)
+	}
+}
+
+func TestMalformedPacket(t *testing.T) {
+	c := newTestContext(t, false)
+	defer c.cleanup()
+
+	v := make(buffer.View, header.ARPSize)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: v.ToVectorisedView(),
+	})
+
+	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+
+	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
+	}
+	if got := c.s.Stats().ARP.MalformedPacketsReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.MalformedPacketsReceived.Value() = %d, want = 1", got)
+	}
+}
+
+func TestDisabledEndpoint(t *testing.T) {
+	c := newTestContext(t, false)
+	defer c.cleanup()
+
+	ep, err := c.s.GetNetworkEndpoint(nicID, header.ARPProtocolNumber)
+	if err != nil {
+		t.Fatalf("GetNetworkEndpoint(%d, header.ARPProtocolNumber) failed: %s", nicID, err)
+	}
+	ep.Disable()
+
+	v := make(buffer.View, header.ARPSize)
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: v.ToVectorisedView(),
+	})
+
+	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+
+	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
+	}
+	if got := c.s.Stats().ARP.DisabledPacketsReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.DisabledPacketsReceived.Value() = %d, want = 1", got)
+	}
+}
+
+func TestDirectReply(t *testing.T) {
+	c := newTestContext(t, false)
+	defer c.cleanup()
+
+	const senderMAC = "\x01\x02\x03\x04\x05\x06"
+	const senderIPv4 = "\x0a\x00\x00\x02"
+
+	v := make(buffer.View, header.ARPSize)
+	h := header.ARP(v)
+	h.SetIPv4OverEthernet()
+	h.SetOp(header.ARPReply)
+
+	copy(h.HardwareAddressSender(), senderMAC)
+	copy(h.ProtocolAddressSender(), senderIPv4)
+	copy(h.HardwareAddressTarget(), stackLinkAddr)
+	copy(h.ProtocolAddressTarget(), stackAddr)
+
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: v.ToVectorisedView(),
+	})
+
+	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+
+	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
+	}
+	if got := c.s.Stats().ARP.RepliesReceived.Value(); got != 1 {
+		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
 	}
 }
 
@@ -311,6 +406,11 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			packetsRecv := c.s.Stats().ARP.PacketsReceived.Value()
+			requestsRecv := c.s.Stats().ARP.RequestsReceived.Value()
+			requestsRecvUnknownAddr := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value()
+			outgoingReplies := c.s.Stats().ARP.OutgoingRepliesSent.Value()
+
 			// Inject an incoming ARP request.
 			v := make(buffer.View, header.ARPSize)
 			h := header.ARP(v)
@@ -323,6 +423,13 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 				Data: v.ToVectorisedView(),
 			}))
 
+			if got, want := c.s.Stats().ARP.PacketsReceived.Value(), packetsRecv+1; got != want {
+				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, want)
+			}
+			if got, want := c.s.Stats().ARP.RequestsReceived.Value(), requestsRecv+1; got != want {
+				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, want)
+			}
+
 			if !test.isValid {
 				// No packets should be sent after receiving an invalid ARP request.
 				// There is no need to perform a blocking read here, since packets are
@@ -330,7 +437,18 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 				if pkt, ok := c.linkEP.Read(); ok {
 					t.Errorf("unexpected packet sent with network protocol number %d", pkt.Proto)
 				}
+				if got, want := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(), requestsRecvUnknownAddr+1; got != want {
+					t.Errorf("got c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value() = %d, want = %d", got, want)
+				}
+				if got, want := c.s.Stats().ARP.OutgoingRepliesSent.Value(), outgoingReplies; got != want {
+					t.Errorf("got c.s.Stats().ARP.OutgoingRepliesSent.Value() = %d, want = %d", got, want)
+				}
+
 				return
+			}
+
+			if got, want := c.s.Stats().ARP.OutgoingRepliesSent.Value(), outgoingReplies+1; got != want {
+				t.Errorf("got c.s.Stats().ARP.OutgoingRepliesSent.Value() = %d, want = %d", got, want)
 			}
 
 			// Verify an ARP response was sent.
@@ -418,6 +536,8 @@ type testInterface struct {
 	stack.LinkEndpoint
 
 	nicID tcpip.NICID
+
+	writeErr *tcpip.Error
 }
 
 func (t *testInterface) ID() tcpip.NICID {
@@ -441,6 +561,10 @@ func (*testInterface) Promiscuous() bool {
 }
 
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	if t.writeErr != nil {
+		return t.writeErr
+	}
+
 	var r stack.Route
 	r.NetProto = protocol
 	r.ResolveWith(remoteLinkAddr)
@@ -458,61 +582,99 @@ func TestLinkAddressRequest(t *testing.T) {
 		localAddr      tcpip.Address
 		remoteLinkAddr tcpip.LinkAddress
 
-		expectedErr            *tcpip.Error
-		expectedLocalAddr      tcpip.Address
-		expectedRemoteLinkAddr tcpip.LinkAddress
+		linkErr                                 *tcpip.Error
+		expectedErr                             *tcpip.Error
+		expectedLocalAddr                       tcpip.Address
+		expectedRemoteLinkAddr                  tcpip.LinkAddress
+		expectedRequestsSent                    uint64
+		expectedRequestBadLocalAddressErrors    uint64
+		expectedRequestNetworkUnreachableErrors uint64
+		expectedRequestDroppedErrors            uint64
 	}{
 		{
-			name:                   "Unicast",
-			nicAddr:                stackAddr,
-			localAddr:              stackAddr,
-			remoteLinkAddr:         remoteLinkAddr,
-			expectedLocalAddr:      stackAddr,
-			expectedRemoteLinkAddr: remoteLinkAddr,
+			name:                                    "Unicast",
+			nicAddr:                                 stackAddr,
+			localAddr:                               stackAddr,
+			remoteLinkAddr:                          remoteLinkAddr,
+			expectedLocalAddr:                       stackAddr,
+			expectedRemoteLinkAddr:                  remoteLinkAddr,
+			expectedRequestsSent:                    1,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:                   "Multicast",
-			nicAddr:                stackAddr,
-			localAddr:              stackAddr,
-			remoteLinkAddr:         "",
-			expectedLocalAddr:      stackAddr,
-			expectedRemoteLinkAddr: header.EthernetBroadcastAddress,
+			name:                                    "Multicast",
+			nicAddr:                                 stackAddr,
+			localAddr:                               stackAddr,
+			remoteLinkAddr:                          "",
+			expectedLocalAddr:                       stackAddr,
+			expectedRemoteLinkAddr:                  header.EthernetBroadcastAddress,
+			expectedRequestsSent:                    1,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:                   "Unicast with unspecified source",
-			nicAddr:                stackAddr,
-			remoteLinkAddr:         remoteLinkAddr,
-			expectedLocalAddr:      stackAddr,
-			expectedRemoteLinkAddr: remoteLinkAddr,
+			name:                                    "Unicast with unspecified source",
+			nicAddr:                                 stackAddr,
+			remoteLinkAddr:                          remoteLinkAddr,
+			expectedLocalAddr:                       stackAddr,
+			expectedRemoteLinkAddr:                  remoteLinkAddr,
+			expectedRequestsSent:                    1,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:                   "Multicast with unspecified source",
-			nicAddr:                stackAddr,
-			remoteLinkAddr:         "",
-			expectedLocalAddr:      stackAddr,
-			expectedRemoteLinkAddr: header.EthernetBroadcastAddress,
+			name:                                    "Multicast with unspecified source",
+			nicAddr:                                 stackAddr,
+			remoteLinkAddr:                          "",
+			expectedLocalAddr:                       stackAddr,
+			expectedRemoteLinkAddr:                  header.EthernetBroadcastAddress,
+			expectedRequestsSent:                    1,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:           "Unicast with unassigned address",
-			localAddr:      testAddr,
-			remoteLinkAddr: remoteLinkAddr,
-			expectedErr:    tcpip.ErrBadLocalAddress,
+			name:                                    "Unicast with unassigned address",
+			localAddr:                               testAddr,
+			remoteLinkAddr:                          remoteLinkAddr,
+			expectedErr:                             tcpip.ErrBadLocalAddress,
+			expectedRequestsSent:                    0,
+			expectedRequestBadLocalAddressErrors:    1,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:           "Multicast with unassigned address",
-			localAddr:      testAddr,
-			remoteLinkAddr: "",
-			expectedErr:    tcpip.ErrBadLocalAddress,
+			name:                                    "Multicast with unassigned address",
+			localAddr:                               testAddr,
+			remoteLinkAddr:                          "",
+			expectedErr:                             tcpip.ErrBadLocalAddress,
+			expectedRequestsSent:                    0,
+			expectedRequestBadLocalAddressErrors:    1,
+			expectedRequestNetworkUnreachableErrors: 0,
 		},
 		{
-			name:           "Unicast with no local address available",
-			remoteLinkAddr: remoteLinkAddr,
-			expectedErr:    tcpip.ErrNetworkUnreachable,
+			name:                                    "Unicast with no local address available",
+			remoteLinkAddr:                          remoteLinkAddr,
+			expectedErr:                             tcpip.ErrNetworkUnreachable,
+			expectedRequestsSent:                    0,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 1,
 		},
 		{
-			name:           "Multicast with no local address available",
-			remoteLinkAddr: "",
-			expectedErr:    tcpip.ErrNetworkUnreachable,
+			name:                                    "Multicast with no local address available",
+			remoteLinkAddr:                          "",
+			expectedErr:                             tcpip.ErrNetworkUnreachable,
+			expectedRequestsSent:                    0,
+			expectedRequestBadLocalAddressErrors:    0,
+			expectedRequestNetworkUnreachableErrors: 1,
+		},
+		{
+			name:                         "Link error",
+			nicAddr:                      stackAddr,
+			localAddr:                    stackAddr,
+			remoteLinkAddr:               remoteLinkAddr,
+			linkErr:                      tcpip.ErrInvalidEndpointState,
+			expectedErr:                  tcpip.ErrInvalidEndpointState,
+			expectedRequestDroppedErrors: 1,
 		},
 	}
 
@@ -543,8 +705,22 @@ func TestLinkAddressRequest(t *testing.T) {
 			// can mock a link address request and observe the packets sent to the
 			// link endpoint even though the stack uses the real NIC to validate the
 			// local address.
-			if err := linkRes.LinkAddressRequest(remoteAddr, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != test.expectedErr {
+			iface := testInterface{LinkEndpoint: linkEP, nicID: nicID, writeErr: test.linkErr}
+			if err := linkRes.LinkAddressRequest(remoteAddr, test.localAddr, test.remoteLinkAddr, &iface); err != test.expectedErr {
 				t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, test.localAddr, test.remoteLinkAddr, err, test.expectedErr)
+			}
+
+			if got := s.Stats().ARP.OutgoingRequestsSent.Value(); got != test.expectedRequestsSent {
+				t.Errorf("got s.Stats().ARP.OutgoingRequestsSent.Value() = %d, want = %d", got, test.expectedRequestsSent)
+			}
+			if got := s.Stats().ARP.OutgoingRequestBadLocalAddressErrors.Value(); got != test.expectedRequestBadLocalAddressErrors {
+				t.Errorf("got s.Stats().ARP.OutgoingRequestBadLocalAddressErrors.Value() = %d, want = %d", got, test.expectedRequestBadLocalAddressErrors)
+			}
+			if got := s.Stats().ARP.OutgoingRequestNetworkUnreachableErrors.Value(); got != test.expectedRequestNetworkUnreachableErrors {
+				t.Errorf("got s.Stats().ARP.OutgoingRequestNetworkUnreachableErrors.Value() = %d, want = %d", got, test.expectedRequestNetworkUnreachableErrors)
+			}
+			if got := s.Stats().ARP.OutgoingRequestsDropped.Value(); got != test.expectedRequestDroppedErrors {
+				t.Errorf("got s.Stats().ARP.OutgoingRequestsDropped.Value() = %d, want = %d", got, test.expectedRequestDroppedErrors)
 			}
 
 			if test.expectedErr != nil {
@@ -561,6 +737,9 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			rep := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			if got := rep.Op(); got != header.ARPRequest {
+				t.Errorf("got Op = %d, want = %d", got, header.ARPRequest)
+			}
 			if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, stackLinkAddr)
 			}
@@ -574,5 +753,24 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, remoteAddr)
 			}
 		})
+	}
+}
+
+func TestLinkAddressRequestWithoutNIC(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
+	})
+	p := s.NetworkProtocolInstance(arp.ProtocolNumber)
+	linkRes, ok := p.(stack.LinkAddressResolver)
+	if !ok {
+		t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
+	}
+
+	if err := linkRes.LinkAddressRequest(remoteAddr, "", remoteLinkAddr, &testInterface{nicID: nicID}); err != tcpip.ErrUnknownNICID {
+		t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, "", remoteLinkAddr, err, tcpip.ErrUnknownNICID)
+	}
+
+	if got := s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value(); got != 1 {
+		t.Errorf("got s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value() = %d, want = 1", got)
 	}
 }
