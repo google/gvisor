@@ -732,10 +732,13 @@ func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.Add
 	})
 
 	sent := ndp.ep.protocol.stack.Stats().ICMP.V6.PacketsSent
-	ndp.ep.addIPHeader(header.IPv6Any, snmc, pkt, stack.NetworkHeaderParams{
+	if err := ndp.ep.addIPHeader(header.IPv6Any, snmc, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.NDPHopLimit,
-	}, nil /* extensionHeaders */)
+	}, nil /* extensionHeaders */); err != nil {
+		sent.Dropped.Increment()
+		return err
+	}
 
 	if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(snmc), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sent.Dropped.Increment()
@@ -1854,10 +1857,13 @@ func (ndp *ndpState) startSolicitingRouters() {
 		})
 
 		sent := ndp.ep.protocol.stack.Stats().ICMP.V6.PacketsSent
-		ndp.ep.addIPHeader(localAddr, header.IPv6AllRoutersMulticastAddress, pkt, stack.NetworkHeaderParams{
+		if err := ndp.ep.addIPHeader(localAddr, header.IPv6AllRoutersMulticastAddress, pkt, stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      header.NDPHopLimit,
-		}, nil /* extensionHeaders */)
+		}, nil /* extensionHeaders */); err != nil {
+			sent.Dropped.Increment()
+			return
+		}
 
 		if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 			sent.Dropped.Increment()
