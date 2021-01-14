@@ -217,6 +217,16 @@ func (n *NIC) disableLocked() {
 		ep.Disable()
 	}
 
+	// Clear the neighbour table (including static entries) as we cannot guarantee
+	// that the current neighbour table will be valid when the NIC is enabled
+	// again.
+	//
+	// This matches linux's behaviour at the time of writing:
+	// https://github.com/torvalds/linux/blob/71c061d2443814de15e177489d5cc00a4a253ef3/net/core/neighbour.c#L371
+	if err := n.clearNeighbors(); err != nil && err != tcpip.ErrNotSupported {
+		panic(fmt.Sprintf("n.clearNeighbors(): %s", err))
+	}
+
 	if !n.setEnabled(false) {
 		panic("should have only done work to disable the NIC if it was enabled")
 	}
