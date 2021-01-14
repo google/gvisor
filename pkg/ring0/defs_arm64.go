@@ -38,7 +38,7 @@ type KernelArchState struct {
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
 	// stack is the stack used for interrupts on this CPU.
-	stack [512]byte
+	stack [128]byte
 
 	// errorCode is the error code from the last exception.
 	errorCode uintptr

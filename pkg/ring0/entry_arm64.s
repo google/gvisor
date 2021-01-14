@@ -35,7 +35,7 @@
 #define RSV_REG 	R18_PLATFORM
 
 // RSV_REG_APP is a register that holds el0 information temporarily.
-#define RSV_REG_APP 	R9
+#define RSV_REG_APP 	R19
 
 #define FPEN_NOTRAP 	0x3
 #define FPEN_SHIFT 	20
@@ -63,36 +63,22 @@
 // This is a macro because it may need to executed in contents where a stack is
 // not available for calls.
 //
-// The following registers are not saved: R9, R18.
+// The following registers are not saved: R18, R19.
 #define REGISTERS_SAVE(reg, offset) \
-  MOVD R0, offset+PTRACE_R0(reg); \
-  MOVD R1, offset+PTRACE_R1(reg); \
-  MOVD R2, offset+PTRACE_R2(reg); \
-  MOVD R3, offset+PTRACE_R3(reg); \
-  MOVD R4, offset+PTRACE_R4(reg); \
-  MOVD R5, offset+PTRACE_R5(reg); \
-  MOVD R6, offset+PTRACE_R6(reg); \
-  MOVD R7, offset+PTRACE_R7(reg); \
-  MOVD R8, offset+PTRACE_R8(reg); \
-  MOVD R10, offset+PTRACE_R10(reg); \
-  MOVD R11, offset+PTRACE_R11(reg); \
-  MOVD R12, offset+PTRACE_R12(reg); \
-  MOVD R13, offset+PTRACE_R13(reg); \
-  MOVD R14, offset+PTRACE_R14(reg); \
-  MOVD R15, offset+PTRACE_R15(reg); \
-  MOVD R16, offset+PTRACE_R16(reg); \
-  MOVD R17, offset+PTRACE_R17(reg); \
-  MOVD R19, offset+PTRACE_R19(reg); \
-  MOVD R20, offset+PTRACE_R20(reg); \
-  MOVD R21, offset+PTRACE_R21(reg); \
-  MOVD R22, offset+PTRACE_R22(reg); \
-  MOVD R23, offset+PTRACE_R23(reg); \
-  MOVD R24, offset+PTRACE_R24(reg); \
-  MOVD R25, offset+PTRACE_R25(reg); \
-  MOVD R26, offset+PTRACE_R26(reg); \
-  MOVD R27, offset+PTRACE_R27(reg); \
-  MOVD g,   offset+PTRACE_R28(reg); \
-  MOVD R29, offset+PTRACE_R29(reg); \
+STP (R0, R1), offset+PTRACE_R0(reg); \
+  STP (R2, R3), offset+PTRACE_R2(reg); \
+  STP (R4, R5), offset+PTRACE_R4(reg); \
+  STP (R6, R7), offset+PTRACE_R6(reg); \
+  STP (R8, R9), offset+PTRACE_R8(reg); \
+  STP (R10, R11), offset+PTRACE_R10(reg); \
+  STP (R12, R13), offset+PTRACE_R12(reg); \
+  STP (R14, R15), offset+PTRACE_R14(reg); \
+  STP (R16, R17), offset+PTRACE_R16(reg); \
+  STP (R20, R21), offset+PTRACE_R20(reg); \
+  STP (R22, R23), offset+PTRACE_R22(reg); \
+  STP (R24, R25), offset+PTRACE_R24(reg); \
+  STP (R26, R27), offset+PTRACE_R26(reg); \
+  STP (g, R29), offset+PTRACE_R28(reg); \
   MOVD R30, offset+PTRACE_R30(reg);
 
 // Loads a register set.
@@ -100,36 +86,22 @@
 // This is a macro because it may need to executed in contents where a stack is
 // not available for calls.
 //
-// The following registers are not loaded: R9, R18.
+// The following registers are not loaded: R18, R19.
 #define REGISTERS_LOAD(reg, offset) \
-  MOVD offset+PTRACE_R0(reg), R0; \
-  MOVD offset+PTRACE_R1(reg), R1; \
-  MOVD offset+PTRACE_R2(reg), R2; \
-  MOVD offset+PTRACE_R3(reg), R3; \
-  MOVD offset+PTRACE_R4(reg), R4; \
-  MOVD offset+PTRACE_R5(reg), R5; \
-  MOVD offset+PTRACE_R6(reg), R6; \
-  MOVD offset+PTRACE_R7(reg), R7; \
-  MOVD offset+PTRACE_R8(reg), R8; \
-  MOVD offset+PTRACE_R10(reg), R10; \
-  MOVD offset+PTRACE_R11(reg), R11; \
-  MOVD offset+PTRACE_R12(reg), R12; \
-  MOVD offset+PTRACE_R13(reg), R13; \
-  MOVD offset+PTRACE_R14(reg), R14; \
-  MOVD offset+PTRACE_R15(reg), R15; \
-  MOVD offset+PTRACE_R16(reg), R16; \
-  MOVD offset+PTRACE_R17(reg), R17; \
-  MOVD offset+PTRACE_R19(reg), R19; \
-  MOVD offset+PTRACE_R20(reg), R20; \
-  MOVD offset+PTRACE_R21(reg), R21; \
-  MOVD offset+PTRACE_R22(reg), R22; \
-  MOVD offset+PTRACE_R23(reg), R23; \
-  MOVD offset+PTRACE_R24(reg), R24; \
-  MOVD offset+PTRACE_R25(reg), R25; \
-  MOVD offset+PTRACE_R26(reg), R26; \
-  MOVD offset+PTRACE_R27(reg), R27; \
-  MOVD offset+PTRACE_R28(reg), g; \
-  MOVD offset+PTRACE_R29(reg), R29; \
+LDP offset+PTRACE_R0(reg), (R0, R1); \
+  LDP offset+PTRACE_R2(reg), (R2, R3); \
+  LDP offset+PTRACE_R4(reg), (R4, R5); \
+  LDP offset+PTRACE_R6(reg), (R6, R7); \
+  LDP offset+PTRACE_R8(reg), (R8, R9); \
+  LDP offset+PTRACE_R10(reg), (R10, R11); \
+  LDP offset+PTRACE_R12(reg), (R12, R13); \
+  LDP offset+PTRACE_R14(reg), (R14, R15); \
+  LDP offset+PTRACE_R16(reg), (R16, R17); \
+  LDP offset+PTRACE_R20(reg), (R20, R21); \
+  LDP offset+PTRACE_R22(reg), (R22, R23); \
+  LDP offset+PTRACE_R24(reg), (R24, R25); \
+  LDP offset+PTRACE_R26(reg), (R26, R27); \
+  LDP offset+PTRACE_R28(reg), (g, R29); \
   MOVD offset+PTRACE_R30(reg), R30;
 
 #define ESR_ELx_EC_UNKNOWN	(0x00)
@@ -310,7 +282,7 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 
 // KERNEL_ENTRY_FROM_EL0 is the entry code of the vcpu from el0 to el1.
 #define KERNEL_ENTRY_FROM_EL0 \
-	SUB $16, RSP, RSP; \		// step1, save r18, r9 into kernel temporary stack.
+	SUB $16, RSP, RSP; \		// step1, save r18, r19 into kernel temporary stack.
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
 	WORD $0xd538d092; \    // MRS   TPIDR_EL1, R18
 	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP; \ // step2, load app context pointer.
@@ -318,8 +290,7 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 	MOVD RSV_REG_APP, R20; \
 	LDP 16*0(RSP), (RSV_REG, RSV_REG_APP); \
 	ADD $16, RSP, RSP; \
-	MOVD RSV_REG, PTRACE_R18(R20); \
-	MOVD RSV_REG_APP, PTRACE_R9(R20); \
+	STP (RSV_REG, RSV_REG_APP), PTRACE_R18(R20); \
 	MRS TPIDR_EL0, R3; \
 	MOVD R3, PTRACE_TLS(R20); \
 	WORD $0xd5384003; \      //  MRS SPSR_EL1, R3
@@ -333,7 +304,7 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 #define KERNEL_ENTRY_FROM_EL1 \
 	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// Save sentry context.
-	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R9(RSV_REG); \
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG); \
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
@@ -372,16 +343,11 @@ TEXT ·storeAppASID(SB),NOSPLIT,$0-8
 
 // Halt halts execution.
 TEXT ·Halt(SB),NOSPLIT,$0
-	// Clear bluepill.
-	WORD $0xd538d092   //MRS   TPIDR_EL1, R18
-	CMP RSV_REG, R9
-	BNE mmio_exit
-	MOVD $0, CPU_REGISTERS+PTRACE_R9(RSV_REG)
-
-mmio_exit:
 	// Disable fpsimd.
 	WORD $0xd5381041 // MRS CPACR_EL1, R1
 	MOVD R1, CPU_LAZY_VFP(RSV_REG)
+	DSB $15
+
 	VFP_DISABLE
 
 	// Trigger MMIO_EXIT/_KVM_HYPERCALL_VMEXIT.
@@ -440,7 +406,7 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	// Step1, save sentry context into memory.
 	MRS TPIDR_EL1, RSV_REG
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS)
-	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R9(RSV_REG)
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG)
 	MRS TPIDR_EL0, R3
 	MOVD R3, CPU_REGISTERS+PTRACE_TLS(RSV_REG)
 
@@ -483,8 +449,7 @@ do_exit_to_el0:
 	MSR RSV_REG, TPIDR_EL0
 
 	// switch to user pagetable.
-	MOVD PTRACE_R18(RSV_REG_APP), RSV_REG
-	MOVD PTRACE_R9(RSV_REG_APP), RSV_REG_APP
+	LDP PTRACE_R18(RSV_REG_APP), (RSV_REG, RSV_REG_APP)
 
 	SUB $STACK_FRAME_SIZE, RSP, RSP
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP)
@@ -521,7 +486,7 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 	SWITCH_TO_KVM_PAGETABLE()
 	MRS TPIDR_EL1, RSV_REG
 
-	MOVD CPU_REGISTERS+PTRACE_R9(RSV_REG), RSV_REG_APP
+	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
 
 	ERET()
 
