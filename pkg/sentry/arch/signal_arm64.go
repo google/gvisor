@@ -36,7 +36,6 @@ type SignalContext64 struct {
 	Pstate    uint64
 	_pad      [8]byte       // __attribute__((__aligned__(16)))
 	Fpsimd64  FpsimdContext // size = 528
-	Reserved  [3568]uint8
 }
 
 // +marshal
@@ -86,10 +85,6 @@ func (c *context64) NewSignalStack() NativeSignalStack {
 func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
 	sp := st.Bottom
 
-	if !(alt.IsEnabled() && sp == alt.Top()) {
-		sp -= 128
-	}
-
 	// Construct the UContext64 now since we need its size.
 	uc := &UContext64{
 		Flags: 0,
@@ -102,6 +97,10 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		},
 		Sigset: sigset,
 	}
+	if linux.Signal(info.Signo) == linux.SIGSEGV || linux.Signal(info.Signo) == linux.SIGBUS {
+		uc.MContext.FaultAddr = info.Addr()
+	}
+
 	ucSize := uc.SizeBytes()
 
 	// frameSize = ucSize + sizeof(siginfo).
