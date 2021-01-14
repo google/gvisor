@@ -64,6 +64,15 @@ TEST(FstatfsTest, InternalTmpfs) {
   EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
 }
 
+TEST(FstatfsTest, WithOpath) {
+  auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_PATH));
+
+  struct statfs st;
+  EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
+}
+
 TEST(FstatfsTest, InternalDevShm) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =

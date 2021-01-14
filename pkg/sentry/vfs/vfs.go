@@ -425,6 +425,17 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		rp.mustBeDir = true
 		rp.mustBeDirOrig = true
 	}
+	if opts.Flags&linux.O_PATH != 0 {
+		vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+		if err != nil {
+			return nil, err
+		}
+		var fd opathFD
+		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.mount, vd.dentry, &FileDescriptionOptions{}); err != nil {
+			return nil, err
+		}
+		return &fd.vfsfd, err
+	}
 	for {
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {

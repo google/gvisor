@@ -49,10 +49,21 @@ TEST(SyncTest, SyncFromPipe) {
   EXPECT_THAT(close(pipes[1]), SyscallSucceeds());
 }
 
-TEST(SyncTest, CannotSyncFileSytemAtBadFd) {
+TEST(SyncTest, CannotSyncFileSystemAtBadFd) {
   EXPECT_THAT(syncfs(-1), SyscallFailsWithErrno(EBADF));
 }
 
+TEST(SyncTest, CannotSyncFileSystemAtOpathFD) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  EXPECT_THAT(syncfs(fd.get()), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(close(fd.get()), SyscallSucceeds());
+}
 }  // namespace
 
 }  // namespace testing

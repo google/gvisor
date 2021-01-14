@@ -283,6 +283,24 @@ TEST(Pwritev2Test, ReadOnlyFile) {
               SyscallFailsWithErrno(EBADF));
 }
 
+TEST(Pwritev2Test, WriteWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  char buf[16];
+  struct iovec iov;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
+
+  EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1, /*offset=*/0, /*flags=*/0),
+              SyscallFailsWithErrno(EBADF));
+}
+
 // This test calls pwritev2 with an invalid flag.
 TEST(Pwritev2Test, InvalidFlag) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);

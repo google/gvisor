@@ -124,6 +124,15 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	defer file.DecRef(t)
 
 	switch cmd {
+	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC, linux.F_GETFD, linux.F_SETFD, linux.F_GETFL:
+		// do nothing
+	default:
+		if file.StatusFlags()&linux.O_PATH != 0 {
+			return 0, nil, syserror.EBADF
+		}
+	}
+
+	switch cmd {
 	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC:
 		minfd := args[2].Int()
 		fd, err := t.NewFDFromVFS2(minfd, file, kernel.FDFlags{

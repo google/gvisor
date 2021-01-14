@@ -112,6 +112,16 @@ TEST_F(ReadTest, ReadDirectoryFails) {
   EXPECT_THAT(ReadFd(file.get(), buf.data(), 1), SyscallFailsWithErrno(EISDIR));
 }
 
+TEST_F(ReadTest, ReadWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+  std::vector<char> buf(1);
+  EXPECT_THAT(ReadFd(fd.get(), buf.data(), 1), SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing

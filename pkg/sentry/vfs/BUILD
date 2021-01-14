@@ -83,6 +83,7 @@ go_library(
         "mount.go",
         "mount_namespace_refs.go",
         "mount_unsafe.go",
+        "opath.go",
         "options.go",
         "pathname.go",
         "permissions.go",

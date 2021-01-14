@@ -353,6 +353,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:opath_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:packet_socket_raw_test",
 )
 

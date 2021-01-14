@@ -71,6 +71,18 @@ TEST(FchdirTest, NotDir) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
+TEST(FchdirTest, SuccessWithOpath) {
+  auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  int fd;
+  ASSERT_THAT(fd = open(temp_dir.path().c_str(), O_DIRECTORY | O_PATH),
+              SyscallSucceeds());
+
+  EXPECT_THAT(fchdir(fd), SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+  // Change CWD to a permanent location as temp dirs will be cleaned up.
+  EXPECT_THAT(chdir("/"), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing

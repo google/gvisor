@@ -108,6 +108,13 @@ TEST_F(AllocateTest, FallocateReadonly) {
   EXPECT_THAT(fallocate(fd.get(), 0, 0, 10), SyscallFailsWithErrno(EBADF));
 }
 
+TEST_F(AllocateTest, FallocateWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+  EXPECT_THAT(fallocate(fd.get(), 0, 0, 10), SyscallFailsWithErrno(EBADF));
+}
+
 TEST_F(AllocateTest, FallocatePipe) {
   int pipes[2];
   EXPECT_THAT(pipe(pipes), SyscallSucceeds());

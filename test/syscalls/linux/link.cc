@@ -235,6 +235,71 @@ TEST(LinkTest, AbsPathsWithNonDirFDs) {
               SyscallSucceeds());
 }
 
+TEST(LinkTest, NewDirFDWithOpath) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string newname_parent = NewTempAbsPath();
+  const std::string newname_base = "child";
+  const std::string newname = JoinPath(newname_parent, newname_base);
+
+  // Create newname_parent directory, and get an FD.
+  EXPECT_THAT(mkdir(newname_parent.c_str(), 0777), SyscallSucceeds());
+  const FileDescriptor newname_parent_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(newname_parent, O_DIRECTORY | O_PATH));
+
+  // Link newname to oldfile, using newname_parent_fd.
+  EXPECT_THAT(linkat(AT_FDCWD, oldfile.path().c_str(), newname_parent_fd.get(),
+                     newname.c_str(), 0),
+              SyscallSucceeds());
+
+  EXPECT_TRUE(IsSameFile(oldfile.path(), newname));
+
+  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
+  EXPECT_THAT(rmdir(newname_parent.c_str()), SyscallSucceeds());
+}
+
+TEST(LinkTest, RelPathsNonDirFDsWithOpath) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // Create a file that will be passed as the directory fd for old/new names.
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor file_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+
+  // Using file_fd as olddirfd will fail.
+  EXPECT_THAT(linkat(file_fd.get(), "foo", AT_FDCWD, "bar", 0),
+              SyscallFailsWithErrno(ENOTDIR));
+
+  // Using file_fd as newdirfd will fail.
+  EXPECT_THAT(linkat(AT_FDCWD, oldfile.path().c_str(), file_fd.get(), "bar", 0),
+              SyscallFailsWithErrno(ENOTDIR));
+}
+
+TEST(LinkTest, AbsPathsNonDirFDsWithOpath) {
+  auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string newname = NewTempAbsPath();
+
+  // Create a file that will be passed as the directory fd for old/new names.
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor file_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+
+  // Using file_fd as the dirfds is OK as long as paths are absolute.
+  EXPECT_THAT(linkat(file_fd.get(), oldfile.path().c_str(), file_fd.get(),
+                     newname.c_str(), 0),
+              SyscallSucceeds());
+}
+
+TEST(LinkTest, EmptyPathNonDirFDsWithOpath) {
+  const std::string newname = NewTempAbsPath();
+
+  // Create a file that will be passed as the directory fd for old/new names.
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor file_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+
+  // Using file_fd as the dirfds is OK as long as paths are absolute.
+  EXPECT_THAT(
+      linkat(file_fd.get(), "", file_fd.get(), newname.c_str(), AT_EMPTY_PATH),
+      SyscallSucceeds());
+}
+
 TEST(LinkTest, LinkDoesNotFollowSymlinks) {
   // Create oldfile, and oldsymlink which points to it.
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

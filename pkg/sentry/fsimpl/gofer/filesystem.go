@@ -952,8 +952,10 @@ afterTrailingSymlink:
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
-	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
-		return nil, err
+	if opts.Flags&linux.O_PATH == 0 {
+		if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
+			return nil, err
+		}
 	}
 
 	trunc := opts.Flags&linux.O_TRUNC != 0 && d.fileType() == linux.S_IFREG

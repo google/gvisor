@@ -89,6 +89,21 @@ TEST(PreadvTest, MMConcurrencyStress) {
   // The test passes if it neither deadlocks nor crashes the OS.
 }
 
+// This test calls preadv with a file set O_PATH.
+TEST(PreadvTest, ReadWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  auto iov = absl::make_unique<struct iovec[]>(1);
+  iov[0].iov_base = nullptr;
+  iov[0].iov_len = 0;
+
+  EXPECT_THAT(preadv(fd.get(), iov.get(), 1, 0), SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing

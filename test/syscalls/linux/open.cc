@@ -45,7 +45,7 @@ namespace {
 // * O_CREAT
 // * O_DIRECTORY
 // * O_NOFOLLOW
-// * O_PATH <- Will we ever support this?
+// * O_PATH
 //
 // Special operations on open:
 // * O_EXCL
@@ -515,6 +515,32 @@ TEST_F(OpenTest, OpenWithStrangeFlags) {
   EXPECT_THAT(write(fd.get(), "x", 1), SyscallFailsWithErrno(EBADF));
   char c;
   EXPECT_THAT(read(fd.get(), &c, 1), SyscallFailsWithErrno(EBADF));
+}
+
+TEST_F(OpenTest, OpenWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  // Drop capabilities that allow us to override file permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  const DisableSave ds;  // Permissions are dropped.
+
+  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "opathdir");
+  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
+
+  std::string path = NewTempAbsPathInDir(dirpath);
+
+  int fd;
+  // Create a file without any permissions.
+  EXPECT_THAT(fd = open(path.c_str(), O_CREAT, 000), SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
+
+  // Cannot open file as read only because we are owner and have no permissions
+  // set.
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+
+  // Can open file with O_PATH because don't need permissions on the object when
+  // opening with O_PATH.
+  EXPECT_THAT(open(path.c_str(), O_PATH), SyscallSucceeds());
 }
 
 }  // namespace

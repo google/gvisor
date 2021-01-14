@@ -251,6 +251,21 @@ TEST_F(ReadvTest, IovecOutsideTaskAddressRangeInNonemptyArray) {
               SyscallFailsWithErrno(EFAULT));
 }
 
+TEST_F(ReadvTest, ReadvBadOpenOpathFlag) {
+  SKIP_IF(IsRunningWithVFS1());
+  char buffer[1024];
+  struct iovec iov[1];
+  iov[0].iov_base = buffer;
+  iov[0].iov_len = 1024;
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  ASSERT_THAT(readv(fd.get(), iov, 1), SyscallFailsWithErrno(EBADF));
+}
+
 // This test depends on the maximum extent of a single readv() syscall, so
 // we can't tolerate interruption from saving.
 TEST(ReadvTestNoFixture, TruncatedAtMax_NoRandomSave) {

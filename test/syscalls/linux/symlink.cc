@@ -269,6 +269,40 @@ TEST(SymlinkTest, SymlinkAtDegradedPermissions_NoRandomSave) {
   EXPECT_THAT(close(dirfd), SyscallSucceeds());
 }
 
+TEST(SymlinkTest, SymlinkAtDirWithOpath) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+
+  int dirfd;
+  ASSERT_THAT(dirfd = open(dir.path().c_str(), O_DIRECTORY | O_PATH, 0),
+              SyscallSucceeds());
+
+  EXPECT_THAT(fchmod(dirfd, 0), SyscallSucceeds());
+
+  std::string basename = std::string(Basename(file.path()));
+  EXPECT_THAT(symlinkat("/dangling", dirfd, basename.c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(close(dirfd), SyscallSucceeds());
+}
+
+TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string filepath = NewTempAbsPathInDir(dir.path());
+  const std::string base = std::string(Basename(filepath));
+  ASSERT_THAT(symlink("/dangling", filepath.c_str()), SyscallSucceeds());
+
+  int dirfd;
+  EXPECT_THAT(dirfd = open(dir.path().c_str(), O_DIRECTORY | O_PATH, 0),
+              SyscallSucceeds());
+
+  std::vector<char> buf(1024);
+  int linksize;
+  EXPECT_THAT(linksize = readlinkat(dirfd, base.c_str(), buf.data(), 1024),
+              SyscallSucceeds());
+  EXPECT_EQ(0, strncmp(filepath.c_str(), buf.data(), linksize));
+  EXPECT_THAT(close(dirfd), SyscallSucceeds());
+}
+
 TEST(SymlinkTest, ReadlinkAtDegradedPermissions_NoRandomSave) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));

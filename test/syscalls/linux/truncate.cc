@@ -196,6 +196,15 @@ TEST(TruncateTest, FtruncateNonWriteable) {
   EXPECT_THAT(ftruncate(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(TruncateTest, FtruncateOpathFile) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_PATH));
+  EXPECT_THAT(ftruncate(fd.get(), 0), SyscallFailsWithErrno(EBADF));
+}
+
 // ftruncate(2) should succeed as long as the file descriptor is writeable,
 // regardless of whether the file permissions allow writing.
 TEST(TruncateTest, FtruncateWithoutWritePermission_NoRandomSave) {

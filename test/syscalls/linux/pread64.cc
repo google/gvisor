@@ -77,6 +77,14 @@ TEST_F(Pread64Test, WriteOnlyNotReadable) {
   EXPECT_THAT(pread64(fd.get(), buf, 1024, 0), SyscallFailsWithErrno(EBADF));
 }
 
+TEST_F(Pread64Test, ReadWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(name_, O_PATH));
+
+  char buf[1024];
+  EXPECT_THAT(pread64(fd.get(), buf, 1024, 0), SyscallFailsWithErrno(EBADF));
+}
+
 TEST_F(Pread64Test, DirNotReadable) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(GetAbsoluteTestTmpdir(), O_RDONLY));

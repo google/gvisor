@@ -1343,6 +1343,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "opath_test",
+    testonly = 1,
+    srcs = ["opath.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        gtest,
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "open_test",
     testonly = 1,
     srcs = [
