@@ -101,10 +101,12 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		}
 
 		for _, p := range packets {
-			if cancelled {
+			if cancelled || p.route.IsResolutionRequired() {
 				p.route.Stats().IP.OutgoingPacketErrors.Increment()
-			} else if p.route.IsResolutionRequired() {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+
+				if linkResolvableEP, ok := p.route.outgoingNIC.getNetworkEndpoint(p.route.NetProto).(LinkResolvableNetworkEndpoint); ok {
+					linkResolvableEP.HandleLinkResolutionFailure(pkt)
+				}
 			} else {
 				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
 			}

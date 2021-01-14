@@ -49,11 +49,10 @@ type segment struct {
 
 	// TODO(gvisor.dev/issue/4417): Hold a stack.PacketBuffer instead of
 	// individual members for link/network packet info.
-	srcAddr        tcpip.Address
-	dstAddr        tcpip.Address
-	netProto       tcpip.NetworkProtocolNumber
-	nicID          tcpip.NICID
-	remoteLinkAddr tcpip.LinkAddress
+	srcAddr  tcpip.Address
+	dstAddr  tcpip.Address
+	netProto tcpip.NetworkProtocolNumber
+	nicID    tcpip.NICID
 
 	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 
@@ -89,13 +88,12 @@ type segment struct {
 func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
 	netHdr := pkt.Network()
 	s := &segment{
-		refCnt:         1,
-		id:             id,
-		srcAddr:        netHdr.SourceAddress(),
-		dstAddr:        netHdr.DestinationAddress(),
-		netProto:       pkt.NetworkProtocolNumber,
-		nicID:          pkt.NICID,
-		remoteLinkAddr: pkt.SourceLinkAddress(),
+		refCnt:   1,
+		id:       id,
+		srcAddr:  netHdr.SourceAddress(),
+		dstAddr:  netHdr.DestinationAddress(),
+		netProto: pkt.NetworkProtocolNumber,
+		nicID:    pkt.NICID,
 	}
 	s.data = pkt.Data.Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
@@ -128,7 +126,6 @@ func (s *segment) clone() *segment {
 		window:         s.window,
 		netProto:       s.netProto,
 		nicID:          s.nicID,
-		remoteLinkAddr: s.remoteLinkAddr,
 		rcvdTime:       s.rcvdTime,
 		xmitTime:       s.xmitTime,
 		xmitCount:      s.xmitCount,
