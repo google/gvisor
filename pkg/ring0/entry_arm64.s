@@ -65,7 +65,7 @@
 //
 // The following registers are not saved: R18, R19.
 #define REGISTERS_SAVE(reg, offset) \
-STP (R0, R1), offset+PTRACE_R0(reg); \
+  STP (R0, R1), offset+PTRACE_R0(reg); \
   STP (R2, R3), offset+PTRACE_R2(reg); \
   STP (R4, R5), offset+PTRACE_R4(reg); \
   STP (R6, R7), offset+PTRACE_R6(reg); \
@@ -88,7 +88,7 @@ STP (R0, R1), offset+PTRACE_R0(reg); \
 //
 // The following registers are not loaded: R18, R19.
 #define REGISTERS_LOAD(reg, offset) \
-LDP offset+PTRACE_R0(reg), (R0, R1); \
+  LDP offset+PTRACE_R0(reg), (R0, R1); \
   LDP offset+PTRACE_R2(reg), (R2, R3); \
   LDP offset+PTRACE_R4(reg), (R4, R5); \
   LDP offset+PTRACE_R6(reg), (R6, R7); \
@@ -103,6 +103,32 @@ LDP offset+PTRACE_R0(reg), (R0, R1); \
   LDP offset+PTRACE_R26(reg), (R26, R27); \
   LDP offset+PTRACE_R28(reg), (g, R29); \
   MOVD offset+PTRACE_R30(reg), R30;
+
+// Loads the application's fpstate.
+#define FPSTATE_EL0_LOAD() \
+  MRS TPIDR_EL1, RSV_REG; \
+  MOVD CPU_FPSTATE_EL0(RSV_REG), RSV_REG; \
+  MOVD 0(RSV_REG), RSV_REG_APP; \
+  MOVD RSV_REG_APP, FPSR; \
+  MOVD 8(RSV_REG), RSV_REG_APP; \
+  MOVD RSV_REG_APP, FPCR; \
+  ADD $16, RSV_REG, RSV_REG; \
+  WORD $0xad400640; \ // ldp q0, q1, [x18]
+  WORD $0xad410e42; \
+  WORD $0xad421644; \
+  WORD $0xad431e46; \
+  WORD $0xad442648; \
+  WORD $0xad452e4a; \
+  WORD $0xad46364c; \
+  WORD $0xad473e4e; \
+  WORD $0xad484650; \
+  WORD $0xad494e52; \
+  WORD $0xad4a5654; \
+  WORD $0xad4b5e56; \
+  WORD $0xad4c6658; \
+  WORD $0xad4d6e5a; \
+  WORD $0xad4e765c; \
+  WORD $0xad4f7e5e;
 
 #define ESR_ELx_EC_UNKNOWN	(0x00)
 #define ESR_ELx_EC_WFx		(0x01)
@@ -258,26 +284,28 @@ LDP offset+PTRACE_R0(reg), (R0, R1); \
 	MSR RSV_REG, TTBR0_EL1; \
 	ISB $15;
 
-TEXT ·EnableVFP(SB),NOSPLIT,$0
+// FPSIMDDisableTrap disables the trap for accessing fpsimd.
+TEXT ·FPSIMDDisableTrap(SB),NOSPLIT,$0
 	MOVD $FPEN_ENABLE, R0
-	WORD $0xd5181040 //MSR R0, CPACR_EL1
+	MSR R0, CPACR_EL1
 	ISB $15
 	RET
 
-TEXT ·DisableVFP(SB),NOSPLIT,$0
-	MOVD $0, R0
-	WORD $0xd5181040 //MSR R0, CPACR_EL1
+// FPSIMDEnableTrap enables the trap for accessing fpsimd.
+TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
+	MSR $0, CPACR_EL1
 	ISB $15
 	RET
 
-#define VFP_ENABLE \
-	MOVD $FPEN_ENABLE, R0; \
-	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+// FPSIMD_DISABLE_TRAP disables the trap for accessing fpsimd.
+#define FPSIMD_DISABLE_TRAP(reg) \
+	MOVD $FPEN_ENABLE, reg; \
+	MSR reg, CPACR_EL1; \
 	ISB $15;
 
-#define VFP_DISABLE \
-	MOVD $0x0, R0; \
-	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+// FPSIMD_ENABLE_TRAP enables the trap for accessing fpsimd.
+#define FPSIMD_ENABLE_TRAP(reg) \
+	MSR $0, CPACR_EL1; \
 	ISB $15;
 
 // KERNEL_ENTRY_FROM_EL0 is the entry code of the vcpu from el0 to el1.
@@ -334,6 +362,14 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 	MOVD R3, 8(RSP); \
 	B ·HaltEl1ExceptionAndResume(SB);
 
+// storeEl0Fpstate writes the address of application's fpstate.
+TEXT ·storeEl0Fpstate(SB),NOSPLIT,$0-8
+	MOVD value+0(FP), R1
+	ORR $0xffff000000000000, R1, R1
+	MRS  TPIDR_EL1, RSV_REG
+	MOVD R1, CPU_FPSTATE_EL0(RSV_REG)
+	RET
+
 // storeAppASID writes the application's asid value.
 TEXT ·storeAppASID(SB),NOSPLIT,$0-8
 	MOVD asid+0(FP), R1
@@ -348,7 +384,7 @@ TEXT ·Halt(SB),NOSPLIT,$0
 	MOVD R1, CPU_LAZY_VFP(RSV_REG)
 	DSB $15
 
-	VFP_DISABLE
+	FPSIMD_ENABLE_TRAP(RSV_REG)
 
 	// Trigger MMIO_EXIT/_KVM_HYPERCALL_VMEXIT.
 	//
@@ -511,6 +547,9 @@ TEXT ·Start(SB),NOSPLIT,$0
 	ORR $0xffff000000000000, RSV_REG, RSV_REG
 	WORD $0xd518d092        //MSR R18, TPIDR_EL1
 
+	// Enable trap for accessing fpsimd.
+	MSR $0, CPACR_EL1
+
 	// Init.
 	MOVD $SCTLR_EL1_DEFAULT, R1 // re-enable the mmu.
 	MSR R1, SCTLR_EL1
@@ -547,6 +586,10 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	BEQ el1_da                        // data abort in EL1
 	CMP $ESR_ELx_EC_IABT_CUR, R24
 	BEQ el1_ia                        // instruction abort in EL1
+	CMP $ESR_ELx_EC_FP_ASIMD, R24
+	BEQ el1_fpsimd_acc                // FP/ASIMD access
+	CMP $ESR_ELx_EC_SVE, R24
+	BEQ el1_sve_acc                   // SVE access
 	CMP $ESR_ELx_EC_SP_ALIGN, R24
 	BEQ el1_sp_pc                     // stack alignment exception
 	CMP $ESR_ELx_EC_PC_ALIGN, R24
@@ -557,10 +600,6 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	BEQ el1_svc                       // SVC in 64-bit state
 	CMP $ESR_ELx_EC_BREAKPT_CUR, R24
 	BEQ el1_dbg                       // debug exception in EL1
-	CMP $ESR_ELx_EC_FP_ASIMD, R24
-	BEQ el1_fpsimd_acc                // FP/ASIMD access
-	CMP $ESR_ELx_EC_SVE, R24
-	BEQ el1_sve_acc                   // SVE access
 	B el1_invalid
 
 el1_da:
@@ -577,8 +616,21 @@ el1_dbg:
 	EXCEPTION_EL1(El1SyncDbg)
 el1_fpsimd_acc:
 el1_sve_acc:
-	VFP_ENABLE
-	B ·kernelExitToEl1(SB)  // Resume.
+	FPSIMD_DISABLE_TRAP(RSV_REG)
+
+	// Restore context.
+	MRS TPIDR_EL1, RSV_REG
+
+	// Restore sp.
+	MOVD CPU_REGISTERS+PTRACE_SP(RSV_REG), R1
+	MOVD R1, RSP
+
+	// Restore common registers.
+	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
+	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
+
+	ERET()	// return to el1.
+
 el1_invalid:
 	EXCEPTION_EL1(El1SyncInv)
 
@@ -642,9 +694,20 @@ el0_da:
 el0_ia:
 	EXCEPTION_EL0(PageFault)
 el0_fpsimd_acc:
-	EXCEPTION_EL0(El0SyncFpsimdAcc)
 el0_sve_acc:
-	EXCEPTION_EL0(El0SyncSveAcc)
+	FPSIMD_DISABLE_TRAP(RSV_REG)
+	FPSTATE_EL0_LOAD()
+
+	// Restore context.
+	MRS TPIDR_EL1, RSV_REG
+	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP
+
+	// Restore R0-R30
+	REGISTERS_LOAD(RSV_REG_APP, 0)
+	MOVD PTRACE_R18(RSV_REG_APP), RSV_REG
+	MOVD PTRACE_R19(RSV_REG_APP), RSV_REG_APP
+
+	ERET()  // return to el0.
 el0_fpsimd_exc:
 	EXCEPTION_EL0(El0SyncFpsimdExc)
 el0_sp_pc:

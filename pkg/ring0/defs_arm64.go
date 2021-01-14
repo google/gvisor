@@ -55,6 +55,9 @@ type CPUArchState struct {
 	// faultAddr is the value of far_el1.
 	faultAddr uintptr
 
+	// el0Fp is the address of application's fpstate.
+	el0Fp uintptr
+
 	// ttbr0Kvm is the value of ttbr0_el1 for sentry.
 	ttbr0Kvm uintptr
 
