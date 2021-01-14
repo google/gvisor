@@ -208,7 +208,9 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // * Filesystem.mu must be locked for at least reading.
 // * isDir(parentInode) == true.
 func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string, parent *Dentry) error {
-	if err := parent.inode.CheckPermissions(ctx, creds, vfs.MayWrite|vfs.MayExec); err != nil {
+	// Order of checks is important. First check if parent directory can be
+	// executed, then check for existence, and lastly check if mount is writable.
+	if err := parent.inode.CheckPermissions(ctx, creds, vfs.MayExec); err != nil {
 		return err
 	}
 	if name == "." || name == ".." {
@@ -222,6 +224,9 @@ func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string
 	}
 	if parent.VFSDentry().IsDead() {
 		return syserror.ENOENT
+	}
+	if err := parent.inode.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
+		return err
 	}
 	return nil
 }
