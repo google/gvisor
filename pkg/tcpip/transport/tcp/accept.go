@@ -305,10 +305,7 @@ func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, q
 
 	// Initialize and start the handshake.
 	h := ep.newPassiveHandshake(isn, irs, opts, deferAccept)
-	if err := h.start(); err != nil {
-		l.cleanupFailedHandshake(h)
-		return nil, err
-	}
+	h.start()
 	return h, nil
 }
 
