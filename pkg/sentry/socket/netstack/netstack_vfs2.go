@@ -16,7 +16,6 @@ package netstack
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -131,18 +130,10 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	}
 
 	f := &ioSequencePayload{ctx: ctx, src: src}
-	n, resCh, err := s.Endpoint.Write(f, tcpip.WriteOptions{})
+	n, err := s.Endpoint.Write(f, tcpip.WriteOptions{})
 	if err == tcpip.ErrWouldBlock {
 		return 0, syserror.ErrWouldBlock
 	}
-
-	if resCh != nil {
-		if err := amutex.Block(ctx, resCh); err != nil {
-			return 0, err
-		}
-		n, _, err = s.Endpoint.Write(f, tcpip.WriteOptions{})
-	}
-
 	if err != nil {
 		return 0, syserr.TranslateNetstackError(err).ToError()
 	}

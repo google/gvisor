@@ -234,20 +234,20 @@ func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip
 }
 
 // Write implements tcpip.Endpoint.Write.
-func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// We can create, but not write to, unassociated IPv6 endpoints.
 	if !e.associated && e.TransportEndpointInfo.NetProto == header.IPv6ProtocolNumber {
-		return 0, nil, tcpip.ErrInvalidOptionValue
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	if opts.To != nil {
 		// Raw sockets do not support sending to a IPv4 address on a IPv6 endpoint.
 		if e.TransportEndpointInfo.NetProto == header.IPv6ProtocolNumber && len(opts.To.Addr) != header.IPv6AddressSize {
-			return 0, nil, tcpip.ErrInvalidOptionValue
+			return 0, tcpip.ErrInvalidOptionValue
 		}
 	}
 
-	n, ch, err := e.write(p, opts)
+	n, err := e.write(p, opts)
 	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
@@ -257,8 +257,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.stats.WriteErrors.WriteClosed.Increment()
 	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case tcpip.ErrNoLinkAddress:
-		e.stats.SendErrors.NoLinkAddr.Increment()
 	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
@@ -266,25 +264,25 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// For all other errors when writing to the network layer.
 		e.stats.SendErrors.SendToNetworkFailed.Increment()
 	}
-	return n, ch, err
+	return n, err
 }
 
-func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
-		return 0, nil, tcpip.ErrInvalidOptionValue
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	if e.closed {
-		return 0, nil, tcpip.ErrInvalidEndpointState
+		return 0, tcpip.ErrInvalidEndpointState
 	}
 
 	payloadBytes, err := p.FullPayload()
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
 	// If this is an unassociated socket and callee provided a nonzero
@@ -292,7 +290,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	if e.ops.GetHeaderIncluded() {
 		ip := header.IPv4(payloadBytes)
 		if !ip.IsValid(len(payloadBytes)) {
-			return 0, nil, tcpip.ErrInvalidOptionValue
+			return 0, tcpip.ErrInvalidOptionValue
 		}
 		dstAddr := ip.DestinationAddress()
 		// Update dstAddr with the address in the IP header, unless
@@ -313,7 +311,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
 		if !e.connected {
-			return 0, nil, tcpip.ErrDestinationRequired
+			return 0, tcpip.ErrDestinationRequired
 		}
 
 		return e.finishWrite(payloadBytes, e.route)
@@ -323,42 +321,30 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	// goes through a different NIC than the endpoint was bound to.
 	nic := opts.To.NIC
 	if e.bound && nic != 0 && nic != e.BindNICID {
-		return 0, nil, tcpip.ErrNoRoute
+		return 0, tcpip.ErrNoRoute
 	}
 
 	// Find the route to the destination. If BindAddress is 0,
 	// FindRoute will choose an appropriate source address.
 	route, err := e.stack.FindRoute(nic, e.BindAddr, opts.To.Addr, e.NetProto, false)
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	n, ch, err := e.finishWrite(payloadBytes, route)
+	n, err := e.finishWrite(payloadBytes, route)
 	route.Release()
-	return n, ch, err
+	return n, err
 }
 
 // finishWrite writes the payload to a route. It resolves the route if
 // necessary. It's really just a helper to make defer unnecessary in Write.
-func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, <-chan struct{}, *tcpip.Error) {
-	// We may need to resolve the route (match a link layer address to the
-	// network address). If that requires blocking (e.g. to use ARP),
-	// return a channel on which the caller can wait.
-	if route.IsResolutionRequired() {
-		if ch, err := route.Resolve(nil); err != nil {
-			if err == tcpip.ErrWouldBlock {
-				return 0, ch, tcpip.ErrNoLinkAddress
-			}
-			return 0, nil, err
-		}
-	}
-
+func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, *tcpip.Error) {
 	if e.ops.GetHeaderIncluded() {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Data: buffer.View(payloadBytes).ToVectorisedView(),
 		})
 		if err := route.WriteHeaderIncludedPacket(pkt); err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 	} else {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -371,11 +357,11 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 			TTL:      route.DefaultTTL(),
 			TOS:      stack.DefaultTOS,
 		}, pkt); err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 	}
 
-	return int64(len(payloadBytes)), nil, nil
+	return int64(len(payloadBytes)), nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect.

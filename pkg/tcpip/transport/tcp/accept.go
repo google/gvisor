@@ -210,7 +210,6 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	if err != nil {
 		return nil, err
 	}
-	route.ResolveWith(s.remoteLinkAddr)
 
 	n := newEndpoint(l.stack, netProto, queue)
 	n.ops.SetV6Only(l.v6Only)
@@ -573,7 +572,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) *tcpip.Er
 				return err
 			}
 			defer route.Release()
-			route.ResolveWith(s.remoteLinkAddr)
 
 			// Send SYN without window scaling because we currently
 			// don't encode this information in the cookie.

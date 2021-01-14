@@ -207,9 +207,9 @@ func (ep *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpi
 	return res, nil
 }
 
-func (*endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (*endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/173): Implement.
-	return 0, nil, tcpip.ErrInvalidOptionValue
+	return 0, tcpip.ErrInvalidOptionValue
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be

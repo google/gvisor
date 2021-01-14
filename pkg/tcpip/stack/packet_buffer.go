@@ -268,17 +268,6 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	}
 }
 
-// SourceLinkAddress returns the source link address of the packet.
-func (pk *PacketBuffer) SourceLinkAddress() tcpip.LinkAddress {
-	link := pk.LinkHeader().View()
-
-	if link.IsEmpty() {
-		return ""
-	}
-
-	return header.Ethernet(link).SourceAddress()
-}
-
 // Network returns the network header as a header.Network.
 //
 // Network should only be called when NetworkHeader has been set.

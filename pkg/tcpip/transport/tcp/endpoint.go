@@ -1507,7 +1507,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
-func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -1520,7 +1520,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.sndBufMu.Unlock()
 		e.UnlockUser()
 		e.stats.WriteErrors.WriteClosed.Increment()
-		return 0, nil, err
+		return 0, err
 	}
 
 	// We can release locks while copying data.
@@ -1541,7 +1541,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			e.sndBufMu.Unlock()
 			e.UnlockUser()
 		}
-		return 0, nil, perr
+		return 0, perr
 	}
 
 	if !opts.Atomic {
@@ -1555,7 +1555,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			e.sndBufMu.Unlock()
 			e.UnlockUser()
 			e.stats.WriteErrors.WriteClosed.Increment()
-			return 0, nil, err
+			return 0, err
 		}
 
 		// Discard any excess data copied in due to avail being reduced due
@@ -1575,7 +1575,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	// Do the work inline.
 	e.handleWrite()
 	e.UnlockUser()
-	return int64(len(v)), nil, nil
+	return int64(len(v)), nil
 }
 
 // selectWindowLocked returns the new window without checking for shrinking or scaling
@@ -2778,6 +2778,9 @@ func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt 
 
 	case stack.ControlNoRoute:
 		e.onICMPError(tcpip.ErrNoRoute, byte(header.ICMPv4DstUnreachable), byte(header.ICMPv4HostUnreachable), extra, pkt)
+
+	case stack.ControlAddressUnreachable:
+		e.onICMPError(tcpip.ErrNoRoute, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6AddressUnreachable), extra, pkt)
 
 	case stack.ControlNetworkUnreachable:
 		e.onICMPError(tcpip.ErrNetworkUnreachable, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6NetworkUnreachable), extra, pkt)

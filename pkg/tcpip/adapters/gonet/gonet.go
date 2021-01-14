@@ -397,22 +397,9 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 		}
 
 		var n int64
-		var resCh <-chan struct{}
-		n, resCh, err = c.ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
+		n, err = c.ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
 		nbytes += int(n)
 		v.TrimFront(int(n))
-
-		if resCh != nil {
-			select {
-			case <-deadline:
-				return nbytes, c.newOpError("write", &timeoutError{})
-			case <-resCh:
-			}
-
-			n, _, err = c.ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
-			nbytes += int(n)
-			v.TrimFront(int(n))
-		}
 	}
 
 	if err == nil {
@@ -666,17 +653,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	v := buffer.NewView(len(b))
 	copy(v, b)
 
-	n, resCh, err := c.ep.Write(tcpip.SlicePayload(v), wopts)
-	if resCh != nil {
-		select {
-		case <-deadline:
-			return int(n), c.newRemoteOpError("write", addr, &timeoutError{})
-		case <-resCh:
-		}
-
-		n, _, err = c.ep.Write(tcpip.SlicePayload(v), wopts)
-	}
-
+	n, err := c.ep.Write(tcpip.SlicePayload(v), wopts)
 	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
@@ -689,7 +666,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 			case <-notifyCh:
 			}
 
-			n, _, err = c.ep.Write(tcpip.SlicePayload(v), wopts)
+			n, err = c.ep.Write(tcpip.SlicePayload(v), wopts)
 			if err != tcpip.ErrWouldBlock {
 				break
 			}
