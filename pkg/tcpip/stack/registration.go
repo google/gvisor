@@ -55,7 +55,19 @@ type ControlType int
 // The following are the allowed values for ControlType values.
 // TODO(http://gvisor.dev/issue/3210): Support time exceeded messages.
 const (
-	ControlNetworkUnreachable ControlType = iota
+	// ControlAddressUnreachable indicates that an IPv6 packet did not reach its
+	// destination as the destination address was unreachable.
+	//
+	// This maps to the ICMPv6 Destination Ureachable Code 3 error; see
+	// RFC 4443 section 3.1 for more details.
+	ControlAddressUnreachable ControlType = iota
+	ControlNetworkUnreachable
+	// ControlNoRoute indicates that an IPv4 packet did not reach its destination
+	// because the destination host was unreachable.
+	//
+	// This maps to the ICMPv4 Destination Ureachable Code 1 error; see
+	// RFC 791's Destination Unreachable Message section (page 4) for more
+	// details.
 	ControlNoRoute
 	ControlPacketTooBig
 	ControlPortUnreachable
@@ -501,6 +513,13 @@ type NetworkInterface interface {
 
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+}
+
+// LinkResolvableNetworkEndpoint handles link resolution events.
+type LinkResolvableNetworkEndpoint interface {
+	// HandleLinkResolutionFailure is called when link resolution prevents the
+	// argument from having been sent.
+	HandleLinkResolutionFailure(*PacketBuffer)
 }
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints

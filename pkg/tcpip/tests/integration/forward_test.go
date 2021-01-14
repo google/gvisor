@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -157,13 +158,13 @@ func TestForwarding(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		epAndAddrs func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses
+		epAndAddrs func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses
 	}{
 		{
 			name: "IPv4 host1 server with host2 client",
-			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
-				ep1, ep1WECH := newEP(t, host1Stack, udp.ProtocolNumber, ipv4.ProtocolNumber)
-				ep2, ep2WECH := newEP(t, host2Stack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, host1Stack, proto, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
 					serverAddr:       host1IPv4Addr.AddressWithPrefix.Address,
@@ -177,9 +178,9 @@ func TestForwarding(t *testing.T) {
 		},
 		{
 			name: "IPv6 host2 server with host1 client",
-			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
-				ep1, ep1WECH := newEP(t, host2Stack, udp.ProtocolNumber, ipv6.ProtocolNumber)
-				ep2, ep2WECH := newEP(t, host1Stack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, host2Stack, proto, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host1Stack, proto, ipv6.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
 					serverAddr:       host2IPv6Addr.AddressWithPrefix.Address,
@@ -193,9 +194,9 @@ func TestForwarding(t *testing.T) {
 		},
 		{
 			name: "IPv4 host2 server with routerNIC1 client",
-			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
-				ep1, ep1WECH := newEP(t, host2Stack, udp.ProtocolNumber, ipv4.ProtocolNumber)
-				ep2, ep2WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv4.ProtocolNumber)
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, host2Stack, proto, ipv4.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, routerStack, proto, ipv4.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
 					serverAddr:       host2IPv4Addr.AddressWithPrefix.Address,
@@ -209,9 +210,9 @@ func TestForwarding(t *testing.T) {
 		},
 		{
 			name: "IPv6 routerNIC2 server with host1 client",
-			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) endpointAndAddresses {
-				ep1, ep1WECH := newEP(t, routerStack, udp.ProtocolNumber, ipv6.ProtocolNumber)
-				ep2, ep2WECH := newEP(t, host1Stack, udp.ProtocolNumber, ipv6.ProtocolNumber)
+			epAndAddrs: func(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack, proto tcpip.TransportProtocolNumber) endpointAndAddresses {
+				ep1, ep1WECH := newEP(t, routerStack, proto, ipv6.ProtocolNumber)
+				ep2, ep2WECH := newEP(t, host1Stack, proto, ipv6.ProtocolNumber)
 				return endpointAndAddresses{
 					serverEP:         ep1,
 					serverAddr:       routerNIC2IPv6Addr.AddressWithPrefix.Address,
@@ -225,202 +226,270 @@ func TestForwarding(t *testing.T) {
 		},
 	}
 
+	subTests := []struct {
+		name               string
+		proto              tcpip.TransportProtocolNumber
+		expectedConnectErr *tcpip.Error
+		setupServerSide    func(t *testing.T, ep tcpip.Endpoint, ch <-chan struct{}, clientAddr tcpip.FullAddress) (tcpip.Endpoint, chan struct{})
+		needRemoteAddr     bool
+	}{
+		{
+			name:               "UDP",
+			proto:              udp.ProtocolNumber,
+			expectedConnectErr: nil,
+			setupServerSide: func(t *testing.T, ep tcpip.Endpoint, _ <-chan struct{}, clientAddr tcpip.FullAddress) (tcpip.Endpoint, chan struct{}) {
+				t.Helper()
+
+				if err := ep.Connect(clientAddr); err != nil {
+					t.Fatalf("ep.Connect(%#v): %s", clientAddr, err)
+				}
+				return nil, nil
+			},
+			needRemoteAddr: true,
+		},
+		{
+			name:               "TCP",
+			proto:              tcp.ProtocolNumber,
+			expectedConnectErr: tcpip.ErrConnectStarted,
+			setupServerSide: func(t *testing.T, ep tcpip.Endpoint, ch <-chan struct{}, clientAddr tcpip.FullAddress) (tcpip.Endpoint, chan struct{}) {
+				t.Helper()
+
+				if err := ep.Listen(1); err != nil {
+					t.Fatalf("ep.Listen(1): %s", err)
+				}
+				var addr tcpip.FullAddress
+				for {
+					newEP, wq, err := ep.Accept(&addr)
+					if err == tcpip.ErrWouldBlock {
+						<-ch
+						continue
+					}
+					if err != nil {
+						t.Fatalf("ep.Accept(_): %s", err)
+					}
+					if diff := cmp.Diff(clientAddr, addr, checker.IgnoreCmpPath(
+						"NIC",
+					)); diff != "" {
+						t.Errorf("accepted address mismatch (-want +got):\n%s", diff)
+					}
+
+					we, newCH := waiter.NewChannelEntry(nil)
+					wq.EventRegister(&we, waiter.EventIn)
+					return newEP, newCH
+				}
+			},
+			needRemoteAddr: false,
+		},
+	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			stackOpts := stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
-			}
+			for _, subTest := range subTests {
+				t.Run(subTest.name, func(t *testing.T) {
+					stackOpts := stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+					}
 
-			host1Stack := stack.New(stackOpts)
-			routerStack := stack.New(stackOpts)
-			host2Stack := stack.New(stackOpts)
+					host1Stack := stack.New(stackOpts)
+					routerStack := stack.New(stackOpts)
+					host2Stack := stack.New(stackOpts)
 
-			host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
-			routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
+					host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
+					routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
 
-			if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
-				t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
-			}
-			if err := routerStack.CreateNIC(routerNICID1, newEthernetEndpoint(routerNIC1)); err != nil {
-				t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID1, err)
-			}
-			if err := routerStack.CreateNIC(routerNICID2, newEthernetEndpoint(routerNIC2)); err != nil {
-				t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID2, err)
-			}
-			if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
-				t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
-			}
+					if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
+						t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
+					}
+					if err := routerStack.CreateNIC(routerNICID1, newEthernetEndpoint(routerNIC1)); err != nil {
+						t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID1, err)
+					}
+					if err := routerStack.CreateNIC(routerNICID2, newEthernetEndpoint(routerNIC2)); err != nil {
+						t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID2, err)
+					}
+					if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
+						t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
+					}
 
-			if err := routerStack.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-				t.Fatalf("routerStack.SetForwarding(%d): %s", ipv4.ProtocolNumber, err)
-			}
-			if err := routerStack.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-				t.Fatalf("routerStack.SetForwarding(%d): %s", ipv6.ProtocolNumber, err)
-			}
+					if err := routerStack.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
+						t.Fatalf("routerStack.SetForwarding(%d): %s", ipv4.ProtocolNumber, err)
+					}
+					if err := routerStack.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
+						t.Fatalf("routerStack.SetForwarding(%d): %s", ipv6.ProtocolNumber, err)
+					}
 
-			if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv4Addr); err != nil {
-				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv4Addr, err)
-			}
-			if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv4Addr); err != nil {
-				t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv4Addr, err)
-			}
-			if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv4Addr); err != nil {
-				t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv4Addr, err)
-			}
-			if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv4Addr); err != nil {
-				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv4Addr, err)
-			}
-			if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv6Addr); err != nil {
-				t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv6Addr, err)
-			}
-			if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv6Addr); err != nil {
-				t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv6Addr, err)
-			}
-			if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv6Addr); err != nil {
-				t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv6Addr, err)
-			}
-			if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv6Addr); err != nil {
-				t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv6Addr, err)
-			}
+					if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv4Addr); err != nil {
+						t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv4Addr, err)
+					}
+					if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv4Addr); err != nil {
+						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv4Addr, err)
+					}
+					if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv4Addr); err != nil {
+						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv4Addr, err)
+					}
+					if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv4Addr); err != nil {
+						t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv4Addr, err)
+					}
+					if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv6Addr); err != nil {
+						t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv6Addr, err)
+					}
+					if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv6Addr); err != nil {
+						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv6Addr, err)
+					}
+					if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv6Addr); err != nil {
+						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv6Addr, err)
+					}
+					if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv6Addr); err != nil {
+						t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv6Addr, err)
+					}
 
-			host1Stack.SetRouteTable([]tcpip.Route{
-				{
-					Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
-					NIC:         host1NICID,
-				},
-				{
-					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
-					NIC:         host1NICID,
-				},
-				{
-					Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
-					Gateway:     routerNIC1IPv4Addr.AddressWithPrefix.Address,
-					NIC:         host1NICID,
-				},
-				{
-					Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
-					Gateway:     routerNIC1IPv6Addr.AddressWithPrefix.Address,
-					NIC:         host1NICID,
-				},
-			})
-			routerStack.SetRouteTable([]tcpip.Route{
-				{
-					Destination: routerNIC1IPv4Addr.AddressWithPrefix.Subnet(),
-					NIC:         routerNICID1,
-				},
-				{
-					Destination: routerNIC1IPv6Addr.AddressWithPrefix.Subnet(),
-					NIC:         routerNICID1,
-				},
-				{
-					Destination: routerNIC2IPv4Addr.AddressWithPrefix.Subnet(),
-					NIC:         routerNICID2,
-				},
-				{
-					Destination: routerNIC2IPv6Addr.AddressWithPrefix.Subnet(),
-					NIC:         routerNICID2,
-				},
-			})
-			host2Stack.SetRouteTable([]tcpip.Route{
-				{
-					Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
-					NIC:         host2NICID,
-				},
-				{
-					Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
-					NIC:         host2NICID,
-				},
-				{
-					Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
-					Gateway:     routerNIC2IPv4Addr.AddressWithPrefix.Address,
-					NIC:         host2NICID,
-				},
-				{
-					Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
-					Gateway:     routerNIC2IPv6Addr.AddressWithPrefix.Address,
-					NIC:         host2NICID,
-				},
-			})
+					host1Stack.SetRouteTable([]tcpip.Route{
+						{
+							Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+							NIC:         host1NICID,
+						},
+						{
+							Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+							NIC:         host1NICID,
+						},
+						{
+							Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
+							Gateway:     routerNIC1IPv4Addr.AddressWithPrefix.Address,
+							NIC:         host1NICID,
+						},
+						{
+							Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
+							Gateway:     routerNIC1IPv6Addr.AddressWithPrefix.Address,
+							NIC:         host1NICID,
+						},
+					})
+					routerStack.SetRouteTable([]tcpip.Route{
+						{
+							Destination: routerNIC1IPv4Addr.AddressWithPrefix.Subnet(),
+							NIC:         routerNICID1,
+						},
+						{
+							Destination: routerNIC1IPv6Addr.AddressWithPrefix.Subnet(),
+							NIC:         routerNICID1,
+						},
+						{
+							Destination: routerNIC2IPv4Addr.AddressWithPrefix.Subnet(),
+							NIC:         routerNICID2,
+						},
+						{
+							Destination: routerNIC2IPv6Addr.AddressWithPrefix.Subnet(),
+							NIC:         routerNICID2,
+						},
+					})
+					host2Stack.SetRouteTable([]tcpip.Route{
+						{
+							Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
+							NIC:         host2NICID,
+						},
+						{
+							Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
+							NIC:         host2NICID,
+						},
+						{
+							Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+							Gateway:     routerNIC2IPv4Addr.AddressWithPrefix.Address,
+							NIC:         host2NICID,
+						},
+						{
+							Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+							Gateway:     routerNIC2IPv6Addr.AddressWithPrefix.Address,
+							NIC:         host2NICID,
+						},
+					})
 
-			epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack)
-			defer epsAndAddrs.serverEP.Close()
-			defer epsAndAddrs.clientEP.Close()
+					epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
+					defer epsAndAddrs.serverEP.Close()
+					defer epsAndAddrs.clientEP.Close()
 
-			serverAddr := tcpip.FullAddress{Addr: epsAndAddrs.serverAddr, Port: listenPort}
-			if err := epsAndAddrs.serverEP.Bind(serverAddr); err != nil {
-				t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", serverAddr, err)
-			}
-			clientAddr := tcpip.FullAddress{Addr: epsAndAddrs.clientAddr}
-			if err := epsAndAddrs.clientEP.Bind(clientAddr); err != nil {
-				t.Fatalf("epsAndAddrs.clientEP.Bind(%#v): %s", clientAddr, err)
-			}
+					serverAddr := tcpip.FullAddress{Addr: epsAndAddrs.serverAddr, Port: listenPort}
+					if err := epsAndAddrs.serverEP.Bind(serverAddr); err != nil {
+						t.Fatalf("epsAndAddrs.serverEP.Bind(%#v): %s", serverAddr, err)
+					}
+					clientAddr := tcpip.FullAddress{Addr: epsAndAddrs.clientAddr}
+					if err := epsAndAddrs.clientEP.Bind(clientAddr); err != nil {
+						t.Fatalf("epsAndAddrs.clientEP.Bind(%#v): %s", clientAddr, err)
+					}
 
-			write := func(ep tcpip.Endpoint, data []byte, to *tcpip.FullAddress) {
-				t.Helper()
+					if err := epsAndAddrs.clientEP.Connect(serverAddr); err != subTest.expectedConnectErr {
+						t.Fatalf("got epsAndAddrs.clientEP.Connect(%#v) = %s, want = %s", serverAddr, err, subTest.expectedConnectErr)
+					}
+					if addr, err := epsAndAddrs.clientEP.GetLocalAddress(); err != nil {
+						t.Fatalf("epsAndAddrs.clientEP.GetLocalAddress(): %s", err)
+					} else {
+						clientAddr = addr
+						clientAddr.NIC = 0
+					}
 
-				dataPayload := tcpip.SlicePayload(data)
-				wOpts := tcpip.WriteOptions{To: to}
-				n, ch, err := ep.Write(dataPayload, wOpts)
-				if err == tcpip.ErrNoLinkAddress {
-					// Wait for link resolution to complete.
-					<-ch
-					n, _, err = ep.Write(dataPayload, wOpts)
-				}
-				if err != nil {
-					t.Fatalf("ep.Write(_, _): %s", err)
-				}
-				if want := int64(len(data)); n != want {
-					t.Fatalf("got ep.Write(_, _) = (%d, _, _), want = (%d, _, _)", n, want)
-				}
-			}
+					serverEP := epsAndAddrs.serverEP
+					serverCH := epsAndAddrs.serverReadableCH
+					if ep, ch := subTest.setupServerSide(t, serverEP, serverCH, clientAddr); ep != nil {
+						defer ep.Close()
+						serverEP = ep
+						serverCH = ch
+					}
 
-			data := []byte{1, 2, 3, 4}
-			write(epsAndAddrs.clientEP, data, &serverAddr)
+					write := func(ep tcpip.Endpoint, data []byte) {
+						t.Helper()
 
-			read := func(ch chan struct{}, ep tcpip.Endpoint, data []byte, expectedFrom tcpip.Address) tcpip.FullAddress {
-				t.Helper()
+						dataPayload := tcpip.SlicePayload(data)
+						var wOpts tcpip.WriteOptions
+						n, err := ep.Write(dataPayload, wOpts)
+						if err != nil {
+							t.Fatalf("ep.Write(_, %#v): %s", wOpts, err)
+						}
+						if want := int64(len(data)); n != want {
+							t.Fatalf("got ep.Write(_, %#v) = (%d, _), want = (%d, _)", wOpts, n, want)
+						}
+					}
 
-				// Wait for the endpoint to be readable.
-				<-ch
-				var buf bytes.Buffer
-				opts := tcpip.ReadOptions{NeedRemoteAddr: true}
-				res, err := ep.Read(&buf, len(data), opts)
-				if err != nil {
-					t.Fatalf("ep.Read(_, %d, %#v): %s", len(data), opts, err)
-				}
+					data := []byte{1, 2, 3, 4}
+					write(epsAndAddrs.clientEP, data)
 
-				if diff := cmp.Diff(tcpip.ReadResult{
-					Count:      len(data),
-					Total:      len(data),
-					RemoteAddr: tcpip.FullAddress{Addr: expectedFrom},
-				}, res, checker.IgnoreCmpPath(
-					"ControlMessages",
-					"RemoteAddr.NIC",
-					"RemoteAddr.Port",
-				)); diff != "" {
-					t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
-				}
-				if diff := cmp.Diff(buf.Bytes(), data); diff != "" {
-					t.Errorf("received data mismatch (-want +got):\n%s", diff)
-				}
+					read := func(ch chan struct{}, ep tcpip.Endpoint, data []byte, expectedFrom tcpip.FullAddress) {
+						t.Helper()
 
-				if t.Failed() {
-					t.FailNow()
-				}
+						// Wait for the endpoint to be readable.
+						<-ch
+						var buf bytes.Buffer
+						opts := tcpip.ReadOptions{NeedRemoteAddr: subTest.needRemoteAddr}
+						res, err := ep.Read(&buf, len(data), opts)
+						if err != nil {
+							t.Fatalf("ep.Read(_, %d, %#v): %s", len(data), opts, err)
+						}
 
-				return res.RemoteAddr
-			}
+						readResult := tcpip.ReadResult{
+							Count: len(data),
+							Total: len(data),
+						}
+						if subTest.needRemoteAddr {
+							readResult.RemoteAddr = expectedFrom
+						}
+						if diff := cmp.Diff(readResult, res, checker.IgnoreCmpPath(
+							"ControlMessages",
+							"RemoteAddr.NIC",
+						)); diff != "" {
+							t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+						}
+						if diff := cmp.Diff(buf.Bytes(), data); diff != "" {
+							t.Errorf("received data mismatch (-want +got):\n%s", diff)
+						}
 
-			addr := read(epsAndAddrs.serverReadableCH, epsAndAddrs.serverEP, data, epsAndAddrs.clientAddr)
-			// Unspecify the NIC since NIC IDs are meaningless across stacks.
-			addr.NIC = 0
+						if t.Failed() {
+							t.FailNow()
+						}
+					}
 
-			data = tcpip.SlicePayload([]byte{5, 6, 7, 8, 9, 10, 11, 12})
-			write(epsAndAddrs.serverEP, data, &addr)
-			addr = read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, epsAndAddrs.serverAddr)
-			if addr.Port != listenPort {
-				t.Errorf("got addr.Port = %d, want = %d", addr.Port, listenPort)
+					read(serverCH, serverEP, data, clientAddr)
+
+					data = tcpip.SlicePayload([]byte{5, 6, 7, 8, 9, 10, 11, 12})
+					write(serverEP, data)
+					read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, serverAddr)
+				})
 			}
 		})
 	}

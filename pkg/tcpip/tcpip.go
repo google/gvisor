@@ -104,7 +104,6 @@ var (
 	ErrConnectionAborted         = &Error{msg: "connection aborted"}
 	ErrNoSuchFile                = &Error{msg: "no such file"}
 	ErrInvalidOptionValue        = &Error{msg: "invalid option value specified"}
-	ErrNoLinkAddress             = &Error{msg: "no remote link address"}
 	ErrBadAddress                = &Error{msg: "bad address"}
 	ErrNetworkUnreachable        = &Error{msg: "network is unreachable"}
 	ErrMessageTooLong            = &Error{msg: "message too long"}
@@ -154,7 +153,6 @@ func StringToError(s string) *Error {
 			ErrConnectionAborted,
 			ErrNoSuchFile,
 			ErrInvalidOptionValue,
-			ErrNoLinkAddress,
 			ErrBadAddress,
 			ErrNetworkUnreachable,
 			ErrMessageTooLong,
@@ -640,12 +638,7 @@ type Endpoint interface {
 	// stream (TCP) Endpoints may return partial writes, and even then only
 	// in the case where writing additional data would block. Other Endpoints
 	// will either write the entire message or return an error.
-	//
-	// For UDP and Ping sockets if address resolution is required,
-	// ErrNoLinkAddress and a notification channel is returned for the caller to
-	// block. Channel is closed once address resolution is complete (success or
-	// not). The channel is only non-nil in this case.
-	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
+	Write(Payloader, WriteOptions) (int64, *Error)
 
 	// Connect connects the endpoint to its peer. Specifying a NIC is
 	// optional.
@@ -1784,9 +1777,6 @@ type SendErrors struct {
 
 	// NoRoute is the number of times we failed to resolve IP route.
 	NoRoute StatCounter
-
-	// NoLinkAddr is the number of times we failed to resolve ARP.
-	NoLinkAddr StatCounter
 }
 
 // ReadErrors collects segment read errors from an endpoint read call.

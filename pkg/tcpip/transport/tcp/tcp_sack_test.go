@@ -402,7 +402,7 @@ func TestSACKRecovery(t *testing.T) {
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

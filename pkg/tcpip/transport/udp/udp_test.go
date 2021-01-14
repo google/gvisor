@@ -967,7 +967,7 @@ func testFailingWrite(c *testContext, flow testFlow, wantErr *tcpip.Error) {
 	writeDstAddr := flow.mapAddrIfApplicable(h.dstAddr.Addr)
 
 	payload := buffer.View(newPayload())
-	_, _, gotErr := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	_, gotErr := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: writeDstAddr, Port: h.dstAddr.Port},
 	})
 	c.checkEndpointWriteStats(1, epstats, gotErr)
@@ -1008,7 +1008,7 @@ func testWriteNoVerify(c *testContext, flow testFlow, setDest bool) buffer.View 
 		}
 	}
 	payload := buffer.View(newPayload())
-	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
+	n, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
 	if err != nil {
 		c.t.Fatalf("Write failed: %s", err)
 	}
@@ -1184,7 +1184,7 @@ func TestWriteOnConnectedInvalidPort(t *testing.T) {
 				To: &tcpip.FullAddress{Addr: stackAddr, Port: invalidPort},
 			}
 			payload := buffer.View(newPayload())
-			n, _, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
+			n, err := c.ep.Write(tcpip.SlicePayload(payload), writeOpts)
 			if err != nil {
 				c.t.Fatalf("c.ep.Write(...) = %+s, want nil", err)
 			}
@@ -2317,8 +2317,6 @@ func (c *testContext) checkEndpointWriteStats(incr uint64, want tcpip.TransportE
 		want.WriteErrors.WriteClosed.IncrementBy(incr)
 	case tcpip.ErrInvalidEndpointState:
 		want.WriteErrors.InvalidEndpointState.IncrementBy(incr)
-	case tcpip.ErrNoLinkAddress:
-		want.SendErrors.NoLinkAddr.IncrementBy(incr)
 	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		want.SendErrors.NoRoute.IncrementBy(incr)
 	default:
@@ -2510,20 +2508,20 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 				expectedErrWithoutBcastOpt = nil
 			}
 
-			if n, _, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
-				t.Fatalf("got ep.Write(_, _) = (%d, _, %v), want = (_, _, %v)", n, err, expectedErrWithoutBcastOpt)
+			if n, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
+				t.Fatalf("got ep.Write(_, %#v) = (%d, %s), want = (_, %s)", opts, n, err, expectedErrWithoutBcastOpt)
 			}
 
 			ep.SocketOptions().SetBroadcast(true)
 
-			if n, _, err := ep.Write(data, opts); err != nil {
-				t.Fatalf("got ep.Write(_, _) = (%d, _, %s), want = (_, _, nil)", n, err)
+			if n, err := ep.Write(data, opts); err != nil {
+				t.Fatalf("got ep.Write(_, %#v) = (%d, %s), want = (_, nil)", opts, n, err)
 			}
 
 			ep.SocketOptions().SetBroadcast(false)
 
-			if n, _, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
-				t.Fatalf("got ep.Write(_, _) = (%d, _, %v), want = (_, _, %v)", n, err, expectedErrWithoutBcastOpt)
+			if n, err := ep.Write(data, opts); err != expectedErrWithoutBcastOpt {
+				t.Fatalf("got ep.Write(_, %#v) = (%d, %s), want = (_, %s)", opts, n, err, expectedErrWithoutBcastOpt)
 			}
 		})
 	}

@@ -645,29 +645,18 @@ func TestLinkResolution(t *testing.T) {
 		t.Fatalf("NewEndpoint(_) = (_, %s), want = (_, nil)", err)
 	}
 
-	for {
-		_, resCh, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: nicID, Addr: lladdr1}})
-		if resCh != nil {
-			if err != tcpip.ErrNoLinkAddress {
-				t.Fatalf("ep.Write(_) = (_, <non-nil>, %s), want = (_, <non-nil>, tcpip.ErrNoLinkAddress)", err)
+	if _, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: nicID, Addr: lladdr1}}); err != nil {
+		t.Fatalf("ep.Write(_): %s", err)
+	}
+	for _, args := range []routeArgs{
+		{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit, remoteLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.SolicitedNodeAddr(lladdr1))},
+		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
+	} {
+		routeICMPv6Packet(t, args, func(t *testing.T, icmpv6 header.ICMPv6) {
+			if got, want := tcpip.Address(icmpv6[8:][:16]), lladdr1; got != want {
+				t.Errorf("%d: got target = %s, want = %s", icmpv6.Type(), got, want)
 			}
-			for _, args := range []routeArgs{
-				{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit, remoteLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.SolicitedNodeAddr(lladdr1))},
-				{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
-			} {
-				routeICMPv6Packet(t, args, func(t *testing.T, icmpv6 header.ICMPv6) {
-					if got, want := tcpip.Address(icmpv6[8:][:16]), lladdr1; got != want {
-						t.Errorf("%d: got target = %s, want = %s", icmpv6.Type(), got, want)
-					}
-				})
-			}
-			<-resCh
-			continue
-		}
-		if err != nil {
-			t.Fatalf("ep.Write(_) = (_, _, %s)", err)
-		}
-		break
+		})
 	}
 
 	for _, args := range []routeArgs{

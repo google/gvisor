@@ -49,7 +49,7 @@ func TestFastRecovery(t *testing.T) {
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -214,7 +214,7 @@ func TestExponentialIncreaseDuringSlowStart(t *testing.T) {
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -256,7 +256,7 @@ func TestCongestionAvoidance(t *testing.T) {
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -361,7 +361,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -470,11 +470,11 @@ func TestRetransmit(t *testing.T) {
 	// Write all the data in two shots. Packets will only be written at the
 	// MTU size though.
 	half := data[:len(data)/2]
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 	half = data[len(data)/2:]
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

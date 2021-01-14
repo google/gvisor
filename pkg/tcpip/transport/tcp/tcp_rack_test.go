@@ -68,7 +68,7 @@ func TestRACKUpdate(t *testing.T) {
 
 	// Write the data.
 	xmitTime = time.Now()
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -120,7 +120,7 @@ func TestRACKDetectReorder(t *testing.T) {
 	}
 
 	// Write the data.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -151,7 +151,7 @@ func sendAndReceive(t *testing.T, c *context.Context, numPackets int) buffer.Vie
 	}
 
 	// Write the data.
-	if _, _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

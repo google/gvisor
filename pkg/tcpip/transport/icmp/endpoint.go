@@ -236,8 +236,8 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
-	n, ch, err := e.write(p, opts)
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
+	n, err := e.write(p, opts)
 	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
@@ -247,8 +247,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		e.stats.WriteErrors.WriteClosed.Increment()
 	case tcpip.ErrInvalidEndpointState:
 		e.stats.WriteErrors.InvalidEndpointState.Increment()
-	case tcpip.ErrNoLinkAddress:
-		e.stats.SendErrors.NoLinkAddr.Increment()
 	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
 		// Errors indicating any problem with IP routing of the packet.
 		e.stats.SendErrors.NoRoute.Increment()
@@ -256,13 +254,13 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// For all other errors when writing to the network layer.
 		e.stats.SendErrors.SendToNetworkFailed.Increment()
 	}
-	return n, ch, err
+	return n, err
 }
 
-func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
-		return 0, nil, tcpip.ErrInvalidOptionValue
+		return 0, tcpip.ErrInvalidOptionValue
 	}
 
 	to := opts.To
@@ -272,14 +270,14 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
-		return 0, nil, tcpip.ErrClosedForSend
+		return 0, tcpip.ErrClosedForSend
 	}
 
 	// Prepare for write.
 	for {
 		retry, err := e.prepareForWrite(to)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 
 		if !retry {
@@ -294,7 +292,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		nicID := to.NIC
 		if e.BindNICID != 0 {
 			if nicID != 0 && nicID != e.BindNICID {
-				return 0, nil, tcpip.ErrNoRoute
+				return 0, tcpip.ErrNoRoute
 			}
 
 			nicID = e.BindNICID
@@ -302,31 +300,22 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 		dst, netProto, err := e.checkV4MappedLocked(*to)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 
 		// Find the endpoint.
 		r, err := e.stack.FindRoute(nicID, e.BindAddr, dst.Addr, netProto, false /* multicastLoop */)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 		defer r.Release()
 
 		route = r
 	}
 
-	if route.IsResolutionRequired() {
-		if ch, err := route.Resolve(nil); err != nil {
-			if err == tcpip.ErrWouldBlock {
-				return 0, ch, tcpip.ErrNoLinkAddress
-			}
-			return 0, nil, err
-		}
-	}
-
 	v, err := p.FullPayload()
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
 	switch e.NetProto {
@@ -338,10 +327,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	return int64(len(v)), nil, nil
+	return int64(len(v)), nil
 }
 
 // SetSockOpt sets a socket option.
