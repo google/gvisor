@@ -197,18 +197,42 @@ func (s *sender) probeTimerExpired() *tcpip.Error {
 	if !s.rc.probeTimer.checkExpiration() {
 		return nil
 	}
-	// TODO(gvisor.dev/issue/5084): Implement this pseudo algorithm.
-	// 	If an unsent segment exists AND
-	// 			the receive window allows new data to be sent:
-	// 					Transmit the lowest-sequence unsent segment of up to SMSS
-	// 					Increment FlightSize by the size of the newly-sent segment
-	// 	Else if TLPRxtOut is not set:
-	// 					Retransmit the highest-sequence segment sent so far
-	// 					TLPRxtOut = true
-	// 					TLPHighRxt = SND.NXT
-	// 	The cwnd remains unchanged
-	//  If FlightSize != 0:
-	//  				Arm RTO timer only.
+
+	var dataSent bool
+	if s.writeNext != nil && s.writeNext.xmitCount == 0 && s.outstanding < s.sndCwnd {
+		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.sndUna.Add(s.sndWnd))
+		if dataSent {
+			s.outstanding += s.pCount(s.writeNext, s.maxPayloadSize)
+			s.writeNext = s.writeNext.Next()
+		}
+	}
+
+	if !dataSent && !s.rc.tlpRxtOut {
+		var highestSeqXmit *segment
+		for highestSeqXmit = s.writeList.Front(); highestSeqXmit != nil; highestSeqXmit = highestSeqXmit.Next() {
+			if highestSeqXmit.xmitCount == 0 {
+				// Nothing in writeList is transmitted, no need to send a probe.
+				highestSeqXmit = nil
+				break
+			}
+			if highestSeqXmit.Next() == nil || highestSeqXmit.Next().xmitCount == 0 {
+				// Either everything in writeList has been transmitted or the next
+				// sequence has not been transmitted. Either way this is the highest
+				// sequence segment that was transmitted.
+				break
+			}
+		}
+
+		if highestSeqXmit != nil {
+			dataSent = s.maybeSendSegment(highestSeqXmit, int(s.ep.scoreboard.SMSS()), s.sndUna.Add(s.sndWnd))
+			if dataSent {
+				s.rc.tlpRxtOut = true
+				s.rc.tlpHighRxt = s.sndNxt
+			}
+		}
+	}
+
+	s.postXmit(dataSent)
 	return nil
 }
 
