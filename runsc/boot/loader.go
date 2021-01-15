@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -719,12 +720,11 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		goferFDs: goferFDs,
 	}
 	info.procArgs, err = createProcessArgs(l.containers[cid], spec, creds, l.k, pidns)
-	info.procArgs, err := createProcessARgs(l.containers[cid], spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
 
-	var dupedStdioFDs []int
+	var dupedStdioFDs []*fd.FD
 	// Use stdios or TTY depending on the spec configuration.
 	if spec.Process.Terminal {
 		if len(stdioFDs) > 0 {
@@ -740,17 +740,17 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 		// require child containers stdioFDs also sarting at fixed locations:
 		// (cindex+1) * 64. With this rule, we can avoid panic on restore due
 		// to host FS inodes of child containers.
-		fd := (l.ctrl.manager.cindex + 1) * startingStdioFD
-		for _, f := range files[:3] {
+		newFd := (l.ctrl.manager.cindex + 1) * startingStdioFD
+		for _, f := range stdioFDs {
 			// FIXME: set O_CLOEXEC will fail
-			err := syscall.Dup3(int(f.Fd()), fd, 0)
+			err := syscall.Dup3(int(f.FD()), newFd, 0)
 			if err != nil {
 				return fmt.Errorf("failed to dup3: %v", err)
 			}
-			dupedStdioFds = append(dupedStdioFds, fd)
-			fd++
+			dupedStdioFDs = append(dupedStdioFDs, fd.New(newFd))
+			newFd++
 		}
-		info.stdioFDs = newStdioFDs
+		info.stdioFDs = dupedStdioFDs
 	}
 
 	ep.tg, ep.tty, ep.ttyVFS2, err = l.createContainerProcess(false, cid, info)
@@ -760,7 +760,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 
 	// after createFDTable, the dup()ed FD is no longer needed
 	for _, fd := range dupedStdioFDs {
-		err := syscall.Close(fd)
+		err := fd.Close()
 		if err != nil {
 			return fmt.Errorf("failed to close dup()ed FD: %v", err)
 		}
@@ -850,9 +850,6 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			log.Warningf("Seccomp spec is being ignored")
 		}
 	}
-
-	l.processes[eid].tg = tg
-	l.k.SetContainerInit(tg)
 
 	return tg, ttyFile, ttyFileVFS2, nil
 }
@@ -1018,6 +1015,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		tty:     ttyFile,
 		ttyVFS2: ttyFileVFS2,
 	}
+	l.k.AddContainerInit(tg)
 	log.Debugf("updated processes: %v", l.processes)
 
 	return tgid, nil

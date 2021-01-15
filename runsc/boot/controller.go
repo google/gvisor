@@ -390,7 +390,7 @@ type RestoreOpts struct {
 	// spec and conf of the to be restored child container.
 	// root container's spec and conf are stored in loader.
 	Spec *specs.Spec
-	Conf *Config
+	Conf *config.Config
 }
 
 // RootRestore loads a container from a statefile.
@@ -498,7 +498,6 @@ func (cm *containerManager) RootRestore(o *RestoreOpts, _ *struct{}) error {
 	specFile.Seek(0, 0)
 
 	// Load the state.
-	loadOpts := state.LoadOpts{Source: specFile}
 	if err := loadOpts.Load(ctx, k, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		// Propagate RootRestore failure to child containers
 		for i := 0; i < cm.totalContainerNum - 1; i++ {
@@ -531,7 +530,7 @@ func (cm *containerManager) RootRestore(o *RestoreOpts, _ *struct{}) error {
 
 	// Update the restored kernel's rootUTSNamespace according to the restore spec
 	// Loader.spec contains hostname information for the restore root container
-	cm.l.k.UpdateRootUTSNamespace(cm.l.spec.Hostname, cm.l.spec.Hostname)
+	cm.l.k.UpdateRootUTSNamespace(cm.l.root.spec.Hostname, cm.l.root.spec.Hostname)
 
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
@@ -566,13 +565,13 @@ func (cm *containerManager) ContainerRestore(o *RestoreOpts, _ *struct{}) error 
 	}
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
-	var goferFDs []int
+	var goferFDs []*fd.FD
 	for _, f := range o.FilePayload.Files[3:] {
-		fd, err := syscall.Dup(int(f.Fd()))
+		newFd, err := syscall.Dup(int(f.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
-		goferFDs = append(goferFDs, fd)
+		goferFDs = append(goferFDs, fd.New(newFd))
 	}
 
 	// Set up the restore environment for child container.

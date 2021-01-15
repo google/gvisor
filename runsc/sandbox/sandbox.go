@@ -292,7 +292,7 @@ func (s *Sandbox) RestoreRoot(cid string, spec *specs.Spec, conf *config.Config,
 }
 
 // RestoreContainer sends the restore call for a container in the sandbox.
-func (s *Sandbox) RestoreContainer(spec *specs.Spec, conf *boot.Config, cid string, goferFiles []*os.File) error {
+func (s *Sandbox) RestoreContainer(spec *specs.Spec, conf *config.Config, cid string, goferFiles []*os.File) error {
 	log.Debugf("Restore child container %q in sandbox %q.", cid, s.ID)
 
 	// The payload must container stdin/stdout/stderr followed by gofer

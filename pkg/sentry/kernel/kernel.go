@@ -1444,8 +1444,8 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 	return k.globalInit
 }
 
-// SetContainerInit sets the thread group with ID 1 in the PID namespace.
-func (k *Kernel) SetContainerInit(tg *ThreadGroup) {
+// AddContainerInit sets the thread group with ID 1 in the PID namespace.
+func (k *Kernel) AddContainerInit(tg *ThreadGroup) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.containerInit = append(k.containerInit, tg)

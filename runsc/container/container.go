@@ -385,9 +385,8 @@ func (c *Container) Start(conf *config.Config) error {
 			}
 
 			if conf.RestoreFile != "" {
-				return c.Sandbox.RestoreContainer(c.Spec, conf, c.ID, ioFiles)
-			} else {
-				return c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles)
+				// TODO/TRAVIS: Do we need to pass stdios here?
+				return c.Sandbox.RestoreContainer(c.Spec, conf, c.ID, goferFiles)
 			}
 
 			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, stdios, goferFiles)
@@ -449,7 +448,7 @@ func (c *Container) RestoreRoot(spec *specs.Spec, conf *config.Config, restoreFi
 	return c.saveLocked()
 }
 
-func (c *Container) Restore(spec *specs.Spec, conf *conf.Config, restoreFile string) error {
+func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile string) error {
 	log.Debugf("Restore container %q", c.ID)
 	if isRoot(spec) {
 		return c.RestoreRoot(spec, conf, restoreFile)
