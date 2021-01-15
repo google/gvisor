@@ -486,9 +486,14 @@ struct TestAddress {
   sockaddr_storage addr;
   socklen_t addr_len;
 
-  int family() const { return addr.ss_family; }
   explicit TestAddress(std::string description = "")
       : description(std::move(description)), addr(), addr_len() {}
+
+  int family() const { return addr.ss_family; }
+
+  // Returns a new TestAddress with specified port. If port is not supported,
+  // the same TestAddress is returned.
+  TestAddress WithPort(uint16_t port) const;
 };
 
 constexpr char kMulticastAddress[] = "224.0.2.1";
