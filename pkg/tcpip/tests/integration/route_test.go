@@ -16,7 +16,6 @@ package integration_test
 
 import (
 	"bytes"
-	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -208,9 +207,9 @@ func TestLocalPing(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
-			res, err := ep.Read(&buf, math.MaxUint16, opts)
+			res, err := ep.Read(&buf, opts)
 			if err != nil {
-				t.Fatalf("ep.Read(_, %d, %#v): %s", math.MaxUint16, opts, err)
+				t.Fatalf("ep.Read(_, %#v): %s", opts, err)
 			}
 			if diff := cmp.Diff(tcpip.ReadResult{
 				Count:      buf.Len(),
@@ -351,7 +350,7 @@ func TestLocalUDP(t *testing.T) {
 
 					var clientAddr tcpip.FullAddress
 					var readBuf bytes.Buffer
-					if read, err := server.Read(&readBuf, math.MaxUint16, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
+					if read, err := server.Read(&readBuf, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
 						t.Fatalf("server.Read(_): %s", err)
 					} else {
 						clientAddr = read.RemoteAddr
@@ -393,7 +392,7 @@ func TestLocalUDP(t *testing.T) {
 					<-clientCH
 
 					readBuf.Reset()
-					if read, err := client.Read(&readBuf, math.MaxUint16, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
+					if read, err := client.Read(&readBuf, tcpip.ReadOptions{NeedRemoteAddr: true}); err != nil {
 						t.Fatalf("client.Read(_): %s", err)
 					} else {
 						if diff := cmp.Diff(tcpip.ReadResult{

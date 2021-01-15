@@ -598,12 +598,12 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 	epstats := c.ep.Stats().(*tcpip.TransportEndpointStats).Clone()
 
 	var buf bytes.Buffer
-	res, err := c.ep.Read(&buf, defaultMTU, tcpip.ReadOptions{NeedRemoteAddr: true})
+	res, err := c.ep.Read(&buf, tcpip.ReadOptions{NeedRemoteAddr: true})
 	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
-			res, err = c.ep.Read(&buf, defaultMTU, tcpip.ReadOptions{NeedRemoteAddr: true})
+			res, err = c.ep.Read(&buf, tcpip.ReadOptions{NeedRemoteAddr: true})
 
 		case <-time.After(300 * time.Millisecond):
 			if packetShouldBeDropped {
@@ -839,7 +839,7 @@ func TestV4ReadSelfSource(t *testing.T) {
 				t.Errorf("c.s.Stats().IP.InvalidSourceAddressesReceived got %d, want %d", got, tt.wantInvalidSource)
 			}
 
-			if _, err := c.ep.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{}); err != tt.wantErr {
+			if _, err := c.ep.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tt.wantErr {
 				t.Errorf("got c.ep.Read = %s, want = %s", err, tt.wantErr)
 			}
 		})

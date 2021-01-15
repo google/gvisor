@@ -12,10 +12,13 @@ go_library(
 )
 
 go_test(
-    name = "buffer_test",
+    name = "buffer_x_test",
     size = "small",
     srcs = [
         "view_test.go",
     ],
-    library = ":buffer",
+    deps = [
+        ":buffer",
+        "//pkg/tcpip",
+    ],
 )

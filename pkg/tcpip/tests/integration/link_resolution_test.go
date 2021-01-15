@@ -218,7 +218,7 @@ func TestPing(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
-			res, err := ep.Read(&buf, len(icmpBuf), opts)
+			res, err := ep.Read(&buf, opts)
 			if err != nil {
 				t.Fatalf("ep.Read(_, %d, %#v): %s", len(icmpBuf), opts, err)
 			}

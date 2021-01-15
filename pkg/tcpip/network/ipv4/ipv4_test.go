@@ -2410,10 +2410,9 @@ func TestReceiveFragments(t *testing.T) {
 				t.Errorf("got UDP Rx Packets = %d, want = %d", got, want)
 			}
 
-			const rcvSize = 65536 // Account for reassembled packets.
 			for i, expectedPayload := range test.expectedPayloads {
 				var buf bytes.Buffer
-				result, err := ep.Read(&buf, rcvSize, tcpip.ReadOptions{})
+				result, err := ep.Read(&buf, tcpip.ReadOptions{})
 				if err != nil {
 					t.Fatalf("(i=%d) Read: %s", i, err)
 				}
@@ -2428,7 +2427,7 @@ func TestReceiveFragments(t *testing.T) {
 				}
 			}
 
-			if res, err := ep.Read(ioutil.Discard, rcvSize, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+			if res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
 				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})

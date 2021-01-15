@@ -86,7 +86,7 @@ func (*fakeTransportEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask 
 	return mask
 }
 
-func (*fakeTransportEndpoint) Read(io.Writer, int, tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
+func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	return tcpip.ReadResult{}, nil
 }
 

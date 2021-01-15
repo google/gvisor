@@ -12,42 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package buffer_test contains tests for the VectorisedView type.
-package buffer
+// Package buffer_test contains tests for the buffer.VectorisedView type.
+package buffer_test
 
 import (
 	"bytes"
+	"io"
 	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // copy returns a deep-copy of the vectorised view.
-func (vv VectorisedView) copy() VectorisedView {
-	uu := VectorisedView{
-		views: make([]View, 0, len(vv.views)),
-		size:  vv.size,
+func copyVV(vv buffer.VectorisedView) buffer.VectorisedView {
+	views := make([]buffer.View, 0, len(vv.Views()))
+	for _, v := range vv.Views() {
+		views = append(views, append(buffer.View(nil), v...))
 	}
-	for _, v := range vv.views {
-		uu.views = append(uu.views, append(View(nil), v...))
-	}
-	return uu
+	return buffer.NewVectorisedView(vv.Size(), views)
 }
 
-// vv is an helper to build VectorisedView from different strings.
-func vv(size int, pieces ...string) VectorisedView {
-	views := make([]View, len(pieces))
+// vv is an helper to build buffer.VectorisedView from different strings.
+func vv(size int, pieces ...string) buffer.VectorisedView {
+	views := make([]buffer.View, len(pieces))
 	for i, p := range pieces {
 		views[i] = []byte(p)
 	}
 
-	return NewVectorisedView(size, views)
+	return buffer.NewVectorisedView(size, views)
 }
 
 var capLengthTestCases = []struct {
 	comment string
-	in      VectorisedView
+	in      buffer.VectorisedView
 	length  int
-	want    VectorisedView
+	want    buffer.VectorisedView
 }{
 	{
 		comment: "Simple case",
@@ -89,7 +90,7 @@ var capLengthTestCases = []struct {
 
 func TestCapLength(t *testing.T) {
 	for _, c := range capLengthTestCases {
-		orig := c.in.copy()
+		orig := copyVV(c.in)
 		c.in.CapLength(c.length)
 		if !reflect.DeepEqual(c.in, c.want) {
 			t.Errorf("Test \"%s\" failed when calling CapLength(%d) on %v. Got %v. Want %v",
@@ -100,9 +101,9 @@ func TestCapLength(t *testing.T) {
 
 var trimFrontTestCases = []struct {
 	comment string
-	in      VectorisedView
+	in      buffer.VectorisedView
 	count   int
-	want    VectorisedView
+	want    buffer.VectorisedView
 }{
 	{
 		comment: "Simple case",
@@ -150,7 +151,7 @@ var trimFrontTestCases = []struct {
 
 func TestTrimFront(t *testing.T) {
 	for _, c := range trimFrontTestCases {
-		orig := c.in.copy()
+		orig := copyVV(c.in)
 		c.in.TrimFront(c.count)
 		if !reflect.DeepEqual(c.in, c.want) {
 			t.Errorf("Test \"%s\" failed when calling TrimFront(%d) on %v. Got %v. Want %v",
@@ -161,8 +162,8 @@ func TestTrimFront(t *testing.T) {
 
 var toViewCases = []struct {
 	comment string
-	in      VectorisedView
-	want    View
+	in      buffer.VectorisedView
+	want    buffer.View
 }{
 	{
 		comment: "Simple case",
@@ -193,28 +194,28 @@ func TestToView(t *testing.T) {
 
 var toCloneCases = []struct {
 	comment  string
-	inView   VectorisedView
-	inBuffer []View
+	inView   buffer.VectorisedView
+	inBuffer []buffer.View
 }{
 	{
 		comment:  "Simple case",
 		inView:   vv(1, "1"),
-		inBuffer: make([]View, 1),
+		inBuffer: make([]buffer.View, 1),
 	},
 	{
 		comment:  "Case with multiple views",
 		inView:   vv(2, "1", "2"),
-		inBuffer: make([]View, 2),
+		inBuffer: make([]buffer.View, 2),
 	},
 	{
 		comment:  "Case with buffer too small",
 		inView:   vv(2, "1", "2"),
-		inBuffer: make([]View, 1),
+		inBuffer: make([]buffer.View, 1),
 	},
 	{
 		comment:  "Case with buffer larger than needed",
 		inView:   vv(1, "1"),
-		inBuffer: make([]View, 2),
+		inBuffer: make([]buffer.View, 2),
 	},
 	{
 		comment:  "Case with nil buffer",
@@ -237,10 +238,10 @@ func TestToClone(t *testing.T) {
 
 type readToTestCases struct {
 	comment     string
-	vv          VectorisedView
+	vv          buffer.VectorisedView
 	bytesToRead int
 	wantBytes   string
-	leftVV      VectorisedView
+	leftVV      buffer.VectorisedView
 }
 
 func createReadToTestCases() []readToTestCases {
@@ -286,7 +287,7 @@ func createReadToTestCases() []readToTestCases {
 func TestVVReadToVV(t *testing.T) {
 	for _, tc := range createReadToTestCases() {
 		t.Run(tc.comment, func(t *testing.T) {
-			var readTo VectorisedView
+			var readTo buffer.VectorisedView
 			inSize := tc.vv.Size()
 			copied := tc.vv.ReadToVV(&readTo, tc.bytesToRead)
 			if got, want := copied, len(tc.wantBytes); got != want {
@@ -308,13 +309,17 @@ func TestVVReadToVV(t *testing.T) {
 func TestVVReadTo(t *testing.T) {
 	for _, tc := range createReadToTestCases() {
 		t.Run(tc.comment, func(t *testing.T) {
-			var dst bytes.Buffer
+			b := make([]byte, tc.bytesToRead)
+			dst := tcpip.SliceWriter(b)
 			origSize := tc.vv.Size()
-			copied, err := tc.vv.ReadTo(&dst, tc.bytesToRead, false /* peek */)
-			if got, want := copied, len(tc.wantBytes); err != nil || got != want {
-				t.Errorf("got ReadTo(&dst, %d, false) = %d, %v; want %d, nil", tc.bytesToRead, got, err, want)
+			copied, err := tc.vv.ReadTo(&dst, false /* peek */)
+			if err != nil && err != io.ErrShortWrite {
+				t.Errorf("got ReadTo(&dst, false) = (_, %s); want nil or io.ErrShortWrite", err)
 			}
-			if got, want := string(dst.Bytes()), tc.wantBytes; got != want {
+			if got, want := copied, len(tc.wantBytes); got != want {
+				t.Errorf("got ReadTo(&dst, false) = (%d, _); want %d", got, want)
+			}
+			if got, want := string(b[:copied]), tc.wantBytes; got != want {
 				t.Errorf("got dst = %q, want %q", got, want)
 			}
 			if got, want := tc.vv.Size(), origSize-copied; got != want {
@@ -330,14 +335,18 @@ func TestVVReadTo(t *testing.T) {
 func TestVVReadToPeek(t *testing.T) {
 	for _, tc := range createReadToTestCases() {
 		t.Run(tc.comment, func(t *testing.T) {
-			var dst bytes.Buffer
+			b := make([]byte, tc.bytesToRead)
+			dst := tcpip.SliceWriter(b)
 			origSize := tc.vv.Size()
 			origData := string(tc.vv.ToView())
-			copied, err := tc.vv.ReadTo(&dst, tc.bytesToRead, true /* peek */)
-			if got, want := copied, len(tc.wantBytes); err != nil || got != want {
-				t.Errorf("got ReadTo(&dst, %d, false) = %d, %v; want %d, nil", tc.bytesToRead, got, err, want)
+			copied, err := tc.vv.ReadTo(&dst, true /* peek */)
+			if err != nil && err != io.ErrShortWrite {
+				t.Errorf("got ReadTo(&dst, true) = (_, %s); want nil or io.ErrShortWrite", err)
 			}
-			if got, want := string(dst.Bytes()), tc.wantBytes; got != want {
+			if got, want := copied, len(tc.wantBytes); got != want {
+				t.Errorf("got ReadTo(&dst, true) = (%d, _); want %d", got, want)
+			}
+			if got, want := string(b[:copied]), tc.wantBytes; got != want {
 				t.Errorf("got dst = %q, want %q", got, want)
 			}
 			// Expect tc.vv is unchanged.
@@ -354,7 +363,7 @@ func TestVVReadToPeek(t *testing.T) {
 func TestVVRead(t *testing.T) {
 	testCases := []struct {
 		comment     string
-		vv          VectorisedView
+		vv          buffer.VectorisedView
 		bytesToRead int
 		readBytes   string
 		leftBytes   string
@@ -399,7 +408,7 @@ func TestVVRead(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.comment, func(t *testing.T) {
-			readTo := NewView(tc.bytesToRead)
+			readTo := buffer.NewView(tc.bytesToRead)
 			inSize := tc.vv.Size()
 			copied, err := tc.vv.Read(readTo)
 			if !tc.wantError && err != nil {
@@ -424,10 +433,10 @@ func TestVVRead(t *testing.T) {
 
 var pullUpTestCases = []struct {
 	comment string
-	in      VectorisedView
+	in      buffer.VectorisedView
 	count   int
 	want    []byte
-	result  VectorisedView
+	result  buffer.VectorisedView
 	ok      bool
 }{
 	{
@@ -521,7 +530,7 @@ func TestPullUp(t *testing.T) {
 			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got an ok of %t. Want %t",
 				c.comment, c.count, c.in, ok, c.ok)
 		}
-		if bytes.Compare(got, View(c.want)) != 0 {
+		if bytes.Compare(got, buffer.View(c.want)) != 0 {
 			t.Errorf("Test %q failed when calling PullUp(%d) on %v. Got %v. Want %v",
 				c.comment, c.count, c.in, got, c.want)
 		}
@@ -536,12 +545,12 @@ func TestPullUp(t *testing.T) {
 
 func TestToVectorisedView(t *testing.T) {
 	testCases := []struct {
-		in   View
-		want VectorisedView
+		in   buffer.View
+		want buffer.VectorisedView
 	}{
-		{nil, VectorisedView{}},
-		{View{}, VectorisedView{}},
-		{View{'a'}, VectorisedView{size: 1, views: []View{{'a'}}}},
+		{nil, buffer.VectorisedView{}},
+		{buffer.View{}, buffer.VectorisedView{}},
+		{buffer.View{'a'}, buffer.NewVectorisedView(1, []buffer.View{{'a'}})},
 	}
 	for _, tc := range testCases {
 		if got, want := tc.in.ToVectorisedView(), tc.want; !reflect.DeepEqual(got, want) {
@@ -552,15 +561,15 @@ func TestToVectorisedView(t *testing.T) {
 
 func TestAppendView(t *testing.T) {
 	testCases := []struct {
-		vv   VectorisedView
-		in   View
-		want VectorisedView
+		vv   buffer.VectorisedView
+		in   buffer.View
+		want buffer.VectorisedView
 	}{
-		{VectorisedView{}, nil, VectorisedView{}},
-		{VectorisedView{}, View{}, VectorisedView{}},
-		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, nil, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
-		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}},
-		{VectorisedView{[]View{{'a', 'b', 'c', 'd'}}, 4}, View{'e'}, VectorisedView{[]View{{'a', 'b', 'c', 'd'}, {'e'}}, 5}},
+		{buffer.VectorisedView{}, nil, buffer.VectorisedView{}},
+		{buffer.VectorisedView{}, buffer.View{}, buffer.VectorisedView{}},
+		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), nil, buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}})},
+		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), buffer.View{}, buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}})},
+		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), buffer.View{'e'}, buffer.NewVectorisedView(5, []buffer.View{{'a', 'b', 'c', 'd'}, {'e'}})},
 	}
 	for _, tc := range testCases {
 		tc.vv.AppendView(tc.in)

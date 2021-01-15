@@ -466,9 +466,9 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			test.rxUDP(e, test.remoteAddr, test.dstAddr, data)
 			var buf bytes.Buffer
 			var opts tcpip.ReadOptions
-			if res, err := ep.Read(&buf, len(data), opts); test.expectRx {
+			if res, err := ep.Read(&buf, opts); test.expectRx {
 				if err != nil {
-					t.Fatalf("ep.Read(_, %d, %#v): %s", len(data), opts, err)
+					t.Fatalf("ep.Read(_, %#v): %s", opts, err)
 				}
 				if diff := cmp.Diff(tcpip.ReadResult{
 					Count: buf.Len(),
@@ -598,7 +598,7 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					<-rep.ch
 
 					var buf bytes.Buffer
-					result, err := rep.ep.Read(&buf, len(data), tcpip.ReadOptions{})
+					result, err := rep.ep.Read(&buf, tcpip.ReadOptions{})
 					if err != nil {
 						t.Errorf("(eps[%d] write) eps[%d].Read: %s", i, j, err)
 						continue
@@ -738,7 +738,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					}
 					test.rxUDP(e, test.remoteAddr, test.multicastAddr, data)
 					var buf bytes.Buffer
-					result, err := ep.Read(&buf, len(data), tcpip.ReadOptions{})
+					result, err := ep.Read(&buf, tcpip.ReadOptions{})
 					if err != nil {
 						t.Fatalf("ep.Read: %s", err)
 					} else {
@@ -759,7 +759,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					if err := ep.SetSockOpt(&removeOpt); err != nil {
 						t.Fatalf("ep.SetSockOpt(&%#v): %s", removeOpt, err)
 					}
-					if _, err := ep.Read(&buf, 1, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+					if _, err := ep.Read(&buf, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
 						t.Fatalf("got ep.Read = (_, %s), want = (_, %s)", err, tcpip.ErrWouldBlock)
 					}
 				})

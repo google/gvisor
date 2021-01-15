@@ -457,7 +457,7 @@ func TestForwarding(t *testing.T) {
 						<-ch
 						var buf bytes.Buffer
 						opts := tcpip.ReadOptions{NeedRemoteAddr: subTest.needRemoteAddr}
-						res, err := ep.Read(&buf, len(data), opts)
+						res, err := ep.Read(&buf, opts)
 						if err != nil {
 							t.Fatalf("ep.Read(_, %d, %#v): %s", len(data), opts, err)
 						}

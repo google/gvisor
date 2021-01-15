@@ -295,7 +295,7 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 
 	w := tcpip.SliceWriter(b)
 	opts := tcpip.ReadOptions{NeedRemoteAddr: addr != nil}
-	res, err := ep.Read(&w, len(b), opts)
+	res, err := ep.Read(&w, opts)
 
 	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
@@ -303,7 +303,7 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 		wq.EventRegister(&waitEntry, waiter.EventIn)
 		defer wq.EventUnregister(&waitEntry)
 		for {
-			res, err = ep.Read(&w, len(b), opts)
+			res, err = ep.Read(&w, opts)
 			if err != tcpip.ErrWouldBlock {
 				break
 			}

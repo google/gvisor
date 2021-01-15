@@ -106,18 +106,19 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 	// There should be 5 views to read and each of them should
 	// contain the same data.
 	for i := 0; i < 5; i++ {
-		var buf bytes.Buffer
-		result, err := c.EP.Read(&buf, len(data), tcpip.ReadOptions{})
+		buf := make([]byte, len(data))
+		w := tcpip.SliceWriter(buf)
+		result, err := c.EP.Read(&w, tcpip.ReadOptions{})
 		if err != nil {
 			t.Fatalf("Unexpected error from Read: %v", err)
 		}
 		if diff := cmp.Diff(tcpip.ReadResult{
-			Count: buf.Len(),
-			Total: buf.Len(),
+			Count: len(buf),
+			Total: len(buf),
 		}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
 			t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
 		}
-		if got, want := buf.Bytes(), data; bytes.Compare(got, want) != 0 {
+		if got, want := buf, data; bytes.Compare(got, want) != 0 {
 			t.Fatalf("Data is different: got: %v, want: %v", got, want)
 		}
 	}
@@ -295,7 +296,7 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 
 	// Issue a read and we should data.
 	var buf bytes.Buffer
-	result, err := c.EP.Read(&buf, defaultMTU, tcpip.ReadOptions{})
+	result, err := c.EP.Read(&buf, tcpip.ReadOptions{})
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}

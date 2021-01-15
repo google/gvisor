@@ -352,7 +352,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}
 
 						ep := <-pollChannel
-						if _, err := ep.Read(ioutil.Discard, math.MaxUint16, tcpip.ReadOptions{}); err != nil {
+						if _, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{}); err != nil {
 							t.Fatalf("Read on endpoint %d failed: %s", eps[ep], err)
 						}
 						stats[ep]++
