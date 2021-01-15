@@ -249,10 +249,12 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		Data:               buffer.View(icmp).ToVectorisedView(),
 	})
 
-	mld.ep.addIPHeader(localAddress, destAddress, pkt, stack.NetworkHeaderParams{
+	if err := mld.ep.addIPHeader(localAddress, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.MLDHopLimit,
-	}, extensionHeaders)
+	}, extensionHeaders); err != nil {
+		panic(fmt.Sprintf("failed to add IP header: %s", err))
+	}
 	if err := mld.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 		sentStats.Dropped.Increment()
 		return false, err
