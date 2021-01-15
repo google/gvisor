@@ -52,6 +52,13 @@ void sigact_handler(int sig, siginfo_t* siginfo, void* context) {
     uintptr_t fault_addr = reinterpret_cast<uintptr_t>(&Fault);
     EXPECT_GE(pc, fault_addr);
     EXPECT_LT(pc, fault_addr + 64);
+
+    // The following file is used to detect tests that exit prematurely. Since
+    // we need to call exit() here, delete the file by hand.
+    const char* exit_file = getenv("TEST_PREMATURE_EXIT_FILE");
+    if (exit_file != nullptr) {
+      ASSERT_THAT(unlink(exit_file), SyscallSucceeds());
+    }
     exit(0);
   }
 }
