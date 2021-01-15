@@ -553,11 +553,11 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 	return e.nic.MaxHeaderLength() + header.IPv6MinimumSize
 }
 
-func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams, extensionHeaders header.IPv6ExtHdrSerializer) {
+func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params stack.NetworkHeaderParams, extensionHeaders header.IPv6ExtHdrSerializer) *tcpip.Error {
 	extHdrsLen := extensionHeaders.Length()
 	length := pkt.Size() + extensionHeaders.Length()
 	if length > math.MaxUint16 {
-		panic(fmt.Sprintf("IPv6 payload too large: %d, must be <= %d", length, math.MaxUint16))
+		return tcpip.ErrMessageTooLong
 	}
 	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen))
 	ip.Encode(&header.IPv6Fields{
@@ -570,6 +570,7 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.Packet
 		ExtensionHeaders:  extensionHeaders,
 	})
 	pkt.NetworkProtocolNumber = ProtocolNumber
+	return nil
 }
 
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
@@ -622,7 +623,9 @@ func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, networkMTU ui
 
 // WritePacket writes a packet to the given destination address and protocol.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) *tcpip.Error {
-	e.addIPHeader(r.LocalAddress, r.RemoteAddress, pkt, params, nil /* extensionHeaders */)
+	if err := e.addIPHeader(r.LocalAddress, r.RemoteAddress, pkt, params, nil /* extensionHeaders */); err != nil {
+		return err
+	}
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
@@ -711,7 +714,9 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 
 	linkMTU := e.nic.MTU()
 	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
-		e.addIPHeader(r.LocalAddress, r.RemoteAddress, pb, params, nil /* extensionHeaders */)
+		if err := e.addIPHeader(r.LocalAddress, r.RemoteAddress, pb, params, nil /* extensionHeaders */); err != nil {
+			return 0, err
+		}
 
 		networkMTU, err := calculateNetworkMTU(linkMTU, uint32(pb.NetworkHeader().View().Size()))
 		if err != nil {
