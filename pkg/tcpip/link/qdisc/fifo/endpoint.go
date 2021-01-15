@@ -166,15 +166,12 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-//
-// Being a batch API, each packet in pkts should have the following fields
-// populated:
-//   - pkt.EgressRoute
-//   - pkt.GSOOptions
-//   - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
+		pkt.EgressRoute = r
+		pkt.GSOOptions = gso
+		pkt.NetworkProtocolNumber = protocol
 		d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 		nxt := pkt.Next()
 		if !d.q.enqueue(pkt) {
