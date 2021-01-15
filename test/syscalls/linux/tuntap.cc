@@ -19,6 +19,7 @@
 #include <linux/if_tun.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -43,6 +44,9 @@ constexpr int kIPLen = 4;
 
 constexpr const char kDevNetTun[] = "/dev/net/tun";
 constexpr const char kTapName[] = "tap0";
+
+#define kTapIPAddr htonl(0x0a000001)     /* Inet 10.0.0.1 */
+#define kTapPeerIPAddr htonl(0x0a000002) /* Inet 10.0.0.2 */
 
 constexpr const uint8_t kMacA[ETH_ALEN] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
 constexpr const uint8_t kMacB[ETH_ALEN] = {0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB};
@@ -79,8 +83,9 @@ struct ping_pkt {
   char payload[64];
 } __attribute__((packed));
 
-ping_pkt CreatePingPacket(const uint8_t srcmac[ETH_ALEN], const char* srcip,
-                          const uint8_t dstmac[ETH_ALEN], const char* dstip) {
+ping_pkt CreatePingPacket(const uint8_t srcmac[ETH_ALEN], const in_addr_t srcip,
+                          const uint8_t dstmac[ETH_ALEN],
+                          const in_addr_t dstip) {
   ping_pkt pkt = {};
 
   pkt.pi.pi_protocol = htons(ETH_P_IP);
@@ -98,8 +103,8 @@ ping_pkt CreatePingPacket(const uint8_t srcmac[ETH_ALEN], const char* srcip,
   pkt.ip.frag_off = 1 << 6;  // Do not fragment
   pkt.ip.ttl = 64;
   pkt.ip.protocol = IPPROTO_ICMP;
-  inet_pton(AF_INET, dstip, &pkt.ip.daddr);
-  inet_pton(AF_INET, srcip, &pkt.ip.saddr);
+  pkt.ip.daddr = dstip;
+  pkt.ip.saddr = srcip;
   pkt.ip.check = IPChecksum(pkt.ip);
 
   pkt.icmp.type = ICMP_ECHO;
@@ -124,8 +129,10 @@ struct arp_pkt {
   uint8_t arp_tpa[kIPLen];
 } __attribute__((packed));
 
-std::string CreateArpPacket(const uint8_t srcmac[ETH_ALEN], const char* srcip,
-                            const uint8_t dstmac[ETH_ALEN], const char* dstip) {
+std::string CreateArpPacket(const uint8_t srcmac[ETH_ALEN],
+                            const in_addr_t srcip,
+                            const uint8_t dstmac[ETH_ALEN],
+                            const in_addr_t dstip) {
   std::string buffer;
   buffer.resize(sizeof(arp_pkt));
 
@@ -144,9 +151,9 @@ std::string CreateArpPacket(const uint8_t srcmac[ETH_ALEN], const char* srcip,
     pkt->arp.ar_op = htons(ARPOP_REPLY);
 
     memcpy(pkt->arp_sha, srcmac, sizeof(pkt->arp_sha));
-    inet_pton(AF_INET, srcip, pkt->arp_spa);
+    memcpy(pkt->arp_spa, &srcip, sizeof(pkt->arp_spa));
     memcpy(pkt->arp_tha, dstmac, sizeof(pkt->arp_tha));
-    inet_pton(AF_INET, dstip, pkt->arp_tpa);
+    memcpy(pkt->arp_tpa, &dstip, sizeof(pkt->arp_tpa));
   }
   return buffer;
 }
@@ -165,6 +172,16 @@ class TuntapTest : public ::testing::Test {
   void SetUp() override {
     have_net_admin_cap_ =
         ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN));
+
+    if (have_net_admin_cap_ && !IsRunningOnGvisor()) {
+      // gVisor always creates enabled/up'd interfaces, while Linux does not (as
+      // observed in b/110961832). Some of the tests require the Linux stack to
+      // notify the socket of any link-address-resolution failures. Those
+      // notifications do not seem to show up when the loopback interface in the
+      // namespace is down.
+      auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName("lo"));
+      ASSERT_NO_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
+    }
   }
 
   void TearDown() override {
@@ -263,8 +280,8 @@ TEST_F(TuntapTest, WriteToDownDevice) {
   EXPECT_THAT(write(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EIO));
 }
 
-PosixErrorOr<FileDescriptor> OpenAndAttachTap(
-    const std::string& dev_name, const std::string& dev_ipv4_addr) {
+PosixErrorOr<FileDescriptor> OpenAndAttachTap(const std::string& dev_name,
+                                              const in_addr_t dev_addr) {
   // Interface creation.
   ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(kDevNetTun, O_RDWR));
 
@@ -277,11 +294,10 @@ PosixErrorOr<FileDescriptor> OpenAndAttachTap(
 
   ASSIGN_OR_RETURN_ERRNO(auto link, GetLinkByName(dev_name));
 
+  const struct in_addr dev_ipv4_addr = {.s_addr = dev_addr};
   // Interface setup.
-  struct in_addr addr;
-  inet_pton(AF_INET, dev_ipv4_addr.c_str(), &addr);
-  EXPECT_NO_ERRNO(LinkAddLocalAddr(link.index, AF_INET, /*prefixlen=*/24, &addr,
-                                   sizeof(addr)));
+  EXPECT_NO_ERRNO(LinkAddLocalAddr(link.index, AF_INET, /*prefixlen=*/24,
+                                   &dev_ipv4_addr, sizeof(dev_ipv4_addr)));
 
   if (!IsRunningOnGvisor()) {
     // FIXME(b/110961832): gVisor doesn't support setting MAC address on
@@ -313,9 +329,11 @@ TEST_F(TuntapTest, PingKernel) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
-  ping_pkt ping_req = CreatePingPacket(kMacB, "10.0.0.2", kMacA, "10.0.0.1");
-  std::string arp_rep = CreateArpPacket(kMacB, "10.0.0.2", kMacA, "10.0.0.1");
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  ping_pkt ping_req =
+      CreatePingPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
+  std::string arp_rep =
+      CreateArpPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
 
   // Send ping, this would trigger an ARP request on Linux.
   EXPECT_THAT(write(fd.get(), &ping_req, sizeof(ping_req)),
@@ -368,20 +386,20 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
 
   // Send a UDP packet to remote.
   int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
   ASSERT_THAT(sock, SyscallSucceeds());
 
-  struct sockaddr_in remote = {};
-  remote.sin_family = AF_INET;
-  remote.sin_port = htons(42);
-  inet_pton(AF_INET, "10.0.0.2", &remote.sin_addr);
-  int ret = sendto(sock, "hello", 5, 0, reinterpret_cast<sockaddr*>(&remote),
-                   sizeof(remote));
-  ASSERT_THAT(ret, ::testing::AnyOf(SyscallSucceeds(),
-                                    SyscallFailsWithErrno(EHOSTDOWN)));
+  struct sockaddr_in remote = {
+      .sin_family = AF_INET,
+      .sin_port = htons(42),
+      .sin_addr = {.s_addr = kTapPeerIPAddr},
+  };
+  ASSERT_THAT(sendto(sock, "hello", 5, 0, reinterpret_cast<sockaddr*>(&remote),
+                     sizeof(remote)),
+              SyscallSucceeds());
 
   struct inpkt {
     union {
@@ -407,21 +425,78 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
   }
 }
 
+// TCPBlockingConnectFailsArpResolution tests for TCP connect to fail on link
+// address resolution failure to a routable, but non existent peer.
+TEST_F(TuntapTest, TCPBlockingConnectFailsArpResolution) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor sender =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+
+  sockaddr_in connect_addr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = kTapPeerIPAddr},
+  };
+  ASSERT_THAT(connect(sender.get(),
+                      reinterpret_cast<const struct sockaddr*>(&connect_addr),
+                      sizeof(connect_addr)),
+              SyscallFailsWithErrno(EHOSTUNREACH));
+}
+
+// TCPNonBlockingConnectFailsArpResolution tests for TCP non-blocking connect to
+// to trigger an error event to be notified to poll on link address resolution
+// failure to a routable, but non existent peer.
+TEST_F(TuntapTest, TCPNonBlockingConnectFailsArpResolution) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  FileDescriptor sender = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+
+  sockaddr_in connect_addr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = kTapPeerIPAddr},
+  };
+  ASSERT_THAT(connect(sender.get(),
+                      reinterpret_cast<const struct sockaddr*>(&connect_addr),
+                      sizeof(connect_addr)),
+              SyscallFailsWithErrno(EINPROGRESS));
+
+  constexpr int kTimeout = 10000;
+  struct pollfd pfd = {
+      .fd = sender.get(),
+      .events = POLLIN | POLLOUT,
+  };
+  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents, POLLIN | POLLOUT | POLLHUP | POLLERR);
+
+  ASSERT_THAT(connect(sender.get(),
+                      reinterpret_cast<const struct sockaddr*>(&connect_addr),
+                      sizeof(connect_addr)),
+              SyscallFailsWithErrno(EHOSTUNREACH));
+}
+
 // Write hang bug found by syskaller: b/155928773
 // https://syzkaller.appspot.com/bug?id=065b893bd8d1d04a4e0a1d53c578537cde1efe99
 TEST_F(TuntapTest, WriteHangBug155928773) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, "10.0.0.1"));
+      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
 
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
   ASSERT_THAT(sock, SyscallSucceeds());
 
-  struct sockaddr_in remote = {};
-  remote.sin_family = AF_INET;
-  remote.sin_port = htons(42);
-  inet_pton(AF_INET, "10.0.0.1", &remote.sin_addr);
+  struct sockaddr_in remote = {
+      .sin_family = AF_INET,
+      .sin_port = htons(42),
+      .sin_addr = {.s_addr = kTapIPAddr},
+  };
   // Return values do not matter in this test.
   connect(sock, reinterpret_cast<struct sockaddr*>(&remote), sizeof(remote));
   write(sock, "hello", 5);
