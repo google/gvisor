@@ -480,9 +480,6 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err != nil {
 		return err
 	}
-	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
-		return err
-	}
 	name := rp.Component()
 	if name == "." || name == ".." {
 		return syserror.EEXIST
@@ -490,11 +487,11 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if parent.vfsd.IsDead() {
 		return syserror.ENOENT
 	}
-	mnt := rp.Mount()
-	if err := mnt.CheckBeginWrite(); err != nil {
+
+	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return err
 	}
-	defer mnt.EndWrite()
+
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
@@ -514,6 +511,14 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return syserror.ENOENT
 	}
 
+	mnt := rp.Mount()
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return err
+	}
+	defer mnt.EndWrite()
+	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+		return err
+	}
 	// Ensure that the parent directory is copied-up so that we can create the
 	// new file in the upper layer.
 	if err := parent.copyUpLocked(ctx); err != nil {

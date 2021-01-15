@@ -41,7 +41,9 @@ func (p *Pipe) StateFields() []string {
 		"isNamed",
 		"readers",
 		"writers",
-		"view",
+		"buf",
+		"off",
+		"size",
 		"max",
 		"hadWriter",
 	}
@@ -54,20 +56,23 @@ func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &p.isNamed)
 	stateSinkObject.Save(1, &p.readers)
 	stateSinkObject.Save(2, &p.writers)
-	stateSinkObject.Save(3, &p.view)
-	stateSinkObject.Save(4, &p.max)
-	stateSinkObject.Save(5, &p.hadWriter)
+	stateSinkObject.Save(3, &p.buf)
+	stateSinkObject.Save(4, &p.off)
+	stateSinkObject.Save(5, &p.size)
+	stateSinkObject.Save(6, &p.max)
+	stateSinkObject.Save(7, &p.hadWriter)
 }
-
-func (p *Pipe) afterLoad() {}
 
 func (p *Pipe) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.isNamed)
 	stateSourceObject.Load(1, &p.readers)
 	stateSourceObject.Load(2, &p.writers)
-	stateSourceObject.Load(3, &p.view)
-	stateSourceObject.Load(4, &p.max)
-	stateSourceObject.Load(5, &p.hadWriter)
+	stateSourceObject.Load(3, &p.buf)
+	stateSourceObject.Load(4, &p.off)
+	stateSourceObject.Load(5, &p.size)
+	stateSourceObject.Load(6, &p.max)
+	stateSourceObject.Load(7, &p.hadWriter)
+	stateSourceObject.AfterLoad(p.afterLoad)
 }
 
 func (r *Reader) StateTypeName() string {

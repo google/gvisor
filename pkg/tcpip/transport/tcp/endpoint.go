@@ -2325,68 +2325,17 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 	}
 
 	if run {
-		if err := e.startMainLoop(handshake); err != nil {
-			return err
-		}
-	}
-
-	return tcpip.ErrConnectStarted
-}
-
-// startMainLoop sends the initial SYN and starts the main loop for the
-// endpoint.
-func (e *endpoint) startMainLoop(handshake bool) *tcpip.Error {
-	preloop := func() *tcpip.Error {
 		if handshake {
 			h := e.newHandshake()
 			e.setEndpointState(StateSynSent)
-			if err := h.start(); err != nil {
-				e.lastErrorMu.Lock()
-				e.lastError = err
-				e.lastErrorMu.Unlock()
-
-				e.setEndpointState(StateError)
-				e.hardError = err
-
-				// Call cleanupLocked to free up any reservations.
-				e.cleanupLocked()
-				return err
-			}
+			h.start()
 		}
 		e.stack.Stats().TCP.ActiveConnectionOpenings.Increment()
-		return nil
-	}
-
-	if e.route.IsResolutionRequired() {
-		// If the endpoint is closed between releasing e.mu and the goroutine below
-		// acquiring it, make sure that cleanup is deferred to the new goroutine.
 		e.workerRunning = true
-
-		// Sending the initial SYN may block due to route resolution; do it in a
-		// separate goroutine to avoid blocking the syscall goroutine.
-		go func() { // S/R-SAFE: will be drained before save.
-			e.mu.Lock()
-			if err := preloop(); err != nil {
-				e.workerRunning = false
-				e.mu.Unlock()
-				return
-			}
-			e.mu.Unlock()
-			_ = e.protocolMainLoop(handshake, nil)
-		}()
-		return nil
+		go e.protocolMainLoop(handshake, nil) // S/R-SAFE: will be drained before save.
 	}
 
-	// No route resolution is required, so we can send the initial SYN here without
-	// blocking. This will hopefully reduce overall latency by overlapping time
-	// spent waiting for a SYN-ACK and time spent spinning up a new goroutine
-	// for the main loop.
-	if err := preloop(); err != nil {
-		return err
-	}
-	e.workerRunning = true
-	go e.protocolMainLoop(handshake, nil) // S/R-SAFE: will be drained before save.
-	return nil
+	return tcpip.ErrConnectStarted
 }
 
 // ConnectEndpoint is not supported.
