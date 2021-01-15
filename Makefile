@@ -323,6 +323,7 @@ containerd-tests: containerd-test-1.4.3
 ##     BENCHMARKS_PLATFORMS - platforms to run benchmarks (e.g. ptrace kvm).
 ##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
 ##     BENCHMARKS_OPTIONS   - options to be passed to the test.
+##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
 ##
 BENCHMARKS_PROJECT   ?= gvisor-benchmarks
 BENCHMARKS_DATASET   ?= kokoro
@@ -334,7 +335,8 @@ BENCHMARKS_PLATFORMS ?= ptrace
 BENCHMARKS_TARGETS   := //test/benchmarks/media:ffmpeg_test
 BENCHMARKS_FILTER    := .
 BENCHMARKS_OPTIONS   := -test.benchtime=30s
-BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex $(BENCHMARKS_OPTIONS)
+BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
+BENCHMARKS_PROFILE   := -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -344,9 +346,10 @@ init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 run_benchmark = \
   ($(call header,BENCHMARK $(1) $(2)); \
   set -euo pipefail; \
-  if test "$(1)" != "runc"; then $(call install_runtime,$(1),--profile $(2)); fi; \
   export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
-  $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; \
+  if test "$(1)" = "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; fi; \
+  if test "$(1)" != "runc"; then $(call install_runtime,$(1),--profile $(2)); \
+	$(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
   if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
     $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
   fi; \
