@@ -167,6 +167,20 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 	return err
 }
 
+func (r *Runsc) Pause(context context.Context, id string) error {
+	if _, err := cmdOutput(r.command(context, "pause", id), true); err != nil {
+		return fmt.Errorf("unable to pause: %w", err)
+	}
+	return nil
+}
+
+func (r *Runsc) Resume(context context.Context, id string) error {
+	if _, err := cmdOutput(r.command(context, "resume", id), true); err != nil {
+		return fmt.Errorf("unable to resume: %w", err)
+	}
+	return nil
+}
+
 // Start will start an already created container.
 func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	cmd := r.command(context, "start", id)
