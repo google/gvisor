@@ -12,6 +12,7 @@ go_library(
         "pipe_util.go",
         "reader.go",
         "reader_writer.go",
+        "save_restore.go",
         "vfs.go",
         "writer.go",
     ],
@@ -19,7 +20,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
-        "//pkg/buffer",
         "//pkg/context",
         "//pkg/marshal/primitive",
         "//pkg/safemem",

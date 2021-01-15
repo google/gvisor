@@ -483,6 +483,112 @@ TEST(SpliceTest, TwoPipes) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
 }
 
+TEST(SpliceTest, TwoPipesPartialRead) {
+  // Create two pipes.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor first_rfd(fds[0]);
+  const FileDescriptor first_wfd(fds[1]);
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor second_rfd(fds[0]);
+  const FileDescriptor second_wfd(fds[1]);
+
+  // Write half a page of data to the first pipe.
+  std::vector<char> buf(kPageSize / 2);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(first_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize / 2));
+
+  // Attempt to splice one page from the first pipe to the second; it should
+  // immediately return after splicing the half-page previously written to the
+  // first pipe.
+  EXPECT_THAT(
+      splice(first_rfd.get(), nullptr, second_wfd.get(), nullptr, kPageSize, 0),
+      SyscallSucceedsWithValue(kPageSize / 2));
+}
+
+TEST(SpliceTest, TwoPipesPartialWrite) {
+  // Create two pipes.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor first_rfd(fds[0]);
+  const FileDescriptor first_wfd(fds[1]);
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor second_rfd(fds[0]);
+  const FileDescriptor second_wfd(fds[1]);
+
+  // Write two pages of data to the first pipe.
+  std::vector<char> buf(2 * kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(first_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(2 * kPageSize));
+
+  // Limit the second pipe to two pages, then write one page of data to it.
+  ASSERT_THAT(fcntl(second_wfd.get(), F_SETPIPE_SZ, 2 * kPageSize),
+              SyscallSucceeds());
+  ASSERT_THAT(write(second_wfd.get(), buf.data(), buf.size() / 2),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Attempt to splice two pages from the first pipe to the second; it should
+  // immediately return after splicing the first page previously written to the
+  // first pipe.
+  EXPECT_THAT(splice(first_rfd.get(), nullptr, second_wfd.get(), nullptr,
+                     2 * kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize));
+}
+
+TEST(TeeTest, TwoPipesPartialRead) {
+  // Create two pipes.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor first_rfd(fds[0]);
+  const FileDescriptor first_wfd(fds[1]);
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor second_rfd(fds[0]);
+  const FileDescriptor second_wfd(fds[1]);
+
+  // Write half a page of data to the first pipe.
+  std::vector<char> buf(kPageSize / 2);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(first_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize / 2));
+
+  // Attempt to tee one page from the first pipe to the second; it should
+  // immediately return after copying the half-page previously written to the
+  // first pipe.
+  EXPECT_THAT(tee(first_rfd.get(), second_wfd.get(), kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize / 2));
+}
+
+TEST(TeeTest, TwoPipesPartialWrite) {
+  // Create two pipes.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor first_rfd(fds[0]);
+  const FileDescriptor first_wfd(fds[1]);
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor second_rfd(fds[0]);
+  const FileDescriptor second_wfd(fds[1]);
+
+  // Write two pages of data to the first pipe.
+  std::vector<char> buf(2 * kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(first_wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(2 * kPageSize));
+
+  // Limit the second pipe to two pages, then write one page of data to it.
+  ASSERT_THAT(fcntl(second_wfd.get(), F_SETPIPE_SZ, 2 * kPageSize),
+              SyscallSucceeds());
+  ASSERT_THAT(write(second_wfd.get(), buf.data(), buf.size() / 2),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Attempt to tee two pages from the first pipe to the second; it should
+  // immediately return after copying the first page previously written to the
+  // first pipe.
+  EXPECT_THAT(tee(first_rfd.get(), second_wfd.get(), 2 * kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize));
+}
+
 TEST(SpliceTest, TwoPipesCircular) {
   // This test deadlocks the sentry on VFS1 because VFS1 splice ordering is
   // based on fs.File.UniqueID, which does not prevent circular ordering between
