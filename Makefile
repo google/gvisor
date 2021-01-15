@@ -295,6 +295,11 @@ packetimpact-tests: load-packetimpact $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
 .PHONY: packetimpact-tests
 
+fsstress-test: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call test_runtime,$(RUNTIME),//test/fsstress:fsstress_test)
+.PHONY: fsstress-test
+
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
