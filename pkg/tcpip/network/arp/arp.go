@@ -119,21 +119,28 @@ func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) *t
 }
 
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+	stats := e.protocol.stack.Stats().ARP
+	stats.PacketsReceived.Increment()
+
 	if !e.isEnabled() {
+		stats.DisabledPacketsReceived.Increment()
 		return
 	}
 
 	h := header.ARP(pkt.NetworkHeader().View())
 	if !h.IsValid() {
+		stats.MalformedPacketsReceived.Increment()
 		return
 	}
 
 	switch h.Op() {
 	case header.ARPRequest:
+		stats.RequestsReceived.Increment()
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
 
 		if e.nud == nil {
 			if e.linkAddrCache.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+				stats.RequestsReceivedUnknownTargetAddress.Increment()
 				return // we have no useful answer, ignore the request
 			}
 
@@ -142,6 +149,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
 		} else {
 			if e.protocol.stack.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+				stats.RequestsReceivedUnknownTargetAddress.Increment()
 				return // we have no useful answer, ignore the request
 			}
 
@@ -177,9 +185,14 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		//
 		//   Send the packet to the (new) target hardware address on the same
 		//   hardware on which the request was received.
-		_ = e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), nil /* gso */, ProtocolNumber, respPkt)
+		if err := e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), nil /* gso */, ProtocolNumber, respPkt); err != nil {
+			stats.OutgoingRepliesDropped.Increment()
+		} else {
+			stats.OutgoingRepliesSent.Increment()
+		}
 
 	case header.ARPReply:
+		stats.RepliesReceived.Increment()
 		addr := tcpip.Address(h.ProtocolAddressSender())
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
@@ -233,6 +246,8 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
 func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+	stats := p.stack.Stats().ARP
+
 	if len(remoteLinkAddr) == 0 {
 		remoteLinkAddr = header.EthernetBroadcastAddress
 	}
@@ -241,15 +256,18 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	if len(localAddr) == 0 {
 		addr, err := p.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
 		if err != nil {
+			stats.OutgoingRequestInterfaceHasNoLocalAddressErrors.Increment()
 			return err
 		}
 
 		if len(addr.Address) == 0 {
+			stats.OutgoingRequestNetworkUnreachableErrors.Increment()
 			return tcpip.ErrNetworkUnreachable
 		}
 
 		localAddr = addr.Address
 	} else if p.stack.CheckLocalAddress(nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
+		stats.OutgoingRequestBadLocalAddressErrors.Increment()
 		return tcpip.ErrBadLocalAddress
 	}
 
@@ -269,7 +287,12 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	if n := copy(h.ProtocolAddressTarget(), targetAddr); n != header.IPv4AddressSize {
 		panic(fmt.Sprintf("copied %d bytes, expected %d bytes", n, header.IPv4AddressSize))
 	}
-	return nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt)
+	if err := nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
+		stats.OutgoingRequestsDropped.Increment()
+		return err
+	}
+	stats.OutgoingRequestsSent.Increment()
+	return nil
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.ResolveStaticAddress.

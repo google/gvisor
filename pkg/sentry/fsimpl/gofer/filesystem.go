@@ -407,33 +407,44 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err != nil {
 		return err
 	}
-	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+
+	// Order of checks is important. First check if parent directory can be
+	// executed, then check for existence, and lastly check if mount is writable.
+	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return err
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
 		return syserror.EEXIST
 	}
-	if len(name) > maxFilenameLen {
-		return syserror.ENAMETOOLONG
-	}
 	if parent.isDeleted() {
 		return syserror.ENOENT
 	}
+
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
+
+	child, err := fs.getChildLocked(ctx, rp.VirtualFilesystem(), parent, name, &ds)
+	switch {
+	case err != nil && err != syserror.ENOENT:
+		return err
+	case child != nil:
+		return syserror.EEXIST
+	}
+
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
 	}
 	defer mnt.EndWrite()
-	parent.dirMu.Lock()
-	defer parent.dirMu.Unlock()
+
+	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		return err
+	}
+	if !dir && rp.MustBeDir() {
+		return syserror.ENOENT
+	}
 	if parent.isSynthetic() {
-		if child := parent.children[name]; child != nil {
-			return syserror.EEXIST
-		}
-		if !dir && rp.MustBeDir() {
-			return syserror.ENOENT
-		}
 		if createInSyntheticDir == nil {
 			return syserror.EPERM
 		}
@@ -449,47 +460,20 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
-	if fs.opts.interop == InteropModeShared {
-		if child := parent.children[name]; child != nil && child.isSynthetic() {
-			return syserror.EEXIST
-		}
-		if !dir && rp.MustBeDir() {
-			return syserror.ENOENT
-		}
-		// The existence of a non-synthetic dentry at name would be inconclusive
-		// because the file it represents may have been deleted from the remote
-		// filesystem, so we would need to make an RPC to revalidate the dentry.
-		// Just attempt the file creation RPC instead. If a file does exist, the
-		// RPC will fail with EEXIST like we would have. If the RPC succeeds, and a
-		// stale dentry exists, the dentry will fail revalidation next time it's
-		// used.
-		if err := createInRemoteDir(parent, name, &ds); err != nil {
-			return err
-		}
-		ev := linux.IN_CREATE
-		if dir {
-			ev |= linux.IN_ISDIR
-		}
-		parent.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
-		return nil
-	}
-	if child := parent.children[name]; child != nil {
-		return syserror.EEXIST
-	}
-	if !dir && rp.MustBeDir() {
-		return syserror.ENOENT
-	}
-	// No cached dentry exists; however, there might still be an existing file
-	// at name. As above, we attempt the file creation RPC anyway.
+	// No cached dentry exists; however, in InteropModeShared there might still be
+	// an existing file at name. Just attempt the file creation RPC anyways. If a
+	// file does exist, the RPC will fail with EEXIST like we would have.
 	if err := createInRemoteDir(parent, name, &ds); err != nil {
 		return err
 	}
-	if child, ok := parent.children[name]; ok && child == nil {
-		// Delete the now-stale negative dentry.
-		delete(parent.children, name)
+	if fs.opts.interop != InteropModeShared {
+		if child, ok := parent.children[name]; ok && child == nil {
+			// Delete the now-stale negative dentry.
+			delete(parent.children, name)
+		}
+		parent.touchCMtime()
+		parent.dirents = nil
 	}
-	parent.touchCMtime()
-	parent.dirents = nil
 	ev := linux.IN_CREATE
 	if dir {
 		ev |= linux.IN_ISDIR

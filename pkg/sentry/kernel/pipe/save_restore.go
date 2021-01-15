@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package buffer
+package pipe
 
 import (
-	"unsafe"
+	"gvisor.dev/gvisor/pkg/safemem"
 )
 
-// minBatch is the smallest Read or Write operation that the
-// WriteFromReader and ReadToWriter functions will use.
-//
-// This is defined as the size of a native pointer.
-const minBatch = int(unsafe.Sizeof(uintptr(0)))
+// afterLoad is called by stateify.
+func (p *Pipe) afterLoad() {
+	p.bufBlocks[0] = safemem.BlockFromSafeSlice(p.buf)
+	p.bufBlocks[1] = p.bufBlocks[0]
+	p.bufBlockSeq = safemem.BlockSeqFromSlice(p.bufBlocks[:])
+}

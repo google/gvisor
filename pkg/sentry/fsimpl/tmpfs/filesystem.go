@@ -153,7 +153,10 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if err != nil {
 		return err
 	}
-	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+
+	// Order of checks is important. First check if parent directory can be
+	// executed, then check for existence, and lastly check if mount is writable.
+	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return err
 	}
 	name := rp.Component()
@@ -179,6 +182,10 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return err
 	}
 	defer mnt.EndWrite()
+
+	if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		return err
+	}
 	if err := create(parentDir, name); err != nil {
 		return err
 	}

@@ -29,24 +29,23 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 || (opts.SrcStart+opts.Length < 0) {
 		return 0, syserror.EINVAL
 	}
-
+	if opts.Length == 0 {
+		return 0, nil
+	}
 	if opts.Length > int64(kernel.MAX_RW_COUNT) {
 		opts.Length = int64(kernel.MAX_RW_COUNT)
 	}
 
 	var (
-		total int64
 		n     int64
 		err   error
 		inCh  chan struct{}
 		outCh chan struct{}
 	)
 
-	for opts.Length > 0 {
+	for {
 		n, err = fs.Splice(t, outFile, inFile, opts)
-		opts.Length -= n
-		total += n
-		if err != syserror.ErrWouldBlock {
+		if n != 0 || err != syserror.ErrWouldBlock {
 			break
 		} else if err == syserror.ErrWouldBlock && nonBlocking {
 			break
@@ -87,13 +86,13 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		}
 	}
 
-	if total > 0 {
+	if n > 0 {
 		// On Linux, inotify behavior is not very consistent with splice(2). We try
 		// our best to emulate Linux for very basic calls to splice, where for some
 		// reason, events are generated for output files, but not input files.
 		outFile.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
 	}
-	return total, err
+	return n, err
 }
 
 // Sendfile implements linux system call sendfile(2).

@@ -53,7 +53,6 @@ const (
 	wakerForNotification = iota
 	wakerForNewSegment
 	wakerForResend
-	wakerForResolution
 )
 
 const (
@@ -460,9 +459,9 @@ func (h *handshake) processSegments() *tcpip.Error {
 	return nil
 }
 
-// start resolves the route if necessary and sends the first
-// SYN/SYN-ACK.
-func (h *handshake) start() *tcpip.Error {
+// start sends the first SYN/SYN-ACK. It does not block, even if link address
+// resolution is required.
+func (h *handshake) start() {
 	h.startTime = time.Now()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 	var sackEnabled tcpip.TCPSACKEnabled
@@ -503,7 +502,6 @@ func (h *handshake) start() *tcpip.Error {
 		ack:    h.ackNum,
 		rcvWnd: h.rcvWnd,
 	}, synOpts)
-	return nil
 }
 
 // complete completes the TCP 3-way handshake initiated by h.start().
