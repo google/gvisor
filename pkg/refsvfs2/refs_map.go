@@ -109,8 +109,7 @@ func LogDecRef(obj CheckedObject, refs int64) {
 // obj.LogRefs() should be checked before calling logEvent, in order to avoid
 // calling any text processing needed to evaluate msg.
 func logEvent(obj CheckedObject, msg string) {
-	log.Infof("[%s %p] %s:", obj.RefType(), obj, msg)
-	log.Infof(refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
+	log.Infof("[%s %p] %s:\n%s", obj.RefType(), obj, msg, refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
 }
 
 // DoLeakCheck iterates through the live object map and logs a message for each
@@ -122,10 +121,11 @@ func DoLeakCheck() {
 		defer liveObjectsMu.Unlock()
 		leaked := len(liveObjects)
 		if leaked > 0 {
-			log.Warningf("Leak checking detected %d leaked objects:", leaked)
+			msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
 			for obj := range liveObjects {
-				log.Warningf(obj.LeakMessage())
+				msg += obj.LeakMessage() + "\n"
 			}
+			log.Warningf(msg)
 		}
 	}
 }
