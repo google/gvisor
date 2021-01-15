@@ -49,7 +49,6 @@ var (
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
 	fuse       = flag.Bool("fuse", false, "enable FUSE")
-	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
@@ -83,13 +82,8 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	if !found {
 		env = append(env, newEnvVar)
 	}
-	// Remove env variables that cause the gunit binary to write output
-	// files, since they will stomp on eachother, and on the output files
-	// from this go test.
-	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
-
 	// Remove shard env variables so that the gunit binary does not try to
-	// intepret them.
+	// interpret them.
 	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
 	if *addUDSTree {
@@ -390,13 +384,8 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		env = append(env, vfsVar+"=VFS1")
 	}
 
-	// Remove env variables that cause the gunit binary to write output
-	// files, since they will stomp on eachother, and on the output files
-	// from this go test.
-	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
-
 	// Remove shard env variables so that the gunit binary does not try to
-	// intepret them.
+	// interpret them.
 	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
 	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
@@ -507,9 +496,6 @@ func main() {
 		tests = append(tests, testing.InternalTest{
 			Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
 			F: func(t *testing.T) {
-				if *parallel {
-					t.Parallel()
-				}
 				if *platform == "native" {
 					// Run the test case on host.
 					runTestCaseNative(testBin, tc, t)
