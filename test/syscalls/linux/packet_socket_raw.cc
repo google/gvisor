@@ -678,6 +678,58 @@ TEST_P(RawPacketTest, GetSocketAcceptConn) {
 INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));
 
+class RawPacketMsgSizeTest : public ::testing::TestWithParam<TestAddress> {};
+
+TEST_P(RawPacketMsgSizeTest, SendTooLong) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  TestAddress addr = GetParam().WithPort(kPort);
+
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(addr.family(), SOCK_RAW, IPPROTO_UDP));
+
+  ASSERT_THAT(
+      connect(udp_sock.get(), reinterpret_cast<struct sockaddr*>(&addr.addr),
+              addr.addr_len),
+      SyscallSucceeds());
+
+  const char buf[65536] = {};
+  ASSERT_THAT(send(udp_sock.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EMSGSIZE));
+}
+
+TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  const char buf[65536] = {};
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  ASSERT_THAT(write(fds[1], buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  TestAddress addr = GetParam().WithPort(kPort);
+
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(addr.family(), SOCK_RAW, IPPROTO_UDP));
+
+  ASSERT_THAT(
+      connect(udp_sock.get(), reinterpret_cast<struct sockaddr*>(&addr.addr),
+              addr.addr_len),
+      SyscallSucceeds());
+
+  ssize_t n = splice(fds[0], nullptr, udp_sock.get(), nullptr, sizeof(buf), 0);
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(n, SyscallFailsWithErrno(EMSGSIZE));
+  } else {
+    // TODO(gvisor.dev/issue/138): Linux sends out multiple UDP datagrams, each
+    // of the size of a page.
+    EXPECT_THAT(n, SyscallSucceedsWithValue(sizeof(buf)));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AllRawPacketMsgSizeTest, RawPacketMsgSizeTest,
+                         ::testing::Values(V4Loopback(), V6Loopback()));
+
 }  // namespace
 
 }  // namespace testing

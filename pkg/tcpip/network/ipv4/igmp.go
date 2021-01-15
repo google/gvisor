@@ -262,13 +262,15 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 	localAddr := addressEndpoint.AddressWithPrefix().Address
 	addressEndpoint.DecRef()
 	addressEndpoint = nil
-	igmp.ep.addIPHeader(localAddr, destAddress, pkt, stack.NetworkHeaderParams{
+	if err := igmp.ep.addIPHeader(localAddr, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.IGMPProtocolNumber,
 		TTL:      header.IGMPTTL,
 		TOS:      stack.DefaultTOS,
 	}, header.IPv4OptionsSerializer{
 		&header.IPv4SerializableRouterAlertOption{},
-	})
+	}); err != nil {
+		panic(fmt.Sprintf("failed to add IP header: %s", err))
+	}
 
 	sentStats := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
 	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {

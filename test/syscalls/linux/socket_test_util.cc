@@ -791,6 +791,19 @@ void RecvNoData(int sock) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
+TestAddress TestAddress::WithPort(uint16_t port) const {
+  TestAddress addr = *this;
+  switch (addr.family()) {
+    case AF_INET:
+      reinterpret_cast<sockaddr_in*>(&addr.addr)->sin_port = htons(port);
+      break;
+    case AF_INET6:
+      reinterpret_cast<sockaddr_in6*>(&addr.addr)->sin6_port = htons(port);
+      break;
+  }
+  return addr;
+}
+
 TestAddress V4Any() {
   TestAddress t("V4Any");
   t.addr.ss_family = AF_INET;
