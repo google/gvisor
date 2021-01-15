@@ -37,6 +37,7 @@ go_test(
     size = "small",
     srcs = ["tcpip_test.go"],
     library = ":tcpip",
+    deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
 )
 
 go_test(

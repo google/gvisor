@@ -15,11 +15,45 @@
 package tcpip
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
+
+func TestLimitedWriter_Write(t *testing.T) {
+	var b bytes.Buffer
+	l := LimitedWriter{
+		W: &b,
+		N: 5,
+	}
+	if n, err := l.Write([]byte{0, 1, 2}); err != nil {
+		t.Errorf("got l.Write(3/5) = (_, %s), want nil", err)
+	} else if n != 3 {
+		t.Errorf("got l.Write(3/5) = (%d, _), want 3", n)
+	}
+	if n, err := l.Write([]byte{3, 4, 5}); err != io.ErrShortWrite {
+		t.Errorf("got l.Write(3/2) = (_, %s), want io.ErrShortWrite", err)
+	} else if n != 2 {
+		t.Errorf("got l.Write(3/2) = (%d, _), want 2", n)
+	}
+	if l.N != 0 {
+		t.Errorf("got l.N = %d, want 0", l.N)
+	}
+	l.N = 1
+	if n, err := l.Write([]byte{5}); err != nil {
+		t.Errorf("got l.Write(1/1) = (_, %s), want nil", err)
+	} else if n != 1 {
+		t.Errorf("got l.Write(1/1) = (%d, _), want 1", n)
+	}
+	if diff := cmp.Diff(b.Bytes(), []byte{0, 1, 2, 3, 4, 5}); diff != "" {
+		t.Errorf("%T wrote incorrect data: (-want +got):\n%s", l, diff)
+	}
+}
 
 func TestSubnetContains(t *testing.T) {
 	tests := []struct {

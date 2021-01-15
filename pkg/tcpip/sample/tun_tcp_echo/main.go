@@ -20,10 +20,9 @@
 package main
 
 import (
-	"bytes"
 	"flag"
+	"io"
 	"log"
-	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -46,6 +45,31 @@ import (
 var tap = flag.Bool("tap", false, "use tap istead of tun")
 var mac = flag.String("mac", "aa:00:01:01:01:01", "mac address to use in tap device")
 
+type endpointWriter struct {
+	ep tcpip.Endpoint
+}
+
+type tcpipError struct {
+	inner *tcpip.Error
+}
+
+func (e *tcpipError) Error() string {
+	return e.inner.String()
+}
+
+func (e *endpointWriter) Write(p []byte) (int, error) {
+	n, err := e.ep.Write(tcpip.SlicePayload(p), tcpip.WriteOptions{})
+	if err != nil {
+		return int(n), &tcpipError{
+			inner: err,
+		}
+	}
+	if n != int64(len(p)) {
+		return int(n), io.ErrShortWrite
+	}
+	return int(n), nil
+}
+
 func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	defer ep.Close()
 
@@ -55,9 +79,12 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	wq.EventRegister(&waitEntry, waiter.EventIn)
 	defer wq.EventUnregister(&waitEntry)
 
+	w := endpointWriter{
+		ep: ep,
+	}
+
 	for {
-		var buf bytes.Buffer
-		_, err := ep.Read(&buf, math.MaxUint16, tcpip.ReadOptions{})
+		_, err := ep.Read(&w, tcpip.ReadOptions{})
 		if err != nil {
 			if err == tcpip.ErrWouldBlock {
 				<-notifyCh
@@ -66,8 +93,6 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 
 			return
 		}
-
-		ep.Write(tcpip.SlicePayload(buf.Bytes()), tcpip.WriteOptions{})
 	}
 }
 

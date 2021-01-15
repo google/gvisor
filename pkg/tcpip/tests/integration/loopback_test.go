@@ -242,9 +242,9 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
-			if res, err := rep.Read(&buf, len(data), opts); test.expectRx {
+			if res, err := rep.Read(&buf, opts); test.expectRx {
 				if err != nil {
-					t.Fatalf("rep.Read(_, %d, %#v): %s", len(data), opts, err)
+					t.Fatalf("rep.Read(_, %#v): %s", opts, err)
 				}
 				if diff := cmp.Diff(tcpip.ReadResult{
 					Count: buf.Len(),

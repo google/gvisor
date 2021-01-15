@@ -846,14 +846,13 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 		},
 	}
 
-	const mtu = header.IPv6MinimumMTU
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
-			e := channel.New(1, mtu, linkAddr1)
+			e := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -983,7 +982,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				t.Errorf("got UDP Rx Packets = %d, want = 1", got)
 			}
 			var buf bytes.Buffer
-			result, err := ep.Read(&buf, mtu, tcpip.ReadOptions{})
+			result, err := ep.Read(&buf, tcpip.ReadOptions{})
 			if err != nil {
 				t.Fatalf("Read: %s", err)
 			}
@@ -998,7 +997,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			}
 
 			// Should not have any more UDP packets.
-			if res, err := ep.Read(ioutil.Discard, mtu, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+			if res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
 				t.Fatalf("got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})
@@ -1979,10 +1978,9 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				t.Errorf("got UDP Rx Packets = %d, want = %d", got, want)
 			}
 
-			const rcvSize = 65536 // Account for reassembled packets.
 			for i, p := range test.expectedPayloads {
 				var buf bytes.Buffer
-				_, err := ep.Read(&buf, rcvSize, tcpip.ReadOptions{})
+				_, err := ep.Read(&buf, tcpip.ReadOptions{})
 				if err != nil {
 					t.Fatalf("(i=%d) Read: %s", i, err)
 				}
@@ -1991,7 +1989,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 				}
 			}
 
-			if res, err := ep.Read(ioutil.Discard, rcvSize, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
+			if res, err := ep.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
 				t.Fatalf("(last) got Read = (%v, %v), want = (_, %s)", res, err, tcpip.ErrWouldBlock)
 			}
 		})

@@ -50,7 +50,7 @@ type endpointTester struct {
 // CheckReadError issues a read to the endpoint and checking for an error.
 func (e *endpointTester) CheckReadError(t *testing.T, want *tcpip.Error) {
 	t.Helper()
-	res, got := e.ep.Read(ioutil.Discard, 1, tcpip.ReadOptions{})
+	res, got := e.ep.Read(ioutil.Discard, tcpip.ReadOptions{})
 	if got != want {
 		t.Fatalf("ep.Read = %s, want %s", got, want)
 	}
@@ -61,10 +61,10 @@ func (e *endpointTester) CheckReadError(t *testing.T, want *tcpip.Error) {
 
 // CheckRead issues a read to the endpoint and checking for a success, returning
 // the data read.
-func (e *endpointTester) CheckRead(t *testing.T, count int) []byte {
+func (e *endpointTester) CheckRead(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	res, err := e.ep.Read(&buf, count, tcpip.ReadOptions{})
+	res, err := e.ep.Read(&buf, tcpip.ReadOptions{})
 	if err != nil {
 		t.Fatalf("ep.Read = _, %s; want _, nil", err)
 	}
@@ -81,9 +81,12 @@ func (e *endpointTester) CheckRead(t *testing.T, count int) []byte {
 func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-chan struct{}, timeout time.Duration) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	var done int
-	for done < count {
-		res, err := e.ep.Read(&buf, count-done, tcpip.ReadOptions{})
+	w := tcpip.LimitedWriter{
+		W: &buf,
+		N: int64(count),
+	}
+	for w.N != 0 {
+		_, err := e.ep.Read(&w, tcpip.ReadOptions{})
 		if err == tcpip.ErrWouldBlock {
 			// Wait for receive to be notified.
 			select {
@@ -95,7 +98,6 @@ func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-cha
 		} else if err != nil {
 			t.Fatalf("ep.Read = _, %s; want _, nil", err)
 		}
-		done += res.Count
 	}
 	return buf.Bytes()
 }
@@ -820,7 +822,7 @@ func TestSimpleReceive(t *testing.T) {
 	}
 
 	// Receive data.
-	v := ept.CheckRead(t, defaultMTU)
+	v := ept.CheckRead(t)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
@@ -1928,7 +1930,7 @@ func TestFullWindowReceive(t *testing.T) {
 	)
 
 	// Receive data and check it.
-	v := ept.CheckRead(t, defaultMTU)
+	v := ept.CheckRead(t)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
@@ -2015,7 +2017,7 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 	// Read the data so that the subsequent ACK from the endpoint
 	// grows the right edge of the window.
 	var buf bytes.Buffer
-	if _, err := c.EP.Read(&buf, math.MaxUint16, tcpip.ReadOptions{}); err != nil {
+	if _, err := c.EP.Read(&buf, tcpip.ReadOptions{}); err != nil {
 		t.Fatalf("c.EP.Read: %s", err)
 	}
 
@@ -2075,7 +2077,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	}
 
 	// Read the 1 byte payload we just sent.
-	if got, want := payload, ept.CheckRead(t, 1); !bytes.Equal(got, want) {
+	if got, want := payload, ept.CheckRead(t); !bytes.Equal(got, want) {
 		t.Fatalf("got data: %v, want: %v", got, want)
 	}
 
@@ -2570,13 +2572,16 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	// update to be sent. For 1MSS worth of window to be available we need to
 	// read at least 128KB. Since our segments above were 50KB each it means
 	// we need to read at 3 packets.
-	sz := 0
-	for sz < defaultMTU*2 {
-		res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
+	w := tcpip.LimitedWriter{
+		W: ioutil.Discard,
+		N: defaultMTU * 2,
+	}
+	for w.N != 0 {
+		res, err := c.EP.Read(&w, tcpip.ReadOptions{})
+		t.Logf("err=%v res=%#v", err, res)
 		if err != nil {
 			t.Fatalf("Read failed: %s", err)
 		}
-		sz += res.Count
 	}
 
 	checker.IPv4(t, c.GetPacket(),
@@ -3271,12 +3276,12 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 loop:
 	for {
-		switch _, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{}); err {
+		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err {
 		case tcpip.ErrWouldBlock:
 			select {
 			case <-ch:
 				// Expect the state to be StateError and subsequent Reads to fail with HardError.
-				if _, err := c.EP.Read(ioutil.Discard, math.MaxUint16, tcpip.ReadOptions{}); err != tcpip.ErrConnectionReset {
+				if _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tcpip.ErrConnectionReset {
 					t.Fatalf("got c.EP.Read() = %s, want = %s", err, tcpip.ErrConnectionReset)
 				}
 				break loop
@@ -4224,7 +4229,7 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Check that peek works.
 	var peekBuf bytes.Buffer
-	res, err := c.EP.Read(&peekBuf, 10, tcpip.ReadOptions{Peek: true})
+	res, err := c.EP.Read(&peekBuf, tcpip.ReadOptions{Peek: true})
 	if err != nil {
 		t.Fatalf("Peek failed: %s", err)
 	}
@@ -4237,7 +4242,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	}
 
 	// Receive data.
-	v := ept.CheckRead(t, defaultMTU)
+	v := ept.CheckRead(t)
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
 	}
@@ -4246,8 +4251,8 @@ func TestReadAfterClosedState(t *testing.T) {
 	// right error code.
 	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
 	var buf bytes.Buffer
-	if _, err := c.EP.Read(&buf, 1, tcpip.ReadOptions{Peek: true}); err != tcpip.ErrClosedForReceive {
-		t.Fatalf("c.EP.Read(_, _, {Peek: true}) = %v, %s; want _, %s", res, err, tcpip.ErrClosedForReceive)
+	if _, err := c.EP.Read(&buf, tcpip.ReadOptions{Peek: true}); err != tcpip.ErrClosedForReceive {
+		t.Fatalf("c.EP.Read(_, {Peek: true}) = %v, %s; want _, %s", res, err, tcpip.ErrClosedForReceive)
 	}
 }
 
@@ -6205,7 +6210,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// Now read all the data from the endpoint and verify that advertised
 	// window increases to the full available buffer size.
 	for {
-		_, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
+		_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
 		if err == tcpip.ErrWouldBlock {
 			break
 		}
@@ -6329,7 +6334,7 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		// to happen before we measure the new window.
 		totalCopied := 0
 		for {
-			res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
+			res, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
 			if err == tcpip.ErrWouldBlock {
 				break
 			}
@@ -7387,15 +7392,17 @@ func TestIncreaseWindowOnRead(t *testing.T) {
 
 	// We now have < 1 MSS in the buffer space. Read at least > 2 MSS
 	// worth of data as receive buffer space
-	read := 0
-	// defaultMTU is a good enough estimate for the MSS used for this
-	// connection.
-	for read < defaultMTU*2 {
-		res, err := c.EP.Read(ioutil.Discard, defaultMTU, tcpip.ReadOptions{})
+	w := tcpip.LimitedWriter{
+		W: ioutil.Discard,
+		// defaultMTU is a good enough estimate for the MSS used for this
+		// connection.
+		N: defaultMTU * 2,
+	}
+	for w.N != 0 {
+		_, err := c.EP.Read(&w, tcpip.ReadOptions{})
 		if err != nil {
 			t.Fatalf("Read failed: %s", err)
 		}
-		read += res.Count
 	}
 
 	// After reading > MSS worth of data, we surely crossed MSS. See the ack:

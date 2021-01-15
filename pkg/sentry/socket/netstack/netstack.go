@@ -425,8 +425,13 @@ func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Write
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
+	w := tcpip.LimitedWriter{
+		W: dst,
+		N: count,
+	}
+
 	// This may return a blocking error.
-	res, err := s.Endpoint.Read(dst, int(count), tcpip.ReadOptions{
+	res, err := s.Endpoint.Read(&w, tcpip.ReadOptions{
 		Peek: dup,
 	})
 	if err != nil {
@@ -2579,7 +2584,10 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	// caller-supplied  buffer.
 	var w io.Writer
 	if !isPacket && trunc {
-		w = ioutil.Discard
+		w = &tcpip.LimitedWriter{
+			W: ioutil.Discard,
+			N: dst.NumBytes(),
+		}
 	} else {
 		w = dst.Writer(ctx)
 	}
@@ -2587,7 +2595,10 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
-	res, err := s.Endpoint.Read(w, int(dst.NumBytes()), readOptions)
+	res, err := s.Endpoint.Read(w, readOptions)
+	if err == tcpip.ErrBadBuffer && dst.NumBytes() == 0 {
+		err = nil
+	}
 	if err != nil {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.TranslateNetstackError(err)
 	}
