@@ -94,7 +94,7 @@ func getBlocking(c *linkAddrCache, addr tcpip.FullAddress, linkRes LinkAddressRe
 }
 
 func TestCacheOverflow(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(New(Options{}), 1<<63-1, 1*time.Second, 3)
 	for i := len(testAddrs) - 1; i >= 0; i-- {
 		e := testAddrs[i]
 		c.add(e.addr, e.linkAddr)
@@ -129,7 +129,7 @@ func TestCacheOverflow(t *testing.T) {
 }
 
 func TestCacheConcurrent(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(New(Options{}), 1<<63-1, 1*time.Second, 3)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	var wg sync.WaitGroup
@@ -165,7 +165,7 @@ func TestCacheConcurrent(t *testing.T) {
 }
 
 func TestCacheAgeLimit(t *testing.T) {
-	c := newLinkAddrCache(1*time.Millisecond, 1*time.Second, 3)
+	c := newLinkAddrCache(New(Options{}), 1*time.Millisecond, 1*time.Second, 3)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	e := testAddrs[0]
@@ -177,7 +177,7 @@ func TestCacheAgeLimit(t *testing.T) {
 }
 
 func TestCacheReplace(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(New(Options{}), 1<<63-1, 1*time.Second, 3)
 	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
 	c.add(e.addr, e.linkAddr)
@@ -206,7 +206,7 @@ func TestCacheResolution(t *testing.T) {
 	//
 	// Using a large resolution timeout decreases the probability of experiencing
 	// this race condition and does not affect how long this test takes to run.
-	c := newLinkAddrCache(1<<63-1, math.MaxInt64, 1)
+	c := newLinkAddrCache(New(Options{}), 1<<63-1, math.MaxInt64, 1)
 	linkRes := &testLinkAddressResolver{cache: c}
 	for i, ta := range testAddrs {
 		got, err := getBlocking(c, ta.addr, linkRes)
@@ -232,7 +232,7 @@ func TestCacheResolution(t *testing.T) {
 }
 
 func TestCacheResolutionFailed(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 10*time.Millisecond, 5)
+	c := newLinkAddrCache(New(Options{}), 1<<63-1, 10*time.Millisecond, 5)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	var requestCount uint32
@@ -265,28 +265,11 @@ func TestCacheResolutionFailed(t *testing.T) {
 func TestCacheResolutionTimeout(t *testing.T) {
 	resolverDelay := 500 * time.Millisecond
 	expiration := resolverDelay / 10
-	c := newLinkAddrCache(expiration, 1*time.Millisecond, 3)
+	c := newLinkAddrCache(New(Options{}), expiration, 1*time.Millisecond, 3)
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
 	e := testAddrs[0]
 	if a, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrTimeout {
 		t.Errorf("got getBlocking(_, %#v, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
-	}
-}
-
-// TestStaticResolution checks that static link addresses are resolved immediately and don't
-// send resolution requests.
-func TestStaticResolution(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, time.Millisecond, 1)
-	linkRes := &testLinkAddressResolver{cache: c, delay: time.Minute}
-
-	addr := tcpip.Address("broadcast")
-	want := tcpip.LinkAddress("mac_broadcast")
-	got, _, err := c.get(tcpip.FullAddress{Addr: addr}, linkRes, "", nil, nil)
-	if err != nil {
-		t.Errorf("c.get(%q)=%q, got error: %v", string(addr), string(got), err)
-	}
-	if got != want {
-		t.Errorf("c.get(%q)=%q, want %q", string(addr), string(got), string(want))
 	}
 }

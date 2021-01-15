@@ -91,9 +91,8 @@ func (q *queueDispatcher) dispatchLoop() {
 			}
 			// We pass a protocol of zero here because each packet carries its
 			// NetworkProtocol.
-			q.lower.WritePackets(nil /* route */, nil /* gso */, batch, 0 /* protocol */)
+			q.lower.WritePackets(stack.RouteInfo{}, nil /* gso */, batch, 0 /* protocol */)
 			for pkt := batch.Front(); pkt != nil; pkt = pkt.Next() {
-				pkt.EgressRoute.Release()
 				batch.Remove(pkt)
 			}
 			batch.Reset()
@@ -151,7 +150,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	pkt.EgressRoute = r
@@ -166,15 +165,12 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.Ne
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-//
-// Being a batch API, each packet in pkts should have the following fields
-// populated:
-//   - pkt.EgressRoute
-//   - pkt.GSOOptions
-//   - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
+		pkt.EgressRoute = r
+		pkt.GSOOptions = gso
+		pkt.NetworkProtocolNumber = protocol
 		d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 		nxt := pkt.Next()
 		if !d.q.enqueue(pkt) {

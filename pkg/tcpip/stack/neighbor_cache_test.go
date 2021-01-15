@@ -1750,34 +1750,6 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	}
 }
 
-// TestNeighborCacheStaticResolution checks that static link addresses are
-// resolved immediately and don't send resolution requests.
-func TestNeighborCacheStaticResolution(t *testing.T) {
-	config := DefaultNUDConfigurations()
-	clock := faketime.NewManualClock()
-	neigh := newTestNeighborCache(nil, config, clock)
-	store := newTestEntryStore()
-	linkRes := &testNeighborResolver{
-		clock:   clock,
-		neigh:   neigh,
-		entries: store,
-		delay:   typicalLatency,
-	}
-
-	got, _, err := neigh.entry(testEntryBroadcastAddr, "", linkRes, nil)
-	if err != nil {
-		t.Fatalf("unexpected error from neigh.entry(%s, '', _, nil, nil): %s", testEntryBroadcastAddr, err)
-	}
-	want := NeighborEntry{
-		Addr:     testEntryBroadcastAddr,
-		LinkAddr: testEntryBroadcastLinkAddr,
-		State:    Static,
-	}
-	if diff := cmp.Diff(got, want, entryDiffOpts()...); diff != "" {
-		t.Errorf("neigh.entry(%s, '', _, nil, nil) mismatch (-got, +want):\n%s", testEntryBroadcastAddr, diff)
-	}
-}
-
 func BenchmarkCacheClear(b *testing.B) {
 	b.StopTimer()
 	config := DefaultNUDConfigurations()

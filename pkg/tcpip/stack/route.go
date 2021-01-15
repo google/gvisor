@@ -51,13 +51,8 @@ type Route struct {
 	// outgoingNIC is the interface this route uses to write packets.
 	outgoingNIC *NIC
 
-	// linkCache is set if link address resolution is enabled for this protocol on
-	// the route's NIC.
-	linkCache LinkAddressCache
-
-	// linkRes is set if link address resolution is enabled for this protocol on
-	// the route's NIC.
-	linkRes LinkAddressResolver
+	// linkResRequired indicates that link resolution is required for this route.
+	linkResRequired bool
 }
 
 type routeInfo struct {
@@ -120,6 +115,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 
 	r := makeRoute(
 		netProto,
+		gateway,
 		localAddr,
 		remoteAddr,
 		outgoingNIC,
@@ -129,20 +125,12 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 		multicastLoop,
 	)
 
-	// If the route requires us to send a packet through some gateway, do not
-	// broadcast it.
-	if len(gateway) > 0 {
-		r.NextHop = gateway
-	} else if subnet := addressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
-		r.ResolveWith(header.EthernetBroadcastAddress)
-	}
-
 	return r
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // AssignableAddressEndpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
 	}
@@ -168,7 +156,46 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		}
 	}
 
-	return makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	r := makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	if r.Loop == PacketLoop {
+		// Packet will not leave the stack, no need for a gateway or a remote link
+		// address.
+		return r
+	}
+
+	var linkRes LinkAddressResolver
+	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
+		var ok bool
+		if linkRes, ok = r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
+			r.linkResRequired = true
+		}
+	}
+
+	if len(gateway) > 0 {
+		r.NextHop = gateway
+		return r
+	}
+
+	if !r.linkResRequired {
+		return r
+	}
+
+	if linkAddr, ok := linkRes.ResolveStaticAddress(r.RemoteAddress); ok {
+		r.ResolveWith(linkAddr)
+		return r
+	}
+
+	if subnet := localAddressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
+		r.ResolveWith(header.EthernetBroadcastAddress)
+		return r
+	}
+
+	if r.RemoteAddress == r.LocalAddress {
+		// Local link address is already known.
+		r.ResolveWith(r.LocalLinkAddress)
+	}
+
+	return r
 }
 
 func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
@@ -187,13 +214,6 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	r.mu.Lock()
 	r.mu.localAddressEndpoint = localAddressEndpoint
 	r.mu.Unlock()
-
-	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes, ok := r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
-			r.linkRes = linkRes
-			r.linkCache = r.outgoingNIC.stack
-		}
-	}
 
 	return r
 }
@@ -292,27 +312,18 @@ func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 // Returns tcpip.ErrWouldBlock if address resolution requires blocking (e.g.
 // waiting for ARP reply). If address resolution is required, a notification
 // channel is also returned for the caller to block on. The channel is closed
-// once address resolution is complete (successful or not). If a callback is
-// provided, it will be called when address resolution is complete, regardless
-// of success or failure.
-func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
+// once address resolution is complete (successful or not).
+func (r *Route) Resolve() (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	r.mu.Lock()
-
-	if !r.isResolutionRequiredRLocked() {
-		// Nothing to do if there is no cache (which does the resolution on cache miss) or
-		// link address is already known.
-		r.mu.Unlock()
-		return nil, nil
+	remoteLinkAddr := r.mu.remoteLinkAddress
+	resolutionRequired := r.isResolutionRequiredRLocked()
+	r.mu.Unlock()
+	if !resolutionRequired {
+		return remoteLinkAddr, nil, nil
 	}
 
 	nextAddr := r.NextHop
 	if nextAddr == "" {
-		// Local link address is already known.
-		if r.RemoteAddress == r.LocalAddress {
-			r.mu.remoteLinkAddress = r.LocalLinkAddress
-			r.mu.Unlock()
-			return nil, nil
-		}
 		nextAddr = r.RemoteAddress
 	}
 
@@ -323,34 +334,7 @@ func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
 
-	// Increment the route's reference count because finishResolution retains a
-	// reference to the route and releases it when called.
-	r.acquireLocked()
-	r.mu.Unlock()
-
-	finishResolution := func(linkAddress tcpip.LinkAddress, ok bool) {
-		if ok {
-			r.ResolveWith(linkAddress)
-		}
-		if afterResolve != nil {
-			afterResolve()
-		}
-		r.Release()
-	}
-
-	if neigh := r.outgoingNIC.neigh; neigh != nil {
-		_, ch, err := neigh.entry(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, finishResolution)
-		if err != nil {
-			return ch, err
-		}
-		return nil, nil
-	}
-
-	_, ch, err := r.linkCache.GetLinkAddress(r.outgoingNIC.ID(), nextAddr, linkAddressResolutionRequestLocalAddr, r.NetProto, finishResolution)
-	if err != nil {
-		return ch, err
-	}
-	return nil, nil
+	return r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.NetProto, nil)
 }
 
 // local returns true if the route is a local route.
@@ -373,7 +357,7 @@ func (r *Route) isResolutionRequiredRLocked() bool {
 		return false
 	}
 
-	return (r.outgoingNIC.neigh != nil && r.linkRes != nil) || r.linkCache != nil
+	return r.linkResRequired
 }
 
 func (r *Route) isValidForOutgoing() bool {

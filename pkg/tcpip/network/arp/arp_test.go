@@ -560,15 +560,23 @@ func (*testInterface) Promiscuous() bool {
 	return false
 }
 
+func (t *testInterface) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	return t.LinkEndpoint.WritePacket(r.GetFields(), gso, protocol, pkt)
+}
+
+func (t *testInterface) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	return t.LinkEndpoint.WritePackets(r.GetFields(), gso, pkts, protocol)
+}
+
 func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
 	if t.writeErr != nil {
 		return t.writeErr
 	}
 
-	var r stack.Route
+	var r stack.RouteInfo
 	r.NetProto = protocol
-	r.ResolveWith(remoteLinkAddr)
-	return t.LinkEndpoint.WritePacket(&r, gso, protocol, pkt)
+	r.RemoteLinkAddress = remoteLinkAddr
+	return t.LinkEndpoint.WritePacket(r, gso, protocol, pkt)
 }
 
 func TestLinkAddressRequest(t *testing.T) {

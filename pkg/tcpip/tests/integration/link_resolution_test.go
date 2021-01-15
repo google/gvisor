@@ -16,6 +16,7 @@ package integration_test
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"testing"
 
@@ -391,6 +392,64 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			}
 			if diff := cmp.Diff(&test.sockError, sockErr, sockErrCmpOpts...); diff != "" {
 				t.Errorf("socket error mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGetLinkAddress(t *testing.T) {
+	const (
+		host1NICID = 1
+		host2NICID = 4
+	)
+
+	tests := []struct {
+		name             string
+		netProto         tcpip.NetworkProtocolNumber
+		remoteAddr       tcpip.Address
+		expectedLinkAddr bool
+	}{
+		{
+			name:       "IPv4",
+			netProto:   ipv4.ProtocolNumber,
+			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
+		},
+		{
+			name:       "IPv6",
+			netProto:   ipv6.ProtocolNumber,
+			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, useNeighborCache := range []bool{true, false} {
+				t.Run(fmt.Sprintf("UseNeighborCache=%t", useNeighborCache), func(t *testing.T) {
+					stackOpts := stack.Options{
+						NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+						UseNeighborCache: useNeighborCache,
+					}
+
+					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+
+					{
+						addr, ch, err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(tcpip.LinkAddress, bool) {})
+						if err != tcpip.ErrWouldBlock {
+							t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = (%s, _, %s, want = ('', _, %s)", host1NICID, test.remoteAddr, test.netProto, addr, err, tcpip.ErrWouldBlock)
+						}
+						<-ch
+					}
+
+					{
+						addr, _, err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(tcpip.LinkAddress, bool) {})
+						if err != nil {
+							t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _): %s", host1NICID, test.remoteAddr, test.netProto, err)
+						}
+						if addr != linkAddr2 {
+							t.Fatalf("got addr = %s, want = %s", addr, linkAddr2)
+						}
+					}
+				})
 			}
 		})
 	}

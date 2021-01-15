@@ -640,7 +640,6 @@ func New(opts Options) *Stack {
 		linkAddrResolvers:  make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 		nics:               make(map[tcpip.NICID]*NIC),
 		cleanupEndpoints:   make(map[TransportEndpoint]struct{}),
-		linkAddrCache:      newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 		PortManager:        ports.NewPortManager(),
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
@@ -665,6 +664,7 @@ func New(opts Options) *Stack {
 		},
 	}
 	s.linkResQueue.init()
+	s.linkAddrCache = newLinkAddrCache(s, ageLimit, resolutionTimeout, resolutionAttempts)
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -1329,6 +1329,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
 				return makeRoute(
 					netProto,
+					"", /* gateway */
 					localAddr,
 					remoteAddr,
 					nic, /* outboundNIC */
@@ -1521,16 +1522,13 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
 func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	s.mu.RLock()
-	nic := s.nics[nicID]
-	if nic == nil {
-		s.mu.RUnlock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+	if !ok {
 		return "", nil, tcpip.ErrUnknownNICID
 	}
-	s.mu.RUnlock()
 
-	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, onResolve)
+	return nic.getNeighborLinkAddress(addr, localAddr, protocol, onResolve)
 }
 
 // Neighbors returns all IP to MAC address associations.

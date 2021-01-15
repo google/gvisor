@@ -307,9 +307,9 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (e fwdTestLinkEndpoint) WritePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	p := fwdTestPacketInfo{
-		RemoteLinkAddress: r.RemoteLinkAddress(),
+		RemoteLinkAddress: r.RemoteLinkAddress,
 		LocalLinkAddress:  r.LocalLinkAddress,
 		Pkt:               pkt,
 	}
@@ -323,7 +323,7 @@ func (e fwdTestLinkEndpoint) WritePacket(r *Route, gso *GSO, protocol tcpip.Netw
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *fwdTestLinkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *fwdTestLinkEndpoint) WritePackets(r RouteInfo, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.WritePacket(r, gso, protocol, pkt)

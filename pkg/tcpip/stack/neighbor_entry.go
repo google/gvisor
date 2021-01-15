@@ -150,6 +150,7 @@ func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
 	if ch := e.done; ch != nil {
 		close(ch)
 		e.done = nil
+		e.nic.stack.linkResQueue.dequeue(ch, e.neigh.LinkAddr, succeeded)
 	}
 }
 

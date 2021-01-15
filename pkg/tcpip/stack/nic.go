@@ -312,30 +312,33 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	//   be limited to some small value. When a queue overflows, the new arrival
 	//   SHOULD replace the oldest entry. Once address resolution completes, the
 	//   node transmits any queued packets.
-	if ch, err := r.Resolve(nil); err != nil {
-		if err == tcpip.ErrWouldBlock {
-			r.Acquire()
-			n.stack.linkResQueue.enqueue(ch, r, protocol, pkt)
-			return nil
-		}
-		return err
+	if !r.IsResolutionRequired() {
+		return n.writePacket(r.GetFields(), gso, protocol, pkt)
 	}
 
-	return n.writePacket(r, gso, protocol, pkt)
+	linkAddr, ch, err := r.Resolve()
+	switch err {
+	case nil:
+		routeInfo := r.GetFields()
+		routeInfo.RemoteLinkAddress = linkAddr
+		return n.writePacket(routeInfo, gso, protocol, pkt)
+	case tcpip.ErrWouldBlock:
+		n.stack.linkResQueue.enqueue(ch, n, r.GetFields(), protocol, pkt)
+		return nil
+	default:
+		return err
+	}
 }
 
 // WritePacketToRemote implements NetworkInterface.
 func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
-	r := Route{
-		routeInfo: routeInfo{
-			NetProto: protocol,
-		},
-	}
-	r.ResolveWith(remoteLinkAddr)
-	return n.writePacket(&r, gso, protocol, pkt)
+	var r RouteInfo
+	r.NetProto = protocol
+	r.RemoteLinkAddress = remoteLinkAddr
+	return n.writePacket(r, gso, protocol, pkt)
 }
 
-func (n *NIC) writePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
@@ -352,7 +355,7 @@ func (n *NIC) writePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/4458): Queue packets whie link address resolution
 	// is being peformed like WritePacket.
-	writtenPackets, err := n.LinkEndpoint.WritePackets(r, gso, pkts, protocol)
+	writtenPackets, err := n.LinkEndpoint.WritePackets(r.GetFields(), gso, pkts, protocol)
 	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
@@ -548,6 +551,17 @@ func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
 	}
 
 	return tcpip.ErrBadLocalAddress
+}
+
+func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+	linkRes := n.stack.linkAddrResolvers[protocol]
+
+	if n.neigh != nil {
+		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
+		return entry.LinkAddr, ch, err
+	}
+
+	return n.stack.linkAddrCache.get(tcpip.FullAddress{NIC: n.ID(), Addr: addr}, linkRes, localAddr, n, onResolve)
 }
 
 func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {

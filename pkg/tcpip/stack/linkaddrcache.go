@@ -30,6 +30,8 @@ const linkAddrCacheSize = 512 // max cache entries
 //
 // This struct is safe for concurrent use.
 type linkAddrCache struct {
+	stack *Stack
+
 	// ageLimit is how long a cache entry is valid for.
 	ageLimit time.Duration
 
@@ -77,6 +79,8 @@ type linkAddrEntry struct {
 	// linkAddrEntryEntry access is synchronized by the linkAddrCache lock.
 	linkAddrEntryEntry
 
+	cache *linkAddrCache
+
 	// TODO(gvisor.dev/issue/5150): move these fields under mu.
 	// mu protects the fields below.
 	mu sync.RWMutex
@@ -102,6 +106,7 @@ func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
 	if ch := e.done; ch != nil {
 		close(ch)
 		e.done = nil
+		e.cache.stack.linkResQueue.dequeue(ch, linkAddr, len(linkAddr) != 0)
 	}
 }
 
@@ -172,8 +177,9 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 	}
 
 	*entry = linkAddrEntry{
-		addr: k,
-		s:    incomplete,
+		cache: c,
+		addr:  k,
+		s:     incomplete,
 	}
 	c.cache.table[k] = entry
 	c.cache.lru.PushFront(entry)
@@ -182,15 +188,6 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 
 // get reports any known link address for k.
 func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
-	if linkRes != nil {
-		if addr, ok := linkRes.ResolveStaticAddress(k.Addr); ok {
-			if onResolve != nil {
-				onResolve(addr, true)
-			}
-			return addr, nil, nil
-		}
-	}
-
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
@@ -271,8 +268,9 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.FullAddress, att
 	return true
 }
 
-func newLinkAddrCache(ageLimit, resolutionTimeout time.Duration, resolutionAttempts int) *linkAddrCache {
+func newLinkAddrCache(stack *Stack, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int) *linkAddrCache {
 	c := &linkAddrCache{
+		stack:              stack,
 		ageLimit:           ageLimit,
 		resolutionTimeout:  resolutionTimeout,
 		resolutionAttempts: resolutionAttempts,

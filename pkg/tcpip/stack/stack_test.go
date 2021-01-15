@@ -3572,9 +3572,10 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
 			})
 			ep := channel.New(0, defaultMTU, "")
+			ep.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID1, ep); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 			}
