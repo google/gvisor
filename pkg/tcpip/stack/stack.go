@@ -1329,6 +1329,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
 				return makeRoute(
 					netProto,
+					"", /* gateway */
 					localAddr,
 					remoteAddr,
 					nic, /* outboundNIC */
@@ -1518,7 +1519,7 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 	// that AddLinkAddress for a particular address has been called.
 }
 
-// GetLinkAddress finds the link address corresponding to the remote address.
+// GetLinkAddress finds the link address corresponding to a neighbor's address.
 //
 // Returns a link address for the remote address, if readily available.
 //

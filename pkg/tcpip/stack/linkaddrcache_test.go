@@ -273,20 +273,3 @@ func TestCacheResolutionTimeout(t *testing.T) {
 		t.Errorf("got getBlocking(_, %#v, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
 	}
 }
-
-// TestStaticResolution checks that static link addresses are resolved immediately and don't
-// send resolution requests.
-func TestStaticResolution(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, time.Millisecond, 1)
-	linkRes := &testLinkAddressResolver{cache: c, delay: time.Minute}
-
-	addr := tcpip.Address("broadcast")
-	want := tcpip.LinkAddress("mac_broadcast")
-	got, _, err := c.get(tcpip.FullAddress{Addr: addr}, linkRes, "", nil, nil)
-	if err != nil {
-		t.Errorf("c.get(%q)=%q, got error: %v", string(addr), string(got), err)
-	}
-	if got != want {
-		t.Errorf("c.get(%q)=%q, want %q", string(addr), string(got), string(want))
-	}
-}
