@@ -116,6 +116,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 
 	r := makeRoute(
 		netProto,
+		gateway,
 		localAddr,
 		remoteAddr,
 		outgoingNIC,
@@ -125,20 +126,12 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 		multicastLoop,
 	)
 
-	// If the route requires us to send a packet through some gateway, do not
-	// broadcast it.
-	if len(gateway) > 0 {
-		r.NextHop = gateway
-	} else if subnet := addressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
-		r.ResolveWith(header.EthernetBroadcastAddress)
-	}
-
 	return r
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // AssignableAddressEndpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
 	}
@@ -164,7 +157,44 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		}
 	}
 
-	return makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	r := makeRouteInner(netProto, localAddr, remoteAddr, outgoingNIC, localAddressNIC, localAddressEndpoint, loop)
+	if r.Loop&PacketOut == 0 {
+		// Packet will not leave the stack, no need for a gateway or a remote link
+		// address.
+		return r
+	}
+
+	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
+		if linkRes, ok := r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
+			r.linkRes = linkRes
+		}
+	}
+
+	if len(gateway) > 0 {
+		r.NextHop = gateway
+		return r
+	}
+
+	if r.linkRes == nil {
+		return r
+	}
+
+	if linkAddr, ok := r.linkRes.ResolveStaticAddress(r.RemoteAddress); ok {
+		r.ResolveWith(linkAddr)
+		return r
+	}
+
+	if subnet := localAddressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
+		r.ResolveWith(header.EthernetBroadcastAddress)
+		return r
+	}
+
+	if r.RemoteAddress == r.LocalAddress {
+		// Local link address is already known.
+		r.ResolveWith(r.LocalLinkAddress)
+	}
+
+	return r
 }
 
 func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
@@ -183,12 +213,6 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	r.mu.Lock()
 	r.mu.localAddressEndpoint = localAddressEndpoint
 	r.mu.Unlock()
-
-	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes, ok := r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
-			r.linkRes = linkRes
-		}
-	}
 
 	return r
 }
@@ -300,14 +324,13 @@ func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 		return nil, nil
 	}
 
+	// Increment the route's reference count because finishResolution retains a
+	// reference to the route and releases it when called.
+	r.acquireLocked()
+	r.mu.Unlock()
+
 	nextAddr := r.NextHop
 	if nextAddr == "" {
-		// Local link address is already known.
-		if r.RemoteAddress == r.LocalAddress {
-			r.mu.remoteLinkAddress = r.LocalLinkAddress
-			r.mu.Unlock()
-			return nil, nil
-		}
 		nextAddr = r.RemoteAddress
 	}
 
@@ -317,11 +340,6 @@ func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 	if r.localAddressNIC == r.outgoingNIC {
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
-
-	// Increment the route's reference count because finishResolution retains a
-	// reference to the route and releases it when called.
-	r.acquireLocked()
-	r.mu.Unlock()
 
 	finishResolution := func(linkAddress tcpip.LinkAddress, ok bool) {
 		if ok {
