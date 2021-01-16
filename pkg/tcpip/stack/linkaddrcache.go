@@ -182,15 +182,6 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 
 // get reports any known link address for k.
 func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
-	if linkRes != nil {
-		if addr, ok := linkRes.ResolveStaticAddress(k.Addr); ok {
-			if onResolve != nil {
-				onResolve(addr, true)
-			}
-			return addr, nil, nil
-		}
-	}
-
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
