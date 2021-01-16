@@ -127,20 +127,6 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 //
 // TODO(gvisor.dev/issue/5151): Don't return the neighbor entry.
 func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(tcpip.LinkAddress, bool)) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
-	// TODO(gvisor.dev/issue/5149): Handle static resolution in route.Resolve.
-	if linkAddr, ok := linkRes.ResolveStaticAddress(remoteAddr); ok {
-		e := NeighborEntry{
-			Addr:           remoteAddr,
-			LinkAddr:       linkAddr,
-			State:          Static,
-			UpdatedAtNanos: 0,
-		}
-		if onResolve != nil {
-			onResolve(linkAddr, true)
-		}
-		return e, nil, nil
-	}
-
 	entry := n.getOrCreateEntry(remoteAddr, linkRes)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
