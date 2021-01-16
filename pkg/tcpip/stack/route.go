@@ -51,10 +51,6 @@ type Route struct {
 	// outgoingNIC is the interface this route uses to write packets.
 	outgoingNIC *NIC
 
-	// linkCache is set if link address resolution is enabled for this protocol on
-	// the route's NIC.
-	linkCache LinkAddressCache
-
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
 	linkRes LinkAddressResolver
@@ -191,7 +187,6 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
 		if linkRes, ok := r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
 			r.linkRes = linkRes
-			r.linkCache = r.outgoingNIC.stack
 		}
 	}
 
@@ -338,19 +333,8 @@ func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 		r.Release()
 	}
 
-	if neigh := r.outgoingNIC.neigh; neigh != nil {
-		_, ch, err := neigh.entry(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, finishResolution)
-		if err != nil {
-			return ch, err
-		}
-		return nil, nil
-	}
-
-	_, ch, err := r.linkCache.GetLinkAddress(r.outgoingNIC.ID(), nextAddr, linkAddressResolutionRequestLocalAddr, r.NetProto, finishResolution)
-	if err != nil {
-		return ch, err
-	}
-	return nil, nil
+	_, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, finishResolution)
+	return ch, err
 }
 
 // local returns true if the route is a local route.
@@ -373,7 +357,7 @@ func (r *Route) isResolutionRequiredRLocked() bool {
 		return false
 	}
 
-	return (r.outgoingNIC.neigh != nil && r.linkRes != nil) || r.linkCache != nil
+	return r.linkRes != nil
 }
 
 func (r *Route) isValidForOutgoing() bool {
