@@ -513,6 +513,23 @@ type NetworkInterface interface {
 
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+
+	// WritePacket writes a packet with the given protocol through the given
+	// route.
+	//
+	// WritePacket takes ownership of the packet buffer. The packet buffer's
+	// network and transport header must be set.
+	WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+
+	// WritePackets writes packets with the given protocol through the given
+	// route. Must not be called with an empty list of packet buffers.
+	//
+	// WritePackets takes ownership of the packet buffers.
+	//
+	// Right now, WritePackets is used only when the software segmentation
+	// offload is enabled. If it will be used for something else, syscall filters
+	// may need to be updated.
+	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.
@@ -708,24 +725,6 @@ type NetworkLinkEndpoint interface {
 	// LinkAddress returns the link address (typically a MAC) of the
 	// endpoint.
 	LinkAddress() tcpip.LinkAddress
-
-	// WritePacket writes a packet with the given protocol through the
-	// given route. It takes ownership of pkt. pkt.NetworkHeader and
-	// pkt.TransportHeader must have already been set.
-	//
-	// To participate in transparent bridging, a LinkEndpoint implementation
-	// should call eth.Encode with header.EthernetFields.SrcAddr set to
-	// r.LocalLinkAddress if it is provided.
-	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error
-
-	// WritePackets writes packets with the given protocol through the
-	// given route. pkts must not be zero length. It takes ownership of pkts and
-	// underlying packets.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, it may
-	// require to change syscall filters.
-	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 }
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
@@ -768,6 +767,26 @@ type LinkEndpoint interface {
 
 	// AddHeader adds a link layer header to pkt if required.
 	AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+
+	// WritePacket writes a packet with the given protocol and route.
+	//
+	// WritePacket takes ownership of the packet buffer. The packet buffer's
+	// network and transport header must be set.
+	//
+	// To participate in transparent bridging, a LinkEndpoint implementation
+	// should call eth.Encode with header.EthernetFields.SrcAddr set to
+	// r.LocalLinkAddress if it is provided.
+	WritePacket(RouteInfo, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+
+	// WritePackets writes packets with the given protocol and route. Must not be
+	// called with an empty list of packet buffers.
+	//
+	// WritePackets takes ownership of the packet buffers.
+	//
+	// Right now, WritePackets is used only when the software segmentation
+	// offload is enabled. If it will be used for something else, syscall filters
+	// may need to be updated.
+	WritePackets(RouteInfo, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are

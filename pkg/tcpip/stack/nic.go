@@ -321,21 +321,18 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 		return err
 	}
 
-	return n.writePacket(r, gso, protocol, pkt)
+	return n.writePacket(r.Fields(), gso, protocol, pkt)
 }
 
 // WritePacketToRemote implements NetworkInterface.
 func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
-	r := Route{
-		routeInfo: routeInfo{
-			NetProto: protocol,
-		},
-	}
-	r.ResolveWith(remoteLinkAddr)
-	return n.writePacket(&r, gso, protocol, pkt)
+	var r RouteInfo
+	r.NetProto = protocol
+	r.RemoteLinkAddress = remoteLinkAddr
+	return n.writePacket(r, gso, protocol, pkt)
 }
 
-func (n *NIC) writePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
@@ -352,7 +349,7 @@ func (n *NIC) writePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/4458): Queue packets whie link address resolution
 	// is being peformed like WritePacket.
-	writtenPackets, err := n.LinkEndpoint.WritePackets(r, gso, pkts, protocol)
+	writtenPackets, err := n.LinkEndpoint.WritePackets(r.Fields(), gso, pkts, protocol)
 	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
