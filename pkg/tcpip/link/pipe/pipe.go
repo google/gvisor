@@ -55,7 +55,22 @@ func (e *Endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, proto tcpip.Netw
 	// remote address from the perspective of the other end of the pipe
 	// (e.linked). Similarly, the remote address from the perspective of this
 	// endpoint is the local address on the other end.
-	e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	//
+	// Deliver the packet in a new goroutine to escape this goroutine's stack and
+	// avoid a deadlock when a packet triggers a response which leads the stack to
+	// try and take a lock it already holds.
+	//
+	// As of writing, a deadlock may occur when performing link resolution as the
+	// neighbor table will send a solicitation while holding a lock and the
+	// response advertisement will be sent in the same stack that sent the
+	// solictation. When the response is received, the stack attempts to take the
+	// same lock it already took before sending the solicitation, leading to a
+	// deadlock. Basically, we attempt to lock the same lock twice in the same
+	// call stack.
+	//
+	// TODO(gvisor.dev/issue/5289): don't use a new goroutine once we support send
+	// and receive queues.
+	go e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
 	}))
 
