@@ -1328,7 +1328,7 @@ func (e *endpoint) UpdateLastError(err *tcpip.Error) {
 }
 
 // Read implements tcpip.Endpoint.Read.
-func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
+func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	e.rcvReadMu.Lock()
 	defer e.rcvReadMu.Unlock()
 
@@ -1346,9 +1346,9 @@ func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip
 	var err error
 	done := 0
 	s := first
-	for s != nil && done < count {
+	for s != nil {
 		var n int
-		n, err = s.data.ReadTo(dst, count-done, opts.Peek)
+		n, err = s.data.ReadTo(dst, opts.Peek)
 		// Book keeping first then error handling.
 
 		done += n
