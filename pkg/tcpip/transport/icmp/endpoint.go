@@ -154,7 +154,7 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 }
 
 // Read implements tcpip.Endpoint.Read.
-func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
+func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
@@ -186,7 +186,7 @@ func (e *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip
 		res.RemoteAddr = p.senderAddress
 	}
 
-	n, err := p.data.ReadTo(dst, count, opts.Peek)
+	n, err := p.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, tcpip.ErrBadBuffer
 	}

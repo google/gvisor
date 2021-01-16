@@ -148,23 +148,13 @@ func (vv *VectorisedView) ReadToVV(dstVV *VectorisedView, count int) (copied int
 
 // ReadTo reads up to count bytes from vv to dst. It also removes them from vv
 // unless peek is true.
-func (vv *VectorisedView) ReadTo(dst io.Writer, count int, peek bool) (int, error) {
+func (vv *VectorisedView) ReadTo(dst io.Writer, peek bool) (int, error) {
 	var err error
 	done := 0
 	for _, v := range vv.Views() {
-		remaining := count - done
-		if remaining <= 0 {
-			break
-		}
-		if len(v) > remaining {
-			v = v[:remaining]
-		}
-
 		var n int
 		n, err = dst.Write(v)
-		if n > 0 {
-			done += n
-		}
+		done += n
 		if err != nil {
 			break
 		}

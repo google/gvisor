@@ -505,10 +505,34 @@ type SliceWriter []byte
 func (s *SliceWriter) Write(b []byte) (int, error) {
 	n := copy(*s, b)
 	*s = (*s)[n:]
-	if n < len(b) {
-		return n, io.ErrShortWrite
+	var err error
+	if n != len(b) {
+		err = io.ErrShortWrite
 	}
-	return n, nil
+	return n, err
+}
+
+var _ io.Writer = (*LimitedWriter)(nil)
+
+// A LimitedWriter writes to W but limits the amount of data copied to just N
+// bytes. Each call to Write updates N to reflect the new amount remaining.
+type LimitedWriter struct {
+	W io.Writer
+	N int64
+}
+
+func (l *LimitedWriter) Write(p []byte) (int, error) {
+	pLen := int64(len(p))
+	if pLen > l.N {
+		p = p[:l.N]
+	}
+	n, err := l.W.Write(p)
+	n64 := int64(n)
+	if err == nil && n64 != pLen {
+		err = io.ErrShortWrite
+	}
+	l.N -= n64
+	return n, err
 }
 
 // A ControlMessages contains socket control messages for IP sockets.
@@ -623,7 +647,7 @@ type Endpoint interface {
 	// If non-zero number of bytes are successfully read and written to dst, err
 	// must be nil. Otherwise, if dst failed to write anything, ErrBadBuffer
 	// should be returned.
-	Read(dst io.Writer, count int, opts ReadOptions) (res ReadResult, err *Error)
+	Read(dst io.Writer, opts ReadOptions) (res ReadResult, err *Error)
 
 	// Write writes data to the endpoint's peer. This method does not block if
 	// the data cannot be written.

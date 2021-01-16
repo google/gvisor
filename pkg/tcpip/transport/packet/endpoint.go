@@ -162,7 +162,7 @@ func (ep *endpoint) Close() {
 func (ep *endpoint) ModerateRecvBuf(copied int) {}
 
 // Read implements tcpip.Endpoint.Read.
-func (ep *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
+func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, *tcpip.Error) {
 	ep.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -199,7 +199,7 @@ func (ep *endpoint) Read(dst io.Writer, count int, opts tcpip.ReadOptions) (tcpi
 		res.LinkPacketInfo = packet.packetInfo
 	}
 
-	n, err := packet.data.ReadTo(dst, count, opts.Peek)
+	n, err := packet.data.ReadTo(dst, opts.Peek)
 	if n == 0 && err != nil {
 		return res, tcpip.ErrBadBuffer
 	}
