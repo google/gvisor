@@ -108,7 +108,7 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 					linkResolvableEP.HandleLinkResolutionFailure(pkt)
 				}
 			} else {
-				p.route.outgoingNIC.writePacket(p.route, nil /* gso */, p.proto, p.pkt)
+				p.route.outgoingNIC.writePacket(p.route.Fields(), nil /* gso */, p.proto, p.pkt)
 			}
 			p.route.Release()
 		}

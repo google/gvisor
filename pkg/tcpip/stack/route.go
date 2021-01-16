@@ -90,9 +90,9 @@ type RouteInfo struct {
 	RemoteLinkAddress tcpip.LinkAddress
 }
 
-// GetFields returns a RouteInfo with all of r's exported fields. This allows
+// Fields returns a RouteInfo with all of r's exported fields. This allows
 // callers to store the route's fields without retaining a reference to it.
-func (r *Route) GetFields() RouteInfo {
+func (r *Route) Fields() RouteInfo {
 	return RouteInfo{
 		routeInfo:         r.routeInfo,
 		RemoteLinkAddress: r.RemoteLinkAddress(),
