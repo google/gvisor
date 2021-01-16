@@ -547,6 +547,15 @@ func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrBadLocalAddress
 }
 
+func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+	if n.neigh != nil {
+		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
+		return entry.LinkAddr, ch, err
+	}
+
+	return n.stack.linkAddrCache.get(tcpip.FullAddress{NIC: n.ID(), Addr: addr}, linkRes, localAddr, n, onResolve)
+}
+
 func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {
 	if n.neigh == nil {
 		return nil, tcpip.ErrNotSupported

@@ -1518,19 +1518,41 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 	// that AddLinkAddress for a particular address has been called.
 }
 
-// GetLinkAddress implements LinkAddressCache.GetLinkAddress.
+// GetLinkAddress finds the link address corresponding to the remote address.
+//
+// Returns a link address for the remote address, if readily available.
+//
+// Returns ErrNotSupported if the stack is not configured with a link address
+// resolver for the specified network protocol.
+//
+// Returns ErrWouldBlock if the link address is not readily available, along
+// with a notification channel for the caller to block on. Triggers address
+// resolution asynchronously.
+//
+// If onResolve is provided, it will be called either immediately, if
+// resolution is not required, or when address resolution is complete, with
+// the resolved link address and whether resolution succeeded. After any
+// callbacks have been called, the returned notification channel is closed.
+//
+// If specified, the local address must be an address local to the interface
+// the neighbor cache belongs to. The local address is the source address of
+// a packet prompting NUD/link address resolution.
+//
+// TODO(gvisor.dev/issue/5151): Don't return the link address.
 func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	s.mu.RLock()
-	nic := s.nics[nicID]
-	if nic == nil {
-		s.mu.RUnlock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+	if !ok {
 		return "", nil, tcpip.ErrUnknownNICID
 	}
-	s.mu.RUnlock()
 
-	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
-	linkRes := s.linkAddrResolvers[protocol]
-	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic, onResolve)
+	linkRes, ok := s.linkAddrResolvers[protocol]
+	if !ok {
+		return "", nil, tcpip.ErrNotSupported
+	}
+
+	return nic.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
 }
 
 // Neighbors returns all IP to MAC address associations.
