@@ -362,7 +362,7 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	if o.Metadata == nil {
 		o.Metadata = make(map[string]string)
 	}
-	o.Metadata["container_num"] = strconv.Itoa(cm.cindex + 1)
+	o.Metadata["container_num"] = strconv.Itoa(cm.cindex)
 	return state.Save(o, nil)
 }
 

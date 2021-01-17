@@ -248,12 +248,12 @@ func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid stri
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) RestoreRoot(cid string, spec *specs.Spec, conf *config.Config, filename string) error {
+func (s *Sandbox) RestoreRoot(cid string, spec *specs.Spec, conf *config.Config, restoreFile string) error {
 	log.Debugf("Restore sandbox %q", s.ID)
 
-	rf, err := os.Open(filename)
+	rf, err := os.Open(restoreFile)
 	if err != nil {
-		return fmt.Errorf("opening restore file %q failed: %v", filename, err)
+		return fmt.Errorf("opening restore file %q failed: %v", restoreFile, err)
 	}
 	defer rf.Close()
 

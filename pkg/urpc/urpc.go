@@ -561,6 +561,7 @@ func unmarshal(s *unet.Socket, v interface{}) ([]*os.File, error) {
 
 	// Extract any FDs that may be there.
 	if _, err := r.ReadVec([][]byte{firstByte}); err != nil {
+		log.Debugf("urpc: error reading bytes: %v", err)
 		return nil, err
 	}
 	fds, err := r.ExtractFDs()
