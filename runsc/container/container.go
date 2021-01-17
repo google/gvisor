@@ -385,8 +385,7 @@ func (c *Container) Start(conf *config.Config) error {
 			}
 
 			if conf.RestoreFile != "" {
-				// TODO/TRAVIS: Do we need to pass stdios here?
-				return c.Sandbox.RestoreContainer(c.Spec, conf, c.ID, goferFiles)
+				return c.Sandbox.RestoreContainer(c.Spec, conf, c.ID, stdios, goferFiles)
 			}
 
 			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, stdios, goferFiles)

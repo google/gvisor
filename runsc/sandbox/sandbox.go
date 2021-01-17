@@ -292,19 +292,21 @@ func (s *Sandbox) RestoreRoot(cid string, spec *specs.Spec, conf *config.Config,
 }
 
 // RestoreContainer sends the restore call for a container in the sandbox.
-func (s *Sandbox) RestoreContainer(spec *specs.Spec, conf *config.Config, cid string, goferFiles []*os.File) error {
+func (s *Sandbox) RestoreContainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File) error {
 	log.Debugf("Restore child container %q in sandbox %q.", cid, s.ID)
 
-	// The payload must container stdin/stdout/stderr followed by gofer
-	// files.
-	files := append([]*os.File{os.Stdin, os.Stdout, os.Stderr}, goferFiles...)
+	// The payload must container stdin/stdout/stderr (empty if using TTY)
+	// followed by gofer files.
+	payload := urpc.FilePayload{}
+	payload.Files = append(payload.Files, stdios...)
+	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
 	opt := boot.RestoreOpts{
-		FilePayload: urpc.FilePayload{Files: files},
 		CID:         cid,
 		Spec:        spec,
 		Conf:        conf,
+		FilePayload: payload,
 	}
 
 	conn, err := s.sandboxConnect()
