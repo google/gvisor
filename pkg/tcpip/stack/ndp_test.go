@@ -2808,6 +2808,7 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID, useN
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -2827,10 +2828,15 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID, useN
 		Gateway:     llAddr3,
 		NIC:         nicID,
 	}})
+
 	if useNeighborCache {
-		s.AddStaticNeighbor(nicID, llAddr3, linkAddr3)
+		if err := s.AddStaticNeighbor(nicID, llAddr3, linkAddr3); err != nil {
+			t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, llAddr3, linkAddr3, err)
+		}
 	} else {
-		s.AddLinkAddress(nicID, llAddr3, linkAddr3)
+		if err := s.AddLinkAddress(nicID, llAddr3, linkAddr3); err != nil {
+			t.Fatalf("s.AddLinkAddress(%d, %s, %s): %s", nicID, llAddr3, linkAddr3, err)
+		}
 	}
 	return ndpDisp, e, s
 }

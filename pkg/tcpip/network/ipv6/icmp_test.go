@@ -91,16 +91,11 @@ func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *st
 	return stack.TransportPacketHandled
 }
 
-type stubLinkAddressCache struct {
-	stack.LinkAddressCache
-}
+var _ stack.LinkAddressCache = (*stubLinkAddressCache)(nil)
 
-func (*stubLinkAddressCache) CheckLocalAddress(tcpip.NICID, tcpip.NetworkProtocolNumber, tcpip.Address) tcpip.NICID {
-	return 0
-}
+type stubLinkAddressCache struct{}
 
-func (*stubLinkAddressCache) AddLinkAddress(tcpip.NICID, tcpip.Address, tcpip.LinkAddress) {
-}
+func (*stubLinkAddressCache) AddLinkAddress(tcpip.Address, tcpip.LinkAddress) {}
 
 type stubNUDHandler struct {
 	probeCount        int

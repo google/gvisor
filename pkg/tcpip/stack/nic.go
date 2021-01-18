@@ -53,6 +53,8 @@ type NIC struct {
 	// complete.
 	linkResQueue packetsPendingLinkResolution
 
+	linkAddrCache *linkAddrCache
+
 	mu struct {
 		sync.RWMutex
 		spoofing    bool
@@ -138,7 +140,8 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		stats:            makeNICStats(),
 		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 	}
-	nic.linkResQueue.init()
+	nic.linkResQueue.init(nic)
+	nic.linkAddrCache = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	// Check for Neighbor Unreachability Detection support.
@@ -167,7 +170,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = new(packetEndpointList)
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, nic.linkAddrCache, nud, nic)
 	}
 
 	nic.LinkEndpoint.Attach(nic)
@@ -317,13 +320,8 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	//   be limited to some small value. When a queue overflows, the new arrival
 	//   SHOULD replace the oldest entry. Once address resolution completes, the
 	//   node transmits any queued packets.
-	if ch, err := r.Resolve(nil); err != nil {
-		if err == tcpip.ErrWouldBlock {
-			r.Acquire()
-			n.linkResQueue.enqueue(ch, r, protocol, pkt)
-			return nil
-		}
-		return err
+	if r.IsResolutionRequired() {
+		return n.linkResQueue.enqueue(r, gso, protocol, pkt)
 	}
 
 	return n.writePacket(r.Fields(), gso, protocol, pkt)
@@ -558,7 +556,7 @@ func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes Link
 		return entry.LinkAddr, ch, err
 	}
 
-	return n.stack.linkAddrCache.get(tcpip.FullAddress{NIC: n.ID(), Addr: addr}, linkRes, localAddr, n, onResolve)
+	return n.linkAddrCache.get(addr, linkRes, localAddr, n, onResolve)
 }
 
 func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {

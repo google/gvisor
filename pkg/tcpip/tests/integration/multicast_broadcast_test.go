@@ -652,29 +652,34 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 	}
 
 	subTests := []struct {
-		name           string
-		specifyNICID   bool
-		specifyNICAddr bool
+		name             string
+		specifyNICID     bool
+		specifyNICAddr   bool
+		expectSockOptErr *tcpip.Error
 	}{
 		{
-			name:           "Specify NIC ID and NIC address",
-			specifyNICID:   true,
-			specifyNICAddr: true,
+			name:             "Specify NIC ID and NIC address",
+			specifyNICID:     true,
+			specifyNICAddr:   true,
+			expectSockOptErr: nil,
 		},
 		{
-			name:           "Don't specify NIC ID or NIC address",
-			specifyNICID:   false,
-			specifyNICAddr: false,
+			name:             "Don't specify NIC ID or NIC address",
+			specifyNICID:     false,
+			specifyNICAddr:   false,
+			expectSockOptErr: tcpip.ErrUnknownDevice,
 		},
 		{
-			name:           "Specify NIC ID but don't specify NIC address",
-			specifyNICID:   true,
-			specifyNICAddr: false,
+			name:             "Specify NIC ID but don't specify NIC address",
+			specifyNICID:     true,
+			specifyNICAddr:   false,
+			expectSockOptErr: nil,
 		},
 		{
-			name:           "Don't specify NIC ID but specify NIC address",
-			specifyNICID:   false,
-			specifyNICAddr: true,
+			name:             "Don't specify NIC ID but specify NIC address",
+			specifyNICID:     false,
+			specifyNICAddr:   true,
+			expectSockOptErr: nil,
 		},
 	}
 
@@ -693,21 +698,6 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					protoAddr := tcpip.ProtocolAddress{Protocol: test.proto, AddressWithPrefix: test.localAddr}
 					if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
 						t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
-					}
-
-					// Set the route table so that UDP can find a NIC that is
-					// routable to the multicast address when the NIC isn't specified.
-					if !subTest.specifyNICID && !subTest.specifyNICAddr {
-						s.SetRouteTable([]tcpip.Route{
-							{
-								Destination: header.IPv6EmptySubnet,
-								NIC:         nicID,
-							},
-							{
-								Destination: header.IPv4EmptySubnet,
-								NIC:         nicID,
-							},
-						})
 					}
 
 					var wq waiter.Queue
@@ -733,15 +723,23 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					// We should receive UDP packets to the group once we join the
 					// multicast group.
 					addOpt := tcpip.AddMembershipOption(memOpt)
-					if err := ep.SetSockOpt(&addOpt); err != nil {
-						t.Fatalf("ep.SetSockOpt(&%#v): %s", addOpt, err)
+					if err := ep.SetSockOpt(&addOpt); err != subTest.expectSockOptErr {
+						t.Fatalf("got ep.SetSockOpt(&%#v) = %s, want = %s", addOpt, err, subTest.expectSockOptErr)
 					}
+
 					test.rxUDP(e, test.remoteAddr, test.multicastAddr, data)
+
+					var wantReadErr *tcpip.Error
+					if subTest.expectSockOptErr != nil {
+						wantReadErr = tcpip.ErrWouldBlock
+					}
+
 					var buf bytes.Buffer
-					result, err := ep.Read(&buf, tcpip.ReadOptions{})
-					if err != nil {
-						t.Fatalf("ep.Read: %s", err)
-					} else {
+					var readOpts tcpip.ReadOptions
+					result, err := ep.Read(&buf, readOpts)
+					if err != wantReadErr {
+						t.Fatalf("got ep.Read(_, %#v) = %s, want = %s", readOpts, err, wantReadErr)
+					} else if wantReadErr == nil {
 						if diff := cmp.Diff(tcpip.ReadResult{
 							Count: buf.Len(),
 							Total: buf.Len(),
@@ -756,11 +754,12 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					// We should not receive UDP packets to the group once we leave
 					// the multicast group.
 					removeOpt := tcpip.RemoveMembershipOption(memOpt)
-					if err := ep.SetSockOpt(&removeOpt); err != nil {
-						t.Fatalf("ep.SetSockOpt(&%#v): %s", removeOpt, err)
+					if err := ep.SetSockOpt(&removeOpt); err != subTest.expectSockOptErr {
+						t.Fatalf("got ep.SetSockOpt(&%#v) = %s, want = %s", removeOpt, err, subTest.expectSockOptErr)
 					}
-					if _, err := ep.Read(&buf, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
-						t.Fatalf("got ep.Read = (_, %s), want = (_, %s)", err, tcpip.ErrWouldBlock)
+					test.rxUDP(e, test.remoteAddr, test.multicastAddr, data)
+					if _, err := ep.Read(&buf, readOpts); err != tcpip.ErrWouldBlock {
+						t.Fatalf("got ep.Read(_, %#v) = (_, %s), want = (_, %s)", readOpts, err, tcpip.ErrWouldBlock)
 					}
 				})
 			}

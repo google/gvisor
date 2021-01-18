@@ -86,12 +86,20 @@ type RouteInfo struct {
 	RemoteLinkAddress tcpip.LinkAddress
 }
 
-// Fields returns a RouteInfo with all of r's exported fields. This allows
-// callers to store the route's fields without retaining a reference to it.
+// Fields returns a RouteInfo with all of the known values for route's fields.
+//
+// If any fields are unknown (e.g. remote link address when it is waiting for
+// link address resolution), they will be unset.
 func (r *Route) Fields() RouteInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.fieldsLocked()
+}
+
+func (r *Route) fieldsLocked() RouteInfo {
 	return RouteInfo{
 		routeInfo:         r.routeInfo,
-		RemoteLinkAddress: r.RemoteLinkAddress(),
+		RemoteLinkAddress: r.mu.remoteLinkAddress,
 	}
 }
 
@@ -306,28 +314,23 @@ func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 	r.mu.remoteLinkAddress = addr
 }
 
-// Resolve attempts to resolve the link address if necessary.
+// ResolvedFields returns the route's fields if remote link address resolution
+// is not required.
 //
-// Returns tcpip.ErrWouldBlock if address resolution requires blocking (e.g.
-// waiting for ARP reply). If address resolution is required, a notification
-// channel is also returned for the caller to block on. The channel is closed
-// once address resolution is complete (successful or not). If a callback is
-// provided, it will be called when address resolution is complete, regardless
-// of success or failure.
-func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
+// If address resolution is required, returns tcpip.ErrWouldBlock and a
+// notification channel for the caller to block on. The channel will be readable
+// once address resolution is complete (successful or not).
+//
+// Note, the route will not cache the link address when address resolution
+// completes.
+func (r *Route) ResolvedFields() (RouteInfo, <-chan struct{}, *tcpip.Error) {
 	r.mu.Lock()
-
-	if !r.isResolutionRequiredRLocked() {
-		// Nothing to do if there is no cache (which does the resolution on cache miss) or
-		// link address is already known.
-		r.mu.Unlock()
-		return nil, nil
-	}
-
-	// Increment the route's reference count because finishResolution retains a
-	// reference to the route and releases it when called.
-	r.acquireLocked()
+	fields := r.fieldsLocked()
+	resolutionRequired := r.isResolutionRequiredRLocked()
 	r.mu.Unlock()
+	if !resolutionRequired {
+		return fields, nil, nil
+	}
 
 	nextAddr := r.NextHop
 	if nextAddr == "" {
@@ -341,18 +344,12 @@ func (r *Route) Resolve(afterResolve func()) (<-chan struct{}, *tcpip.Error) {
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
 
-	finishResolution := func(linkAddress tcpip.LinkAddress, ok bool) {
-		if ok {
-			r.ResolveWith(linkAddress)
-		}
-		if afterResolve != nil {
-			afterResolve()
-		}
-		r.Release()
+	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, nil)
+	if err == nil {
+		fields.RemoteLinkAddress = linkAddr
+		return fields, nil, nil
 	}
-
-	_, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, finishResolution)
-	return ch, err
+	return RouteInfo{}, ch, err
 }
 
 // local returns true if the route is a local route.
@@ -371,11 +368,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 func (r *Route) isResolutionRequiredRLocked() bool {
-	if !r.isValidForOutgoingRLocked() || r.mu.remoteLinkAddress != "" || r.local() {
-		return false
-	}
-
-	return r.linkRes != nil
+	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes != nil && r.isValidForOutgoingRLocked() && !r.local()
 }
 
 func (r *Route) isValidForOutgoing() bool {

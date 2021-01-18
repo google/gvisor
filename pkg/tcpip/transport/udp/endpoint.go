@@ -705,15 +705,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		}
 
 		nicID := v.NIC
-
-		if v.InterfaceAddr.Unspecified() {
-			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
-					nicID = r.NICID()
-					r.Release()
-				}
-			}
-		} else {
+		if !v.InterfaceAddr.Unspecified() {
 			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
@@ -741,14 +733,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		}
 
 		nicID := v.NIC
-		if v.InterfaceAddr.Unspecified() {
-			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
-					nicID = r.NICID()
-					r.Release()
-				}
-			}
-		} else {
+		if !v.InterfaceAddr.Unspecified() {
 			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
