@@ -527,7 +527,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 				route.NetProto,
 				header.UDPMaximumPacketSize,
 				tcpip.FullAddress{
-					NIC:  route.NICID(),
+					// Unless we bind the endpoint to a specific NIC, we don't know what
+					// interface packets will be sent through - the route may use a
+					// different NIC depending on routing table and address changes.
+					NIC:  e.BindNICID,
 					Addr: route.RemoteAddress,
 					Port: dstPort,
 				},
@@ -705,15 +708,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		}
 
 		nicID := v.NIC
-
-		if v.InterfaceAddr.Unspecified() {
-			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
-					nicID = r.NICID()
-					r.Release()
-				}
-			}
-		} else {
+		if !v.InterfaceAddr.Unspecified() {
 			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
@@ -741,14 +736,7 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 		}
 
 		nicID := v.NIC
-		if v.InterfaceAddr.Unspecified() {
-			if nicID == 0 {
-				if r, err := e.stack.FindRoute(0, "", v.MulticastAddr, e.NetProto, false /* multicastLoop */); err == nil {
-					nicID = r.NICID()
-					r.Release()
-				}
-			}
-		} else {
+		if !v.InterfaceAddr.Unspecified() {
 			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
