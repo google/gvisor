@@ -440,10 +440,6 @@ type Stack struct {
 	// uniqueIDGenerator is a generator of unique identifiers.
 	uniqueIDGenerator UniqueID
 
-	// linkResQueue holds packets that are waiting for link resolution to
-	// complete.
-	linkResQueue packetsPendingLinkResolution
-
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required.
 	randomGenerator *mathrand.Rand
@@ -664,7 +660,6 @@ func New(opts Options) *Stack {
 			Max:     DefaultMaxBufferSize,
 		},
 	}
-	s.linkResQueue.init()
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {

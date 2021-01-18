@@ -49,6 +49,10 @@ type NIC struct {
 	// Must be accessed using atomic operations.
 	enabled uint32
 
+	// linkResQueue holds packets that are waiting for link resolution to
+	// complete.
+	linkResQueue packetsPendingLinkResolution
+
 	mu struct {
 		sync.RWMutex
 		spoofing    bool
@@ -134,6 +138,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		stats:            makeNICStats(),
 		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 	}
+	nic.linkResQueue.init()
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	// Check for Neighbor Unreachability Detection support.
@@ -315,7 +320,7 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	if ch, err := r.Resolve(nil); err != nil {
 		if err == tcpip.ErrWouldBlock {
 			r.Acquire()
-			n.stack.linkResQueue.enqueue(ch, r, protocol, pkt)
+			n.linkResQueue.enqueue(ch, r, protocol, pkt)
 			return nil
 		}
 		return err
