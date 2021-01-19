@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -2582,18 +2583,33 @@ func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string) (bool, 
 	return false, false
 }
 
+func getKnownNICIDs(proto *protocol) []tcpip.NICID {
+	var nicIDs []tcpip.NICID
+
+	for k := range proto.mu.eps {
+		nicIDs = append(nicIDs, k)
+	}
+
+	return nicIDs
+}
+
 func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
-	ep := proto.NewEndpoint(&testInterface{}, nil, nil, nil).(*endpoint)
+	var nic testInterface
+	ep := proto.NewEndpoint(&nic, nil, nil, nil).(*endpoint)
 	{
 		proto.mu.Lock()
-		_, hasEP := proto.mu.eps[ep]
+		foundEP, hasEP := proto.mu.eps[nic.ID()]
+		nicIDs := getKnownNICIDs(proto)
 		proto.mu.Unlock()
 		if !hasEP {
-			t.Fatalf("expected protocol to have ep = %p in set of endpoints", ep)
+			t.Fatalf("expected to find the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
+		}
+		if foundEP != ep {
+			t.Fatalf("expected protocol to map endpoint %p to nic id %d, but endpoint %p was found instead", ep, nic.ID(), foundEP)
 		}
 	}
 
@@ -2601,10 +2617,11 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 
 	{
 		proto.mu.Lock()
-		_, hasEP := proto.mu.eps[ep]
+		_, hasEP := proto.mu.eps[nic.ID()]
+		nicIDs := getKnownNICIDs(proto)
 		proto.mu.Unlock()
 		if hasEP {
-			t.Fatalf("unexpectedly found ep = %p in set of protocol's endpoints", ep)
+			t.Fatalf("unexpectedly found an endpoint mapped to the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
 		}
 	}
 }
@@ -3051,5 +3068,24 @@ func TestForwarding(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMultiCounterStatsInitialization(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+	})
+	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
+	var nic testInterface
+	ep := proto.NewEndpoint(&nic, nil, nil, nil).(*endpoint)
+	// At this point, the Stack's stats and the NetworkEndpoint's stats are
+	// supposed to be bound.
+	refStack := s.Stats()
+	refEP := ep.stats.localStats
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refStack.IP).Elem(), reflect.ValueOf(&refEP.IP).Elem()}); err != nil {
+		t.Error(err)
+	}
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refStack.ICMP.V6).Elem(), reflect.ValueOf(&refEP.ICMP).Elem()}); err != nil {
+		t.Error(err)
 	}
 }
