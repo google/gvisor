@@ -138,23 +138,17 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		stats.RequestsReceived.Increment()
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
 
+		if e.protocol.stack.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+			stats.RequestsReceivedUnknownTargetAddress.Increment()
+			return // we have no useful answer, ignore the request
+		}
+
+		remoteAddr := tcpip.Address(h.ProtocolAddressSender())
+		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
+
 		if e.nud == nil {
-			if e.linkAddrCache.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
-				stats.RequestsReceivedUnknownTargetAddress.Increment()
-				return // we have no useful answer, ignore the request
-			}
-
-			addr := tcpip.Address(h.ProtocolAddressSender())
-			linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
+			e.linkAddrCache.AddLinkAddress(e.nic.ID(), remoteAddr, remoteLinkAddr)
 		} else {
-			if e.protocol.stack.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
-				stats.RequestsReceivedUnknownTargetAddress.Increment()
-				return // we have no useful answer, ignore the request
-			}
-
-			remoteAddr := tcpip.Address(h.ProtocolAddressSender())
-			remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 			e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 		}
 
