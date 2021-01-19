@@ -15,7 +15,9 @@ go_library(
     ],
     visibility = ["//test/iptables:__subpackages__"],
     deps = [
+        "//pkg/binary",
         "//pkg/test/testutil",
+        "//pkg/usermem",
     ],
 )
 
