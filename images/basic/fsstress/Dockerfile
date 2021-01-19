@@ -1,7 +1,7 @@
 # Usage: docker run --rm fsstress -d /test -n 10000 -p 100 -X -v
 FROM alpine
 
-RUN apk add git
+RUN apk update && apk add git
 RUN git clone https://github.com/linux-test-project/ltp.git --depth 1
 
 WORKDIR /ltp
