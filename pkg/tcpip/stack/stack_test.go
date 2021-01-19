@@ -145,7 +145,7 @@ func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
 }
 
-func (f *fakeNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
+func (*fakeNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
 	return 0
 }
 
@@ -176,7 +176,7 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
+func (*fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, *tcpip.Error) {
 	panic("not implemented")
 }
 
@@ -187,6 +187,18 @@ func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack
 func (f *fakeNetworkEndpoint) Close() {
 	f.AddressableEndpointState.Cleanup()
 }
+
+// Stats implements NetworkEndpoint.
+func (*fakeNetworkEndpoint) Stats() stack.NetworkEndpointStats {
+	return &fakeNetworkEndpointStats{}
+}
+
+var _ stack.NetworkEndpointStats = (*fakeNetworkEndpointStats)(nil)
+
+type fakeNetworkEndpointStats struct{}
+
+// IsNetworkEndpointStats implements stack.NetworkEndpointStats.
+func (*fakeNetworkEndpointStats) IsNetworkEndpointStats() {}
 
 // fakeNetworkProtocol is a network-layer protocol descriptor. It aggregates the
 // number of packets sent and received via endpoints of this protocol. The index
@@ -202,15 +214,15 @@ type fakeNetworkProtocol struct {
 	}
 }
 
-func (f *fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
+func (*fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
 	return fakeNetNumber
 }
 
-func (f *fakeNetworkProtocol) MinimumPacketSize() int {
+func (*fakeNetworkProtocol) MinimumPacketSize() int {
 	return fakeNetHeaderLen
 }
 
-func (f *fakeNetworkProtocol) DefaultPrefixLen() int {
+func (*fakeNetworkProtocol) DefaultPrefixLen() int {
 	return fakeDefaultPrefixLen
 }
 

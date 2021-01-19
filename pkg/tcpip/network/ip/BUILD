@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "ip",
-    srcs = ["generic_multicast_protocol.go"],
+    srcs = [
+        "generic_multicast_protocol.go",
+        "stats.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",

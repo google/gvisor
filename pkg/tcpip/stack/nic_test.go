@@ -99,11 +99,20 @@ func (e *testIPv6Endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
 	e.invalidatedRtr = rtr
 }
 
-var _ NetworkProtocol = (*testIPv6Protocol)(nil)
+// Stats implements NetworkEndpoint.
+func (*testIPv6Endpoint) Stats() NetworkEndpointStats {
+	return &testIPv6EndpointStats{}
+}
 
-// An IPv6 NetworkProtocol that supports the bare minimum to make a stack
-// believe it supports IPv6.
-//
+var _ NetworkEndpointStats = (*testIPv6EndpointStats)(nil)
+
+type testIPv6EndpointStats struct{}
+
+// IsNetworkEndpointStats implements stack.NetworkEndpointStats.
+func (*testIPv6EndpointStats) IsNetworkEndpointStats() {}
+
+var _ LinkAddressResolver = (*testIPv6Protocol)(nil)
+
 // We use this instead of ipv6.protocol because the ipv6 package depends on
 // the stack package which this test lives in, causing a cyclic dependency.
 type testIPv6Protocol struct{}
@@ -159,8 +168,6 @@ func (*testIPv6Protocol) Wait() {}
 func (*testIPv6Protocol) Parse(*PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
 	return 0, false, false
 }
-
-var _ LinkAddressResolver = (*testIPv6Protocol)(nil)
 
 // LinkAddressProtocol implements LinkAddressResolver.
 func (*testIPv6Protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {

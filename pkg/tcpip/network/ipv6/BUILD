@@ -10,6 +10,7 @@ go_library(
         "ipv6.go",
         "mld.go",
         "ndp.go",
+        "stats.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
