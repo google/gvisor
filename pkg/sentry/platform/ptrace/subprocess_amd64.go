@@ -257,3 +257,6 @@ func probeSeccomp() bool {
 		}
 	}
 }
+
+func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
+}

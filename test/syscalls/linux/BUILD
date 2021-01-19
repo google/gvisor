@@ -2191,11 +2191,11 @@ cc_binary(
 )
 
 cc_binary(
-    name = "sigiret_test",
+    name = "sigreturn_test",
     testonly = 1,
     srcs = select_arch(
-        amd64 = ["sigiret.cc"],
-        arm64 = [],
+        amd64 = ["sigreturn_amd64.cc"],
+        arm64 = ["sigreturn_arm64.cc"],
     ),
     linkstatic = 1,
     deps = [
