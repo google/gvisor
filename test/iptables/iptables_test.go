@@ -424,3 +424,11 @@ func TestNATPreOriginalDst(t *testing.T) {
 func TestNATOutOriginalDst(t *testing.T) {
 	singleTest(t, NATOutOriginalDst{})
 }
+
+func TestNATPreRECVORIGDSTADDR(t *testing.T) {
+	singleTest(t, NATPreRECVORIGDSTADDR{})
+}
+
+func TestNATOutRECVORIGDSTADDR(t *testing.T) {
+	singleTest(t, NATOutRECVORIGDSTADDR{})
+}
