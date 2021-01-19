@@ -231,7 +231,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	}
 
 	// Start the newly created process.
-	proc.Kernel.StartProcess(tg)
+	proc.Kernel.StartProcess(tg, nil /* run */)
 
 	return tg, tid, ttyFile, ttyFileVFS2, nil
 }

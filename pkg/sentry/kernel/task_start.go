@@ -15,8 +15,12 @@
 package kernel
 
 import (
+	"runtime"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -306,11 +310,20 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 // 'tid' must be the task's TID in the root PID namespace and it's used for
 // debugging purposes only (set as parameter to Task.run to make it visible
 // in stack dumps).
-func (t *Task) Start(tid ThreadID) {
-	// If the task was restored, it may be "starting" after having already exited.
-	if t.runState == nil {
+//
+// The `run` function may be provided in order to perform testing within the
+// context of the "Task goroutine". If it is nil, then the default (*Task).run
+// function will be used instead.
+func (t *Task) Start(tid ThreadID, run func(*Task)) {
+	// If the task was restored, it may be "starting" after having already
+	// exited. Note that this applies only to the default run function.
+	if run == nil && t.runState == nil {
 		return
 	}
+	if run == nil {
+		run = (*Task).run
+	}
+
 	t.goroutineStopped.Add(1)
 	t.tg.liveGoroutines.Add(1)
 	t.tg.pidns.owner.liveGoroutines.Add(1)
@@ -319,6 +332,24 @@ func (t *Task) Start(tid ThreadID) {
 	// Task is now running in system mode.
 	t.accountTaskGoroutineLeave(TaskGoroutineNonexistent)
 
-	// Use the task's TID in the root PID namespace to make it visible in stack dumps.
-	go t.run(uintptr(tid)) // S/R-SAFE: synchronizes with saving through stops
+	// threadID is a dummy value set to the task's TID in the root PID namespace to
+	// make it visible in stack dumps. A goroutine for a given task can be identified
+	// by finding instances of the task.Run function and looking at this value.
+	go func(tid uintptr) { // S/R-SAFE: synchronizes with saving through stops.
+		atomic.StoreInt64(&t.goid, goid.Get())
+		defer func() {
+			t.accountTaskGoroutineEnter(TaskGoroutineNonexistent)
+			t.goroutineStopped.Done()
+			t.tg.liveGoroutines.Done()
+			t.tg.pidns.owner.liveGoroutines.Done()
+			t.tg.pidns.owner.runningGoroutines.Done()
+			t.p.Release()
+
+			// Deferring this store triggers a false positive in the race
+			// detector (https://github.com/golang/go/issues/42599).
+			atomic.StoreInt64(&t.goid, 0)
+		}()
+		run(t)
+		runtime.KeepAlive(tid)
+	}(uintptr(tid))
 }

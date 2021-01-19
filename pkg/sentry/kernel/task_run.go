@@ -54,13 +54,7 @@ type taskRunState interface {
 }
 
 // run runs the task goroutine.
-//
-// threadID a dummy value set to the task's TID in the root PID namespace to
-// make it visible in stack dumps. A goroutine for a given task can be identified
-// searching for Task.run()'s argument value.
-func (t *Task) run(threadID uintptr) {
-	atomic.StoreInt64(&t.goid, goid.Get())
-
+func (t *Task) run() {
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
 	// kernel.timekeeper.SetClocks() hasn't been called yet.
@@ -96,18 +90,6 @@ func (t *Task) run(threadID uintptr) {
 		t.doStop()
 		t.runState = t.runState.execute(t)
 		if t.runState == nil {
-			t.accountTaskGoroutineEnter(TaskGoroutineNonexistent)
-			t.goroutineStopped.Done()
-			t.tg.liveGoroutines.Done()
-			t.tg.pidns.owner.liveGoroutines.Done()
-			t.tg.pidns.owner.runningGoroutines.Done()
-			t.p.Release()
-
-			// Deferring this store triggers a false positive in the race
-			// detector (https://github.com/golang/go/issues/42599).
-			atomic.StoreInt64(&t.goid, 0)
-			// Keep argument alive because stack trace for dead variables may not be correct.
-			runtime.KeepAlive(threadID)
 			return
 		}
 	}

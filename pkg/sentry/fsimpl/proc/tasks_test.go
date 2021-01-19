@@ -393,11 +393,15 @@ func TestProcSelf(t *testing.T) {
 		t.Fatalf("CreateTask(): %v", err)
 	}
 
-	collector := s.WithTemporaryContext(task).ListDirents(&vfs.PathOperation{
-		Root:               s.Root,
-		Start:              s.Root,
-		Path:               fspath.Parse("/proc/self/"),
-		FollowFinalSymlink: true,
+	// Collect dirents in the task context.
+	var collector *testutil.DirentCollector
+	task.Start(1, func(t *kernel.Task) {
+		collector = s.WithTemporaryContext(t).ListDirents(&vfs.PathOperation{
+			Root:               s.Root,
+			Start:              s.Root,
+			Path:               fspath.Parse("/proc/self/"),
+			FollowFinalSymlink: true,
+		})
 	})
 	s.AssertAllDirentTypes(collector, taskStaticFiles)
 }

@@ -1060,10 +1060,13 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 }
 
 // StartProcess starts running a process that was created with CreateProcess.
-func (k *Kernel) StartProcess(tg *ThreadGroup) {
+//
+// The run function is provided for testing. If nil is provided, then the
+// default (*Task).run entrypoint will be used.
+func (k *Kernel) StartProcess(tg *ThreadGroup, run func(t *Task)) {
 	t := tg.Leader()
 	tid := k.tasks.Root.IDOfTask(t)
-	t.Start(tid)
+	t.Start(tid, run)
 }
 
 // Start starts execution of all tasks in k.
@@ -1094,7 +1097,7 @@ func (k *Kernel) Start() error {
 	k.tasks.mu.RLock()
 	defer k.tasks.mu.RUnlock()
 	for t, tid := range k.tasks.Root.tids {
-		t.Start(tid)
+		t.Start(tid, nil)
 	}
 	return nil
 }

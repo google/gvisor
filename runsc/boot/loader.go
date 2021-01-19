@@ -732,7 +732,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 	if err != nil {
 		return err
 	}
-	l.k.StartProcess(ep.tg)
+	l.k.StartProcess(ep.tg, nil /* run */)
 	return nil
 }
 

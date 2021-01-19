@@ -336,7 +336,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// This has to happen last, because e.g. ptraceClone may send a SIGSTOP to
 	// nt that it must receive before its task goroutine starts running.
 	tid := nt.k.tasks.Root.IDOfTask(nt)
-	defer nt.Start(tid)
+	defer nt.start(tid, (*Task).run)
 	t.traceCloneEvent(tid)
 
 	// "If fork/clone and execve are allowed by @prog, any child processes will
