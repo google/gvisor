@@ -569,7 +569,7 @@ syscall_test(
 # syscall_test(vfs2="True",test = "//test/syscalls/linux:sigaltstack_test")
 
 syscall_test(
-    test = "//test/syscalls/linux:sigiret_test",
+    test = "//test/syscalls/linux:sigreturn_test",
 )
 
 syscall_test(

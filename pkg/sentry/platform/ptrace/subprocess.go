@@ -550,6 +550,12 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		// Wait for the syscall-enter stop.
 		sig := t.wait(stopped)
 
+		if sig == syscall.SIGSTOP {
+			// SIGSTOP was delivered to another thread in the same thread
+			// group, which initiated another group stop. Just ignore it.
+			continue
+		}
+
 		// Refresh all registers.
 		if err := t.getRegs(regs); err != nil {
 			panic(fmt.Sprintf("ptrace get regs failed: %v", err))
@@ -566,13 +572,11 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 
 		// Is it a system call?
 		if sig == (syscallEvent | syscall.SIGTRAP) {
+			s.arm64SyscallWorkaround(t, regs)
+
 			// Ensure registers are sane.
 			updateSyscallRegs(regs)
 			return true
-		} else if sig == syscall.SIGSTOP {
-			// SIGSTOP was delivered to another thread in the same thread
-			// group, which initiated another group stop. Just ignore it.
-			continue
 		}
 
 		// Grab signal information.
