@@ -54,6 +54,15 @@ func (f *packetsPendingLinkResolution) init() {
 	f.packets = make(map[<-chan struct{}][]pendingPacket)
 }
 
+func incrementOutgoingPacketErrors(r *Route, proto tcpip.NetworkProtocolNumber) {
+	r.Stats().IP.OutgoingPacketErrors.Increment()
+
+	// ok may be false if the endpoint's stats do not collect IP-related data.
+	if ipEndpointStats, ok := r.outgoingNIC.getNetworkEndpoint(proto).Stats().(IPNetworkEndpointStats); ok {
+		ipEndpointStats.IPStats().OutgoingPacketErrors.Increment()
+	}
+}
+
 func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, proto tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	f.Lock()
 	defer f.Unlock()
@@ -63,7 +72,9 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 		p := packets[0]
 		packets[0] = pendingPacket{}
 		packets = packets[1:]
-		p.route.Stats().IP.OutgoingPacketErrors.Increment()
+
+		incrementOutgoingPacketErrors(r, proto)
+
 		p.route.Release()
 	}
 
@@ -102,7 +113,7 @@ func (f *packetsPendingLinkResolution) enqueue(ch <-chan struct{}, r *Route, pro
 
 		for _, p := range packets {
 			if cancelled || p.route.IsResolutionRequired() {
-				p.route.Stats().IP.OutgoingPacketErrors.Increment()
+				incrementOutgoingPacketErrors(r, proto)
 
 				if linkResolvableEP, ok := p.route.outgoingNIC.getNetworkEndpoint(p.route.NetProto).(LinkResolvableNetworkEndpoint); ok {
 					linkResolvableEP.HandleLinkResolutionFailure(pkt)

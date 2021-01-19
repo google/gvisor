@@ -149,11 +149,10 @@ func (igmp *igmpState) init(ep *endpoint) {
 //
 // Precondition: igmp.ep.mu must be locked.
 func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
-	stats := igmp.ep.protocol.stack.Stats()
-	received := stats.IGMP.PacketsReceived
+	received := igmp.ep.stats.igmp.packetsReceived
 	headerView, ok := pkt.Data.PullUp(header.IGMPMinimumSize)
 	if !ok {
-		received.Invalid.Increment()
+		received.invalid.Increment()
 		return
 	}
 	h := header.IGMP(headerView)
@@ -166,34 +165,34 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 	h.SetChecksum(wantChecksum)
 
 	if gotChecksum != wantChecksum {
-		received.ChecksumErrors.Increment()
+		received.checksumErrors.Increment()
 		return
 	}
 
 	switch h.Type() {
 	case header.IGMPMembershipQuery:
-		received.MembershipQuery.Increment()
+		received.membershipQuery.Increment()
 		if len(headerView) < header.IGMPQueryMinimumSize {
-			received.Invalid.Increment()
+			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipQuery(h.GroupAddress(), h.MaxRespTime())
 	case header.IGMPv1MembershipReport:
-		received.V1MembershipReport.Increment()
+		received.v1MembershipReport.Increment()
 		if len(headerView) < header.IGMPReportMinimumSize {
-			received.Invalid.Increment()
+			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipReport(h.GroupAddress())
 	case header.IGMPv2MembershipReport:
-		received.V2MembershipReport.Increment()
+		received.v2MembershipReport.Increment()
 		if len(headerView) < header.IGMPReportMinimumSize {
-			received.Invalid.Increment()
+			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipReport(h.GroupAddress())
 	case header.IGMPLeaveGroup:
-		received.LeaveGroup.Increment()
+		received.leaveGroup.Increment()
 		// As per RFC 2236 Section 6, Page 7: "IGMP messages other than Query or
 		// Report, are ignored in all states"
 
@@ -201,7 +200,7 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 		// As per RFC 2236 Section 2.1 Page 3: "Unrecognized message types should
 		// be silently ignored. New message types may be used by newer versions of
 		// IGMP, by multicast routing protocols, or other uses."
-		received.Unrecognized.Increment()
+		received.unrecognized.Increment()
 	}
 }
 
@@ -272,18 +271,18 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		panic(fmt.Sprintf("failed to add IP header: %s", err))
 	}
 
-	sentStats := igmp.ep.protocol.stack.Stats().IGMP.PacketsSent
+	sentStats := igmp.ep.stats.igmp.packetsSent
 	if err := igmp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv4Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
-		sentStats.Dropped.Increment()
+		sentStats.dropped.Increment()
 		return false, err
 	}
 	switch igmpType {
 	case header.IGMPv1MembershipReport:
-		sentStats.V1MembershipReport.Increment()
+		sentStats.v1MembershipReport.Increment()
 	case header.IGMPv2MembershipReport:
-		sentStats.V2MembershipReport.Increment()
+		sentStats.v2MembershipReport.Increment()
 	case header.IGMPLeaveGroup:
-		sentStats.LeaveGroup.Increment()
+		sentStats.leaveGroup.Increment()
 	default:
 		panic(fmt.Sprintf("unrecognized igmp type = %d", igmpType))
 	}
