@@ -210,6 +210,20 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	}
 }
 
+// Stats implements stack.NetworkEndpoint.
+func (e *endpoint) Stats() stack.NetworkEndpointStats {
+	// TODO(gvisor.dev/issues/4963): Record statistics for ARP.
+	return &Stats{}
+}
+
+var _ stack.NetworkEndpointStats = (*Stats)(nil)
+
+// Stats holds ARP statistics.
+type Stats struct{}
+
+// IsNetworkEndpointStats implements stack.NetworkEndpointStats.
+func (*Stats) IsNetworkEndpointStats() {}
+
 // protocol implements stack.NetworkProtocol and stack.LinkAddressResolver.
 type protocol struct {
 	stack *stack.Stack
