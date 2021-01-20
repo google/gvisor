@@ -53,6 +53,8 @@ type NIC struct {
 	// complete.
 	linkResQueue packetsPendingLinkResolution
 
+	linkAddrCache *linkAddrCache
+
 	mu struct {
 		sync.RWMutex
 		spoofing    bool
@@ -137,6 +139,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		context:          ctx,
 		stats:            makeNICStats(),
 		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		linkAddrCache:    newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 	}
 	nic.linkResQueue.init()
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
@@ -167,7 +170,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = new(packetEndpointList)
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, stack, nud, nic)
+		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, nic.linkAddrCache, nud, nic)
 	}
 
 	nic.LinkEndpoint.Attach(nic)
@@ -558,7 +561,7 @@ func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes Link
 		return entry.LinkAddr, ch, err
 	}
 
-	return n.stack.linkAddrCache.get(tcpip.FullAddress{NIC: n.ID(), Addr: addr}, linkRes, localAddr, n, onResolve)
+	return n.linkAddrCache.get(addr, linkRes, localAddr, n, onResolve)
 }
 
 func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {

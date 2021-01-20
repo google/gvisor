@@ -95,7 +95,7 @@ var _ stack.LinkAddressCache = (*stubLinkAddressCache)(nil)
 
 type stubLinkAddressCache struct{}
 
-func (*stubLinkAddressCache) AddLinkAddress(tcpip.NICID, tcpip.Address, tcpip.LinkAddress) {}
+func (*stubLinkAddressCache) AddLinkAddress(tcpip.Address, tcpip.LinkAddress) {}
 
 type stubNUDHandler struct {
 	probeCount        int

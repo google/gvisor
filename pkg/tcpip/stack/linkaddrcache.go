@@ -24,6 +24,8 @@ import (
 
 const linkAddrCacheSize = 512 // max cache entries
 
+var _ LinkAddressCache = (*linkAddrCache)(nil)
+
 // linkAddrCache is a fixed-sized cache mapping IP addresses to link addresses.
 //
 // The entries are stored in a ring buffer, oldest entry replaced first.
@@ -43,7 +45,7 @@ type linkAddrCache struct {
 
 	cache struct {
 		sync.Mutex
-		table map[tcpip.FullAddress]*linkAddrEntry
+		table map[tcpip.Address]*linkAddrEntry
 		lru   linkAddrEntryList
 	}
 }
@@ -81,7 +83,7 @@ type linkAddrEntry struct {
 	// mu protects the fields below.
 	mu sync.RWMutex
 
-	addr       tcpip.FullAddress
+	addr       tcpip.Address
 	linkAddr   tcpip.LinkAddress
 	expiration time.Time
 	s          entryState
@@ -125,7 +127,7 @@ func (e *linkAddrEntry) changeStateLocked(ns entryState, expiration time.Time) {
 }
 
 // add adds a k -> v mapping to the cache.
-func (c *linkAddrCache) add(k tcpip.FullAddress, v tcpip.LinkAddress) {
+func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
 	// Calculate expiration time before acquiring the lock, since expiration is
 	// relative to the time when information was learned, rather than when it
 	// happened to be inserted into the cache.
@@ -150,7 +152,7 @@ func (c *linkAddrCache) add(k tcpip.FullAddress, v tcpip.LinkAddress) {
 // reset to state incomplete, and returned. If no matching entry exists and the
 // cache is not full, a new entry with state incomplete is allocated and
 // returned.
-func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEntry {
+func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 	if entry, ok := c.cache.table[k]; ok {
 		c.cache.lru.Remove(entry)
 		c.cache.lru.PushFront(entry)
@@ -181,7 +183,7 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.FullAddress) *linkAddrEnt
 }
 
 // get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
@@ -214,11 +216,11 @@ func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, lo
 	}
 }
 
-func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, done <-chan struct{}) {
+func (c *linkAddrCache) startAddressResolution(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, done <-chan struct{}) {
 	for i := 0; ; i++ {
 		// Send link request, then wait for the timeout limit and check
 		// whether the request succeeded.
-		linkRes.LinkAddressRequest(k.Addr, localAddr, "" /* linkAddr */, nic)
+		linkRes.LinkAddressRequest(k, localAddr, "" /* linkAddr */, nic)
 
 		select {
 		case now := <-time.After(c.resolutionTimeout):
@@ -234,7 +236,7 @@ func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes Link
 // checkLinkRequest checks whether previous attempt to resolve address has
 // succeeded and mark the entry accordingly. Returns true if request can stop,
 // false if another request should be sent.
-func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.FullAddress, attempt int) bool {
+func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt int) bool {
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry, ok := c.cache.table[k]
@@ -268,6 +270,6 @@ func newLinkAddrCache(ageLimit, resolutionTimeout time.Duration, resolutionAttem
 		resolutionTimeout:  resolutionTimeout,
 		resolutionAttempts: resolutionAttempts,
 	}
-	c.cache.table = make(map[tcpip.FullAddress]*linkAddrEntry, linkAddrCacheSize)
+	c.cache.table = make(map[tcpip.Address]*linkAddrEntry, linkAddrCacheSize)
 	return c
 }
