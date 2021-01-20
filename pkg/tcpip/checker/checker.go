@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -234,7 +234,7 @@ func IPv4RouterAlert() NetworkChecker {
 		for {
 			opt, done, err := iterator.Next()
 			if err != nil {
-				t.Fatalf("error acquiring next IPv4 option %s", err)
+				t.Fatalf("error acquiring next IPv4 option at offset %d", err.Pointer)
 			}
 			if done {
 				break
