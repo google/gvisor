@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 package ipv4
 
 import (
-	"errors"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -105,17 +104,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		} else {
 			op = &optionUsageReceive{}
 		}
-		aux, tmp, err := e.processIPOptions(pkt, opts, op)
-		if err != nil {
-			switch {
-			case
-				errors.Is(err, header.ErrIPv4OptDuplicate),
-				errors.Is(err, errIPv4RecordRouteOptInvalidLength),
-				errors.Is(err, errIPv4RecordRouteOptInvalidPointer),
-				errors.Is(err, errIPv4TimestampOptInvalidLength),
-				errors.Is(err, errIPv4TimestampOptInvalidPointer),
-				errors.Is(err, errIPv4TimestampOptOverflow):
-				_ = e.protocol.returnError(&icmpReasonParamProblem{pointer: aux}, pkt)
+		tmp, optProblem := e.processIPOptions(pkt, opts, op)
+		if optProblem != nil {
+			if optProblem.NeedICMP {
+				_ = e.protocol.returnError(&icmpReasonParamProblem{
+					pointer: optProblem.Pointer,
+				}, pkt)
 				e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 				e.stats.ip.MalformedPacketsReceived.Increment()
 			}
