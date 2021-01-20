@@ -368,10 +368,6 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 		UseNeighborCache: useNeighborCache,
 	})
 
-	if !useNeighborCache {
-		proto.addrCache = s.linkAddrCache
-	}
-
 	// Enable forwarding.
 	s.SetForwarding(proto.Number(), true)
 
@@ -401,13 +397,15 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 		t.Fatal("AddAddress #2 failed:", err)
 	}
 
+	nic, ok := s.nics[2]
+	if !ok {
+		t.Fatal("NIC 2 does not exist")
+	}
 	if useNeighborCache {
 		// Control the neighbor cache for NIC 2.
-		nic, ok := s.nics[2]
-		if !ok {
-			t.Fatal("failed to get the neighbor cache for NIC 2")
-		}
 		proto.neigh = nic.neigh
+	} else {
+		proto.addrCache = nic.linkAddrCache
 	}
 
 	// Route all packets to NIC 2.
@@ -493,7 +491,7 @@ func TestForwardingWithFakeResolver(t *testing.T) {
 				addrResolveDelay: 500 * time.Millisecond,
 				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
 					// Any address will be resolved to the link address "c".
-					cache.add(tcpip.FullAddress{NIC: 2, Addr: addr}, "c")
+					cache.AddLinkAddress(addr, "c")
 				},
 			},
 		},
@@ -619,7 +617,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 					// Only packets to address 3 will be resolved to the
 					// link address "c".
 					if addr == "\x03" {
-						cache.add(tcpip.FullAddress{NIC: 2, Addr: addr}, "c")
+						cache.AddLinkAddress(addr, "c")
 					}
 				},
 			},
@@ -704,7 +702,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 				addrResolveDelay: 500 * time.Millisecond,
 				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
 					// Any packets will be resolved to the link address "c".
-					cache.add(tcpip.FullAddress{NIC: 2, Addr: addr}, "c")
+					cache.AddLinkAddress(addr, "c")
 				},
 			},
 		},
@@ -780,7 +778,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 				addrResolveDelay: 500 * time.Millisecond,
 				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
 					// Any packets will be resolved to the link address "c".
-					cache.add(tcpip.FullAddress{NIC: 2, Addr: addr}, "c")
+					cache.AddLinkAddress(addr, "c")
 				},
 			},
 		},
@@ -870,7 +868,7 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 				addrResolveDelay: 500 * time.Millisecond,
 				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
 					// Any packets will be resolved to the link address "c".
-					cache.add(tcpip.FullAddress{NIC: 2, Addr: addr}, "c")
+					cache.AddLinkAddress(addr, "c")
 				},
 			},
 		},

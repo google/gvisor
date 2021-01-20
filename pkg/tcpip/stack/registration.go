@@ -850,7 +850,7 @@ type LinkAddressResolver interface {
 // A LinkAddressCache caches link addresses.
 type LinkAddressCache interface {
 	// AddLinkAddress adds a link address to the cache.
-	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
+	AddLinkAddress(addr tcpip.Address, linkAddr tcpip.LinkAddress)
 }
 
 // RawFactory produces endpoints for writing various types of raw packets.
