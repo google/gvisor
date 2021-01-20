@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@ package header
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -481,15 +480,13 @@ const (
 	IPv4OptionLengthOffset = 1
 )
 
-// Potential errors when parsing generic IP options.
-var (
-	ErrIPv4OptZeroLength   = errors.New("zero length IP option")
-	ErrIPv4OptDuplicate    = errors.New("duplicate IP option")
-	ErrIPv4OptInvalid      = errors.New("invalid IP option")
-	ErrIPv4OptMalformed    = errors.New("malformed IP option")
-	ErrIPv4OptionTruncated = errors.New("truncated IP option")
-	ErrIPv4OptionAddress   = errors.New("bad IP option address")
-)
+// IPv4OptParameterProblem indicates that a Parameter Problem message
+// should be generated, and gives the offset in the current entity
+// that should be used in that packet.
+type IPv4OptParameterProblem struct {
+	Pointer  uint8
+	NeedICMP bool
+}
 
 // IPv4Option is an interface representing various option types.
 type IPv4Option interface {
@@ -583,8 +580,9 @@ func (i *IPv4OptionIterator) Finalize() IPv4Options {
 // It returns
 // - A slice of bytes holding the next option or nil if there is error.
 // - A boolean which is true if parsing of all the options is complete.
-// - An error which is non-nil if an error condition was encountered.
-func (i *IPv4OptionIterator) Next() (IPv4Option, bool, error) {
+//   Undefined in the case of error.
+// - An error indication which is non-nil if an error condition was found.
+func (i *IPv4OptionIterator) Next() (IPv4Option, bool, *IPv4OptParameterProblem) {
 	// The opts slice gets shorter as we process the options. When we have no
 	// bytes left we are done.
 	if len(i.options) == 0 {
@@ -606,24 +604,22 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, error) {
 	// There are no more single byte options defined.  All the rest have a length
 	// field so we need to sanity check it.
 	if len(i.options) == 1 {
-		return nil, true, ErrIPv4OptMalformed
+		return nil, false, &IPv4OptParameterProblem{
+			Pointer:  i.ErrCursor,
+			NeedICMP: true,
+		}
 	}
 
 	optLen := i.options[IPv4OptionLengthOffset]
 
-	if optLen == 0 {
-		i.ErrCursor++
-		return nil, true, ErrIPv4OptZeroLength
-	}
+	if optLen <= IPv4OptionLengthOffset || optLen > uint8(len(i.options)) {
+		// The actual error is in the length (2nd byte of the option) but we
+		// return the start of the option for compatibility with Linux.
 
-	if optLen == 1 {
-		i.ErrCursor++
-		return nil, true, ErrIPv4OptMalformed
-	}
-
-	if optLen > uint8(len(i.options)) {
-		i.ErrCursor++
-		return nil, true, ErrIPv4OptionTruncated
+		return nil, false, &IPv4OptParameterProblem{
+			Pointer:  i.ErrCursor,
+			NeedICMP: true,
+		}
 	}
 
 	optionBody := i.options[:optLen]
@@ -635,7 +631,10 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, error) {
 	case IPv4OptionTimestampType:
 		if optLen < IPv4OptionTimestampHdrLength {
 			i.ErrCursor++
-			return nil, true, ErrIPv4OptMalformed
+			return nil, false, &IPv4OptParameterProblem{
+				Pointer:  i.ErrCursor,
+				NeedICMP: true,
+			}
 		}
 		retval := IPv4OptionTimestamp(optionBody)
 		return &retval, false, nil
@@ -643,7 +642,10 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, error) {
 	case IPv4OptionRecordRouteType:
 		if optLen < IPv4OptionRecordRouteHdrLength {
 			i.ErrCursor++
-			return nil, true, ErrIPv4OptMalformed
+			return nil, false, &IPv4OptParameterProblem{
+				Pointer:  i.ErrCursor,
+				NeedICMP: true,
+			}
 		}
 		retval := IPv4OptionRecordRoute(optionBody)
 		return &retval, false, nil

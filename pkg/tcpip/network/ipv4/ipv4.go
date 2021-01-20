@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package ipv4
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -780,17 +779,11 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		// TODO(gvisor.dev/issue/4586):
 		// When we add forwarding support we should use the verified options
 		// rather than just throwing them away.
-		aux, _, err := e.processIPOptions(pkt, opts, &optionUsageReceive{})
-		if err != nil {
-			switch {
-			case
-				errors.Is(err, header.ErrIPv4OptDuplicate),
-				errors.Is(err, errIPv4RecordRouteOptInvalidPointer),
-				errors.Is(err, errIPv4RecordRouteOptInvalidLength),
-				errors.Is(err, errIPv4TimestampOptInvalidLength),
-				errors.Is(err, errIPv4TimestampOptInvalidPointer),
-				errors.Is(err, errIPv4TimestampOptOverflow):
-				_ = e.protocol.returnError(&icmpReasonParamProblem{pointer: aux}, pkt)
+		if _, optProblem := e.processIPOptions(pkt, opts, &optionUsageReceive{}); optProblem != nil {
+			if optProblem.NeedICMP {
+				_ = e.protocol.returnError(&icmpReasonParamProblem{
+					pointer: optProblem.Pointer,
+				}, pkt)
 				e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 				stats.ip.MalformedPacketsReceived.Increment()
 			}
@@ -1233,16 +1226,9 @@ func (*optionUsageEcho) actions() optionActions {
 	}
 }
 
-var (
-	errIPv4TimestampOptInvalidLength  = errors.New("invalid Timestamp length")
-	errIPv4TimestampOptInvalidPointer = errors.New("invalid Timestamp pointer")
-	errIPv4TimestampOptOverflow       = errors.New("overflow in Timestamp")
-	errIPv4TimestampOptInvalidFlags   = errors.New("invalid Timestamp flags")
-)
-
 // handleTimestamp does any required processing on a Timestamp option
 // in place.
-func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Address, clock tcpip.Clock, usage optionsUsage) (uint8, error) {
+func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Address, clock tcpip.Clock, usage optionsUsage) *header.IPv4OptParameterProblem {
 	flags := tsOpt.Flags()
 	var entrySize uint8
 	switch flags {
@@ -1253,7 +1239,10 @@ func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Addres
 		header.IPv4OptionTimestampWithPredefinedIPFlag:
 		entrySize = header.IPv4OptionTimestampWithAddrSize
 	default:
-		return header.IPv4OptTSOFLWAndFLGOffset, errIPv4TimestampOptInvalidFlags
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptTSOFLWAndFLGOffset,
+			NeedICMP: true,
+		}
 	}
 
 	pointer := tsOpt.Pointer()
@@ -1261,7 +1250,10 @@ func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Addres
 	// Since the pointer is 1 based, and the header is 4 bytes long the
 	// pointer must point beyond the header therefore 4 or less is bad.
 	if pointer <= header.IPv4OptionTimestampHdrLength {
-		return header.IPv4OptTSPointerOffset, errIPv4TimestampOptInvalidPointer
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptTSPointerOffset,
+			NeedICMP: true,
+		}
 	}
 	// To simplify processing below, base further work on the array of timestamps
 	// beyond the header, rather than on the whole option. Also to aid
@@ -1295,14 +1287,17 @@ func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Addres
 		//    timestamp, but the overflow count is incremented by one.
 		if flags == header.IPv4OptionTimestampWithPredefinedIPFlag {
 			// By definition we have nothing to do.
-			return 0, nil
+			return nil
 		}
 
 		if tsOpt.IncOverflow() != 0 {
-			return 0, nil
+			return nil
 		}
 		// The overflow count is also full.
-		return header.IPv4OptTSOFLWAndFLGOffset, errIPv4TimestampOptOverflow
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptTSOFLWAndFLGOffset,
+			NeedICMP: true,
+		}
 	}
 	if nextSlot+entrySize > dataLength {
 		// The data area isn't full but there isn't room for a new entry.
@@ -1321,32 +1316,36 @@ func handleTimestamp(tsOpt header.IPv4OptionTimestamp, localAddress tcpip.Addres
 			if dataLength%entrySize != 0 {
 				// The Data section size should be a multiple of the expected
 				// timestamp entry size.
-				return header.IPv4OptionLengthOffset, errIPv4TimestampOptInvalidLength
+				return &header.IPv4OptParameterProblem{
+					Pointer:  header.IPv4OptionLengthOffset,
+					NeedICMP: false,
+				}
 			}
 			// If the size is OK, the pointer must be corrupted.
 		}
-		return header.IPv4OptTSPointerOffset, errIPv4TimestampOptInvalidPointer
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptTSPointerOffset,
+			NeedICMP: true,
+		}
 	}
 
 	if usage.actions().timestamp == optionProcess {
 		tsOpt.UpdateTimestamp(localAddress, clock)
 	}
-	return 0, nil
+	return nil
 }
-
-var (
-	errIPv4RecordRouteOptInvalidLength  = errors.New("invalid length in Record Route")
-	errIPv4RecordRouteOptInvalidPointer = errors.New("invalid pointer in Record Route")
-)
 
 // handleRecordRoute checks and processes a Record route option. It is much
 // like the timestamp type 1 option, but without timestamps. The passed in
 // address is stored in the option in the correct spot if possible.
-func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Address, usage optionsUsage) (uint8, error) {
+func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Address, usage optionsUsage) *header.IPv4OptParameterProblem {
 	optlen := rrOpt.Size()
 
 	if optlen < header.IPv4AddressSize+header.IPv4OptionRecordRouteHdrLength {
-		return header.IPv4OptionLengthOffset, errIPv4RecordRouteOptInvalidLength
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptionLengthOffset,
+			NeedICMP: true,
+		}
 	}
 
 	pointer := rrOpt.Pointer()
@@ -1356,7 +1355,10 @@ func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Ad
 	// Since the pointer is 1 based, and the header is 3 bytes long the
 	// pointer must point beyond the header therefore 3 or less is bad.
 	if pointer <= header.IPv4OptionRecordRouteHdrLength {
-		return header.IPv4OptRRPointerOffset, errIPv4RecordRouteOptInvalidPointer
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptRRPointerOffset,
+			NeedICMP: true,
+		}
 	}
 
 	// RFC 791 page 21 says
@@ -1373,7 +1375,7 @@ func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Ad
 	// of these words is a copy/paste error from the timestamp option where
 	// there are two failure reasons given.
 	if pointer > optlen {
-		return 0, nil
+		return nil
 	}
 
 	// The data area isn't full but there isn't room for a new entry.
@@ -1398,17 +1400,23 @@ func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Ad
 			//    }
 			if (optlen-header.IPv4OptionRecordRouteHdrLength)%header.IPv4AddressSize != 0 {
 				// Length is bad, not on integral number of slots.
-				return header.IPv4OptionLengthOffset, errIPv4RecordRouteOptInvalidLength
+				return &header.IPv4OptParameterProblem{
+					Pointer:  header.IPv4OptionLengthOffset,
+					NeedICMP: true,
+				}
 			}
 			// If not length, the fault must be with the pointer.
 		}
-		return header.IPv4OptRRPointerOffset, errIPv4RecordRouteOptInvalidPointer
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptRRPointerOffset,
+			NeedICMP: true,
+		}
 	}
 	if usage.actions().recordRoute == optionVerify {
-		return 0, nil
+		return nil
 	}
 	rrOpt.StoreAddress(localAddress)
-	return 0, nil
+	return nil
 }
 
 // processIPOptions parses the IPv4 options and produces a new set of options
@@ -1419,7 +1427,7 @@ func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Ad
 // - The location of an error if there was one (or 0 if no error)
 // - If there is an error, information as to what it was was.
 // - The replacement option set.
-func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Options, usage optionsUsage) (uint8, header.IPv4Options, error) {
+func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Options, usage optionsUsage) (header.IPv4Options, *header.IPv4OptParameterProblem) {
 	stats := e.stats.ip
 	opts := header.IPv4Options(orig)
 	optIter := opts.MakeIterator()
@@ -1439,15 +1447,17 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 		h := header.IPv4(pkt.NetworkHeader().View())
 		dstAddr := h.DestinationAddress()
 		if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(dstAddr) {
-			return 0 /* errCursor */, nil, header.ErrIPv4OptionAddress
+			return nil, &header.IPv4OptParameterProblem{
+				NeedICMP: false,
+			}
 		}
 		localAddress = dstAddr
 	}
 
 	for {
-		option, done, err := optIter.Next()
-		if done || err != nil {
-			return optIter.ErrCursor, optIter.Finalize(), err
+		option, done, optProblem := optIter.Next()
+		if done || optProblem != nil {
+			return optIter.Finalize(), optProblem
 		}
 		optType := option.Type()
 		if optType == header.IPv4OptionNOPType {
@@ -1456,12 +1466,15 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 		}
 		if optType == header.IPv4OptionListEndType {
 			optIter.PushNOPOrEnd(optType)
-			return 0 /* errCursor */, optIter.Finalize(), nil /* err */
+			return optIter.Finalize(), nil
 		}
 
 		// check for repeating options (multiple NOPs are OK)
 		if seenOptions[optType] {
-			return optIter.ErrCursor, nil, header.ErrIPv4OptDuplicate
+			return nil, &header.IPv4OptParameterProblem{
+				Pointer:  optIter.ErrCursor,
+				NeedICMP: true,
+			}
 		}
 		seenOptions[optType] = true
 
@@ -1473,9 +1486,9 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 				clock := e.protocol.stack.Clock()
 				newBuffer := optIter.RemainingBuffer()[:len(*option)]
 				_ = copy(newBuffer, option.Contents())
-				offset, err := handleTimestamp(header.IPv4OptionTimestamp(newBuffer), localAddress, clock, usage)
-				if err != nil {
-					return optIter.ErrCursor + offset, nil, err
+				if optProblem := handleTimestamp(header.IPv4OptionTimestamp(newBuffer), localAddress, clock, usage); optProblem != nil {
+					optProblem.Pointer += optIter.ErrCursor
+					return nil, optProblem
 				}
 				optIter.ConsumeBuffer(optLen)
 			}
@@ -1485,9 +1498,9 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 			if usage.actions().recordRoute != optionRemove {
 				newBuffer := optIter.RemainingBuffer()[:len(*option)]
 				_ = copy(newBuffer, option.Contents())
-				offset, err := handleRecordRoute(header.IPv4OptionRecordRoute(newBuffer), localAddress, usage)
-				if err != nil {
-					return optIter.ErrCursor + offset, nil, err
+				if optProblem := handleRecordRoute(header.IPv4OptionRecordRoute(newBuffer), localAddress, usage); optProblem != nil {
+					optProblem.Pointer += optIter.ErrCursor
+					return nil, optProblem
 				}
 				optIter.ConsumeBuffer(optLen)
 			}
