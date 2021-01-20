@@ -147,7 +147,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), remoteAddr, remoteLinkAddr)
+			e.linkAddrCache.AddLinkAddress(remoteAddr, remoteLinkAddr)
 		} else {
 			e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e.protocol)
 		}
@@ -191,7 +191,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), addr, linkAddr)
+			e.linkAddrCache.AddLinkAddress(addr, linkAddr)
 			return
 		}
 

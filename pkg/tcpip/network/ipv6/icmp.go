@@ -290,7 +290,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		} else if e.nud != nil {
 			e.nud.HandleProbe(srcAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
 		} else {
-			e.linkAddrCache.AddLinkAddress(e.nic.ID(), srcAddr, sourceLinkAddr)
+			e.linkAddrCache.AddLinkAddress(srcAddr, sourceLinkAddr)
 		}
 
 		// As per RFC 4861 section 7.1.1:
@@ -445,7 +445,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		// address cache with the link address for the target of the message.
 		if e.nud == nil {
 			if len(targetLinkAddr) != 0 {
-				e.linkAddrCache.AddLinkAddress(e.nic.ID(), targetAddr, targetLinkAddr)
+				e.linkAddrCache.AddLinkAddress(targetAddr, targetLinkAddr)
 			}
 			return
 		}
