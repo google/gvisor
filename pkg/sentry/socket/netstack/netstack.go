@@ -565,7 +565,7 @@ func (s *socketOpsCommon) checkFamily(family uint16, exact bool) *syserr.Error {
 			return nil
 		}
 	}
-	return syserr.ErrInvalidArgument
+	return syserr.ErrAddressFamilyNotSupported
 }
 
 // mapFamily maps the AF_INET ANY address to the IPv4-mapped IPv6 ANY if the
