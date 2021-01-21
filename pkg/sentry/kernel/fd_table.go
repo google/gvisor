@@ -153,9 +153,8 @@ func (f *FDTable) drop(ctx context.Context, file *fs.File) {
 
 // dropVFS2 drops the table reference.
 func (f *FDTable) dropVFS2(ctx context.Context, file *vfs.FileDescription) {
-	// Release any POSIX lock possibly held by the FDTable. Range {0, 0} means the
-	// entire file.
-	err := file.UnlockPOSIX(ctx, f, 0, 0, linux.SEEK_SET)
+	// Release any POSIX lock possibly held by the FDTable.
+	err := file.UnlockPOSIX(ctx, f, lock.LockRange{0, lock.LockEOF})
 	if err != nil && err != syserror.ENOLCK {
 		panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
 	}

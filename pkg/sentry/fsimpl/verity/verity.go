@@ -660,7 +660,6 @@ func (d *dentry) readlink(ctx context.Context) (string, error) {
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
-	vfs.LockFD
 
 	// d is the corresponding dentry to the fileDescription.
 	d *dentry
@@ -1104,14 +1103,24 @@ func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, op
 	return 0, syserror.EROFS
 }
 
+// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
+func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, block fslock.Blocker) error {
+	return fd.lowerFD.LockBSD(ctx, t, block)
+}
+
+// UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
+func (fd *fileDescription) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
+	return fd.lowerFD.UnlockBSD(ctx)
+}
+
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
-	return fd.lowerFD.LockPOSIX(ctx, uid, t, start, length, whence, block)
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+	return fd.lowerFD.LockPOSIX(ctx, uid, t, r, block)
 }
 
 // UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
-func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
-	return fd.lowerFD.UnlockPOSIX(ctx, uid, start, length, whence)
+func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
+	return fd.lowerFD.UnlockPOSIX(ctx, uid, r)
 }
 
 // FileReadWriteSeeker is a helper struct to pass a vfs.FileDescription as

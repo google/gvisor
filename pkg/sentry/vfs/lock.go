@@ -61,12 +61,8 @@ func (fl *FileLocks) UnlockBSD(uid fslock.UniqueID) {
 }
 
 // LockPOSIX tries to acquire a POSIX-style lock on a file region.
-func (fl *FileLocks) LockPOSIX(ctx context.Context, fd *FileDescription, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
-	rng, err := computeRange(ctx, fd, start, length, whence)
-	if err != nil {
-		return err
-	}
-	if fl.posix.LockRegion(uid, t, rng, block) {
+func (fl *FileLocks) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+	if fl.posix.LockRegion(uid, t, r, block) {
 		return nil
 	}
 
@@ -82,12 +78,8 @@ func (fl *FileLocks) LockPOSIX(ctx context.Context, fd *FileDescription, uid fsl
 //
 // This operation is always successful, even if there did not exist a lock on
 // the requested region held by uid in the first place.
-func (fl *FileLocks) UnlockPOSIX(ctx context.Context, fd *FileDescription, uid fslock.UniqueID, start, length uint64, whence int16) error {
-	rng, err := computeRange(ctx, fd, start, length, whence)
-	if err != nil {
-		return err
-	}
-	fl.posix.UnlockRegion(uid, rng)
+func (fl *FileLocks) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
+	fl.posix.UnlockRegion(uid, r)
 	return nil
 }
 
