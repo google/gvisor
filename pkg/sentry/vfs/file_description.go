@@ -454,10 +454,10 @@ type FileDescriptionImpl interface {
 	UnlockBSD(ctx context.Context, uid lock.UniqueID) error
 
 	// LockPOSIX tries to acquire a POSIX-style advisory file lock.
-	LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, start, length uint64, whence int16, block lock.Blocker) error
+	LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, r lock.LockRange, block lock.Blocker) error
 
 	// UnlockPOSIX releases a POSIX-style advisory file lock.
-	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, start, length uint64, whence int16) error
+	UnlockPOSIX(ctx context.Context, uid lock.UniqueID, ComputeLockRange lock.LockRange) error
 }
 
 // Dirent holds the information contained in struct linux_dirent64.
@@ -802,13 +802,40 @@ func (fd *FileDescription) UnlockBSD(ctx context.Context) error {
 }
 
 // LockPOSIX locks a POSIX-style file range lock.
-func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, start, end uint64, whence int16, block lock.Blocker) error {
-	return fd.impl.LockPOSIX(ctx, uid, t, start, end, whence, block)
+func (fd *FileDescription) LockPOSIX(ctx context.Context, uid lock.UniqueID, t lock.LockType, r lock.LockRange, block lock.Blocker) error {
+	return fd.impl.LockPOSIX(ctx, uid, t, r, block)
 }
 
 // UnlockPOSIX unlocks a POSIX-style file range lock.
-func (fd *FileDescription) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, start, end uint64, whence int16) error {
-	return fd.impl.UnlockPOSIX(ctx, uid, start, end, whence)
+func (fd *FileDescription) UnlockPOSIX(ctx context.Context, uid lock.UniqueID, r lock.LockRange) error {
+	return fd.impl.UnlockPOSIX(ctx, uid, r)
+}
+
+// ComputeLockRange computes the range of a file lock based on the given values.
+func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, length uint64, whence int16) (lock.LockRange, error) {
+	var off int64
+	switch whence {
+	case linux.SEEK_SET:
+		off = 0
+	case linux.SEEK_CUR:
+		// Note that Linux does not hold any mutexes while retrieving the file
+		// offset, see fs/locks.c:flock_to_posix_lock and fs/locks.c:fcntl_setlk.
+		curOff, err := fd.Seek(ctx, 0, linux.SEEK_CUR)
+		if err != nil {
+			return lock.LockRange{}, err
+		}
+		off = curOff
+	case linux.SEEK_END:
+		stat, err := fd.Stat(ctx, StatOptions{Mask: linux.STATX_SIZE})
+		if err != nil {
+			return lock.LockRange{}, err
+		}
+		off = int64(stat.Size)
+	default:
+		return lock.LockRange{}, syserror.EINVAL
+	}
+
+	return lock.ComputeRange(int64(start), int64(length), off)
 }
 
 // A FileAsync sends signals to its owner when w is ready for IO. This is only

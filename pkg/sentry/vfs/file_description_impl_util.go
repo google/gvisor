@@ -429,6 +429,16 @@ func (fd *LockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 	return nil
 }
 
+// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+func (fd *LockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+	return fd.locks.LockPOSIX(ctx, uid, t, r, block)
+}
+
+// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+func (fd *LockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
+	return fd.locks.UnlockPOSIX(ctx, uid, r)
+}
+
 // NoLockFD implements Lock*/Unlock* portion of FileDescriptionImpl interface
 // returning ENOLCK.
 //
@@ -446,11 +456,11 @@ func (NoLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, start, length uint64, whence int16, block fslock.Blocker) error {
+func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
 	return syserror.ENOLCK
 }
 
 // UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
-func (NoLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, start, length uint64, whence int16) error {
+func (NoLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
 	return syserror.ENOLCK
 }
