@@ -156,19 +156,19 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
 	}
 
-	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.ReadLock, 0, 1, linux.SEEK_SET, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if err := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, 1, 2, linux.SEEK_SET, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, lock.LockRange{Start: 1, End: 2}, nil); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.WriteLock, 0, 1, linux.SEEK_SET, nil); err != nil {
+	if err := fd.Impl().LockPOSIX(ctx, uid1, lock.WriteLock, lock.LockRange{Start: 0, End: 1}, nil); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if got, want := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, 0, 1, linux.SEEK_SET, nil), syserror.ErrWouldBlock; got != want {
+	if got, want := fd.Impl().LockPOSIX(ctx, uid2, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil), syserror.ErrWouldBlock; got != want {
 		t.Fatalf("fd.Impl().LockPOSIX failed: got = %v, want = %v", got, want)
 	}
-	if err := fd.Impl().UnlockPOSIX(ctx, uid1, 0, 1, linux.SEEK_SET); err != nil {
+	if err := fd.Impl().UnlockPOSIX(ctx, uid1, lock.LockRange{Start: 0, End: 1}); err != nil {
 		t.Fatalf("fd.Impl().UnlockPOSIX failed: err = %v", err)
 	}
 }

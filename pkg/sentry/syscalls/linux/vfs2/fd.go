@@ -305,21 +305,26 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 		blocker = t
 	}
 
+	r, err := file.ComputeLockRange(t, uint64(flock.Start), uint64(flock.Len), flock.Whence)
+	if err != nil {
+		return err
+	}
+
 	switch flock.Type {
 	case linux.F_RDLCK:
 		if !file.IsReadable() {
 			return syserror.EBADF
 		}
-		return file.LockPOSIX(t, t.FDTable(), lock.ReadLock, uint64(flock.Start), uint64(flock.Len), flock.Whence, blocker)
+		return file.LockPOSIX(t, t.FDTable(), lock.ReadLock, r, blocker)
 
 	case linux.F_WRLCK:
 		if !file.IsWritable() {
 			return syserror.EBADF
 		}
-		return file.LockPOSIX(t, t.FDTable(), lock.WriteLock, uint64(flock.Start), uint64(flock.Len), flock.Whence, blocker)
+		return file.LockPOSIX(t, t.FDTable(), lock.WriteLock, r, blocker)
 
 	case linux.F_UNLCK:
-		return file.UnlockPOSIX(t, t.FDTable(), uint64(flock.Start), uint64(flock.Len), flock.Whence)
+		return file.UnlockPOSIX(t, t.FDTable(), r)
 
 	default:
 		return syserror.EINVAL
