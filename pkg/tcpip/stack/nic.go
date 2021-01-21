@@ -344,6 +344,9 @@ func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
+	pkt.EgressRoute = r
+	pkt.GSOOptions = gso
+	pkt.NetworkProtocolNumber = protocol
 	if err := n.LinkEndpoint.WritePacket(r, gso, protocol, pkt); err != nil {
 		return err
 	}
@@ -357,7 +360,14 @@ func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/4458): Queue packets whie link address resolution
 	// is being peformed like WritePacket.
-	writtenPackets, err := n.LinkEndpoint.WritePackets(r.Fields(), gso, pkts, protocol)
+	routeInfo := r.Fields()
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+		pkt.EgressRoute = routeInfo
+		pkt.GSOOptions = gso
+		pkt.NetworkProtocolNumber = protocol
+	}
+
+	writtenPackets, err := n.LinkEndpoint.WritePackets(routeInfo, gso, pkts, protocol)
 	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
