@@ -362,7 +362,7 @@ TEST_P(UnixSocketPairCmsgTest, BasicThreeFDPassTruncationMsgCtrunc) {
 
 // BasicFDPassUnalignedRecv starts off by sending a single FD just like
 // BasicFDPass. The difference is that when calling recvmsg, the length of the
-// receive data is only aligned on a 4 byte boundry instead of the normal 8.
+// receive data is only aligned on a 4 byte boundary instead of the normal 8.
 TEST_P(UnixSocketPairCmsgTest, BasicFDPassUnalignedRecv) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
