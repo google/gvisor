@@ -17,7 +17,6 @@ package mm
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
@@ -165,12 +164,12 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 	}
 	if s != "" {
 		// Per linux, we pad until the 74th character.
-		if pad := 73 - lineLen; pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
+		for pad := 73 - lineLen; pad > 0; pad-- {
+			b.WriteByte(' ')
 		}
 		b.WriteString(s)
 	}
-	b.WriteString("\n")
+	b.WriteByte('\n')
 }
 
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
