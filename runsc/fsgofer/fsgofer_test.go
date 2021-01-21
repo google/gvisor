@@ -32,6 +32,9 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// Nodoby is the standard UID/GID for the nobody user/group.
+const nobody = 65534
+
 var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
 
 var (
@@ -281,6 +284,92 @@ func TestCreate(t *testing.T) {
 	})
 }
 
+func checkIDs(f p9.File, uid, gid int) error {
+	_, _, stat, err := f.GetAttr(p9.AttrMask{UID: true, GID: true})
+	if err != nil {
+		return fmt.Errorf("GetAttr() failed, err: %v", err)
+	}
+	if want := p9.UID(uid); stat.UID != want {
+		return fmt.Errorf("Wrong UID, want: %v, got: %v", want, stat.UID)
+	}
+	if want := p9.GID(gid); stat.GID != want {
+		return fmt.Errorf("Wrong GID, want: %v, got: %v", want, stat.GID)
+	}
+	return nil
+}
+
+// TestCreateSetGID checks files/dirs/symlinks are created with the proper
+// owner when the parent directory has setgid set,
+func TestCreateSetGID(t *testing.T) {
+	if !specutils.HasCapabilities(capability.CAP_CHOWN) {
+		t.Skipf("Test requires CAP_CHOWN")
+	}
+
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+		// Change group and set setgid to the parent dir.
+		if err := unix.Chown(s.file.hostPath, os.Getuid(), nobody); err != nil {
+			t.Fatalf("Chown() failed: %v", err)
+		}
+		if err := unix.Chmod(s.file.hostPath, 02777); err != nil {
+			t.Fatalf("Chmod() failed: %v", err)
+		}
+
+		t.Run("create", func(t *testing.T) {
+			_, l, _, _, err := s.file.Create("test", p9.ReadOnly, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
+			if err != nil {
+				t.Fatalf("WriteAt() failed: %v", err)
+			}
+			defer l.Close()
+			if err := checkIDs(l, os.Getuid(), os.Getgid()); err != nil {
+				t.Error(err)
+			}
+		})
+
+		t.Run("mkdir", func(t *testing.T) {
+			_, err := s.file.Mkdir("test-dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
+			if err != nil {
+				t.Fatalf("WriteAt() failed: %v", err)
+			}
+			_, l, err := s.file.Walk([]string{"test-dir"})
+			if err != nil {
+				t.Fatalf("Walk() failed: %v", err)
+			}
+			defer l.Close()
+			if err := checkIDs(l, os.Getuid(), os.Getgid()); err != nil {
+				t.Error(err)
+			}
+		})
+
+		t.Run("symlink", func(t *testing.T) {
+			if _, err := s.file.Symlink("/some/target", "symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
+				t.Fatalf("Symlink() failed: %v", err)
+			}
+			_, l, err := s.file.Walk([]string{"symlink"})
+			if err != nil {
+				t.Fatalf("Walk() failed, err: %v", err)
+			}
+			defer l.Close()
+			if err := checkIDs(l, os.Getuid(), os.Getgid()); err != nil {
+				t.Error(err)
+			}
+		})
+
+		t.Run("mknod", func(t *testing.T) {
+			if _, err := s.file.Mknod("nod", p9.ModeRegular|0777, 0, 0, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
+				t.Fatalf("Mknod() failed: %v", err)
+			}
+			_, l, err := s.file.Walk([]string{"nod"})
+			if err != nil {
+				t.Fatalf("Walk() failed, err: %v", err)
+			}
+			defer l.Close()
+			if err := checkIDs(l, os.Getuid(), os.Getgid()); err != nil {
+				t.Error(err)
+			}
+		})
+	})
+}
+
 // TestReadWriteDup tests that a file opened in any mode can be dup'ed and
 // reopened in any other mode.
 func TestReadWriteDup(t *testing.T) {
@@ -458,7 +547,7 @@ func TestSetAttrTime(t *testing.T) {
 }
 
 func TestSetAttrOwner(t *testing.T) {
-	if os.Getuid() != 0 {
+	if !specutils.HasCapabilities(capability.CAP_CHOWN) {
 		t.Skipf("SetAttr(owner) test requires CAP_CHOWN, running as %d", os.Getuid())
 	}
 
@@ -477,7 +566,7 @@ func TestSetAttrOwner(t *testing.T) {
 }
 
 func TestLink(t *testing.T) {
-	if os.Getuid() != 0 {
+	if !specutils.HasCapabilities(capability.CAP_DAC_READ_SEARCH) {
 		t.Skipf("Link test requires CAP_DAC_READ_SEARCH, running as %d", os.Getuid())
 	}
 	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
@@ -995,7 +1084,6 @@ func BenchmarkCreateDiffOwner(b *testing.B) {
 	files := make([]p9.File, 0, 500)
 	fds := make([]*fd.FD, 0, 500)
 	gid := p9.GID(os.Getgid())
-	const nobody = 65534
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
