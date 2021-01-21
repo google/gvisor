@@ -441,30 +441,30 @@ func (e *neighborEntryEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
-func (l *PacketBufferList) StateTypeName() string {
+func (p *PacketBufferList) StateTypeName() string {
 	return "pkg/tcpip/stack.PacketBufferList"
 }
 
-func (l *PacketBufferList) StateFields() []string {
+func (p *PacketBufferList) StateFields() []string {
 	return []string{
 		"head",
 		"tail",
 	}
 }
 
-func (l *PacketBufferList) beforeSave() {}
+func (p *PacketBufferList) beforeSave() {}
 
-func (l *PacketBufferList) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.head)
-	stateSinkObject.Save(1, &l.tail)
+func (p *PacketBufferList) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.head)
+	stateSinkObject.Save(1, &p.tail)
 }
 
-func (l *PacketBufferList) afterLoad() {}
+func (p *PacketBufferList) afterLoad() {}
 
-func (l *PacketBufferList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.head)
-	stateSourceObject.Load(1, &l.tail)
+func (p *PacketBufferList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.head)
+	stateSourceObject.Load(1, &p.tail)
 }
 
 func (e *PacketBufferEntry) StateTypeName() string {
