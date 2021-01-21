@@ -393,7 +393,7 @@ func TestProcSelf(t *testing.T) {
 		t.Fatalf("CreateTask(): %v", err)
 	}
 
-	collector := s.WithTemporaryContext(task).ListDirents(&vfs.PathOperation{
+	collector := s.WithTemporaryContext(task.AsyncContext()).ListDirents(&vfs.PathOperation{
 		Root:               s.Root,
 		Start:              s.Root,
 		Path:               fspath.Parse("/proc/self/"),
@@ -491,11 +491,11 @@ func TestTree(t *testing.T) {
 			t.Fatalf("CreateTask(): %v", err)
 		}
 		// Add file to populate /proc/[pid]/fd and fdinfo directories.
-		task.FDTable().NewFDVFS2(task, 0, file, kernel.FDFlags{})
+		task.FDTable().NewFDVFS2(task.AsyncContext(), 0, file, kernel.FDFlags{})
 		tasks = append(tasks, task)
 	}
 
-	ctx := tasks[0]
+	ctx := tasks[0].AsyncContext()
 	fd, err := s.VFS.OpenAt(
 		ctx,
 		auth.CredentialsFromContext(s.Ctx),
