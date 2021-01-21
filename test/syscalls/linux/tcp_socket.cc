@@ -2008,6 +2008,29 @@ TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
   EXPECT_EQ(got, 0);
 }
 
+// Tests that connecting to an unspecified address results in ECONNREFUSED.
+TEST_P(SimpleTcpSocketTest, ConnectUnspecifiedAddress) {
+  sockaddr_storage addr;
+  socklen_t addrlen = sizeof(addr);
+  memset(&addr, 0, addrlen);
+  addr.ss_family = GetParam();
+  auto do_connect = [&addr, addrlen]() {
+    FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(addr.ss_family, SOCK_STREAM, IPPROTO_TCP));
+    ASSERT_THAT(
+        RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                            addrlen),
+        SyscallFailsWithErrno(ECONNREFUSED));
+  };
+  do_connect();
+  // Test the v4 mapped address as well.
+  if (GetParam() == AF_INET6) {
+    auto sin6 = reinterpret_cast<struct sockaddr_in6*>(&addr);
+    sin6->sin6_addr.s6_addr[10] = sin6->sin6_addr.s6_addr[11] = 0xff;
+    do_connect();
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
