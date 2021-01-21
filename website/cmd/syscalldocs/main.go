@@ -52,6 +52,7 @@ layout: docs
 category: Compatibility
 weight: 50
 permalink: /docs/user_guide/compatibility/{{.OS}}/{{.Arch}}/
+include_in_menu: True
 ---
 
 This table is a reference of {{.OS}} syscalls for the {{.Arch}} architecture and
