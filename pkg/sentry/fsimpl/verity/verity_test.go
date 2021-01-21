@@ -66,7 +66,7 @@ func dentryFromFD(t *testing.T, fd *vfs.FileDescription) *dentry {
 // newVerityRoot creates a new verity mount, and returns the root. The
 // underlying file system is tmpfs. If the error is not nil, then cleanup
 // should be called when the root is no longer needed.
-func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem, vfs.VirtualDentry, *kernel.Task, error) {
+func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem, vfs.VirtualDentry, context.Context, error) {
 	t.Helper()
 	k, err := testutil.Boot()
 	if err != nil {
@@ -119,7 +119,7 @@ func newVerityRoot(t *testing.T, hashAlg HashAlgorithm) (*vfs.VirtualFilesystem,
 		root.DecRef(ctx)
 		mntns.DecRef(ctx)
 	})
-	return vfsObj, root, task, nil
+	return vfsObj, root, task.AsyncContext(), nil
 }
 
 // openVerityAt opens a verity file.
