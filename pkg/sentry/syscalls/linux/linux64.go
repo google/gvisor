@@ -503,8 +503,8 @@ var ARM64 = &kernel.SyscallTable{
 		72:  syscalls.Supported("pselect", Pselect),
 		73:  syscalls.Supported("ppoll", Ppoll),
 		74:  syscalls.PartiallySupported("signalfd4", Signalfd4, "Semantics are slightly different.", []string{"gvisor.dev/issue/139"}),
-		75:  syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}),              // TODO(b/29354098)
-		76:  syscalls.PartiallySupported("splice", Splice, "Stub implementation.", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
+		75:  syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
+		76:  syscalls.Supported("splice", Splice),
 		77:  syscalls.Supported("tee", Tee),
 		78:  syscalls.Supported("readlinkat", Readlinkat),
 		79:  syscalls.Supported("fstatat", Fstatat),
