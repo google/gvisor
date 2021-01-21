@@ -358,16 +358,43 @@ func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 
 // WritePackets implements NetworkLinkEndpoint.
 func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	// TODO(gvisor.dev/issue/4458): Queue packets whie link address resolution
-	// is being peformed like WritePacket.
-	routeInfo := r.Fields()
+	// As per relevant RFCs, we should queue packets while we wait for link
+	// resolution to complete.
+	//
+	// RFC 1122 section 2.3.2.2 (for IPv4):
+	//   The link layer SHOULD save (rather than discard) at least
+	//   one (the latest) packet of each set of packets destined to
+	//   the same unresolved IP address, and transmit the saved
+	//   packet when the address has been resolved.
+	//
+	// RFC 4861 section 7.2.2 (for IPv6):
+	//   While waiting for address resolution to complete, the sender MUST, for
+	//   each neighbor, retain a small queue of packets waiting for address
+	//   resolution to complete. The queue MUST hold at least one packet, and MAY
+	//   contain more. However, the number of queued packets per neighbor SHOULD
+	//   be limited to some small value. When a queue overflows, the new arrival
+	//   SHOULD replace the oldest entry. Once address resolution completes, the
+	//   node transmits any queued packets.
+	if ch, err := r.Resolve(nil); err != nil {
+		if err == tcpip.ErrWouldBlock {
+			r.Acquire()
+			n.linkResQueue.enqueue(ch, r, protocol, &pkts)
+			return pkts.Len(), nil
+		}
+		return 0, err
+	}
+
+	return n.writePackets(r.Fields(), gso, protocol, pkts)
+}
+
+func (n *NIC) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, *tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		pkt.EgressRoute = routeInfo
+		pkt.EgressRoute = r
 		pkt.GSOOptions = gso
 		pkt.NetworkProtocolNumber = protocol
 	}
 
-	writtenPackets, err := n.LinkEndpoint.WritePackets(routeInfo, gso, pkts, protocol)
+	writtenPackets, err := n.LinkEndpoint.WritePackets(r, gso, pkts, protocol)
 	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {

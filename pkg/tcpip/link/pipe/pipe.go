@@ -45,12 +45,7 @@ type Endpoint struct {
 	linkAddr   tcpip.LinkAddress
 }
 
-// WritePacket implements stack.LinkEndpoint.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
-	if !e.linked.IsAttached() {
-		return nil
-	}
-
+func (e *Endpoint) deliverPackets(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkts stack.PacketBufferList) {
 	// Note that the local address from the perspective of this endpoint is the
 	// remote address from the perspective of the other end of the pipe
 	// (e.linked). Similarly, the remote address from the perspective of this
@@ -70,16 +65,33 @@ func (e *Endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, proto tcpip.Netw
 	//
 	// TODO(gvisor.dev/issue/5289): don't use a new goroutine once we support send
 	// and receive queues.
-	go e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
-	}))
+	go func() {
+		for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+			e.linked.dispatcher.DeliverNetworkPacket(r.LocalLinkAddress /* remote */, r.RemoteLinkAddress /* local */, proto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: buffer.NewVectorisedView(pkt.Size(), pkt.Views()),
+			}))
+		}
+	}()
+}
+
+// WritePacket implements stack.LinkEndpoint.
+func (e *Endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+	if e.linked.IsAttached() {
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		e.deliverPackets(r, proto, pkts)
+	}
 
 	return nil
 }
 
 // WritePackets implements stack.LinkEndpoint.
-func (*Endpoint) WritePackets(stack.RouteInfo, *stack.GSO, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	panic("not implemented")
+func (e *Endpoint) WritePackets(r stack.RouteInfo, _ *stack.GSO, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	if e.linked.IsAttached() {
+		e.deliverPackets(r, proto, pkts)
+	}
+
+	return pkts.Len(), nil
 }
 
 // Attach implements stack.LinkEndpoint.
