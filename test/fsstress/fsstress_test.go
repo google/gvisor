@@ -41,7 +41,7 @@ func fsstress(t *testing.T, dir string) {
 		image      = "basic/fsstress"
 	)
 	seed := strconv.FormatUint(uint64(rand.Uint32()), 10)
-	args := []string{"-d", dir, "-n", operations, "-p", processes, "-seed", seed, "-X"}
+	args := []string{"-d", dir, "-n", operations, "-p", processes, "-s", seed, "-X"}
 	t.Logf("Repro: docker run --rm --runtime=runsc %s %s", image, strings.Join(args, ""))
 	out, err := d.Run(ctx, dockerutil.RunOpts{Image: image}, args...)
 	if err != nil {
