@@ -45,6 +45,14 @@ steps:
       - make BAZEL_OPTIONS=--config=cross-aarch64 artifacts/aarch64
       - make release
 
+  # Images tests.
+  - <<: *common
+    label: ":docker: Images (x86_64)"
+    command: make ARCH=x86_64 load-all-images
+  - <<: *common
+    label: ":docker: Images (aarch64)"
+    command: make ARCH=aarch64 load-all-images
+
   # Basic unit tests.
   - <<: *common
     label: ":test_tube: Unit tests"
