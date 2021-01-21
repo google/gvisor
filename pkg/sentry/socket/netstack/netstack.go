@@ -1814,10 +1814,6 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		var v linux.Linger
 		binary.Unmarshal(optVal[:linux.SizeOfLinger], usermem.ByteOrder, &v)
 
-		if v != (linux.Linger{}) {
-			socket.SetSockOptEmitUnimplementedEvent(t, name)
-		}
-
 		ep.SocketOptions().SetLinger(tcpip.LingerOption{
 			Enabled: v.OnOff != 0,
 			Timeout: time.Second * time.Duration(v.Linger),
