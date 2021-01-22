@@ -315,23 +315,42 @@ func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 	r.mu.remoteLinkAddress = addr
 }
 
-// ResolvedFields is like Fields but also attempts to resolve the remote link
-// address if it is not yet known.
+// ResolvedFieldsResult is the result of a route resolution attempt.
+type ResolvedFieldsResult struct {
+	RouteInfo RouteInfo
+	Success   bool
+}
+
+// ResolvedFields attempts to resolve the remote link address if it is not
+// known.
 //
-// If address resolution is required, returns tcpip.ErrWouldBlock and a
-// notification channel for the caller to block on. The channel will be readable
-// once address resolution is complete (successful or not). If a callback is
-// provided, it will be called when address resolution is complete, regardless
-// of success or failure before the notification channel is readable.
+// If a callback is provided, it will be called before ResolvedFields returns
+// when address resolution is not required. If address resolution is required,
+// the callback will be called once address resolution is complete, regardless
+// of success or failure.
 //
 // Note, the route will not cache the remote link address when address
 // resolution completes.
-func (r *Route) ResolvedFields(afterResolve func()) (RouteInfo, <-chan struct{}, *tcpip.Error) {
+func (r *Route) ResolvedFields(afterResolve func(ResolvedFieldsResult)) *tcpip.Error {
+	_, _, err := r.resolvedFields(afterResolve)
+	return err
+}
+
+// resolvedFields is like ResolvedFields but also returns a notification channel
+// when address resolution is required. This channel will become readable once
+// address resolution is complete.
+//
+// The route's fields will also be returned, regardless of whether address
+// resolution is required or not.
+func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteInfo, <-chan struct{}, *tcpip.Error) {
 	r.mu.RLock()
 	fields := r.fieldsLocked()
 	resolutionRequired := r.isResolutionRequiredRLocked()
 	r.mu.RUnlock()
 	if !resolutionRequired {
+		if afterResolve != nil {
+			afterResolve(ResolvedFieldsResult{RouteInfo: fields, Success: true})
+		}
 		return fields, nil, nil
 	}
 
@@ -347,9 +366,14 @@ func (r *Route) ResolvedFields(afterResolve func()) (RouteInfo, <-chan struct{},
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
 
-	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, func(LinkResolutionResult) {
+	afterResolveFields := fields
+	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, func(r LinkResolutionResult) {
 		if afterResolve != nil {
-			afterResolve()
+			if r.Success {
+				afterResolveFields.RemoteLinkAddress = r.LinkAddress
+			}
+
+			afterResolve(ResolvedFieldsResult{RouteInfo: afterResolveFields, Success: r.Success})
 		}
 	})
 	if err == nil {
