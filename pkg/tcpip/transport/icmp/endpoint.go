@@ -313,11 +313,12 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 		route = r
 	}
 
-	v, err := p.FullPayload()
-	if err != nil {
-		return 0, err
+	v := make([]byte, p.Len())
+	if _, err := io.ReadFull(p, v); err != nil {
+		return 0, tcpip.ErrBadBuffer
 	}
 
+	var err *tcpip.Error
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		err = send4(route, e.ID.LocalPort, v, e.ttl, e.owner)

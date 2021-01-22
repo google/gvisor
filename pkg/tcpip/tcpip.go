@@ -29,6 +29,7 @@
 package tcpip
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -471,30 +472,15 @@ type FullAddress struct {
 // This interface allows the endpoint to request the amount of data it needs
 // based on internal buffers without exposing them.
 type Payloader interface {
-	// FullPayload returns all available bytes.
-	FullPayload() ([]byte, *Error)
+	io.Reader
 
-	// Payload returns a slice containing at most size bytes.
-	Payload(size int) ([]byte, *Error)
+	// Len returns the number of bytes of the unread portion of the
+	// Reader.
+	Len() int
 }
 
-// SlicePayload implements Payloader for slices.
-//
-// This is typically used for tests.
-type SlicePayload []byte
-
-// FullPayload implements Payloader.FullPayload.
-func (s SlicePayload) FullPayload() ([]byte, *Error) {
-	return s, nil
-}
-
-// Payload implements Payloader.Payload.
-func (s SlicePayload) Payload(size int) ([]byte, *Error) {
-	if size > len(s) {
-		size = len(s)
-	}
-	return s[:size], nil
-}
+var _ Payloader = (*bytes.Buffer)(nil)
+var _ Payloader = (*bytes.Reader)(nil)
 
 var _ io.Writer = (*SliceWriter)(nil)
 
