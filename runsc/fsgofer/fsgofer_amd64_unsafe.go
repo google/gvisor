@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
@@ -39,7 +38,7 @@ func statAt(dirFd int, name string) (unix.Stat_t, error) {
 		uintptr(dirFd),
 		uintptr(namePtr),
 		uintptr(statPtr),
-		linux.AT_SYMLINK_NOFOLLOW,
+		unix.AT_SYMLINK_NOFOLLOW,
 		0,
 		0); errno != 0 {
 
