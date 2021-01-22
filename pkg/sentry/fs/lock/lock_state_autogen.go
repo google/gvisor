@@ -6,6 +6,29 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (o *OwnerInfo) StateTypeName() string {
+	return "pkg/sentry/fs/lock.OwnerInfo"
+}
+
+func (o *OwnerInfo) StateFields() []string {
+	return []string{
+		"PID",
+	}
+}
+
+func (o *OwnerInfo) beforeSave() {}
+
+func (o *OwnerInfo) StateSave(stateSinkObject state.Sink) {
+	o.beforeSave()
+	stateSinkObject.Save(0, &o.PID)
+}
+
+func (o *OwnerInfo) afterLoad() {}
+
+func (o *OwnerInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &o.PID)
+}
+
 func (l *Lock) StateTypeName() string {
 	return "pkg/sentry/fs/lock.Lock"
 }
@@ -14,6 +37,7 @@ func (l *Lock) StateFields() []string {
 	return []string{
 		"Readers",
 		"Writer",
+		"WriterInfo",
 	}
 }
 
@@ -23,6 +47,7 @@ func (l *Lock) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Readers)
 	stateSinkObject.Save(1, &l.Writer)
+	stateSinkObject.Save(2, &l.WriterInfo)
 }
 
 func (l *Lock) afterLoad() {}
@@ -30,6 +55,7 @@ func (l *Lock) afterLoad() {}
 func (l *Lock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Readers)
 	stateSourceObject.Load(1, &l.Writer)
+	stateSourceObject.Load(2, &l.WriterInfo)
 }
 
 func (l *Locks) StateTypeName() string {
@@ -182,6 +208,7 @@ func (l *LockSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*OwnerInfo)(nil))
 	state.Register((*Lock)(nil))
 	state.Register((*Locks)(nil))
 	state.Register((*LockRange)(nil))
