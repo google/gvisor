@@ -514,9 +514,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 		return 0, tcpip.ErrBroadcastDisabled
 	}
 
-	v, err := p.FullPayload()
-	if err != nil {
-		return 0, err
+	v := make([]byte, p.Len())
+	if _, err := io.ReadFull(p, v); err != nil {
+		return 0, tcpip.ErrBadBuffer
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.

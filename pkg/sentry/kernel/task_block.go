@@ -69,7 +69,7 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 // syserror.ErrInterrupted if t is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) BlockWithDeadline(C chan struct{}, haveDeadline bool, deadline ktime.Time) error {
+func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline ktime.Time) error {
 	if !haveDeadline {
 		return t.block(C, nil)
 	}
