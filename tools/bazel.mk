@@ -191,7 +191,7 @@ endif
 build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) 2>&1 \
-  | tee /proc/self/fd/2 \
+  | tee /dev/fd/2 \
   | sed -n -e '/^Target/,$$p' \
   | sed -n -e '/^  \($(subst /,\/,$(subst $(SPACE),\|,$(BUILD_ROOTS)))\)/p' \
   | sed -e 's/ /\n/g' \
