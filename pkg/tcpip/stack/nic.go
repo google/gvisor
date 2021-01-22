@@ -561,7 +561,7 @@ func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrBadLocalAddress
 }
 
-func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	if n.neigh != nil {
 		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
 		return entry.LinkAddr, ch, err

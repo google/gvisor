@@ -347,7 +347,7 @@ func (r *Route) ResolvedFields(afterResolve func()) (RouteInfo, <-chan struct{},
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress
 	}
 
-	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, func(tcpip.LinkAddress, bool) {
+	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, func(LinkResolutionResult) {
 		if afterResolve != nil {
 			afterResolve()
 		}

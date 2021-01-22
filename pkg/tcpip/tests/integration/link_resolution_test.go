@@ -406,20 +406,34 @@ func TestGetLinkAddress(t *testing.T) {
 	)
 
 	tests := []struct {
-		name             string
-		netProto         tcpip.NetworkProtocolNumber
-		remoteAddr       tcpip.Address
-		expectedLinkAddr bool
+		name       string
+		netProto   tcpip.NetworkProtocolNumber
+		remoteAddr tcpip.Address
+		expectedOk bool
 	}{
 		{
-			name:       "IPv4",
+			name:       "IPv4 resolvable",
 			netProto:   ipv4.ProtocolNumber,
 			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
+			expectedOk: true,
 		},
 		{
-			name:       "IPv6",
+			name:       "IPv6 resolvable",
 			netProto:   ipv6.ProtocolNumber,
 			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
+			expectedOk: true,
+		},
+		{
+			name:       "IPv4 not resolvable",
+			netProto:   ipv4.ProtocolNumber,
+			remoteAddr: ipv4Addr3.AddressWithPrefix.Address,
+			expectedOk: false,
+		},
+		{
+			name:       "IPv6 not resolvable",
+			netProto:   ipv6.ProtocolNumber,
+			remoteAddr: ipv6Addr3.AddressWithPrefix.Address,
+			expectedOk: false,
 		},
 	}
 
@@ -434,24 +448,18 @@ func TestGetLinkAddress(t *testing.T) {
 
 					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
 
-					for i := 0; i < 2; i++ {
-						addr, ch, err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(tcpip.LinkAddress, bool) {})
-						var want *tcpip.Error
-						if i == 0 {
-							want = tcpip.ErrWouldBlock
-						}
-						if err != want {
-							t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = (%s, _, %s), want = (_, _, %s)", host1NICID, test.remoteAddr, test.netProto, addr, err, want)
-						}
-
-						if i == 0 {
-							<-ch
-							continue
-						}
-
-						if addr != linkAddr2 {
-							t.Fatalf("got addr = %s, want = %s", addr, linkAddr2)
-						}
+					ch := make(chan stack.LinkResolutionResult, 1)
+					if err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+						ch <- r
+					}); err != tcpip.ErrWouldBlock {
+						t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, tcpip.ErrWouldBlock)
+					}
+					wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
+					if test.expectedOk {
+						wantRes.LinkAddress = linkAddr2
+					}
+					if diff := cmp.Diff(wantRes, <-ch); diff != "" {
+						t.Fatalf("link resolution result mismatch (-want +got):\n%s", diff)
 					}
 				})
 			}
