@@ -280,9 +280,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	payloadBytes, err := p.FullPayload()
-	if err != nil {
-		return 0, err
+	payloadBytes := make([]byte, p.Len())
+	if _, err := io.ReadFull(p, payloadBytes); err != nil {
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	// If this is an unassociated socket and callee provided a nonzero

@@ -15,11 +15,11 @@
 package tcp_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -415,8 +415,10 @@ func testV4Accept(t *testing.T, c *context.Context) {
 		t.Fatalf("Unexpected remote address: got %v, want %v", addr.Addr, context.TestAddr)
 	}
 
+	var r strings.Reader
 	data := "Don't panic"
-	nep.Write(tcpip.SlicePayload(buffer.NewViewFromBytes([]byte(data))), tcpip.WriteOptions{})
+	r.Reset(data)
+	nep.Write(&r, tcpip.WriteOptions{})
 	b = c.GetPacket()
 	tcp = header.TCP(header.IPv4(b).Payload())
 	if string(tcp.Payload()) != data {

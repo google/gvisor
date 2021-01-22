@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -152,10 +151,10 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 
 	// Now send some data and validate that timestamp is echoed correctly in the ACK.
 	data := []byte{1, 2, 3}
-	view := buffer.NewView(len(data))
-	copy(view, data)
 
-	if _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Unexpected error from Write: %s", err)
 	}
 
@@ -215,10 +214,10 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	// Now send some data with the accepted connection endpoint and validate
 	// that no timestamp option is sent in the TCP segment.
 	data := []byte{1, 2, 3}
-	view := buffer.NewView(len(data))
-	copy(view, data)
 
-	if _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Unexpected error from Write: %s", err)
 	}
 

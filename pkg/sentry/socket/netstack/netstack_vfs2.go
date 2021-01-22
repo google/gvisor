@@ -128,8 +128,8 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 		return 0, syserror.EOPNOTSUPP
 	}
 
-	f := &ioSequencePayload{ctx: ctx, src: src}
-	n, err := s.Endpoint.Write(f, tcpip.WriteOptions{})
+	r := src.Reader(ctx)
+	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
 	if err == tcpip.ErrWouldBlock {
 		return 0, syserror.ErrWouldBlock
 	}
@@ -137,11 +137,11 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 		return 0, syserr.TranslateNetstackError(err).ToError()
 	}
 
-	if int64(n) < src.NumBytes() {
-		return int64(n), syserror.ErrWouldBlock
+	if n < src.NumBytes() {
+		return n, syserror.ErrWouldBlock
 	}
 
-	return int64(n), nil
+	return n, nil
 }
 
 // Accept implements the linux syscall accept(2) for sockets backed by

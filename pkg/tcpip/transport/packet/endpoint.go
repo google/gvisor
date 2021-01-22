@@ -207,7 +207,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	return res, nil
 }
 
-func (*endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tcpip.Error) {
+func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, *tcpip.Error) {
 	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, tcpip.ErrInvalidOptionValue
 }

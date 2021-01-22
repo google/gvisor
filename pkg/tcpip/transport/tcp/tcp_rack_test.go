@@ -15,11 +15,11 @@
 package tcp_test
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -61,14 +61,16 @@ func TestRACKUpdate(t *testing.T) {
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
 
-	data := buffer.NewView(maxPayload)
+	data := make([]byte, maxPayload)
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write the data.
 	xmitTime = time.Now()
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -114,13 +116,15 @@ func TestRACKDetectReorder(t *testing.T) {
 	})
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
-	data := buffer.NewView(ackNumToVerify * maxPayload)
+	data := make([]byte, ackNumToVerify*maxPayload)
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write the data.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -141,17 +145,19 @@ func TestRACKDetectReorder(t *testing.T) {
 	<-probeDone
 }
 
-func sendAndReceive(t *testing.T, c *context.Context, numPackets int) buffer.View {
+func sendAndReceive(t *testing.T, c *context.Context, numPackets int) []byte {
 	setStackSACKPermitted(t, c, true)
 	createConnectedWithSACKAndTS(c)
 
-	data := buffer.NewView(numPackets * maxPayload)
+	data := make([]byte, numPackets*maxPayload)
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write the data.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

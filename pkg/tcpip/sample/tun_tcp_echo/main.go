@@ -20,6 +20,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"io"
 	"log"
@@ -58,7 +59,9 @@ func (e *tcpipError) Error() string {
 }
 
 func (e *endpointWriter) Write(p []byte) (int, error) {
-	n, err := e.ep.Write(tcpip.SlicePayload(p), tcpip.WriteOptions{})
+	var r bytes.Reader
+	r.Reset(p)
+	n, err := e.ep.Write(&r, tcpip.WriteOptions{})
 	if err != nil {
 		return int(n), &tcpipError{
 			inner: err,

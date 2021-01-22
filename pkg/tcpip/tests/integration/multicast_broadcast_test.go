@@ -586,8 +586,10 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 						Port: localPort,
 					},
 				}
-				data := tcpip.SlicePayload([]byte{byte(i), 2, 3, 4})
-				if n, err := wep.ep.Write(data, writeOpts); err != nil {
+				data := []byte{byte(i), 2, 3, 4}
+				var r bytes.Reader
+				r.Reset(data)
+				if n, err := wep.ep.Write(&r, writeOpts); err != nil {
 					t.Fatalf("eps[%d].Write(_, _): %s", i, err)
 				} else if want := int64(len(data)); n != want {
 					t.Fatalf("got eps[%d].Write(_, _) = (%d, nil), want = (%d, nil)", i, n, want)

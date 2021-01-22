@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"reflect"
@@ -638,7 +639,6 @@ func TestLinkResolution(t *testing.T) {
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 	pkt.SetType(header.ICMPv6EchoRequest)
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
-	payload := tcpip.SlicePayload(hdr.View())
 
 	// We can't send our payload directly over the route because that
 	// doesn't provoke NDP discovery.
@@ -648,8 +648,12 @@ func TestLinkResolution(t *testing.T) {
 		t.Fatalf("NewEndpoint(_) = (_, %s), want = (_, nil)", err)
 	}
 
-	if _, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: nicID, Addr: lladdr1}}); err != nil {
-		t.Fatalf("ep.Write(_): %s", err)
+	{
+		var r bytes.Reader
+		r.Reset(hdr.View())
+		if _, err := ep.Write(&r, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: nicID, Addr: lladdr1}}); err != nil {
+			t.Fatalf("ep.Write(_): %s", err)
+		}
 	}
 	for _, args := range []routeArgs{
 		{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit, remoteLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.SolicitedNodeAddr(lladdr1))},

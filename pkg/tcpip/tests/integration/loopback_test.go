@@ -232,7 +232,9 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 					Port: localPort,
 				},
 			}
-			n, err := sep.Write(tcpip.SlicePayload(data), wopts)
+			var r bytes.Reader
+			r.Reset(data)
+			n, err := sep.Write(&r, wopts)
 			if err != nil {
 				t.Fatalf("sep.Write(_, _): %s", err)
 			}
