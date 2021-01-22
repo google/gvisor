@@ -7,6 +7,7 @@ go_test(
     size = "small",
     srcs = [
         "forward_test.go",
+        "iptables_test.go",
         "link_resolution_test.go",
         "loopback_test.go",
         "multicast_broadcast_test.go",

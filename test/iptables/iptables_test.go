@@ -392,6 +392,30 @@ func TestInputInvertSource(t *testing.T) {
 	singleTest(t, FilterInputInvertSource{})
 }
 
+func TestInputInterfaceAccept(t *testing.T) {
+	singleTest(t, FilterInputInterfaceAccept{})
+}
+
+func TestInputInterfaceDrop(t *testing.T) {
+	singleTest(t, FilterInputInterfaceDrop{})
+}
+
+func TestInputInterface(t *testing.T) {
+	singleTest(t, FilterInputInterface{})
+}
+
+func TestInputInterfaceBeginsWith(t *testing.T) {
+	singleTest(t, FilterInputInterfaceBeginsWith{})
+}
+
+func TestInputInterfaceInvertDrop(t *testing.T) {
+	singleTest(t, FilterInputInterfaceInvertDrop{})
+}
+
+func TestInputInterfaceInvertAccept(t *testing.T) {
+	singleTest(t, FilterInputInterfaceInvertAccept{})
+}
+
 func TestFilterAddrs(t *testing.T) {
 	tcs := []struct {
 		ipv6  bool

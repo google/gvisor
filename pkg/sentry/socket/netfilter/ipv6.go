@@ -15,7 +15,6 @@
 package netfilter
 
 import (
-	"bytes"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -223,18 +222,6 @@ func filterFromIP6TIP(iptip linux.IP6TIP) (stack.IPHeaderFilter, error) {
 		return stack.IPHeaderFilter{}, fmt.Errorf("incorrect length of source (%d) and/or source mask (%d) fields", len(iptip.Src), len(iptip.SrcMask))
 	}
 
-	n := bytes.IndexByte([]byte(iptip.OutputInterface[:]), 0)
-	if n == -1 {
-		n = len(iptip.OutputInterface)
-	}
-	ifname := string(iptip.OutputInterface[:n])
-
-	n = bytes.IndexByte([]byte(iptip.OutputInterfaceMask[:]), 0)
-	if n == -1 {
-		n = len(iptip.OutputInterfaceMask)
-	}
-	ifnameMask := string(iptip.OutputInterfaceMask[:n])
-
 	return stack.IPHeaderFilter{
 		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
 		// In ip6tables a flag controls whether to check the protocol.
@@ -245,8 +232,11 @@ func filterFromIP6TIP(iptip linux.IP6TIP) (stack.IPHeaderFilter, error) {
 		Src:                   tcpip.Address(iptip.Src[:]),
 		SrcMask:               tcpip.Address(iptip.SrcMask[:]),
 		SrcInvert:             iptip.InverseFlags&linux.IP6T_INV_SRCIP != 0,
-		OutputInterface:       ifname,
-		OutputInterfaceMask:   ifnameMask,
+		InputInterface:        string(trimNullBytes(iptip.InputInterface[:])),
+		InputInterfaceMask:    string(trimNullBytes(iptip.InputInterfaceMask[:])),
+		InputInterfaceInvert:  iptip.InverseFlags&linux.IP6T_INV_VIA_IN != 0,
+		OutputInterface:       string(trimNullBytes(iptip.OutputInterface[:])),
+		OutputInterfaceMask:   string(trimNullBytes(iptip.OutputInterfaceMask[:])),
 		OutputInterfaceInvert: iptip.InverseFlags&linux.IP6T_INV_VIA_OUT != 0,
 	}, nil
 }
@@ -257,14 +247,13 @@ func containsUnsupportedFields6(iptip linux.IP6TIP) bool {
 	// - Dst and DstMask
 	// - Src and SrcMask
 	// - The inverse destination IP check flag
+	// - InputInterface, InputInterfaceMask and its inverse.
 	// - OutputInterface, OutputInterfaceMask and its inverse.
-	var emptyInterface = [linux.IFNAMSIZ]byte{}
-	flagMask := uint8(linux.IP6T_F_PROTO)
+	const flagMask = linux.IP6T_F_PROTO
 	// Disable any supported inverse flags.
-	inverseMask := uint8(linux.IP6T_INV_DSTIP) | uint8(linux.IP6T_INV_SRCIP) | uint8(linux.IP6T_INV_VIA_OUT)
-	return iptip.InputInterface != emptyInterface ||
-		iptip.InputInterfaceMask != emptyInterface ||
-		iptip.Flags&^flagMask != 0 ||
+	const inverseMask = linux.IP6T_INV_DSTIP | linux.IP6T_INV_SRCIP |
+		linux.IP6T_INV_VIA_IN | linux.IP6T_INV_VIA_OUT
+	return iptip.Flags&^flagMask != 0 ||
 		iptip.InverseFlags&^inverseMask != 0 ||
 		iptip.TOS != 0
 }

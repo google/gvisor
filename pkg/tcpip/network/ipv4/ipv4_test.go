@@ -2656,7 +2656,7 @@ func (*limitedMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string) (bool, bool) {
+func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string) (bool, bool) {
 	if lm.limit == 0 {
 		return true, false
 	}
