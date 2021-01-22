@@ -376,6 +376,20 @@ packetimpact_testbench(
     ],
 )
 
+packetimpact_testbench(
+    name = "tcp_rack",
+    srcs = ["tcp_rack_test.go"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/binary",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//pkg/usermem",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 validate_all_tests()
 
 [packetimpact_go_test(
