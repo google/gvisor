@@ -97,12 +97,13 @@ type linkAddrEntry struct {
 	done chan struct{}
 
 	// onResolve is called with the result of address resolution.
-	onResolve []func(tcpip.LinkAddress, bool)
+	onResolve []func(LinkResolutionResult)
 }
 
 func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
+	res := LinkResolutionResult{LinkAddress: linkAddr, Success: len(linkAddr) != 0}
 	for _, callback := range e.onResolve {
-		callback(linkAddr, len(linkAddr) != 0)
+		callback(res)
 	}
 	e.onResolve = nil
 	if ch := e.done; ch != nil {
@@ -196,7 +197,7 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 }
 
 // get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	c.cache.Lock()
 	defer c.cache.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
@@ -208,7 +209,7 @@ func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localA
 		if !time.Now().After(entry.expiration) {
 			// Not expired.
 			if onResolve != nil {
-				onResolve(entry.linkAddr, true)
+				onResolve(LinkResolutionResult{LinkAddress: entry.linkAddr, Success: true})
 			}
 			return entry.linkAddr, nil, nil
 		}

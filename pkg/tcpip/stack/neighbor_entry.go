@@ -96,7 +96,7 @@ type neighborEntry struct {
 	done chan struct{}
 
 	// onResolve is called with the result of address resolution.
-	onResolve []func(tcpip.LinkAddress, bool)
+	onResolve []func(LinkResolutionResult)
 
 	isRouter bool
 	job      *tcpip.Job
@@ -143,8 +143,9 @@ func newStaticNeighborEntry(nic *NIC, addr tcpip.Address, linkAddr tcpip.LinkAdd
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
+	res := LinkResolutionResult{LinkAddress: e.neigh.LinkAddr, Success: succeeded}
 	for _, callback := range e.onResolve {
-		callback(e.neigh.LinkAddr, succeeded)
+		callback(res)
 	}
 	e.onResolve = nil
 	if ch := e.done; ch != nil {
