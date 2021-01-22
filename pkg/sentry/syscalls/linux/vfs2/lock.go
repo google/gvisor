@@ -44,11 +44,11 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	switch operation {
 	case linux.LOCK_EX:
-		if err := file.LockBSD(t, lock.WriteLock, blocker); err != nil {
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.WriteLock, blocker); err != nil {
 			return 0, nil, err
 		}
 	case linux.LOCK_SH:
-		if err := file.LockBSD(t, lock.ReadLock, blocker); err != nil {
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.ReadLock, blocker); err != nil {
 			return 0, nil, err
 		}
 	case linux.LOCK_UN:

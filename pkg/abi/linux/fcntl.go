@@ -21,6 +21,7 @@ const (
 	F_SETFD         = 2
 	F_GETFL         = 3
 	F_SETFL         = 4
+	F_GETLK         = 5
 	F_SETLK         = 6
 	F_SETLKW        = 7
 	F_SETOWN        = 8
@@ -55,7 +56,7 @@ type Flock struct {
 	_      [4]byte
 	Start  int64
 	Len    int64
-	Pid    int32
+	PID    int32
 	_      [4]byte
 }
 

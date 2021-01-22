@@ -216,7 +216,7 @@ func (ns *PIDNamespace) TaskWithID(tid ThreadID) *Task {
 	return t
 }
 
-// ThreadGroupWithID returns the thread group lead by the task with thread ID
+// ThreadGroupWithID returns the thread group led by the task with thread ID
 // tid in PID namespace ns. If no task has that TID, or if the task with that
 // TID is not a thread group leader, ThreadGroupWithID returns nil.
 func (ns *PIDNamespace) ThreadGroupWithID(tid ThreadID) *ThreadGroup {
@@ -290,6 +290,11 @@ func (ns *PIDNamespace) ThreadGroupsAppend(tgs []*ThreadGroup) []*ThreadGroup {
 // UserNamespace returns the user namespace associated with PID namespace ns.
 func (ns *PIDNamespace) UserNamespace() *auth.UserNamespace {
 	return ns.userns
+}
+
+// Root returns the root PID namespace of ns.
+func (ns *PIDNamespace) Root() *PIDNamespace {
+	return ns.owner.Root
 }
 
 // A threadGroupNode defines the relationship between a thread group and the
@@ -484,4 +489,9 @@ func (t *Task) Parent() *Task {
 // dead, ThreadID returns 0.
 func (t *Task) ThreadID() ThreadID {
 	return t.tg.pidns.IDOfTask(t)
+}
+
+// TGIDInRoot returns t's TGID in the root PID namespace.
+func (t *Task) TGIDInRoot() ThreadID {
+	return t.tg.pidns.owner.Root.IDOfThreadGroup(t.tg)
 }
