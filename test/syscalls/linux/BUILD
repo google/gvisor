@@ -797,6 +797,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_test_util",
+        "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
@@ -807,6 +808,7 @@ cc_binary(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:memory_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:save_util",

@@ -1014,12 +1014,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.ReadLock, rng, nil) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.ReadLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.ReadLock, rng, t) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.ReadLock, rng, t) {
 					return 0, nil, syserror.EINTR
 				}
 			}
@@ -1030,12 +1030,12 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.WriteLock, rng, nil) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.WriteLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(t.FDTable(), lock.WriteLock, rng, t) {
+				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.WriteLock, rng, t) {
 					return 0, nil, syserror.EINTR
 				}
 			}
@@ -2167,24 +2167,24 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.LOCK_EX:
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.WriteLock, rng, nil) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.WriteLock, rng, nil) {
 				return 0, nil, syserror.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.WriteLock, rng, t) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.WriteLock, rng, t) {
 				return 0, nil, syserror.EINTR
 			}
 		}
 	case linux.LOCK_SH:
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.ReadLock, rng, nil) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.ReadLock, rng, nil) {
 				return 0, nil, syserror.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegion(file, lock.ReadLock, rng, t) {
+			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.ReadLock, rng, t) {
 				return 0, nil, syserror.EINTR
 			}
 		}

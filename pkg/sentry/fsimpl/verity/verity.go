@@ -1104,8 +1104,8 @@ func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, op
 }
 
 // LockBSD implements vfs.FileDescriptionImpl.LockBSD.
-func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, block fslock.Blocker) error {
-	return fd.lowerFD.LockBSD(ctx, t, block)
+func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+	return fd.lowerFD.LockBSD(ctx, ownerPID, t, block)
 }
 
 // UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
@@ -1114,13 +1114,18 @@ func (fd *fileDescription) UnlockBSD(ctx context.Context, uid fslock.UniqueID) e
 }
 
 // LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
-func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
-	return fd.lowerFD.LockPOSIX(ctx, uid, t, r, block)
+func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+	return fd.lowerFD.LockPOSIX(ctx, uid, ownerPID, t, r, block)
 }
 
 // UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
 func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
 	return fd.lowerFD.UnlockPOSIX(ctx, uid, r)
+}
+
+// TestPOSIX implements vfs.FileDescriptionImpl.TestPOSIX.
+func (fd *fileDescription) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
+	return fd.lowerFD.TestPOSIX(ctx, uid, t, r)
 }
 
 // FileReadWriteSeeker is a helper struct to pass a vfs.FileDescription as

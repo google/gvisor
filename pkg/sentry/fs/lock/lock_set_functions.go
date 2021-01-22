@@ -40,7 +40,7 @@ func (lockSetFunctions) Merge(r1 LockRange, val1 Lock, r2 LockRange, val2 Lock) 
 		return Lock{}, false
 	}
 	for k := range val1.Readers {
-		if !val2.Readers[k] {
+		if _, ok := val2.Readers[k]; !ok {
 			return Lock{}, false
 		}
 	}
@@ -53,11 +53,12 @@ func (lockSetFunctions) Merge(r1 LockRange, val1 Lock, r2 LockRange, val2 Lock) 
 func (lockSetFunctions) Split(r LockRange, val Lock, split uint64) (Lock, Lock) {
 	// Copy the segment so that split segments don't contain map references
 	// to other segments.
-	val0 := Lock{Readers: make(map[UniqueID]bool)}
+	val0 := Lock{Readers: make(map[UniqueID]OwnerInfo)}
 	for k, v := range val.Readers {
 		val0.Readers[k] = v
 	}
 	val0.Writer = val.Writer
+	val0.WriterInfo = val.WriterInfo
 
 	return val, val0
 }

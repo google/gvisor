@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/epoll.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
@@ -35,10 +36,12 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -1640,6 +1643,202 @@ TEST(FcntlTest, SetFlSetOwnSetSigDoNotRace) {
     threads.emplace_back(set_own);
     threads.emplace_back(set_sig);
   }
+}
+
+TEST_F(FcntlLockTest, GetLockOnNothing) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_RDLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_GETLK, &fl), SyscallSucceeds());
+  ASSERT_TRUE(fl.l_type == F_UNLCK);
+}
+
+TEST_F(FcntlLockTest, GetLockOnLockSameProcess) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_RDLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_GETLK, &fl), SyscallSucceeds());
+  ASSERT_TRUE(fl.l_type == F_UNLCK);
+
+  fl.l_type = F_WRLCK;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_GETLK, &fl), SyscallSucceeds());
+  ASSERT_TRUE(fl.l_type == F_UNLCK);
+}
+
+TEST_F(FcntlLockTest, GetReadLockOnReadLock) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_RDLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+  pid_t child_pid = fork();
+  if (child_pid == 0) {
+    TEST_CHECK(fcntl(fd.get(), F_GETLK, &fl) >= 0);
+    TEST_CHECK(fl.l_type == F_UNLCK);
+    _exit(0);
+  }
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(FcntlLockTest, GetReadLockOnWriteLock) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_WRLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+  fl.l_type = F_RDLCK;
+  pid_t child_pid = fork();
+  if (child_pid == 0) {
+    TEST_CHECK(fcntl(fd.get(), F_GETLK, &fl) >= 0);
+    TEST_CHECK(fl.l_type == F_WRLCK);
+    TEST_CHECK(fl.l_pid == getppid());
+    _exit(0);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(FcntlLockTest, GetWriteLockOnReadLock) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_RDLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+  fl.l_type = F_WRLCK;
+  pid_t child_pid = fork();
+  if (child_pid == 0) {
+    TEST_CHECK(fcntl(fd.get(), F_GETLK, &fl) >= 0);
+    TEST_CHECK(fl.l_type == F_RDLCK);
+    TEST_CHECK(fl.l_pid == getppid());
+    _exit(0);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(FcntlLockTest, GetWriteLockOnWriteLock) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl;
+  fl.l_type = F_WRLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+  pid_t child_pid = fork();
+  if (child_pid == 0) {
+    TEST_CHECK(fcntl(fd.get(), F_GETLK, &fl) >= 0);
+    TEST_CHECK(fl.l_type == F_WRLCK);
+    TEST_CHECK(fl.l_pid == getppid());
+    _exit(0);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Tests that the pid returned from F_GETLK is relative to the caller's PID
+// namespace.
+TEST_F(FcntlLockTest, GetLockRespectsPIDNamespace) {
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  std::string filename = file.path();
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDWR, 0666));
+
+  // Lock in the parent process.
+  struct flock fl;
+  fl.l_type = F_WRLCK;
+  fl.l_whence = SEEK_SET;
+  fl.l_start = 0;
+  fl.l_len = 40;
+  ASSERT_THAT(fcntl(fd.get(), F_SETLK, &fl), SyscallSucceeds());
+
+  auto child_getlk = [](void* filename) {
+    int fd = open((char*)filename, O_RDWR, 0666);
+    TEST_CHECK(fd >= 0);
+
+    struct flock fl;
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 40;
+    TEST_CHECK(fcntl(fd, F_GETLK, &fl) >= 0);
+    TEST_CHECK(fl.l_type == F_WRLCK);
+    // Parent PID should be 0 in the child PID namespace.
+    TEST_CHECK(fl.l_pid == 0);
+    close(fd);
+    return 0;
+  };
+
+  // Set up child process in a new PID namespace.
+  constexpr int kStackSize = 4096;
+  Mapping stack = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
+           MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0));
+  pid_t child_pid;
+  ASSERT_THAT(
+      child_pid = clone(child_getlk, (char*)stack.ptr() + stack.len(),
+                        CLONE_NEWPID | SIGCHLD, (void*)filename.c_str()),
+      SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 }  // namespace
