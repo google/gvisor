@@ -150,6 +150,14 @@ func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
 	if ch := e.done; ch != nil {
 		close(ch)
 		e.done = nil
+		// Dequeue the pending packets in a new goroutine to not hold up the current
+		// goroutine as writing packets may be a costly operation.
+		//
+		// At the time of writing, when writing packets, a neighbor's link address
+		// is resolved (which ends up obtaining the entry's lock) while holding the
+		// link resolution queue's lock. Dequeuing packets in a new goroutine avoids
+		// a lock ordering violation.
+		go e.nic.linkResQueue.dequeue(ch, e.neigh.LinkAddr, succeeded)
 	}
 }
 
