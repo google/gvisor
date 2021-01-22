@@ -139,9 +139,9 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		context:          ctx,
 		stats:            makeNICStats(),
 		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrCache:    newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 	}
-	nic.linkResQueue.init()
+	nic.linkResQueue.init(nic)
+	nic.linkAddrCache = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	// Check for Neighbor Unreachability Detection support.
@@ -303,6 +303,10 @@ func (n *NIC) IsLoopback() bool {
 
 // WritePacket implements NetworkLinkEndpoint.
 func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+	_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
+	return err
+}
+func (n *NIC) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, *tcpip.Error) {
 	// As per relevant RFCs, we should queue packets while we wait for link
 	// resolution to complete.
 	//
@@ -320,16 +324,7 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	//   be limited to some small value. When a queue overflows, the new arrival
 	//   SHOULD replace the oldest entry. Once address resolution completes, the
 	//   node transmits any queued packets.
-	if ch, err := r.Resolve(nil); err != nil {
-		if err == tcpip.ErrWouldBlock {
-			r.Acquire()
-			n.linkResQueue.enqueue(ch, r, protocol, pkt)
-			return nil
-		}
-		return err
-	}
-
-	return n.writePacket(r.Fields(), gso, protocol, pkt)
+	return n.linkResQueue.enqueue(r, gso, protocol, pkt)
 }
 
 // WritePacketToRemote implements NetworkInterface.
@@ -358,33 +353,7 @@ func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 
 // WritePackets implements NetworkLinkEndpoint.
 func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	// As per relevant RFCs, we should queue packets while we wait for link
-	// resolution to complete.
-	//
-	// RFC 1122 section 2.3.2.2 (for IPv4):
-	//   The link layer SHOULD save (rather than discard) at least
-	//   one (the latest) packet of each set of packets destined to
-	//   the same unresolved IP address, and transmit the saved
-	//   packet when the address has been resolved.
-	//
-	// RFC 4861 section 7.2.2 (for IPv6):
-	//   While waiting for address resolution to complete, the sender MUST, for
-	//   each neighbor, retain a small queue of packets waiting for address
-	//   resolution to complete. The queue MUST hold at least one packet, and MAY
-	//   contain more. However, the number of queued packets per neighbor SHOULD
-	//   be limited to some small value. When a queue overflows, the new arrival
-	//   SHOULD replace the oldest entry. Once address resolution completes, the
-	//   node transmits any queued packets.
-	if ch, err := r.Resolve(nil); err != nil {
-		if err == tcpip.ErrWouldBlock {
-			r.Acquire()
-			n.linkResQueue.enqueue(ch, r, protocol, &pkts)
-			return pkts.Len(), nil
-		}
-		return 0, err
-	}
-
-	return n.writePackets(r.Fields(), gso, protocol, pkts)
+	return n.enqueuePacketBuffer(r, gso, protocol, &pkts)
 }
 
 func (n *NIC) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, *tcpip.Error) {

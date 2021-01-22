@@ -32,6 +32,8 @@ var _ LinkAddressCache = (*linkAddrCache)(nil)
 //
 // This struct is safe for concurrent use.
 type linkAddrCache struct {
+	nic *NIC
+
 	// ageLimit is how long a cache entry is valid for.
 	ageLimit time.Duration
 
@@ -79,6 +81,8 @@ type linkAddrEntry struct {
 	// linkAddrEntryEntry access is synchronized by the linkAddrCache lock.
 	linkAddrEntryEntry
 
+	cache *linkAddrCache
+
 	// TODO(gvisor.dev/issue/5150): move these fields under mu.
 	// mu protects the fields below.
 	mu sync.RWMutex
@@ -104,6 +108,14 @@ func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
 	if ch := e.done; ch != nil {
 		close(ch)
 		e.done = nil
+		// Dequeue the pending packets in a new goroutine to not hold up the current
+		// goroutine as writing packets may be a costly operation.
+		//
+		// At the time of writing, when writing packets, a neighbor's link address
+		// is resolved (which ends up obtaining the entry's lock) while holding the
+		// link resolution queue's lock. Dequeuing packets in a new goroutine avoids
+		// a lock ordering violation.
+		go e.cache.nic.linkResQueue.dequeue(ch, linkAddr, len(linkAddr) != 0)
 	}
 }
 
@@ -174,8 +186,9 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 	}
 
 	*entry = linkAddrEntry{
-		addr: k,
-		s:    incomplete,
+		cache: c,
+		addr:  k,
+		s:     incomplete,
 	}
 	c.cache.table[k] = entry
 	c.cache.lru.PushFront(entry)
@@ -264,8 +277,9 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt
 	return true
 }
 
-func newLinkAddrCache(ageLimit, resolutionTimeout time.Duration, resolutionAttempts int) *linkAddrCache {
+func newLinkAddrCache(nic *NIC, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int) *linkAddrCache {
 	c := &linkAddrCache{
+		nic:                nic,
 		ageLimit:           ageLimit,
 		resolutionTimeout:  resolutionTimeout,
 		resolutionAttempts: resolutionAttempts,
