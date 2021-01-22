@@ -52,7 +52,7 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 	cb := func() error {
 		got, err := cont.Processes()
 		if err != nil {
-			err = fmt.Errorf("error getting process data from container: %v", err)
+			err = fmt.Errorf("error getting process data from container: %w", err)
 			return &backoff.PermanentError{Err: err}
 		}
 		if !procListsEqual(got, want) {
@@ -64,11 +64,30 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 	return testutil.Poll(cb, 30*time.Second)
 }
 
+// waitForProcess waits for the given process to show up in the container.
+func waitForProcess(cont *Container, want *control.Process) error {
+	cb := func() error {
+		gots, err := cont.Processes()
+		if err != nil {
+			err = fmt.Errorf("error getting process data from container: %w", err)
+			return &backoff.PermanentError{Err: err}
+		}
+		for _, got := range gots {
+			if procEqual(got, want) {
+				return nil
+			}
+		}
+		return fmt.Errorf("container got process list: %s, want: %+v", procListToString(gots), want)
+	}
+	// Gives plenty of time as tests can run slow under --race.
+	return testutil.Poll(cb, 30*time.Second)
+}
+
 func waitForProcessCount(cont *Container, want int) error {
 	cb := func() error {
 		pss, err := cont.Processes()
 		if err != nil {
-			err = fmt.Errorf("error getting process data from container: %v", err)
+			err = fmt.Errorf("error getting process data from container: %w", err)
 			return &backoff.PermanentError{Err: err}
 		}
 		if got := len(pss); got != want {
@@ -101,24 +120,28 @@ func procListsEqual(gots, wants []*control.Process) bool {
 		return false
 	}
 	for i := range gots {
-		got := gots[i]
-		want := wants[i]
+		if !procEqual(gots[i], wants[i]) {
+			return false
+		}
+	}
+	return true
+}
 
-		if want.UID != math.MaxUint32 && want.UID != got.UID {
-			return false
-		}
-		if want.PID != -1 && want.PID != got.PID {
-			return false
-		}
-		if want.PPID != -1 && want.PPID != got.PPID {
-			return false
-		}
-		if len(want.TTY) != 0 && want.TTY != got.TTY {
-			return false
-		}
-		if len(want.Cmd) != 0 && want.Cmd != got.Cmd {
-			return false
-		}
+func procEqual(got, want *control.Process) bool {
+	if want.UID != math.MaxUint32 && want.UID != got.UID {
+		return false
+	}
+	if want.PID != -1 && want.PID != got.PID {
+		return false
+	}
+	if want.PPID != -1 && want.PPID != got.PPID {
+		return false
+	}
+	if len(want.TTY) != 0 && want.TTY != got.TTY {
+		return false
+	}
+	if len(want.Cmd) != 0 && want.Cmd != got.Cmd {
+		return false
 	}
 	return true
 }
