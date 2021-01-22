@@ -93,8 +93,14 @@ func getBlocking(c *linkAddrCache, addr tcpip.Address, linkRes LinkAddressResolv
 	}
 }
 
+func newEmptyNIC() *NIC {
+	n := &NIC{}
+	n.linkResQueue.init(n)
+	return n
+}
+
 func TestCacheOverflow(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
 	for i := len(testAddrs) - 1; i >= 0; i-- {
 		e := testAddrs[i]
 		c.AddLinkAddress(e.addr, e.linkAddr)
@@ -129,7 +135,7 @@ func TestCacheOverflow(t *testing.T) {
 }
 
 func TestCacheConcurrent(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	var wg sync.WaitGroup
@@ -165,7 +171,7 @@ func TestCacheConcurrent(t *testing.T) {
 }
 
 func TestCacheAgeLimit(t *testing.T) {
-	c := newLinkAddrCache(1*time.Millisecond, 1*time.Second, 3)
+	c := newLinkAddrCache(newEmptyNIC(), 1*time.Millisecond, 1*time.Second, 3)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	e := testAddrs[0]
@@ -177,7 +183,7 @@ func TestCacheAgeLimit(t *testing.T) {
 }
 
 func TestCacheReplace(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
+	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
 	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
 	c.AddLinkAddress(e.addr, e.linkAddr)
@@ -206,7 +212,7 @@ func TestCacheResolution(t *testing.T) {
 	//
 	// Using a large resolution timeout decreases the probability of experiencing
 	// this race condition and does not affect how long this test takes to run.
-	c := newLinkAddrCache(1<<63-1, math.MaxInt64, 1)
+	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, math.MaxInt64, 1)
 	linkRes := &testLinkAddressResolver{cache: c}
 	for i, ta := range testAddrs {
 		got, err := getBlocking(c, ta.addr, linkRes)
@@ -232,7 +238,7 @@ func TestCacheResolution(t *testing.T) {
 }
 
 func TestCacheResolutionFailed(t *testing.T) {
-	c := newLinkAddrCache(1<<63-1, 10*time.Millisecond, 5)
+	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 10*time.Millisecond, 5)
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	var requestCount uint32
@@ -265,7 +271,7 @@ func TestCacheResolutionFailed(t *testing.T) {
 func TestCacheResolutionTimeout(t *testing.T) {
 	resolverDelay := 500 * time.Millisecond
 	expiration := resolverDelay / 10
-	c := newLinkAddrCache(expiration, 1*time.Millisecond, 3)
+	c := newLinkAddrCache(newEmptyNIC(), expiration, 1*time.Millisecond, 3)
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
 	e := testAddrs[0]
