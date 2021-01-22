@@ -162,6 +162,11 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 	}
 }
 
+type linkResolutionResult struct {
+	linkAddr tcpip.LinkAddress
+	ok       bool
+}
+
 // TestNeighorSolicitationWithSourceLinkLayerOption tests that receiving a
 // valid NDP NS message with the Source Link Layer Address option results in a
 // new entry in the link address cache for the sender of the message.
@@ -231,35 +236,28 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
-			linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
-			if linkAddr != test.expectedLinkAddr {
-				t.Errorf("got link address = %s, want = %s", linkAddr, test.expectedLinkAddr)
+			ch := make(chan stack.LinkResolutionResult, 1)
+			err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, func(r stack.LinkResolutionResult) {
+				ch <- r
+			})
+
+			wantInvalid := uint64(0)
+			wantErr := (*tcpip.Error)(nil)
+			wantSucccess := true
+			if len(test.expectedLinkAddr) == 0 {
+				wantInvalid = 1
+				wantErr = tcpip.ErrWouldBlock
+				wantSucccess = false
 			}
 
-			if test.expectedLinkAddr != "" {
-				if err != nil {
-					t.Errorf("s.GetLinkAddress(%d, %s, %s, %d, nil): %s", nicID, lladdr1, lladdr0, ProtocolNumber, err)
-				}
-				if c != nil {
-					t.Errorf("got unexpected channel")
-				}
-
-				// Invalid count should not have increased.
-				if got := invalid.Value(); got != 0 {
-					t.Errorf("got invalid = %d, want = 0", got)
-				}
-			} else {
-				if err != tcpip.ErrWouldBlock {
-					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, nil) = (_, _, %v), want = (_, _, %s)", nicID, lladdr1, lladdr0, ProtocolNumber, err, tcpip.ErrWouldBlock)
-				}
-				if c == nil {
-					t.Errorf("expected channel from call to s.GetLinkAddress(%d, %s, %s, %d, nil)", nicID, lladdr1, lladdr0, ProtocolNumber)
-				}
-
-				// Invalid count should have increased.
-				if got := invalid.Value(); got != 1 {
-					t.Errorf("got invalid = %d, want = 1", got)
-				}
+			if err != wantErr {
+				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, wantErr)
+			}
+			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Success: wantSucccess}, <-ch); diff != "" {
+				t.Errorf("linkResolutionResult mismatch (-want +got):\n%s", diff)
+			}
+			if got := invalid.Value(); got != wantInvalid {
+				t.Errorf("got invalid = %d, want = %d", got, wantInvalid)
 			}
 		})
 	}
@@ -803,35 +801,28 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
-			linkAddr, c, err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, nil)
-			if linkAddr != test.expectedLinkAddr {
-				t.Errorf("got link address = %s, want = %s", linkAddr, test.expectedLinkAddr)
+			ch := make(chan stack.LinkResolutionResult, 1)
+			err := s.GetLinkAddress(nicID, lladdr1, lladdr0, ProtocolNumber, func(r stack.LinkResolutionResult) {
+				ch <- r
+			})
+
+			wantInvalid := uint64(0)
+			wantErr := (*tcpip.Error)(nil)
+			wantSucccess := true
+			if len(test.expectedLinkAddr) == 0 {
+				wantInvalid = 1
+				wantErr = tcpip.ErrWouldBlock
+				wantSucccess = false
 			}
 
-			if test.expectedLinkAddr != "" {
-				if err != nil {
-					t.Errorf("s.GetLinkAddress(%d, %s, %s, %d, nil): %s", nicID, lladdr1, lladdr0, ProtocolNumber, err)
-				}
-				if c != nil {
-					t.Errorf("got unexpected channel")
-				}
-
-				// Invalid count should not have increased.
-				if got := invalid.Value(); got != 0 {
-					t.Errorf("got invalid = %d, want = 0", got)
-				}
-			} else {
-				if err != tcpip.ErrWouldBlock {
-					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, nil) = (_, _, %v), want = (_, _, %s)", nicID, lladdr1, lladdr0, ProtocolNumber, err, tcpip.ErrWouldBlock)
-				}
-				if c == nil {
-					t.Errorf("expected channel from call to s.GetLinkAddress(%d, %s, %s, %d, nil)", nicID, lladdr1, lladdr0, ProtocolNumber)
-				}
-
-				// Invalid count should have increased.
-				if got := invalid.Value(); got != 1 {
-					t.Errorf("got invalid = %d, want = 1", got)
-				}
+			if err != wantErr {
+				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, wantErr)
+			}
+			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Success: wantSucccess}, <-ch); diff != "" {
+				t.Errorf("linkResolutionResult mismatch (-want +got):\n%s", diff)
+			}
+			if got := invalid.Value(); got != wantInvalid {
+				t.Errorf("got invalid = %d, want = %d", got, wantInvalid)
 			}
 		})
 	}

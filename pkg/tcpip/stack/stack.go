@@ -1527,9 +1527,13 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, neighbor tcpip.Address, linkAd
 	return nil
 }
 
+// LinkResolutionResult is the result of a link address resolution attempt.
+type LinkResolutionResult struct {
+	LinkAddress tcpip.LinkAddress
+	Success     bool
+}
+
 // GetLinkAddress finds the link address corresponding to a neighbor's address.
-//
-// Returns a link address for the remote address, if readily available.
 //
 // Returns ErrNotSupported if the stack is not configured with a link address
 // resolver for the specified network protocol.
@@ -1538,30 +1542,28 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, neighbor tcpip.Address, linkAd
 // with a notification channel for the caller to block on. Triggers address
 // resolution asynchronously.
 //
-// If onResolve is provided, it will be called either immediately, if
-// resolution is not required, or when address resolution is complete, with
-// the resolved link address and whether resolution succeeded. After any
-// callbacks have been called, the returned notification channel is closed.
+// onResolve will be called either immediately, if resolution is not required,
+// or when address resolution is complete, with the resolved link address and
+// whether resolution succeeded.
 //
 // If specified, the local address must be an address local to the interface
 // the neighbor cache belongs to. The local address is the source address of
 // a packet prompting NUD/link address resolution.
-//
-// TODO(gvisor.dev/issue/5151): Don't return the link address.
-func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(tcpip.LinkAddress, bool)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) *tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
 	if !ok {
-		return "", nil, tcpip.ErrUnknownNICID
+		return tcpip.ErrUnknownNICID
 	}
 
 	linkRes, ok := s.linkAddrResolvers[protocol]
 	if !ok {
-		return "", nil, tcpip.ErrNotSupported
+		return tcpip.ErrNotSupported
 	}
 
-	return nic.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
+	_, _, err := nic.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
+	return err
 }
 
 // Neighbors returns all IP to MAC address associations.

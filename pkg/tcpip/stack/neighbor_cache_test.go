@@ -1188,12 +1188,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if !ok {
 			t.Fatalf("store.entry(%d) not found", i)
 		}
-		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if !ok {
-				t.Fatal("expected successful address resolution")
-			}
-			if linkAddr != entry.LinkAddr {
-				t.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1247,12 +1244,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			t.Fatalf("store.entry(%d) not found", i)
 		}
 
-		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if !ok {
-				t.Fatal("expected successful address resolution")
-			}
-			if linkAddr != entry.LinkAddr {
-				t.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1423,12 +1417,9 @@ func TestNeighborCacheReplace(t *testing.T) {
 		t.Fatal("store.entry(0) not found")
 	}
 
-	_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-		if !ok {
-			t.Fatal("expected successful address resolution")
-		}
-		if linkAddr != entry.LinkAddr {
-			t.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+	_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+		if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
 	})
 	if err != tcpip.ErrWouldBlock {
@@ -1539,12 +1530,9 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 
 	// First, sanity check that resolution is working
 	{
-		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if !ok {
-				t.Fatal("expected successful address resolution")
-			}
-			if linkAddr != entry.LinkAddr {
-				t.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1576,15 +1564,9 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 
 	entry.Addr += "2"
 	{
-		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if ok {
-				t.Error("expected unsuccessful address resolution")
-			}
-			if len(linkAddr) != 0 {
-				t.Fatalf("got linkAddr = %s, want = \"\"", linkAddr)
-			}
-			if t.Failed() {
-				t.FailNow()
+		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1627,15 +1609,9 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 		t.Fatal("store.entry(0) not found")
 	}
 
-	_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-		if ok {
-			t.Error("expected unsuccessful address resolution")
-		}
-		if len(linkAddr) != 0 {
-			t.Fatalf("got linkAddr = %s, want = \"\"", linkAddr)
-		}
-		if t.Failed() {
-			t.FailNow()
+	_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+		if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
 	})
 	if err != tcpip.ErrWouldBlock {
@@ -1674,15 +1650,9 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 
 	// Perform address resolution with a faulty link, which will fail.
 	{
-		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if ok {
-				t.Error("expected unsuccessful address resolution")
-			}
-			if len(linkAddr) != 0 {
-				t.Fatalf("got linkAddr = %s, want = \"\"", linkAddr)
-			}
-			if t.Failed() {
-				t.FailNow()
+		_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1713,9 +1683,9 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	// Retry address resolution with a working link.
 	linkRes.dropReplies = false
 	{
-		incompleteEntry, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-			if linkAddr != entry.LinkAddr {
-				t.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+		incompleteEntry, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 		if err != tcpip.ErrWouldBlock {
@@ -1772,12 +1742,9 @@ func BenchmarkCacheClear(b *testing.B) {
 				b.Fatalf("store.entry(%d) not found", i)
 			}
 
-			_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(linkAddr tcpip.LinkAddress, ok bool) {
-				if !ok {
-					b.Fatal("expected successful address resolution")
-				}
-				if linkAddr != entry.LinkAddr {
-					b.Fatalf("got linkAddr = %s, want = %s", linkAddr, entry.LinkAddr)
+			_, ch, err := neigh.entry(entry.Addr, "", linkRes, func(r LinkResolutionResult) {
+				if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+					b.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 				}
 			})
 			if err != tcpip.ErrWouldBlock {
