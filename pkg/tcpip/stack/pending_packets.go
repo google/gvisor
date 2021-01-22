@@ -145,7 +145,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.N
 	//
 	// To make sure B does not interleave with A and C, we make sure A and C are
 	// done while holding the lock.
-	routeInfo, ch, err := r.ResolvedFields(nil)
+	routeInfo, ch, err := r.resolvedFields(nil)
 	switch err {
 	case nil:
 		// The route resolved immediately, so we don't need to wait for link
