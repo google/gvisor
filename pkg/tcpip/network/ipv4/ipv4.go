@@ -321,8 +321,8 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Output, pkt, gso, r, "", nicName); !ok {
+	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	if ok := e.protocol.stack.IPTables().Check(stack.Output, pkt, gso, r, "" /* preroutingAddr */, "" /* inNicName */, outNicName); !ok {
 		// iptables is telling us to drop the packet.
 		e.stats.ip.IPTablesOutputDropped.Increment()
 		return nil
@@ -436,10 +436,10 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		}
 	}
 
-	nicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
 	// iptables filtering. All packets that reach here are locally
 	// generated.
-	dropped, natPkts := e.protocol.stack.IPTables().CheckPackets(stack.Output, pkts, gso, r, nicName)
+	dropped, natPkts := e.protocol.stack.IPTables().CheckPackets(stack.Output, pkts, gso, r, "", outNicName)
 	if len(dropped) == 0 && len(natPkts) == 0 {
 		// Fast path: If no packets are to be dropped then we can just invoke the
 		// faster WritePackets API directly.
@@ -611,7 +611,8 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 	// Loopback traffic skips the prerouting chain.
 	if !e.nic.IsLoopback() {
-		if ok := e.protocol.stack.IPTables().Check(stack.Prerouting, pkt, nil, nil, e.MainAddress().Address, ""); !ok {
+		inNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+		if ok := e.protocol.stack.IPTables().Check(stack.Prerouting, pkt, nil, nil, e.MainAddress().Address, inNicName, "" /* outNicName */); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
 			return
@@ -698,7 +699,8 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
-	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, nil, "", ""); !ok {
+	inNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
+	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, nil, "" /* preroutingAddr */, inNicName, "" /* outNicName */); !ok {
 		// iptables is telling us to drop the packet.
 		stats.ip.IPTablesInputDropped.Increment()
 		return

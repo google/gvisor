@@ -93,7 +93,7 @@ func (*UDPMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, interfaceName string) (bool, bool) {
+func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
 	// into the stack.Check codepath as matchers are added.
 	switch pkt.NetworkProtocolNumber {

@@ -298,6 +298,9 @@ func (fl *IPHeaderFilter) StateFields() []string {
 		"Src",
 		"SrcMask",
 		"SrcInvert",
+		"InputInterface",
+		"InputInterfaceMask",
+		"InputInterfaceInvert",
 		"OutputInterface",
 		"OutputInterfaceMask",
 		"OutputInterfaceInvert",
@@ -316,9 +319,12 @@ func (fl *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fl.Src)
 	stateSinkObject.Save(6, &fl.SrcMask)
 	stateSinkObject.Save(7, &fl.SrcInvert)
-	stateSinkObject.Save(8, &fl.OutputInterface)
-	stateSinkObject.Save(9, &fl.OutputInterfaceMask)
-	stateSinkObject.Save(10, &fl.OutputInterfaceInvert)
+	stateSinkObject.Save(8, &fl.InputInterface)
+	stateSinkObject.Save(9, &fl.InputInterfaceMask)
+	stateSinkObject.Save(10, &fl.InputInterfaceInvert)
+	stateSinkObject.Save(11, &fl.OutputInterface)
+	stateSinkObject.Save(12, &fl.OutputInterfaceMask)
+	stateSinkObject.Save(13, &fl.OutputInterfaceInvert)
 }
 
 func (fl *IPHeaderFilter) afterLoad() {}
@@ -332,9 +338,12 @@ func (fl *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &fl.Src)
 	stateSourceObject.Load(6, &fl.SrcMask)
 	stateSourceObject.Load(7, &fl.SrcInvert)
-	stateSourceObject.Load(8, &fl.OutputInterface)
-	stateSourceObject.Load(9, &fl.OutputInterfaceMask)
-	stateSourceObject.Load(10, &fl.OutputInterfaceInvert)
+	stateSourceObject.Load(8, &fl.InputInterface)
+	stateSourceObject.Load(9, &fl.InputInterfaceMask)
+	stateSourceObject.Load(10, &fl.InputInterfaceInvert)
+	stateSourceObject.Load(11, &fl.OutputInterface)
+	stateSourceObject.Load(12, &fl.OutputInterfaceMask)
+	stateSourceObject.Load(13, &fl.OutputInterfaceInvert)
 }
 
 func (l *linkAddrEntryList) StateTypeName() string {

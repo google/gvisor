@@ -17,6 +17,7 @@
 package netfilter
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -392,4 +393,12 @@ func TargetRevision(t *kernel.Task, revPtr usermem.Addr, netProto tcpip.NetworkP
 	}
 	rev.Revision = maxSupported
 	return rev, nil
+}
+
+func trimNullBytes(b []byte) []byte {
+	n := bytes.IndexByte(b, 0)
+	if n == -1 {
+		n = len(b)
+	}
+	return b[:n]
 }
