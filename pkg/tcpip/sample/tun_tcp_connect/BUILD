@@ -8,7 +8,6 @@ go_binary(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/rawfile",

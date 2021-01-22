@@ -21,13 +21,13 @@
 package tcp_test
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
@@ -42,14 +42,16 @@ func TestFastRecovery(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 3
-	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
+	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -207,14 +209,16 @@ func TestExponentialIncreaseDuringSlowStart(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 3
-	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))
+	data := make([]byte, maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -249,14 +253,16 @@ func TestCongestionAvoidance(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 3
-	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
+	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -353,15 +359,16 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 3
-	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
-
+	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 
@@ -462,19 +469,20 @@ func TestRetransmit(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 3
-	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))
+	data := make([]byte, maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in two shots. Packets will only be written at the
 	// MTU size though.
-	half := data[:len(data)/2]
-	if _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data[:len(data)/2])
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
-	half = data[len(data)/2:]
-	if _, err := c.EP.Write(tcpip.SlicePayload(half), tcpip.WriteOptions{}); err != nil {
+	r.Reset(data[len(data)/2:])
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

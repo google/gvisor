@@ -194,9 +194,11 @@ func TestLocalPing(t *testing.T) {
 				return
 			}
 
-			payload := tcpip.SlicePayload(test.icmpBuf(t))
+			payload := test.icmpBuf(t)
+			var r bytes.Reader
+			r.Reset(payload)
 			var wOpts tcpip.WriteOptions
-			if n, err := ep.Write(payload, wOpts); err != nil {
+			if n, err := ep.Write(&r, wOpts); err != nil {
 				t.Fatalf("ep.Write(%#v, %#v): %s", payload, wOpts, err)
 			} else if n != int64(len(payload)) {
 				t.Fatalf("got ep.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", payload, wOpts, n, len(payload))
@@ -329,12 +331,14 @@ func TestLocalUDP(t *testing.T) {
 						Port: 80,
 					}
 
-					clientPayload := tcpip.SlicePayload([]byte{1, 2, 3, 4})
+					clientPayload := []byte{1, 2, 3, 4}
 					{
+						var r bytes.Reader
+						r.Reset(clientPayload)
 						wOpts := tcpip.WriteOptions{
 							To: &serverAddr,
 						}
-						if n, err := client.Write(clientPayload, wOpts); err != subTest.expectedWriteErr {
+						if n, err := client.Write(&r, wOpts); err != subTest.expectedWriteErr {
 							t.Fatalf("got client.Write(%#v, %#v) = (%d, %s), want = (_, %s)", clientPayload, wOpts, n, err, subTest.expectedWriteErr)
 						} else if subTest.expectedWriteErr != nil {
 							// Nothing else to test if we expected not to be able to send the
@@ -376,12 +380,14 @@ func TestLocalUDP(t *testing.T) {
 						}
 					}
 
-					serverPayload := tcpip.SlicePayload([]byte{1, 2, 3, 4})
+					serverPayload := []byte{1, 2, 3, 4}
 					{
+						var r bytes.Reader
+						r.Reset(serverPayload)
 						wOpts := tcpip.WriteOptions{
 							To: &clientAddr,
 						}
-						if n, err := server.Write(serverPayload, wOpts); err != nil {
+						if n, err := server.Write(&r, wOpts); err != nil {
 							t.Fatalf("server.Write(%#v, %#v): %s", serverPayload, wOpts, err)
 						} else if n != int64(len(serverPayload)) {
 							t.Fatalf("got server.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", serverPayload, wOpts, n, len(serverPayload))

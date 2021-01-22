@@ -15,6 +15,7 @@
 package tcp_test
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"reflect"
@@ -22,7 +23,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -395,14 +395,16 @@ func TestSACKRecovery(t *testing.T) {
 	createConnectedWithSACKAndTS(c)
 
 	const iterations = 3
-	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
+	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
 	for i := range data {
 		data[i] = byte(i)
 	}
 
 	// Write all the data in one shot. Packets will only be written at the
 	// MTU size though.
-	if _, err := c.EP.Write(tcpip.SlicePayload(data), tcpip.WriteOptions{}); err != nil {
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Write failed: %s", err)
 	}
 

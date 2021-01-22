@@ -15,6 +15,7 @@
 package stack_test
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -95,10 +96,11 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 		return 0, tcpip.ErrNoRoute
 	}
 
-	v, err := p.FullPayload()
-	if err != nil {
-		return 0, err
+	v := make([]byte, p.Len())
+	if _, err := io.ReadFull(p, v); err != nil {
+		return 0, tcpip.ErrBadBuffer
 	}
+
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
 		Data:               buffer.View(v).ToVectorisedView(),
@@ -520,8 +522,10 @@ func TestTransportSend(t *testing.T) {
 	}
 
 	// Create buffer that will hold the payload.
-	view := buffer.NewView(30)
-	if _, err := ep.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+	b := make([]byte, 30)
+	var r bytes.Reader
+	r.Reset(b)
+	if _, err := ep.Write(&r, tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
 

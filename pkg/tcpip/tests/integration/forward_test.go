@@ -436,9 +436,10 @@ func TestForwarding(t *testing.T) {
 					write := func(ep tcpip.Endpoint, data []byte) {
 						t.Helper()
 
-						dataPayload := tcpip.SlicePayload(data)
+						var r bytes.Reader
+						r.Reset(data)
 						var wOpts tcpip.WriteOptions
-						n, err := ep.Write(dataPayload, wOpts)
+						n, err := ep.Write(&r, wOpts)
 						if err != nil {
 							t.Fatalf("ep.Write(_, %#v): %s", wOpts, err)
 						}
@@ -486,7 +487,7 @@ func TestForwarding(t *testing.T) {
 
 					read(serverCH, serverEP, data, clientAddr)
 
-					data = tcpip.SlicePayload([]byte{5, 6, 7, 8, 9, 10, 11, 12})
+					data = []byte{5, 6, 7, 8, 9, 10, 11, 12}
 					write(serverEP, data)
 					read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, serverAddr)
 				})

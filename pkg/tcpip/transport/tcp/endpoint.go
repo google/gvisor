@@ -1534,14 +1534,19 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 	}
 
 	// Fetch data.
-	v, perr := p.Payload(avail)
-	if perr != nil || len(v) == 0 {
-		// Note that perr may be nil if len(v) == 0.
+	if l := p.Len(); l < avail {
+		avail = l
+	}
+	if avail == 0 {
+		return 0, nil
+	}
+	v := make([]byte, avail)
+	if _, err := io.ReadFull(p, v); err != nil {
 		if opts.Atomic {
 			e.sndBufMu.Unlock()
 			e.UnlockUser()
 		}
-		return 0, perr
+		return 0, tcpip.ErrBadBuffer
 	}
 
 	if !opts.Atomic {

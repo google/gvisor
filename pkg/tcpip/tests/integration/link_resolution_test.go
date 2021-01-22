@@ -209,8 +209,10 @@ func TestPing(t *testing.T) {
 			defer ep.Close()
 
 			icmpBuf := test.icmpBuf(t)
+			var r bytes.Reader
+			r.Reset(icmpBuf)
 			wOpts := tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: test.remoteAddr}}
-			if n, err := ep.Write(tcpip.SlicePayload(icmpBuf), wOpts); err != nil {
+			if n, err := ep.Write(&r, wOpts); err != nil {
 				t.Fatalf("ep.Write(_, _): %s", err)
 			} else if want := int64(len(icmpBuf)); n != want {
 				t.Fatalf("got ep.Write(_, _) = (%d, _), want = (%d, _)", n, want)
@@ -360,9 +362,11 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			// Wait for an error due to link resolution failing, or the endpoint to be
 			// writable.
 			<-ch
+			var r bytes.Reader
+			r.Reset([]byte{0})
 			var wOpts tcpip.WriteOptions
-			if n, err := clientEP.Write(tcpip.SlicePayload(nil), wOpts); err != test.expectedWriteErr {
-				t.Errorf("got clientEP.Write(nil, %#v) = (%d, %s), want = (_, %s)", wOpts, n, err, test.expectedWriteErr)
+			if n, err := clientEP.Write(&r, wOpts); err != test.expectedWriteErr {
+				t.Errorf("got clientEP.Write(_, %#v) = (%d, %s), want = (_, %s)", wOpts, n, err, test.expectedWriteErr)
 			}
 
 			if test.expectedWriteErr == nil {
