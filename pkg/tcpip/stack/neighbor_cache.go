@@ -126,7 +126,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address, linkRes LinkA
 // packet prompting NUD/link address resolution.
 //
 // TODO(gvisor.dev/issue/5151): Don't return the neighbor entry.
-func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(tcpip.LinkAddress, bool)) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
+func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (NeighborEntry, <-chan struct{}, *tcpip.Error) {
 	entry := n.getOrCreateEntry(remoteAddr, linkRes)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -142,7 +142,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, linkRes LinkA
 		//   a node continues sending packets to that neighbor using the cached
 		//   link-layer address."
 		if onResolve != nil {
-			onResolve(entry.neigh.LinkAddr, true)
+			onResolve(LinkResolutionResult{LinkAddress: entry.neigh.LinkAddr, Success: true})
 		}
 		return entry.neigh, nil, nil
 	case Unknown, Incomplete, Failed:
