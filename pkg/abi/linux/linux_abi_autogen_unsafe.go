@@ -1284,7 +1284,7 @@ func (f *Flock) MarshalBytes(dst []byte) {
     dst = dst[8:]
     usermem.ByteOrder.PutUint64(dst[:8], uint64(f.Len))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.Pid))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(f.PID))
     dst = dst[4:]
     // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
     dst = dst[1*(4):]
@@ -1302,7 +1302,7 @@ func (f *Flock) UnmarshalBytes(src []byte) {
     src = src[8:]
     f.Len = int64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    f.Pid = int32(usermem.ByteOrder.Uint32(src[:4]))
+    f.PID = int32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: ~ copy([4]byte(f._), src[:sizeof(byte)*4])
     src = src[1*(4):]

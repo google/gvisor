@@ -54,6 +54,8 @@ import (
 	"math"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -83,6 +85,17 @@ const (
 // offset 0 to LockEOF.
 const LockEOF = math.MaxUint64
 
+// OwnerInfo describes the owner of a lock.
+//
+// TODO(gvisor.dev/issue/5264): We may need to add other fields in the future
+// (e.g., Linux's file_lock.fl_flags to support open file-descriptor locks).
+//
+// +stateify savable
+type OwnerInfo struct {
+	// PID is the process ID of the lock owner.
+	PID int32
+}
+
 // Lock is a regional file lock.  It consists of either a single writer
 // or a set of readers.
 //
@@ -92,14 +105,20 @@ const LockEOF = math.MaxUint64
 // A Lock may be downgraded from a write lock to a read lock only if
 // the write lock's uid is the same as the read lock.
 //
+// Accesses to Lock are synchronized through the Locks object to which it
+// belongs.
+//
 // +stateify savable
 type Lock struct {
 	// Readers are the set of read lock holders identified by UniqueID.
-	// If len(Readers) > 0 then HasWriter must be false.
-	Readers map[UniqueID]bool
+	// If len(Readers) > 0 then Writer must be nil.
+	Readers map[UniqueID]OwnerInfo
 
 	// Writer holds the writer unique ID. It's nil if there are no writers.
 	Writer UniqueID
+
+	// WriterInfo describes the writer. It is only meaningful if Writer != nil.
+	WriterInfo OwnerInfo
 }
 
 // Locks is a thread-safe wrapper around a LockSet.
@@ -135,14 +154,14 @@ const (
 // acquiring the lock in a non-blocking mode or "interrupted" if in a blocking mode.
 // Blocker is the interface used to provide blocking behavior, passing a nil Blocker
 // will result in non-blocking behavior.
-func (l *Locks) LockRegion(uid UniqueID, t LockType, r LockRange, block Blocker) bool {
+func (l *Locks) LockRegion(uid UniqueID, ownerPID int32, t LockType, r LockRange, block Blocker) bool {
 	for {
 		l.mu.Lock()
 
 		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
 		// happens for this lock. We will then attempt to take the lock again and if it fails
 		// continue blocking.
-		res := l.locks.lock(uid, t, r)
+		res := l.locks.lock(uid, ownerPID, t, r)
 		if !res && block != nil {
 			e, ch := waiter.NewChannelEntry(nil)
 			l.blockedQueue.EventRegister(&e, EventMaskAll)
@@ -161,6 +180,14 @@ func (l *Locks) LockRegion(uid UniqueID, t LockType, r LockRange, block Blocker)
 	}
 }
 
+// LockRegionVFS1 is a wrapper around LockRegion for VFS1, which does not implement
+// F_GETLK (and does not care about storing PIDs as a result).
+//
+// TODO(gvisor.dev/issue/1624): Delete.
+func (l *Locks) LockRegionVFS1(uid UniqueID, t LockType, r LockRange, block Blocker) bool {
+	return l.LockRegion(uid, 0 /* ownerPID */, t, r, block)
+}
+
 // UnlockRegion attempts to release a lock for the uid on a region of a file.
 // This operation is always successful, even if there did not exist a lock on
 // the requested region held by uid in the first place.
@@ -175,13 +202,14 @@ func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 
 // makeLock returns a new typed Lock that has either uid as its only reader
 // or uid as its only writer.
-func makeLock(uid UniqueID, t LockType) Lock {
-	value := Lock{Readers: make(map[UniqueID]bool)}
+func makeLock(uid UniqueID, ownerPID int32, t LockType) Lock {
+	value := Lock{Readers: make(map[UniqueID]OwnerInfo)}
 	switch t {
 	case ReadLock:
-		value.Readers[uid] = true
+		value.Readers[uid] = OwnerInfo{PID: ownerPID}
 	case WriteLock:
 		value.Writer = uid
+		value.WriterInfo = OwnerInfo{PID: ownerPID}
 	default:
 		panic(fmt.Sprintf("makeLock: invalid lock type %d", t))
 	}
@@ -190,17 +218,20 @@ func makeLock(uid UniqueID, t LockType) Lock {
 
 // isHeld returns true if uid is a holder of Lock.
 func (l Lock) isHeld(uid UniqueID) bool {
-	return l.Writer == uid || l.Readers[uid]
+	if _, ok := l.Readers[uid]; ok {
+		return true
+	}
+	return l.Writer == uid
 }
 
 // lock sets uid as a holder of a typed lock on Lock.
 //
 // Preconditions: canLock is true for the range containing this Lock.
-func (l *Lock) lock(uid UniqueID, t LockType) {
+func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType) {
 	switch t {
 	case ReadLock:
 		// If we are already a reader, then this is a no-op.
-		if l.Readers[uid] {
+		if _, ok := l.Readers[uid]; ok {
 			return
 		}
 		// We cannot downgrade a write lock to a read lock unless the
@@ -210,11 +241,11 @@ func (l *Lock) lock(uid UniqueID, t LockType) {
 				panic(fmt.Sprintf("lock: cannot downgrade write lock to read lock for uid %d, writer is %d", uid, l.Writer))
 			}
 			// Ensure that there is only one reader if upgrading.
-			l.Readers = make(map[UniqueID]bool)
+			l.Readers = make(map[UniqueID]OwnerInfo)
 			// Ensure that there is no longer a writer.
 			l.Writer = nil
 		}
-		l.Readers[uid] = true
+		l.Readers[uid] = OwnerInfo{PID: ownerPID}
 		return
 	case WriteLock:
 		// If we are already the writer, then this is a no-op.
@@ -228,13 +259,14 @@ func (l *Lock) lock(uid UniqueID, t LockType) {
 			if readers != 1 {
 				panic(fmt.Sprintf("lock: cannot upgrade read lock to write lock for uid %d, too many readers %v", uid, l.Readers))
 			}
-			if !l.Readers[uid] {
+			if _, ok := l.Readers[uid]; !ok {
 				panic(fmt.Sprintf("lock: cannot upgrade read lock to write lock for uid %d, conflicting reader %v", uid, l.Readers))
 			}
 		}
 		// Ensure that there is only a writer.
-		l.Readers = make(map[UniqueID]bool)
+		l.Readers = make(map[UniqueID]OwnerInfo)
 		l.Writer = uid
+		l.WriterInfo = OwnerInfo{PID: ownerPID}
 	default:
 		panic(fmt.Sprintf("lock: invalid lock type %d", t))
 	}
@@ -247,7 +279,7 @@ func (l LockSet) lockable(r LockRange, check func(value Lock) bool) bool {
 	// Get our starting point.
 	seg := l.LowerBoundSegment(r.Start)
 	for seg.Ok() && seg.Start() < r.End {
-		// Note that we don't care about overruning the end of the
+		// Note that we don't care about overrunning the end of the
 		// last segment because if everything checks out we'll just
 		// split the last segment.
 		if !check(seg.Value()) {
@@ -281,7 +313,7 @@ func (l LockSet) canLock(uid UniqueID, t LockType, r LockRange) bool {
 			if value.Writer == nil {
 				// Then this uid can only take a write lock if this is a private
 				// upgrade, meaning that the only reader is uid.
-				return len(value.Readers) == 1 && value.Readers[uid]
+				return value.isOnlyReader(uid)
 			}
 			// If the uid is already a writer on this region, then
 			// adding a write lock would be a no-op.
@@ -292,11 +324,19 @@ func (l LockSet) canLock(uid UniqueID, t LockType, r LockRange) bool {
 	}
 }
 
+func (l *Lock) isOnlyReader(uid UniqueID) bool {
+	if len(l.Readers) != 1 {
+		return false
+	}
+	_, ok := l.Readers[uid]
+	return ok
+}
+
 // lock returns true if uid took a lock of type t on the entire range of
 // LockRange.
 //
 // Preconditions: r.Start <= r.End (will panic otherwise).
-func (l *LockSet) lock(uid UniqueID, t LockType, r LockRange) bool {
+func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) bool {
 	if r.Start > r.End {
 		panic(fmt.Sprintf("lock: r.Start %d > r.End %d", r.Start, r.End))
 	}
@@ -317,7 +357,7 @@ func (l *LockSet) lock(uid UniqueID, t LockType, r LockRange) bool {
 	seg, gap := l.Find(r.Start)
 	if gap.Ok() {
 		// Fill in the gap and get the next segment to modify.
-		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, t)).NextSegment()
+		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, ownerPID, t)).NextSegment()
 	} else if seg.Start() < r.Start {
 		// Get our first segment to modify.
 		_, seg = l.Split(seg, r.Start)
@@ -331,12 +371,12 @@ func (l *LockSet) lock(uid UniqueID, t LockType, r LockRange) bool {
 		// Set the lock on the segment. This is guaranteed to
 		// always be safe, given canLock above.
 		value := seg.ValuePtr()
-		value.lock(uid, t)
+		value.lock(uid, ownerPID, t)
 
 		// Fill subsequent gaps.
 		gap = seg.NextGap()
 		if gr := gap.Range().Intersect(r); gr.Length() > 0 {
-			seg = l.Insert(gap, gr, makeLock(uid, t)).NextSegment()
+			seg = l.Insert(gap, gr, makeLock(uid, ownerPID, t)).NextSegment()
 		} else {
 			seg = gap.NextSegment()
 		}
@@ -380,7 +420,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 			// only ever be one writer and no readers, then this
 			// lock should always be removed from the set.
 			remove = true
-		} else if value.Readers[uid] {
+		} else if _, ok := value.Readers[uid]; ok {
 			// If uid is the last reader, then just remove the entire
 			// segment.
 			if len(value.Readers) == 1 {
@@ -390,7 +430,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 				// affecting any other segment's readers.  To do
 				// this, we need to make a copy of the Readers map
 				// and not add this uid.
-				newValue := Lock{Readers: make(map[UniqueID]bool)}
+				newValue := Lock{Readers: make(map[UniqueID]OwnerInfo)}
 				for k, v := range value.Readers {
 					if k != uid {
 						newValue.Readers[k] = v
@@ -450,4 +490,73 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 	}
 	// Offset is guaranteed to be positive at this point.
 	return LockRange{Start: uint64(offset), End: end}, nil
+}
+
+// TestRegion checks whether the lock holder identified by uid can hold a lock
+// of type t on range r. It returns a Flock struct representing this
+// information as the F_GETLK fcntl does.
+//
+// Note that the PID returned in the flock structure is relative to the root PID
+// namespace. It needs to be converted to the caller's PID namespace before
+// returning to userspace.
+//
+// TODO(gvisor.dev/issue/5264): we don't support OFD locks through fcntl, which
+// would return a struct with pid = -1.
+func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange) linux.Flock {
+	f := linux.Flock{Type: linux.F_UNLCK}
+	switch t {
+	case ReadLock:
+		l.testRegion(r, func(lock Lock, start, length uint64) bool {
+			if lock.Writer == nil || lock.Writer == uid {
+				return true
+			}
+			f.Type = linux.F_WRLCK
+			f.PID = lock.WriterInfo.PID
+			f.Start = int64(start)
+			f.Len = int64(length)
+			return false
+		})
+	case WriteLock:
+		l.testRegion(r, func(lock Lock, start, length uint64) bool {
+			if lock.Writer == nil {
+				for k, v := range lock.Readers {
+					if k != uid {
+						// Stop at the first conflict detected.
+						f.Type = linux.F_RDLCK
+						f.PID = v.PID
+						f.Start = int64(start)
+						f.Len = int64(length)
+						return false
+					}
+				}
+				return true
+			}
+			if lock.Writer == uid {
+				return true
+			}
+			f.Type = linux.F_WRLCK
+			f.PID = lock.WriterInfo.PID
+			f.Start = int64(start)
+			f.Len = int64(length)
+			return false
+		})
+	default:
+		panic(fmt.Sprintf("TestRegion: invalid lock type %d", t))
+	}
+	return f
+}
+
+func (l *Locks) testRegion(r LockRange, check func(lock Lock, start, length uint64) bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	seg := l.locks.LowerBoundSegment(r.Start)
+	for seg.Ok() && seg.Start() < r.End {
+		lock := seg.Value()
+		if !check(lock, seg.Start(), seg.End()-seg.Start()) {
+			// Stop at the first conflict detected.
+			return
+		}
+		seg = seg.NextSegment()
+	}
 }
