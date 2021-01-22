@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -69,12 +68,18 @@ var globalData struct {
 }
 
 // ClearCoverageData clears existing coverage data.
+//
+//go:norace
 func ClearCoverageData() {
 	coverageMu.Lock()
 	defer coverageMu.Unlock()
+
+	// We do not use atomic operations while reading/writing to the counters,
+	// which would drastically degrade performance. Slight discrepancies due to
+	// racing is okay for the purposes of kcov.
 	for _, counters := range coverdata.Cover.Counters {
 		for index := 0; index < len(counters); index++ {
-			atomic.StoreUint32(&counters[index], 0)
+			counters[index] = 0
 		}
 	}
 }
@@ -114,6 +119,8 @@ var coveragePool = sync.Pool{
 // ensure that each event is only reported once. Due to the limitations of Go
 // coverage tools, we reset the global coverage data every time this function is
 // run.
+//
+//go:norace
 func ConsumeCoverageData(w io.Writer) int {
 	InitCoverageData()
 
@@ -125,11 +132,14 @@ func ConsumeCoverageData(w io.Writer) int {
 	for fileNum, file := range globalData.files {
 		counters := coverdata.Cover.Counters[file]
 		for index := 0; index < len(counters); index++ {
-			if atomic.LoadUint32(&counters[index]) == 0 {
+			// We do not use atomic operations while reading/writing to the counters,
+			// which would drastically degrade performance. Slight discrepancies due to
+			// racing is okay for the purposes of kcov.
+			if counters[index] == 0 {
 				continue
 			}
 			// Non-zero coverage data found; consume it and report as a PC.
-			atomic.StoreUint32(&counters[index], 0)
+			counters[index] = 0
 			pc := globalData.syntheticPCs[fileNum][index]
 			usermem.ByteOrder.PutUint64(pcBuffer[:], pc)
 			n, err := w.Write(pcBuffer[:])
