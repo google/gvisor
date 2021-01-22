@@ -1708,12 +1708,9 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 				t.Errorf("wait on child container: %v", err)
 			}
 
-			// Wait for the root container to run.
-			expectedPL := []*control.Process{
-				newProcessBuilder().Cmd("sh").Process(),
-				newProcessBuilder().Cmd("sleep").Process(),
-			}
-			if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			// Wait until after `env` has executed.
+			expectedProc := newProcessBuilder().Cmd("sleep").Process()
+			if err := waitForProcess(containers[0], expectedProc); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 
@@ -1831,7 +1828,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 	cmd1 := fmt.Sprintf("env > %q; sleep 1000", files[0].Name())
 	cmd2 := fmt.Sprintf("env > %q", files[1].Name())
 	cmdExec := fmt.Sprintf("env > %q", files[2].Name())
-	testSpecs, ids := createSpecs([]string{"/bin/bash", "-c", cmd1}, []string{"/bin/bash", "-c", cmd2})
+	testSpecs, ids := createSpecs([]string{"/bin/sh", "-c", cmd1}, []string{"/bin/sh", "-c", cmd2})
 	testSpecs[0].Process.Env = append(testSpecs[0].Process.Env, "VAR=foo", "VAR=bar")
 	testSpecs[1].Process.Env = append(testSpecs[1].Process.Env, "VAR=foo", "VAR=bar")
 
@@ -1841,12 +1838,9 @@ func TestDuplicateEnvVariable(t *testing.T) {
 	}
 	defer cleanup()
 
-	// Wait for the `env` from the root container to finish.
-	expectedPL := []*control.Process{
-		newProcessBuilder().Cmd("bash").Process(),
-		newProcessBuilder().Cmd("sleep").Process(),
-	}
-	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+	// Wait until after `env` has executed.
+	expectedProc := newProcessBuilder().Cmd("sleep").Process()
+	if err := waitForProcess(containers[0], expectedProc); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
 	if ws, err := containers[1].Wait(); err != nil {
@@ -1856,8 +1850,8 @@ func TestDuplicateEnvVariable(t *testing.T) {
 	}
 
 	execArgs := &control.ExecArgs{
-		Filename: "/bin/bash",
-		Argv:     []string{"/bin/bash", "-c", cmdExec},
+		Filename: "/bin/sh",
+		Argv:     []string{"/bin/sh", "-c", cmdExec},
 		Envv:     []string{"VAR=foo", "VAR=bar"},
 	}
 	if ws, err := containers[0].executeSync(execArgs); err != nil || ws.ExitStatus() != 0 {
