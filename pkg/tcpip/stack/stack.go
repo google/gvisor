@@ -1533,7 +1533,7 @@ type LinkResolutionResult struct {
 	Success     bool
 }
 
-// GetLinkAddress finds the link address corresponding to a neighbor's address.
+// GetLinkAddress finds the link address corresponding to a network address.
 //
 // Returns ErrNotSupported if the stack is not configured with a link address
 // resolver for the specified network protocol.
@@ -1560,6 +1560,11 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 	linkRes, ok := s.linkAddrResolvers[protocol]
 	if !ok {
 		return tcpip.ErrNotSupported
+	}
+
+	if linkAddr, ok := linkRes.ResolveStaticAddress(addr); ok {
+		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Success: true})
+		return nil
 	}
 
 	_, _, err := nic.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
