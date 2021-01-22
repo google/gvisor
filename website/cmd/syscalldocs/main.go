@@ -76,9 +76,9 @@ syscalls. {{if .Undocumented}}{{.Undocumented}} syscalls are not yet documented.
   </thead>
   <tbody>
  	{{range $i, $syscall := .Syscalls}}
-    <tr>
-      <td><a class="doc-table-anchor" id="{{.Name}}"></a>{{.Number}}</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/{{.Name}}.2.html" target="_blank" rel="noopener">{{.Name}}</a></td>
+    <tr id="{{.Name}}">
+      <td><a href="#{{.Name}}">{{.Number}}</a></td>
+      <td><a href="{{.DocURL}}" target="_blank" rel="noopener">{{.Name}}</a></td>
       <td>{{.Support}}</td>
 	  <td>{{.Note}} {{range $i, $url := .URLs}}<br/>See: <a href="{{.}}">{{.}}</a>{{end}}</td>
     </tr>
@@ -91,6 +91,27 @@ syscalls. {{if .Undocumented}}{{.Undocumented}} syscalls are not yet documented.
 func Fatalf(format string, a ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, a...)
 	os.Exit(1)
+}
+
+// syscallDocURL returns a doc url for a given syscall, doing its best to return a url that exists.
+func syscallDocURL(name string) string {
+	customDocs := map[string]string{
+		"io_pgetevents":     "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"rseq":              "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"io_uring_setup":    "https://manpages.debian.org/buster-backports/liburing-dev/io_uring_setup.2.en.html",
+		"io_uring_enter":    "https://manpages.debian.org/buster-backports/liburing-dev/io_uring_enter.2.en.html",
+		"io_uring_register": "https://manpages.debian.org/buster-backports/liburing-dev/io_uring_register.2.en.html",
+		"open_tree":         "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"move_mount":        "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"fsopen":            "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"fsconfig":          "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"fsmount":           "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+		"fspick":            "https://man7.org/linux/man-pages/man2/syscalls.2.html",
+	}
+	if url, ok := customDocs[name]; ok {
+		return url
+	}
+	return fmt.Sprintf("http://man7.org/linux/man-pages/man2/%s.2.html", name)
 }
 
 func main() {
@@ -146,6 +167,7 @@ func main() {
 				Syscalls     []struct {
 					Name    string
 					Number  uintptr
+					DocURL  string
 					Support string
 					Note    string
 					URLs    []string
@@ -162,6 +184,7 @@ func main() {
 				Syscalls: []struct {
 					Name    string
 					Number  uintptr
+					DocURL  string
 					Support string
 					Note    string
 					URLs    []string
@@ -188,14 +211,16 @@ func main() {
 				data.Syscalls = append(data.Syscalls, struct {
 					Name    string
 					Number  uintptr
+					DocURL  string
 					Support string
 					Note    string
 					URLs    []string
 				}{
 					Name:    s.Name,
 					Number:  num,
+					DocURL:  syscallDocURL(s.Name),
 					Support: s.Support,
-					Note:    s.Note, // TODO urls
+					Note:    s.Note,
 					URLs:    s.URLs,
 				})
 			}
