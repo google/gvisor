@@ -31,7 +31,6 @@ import (
 	"strconv"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -367,7 +366,7 @@ func fstat(fd int) (unix.Stat_t, error) {
 }
 
 func fchown(fd int, uid p9.UID, gid p9.GID) error {
-	return unix.Fchownat(fd, "", int(uid), int(gid), linux.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
+	return unix.Fchownat(fd, "", int(uid), int(gid), unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
 func setOwnerIfNeeded(fd int, uid p9.UID, gid p9.GID) (unix.Stat_t, error) {
@@ -734,15 +733,15 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 
 	if valid.ATime || valid.MTime {
 		utimes := [2]unix.Timespec{
-			{Sec: 0, Nsec: linux.UTIME_OMIT},
-			{Sec: 0, Nsec: linux.UTIME_OMIT},
+			{Sec: 0, Nsec: unix.UTIME_OMIT},
+			{Sec: 0, Nsec: unix.UTIME_OMIT},
 		}
 		if valid.ATime {
 			if valid.ATimeNotSystemTime {
 				utimes[0].Sec = int64(attr.ATimeSeconds)
 				utimes[0].Nsec = int64(attr.ATimeNanoSeconds)
 			} else {
-				utimes[0].Nsec = linux.UTIME_NOW
+				utimes[0].Nsec = unix.UTIME_NOW
 			}
 		}
 		if valid.MTime {
@@ -750,7 +749,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 				utimes[1].Sec = int64(attr.MTimeSeconds)
 				utimes[1].Nsec = int64(attr.MTimeNanoSeconds)
 			} else {
-				utimes[1].Nsec = linux.UTIME_NOW
+				utimes[1].Nsec = unix.UTIME_NOW
 			}
 		}
 
@@ -764,7 +763,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			}
 			defer unix.Close(parent)
 
-			if tErr := utimensat(parent, path.Base(l.hostPath), utimes, linux.AT_SYMLINK_NOFOLLOW); tErr != nil {
+			if tErr := utimensat(parent, path.Base(l.hostPath), utimes, unix.AT_SYMLINK_NOFOLLOW); tErr != nil {
 				log.Debugf("SetAttr utimens failed %q, err: %v", l.hostPath, tErr)
 				err = extractErrno(tErr)
 			}
@@ -779,15 +778,15 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	}
 
 	if valid.UID || valid.GID {
-		uid := -1
+		uid := p9.NoUID
 		if valid.UID {
-			uid = int(attr.UID)
+			uid = attr.UID
 		}
-		gid := -1
+		gid := p9.NoGID
 		if valid.GID {
-			gid = int(attr.GID)
+			gid = attr.GID
 		}
-		if oErr := unix.Fchownat(f.FD(), "", uid, gid, linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW); oErr != nil {
+		if oErr := fchown(f.FD(), uid, gid); oErr != nil {
 			log.Debugf("SetAttr fchownat failed %q, err: %v", l.hostPath, oErr)
 			err = extractErrno(oErr)
 		}
@@ -916,7 +915,7 @@ func (l *localFile) Link(target p9.File, newName string) error {
 	}
 
 	targetFile := target.(*localFile)
-	if err := unix.Linkat(targetFile.file.FD(), "", l.file.FD(), newName, linux.AT_EMPTY_PATH); err != nil {
+	if err := unix.Linkat(targetFile.file.FD(), "", l.file.FD(), newName, unix.AT_EMPTY_PATH); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -1103,7 +1102,8 @@ func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	// mappings, the app path may have fit in the sockaddr, but we can't
 	// fit f.path in our sockaddr. We'd need to redirect through a shorter
 	// path in order to actually connect to this socket.
-	if len(l.hostPath) > linux.UnixPathMax {
+	const UNIX_PATH_MAX = 108 // defined in afunix.h
+	if len(l.hostPath) > UNIX_PATH_MAX {
 		return nil, unix.ECONNREFUSED
 	}
 
