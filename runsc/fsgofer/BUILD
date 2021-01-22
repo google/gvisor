@@ -12,7 +12,6 @@ go_library(
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/fd",
         "//pkg/log",
