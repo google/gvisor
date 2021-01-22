@@ -471,6 +471,141 @@ func TestGetLinkAddress(t *testing.T) {
 	}
 }
 
+func TestRouteResolvedFields(t *testing.T) {
+	const (
+		host1NICID = 1
+		host2NICID = 4
+	)
+
+	tests := []struct {
+		name                  string
+		netProto              tcpip.NetworkProtocolNumber
+		localAddr             tcpip.Address
+		remoteAddr            tcpip.Address
+		immediatelyResolvable bool
+		expectedSuccess       bool
+		expectedLinkAddr      tcpip.LinkAddress
+	}{
+		{
+			name:                  "IPv4 immediately resolvable",
+			netProto:              ipv4.ProtocolNumber,
+			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:            header.IPv4AllSystems,
+			immediatelyResolvable: true,
+			expectedSuccess:       true,
+			expectedLinkAddr:      header.EthernetAddressFromMulticastIPv4Address(header.IPv4AllSystems),
+		},
+		{
+			name:                  "IPv6 immediately resolvable",
+			netProto:              ipv6.ProtocolNumber,
+			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:            header.IPv6AllNodesMulticastAddress,
+			immediatelyResolvable: true,
+			expectedSuccess:       true,
+			expectedLinkAddr:      header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllNodesMulticastAddress),
+		},
+		{
+			name:                  "IPv4 resolvable",
+			netProto:              ipv4.ProtocolNumber,
+			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:            ipv4Addr2.AddressWithPrefix.Address,
+			immediatelyResolvable: false,
+			expectedSuccess:       true,
+			expectedLinkAddr:      linkAddr2,
+		},
+		{
+			name:                  "IPv6 resolvable",
+			netProto:              ipv6.ProtocolNumber,
+			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:            ipv6Addr2.AddressWithPrefix.Address,
+			immediatelyResolvable: false,
+			expectedSuccess:       true,
+			expectedLinkAddr:      linkAddr2,
+		},
+		{
+			name:                  "IPv4 not resolvable",
+			netProto:              ipv4.ProtocolNumber,
+			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:            ipv4Addr3.AddressWithPrefix.Address,
+			immediatelyResolvable: false,
+			expectedSuccess:       false,
+		},
+		{
+			name:                  "IPv6 not resolvable",
+			netProto:              ipv6.ProtocolNumber,
+			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:            ipv6Addr3.AddressWithPrefix.Address,
+			immediatelyResolvable: false,
+			expectedSuccess:       false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, useNeighborCache := range []bool{true, false} {
+				t.Run(fmt.Sprintf("UseNeighborCache=%t", useNeighborCache), func(t *testing.T) {
+					stackOpts := stack.Options{
+						NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+						UseNeighborCache: useNeighborCache,
+					}
+
+					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+					r, err := host1Stack.FindRoute(host1NICID, "", test.remoteAddr, test.netProto, false /* multicastLoop */)
+					if err != nil {
+						t.Fatalf("host1Stack.FindRoute(%d, '', %s, %d, false): %s", host1NICID, test.remoteAddr, test.netProto, err)
+					}
+					defer r.Release()
+
+					var wantRouteInfo stack.RouteInfo
+					wantRouteInfo.LocalLinkAddress = linkAddr1
+					wantRouteInfo.LocalAddress = test.localAddr
+					wantRouteInfo.RemoteAddress = test.remoteAddr
+					wantRouteInfo.NetProto = test.netProto
+					wantRouteInfo.Loop = stack.PacketOut
+					wantRouteInfo.RemoteLinkAddress = test.expectedLinkAddr
+
+					ch := make(chan stack.ResolvedFieldsResult, 1)
+
+					if !test.immediatelyResolvable {
+						wantUnresolvedRouteInfo := wantRouteInfo
+						wantUnresolvedRouteInfo.RemoteLinkAddress = ""
+
+						if err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
+							ch <- r
+						}); err != tcpip.ErrWouldBlock {
+							t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, tcpip.ErrWouldBlock)
+						}
+						if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: test.expectedSuccess}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+							t.Errorf("route resolve result mismatch (-want +got):\n%s", diff)
+						}
+
+						if !test.expectedSuccess {
+							return
+						}
+
+						// At this point the neighbor table should be populated so the route
+						// should be immediately resolvable.
+					}
+
+					if err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
+						ch <- r
+					}); err != nil {
+						t.Errorf("r.ResolvedFields(_): %s", err)
+					}
+					select {
+					case routeResolveRes := <-ch:
+						if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: true}, routeResolveRes, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+							t.Errorf("route resolve result from resolved route mismatch (-want +got):\n%s", diff)
+						}
+					default:
+						t.Fatal("expected route to be immediately resolvable")
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestWritePacketsLinkResolution(t *testing.T) {
 	const (
 		host1NICID = 1
