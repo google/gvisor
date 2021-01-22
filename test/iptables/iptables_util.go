@@ -171,7 +171,7 @@ func connectTCP(ctx context.Context, ip net.IP, port int) error {
 		return err
 	}
 	if err := testutil.PollContext(ctx, callback); err != nil {
-		return fmt.Errorf("timed out waiting to connect IP on port %v, most recent error: %v", port, err)
+		return fmt.Errorf("timed out waiting to connect IP on port %v, most recent error: %w", port, err)
 	}
 
 	return nil
