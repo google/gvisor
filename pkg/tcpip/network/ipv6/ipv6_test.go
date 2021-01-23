@@ -371,12 +371,10 @@ func TestAddIpv6Address(t *testing.T) {
 				t.Fatalf("AddAddress(_, %d, nil) = %s", ProtocolNumber, err)
 			}
 
-			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
-			}
-			if addr.Address != test.addr {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr.Address, test.addr)
+			if addr, ok := s.GetMainNICAddress(1, header.IPv6ProtocolNumber); !ok {
+				t.Fatalf("got stack.GetMainNICAddress(1, %d) = (_, false), want = (_, true)", header.IPv6ProtocolNumber)
+			} else if addr.Address != test.addr {
+				t.Fatalf("got stack.GetMainNICAddress(1_, %d) = (%s, true), want = (%s, true)", header.IPv6ProtocolNumber, addr.Address, test.addr)
 			}
 		})
 	}

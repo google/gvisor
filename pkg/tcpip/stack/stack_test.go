@@ -60,6 +60,15 @@ const (
 	protocolNumberOffset = 2
 )
 
+func checkGetMainNICAddress(s *stack.Stack, nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, want tcpip.AddressWithPrefix) error {
+	if addr, ok := s.GetMainNICAddress(nicID, proto); !ok {
+		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, false), want = (_, true)", nicID, proto)
+	} else if addr != want {
+		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = (%s, true), want = (%s, true)", nicID, proto, addr, want)
+	}
+	return nil
+}
+
 // fakeNetworkEndpoint is a network-layer protocol endpoint. It counts sent and
 // received packets; the counts of all endpoints are aggregated in the protocol
 // descriptor.
@@ -1873,20 +1882,20 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 							// Check that GetMainNICAddress returns an address if at least
 							// one primary address was added. In that case make sure the
 							// address/prefixLen matches what we added.
-							gotAddr, err := s.GetMainNICAddress(1, fakeNetNumber)
-							if err != nil {
-								t.Fatal("GetMainNICAddress failed:", err)
+							gotAddr, ok := s.GetMainNICAddress(1, fakeNetNumber)
+							if !ok {
+								t.Fatalf("got GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
 							}
 							if len(primaryAddrAdded) == 0 {
 								// No primary addresses present.
 								if wantAddr := (tcpip.AddressWithPrefix{}); gotAddr != wantAddr {
-									t.Fatalf("GetMainNICAddress: got addr = %s, want = %s", gotAddr, wantAddr)
+									t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, gotAddr, wantAddr)
 								}
 							} else {
 								// At least one primary address was added, verify the returned
 								// address is in the list of primary addresses we added.
 								if _, ok := primaryAddrAdded[gotAddr]; !ok {
-									t.Fatalf("GetMainNICAddress: got = %s, want any in {%v}", gotAddr, primaryAddrAdded)
+									t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, gotAddr, primaryAddrAdded)
 								}
 							}
 						})
@@ -1927,12 +1936,8 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 			}
 
 			// Check that we get the right initial address and prefix length.
-			gotAddr, err := s.GetMainNICAddress(1, fakeNetNumber)
-			if err != nil {
-				t.Fatal("GetMainNICAddress failed:", err)
-			}
-			if wantAddr := protocolAddress.AddressWithPrefix; gotAddr != wantAddr {
-				t.Fatalf("got s.GetMainNICAddress(...) = %s, want = %s", gotAddr, wantAddr)
+			if err := checkGetMainNICAddress(s, 1, fakeNetNumber, protocolAddress.AddressWithPrefix); err != nil {
+				t.Fatal(err)
 			}
 
 			if err := s.RemoveAddress(1, protocolAddress.AddressWithPrefix.Address); err != nil {
@@ -1940,12 +1945,8 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 			}
 
 			// Check that we get no address after removal.
-			gotAddr, err = s.GetMainNICAddress(1, fakeNetNumber)
-			if err != nil {
-				t.Fatal("GetMainNICAddress failed:", err)
-			}
-			if wantAddr := (tcpip.AddressWithPrefix{}); gotAddr != wantAddr {
-				t.Fatalf("got GetMainNICAddress(...) = %s, want = %s", gotAddr, wantAddr)
+			if err := checkGetMainNICAddress(s, 1, fakeNetNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -2486,12 +2487,12 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 				}
 			}
 
-			gotMainAddr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
+			// Check that we get no address after removal.
+			if err := checkGetMainNICAddress(s, 1, fakeNetNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
-			if gotMainAddr != expectedMainAddr {
-				t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", gotMainAddr, expectedMainAddr)
+			if err := checkGetMainNICAddress(s, 1, header.IPv6ProtocolNumber, expectedMainAddr); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -2537,12 +2538,8 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, nicOpts, err)
 			}
 
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("stack.GetMainNICAddress(%d, _) err = %s", nicID, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Errorf("got stack.GetMainNICAddress(%d, _) = %s, want = %s", nicID, addr, want)
+			if err := checkGetMainNICAddress(s, 1, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -2573,12 +2570,8 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 
 	// Address should not be considered bound to the
 	// NIC yet (DAD ongoing).
-	addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if want := (tcpip.AddressWithPrefix{}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+		t.Fatal(err)
 	}
 
 	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
@@ -2596,12 +2589,8 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
-	addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -2633,17 +2622,17 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", pi); err != nil {
 					t.Fatal("AddAddressWithOptions failed:", err)
 				}
-				addr, err := s.GetMainNICAddress(1, fakeNetNumber)
-				if err != nil {
-					t.Fatal("s.GetMainNICAddress failed:", err)
+				addr, ok := s.GetMainNICAddress(1, fakeNetNumber)
+				if !ok {
+					t.Fatalf("GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
 				}
 				if pi == stack.NeverPrimaryEndpoint {
 					if want := (tcpip.AddressWithPrefix{}); addr != want {
-						t.Fatalf("got GetMainNICAddress = %s, want = %s", addr, want)
+						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, addr, want)
 
 					}
 				} else if addr.Address != "\x01" {
-					t.Fatalf("got GetMainNICAddress = %s, want = 1", addr.Address)
+					t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (1, true)", fakeNetNumber, addr.Address)
 				}
 
 				{
@@ -2722,18 +2711,17 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				if err := s.RemoveAddress(1, "\x03"); err != nil {
 					t.Fatalf("RemoveAddress failed: %v", err)
 				}
-				addr, err = s.GetMainNICAddress(1, fakeNetNumber)
-				if err != nil {
-					t.Fatalf("s.GetMainNICAddress failed: %v", err)
+				addr, ok = s.GetMainNICAddress(1, fakeNetNumber)
+				if !ok {
+					t.Fatalf("got GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
 				}
 				if ps == stack.NeverPrimaryEndpoint {
 					if want := (tcpip.AddressWithPrefix{}); addr != want {
-						t.Fatalf("got GetMainNICAddress = %s, want = %s", addr, want)
-
+						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, addr, want)
 					}
 				} else {
 					if addr.Address != "\x01" {
-						t.Fatalf("got GetMainNICAddress = %s, want = 1", addr.Address)
+						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (1, true)", fakeNetNumber, addr.Address)
 					}
 				}
 			})
@@ -3259,12 +3247,8 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	}
 
 	// Address should be tentative so it should not be a main address.
-	got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if want := (tcpip.AddressWithPrefix{}); got != want {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Enabling the NIC should start DAD for the address.
@@ -3276,12 +3260,8 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	}
 
 	// Address should not be considered bound to the NIC yet (DAD ongoing).
-	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if want := (tcpip.AddressWithPrefix{}); got != want {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, want)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Wait for DAD to resolve.
@@ -3296,12 +3276,8 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
 		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
 	}
-	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if got != addr.AddressWithPrefix {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addr.AddressWithPrefix); err != nil {
+		t.Fatal(err)
 	}
 
 	// Enabling the NIC again should be a no-op.
@@ -3311,12 +3287,8 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
 		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)
 	}
-	got, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if got != addr.AddressWithPrefix {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, got, addr.AddressWithPrefix)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addr.AddressWithPrefix); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -3790,20 +3762,16 @@ func TestGetMainNICAddressWhenNICDisabled(t *testing.T) {
 	}
 
 	// Check that we get the right initial address and prefix length.
-	if gotAddr, err := s.GetMainNICAddress(nicID, fakeNetNumber); err != nil {
-		t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
-	} else if gotAddr != protocolAddress.AddressWithPrefix {
-		t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, protocolAddress.AddressWithPrefix)
+	if err := checkGetMainNICAddress(s, nicID, fakeNetNumber, protocolAddress.AddressWithPrefix); err != nil {
+		t.Fatal(err)
 	}
 
 	// Should still get the address when the NIC is diabled.
 	if err := s.DisableNIC(nicID); err != nil {
 		t.Fatalf("DisableNIC(%d): %s", nicID, err)
 	}
-	if gotAddr, err := s.GetMainNICAddress(nicID, fakeNetNumber); err != nil {
-		t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
-	} else if gotAddr != protocolAddress.AddressWithPrefix {
-		t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, protocolAddress.AddressWithPrefix)
+	if err := checkGetMainNICAddress(s, nicID, fakeNetNumber, protocolAddress.AddressWithPrefix); err != nil {
+		t.Fatal(err)
 	}
 }
 

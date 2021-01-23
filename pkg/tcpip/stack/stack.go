@@ -1196,19 +1196,19 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 
 // GetMainNICAddress returns the first non-deprecated primary address and prefix
 // for the given NIC and protocol. If no non-deprecated primary address exists,
-// a deprecated primary address and prefix will be returned. Returns an error if
+// a deprecated primary address and prefix will be returned. Returns false if
 // the NIC doesn't exist and an empty value if the NIC doesn't have a primary
 // address for the given protocol.
-func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
+func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nic, ok := s.nics[id]
 	if !ok {
-		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
+		return tcpip.AddressWithPrefix{}, false
 	}
 
-	return nic.primaryAddress(protocol), nil
+	return nic.primaryAddress(protocol), true
 }
 
 func (s *Stack) getAddressEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {

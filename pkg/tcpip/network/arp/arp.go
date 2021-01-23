@@ -262,10 +262,10 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 
 	nicID := nic.ID()
 	if len(localAddr) == 0 {
-		addr, err := p.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
-		if err != nil {
+		addr, ok := p.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
+		if !ok {
 			stats.OutgoingRequestInterfaceHasNoLocalAddressErrors.Increment()
-			return err
+			return tcpip.ErrUnknownNICID
 		}
 
 		if len(addr.Address) == 0 {
