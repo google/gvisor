@@ -157,14 +157,13 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 	}
 	h := header.IGMP(headerView)
 
-	// Temporarily reset the checksum field to 0 in order to calculate the proper
-	// checksum.
-	wantChecksum := h.Checksum()
-	h.SetChecksum(0)
-	gotChecksum := ^header.ChecksumVV(pkt.Data, 0 /* initial */)
-	h.SetChecksum(wantChecksum)
-
-	if gotChecksum != wantChecksum {
+	// As per RFC 1071 section 1.3,
+	//
+	//   To check a checksum, the 1's complement sum is computed over the
+	//   same set of octets, including the checksum field. If the result
+	//   is all 1 bits (-0 in 1's complement arithmetic), the check
+	//   succeeds.
+	if header.ChecksumVV(pkt.Data, 0 /* initial */) != 0xFFFF {
 		received.checksumErrors.Increment()
 		return
 	}
