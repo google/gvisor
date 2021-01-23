@@ -154,6 +154,9 @@ PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn) {
   pid_t pid = fork();
   if (pid == 0) {
     fn();
+    TEST_CHECK_MSG(!::testing::Test::HasFailure(),
+                   "EXPECT*/ASSERT* failed. These are not async-signal-safe "
+                   "and must not be called from fn.");
     _exit(0);
   }
   MaybeSave();

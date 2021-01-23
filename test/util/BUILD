@@ -172,6 +172,7 @@ cc_library(
         ":posix_error",
         ":save_util",
         ":test_util",
+        gtest,
         "@com_google_absl//absl/strings",
     ],
 )
