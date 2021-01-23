@@ -1443,9 +1443,9 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 	// This will need tweaking  when we start really forwarding packets
 	// as we may need to get two addresses, for rx and tx interfaces.
 	// We will also have to take usage into account.
-	prefixedAddress, err := e.protocol.stack.GetMainNICAddress(e.nic.ID(), ProtocolNumber)
+	prefixedAddress, ok := e.protocol.stack.GetMainNICAddress(e.nic.ID(), ProtocolNumber)
 	localAddress := prefixedAddress.Address
-	if err != nil {
+	if !ok {
 		h := header.IPv4(pkt.NetworkHeader().View())
 		dstAddr := h.DestinationAddress()
 		if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(dstAddr) {

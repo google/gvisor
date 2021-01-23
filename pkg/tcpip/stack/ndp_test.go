@@ -45,6 +45,8 @@ const (
 	linkAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
 	linkAddr4 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
 
+	defaultPrefixLen = 128
+
 	// Extra time to use when waiting for an async event to occur.
 	defaultAsyncPositiveEventTimeout = 10 * time.Second
 
@@ -330,8 +332,12 @@ func TestDADDisabled(t *testing.T) {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr1); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr1, err)
+	addrWithPrefix := tcpip.AddressWithPrefix{
+		Address:   addr1,
+		PrefixLen: defaultPrefixLen,
+	}
+	if err := s.AddAddressWithPrefix(nicID, header.IPv6ProtocolNumber, addrWithPrefix); err != nil {
+		t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addrWithPrefix, err)
 	}
 
 	// Should get the address immediately since we should not have performed
@@ -344,12 +350,8 @@ func TestDADDisabled(t *testing.T) {
 	default:
 		t.Fatal("expected DAD event")
 	}
-	addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-	if err != nil {
-		t.Fatalf("stack.GetMainNICAddress(%d, %d) err = %s", nicID, header.IPv6ProtocolNumber, err)
-	}
-	if addr.Address != addr1 {
-		t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, addr, addr1)
+	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addrWithPrefix); err != nil {
+		t.Fatal(err)
 	}
 
 	// We should not have sent any NDP NS messages.
@@ -440,24 +442,24 @@ func TestDADResolve(t *testing.T) {
 				NIC:         nicID,
 			}})
 
-			if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr1); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr1, err)
+			addrWithPrefix := tcpip.AddressWithPrefix{
+				Address:   addr1,
+				PrefixLen: defaultPrefixLen,
+			}
+			if err := s.AddAddressWithPrefix(nicID, header.IPv6ProtocolNumber, addrWithPrefix); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addrWithPrefix, err)
 			}
 
 			// Address should not be considered bound to the NIC yet (DAD ongoing).
-			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			} else if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			// Make sure the address does not resolve before the resolution time has
 			// passed.
 			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncNegativeEventTimeout)
-			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			} else if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Error(err)
 			}
 			// Should not get a route even if we specify the local address as the
 			// tentative address.
@@ -493,10 +495,8 @@ func TestDADResolve(t *testing.T) {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
-			if addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-				t.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, %s), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			} else if addr.Address != addr1 {
-				t.Errorf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, addr, addr1)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addrWithPrefix); err != nil {
+				t.Error(err)
 			}
 			// Should get a route using the address now that it is resolved.
 			{
@@ -662,12 +662,8 @@ func TestDADFail(t *testing.T) {
 
 			// Address should not be considered bound to the NIC yet
 			// (DAD ongoing).
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			// Receive a packet to simulate an address conflict.
@@ -691,12 +687,8 @@ func TestDADFail(t *testing.T) {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
-			addr, err = s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			// Attempting to add the address again should not fail if the address's
@@ -777,12 +769,8 @@ func TestDADStop(t *testing.T) {
 			}
 
 			// Address should not be considered bound to the NIC yet (DAD ongoing).
-			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			test.stopFn(t, s)
@@ -800,12 +788,8 @@ func TestDADStop(t *testing.T) {
 			}
 
 			if !test.skipFinalAddrCheck {
-				addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
-				if err != nil {
-					t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID, header.IPv6ProtocolNumber, err)
-				}
-				if want := (tcpip.AddressWithPrefix{}); addr != want {
-					t.Errorf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID, header.IPv6ProtocolNumber, addr, want)
+				if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+					t.Fatal(err)
 				}
 			}
 
@@ -901,26 +885,25 @@ func TestSetNDPConfigurations(t *testing.T) {
 			}
 
 			// Add addresses for each NIC.
-			if err := s.AddAddress(nicID1, header.IPv6ProtocolNumber, addr1); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID1, header.IPv6ProtocolNumber, addr1, err)
+			addrWithPrefix1 := tcpip.AddressWithPrefix{Address: addr1, PrefixLen: defaultPrefixLen}
+			if err := s.AddAddressWithPrefix(nicID1, header.IPv6ProtocolNumber, addrWithPrefix1); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID1, header.IPv6ProtocolNumber, addrWithPrefix1, err)
 			}
-			if err := s.AddAddress(nicID2, header.IPv6ProtocolNumber, addr2); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID2, header.IPv6ProtocolNumber, addr2, err)
+			addrWithPrefix2 := tcpip.AddressWithPrefix{Address: addr2, PrefixLen: defaultPrefixLen}
+			if err := s.AddAddressWithPrefix(nicID2, header.IPv6ProtocolNumber, addrWithPrefix2); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID2, header.IPv6ProtocolNumber, addrWithPrefix2, err)
 			}
 			expectDADEvent(nicID2, addr2)
-			if err := s.AddAddress(nicID3, header.IPv6ProtocolNumber, addr3); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID3, header.IPv6ProtocolNumber, addr3, err)
+			addrWithPrefix3 := tcpip.AddressWithPrefix{Address: addr3, PrefixLen: defaultPrefixLen}
+			if err := s.AddAddressWithPrefix(nicID3, header.IPv6ProtocolNumber, addrWithPrefix3); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID3, header.IPv6ProtocolNumber, addrWithPrefix3, err)
 			}
 			expectDADEvent(nicID3, addr3)
 
 			// Address should not be considered bound to NIC(1) yet
 			// (DAD ongoing).
-			addr, err := s.GetMainNICAddress(nicID1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID1, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID1, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID1, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			// Should get the address on NIC(2) and NIC(3)
@@ -928,31 +911,19 @@ func TestSetNDPConfigurations(t *testing.T) {
 			// it as the stack was configured to not do DAD by
 			// default and we only updated the NDP configurations on
 			// NIC(1).
-			addr, err = s.GetMainNICAddress(nicID2, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID2, header.IPv6ProtocolNumber, err)
+			if err := checkGetMainNICAddress(s, nicID2, header.IPv6ProtocolNumber, addrWithPrefix2); err != nil {
+				t.Fatal(err)
 			}
-			if addr.Address != addr2 {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID2, header.IPv6ProtocolNumber, addr, addr2)
-			}
-			addr, err = s.GetMainNICAddress(nicID3, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID3, header.IPv6ProtocolNumber, err)
-			}
-			if addr.Address != addr3 {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID3, header.IPv6ProtocolNumber, addr, addr3)
+			if err := checkGetMainNICAddress(s, nicID3, header.IPv6ProtocolNumber, addrWithPrefix3); err != nil {
+				t.Fatal(err)
 			}
 
 			// Sleep until right (500ms before) before resolution to
 			// make sure the address didn't resolve on NIC(1) yet.
 			const delta = 500 * time.Millisecond
 			time.Sleep(time.Duration(test.dupAddrDetectTransmits)*test.expectedRetransmitTimer - delta)
-			addr, err = s.GetMainNICAddress(nicID1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID1, header.IPv6ProtocolNumber, err)
-			}
-			if want := (tcpip.AddressWithPrefix{}); addr != want {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (%s, nil), want = (%s, nil)", nicID1, header.IPv6ProtocolNumber, addr, want)
+			if err := checkGetMainNICAddress(s, nicID1, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 
 			// Wait for DAD to resolve.
@@ -970,12 +941,8 @@ func TestSetNDPConfigurations(t *testing.T) {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
-			addr, err = s.GetMainNICAddress(nicID1, header.IPv6ProtocolNumber)
-			if err != nil {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = (_, %v), want = (_, nil)", nicID1, header.IPv6ProtocolNumber, err)
-			}
-			if addr.Address != addr1 {
-				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID1, header.IPv6ProtocolNumber, addr, addr1)
+			if err := checkGetMainNICAddress(s, nicID1, header.IPv6ProtocolNumber, addrWithPrefix1); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -2946,10 +2913,8 @@ func TestAutoGenAddrDeprecateFromPI(t *testing.T) {
 			expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
 				t.Helper()
 
-				if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-					t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
-				} else if got != addr {
-					t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+				if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addr); err != nil {
+					t.Fatal(err)
 				}
 
 				if got := addrForNewConnection(t, s); got != addr.Address {
@@ -3094,10 +3059,8 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 			expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
 				t.Helper()
 
-				if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-					t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
-				} else if got != addr {
-					t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+				if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addr); err != nil {
+					t.Fatal(err)
 				}
 
 				if got := addrForNewConnection(t, s); got != addr.Address {
@@ -3244,10 +3207,8 @@ func TestAutoGenAddrJobDeprecation(t *testing.T) {
 				t.Fatalf("should not have %s in the list of addresses", addr2)
 			}
 			// Should not have any primary endpoints.
-			if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-				t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
-			} else if want := (tcpip.AddressWithPrefix{}); got != want {
-				t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, want)
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
+				t.Fatal(err)
 			}
 			wq := waiter.Queue{}
 			we, ch := waiter.NewChannelEntry(nil)
@@ -3621,10 +3582,8 @@ func TestAutoGenAddrAfterRemoval(t *testing.T) {
 			expectPrimaryAddr := func(addr tcpip.AddressWithPrefix) {
 				t.Helper()
 
-				if got, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber); err != nil {
-					t.Fatalf("s.GetMainNICAddress(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
-				} else if got != addr {
-					t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, header.IPv6ProtocolNumber, got, addr)
+				if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addr); err != nil {
+					t.Fatal(err)
 				}
 
 				if got := addrForNewConnection(t, s); got != addr.Address {
