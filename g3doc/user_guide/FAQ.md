@@ -137,9 +137,16 @@ sandbox isolation. There are a few different workarounds you can try:
 *   Use IPs instead of container names.
 *   Use [Kubernetes][k8s]. Container name lookup works fine in Kubernetes.
 
+### I'm getting an error like `dial unix /run/containerd/s/09e4...8cff: connect: connection refused: unknown` {#shim-connect}
+
+This error may happen when using `gvisor-containerd-shim` with a `containerd`
+that does not contain the fix for [CVE-2020-15257]. The resolve the issue,
+update containerd to 1.3.9 or 1.4.3 (or newer versions respectively).
+
 [security-model]: /docs/architecture_guide/security/
 [host-net]: /docs/user_guide/networking/#network-passthrough
 [debugging]: /docs/user_guide/debugging/
 [filesystem]: /docs/user_guide/filesystem/
 [docker]: /docs/user_guide/quick_start/docker/
 [k8s]: /docs/user_guide/quick_start/kubernetes/
+[CVE-2020-15257]: https://github.com/containerd/containerd/security/advisories/GHSA-36xw-fx78-c5r4

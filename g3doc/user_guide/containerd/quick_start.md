@@ -1,7 +1,7 @@
 # Containerd Quick Start
 
 This document describes how to use `containerd-shim-runsc-v1` with the
-containerd runtime handler support on `containerd` 1.2 or later.
+containerd runtime handler support on `containerd`.
 
 > ⚠️ NOTE: If you are using Kubernetes and set up your cluster using kubeadm you
 > may run into issues. See the [FAQ](../FAQ.md#runtime-handler) for details.
@@ -11,7 +11,8 @@ containerd runtime handler support on `containerd` 1.2 or later.
 -   **runsc** and **containerd-shim-runsc-v1**: See the
     [installation guide](/docs/user_guide/install/).
 -   **containerd**: See the [containerd website](https://containerd.io/) for
-    information on how to install containerd.
+    information on how to install containerd. **Minimal version supported: 1.3.9
+    or 1.4.3.**
 
 ## Configure containerd
 

@@ -1,8 +1,8 @@
 # Containerd Advanced Configuration
 
 This document describes how to configure runtime options for
-`containerd-shim-runsc-v1`. This follows the
-[Containerd Quick Start](./quick_start.md) and requires containerd 1.2 or later.
+`containerd-shim-runsc-v1`. You can find the installation instructions and
+minimal requirements in [Containerd Quick Start](./quick_start.md).
 
 ## Shim Configuration
 
@@ -45,27 +45,6 @@ When you are done, restart containerd to pick up the changes.
 
 ```shell
 sudo systemctl restart containerd
-```
-
-### Containerd 1.2
-
-For containerd 1.2, the config file is not configurable. It should be named
-`config.toml` and located in the runtime root. By default, this is
-`/run/containerd/runsc`.
-
-### Example: Enable the KVM platform
-
-gVisor enables the use of a number of platforms. This example shows how to
-configure `containerd-shim-runsc-v1` to use gvisor with the KVM platform.
-
-Find out more about platform in the
-[Platforms Guide](../../architecture_guide/platforms.md).
-
-```shell
-cat <<EOF | sudo tee /etc/containerd/runsc.toml
-[runsc_config]
-  platform = "kvm"
-EOF
 ```
 
 ## Debug
