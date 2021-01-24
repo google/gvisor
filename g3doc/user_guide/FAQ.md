@@ -107,11 +107,11 @@ kubeadm to create your cluster please check if Docker is also installed on that
 system. Kubeadm prefers using Docker if both Docker and containerd are
 installed.
 
-Please recreate your cluster and set the `--cni-socket` option on kubeadm
+Please recreate your cluster and set the `--cri-socket` option on kubeadm
 commands. For example:
 
 ```bash
-kubeadm init --cni-socket=/var/run/containerd/containerd.sock ...
+kubeadm init --cri-socket=/var/run/containerd/containerd.sock ...
 ```
 
 To fix an existing cluster edit the `/var/lib/kubelet/kubeadm-flags.env` file
