@@ -36,6 +36,7 @@
 #include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -315,8 +316,7 @@ PosixErrorOr<std::vector<Event>> DrainEvents(int fd) {
 }
 
 PosixErrorOr<FileDescriptor> InotifyInit1(int flags) {
-  int fd;
-  EXPECT_THAT(fd = inotify_init1(flags), SyscallSucceeds());
+  int fd = inotify_init1(flags);
   if (fd < 0) {
     return PosixError(errno, "inotify_init1() failed");
   }
@@ -325,9 +325,7 @@ PosixErrorOr<FileDescriptor> InotifyInit1(int flags) {
 
 PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path,
                                   uint32_t mask) {
-  int wd;
-  EXPECT_THAT(wd = inotify_add_watch(fd, path.c_str(), mask),
-              SyscallSucceeds());
+  int wd = inotify_add_watch(fd, path.c_str(), mask);
   if (wd < 0) {
     return PosixError(errno, "inotify_add_watch() failed");
   }
@@ -1936,24 +1934,31 @@ TEST(Inotify, Xattr) {
 }
 
 TEST(Inotify, Exec) {
-  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const TempPath bin = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateSymlinkTo(dir.path(), "/bin/true"));
+  // TODO(gvisor.dev/issues/5348)
+  SKIP_IF(IsRunningOnGvisor());
 
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
   const int wd = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), bin.path(), IN_ALL_EVENTS));
+      InotifyAddWatch(fd.get(), "/bin/true", IN_ALL_EVENTS));
 
   // Perform exec.
-  ScopedThread t([&bin]() {
-    ASSERT_THAT(execl(bin.path().c_str(), bin.path().c_str(), (char*)nullptr),
-                SyscallSucceeds());
-  });
-  t.Join();
+  pid_t child = -1;
+  int execve_errno = -1;
+  auto kill = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec("/bin/true", {}, {}, nullptr, &child, &execve_errno));
+  ASSERT_EQ(0, execve_errno);
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
+  EXPECT_EQ(0, status);
+
+  // Process cleanup no longer needed.
+  kill.Release();
 
   std::vector<Event> events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
-  EXPECT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
+  EXPECT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd),
+                           Event(IN_CLOSE_NOWRITE, wd)}));
 }
 
 // Watches without IN_EXCL_UNLINK, should continue to emit events for file
