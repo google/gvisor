@@ -895,43 +895,46 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 	return err
 }
 
-func (e *endpoint) handleWrite() *tcpip.Error {
-	// Move packets from send queue to send list. The queue is accessible
-	// from other goroutines and protected by the send mutex, while the send
-	// list is only accessible from the handler goroutine, so it needs no
-	// mutexes.
+func (e *endpoint) handleWrite() {
 	e.sndBufMu.Lock()
+	next := e.drainSendQueueLocked()
+	e.sndBufMu.Unlock()
 
+	e.sendData(next)
+}
+
+// Move packets from send queue to send list.
+//
+// Precondition: e.sndBufMu must be locked.
+func (e *endpoint) drainSendQueueLocked() *segment {
 	first := e.sndQueue.Front()
 	if first != nil {
 		e.snd.writeList.PushBackList(&e.sndQueue)
 		e.sndBufInQueue = 0
 	}
+	return first
+}
 
-	e.sndBufMu.Unlock()
-
+// Precondition: e.mu must be locked.
+func (e *endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
-		e.snd.writeNext = first
+		e.snd.writeNext = next
 	}
 
 	// Push out any new packets.
 	e.snd.sendData()
-
-	return nil
 }
 
-func (e *endpoint) handleClose() *tcpip.Error {
+func (e *endpoint) handleClose() {
 	if !e.EndpointState().connected() {
-		return nil
+		return
 	}
 	// Drain the send queue.
 	e.handleWrite()
 
 	// Mark send side as closed.
 	e.snd.closed = true
-
-	return nil
 }
 
 // resetConnectionLocked puts the endpoint in an error state with the given
@@ -1348,11 +1351,17 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}{
 		{
 			w: &e.sndWaker,
-			f: e.handleWrite,
+			f: func() *tcpip.Error {
+				e.handleWrite()
+				return nil
+			},
 		},
 		{
 			w: &e.sndCloseWaker,
-			f: e.handleClose,
+			f: func() *tcpip.Error {
+				e.handleClose()
+				return nil
+			},
 		},
 		{
 			w: &closeWaker,
