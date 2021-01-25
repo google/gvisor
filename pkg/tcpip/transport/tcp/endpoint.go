@@ -1513,74 +1513,79 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, *tc
 	// and opts.EndOfRecord are also ignored.
 
 	e.LockUser()
-	e.sndBufMu.Lock()
+	defer e.UnlockUser()
 
-	avail, err := e.isEndpointWritableLocked()
-	if err != nil {
-		e.sndBufMu.Unlock()
-		e.UnlockUser()
-		e.stats.WriteErrors.WriteClosed.Increment()
-		return 0, err
-	}
-
-	// We can release locks while copying data.
-	//
-	// This is not possible if atomic is set, because we can't allow the
-	// available buffer space to be consumed by some other caller while we
-	// are copying data in.
-	if !opts.Atomic {
-		e.sndBufMu.Unlock()
-		e.UnlockUser()
-	}
-
-	// Fetch data.
-	if l := p.Len(); l < avail {
-		avail = l
-	}
-	if avail == 0 {
-		return 0, nil
-	}
-	v := make([]byte, avail)
-	if _, err := io.ReadFull(p, v); err != nil {
-		if opts.Atomic {
-			e.sndBufMu.Unlock()
-			e.UnlockUser()
-		}
-		return 0, tcpip.ErrBadBuffer
-	}
-
-	if !opts.Atomic {
-		// Since we released locks in between it's possible that the
-		// endpoint transitioned to a CLOSED/ERROR states so make
-		// sure endpoint is still writable before trying to write.
-		e.LockUser()
+	nextSeg, n, err := func() (*segment, int, *tcpip.Error) {
 		e.sndBufMu.Lock()
+		defer e.sndBufMu.Unlock()
+
 		avail, err := e.isEndpointWritableLocked()
 		if err != nil {
-			e.sndBufMu.Unlock()
-			e.UnlockUser()
 			e.stats.WriteErrors.WriteClosed.Increment()
-			return 0, err
+			return nil, 0, err
 		}
 
-		// Discard any excess data copied in due to avail being reduced due
-		// to a simultaneous write call to the socket.
-		if avail < len(v) {
-			v = v[:avail]
+		v, err := func() ([]byte, *tcpip.Error) {
+			// We can release locks while copying data.
+			//
+			// This is not possible if atomic is set, because we can't allow the
+			// available buffer space to be consumed by some other caller while we
+			// are copying data in.
+			if !opts.Atomic {
+				e.sndBufMu.Unlock()
+				defer e.sndBufMu.Lock()
+
+				e.UnlockUser()
+				defer e.LockUser()
+			}
+
+			// Fetch data.
+			if l := p.Len(); l < avail {
+				avail = l
+			}
+			if avail == 0 {
+				return nil, nil
+			}
+			v := make([]byte, avail)
+			if _, err := io.ReadFull(p, v); err != nil {
+				return nil, tcpip.ErrBadBuffer
+			}
+			return v, nil
+		}()
+		if len(v) == 0 || err != nil {
+			return nil, 0, err
 		}
+
+		if !opts.Atomic {
+			// Since we released locks in between it's possible that the
+			// endpoint transitioned to a CLOSED/ERROR states so make
+			// sure endpoint is still writable before trying to write.
+			avail, err := e.isEndpointWritableLocked()
+			if err != nil {
+				e.stats.WriteErrors.WriteClosed.Increment()
+				return nil, 0, err
+			}
+
+			// Discard any excess data copied in due to avail being reduced due
+			// to a simultaneous write call to the socket.
+			if avail < len(v) {
+				v = v[:avail]
+			}
+		}
+
+		// Add data to the send queue.
+		s := newOutgoingSegment(e.ID, v)
+		e.sndBufUsed += len(v)
+		e.sndBufInQueue += seqnum.Size(len(v))
+		e.sndQueue.PushBack(s)
+
+		return e.drainSendQueueLocked(), len(v), nil
+	}()
+	if err != nil {
+		return 0, err
 	}
-
-	// Add data to the send queue.
-	s := newOutgoingSegment(e.ID, v)
-	e.sndBufUsed += len(v)
-	e.sndBufInQueue += seqnum.Size(len(v))
-	e.sndQueue.PushBack(s)
-	e.sndBufMu.Unlock()
-
-	// Do the work inline.
-	e.handleWrite()
-	e.UnlockUser()
-	return int64(len(v)), nil
+	e.sendData(nextSeg)
+	return int64(n), nil
 }
 
 // selectWindowLocked returns the new window without checking for shrinking or scaling
