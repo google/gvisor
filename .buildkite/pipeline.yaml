@@ -200,7 +200,7 @@ steps:
     command: make benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test
   - <<: *benchmarks
     label: ":redis: Redis benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test
+    command: make benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_OPTIONS=-test.benchtime=15s
   - <<: *benchmarks
     label: ":ruby: Ruby benchmarks"
     command: make benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test
