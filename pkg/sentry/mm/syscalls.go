@@ -1055,18 +1055,11 @@ func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
 
-	// Linux's mm/madvise.c:madvise_dontneed() => mm/memory.c:zap_page_range()
-	// is analogous to our mm.invalidateLocked(ar, true, true). We inline this
-	// here, with the special case that we synchronously decommit
-	// uniquely-owned (non-copy-on-write) pages for private anonymous vma,
-	// which is the common case for MADV_DONTNEED. Invalidating these pmas, and
-	// allowing them to be reallocated when touched again, increases pma
-	// fragmentation, which may significantly reduce performance for
-	// non-vectored I/O implementations. Also, decommitting synchronously
-	// ensures that Decommit immediately reduces host memory usage.
+	// This is invalidateLocked(invalidatePrivate=true, invalidateShared=true),
+	// with the additional wrinkle that we must refuse to invalidate pmas under
+	// mlocked vmas.
 	var didUnmapAS bool
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
-	mf := mm.mfp.MemoryFile()
 	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
 		vma := vseg.ValuePtr()
 		if vma.mlockMode != memmap.MLockNone {
@@ -1081,20 +1074,8 @@ func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 			}
 		}
 		for pseg.Ok() && pseg.Start() < vsegAR.End {
-			pma := pseg.ValuePtr()
-			if pma.private && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
-				psegAR := pseg.Range().Intersect(ar)
-				if vsegAR.IsSupersetOf(psegAR) && vma.mappable == nil {
-					if err := mf.Decommit(pseg.fileRangeOf(psegAR)); err == nil {
-						pseg = pseg.NextSegment()
-						continue
-					}
-					// If an error occurs, fall through to the general
-					// invalidation case below.
-				}
-			}
 			pseg = mm.pmas.Isolate(pseg, vsegAR)
-			pma = pseg.ValuePtr()
+			pma := pseg.ValuePtr()
 			if !didUnmapAS {
 				// Unmap all of ar, not just pseg.Range(), to minimize host
 				// syscalls. AddressSpace mappings must be removed before
