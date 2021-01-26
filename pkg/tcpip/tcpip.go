@@ -1667,6 +1667,8 @@ type IPStats struct {
 
 // ARPStats collects ARP-specific stats.
 type ARPStats struct {
+	// LINT.IfChange(ARPStats)
+
 	// PacketsReceived is the number of ARP packets received from the link layer.
 	PacketsReceived *StatCounter
 
@@ -1694,10 +1696,6 @@ type ARPStats struct {
 	// ARP request with a bad local address.
 	OutgoingRequestBadLocalAddressErrors *StatCounter
 
-	// OutgoingRequestNetworkUnreachableErrors is the number of failures to send
-	// an ARP request with a network unreachable error.
-	OutgoingRequestNetworkUnreachableErrors *StatCounter
-
 	// OutgoingRequestsDropped is the number of ARP requests which failed to write
 	// to a link-layer endpoint.
 	OutgoingRequestsDropped *StatCounter
@@ -1716,6 +1714,8 @@ type ARPStats struct {
 	// OutgoingRepliesSent is the number of ARP replies successfully written to a
 	// link-layer endpoint.
 	OutgoingRepliesSent *StatCounter
+
+	// LINT.ThenChange(network/arp/stats.go:multiCounterARPStats)
 }
 
 // TCPStats collects TCP-specific stats.
