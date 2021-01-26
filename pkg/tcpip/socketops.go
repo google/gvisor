@@ -15,10 +15,15 @@
 package tcpip
 
 import (
+	"math"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/sync"
 )
+
+// PacketOverheadFactor is used to multiply the value provided by the user on a
+// SetSockOpt for setting the send/receive buffer sizes sockets.
+const PacketOverheadFactor = 2
 
 // SocketOptionsHandler holds methods that help define endpoint specific
 // behavior for socket level socket options. These must be implemented by
@@ -48,6 +53,12 @@ type SocketOptionsHandler interface {
 
 	// HasNIC is invoked to check if the NIC is valid for SO_BINDTODEVICE.
 	HasNIC(v int32) bool
+
+	// GetSendBufferSize is invoked to get the SO_SNDBUFSIZE.
+	GetSendBufferSize() (int64, *Error)
+
+	// IsUnixSocket is invoked to check if the socket is of unix domain.
+	IsUnixSocket() bool
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -84,12 +95,36 @@ func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
 	return false
 }
 
+// GetSendBufferSize implements SocketOptionsHandler.GetSendBufferSize.
+func (*DefaultSocketOptionsHandler) GetSendBufferSize() (int64, *Error) {
+	return 0, nil
+}
+
+// IsUnixSocket implements SocketOptionsHandler.IsUnixSocket.
+func (*DefaultSocketOptionsHandler) IsUnixSocket() bool {
+	return false
+}
+
+// StackHandler holds methods to access the stack options. These must be
+// implemented by the stack.
+type StackHandler interface {
+	// Option allows retrieving stack wide options.
+	Option(option interface{}) *Error
+
+	// TransportProtocolOption allows retrieving individual protocol level
+	// option values.
+	TransportProtocolOption(proto TransportProtocolNumber, option GettableTransportProtocolOption) *Error
+}
+
 // SocketOptions contains all the variables which store values for SOL_SOCKET,
 // SOL_IP, SOL_IPV6 and SOL_TCP level options.
 //
 // +stateify savable
 type SocketOptions struct {
 	handler SocketOptionsHandler
+
+	// StackHandler is initialized at the creation time and will not change.
+	stackHandler StackHandler `state:"manual"`
 
 	// These fields are accessed and modified using atomic operations.
 
@@ -170,6 +205,9 @@ type SocketOptions struct {
 	// bindToDevice determines the device to which the socket is bound.
 	bindToDevice int32
 
+	// sendBufferSize determines the send buffer size for this socket.
+	sendBufferSize int64
+
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
 
@@ -180,8 +218,9 @@ type SocketOptions struct {
 
 // InitHandler initializes the handler. This must be called before using the
 // socket options utility.
-func (so *SocketOptions) InitHandler(handler SocketOptionsHandler) {
+func (so *SocketOptions) InitHandler(handler SocketOptionsHandler, stack StackHandler) {
 	so.handler = handler
+	so.stackHandler = stack
 }
 
 func storeAtomicBool(addr *uint32, v bool) {
@@ -517,4 +556,42 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) *Error {
 
 	atomic.StoreInt32(&so.bindToDevice, bindToDevice)
 	return nil
+}
+
+// GetSendBufferSize gets value for SO_SNDBUF option.
+func (so *SocketOptions) GetSendBufferSize() (int64, *Error) {
+	if so.handler.IsUnixSocket() {
+		return so.handler.GetSendBufferSize()
+	}
+	return atomic.LoadInt64(&so.sendBufferSize), nil
+}
+
+// SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
+// stack handler should be invoked to set the send buffer size.
+func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool, getBufferLimits GetSendBufferLimits) {
+	v := sendBufferSize
+	ss := getBufferLimits(so.stackHandler)
+
+	if notify {
+		// TODO(b/176170271): Notify waiters after size has grown.
+		// Make sure the send buffer size is within the min and max
+		// allowed.
+		min := int64(ss.Min)
+		max := int64(ss.Max)
+		// Validate the send buffer size with min and max values.
+		// Multiply it by factor of 2.
+		if v > max {
+			v = max
+		}
+
+		if v < math.MaxInt32/PacketOverheadFactor {
+			v *= PacketOverheadFactor
+			if v < min {
+				v = min
+			}
+		} else {
+			v = math.MaxInt32
+		}
+	}
+	atomic.StoreInt64(&so.sendBufferSize, v)
 }

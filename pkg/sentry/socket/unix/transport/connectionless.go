@@ -44,7 +44,7 @@ func NewConnectionless(ctx context.Context) Endpoint {
 	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}
 	q.InitRefs()
 	ep.receiver = &queueReceiver{readQueue: &q}
-	ep.ops.InitHandler(ep)
+	ep.ops.InitHandler(ep, nil)
 	return ep
 }
 

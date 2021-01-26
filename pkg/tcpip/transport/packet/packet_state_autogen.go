@@ -58,8 +58,6 @@ func (ep *endpoint) StateFields() []string {
 		"rcvBufSizeMax",
 		"rcvBufSize",
 		"rcvClosed",
-		"sndBufSize",
-		"sndBufSizeMax",
 		"closed",
 		"bound",
 		"boundNIC",
@@ -73,7 +71,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	var rcvBufSizeMaxValue int = ep.saveRcvBufSizeMax()
 	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
 	var lastErrorValue string = ep.saveLastError()
-	stateSinkObject.SaveValue(14, lastErrorValue)
+	stateSinkObject.SaveValue(12, lastErrorValue)
 	stateSinkObject.Save(0, &ep.TransportEndpointInfo)
 	stateSinkObject.Save(1, &ep.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &ep.netProto)
@@ -82,12 +80,10 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &ep.rcvList)
 	stateSinkObject.Save(7, &ep.rcvBufSize)
 	stateSinkObject.Save(8, &ep.rcvClosed)
-	stateSinkObject.Save(9, &ep.sndBufSize)
-	stateSinkObject.Save(10, &ep.sndBufSizeMax)
-	stateSinkObject.Save(11, &ep.closed)
-	stateSinkObject.Save(12, &ep.bound)
-	stateSinkObject.Save(13, &ep.boundNIC)
-	stateSinkObject.Save(15, &ep.ops)
+	stateSinkObject.Save(9, &ep.closed)
+	stateSinkObject.Save(10, &ep.bound)
+	stateSinkObject.Save(11, &ep.boundNIC)
+	stateSinkObject.Save(13, &ep.ops)
 }
 
 func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -99,14 +95,12 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &ep.rcvList)
 	stateSourceObject.Load(7, &ep.rcvBufSize)
 	stateSourceObject.Load(8, &ep.rcvClosed)
-	stateSourceObject.Load(9, &ep.sndBufSize)
-	stateSourceObject.Load(10, &ep.sndBufSizeMax)
-	stateSourceObject.Load(11, &ep.closed)
-	stateSourceObject.Load(12, &ep.bound)
-	stateSourceObject.Load(13, &ep.boundNIC)
-	stateSourceObject.Load(15, &ep.ops)
+	stateSourceObject.Load(9, &ep.closed)
+	stateSourceObject.Load(10, &ep.bound)
+	stateSourceObject.Load(11, &ep.boundNIC)
+	stateSourceObject.Load(13, &ep.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { ep.loadRcvBufSizeMax(y.(int)) })
-	stateSourceObject.LoadValue(14, new(string), func(y interface{}) { ep.loadLastError(y.(string)) })
+	stateSourceObject.LoadValue(12, new(string), func(y interface{}) { ep.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 

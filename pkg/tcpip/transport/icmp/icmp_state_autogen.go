@@ -55,7 +55,6 @@ func (e *endpoint) StateFields() []string {
 		"rcvBufSizeMax",
 		"rcvBufSize",
 		"rcvClosed",
-		"sndBufSize",
 		"shutdownFlags",
 		"state",
 		"ttl",
@@ -76,12 +75,11 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &e.rcvList)
 	stateSinkObject.Save(7, &e.rcvBufSize)
 	stateSinkObject.Save(8, &e.rcvClosed)
-	stateSinkObject.Save(9, &e.sndBufSize)
-	stateSinkObject.Save(10, &e.shutdownFlags)
-	stateSinkObject.Save(11, &e.state)
-	stateSinkObject.Save(12, &e.ttl)
-	stateSinkObject.Save(13, &e.owner)
-	stateSinkObject.Save(14, &e.ops)
+	stateSinkObject.Save(9, &e.shutdownFlags)
+	stateSinkObject.Save(10, &e.state)
+	stateSinkObject.Save(11, &e.ttl)
+	stateSinkObject.Save(12, &e.owner)
+	stateSinkObject.Save(13, &e.ops)
 }
 
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
@@ -93,12 +91,11 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &e.rcvList)
 	stateSourceObject.Load(7, &e.rcvBufSize)
 	stateSourceObject.Load(8, &e.rcvClosed)
-	stateSourceObject.Load(9, &e.sndBufSize)
-	stateSourceObject.Load(10, &e.shutdownFlags)
-	stateSourceObject.Load(11, &e.state)
-	stateSourceObject.Load(12, &e.ttl)
-	stateSourceObject.Load(13, &e.owner)
-	stateSourceObject.Load(14, &e.ops)
+	stateSourceObject.Load(9, &e.shutdownFlags)
+	stateSourceObject.Load(10, &e.state)
+	stateSourceObject.Load(11, &e.ttl)
+	stateSourceObject.Load(12, &e.owner)
+	stateSourceObject.Load(13, &e.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }

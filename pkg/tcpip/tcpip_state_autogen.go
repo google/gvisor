@@ -84,6 +84,7 @@ func (so *SocketOptions) StateFields() []string {
 		"recvErrEnabled",
 		"errQueue",
 		"bindToDevice",
+		"sendBufferSize",
 		"linger",
 	}
 }
@@ -112,7 +113,8 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(17, &so.recvErrEnabled)
 	stateSinkObject.Save(18, &so.errQueue)
 	stateSinkObject.Save(19, &so.bindToDevice)
-	stateSinkObject.Save(20, &so.linger)
+	stateSinkObject.Save(20, &so.sendBufferSize)
+	stateSinkObject.Save(21, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -138,7 +140,8 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(17, &so.recvErrEnabled)
 	stateSourceObject.Load(18, &so.errQueue)
 	stateSourceObject.Load(19, &so.bindToDevice)
-	stateSourceObject.Load(20, &so.linger)
+	stateSourceObject.Load(20, &so.sendBufferSize)
+	stateSourceObject.Load(21, &so.linger)
 }
 
 func (s *SockError) StateTypeName() string {
