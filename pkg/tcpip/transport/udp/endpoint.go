@@ -1009,6 +1009,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	e.ID = id
 	e.boundBindToDevice = btd
+	if e.route != nil {
+		// If the endpoint was already connected then make sure we release the
+		// previous route.
+		e.route.Release()
+	}
 	e.route = r
 	e.dstPort = addr.Port
 	e.RegisterNICID = nicID
