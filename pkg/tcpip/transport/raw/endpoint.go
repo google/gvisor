@@ -413,7 +413,10 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		e.RegisterNICID = nic
 	}
 
-	// Save the route we've connected via.
+	if e.route != nil {
+		// If the endpoint was previously connected then release any previous route.
+		e.route.Release()
+	}
 	e.route = route
 	e.connected = true
 
