@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -465,67 +464,85 @@ var capLengthTestCases = []struct {
 		config:      []int{1, 2, 3},
 		n:           3,
 		wantUsed:    2,
-		wantLengths: []int{1, 2, 3},
+		wantLengths: []int{1, 2},
 	},
 }
 
-func TestReadVDispatcherCapLength(t *testing.T) {
+func TestIovecBuffer(t *testing.T) {
 	for _, c := range capLengthTestCases {
-		// fd does not matter for this test.
-		d := readVDispatcher{fd: -1, e: &endpoint{}}
-		d.views = make([]buffer.View, len(c.config))
-		d.iovecs = make([]syscall.Iovec, len(c.config))
-		d.allocateViews(c.config)
+		t.Run(c.comment, func(t *testing.T) {
+			b := newIovecBuffer(c.config, false /* skipsVnetHdr */)
 
-		used := d.capViews(c.n, c.config)
-		if used != c.wantUsed {
-			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
-		}
-		lengths := make([]int, len(d.views))
-		for i, v := range d.views {
-			lengths[i] = len(v)
-		}
-		if !reflect.DeepEqual(lengths, c.wantLengths) {
-			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
-		}
+			// Test initial allocation.
+			iovecs := b.nextIovecs()
+			if got, want := len(iovecs), len(c.config); got != want {
+				t.Fatalf("len(iovecs) = %d, want %d", got, want)
+			}
+
+			// Make a copy as iovecs points to internal slice. We will need this state
+			// later.
+			oldIovecs := append([]syscall.Iovec(nil), iovecs...)
+
+			// Test the views that get pulled.
+			vv := b.pullViews(c.n)
+			var lengths []int
+			for _, v := range vv.Views() {
+				lengths = append(lengths, len(v))
+			}
+			if !reflect.DeepEqual(lengths, c.wantLengths) {
+				t.Errorf("Pulled view lengths = %v, want %v", lengths, c.wantLengths)
+			}
+
+			// Test that new views get reallocated.
+			for i, newIov := range b.nextIovecs() {
+				if i < c.wantUsed {
+					if newIov.Base == oldIovecs[i].Base {
+						t.Errorf("b.views[%d] should have been reallocated", i)
+					}
+				} else {
+					if newIov.Base != oldIovecs[i].Base {
+						t.Errorf("b.views[%d] should not have been reallocated", i)
+					}
+				}
+			}
+		})
 	}
 }
 
-func TestRecvMMsgDispatcherCapLength(t *testing.T) {
-	for _, c := range capLengthTestCases {
-		d := recvMMsgDispatcher{
-			fd:      -1, // fd does not matter for this test.
-			e:       &endpoint{},
-			views:   make([][]buffer.View, 1),
-			iovecs:  make([][]syscall.Iovec, 1),
-			msgHdrs: make([]rawfile.MMsgHdr, 1),
-		}
-
-		for i := range d.views {
-			d.views[i] = make([]buffer.View, len(c.config))
-		}
-		for i := range d.iovecs {
-			d.iovecs[i] = make([]syscall.Iovec, len(c.config))
-		}
-		for k, msgHdr := range d.msgHdrs {
-			msgHdr.Msg.Iov = &d.iovecs[k][0]
-			msgHdr.Msg.Iovlen = uint64(len(c.config))
-		}
-
-		d.allocateViews(c.config)
-
-		used := d.capViews(0, c.n, c.config)
-		if used != c.wantUsed {
-			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
-		}
-		lengths := make([]int, len(d.views[0]))
-		for i, v := range d.views[0] {
-			lengths[i] = len(v)
-		}
-		if !reflect.DeepEqual(lengths, c.wantLengths) {
-			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
-		}
-
+func TestIovecBufferSkipVnetHdr(t *testing.T) {
+	for _, test := range []struct {
+		desc    string
+		readN   int
+		wantLen int
+	}{
+		{
+			desc:    "nothing read",
+			readN:   0,
+			wantLen: 0,
+		},
+		{
+			desc:    "smaller than vnet header",
+			readN:   virtioNetHdrSize - 1,
+			wantLen: 0,
+		},
+		{
+			desc:    "header skipped",
+			readN:   virtioNetHdrSize + 100,
+			wantLen: 100,
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			b := newIovecBuffer([]int{10, 20, 50, 50}, true)
+			// Pretend a read happend.
+			b.nextIovecs()
+			vv := b.pullViews(test.readN)
+			if got, want := vv.Size(), test.wantLen; got != want {
+				t.Errorf("b.pullView(%d).Size() = %d; want %d", test.readN, got, want)
+			}
+			if got, want := len(vv.ToOwnedView()), test.wantLen; got != want {
+				t.Errorf("b.pullView(%d).ToOwnedView() has length %d; want %d", test.readN, got, want)
+			}
+		})
 	}
 }
 
