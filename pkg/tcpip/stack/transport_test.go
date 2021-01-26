@@ -149,7 +149,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Try to register so that we can start receiving packets.
 	f.ID.RemoteAddress = addr.Addr
-	err = f.proto.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
+	err = f.proto.stack.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, ports.Flags{}, 0 /* bindToDevice */)
 	if err != nil {
 		r.Release()
 		return err
@@ -190,7 +190,6 @@ func (f *fakeTransportEndpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *wai
 
 func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
 	if err := f.proto.stack.RegisterTransportEndpoint(
-		a.NIC,
 		[]tcpip.NetworkProtocolNumber{fakeNetNumber},
 		fakeTransNumber,
 		stack.TransportEndpointID{LocalAddress: a.Addr},
