@@ -593,8 +593,8 @@ func (k *Kernel) flushWritesToFiles(ctx context.Context) error {
 			// Wrap this error in ErrSaveRejection so that it will trigger a save
 			// error, rather than a panic. This also allows us to distinguish Fsync
 			// errors from state file errors in state.Save.
-			return fs.ErrSaveRejection{
-				Err: fmt.Errorf("%q was not sufficiently synced: %v", name, err),
+			return &fs.ErrSaveRejection{
+				Err: fmt.Errorf("%q was not sufficiently synced: %w", name, err),
 			}
 		}
 		return nil
