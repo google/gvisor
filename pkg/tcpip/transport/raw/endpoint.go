@@ -136,7 +136,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		return e, nil
 	}
 
-	if err := e.stack.RegisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e); err != nil {
+	if err := e.stack.RegisterRawTransportEndpoint(e.NetProto, e.TransProto, e); err != nil {
 		return nil, err
 	}
 
@@ -157,7 +157,7 @@ func (e *endpoint) Close() {
 		return
 	}
 
-	e.stack.UnregisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e)
+	e.stack.UnregisterRawTransportEndpoint(e.NetProto, e.TransProto, e)
 
 	e.rcvMu.Lock()
 	defer e.rcvMu.Unlock()
@@ -405,11 +405,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	if e.associated {
 		// Re-register the endpoint with the appropriate NIC.
-		if err := e.stack.RegisterRawTransportEndpoint(addr.NIC, e.NetProto, e.TransProto, e); err != nil {
+		if err := e.stack.RegisterRawTransportEndpoint(e.NetProto, e.TransProto, e); err != nil {
 			route.Release()
 			return err
 		}
-		e.stack.UnregisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e)
+		e.stack.UnregisterRawTransportEndpoint(e.NetProto, e.TransProto, e)
 		e.RegisterNICID = nic
 	}
 
@@ -447,16 +447,16 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	defer e.mu.Unlock()
 
 	// If a local address was specified, verify that it's valid.
-	if len(addr.Addr) != 0 && e.stack.CheckLocalAddress(addr.NIC, e.NetProto, addr.Addr) == 0 {
+	if len(addr.Addr) != 0 && e.stack.CheckLocalAddress(e.RegisterNICID, e.NetProto, addr.Addr) == 0 {
 		return tcpip.ErrBadLocalAddress
 	}
 
 	if e.associated {
 		// Re-register the endpoint with the appropriate NIC.
-		if err := e.stack.RegisterRawTransportEndpoint(addr.NIC, e.NetProto, e.TransProto, e); err != nil {
+		if err := e.stack.RegisterRawTransportEndpoint(e.NetProto, e.TransProto, e); err != nil {
 			return err
 		}
-		e.stack.UnregisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e)
+		e.stack.UnregisterRawTransportEndpoint(e.NetProto, e.TransProto, e)
 		e.RegisterNICID = addr.NIC
 		e.BindNICID = addr.NIC
 	}
