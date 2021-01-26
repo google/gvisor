@@ -35,7 +35,7 @@ type Stats struct {
 }
 
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
-func (s *Stats) IsNetworkEndpointStats() {}
+func (*Stats) IsNetworkEndpointStats() {}
 
 // IPStats implements stack.IPNetworkEndointStats
 func (s *Stats) IPStats() *tcpip.IPStats {

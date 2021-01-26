@@ -2581,7 +2581,7 @@ func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string)
 	return false, false
 }
 
-func getKnownNICIDs(proto *protocol) []tcpip.NICID {
+func knownNICIDs(proto *protocol) []tcpip.NICID {
 	var nicIDs []tcpip.NICID
 
 	for k := range proto.mu.eps {
@@ -2598,29 +2598,27 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
 	ep := proto.NewEndpoint(&nic, nil, nil, nil).(*endpoint)
-	{
-		proto.mu.Lock()
-		foundEP, hasEP := proto.mu.eps[nic.ID()]
-		nicIDs := getKnownNICIDs(proto)
-		proto.mu.Unlock()
-		if !hasEP {
-			t.Fatalf("expected to find the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
-		}
-		if foundEP != ep {
-			t.Fatalf("expected protocol to map endpoint %p to nic id %d, but endpoint %p was found instead", ep, nic.ID(), foundEP)
-		}
+	var nicIDs []tcpip.NICID
+
+	proto.mu.Lock()
+	foundEP, hasEndpointBeforeClose := proto.mu.eps[nic.ID()]
+	nicIDs = knownNICIDs(proto)
+	proto.mu.Unlock()
+	if !hasEndpointBeforeClose {
+		t.Fatalf("expected to find the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
+	}
+	if foundEP != ep {
+		t.Fatalf("found an incorrect endpoint mapped to nic id %d", nic.ID())
 	}
 
 	ep.Close()
 
-	{
-		proto.mu.Lock()
-		_, hasEP := proto.mu.eps[nic.ID()]
-		nicIDs := getKnownNICIDs(proto)
-		proto.mu.Unlock()
-		if hasEP {
-			t.Fatalf("unexpectedly found an endpoint mapped to the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
-		}
+	proto.mu.Lock()
+	_, hasEndpointAfterClose := proto.mu.eps[nic.ID()]
+	nicIDs = knownNICIDs(proto)
+	proto.mu.Unlock()
+	if hasEndpointAfterClose {
+		t.Fatalf("unexpectedly found an endpoint mapped to the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
 	}
 }
 

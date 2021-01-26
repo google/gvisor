@@ -585,104 +585,122 @@ func TestLinkAddressRequest(t *testing.T) {
 	testAddr := tcpip.Address([]byte{1, 2, 3, 4})
 
 	tests := []struct {
-		name           string
-		nicAddr        tcpip.Address
-		localAddr      tcpip.Address
-		remoteLinkAddr tcpip.LinkAddress
-
-		linkErr                                 *tcpip.Error
-		expectedErr                             *tcpip.Error
-		expectedLocalAddr                       tcpip.Address
-		expectedRemoteLinkAddr                  tcpip.LinkAddress
-		expectedRequestsSent                    uint64
-		expectedRequestBadLocalAddressErrors    uint64
-		expectedRequestNetworkUnreachableErrors uint64
-		expectedRequestDroppedErrors            uint64
+		name                                            string
+		nicAddr                                         tcpip.Address
+		localAddr                                       tcpip.Address
+		remoteLinkAddr                                  tcpip.LinkAddress
+		linkErr                                         *tcpip.Error
+		expectedErr                                     *tcpip.Error
+		expectedLocalAddr                               tcpip.Address
+		expectedRemoteLinkAddr                          tcpip.LinkAddress
+		expectedRequestsSent                            uint64
+		expectedRequestBadLocalAddressErrors            uint64
+		expectedRequestInterfaceHasNoLocalAddressErrors uint64
+		expectedRequestDroppedErrors                    uint64
 	}{
 		{
-			name:                                    "Unicast",
-			nicAddr:                                 stackAddr,
-			localAddr:                               stackAddr,
-			remoteLinkAddr:                          remoteLinkAddr,
-			expectedLocalAddr:                       stackAddr,
-			expectedRemoteLinkAddr:                  remoteLinkAddr,
-			expectedRequestsSent:                    1,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Unicast",
+			nicAddr:                              stackAddr,
+			localAddr:                            stackAddr,
+			remoteLinkAddr:                       remoteLinkAddr,
+			expectedLocalAddr:                    stackAddr,
+			expectedRemoteLinkAddr:               remoteLinkAddr,
+			expectedRequestsSent:                 1,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Multicast",
-			nicAddr:                                 stackAddr,
-			localAddr:                               stackAddr,
-			remoteLinkAddr:                          "",
-			expectedLocalAddr:                       stackAddr,
-			expectedRemoteLinkAddr:                  header.EthernetBroadcastAddress,
-			expectedRequestsSent:                    1,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Multicast",
+			nicAddr:                              stackAddr,
+			localAddr:                            stackAddr,
+			remoteLinkAddr:                       "",
+			expectedLocalAddr:                    stackAddr,
+			expectedRemoteLinkAddr:               header.EthernetBroadcastAddress,
+			expectedRequestsSent:                 1,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Unicast with unspecified source",
-			nicAddr:                                 stackAddr,
-			remoteLinkAddr:                          remoteLinkAddr,
-			expectedLocalAddr:                       stackAddr,
-			expectedRemoteLinkAddr:                  remoteLinkAddr,
-			expectedRequestsSent:                    1,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Unicast with unspecified source",
+			nicAddr:                              stackAddr,
+			localAddr:                            "",
+			remoteLinkAddr:                       remoteLinkAddr,
+			expectedLocalAddr:                    stackAddr,
+			expectedRemoteLinkAddr:               remoteLinkAddr,
+			expectedRequestsSent:                 1,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Multicast with unspecified source",
-			nicAddr:                                 stackAddr,
-			remoteLinkAddr:                          "",
-			expectedLocalAddr:                       stackAddr,
-			expectedRemoteLinkAddr:                  header.EthernetBroadcastAddress,
-			expectedRequestsSent:                    1,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Multicast with unspecified source",
+			nicAddr:                              stackAddr,
+			localAddr:                            "",
+			remoteLinkAddr:                       "",
+			expectedLocalAddr:                    stackAddr,
+			expectedRemoteLinkAddr:               header.EthernetBroadcastAddress,
+			expectedRequestsSent:                 1,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Unicast with unassigned address",
-			localAddr:                               testAddr,
-			remoteLinkAddr:                          remoteLinkAddr,
-			expectedErr:                             tcpip.ErrBadLocalAddress,
-			expectedRequestsSent:                    0,
-			expectedRequestBadLocalAddressErrors:    1,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Unicast with unassigned address",
+			nicAddr:                              stackAddr,
+			localAddr:                            testAddr,
+			remoteLinkAddr:                       remoteLinkAddr,
+			expectedErr:                          tcpip.ErrBadLocalAddress,
+			expectedRequestsSent:                 0,
+			expectedRequestBadLocalAddressErrors: 1,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Multicast with unassigned address",
-			localAddr:                               testAddr,
-			remoteLinkAddr:                          "",
-			expectedErr:                             tcpip.ErrBadLocalAddress,
-			expectedRequestsSent:                    0,
-			expectedRequestBadLocalAddressErrors:    1,
-			expectedRequestNetworkUnreachableErrors: 0,
+			name:                                 "Multicast with unassigned address",
+			nicAddr:                              stackAddr,
+			localAddr:                            testAddr,
+			remoteLinkAddr:                       "",
+			expectedErr:                          tcpip.ErrBadLocalAddress,
+			expectedRequestsSent:                 0,
+			expectedRequestBadLocalAddressErrors: 1,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Unicast with no local address available",
-			remoteLinkAddr:                          remoteLinkAddr,
-			expectedErr:                             tcpip.ErrNetworkUnreachable,
-			expectedRequestsSent:                    0,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 1,
+			name:                                 "Unicast with no local address available",
+			nicAddr:                              "",
+			localAddr:                            "",
+			remoteLinkAddr:                       remoteLinkAddr,
+			expectedErr:                          tcpip.ErrNetworkUnreachable,
+			expectedRequestsSent:                 0,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 1,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                                    "Multicast with no local address available",
-			remoteLinkAddr:                          "",
-			expectedErr:                             tcpip.ErrNetworkUnreachable,
-			expectedRequestsSent:                    0,
-			expectedRequestBadLocalAddressErrors:    0,
-			expectedRequestNetworkUnreachableErrors: 1,
+			name:                                 "Multicast with no local address available",
+			nicAddr:                              "",
+			localAddr:                            "",
+			remoteLinkAddr:                       "",
+			expectedErr:                          tcpip.ErrNetworkUnreachable,
+			expectedRequestsSent:                 0,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 1,
+			expectedRequestDroppedErrors:                    0,
 		},
 		{
-			name:                         "Link error",
-			nicAddr:                      stackAddr,
-			localAddr:                    stackAddr,
-			remoteLinkAddr:               remoteLinkAddr,
-			linkErr:                      tcpip.ErrInvalidEndpointState,
-			expectedErr:                  tcpip.ErrInvalidEndpointState,
-			expectedRequestDroppedErrors: 1,
+			name:                                 "Link error",
+			nicAddr:                              stackAddr,
+			localAddr:                            stackAddr,
+			remoteLinkAddr:                       remoteLinkAddr,
+			linkErr:                              tcpip.ErrInvalidEndpointState,
+			expectedErr:                          tcpip.ErrInvalidEndpointState,
+			expectedRequestsSent:                 0,
+			expectedRequestBadLocalAddressErrors: 0,
+			expectedRequestInterfaceHasNoLocalAddressErrors: 0,
+			expectedRequestDroppedErrors:                    1,
 		},
 	}
 
@@ -721,11 +739,11 @@ func TestLinkAddressRequest(t *testing.T) {
 			if got := s.Stats().ARP.OutgoingRequestsSent.Value(); got != test.expectedRequestsSent {
 				t.Errorf("got s.Stats().ARP.OutgoingRequestsSent.Value() = %d, want = %d", got, test.expectedRequestsSent)
 			}
+			if got := s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value(); got != test.expectedRequestInterfaceHasNoLocalAddressErrors {
+				t.Errorf("got s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value() = %d, want = %d", got, test.expectedRequestInterfaceHasNoLocalAddressErrors)
+			}
 			if got := s.Stats().ARP.OutgoingRequestBadLocalAddressErrors.Value(); got != test.expectedRequestBadLocalAddressErrors {
 				t.Errorf("got s.Stats().ARP.OutgoingRequestBadLocalAddressErrors.Value() = %d, want = %d", got, test.expectedRequestBadLocalAddressErrors)
-			}
-			if got := s.Stats().ARP.OutgoingRequestNetworkUnreachableErrors.Value(); got != test.expectedRequestNetworkUnreachableErrors {
-				t.Errorf("got s.Stats().ARP.OutgoingRequestNetworkUnreachableErrors.Value() = %d, want = %d", got, test.expectedRequestNetworkUnreachableErrors)
 			}
 			if got := s.Stats().ARP.OutgoingRequestsDropped.Value(); got != test.expectedRequestDroppedErrors {
 				t.Errorf("got s.Stats().ARP.OutgoingRequestsDropped.Value() = %d, want = %d", got, test.expectedRequestDroppedErrors)
@@ -774,11 +792,7 @@ func TestLinkAddressRequestWithoutNIC(t *testing.T) {
 		t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
 	}
 
-	if err := linkRes.LinkAddressRequest(remoteAddr, "", remoteLinkAddr, &testInterface{nicID: nicID}); err != tcpip.ErrUnknownNICID {
-		t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, "", remoteLinkAddr, err, tcpip.ErrUnknownNICID)
-	}
-
-	if got := s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value(); got != 1 {
-		t.Errorf("got s.Stats().ARP.OutgoingRequestInterfaceHasNoLocalAddressErrors.Value() = %d, want = 1", got)
+	if err := linkRes.LinkAddressRequest(remoteAddr, "", remoteLinkAddr, &testInterface{nicID: nicID}); err != tcpip.ErrNotConnected {
+		t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, "", remoteLinkAddr, err, tcpip.ErrNotConnected)
 	}
 }
