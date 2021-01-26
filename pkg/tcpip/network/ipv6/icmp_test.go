@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -1320,13 +1321,13 @@ func TestLinkAddressRequest(t *testing.T) {
 			name:           "Unicast with unassigned address",
 			localAddr:      lladdr1,
 			remoteLinkAddr: linkAddr1,
-			expectedErr:    tcpip.ErrNetworkUnreachable,
+			expectedErr:    tcpip.ErrBadLocalAddress,
 		},
 		{
 			name:           "Multicast with unassigned address",
 			localAddr:      lladdr1,
 			remoteLinkAddr: "",
-			expectedErr:    tcpip.ErrNetworkUnreachable,
+			expectedErr:    tcpip.ErrBadLocalAddress,
 		},
 		{
 			name:           "Unicast with no local address available",
@@ -1341,58 +1342,58 @@ func TestLinkAddressRequest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		s := stack.New(stack.Options{
-			NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-		})
-		p := s.NetworkProtocolInstance(ProtocolNumber)
-		linkRes, ok := p.(stack.LinkAddressResolver)
-		if !ok {
-			t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")
-		}
-
-		linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
-		if err := s.CreateNIC(nicID, linkEP); err != nil {
-			t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
-		}
-		if len(test.nicAddr) != 0 {
-			if err := s.AddAddress(nicID, ProtocolNumber, test.nicAddr); err != nil {
-				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, test.nicAddr, err)
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+			})
+			p := s.NetworkProtocolInstance(ProtocolNumber)
+			linkRes, ok := p.(stack.LinkAddressResolver)
+			if !ok {
+				t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")
 			}
-		}
 
-		// We pass a test network interface to LinkAddressRequest with the same NIC
-		// ID and link endpoint used by the NIC we created earlier so that we can
-		// mock a link address request and observe the packets sent to the link
-		// endpoint even though the stack uses the real NIC.
-		if err := linkRes.LinkAddressRequest(lladdr0, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != test.expectedErr {
-			t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", lladdr0, test.localAddr, test.remoteLinkAddr, err, test.expectedErr)
-		}
+			linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
+			if err := s.CreateNIC(nicID, linkEP); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+			}
+			if len(test.nicAddr) != 0 {
+				if err := s.AddAddress(nicID, ProtocolNumber, test.nicAddr); err != nil {
+					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, test.nicAddr, err)
+				}
+			}
 
-		if test.expectedErr != nil {
-			return
-		}
+			// We pass a test network interface to LinkAddressRequest with the same NIC
+			// ID and link endpoint used by the NIC we created earlier so that we can
+			// mock a link address request and observe the packets sent to the link
+			// endpoint even though the stack uses the real NIC.
+			if err := linkRes.LinkAddressRequest(lladdr0, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID}); err != test.expectedErr {
+				t.Errorf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", lladdr0, test.localAddr, test.remoteLinkAddr, err, test.expectedErr)
+			}
 
-		pkt, ok := linkEP.Read()
-		if !ok {
-			t.Fatal("expected to send a link address request")
-		}
-		if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
-			t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
-		}
-		if pkt.Route.RemoteAddress != test.expectedRemoteAddr {
-			t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.expectedRemoteAddr)
-		}
-		if pkt.Route.LocalAddress != lladdr1 {
-			t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, lladdr1)
-		}
-		checker.IPv6(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()),
-			checker.SrcAddr(lladdr1),
-			checker.DstAddr(test.expectedRemoteAddr),
-			checker.TTL(header.NDPHopLimit),
-			checker.NDPNS(
-				checker.NDPNSTargetAddress(lladdr0),
-				checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(linkAddr0)}),
-			))
+			if test.expectedErr != nil {
+				return
+			}
+
+			pkt, ok := linkEP.Read()
+			if !ok {
+				t.Fatal("expected to send a link address request")
+			}
+
+			var want stack.RouteInfo
+			want.NetProto = ProtocolNumber
+			want.RemoteLinkAddress = test.expectedRemoteLinkAddr
+			if diff := cmp.Diff(want, pkt.Route, cmp.AllowUnexported(want)); diff != "" {
+				t.Errorf("route info mismatch (-want +got):\n%s", diff)
+			}
+			checker.IPv6(t, stack.PayloadSince(pkt.Pkt.NetworkHeader()),
+				checker.SrcAddr(lladdr1),
+				checker.DstAddr(test.expectedRemoteAddr),
+				checker.TTL(header.NDPHopLimit),
+				checker.NDPNS(
+					checker.NDPNSTargetAddress(lladdr0),
+					checker.NDPNSOptions([]header.NDPOption{header.NDPSourceLinkLayerAddressOption(linkAddr0)}),
+				))
+		})
 	}
 }
 
