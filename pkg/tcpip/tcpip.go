@@ -826,10 +826,6 @@ const (
 	// number of unread bytes in the input buffer should be returned.
 	ReceiveQueueSizeOption
 
-	// SendBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
-	// specify the send buffer size option.
-	SendBufferSizeOption
-
 	// ReceiveBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
 	// specify the receive buffer size option.
 	ReceiveBufferSizeOption
@@ -1232,6 +1228,31 @@ type IPPacketInfo struct {
 
 	// DestinationAddr is the destination address found in the IP header.
 	DestinationAddr Address
+}
+
+// SendBufferSizeOption is used by stack.(Stack*).Option/SetOption to
+// get/set the default, min and max send buffer sizes.
+type SendBufferSizeOption struct {
+	// Min is the minimum size for send buffer.
+	Min int
+
+	// Default is the default size for send buffer.
+	Default int
+
+	// Max is the maximum size for send buffer.
+	Max int
+}
+
+// GetSendBufferLimits is used to get the send buffer size limits.
+type GetSendBufferLimits func(StackHandler) SendBufferSizeOption
+
+// GetStackSendBufferLimits is used to get default, min and max send buffer size.
+func GetStackSendBufferLimits(so StackHandler) SendBufferSizeOption {
+	var ss SendBufferSizeOption
+	if err := so.Option(&ss); err != nil {
+		panic(fmt.Sprintf("s.Option(%#v) = %s", ss, err))
+	}
+	return ss
 }
 
 // Route is a row in the routing table. It specifies through which NIC (and

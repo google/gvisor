@@ -548,13 +548,7 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
               SyscallSucceeds());
 
-  // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
-  // TODO(gvisor.dev/issue/2926): Remove the gvisor special casing when Netstack
-  // matches linux behavior.
-  if (!IsRunningOnGvisor()) {
-    quarter_sz *= 2;
-  }
-
+  quarter_sz *= 2;
   ASSERT_EQ(quarter_sz, val);
 }
 

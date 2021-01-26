@@ -68,9 +68,9 @@ func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 	return &f.ops
 }
 
-func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
-	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
-	ep.ops.InitHandler(ep)
+func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, s *stack.Stack) tcpip.Endpoint {
+	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: s.UniqueID()}
+	ep.ops.InitHandler(ep, s)
 	return ep
 }
 
@@ -234,7 +234,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 		peerAddr: route.RemoteAddress,
 		route:    route,
 	}
-	ep.ops.InitHandler(ep)
+	ep.ops.InitHandler(ep, f.proto.stack)
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
@@ -282,7 +282,7 @@ func (*fakeTransportProtocol) Number() tcpip.TransportProtocolNumber {
 }
 
 func (f *fakeTransportProtocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return newFakeTransportEndpoint(f, netProto, f.stack.UniqueID()), nil
+	return newFakeTransportEndpoint(f, netProto, f.stack), nil
 }
 
 func (*fakeTransportProtocol) NewRawEndpoint(tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {

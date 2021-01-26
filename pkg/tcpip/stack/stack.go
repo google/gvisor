@@ -444,7 +444,7 @@ type Stack struct {
 
 	// sendBufferSize holds the min/default/max send buffer sizes for
 	// endpoints other than TCP.
-	sendBufferSize SendBufferSizeOption
+	sendBufferSize tcpip.SendBufferSizeOption
 
 	// receiveBufferSize holds the min/default/max receive buffer sizes for
 	// endpoints other than TCP.
@@ -646,7 +646,7 @@ func New(opts Options) *Stack {
 		uniqueIDGenerator:  opts.UniqueID,
 		nudDisp:            opts.NUDDisp,
 		randomGenerator:    mathrand.New(randSrc),
-		sendBufferSize: SendBufferSizeOption{
+		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultBufferSize,
 			Max:     DefaultMaxBufferSize,

@@ -97,9 +97,7 @@ type endpoint struct {
 	rcvClosed     bool
 
 	// The following fields are protected by the mu mutex.
-	mu            sync.RWMutex `state:"nosave"`
-	sndBufSize    int
-	sndBufSizeMax int
+	mu sync.RWMutex `state:"nosave"`
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
 	state          EndpointState
@@ -176,18 +174,18 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		// Linux defaults to TTL=1.
 		multicastTTL:         1,
 		rcvBufSizeMax:        32 * 1024,
-		sndBufSizeMax:        32 * 1024,
 		multicastMemberships: make(map[multicastMembership]struct{}),
 		state:                StateInitial,
 		uniqueID:             s.UniqueID(),
 	}
-	e.ops.InitHandler(e)
+	e.ops.InitHandler(e, e.stack)
 	e.ops.SetMulticastLoop(true)
+	e.ops.SetSendBufferSize(32*1024, false /* notify */, tcpip.GetStackSendBufferLimits)
 
 	// Override with stack defaults.
-	var ss stack.SendBufferSizeOption
+	var ss tcpip.SendBufferSizeOption
 	if err := s.Option(&ss); err == nil {
-		e.sndBufSizeMax = ss.Default
+		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, tcpip.GetStackSendBufferLimits)
 	}
 
 	var rs stack.ReceiveBufferSizeOption
@@ -632,25 +630,6 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 		e.rcvBufSizeMax = v
 		e.mu.Unlock()
 		return nil
-	case tcpip.SendBufferSizeOption:
-		// Make sure the send buffer size is within the min and max
-		// allowed.
-		var ss stack.SendBufferSizeOption
-		if err := e.stack.Option(&ss); err != nil {
-			panic(fmt.Sprintf("e.stack.Option(%#v) = %s", ss, err))
-		}
-
-		if v < ss.Min {
-			v = ss.Min
-		}
-		if v > ss.Max {
-			v = ss.Max
-		}
-
-		e.mu.Lock()
-		e.sndBufSizeMax = v
-		e.mu.Unlock()
-		return nil
 	}
 
 	return nil
@@ -809,12 +788,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 			v = p.data.Size()
 		}
 		e.rcvMu.Unlock()
-		return v, nil
-
-	case tcpip.SendBufferSizeOption:
-		e.mu.Lock()
-		v := e.sndBufSizeMax
-		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.ReceiveBufferSizeOption:
