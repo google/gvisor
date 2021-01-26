@@ -67,7 +67,9 @@ func (i *inodeFileState) beforeSave() {
 	if i.sattr.Type == fs.RegularFile {
 		uattr, err := i.unstableAttr(&dummyClockContext{context.Background()})
 		if err != nil {
-			panic(fs.ErrSaveRejection{fmt.Errorf("failed to get unstable atttribute of %s: %v", i.s.inodeMappings[i.sattr.InodeID], err)})
+			panic(&fs.ErrSaveRejection{
+				Err: fmt.Errorf("failed to get unstable atttribute of %s: %w", i.s.inodeMappings[i.sattr.InodeID], err),
+			})
 		}
 		i.savedUAttr = &uattr
 	}

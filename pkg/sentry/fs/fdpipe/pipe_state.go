@@ -34,7 +34,9 @@ func (p *pipeOperations) beforeSave() {
 	} else if p.flags.Write {
 		file, err := p.opener.NonBlockingOpen(context.Background(), fs.PermMask{Write: true})
 		if err != nil {
-			panic(fs.ErrSaveRejection{fmt.Errorf("write-only pipe end cannot be re-opened as %v: %v", p, err)})
+			panic(&fs.ErrSaveRejection{
+				Err: fmt.Errorf("write-only pipe end cannot be re-opened as %#v: %w", p, err),
+			})
 		}
 		file.Close()
 	}
