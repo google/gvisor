@@ -159,13 +159,6 @@ func (f *FDTable) dropVFS2(ctx context.Context, file *vfs.FileDescription) {
 		panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
 	}
 
-	// Generate inotify events.
-	ev := uint32(linux.IN_CLOSE_NOWRITE)
-	if file.IsWritable() {
-		ev = linux.IN_CLOSE_WRITE
-	}
-	file.Dentry().InotifyWithParent(ctx, ev, 0, vfs.PathEvent)
-
 	// Drop the table's reference.
 	file.DecRef(ctx)
 }
