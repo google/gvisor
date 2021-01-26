@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -910,11 +910,11 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	//    the error message packet exceed the minimum IPv6 MTU
 	//    [IPv6].
 	mtu := int(route.MTU())
-	if mtu > header.IPv6MinimumMTU {
-		mtu = header.IPv6MinimumMTU
+	const maxIPv6Data = header.IPv6MinimumMTU - header.IPv6FixedHeaderSize
+	if mtu > maxIPv6Data {
+		mtu = maxIPv6Data
 	}
-	headerLen := int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize
-	available := int(mtu) - headerLen
+	available := mtu - header.ICMPv6ErrorHeaderSize
 	if available < header.IPv6MinimumSize {
 		return nil
 	}
@@ -928,7 +928,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	payload.CapLength(payloadLen)
 
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: headerLen,
+		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize,
 		Data:               payload,
 	})
 	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
