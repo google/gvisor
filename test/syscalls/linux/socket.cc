@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
@@ -109,6 +110,77 @@ TEST(SocketTest, UnixSocketStatFS) {
   EXPECT_EQ(st.f_type, SOCKFS_MAGIC);
   EXPECT_EQ(st.f_bsize, getpagesize());
   EXPECT_EQ(st.f_namelen, NAME_MAX);
+}
+
+TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
+  const DisableSave ds;
+
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+  // Send more than what will fit inside the send/receive buffers, so that it is
+  // split into multiple messages.
+  constexpr int kBufSize = 0x100000;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(close(sockets[0]) == 0);
+
+    // Construct a message with some control message.
+    struct msghdr msg = {};
+    char control[CMSG_SPACE(sizeof(int))] = {};
+    std::vector<char> buf(kBufSize);
+    struct iovec iov = {};
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    ((int*)CMSG_DATA(cmsg))[0] = sockets[1];
+
+    iov.iov_base = buf.data();
+    iov.iov_len = kBufSize;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    int n = sendmsg(sockets[1], &msg, 0);
+    TEST_PCHECK(n == kBufSize);
+    TEST_PCHECK(shutdown(sockets[1], SHUT_RDWR) == 0);
+    TEST_PCHECK(close(sockets[1]) == 0);
+    _exit(0);
+  }
+
+  close(sockets[1]);
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(int))] = {};
+  std::vector<char> buf(kBufSize);
+  struct iovec iov = {};
+  msg.msg_control = &control;
+  msg.msg_controllen = sizeof(control);
+
+  iov.iov_base = buf.data();
+  iov.iov_len = kBufSize;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  // The control message should only be present in the first message received.
+  int n;
+  ASSERT_THAT(n = recvmsg(sockets[0], &msg, 0), SyscallSucceeds());
+  ASSERT_GT(n, 0);
+  ASSERT_EQ(msg.msg_controllen, CMSG_SPACE(sizeof(int)));
+
+  while (n > 0) {
+    ASSERT_THAT(n = recvmsg(sockets[0], &msg, 0), SyscallSucceeds());
+    ASSERT_EQ(msg.msg_controllen, 0);
+  }
+
+  close(sockets[0]);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 using SocketOpenTest = ::testing::TestWithParam<int>;

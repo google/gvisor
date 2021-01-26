@@ -496,6 +496,9 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		return int(n), syserr.FromError(err)
 	}
 
+	// Only send SCM Rights once (see net/unix/af_unix.c:unix_stream_sendmsg).
+	w.Control.Rights = nil
+
 	// We'll have to block. Register for notification and keep trying to
 	// send all the data.
 	e, ch := waiter.NewChannelEntry(nil)
