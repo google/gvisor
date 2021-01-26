@@ -161,6 +161,13 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 // DecRef decrements fd's reference count.
 func (fd *FileDescription) DecRef(ctx context.Context) {
 	fd.FileDescriptionRefs.DecRef(func() {
+		// Generate inotify events.
+		ev := uint32(linux.IN_CLOSE_NOWRITE)
+		if fd.IsWritable() {
+			ev = linux.IN_CLOSE_WRITE
+		}
+		fd.Dentry().InotifyWithParent(ctx, ev, 0, PathEvent)
+
 		// Unregister fd from all epoll instances.
 		fd.epollMu.Lock()
 		epolls := fd.epolls
