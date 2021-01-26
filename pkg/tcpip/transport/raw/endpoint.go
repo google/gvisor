@@ -76,12 +76,10 @@ type endpoint struct {
 	rcvClosed     bool
 
 	// The following fields are protected by mu.
-	mu            sync.RWMutex `state:"nosave"`
-	sndBufSize    int
-	sndBufSizeMax int
-	closed        bool
-	connected     bool
-	bound         bool
+	mu        sync.RWMutex `state:"nosave"`
+	closed    bool
+	connected bool
+	bound     bool
 	// route is the route to a remote network endpoint. It is set via
 	// Connect(), and is valid only when conneted is true.
 	route *stack.Route                 `state:"manual"`
@@ -112,16 +110,16 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		},
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
-		sndBufSizeMax: 32 * 1024,
 		associated:    associated,
 	}
-	e.ops.InitHandler(e)
+	e.ops.InitHandler(e, e.stack)
 	e.ops.SetHeaderIncluded(!associated)
+	e.ops.SetSendBufferSize(32*1024, false /* notify */, tcpip.GetStackSendBufferLimits)
 
 	// Override with stack defaults.
-	var ss stack.SendBufferSizeOption
+	var ss tcpip.SendBufferSizeOption
 	if err := s.Option(&ss); err == nil {
-		e.sndBufSizeMax = ss.Default
+		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, tcpip.GetStackSendBufferLimits)
 	}
 
 	var rs stack.ReceiveBufferSizeOption
@@ -511,24 +509,6 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
-	case tcpip.SendBufferSizeOption:
-		// Make sure the send buffer size is within the min and max
-		// allowed.
-		var ss stack.SendBufferSizeOption
-		if err := e.stack.Option(&ss); err != nil {
-			panic(fmt.Sprintf("s.Option(%#v) = %s", ss, err))
-		}
-		if v > ss.Max {
-			v = ss.Max
-		}
-		if v < ss.Min {
-			v = ss.Min
-		}
-		e.mu.Lock()
-		e.sndBufSizeMax = v
-		e.mu.Unlock()
-		return nil
-
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -568,12 +548,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 			v = p.data.Size()
 		}
 		e.rcvMu.Unlock()
-		return v, nil
-
-	case tcpip.SendBufferSizeOption:
-		e.mu.Lock()
-		v := e.sndBufSizeMax
-		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.ReceiveBufferSizeOption:
