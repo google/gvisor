@@ -249,7 +249,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		Data:               buffer.View(icmp).ToVectorisedView(),
 	})
 
-	if err := mld.ep.addIPHeader(localAddress, destAddress, pkt, stack.NetworkHeaderParams{
+	if err := addIPHeader(localAddress, destAddress, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.MLDHopLimit,
 	}, extensionHeaders); err != nil {

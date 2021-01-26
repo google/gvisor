@@ -638,18 +638,12 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 							t.Fatal("expected an NDP NS response")
 						}
 
-						if p.Route.LocalAddress != nicAddr {
-							t.Errorf("got p.Route.LocalAddress = %s, want = %s", p.Route.LocalAddress, nicAddr)
-						}
-						if p.Route.LocalLinkAddress != nicLinkAddr {
-							t.Errorf("p.Route.LocalLinkAddress = %s, want = %s", p.Route.LocalLinkAddress, nicLinkAddr)
-						}
 						respNSDst := header.SolicitedNodeAddr(test.nsSrc)
-						if p.Route.RemoteAddress != respNSDst {
-							t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, respNSDst)
-						}
-						if want := header.EthernetAddressFromMulticastIPv6Address(respNSDst); p.Route.RemoteLinkAddress != want {
-							t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, want)
+						var want stack.RouteInfo
+						want.NetProto = ProtocolNumber
+						want.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(respNSDst)
+						if diff := cmp.Diff(want, p.Route, cmp.AllowUnexported(want)); diff != "" {
+							t.Errorf("route info mismatch (-want +got):\n%s", diff)
 						}
 
 						checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
