@@ -170,13 +170,6 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	}
 
-	if n != 0 {
-		// On Linux, inotify behavior is not very consistent with splice(2). We try
-		// our best to emulate Linux for very basic calls to splice, where for some
-		// reason, events are generated for output files, but not input files.
-		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-	}
-
 	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
 	// This is used only for debugging purposes.
 	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "splice", outFile)
@@ -256,8 +249,6 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 
 	if n != 0 {
-		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-
 		// If a partial write is completed, the error is dropped. Log it here.
 		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
 			log.Debugf("tee completed a partial write with error: %v", err)
@@ -449,9 +440,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	if total != 0 {
-		inFile.Dentry().InotifyWithParent(t, linux.IN_ACCESS, 0, vfs.PathEvent)
-		outFile.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-
 		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
 			// If a partial write is completed, the error is dropped. Log it here.
 			log.Debugf("sendfile completed a partial write with error: %v", err)
