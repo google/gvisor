@@ -688,25 +688,38 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
 func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+	nicID := nic.ID()
+
+	p.mu.Lock()
+	netEP, ok := p.mu.eps[nicID]
+	p.mu.Unlock()
+	if !ok {
+		return tcpip.ErrNotConnected
+	}
+
 	remoteAddr := targetAddr
 	if len(remoteLinkAddr) == 0 {
 		remoteAddr = header.SolicitedNodeAddr(targetAddr)
 		remoteLinkAddr = header.EthernetAddressFromMulticastIPv6Address(remoteAddr)
 	}
 
-	r, err := p.stack.FindRoute(nic.ID(), localAddr, remoteAddr, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return err
+	if len(localAddr) == 0 {
+		addressEndpoint := netEP.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
+		if addressEndpoint == nil {
+			return tcpip.ErrNetworkUnreachable
+		}
+
+		localAddr = addressEndpoint.AddressWithPrefix().Address
+	} else if p.stack.CheckLocalAddress(nicID, ProtocolNumber, localAddr) == 0 {
+		return tcpip.ErrBadLocalAddress
 	}
-	defer r.Release()
-	r.ResolveWith(remoteLinkAddr)
 
 	optsSerializer := header.NDPOptionsSerializer{
 		header.NDPSourceLinkLayerAddressOption(nic.LinkAddress()),
 	}
 	neighborSolicitSize := header.ICMPv6NeighborSolicitMinimumSize + optsSerializer.Length()
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()) + neighborSolicitSize,
+		ReserveHeaderBytes: int(nic.MaxHeaderLength()) + header.IPv6FixedHeaderSize + neighborSolicitSize,
 	})
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
@@ -714,20 +727,18 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	ns := header.NDPNeighborSolicit(packet.MessageBody())
 	ns.SetTargetAddress(targetAddr)
 	ns.Options().Serialize(optsSerializer)
-	packet.SetChecksum(header.ICMPv6Checksum(packet, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+	packet.SetChecksum(header.ICMPv6Checksum(packet, localAddr, remoteAddr, buffer.VectorisedView{}))
 
-	p.mu.Lock()
-	netEP, ok := p.mu.eps[nic.ID()]
-	p.mu.Unlock()
-	if !ok {
-		return tcpip.ErrNotConnected
-	}
-	stat := netEP.stats.icmp.packetsSent
-
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+	if err := addIPHeader(localAddr, remoteAddr, pkt, stack.NetworkHeaderParams{
 		Protocol: header.ICMPv6ProtocolNumber,
 		TTL:      header.NDPHopLimit,
-	}, pkt); err != nil {
+	}, header.IPv6ExtHdrSerializer{}); err != nil {
+		panic(fmt.Sprintf("failed to add IP header: %s", err))
+	}
+
+	stat := netEP.stats.icmp.packetsSent
+
+	if err := nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
 		stat.dropped.Increment()
 		return err
 	}
