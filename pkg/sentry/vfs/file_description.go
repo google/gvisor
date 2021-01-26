@@ -566,7 +566,11 @@ func (fd *FileDescription) Allocate(ctx context.Context, mode, offset, length ui
 	if !fd.IsWritable() {
 		return syserror.EBADF
 	}
-	return fd.impl.Allocate(ctx, mode, offset, length)
+	if err := fd.impl.Allocate(ctx, mode, offset, length); err != nil {
+		return err
+	}
+	fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
+	return nil
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -602,6 +606,9 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	}
 	start := fsmetric.StartReadWait()
 	n, err := fd.impl.PRead(ctx, dst, offset, opts)
+	if n > 0 {
+		fd.Dentry().InotifyWithParent(ctx, linux.IN_ACCESS, 0, PathEvent)
+	}
 	fsmetric.Reads.Increment()
 	fsmetric.FinishReadWait(fsmetric.ReadWait, start)
 	return n, err
@@ -614,6 +621,9 @@ func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opt
 	}
 	start := fsmetric.StartReadWait()
 	n, err := fd.impl.Read(ctx, dst, opts)
+	if n > 0 {
+		fd.Dentry().InotifyWithParent(ctx, linux.IN_ACCESS, 0, PathEvent)
+	}
 	fsmetric.Reads.Increment()
 	fsmetric.FinishReadWait(fsmetric.ReadWait, start)
 	return n, err
@@ -629,7 +639,11 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 	if !fd.writable {
 		return 0, syserror.EBADF
 	}
-	return fd.impl.PWrite(ctx, src, offset, opts)
+	n, err := fd.impl.PWrite(ctx, src, offset, opts)
+	if n > 0 {
+		fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
+	}
+	return n, err
 }
 
 // Write is similar to PWrite, but does not specify an offset.
@@ -637,7 +651,11 @@ func (fd *FileDescription) Write(ctx context.Context, src usermem.IOSequence, op
 	if !fd.writable {
 		return 0, syserror.EBADF
 	}
-	return fd.impl.Write(ctx, src, opts)
+	n, err := fd.impl.Write(ctx, src, opts)
+	if n > 0 {
+		fd.Dentry().InotifyWithParent(ctx, linux.IN_MODIFY, 0, PathEvent)
+	}
+	return n, err
 }
 
 // IterDirents invokes cb on each entry in the directory represented by fd. If

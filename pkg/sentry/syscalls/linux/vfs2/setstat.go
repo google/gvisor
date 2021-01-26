@@ -220,7 +220,6 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	length := args[3].Int64()
 
 	file := t.GetFileVFS2(fd)
-
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -229,23 +228,18 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if !file.IsWritable() {
 		return 0, nil, syserror.EBADF
 	}
-
 	if mode != 0 {
 		return 0, nil, syserror.ENOTSUP
 	}
-
 	if offset < 0 || length <= 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
 	size := offset + length
-
 	if size < 0 {
 		return 0, nil, syserror.EFBIG
 	}
-
 	limit := limits.FromContext(t).Get(limits.FileSize).Cur
-
 	if uint64(size) >= limit {
 		t.SendSignal(&arch.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
@@ -254,12 +248,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EFBIG
 	}
 
-	if err := file.Allocate(t, mode, uint64(offset), uint64(length)); err != nil {
-		return 0, nil, err
-	}
-
-	file.Dentry().InotifyWithParent(t, linux.IN_MODIFY, 0, vfs.PathEvent)
-	return 0, nil, nil
+	return 0, nil, file.Allocate(t, mode, uint64(offset), uint64(length))
 }
 
 // Utime implements Linux syscall utime(2).

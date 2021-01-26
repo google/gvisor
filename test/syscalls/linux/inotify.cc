@@ -1809,11 +1809,9 @@ TEST(Inotify, Sendfile) {
   EXPECT_THAT(out_events, Are({Event(IN_MODIFY, out_wd)}));
 }
 
-// On Linux, inotify behavior is not very consistent with splice(2). We try our
-// best to emulate Linux for very basic calls to splice.
 TEST(Inotify, SpliceOnWatchTarget) {
-  int pipes[2];
-  ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
+  int pipefds[2];
+  ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const FileDescriptor inotify_fd =
@@ -1828,15 +1826,20 @@ TEST(Inotify, SpliceOnWatchTarget) {
   const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
 
-  EXPECT_THAT(splice(fd.get(), nullptr, pipes[1], nullptr, 1, /*flags=*/0),
+  EXPECT_THAT(splice(fd.get(), nullptr, pipefds[1], nullptr, 1, /*flags=*/0),
               SyscallSucceedsWithValue(1));
 
-  // Surprisingly, events are not generated in Linux if we read from a file.
+  // Surprisingly, events may not be generated in Linux if we read from a file.
+  // fs/splice.c:generic_file_splice_read, which is used most often, does not
+  // generate events, whereas fs/splice.c:default_file_splice_read does.
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  ASSERT_THAT(events, Are({}));
+  if (IsRunningOnGvisor() && !IsRunningWithVFS1()) {
+    ASSERT_THAT(events, Are({Event(IN_ACCESS, dir_wd, Basename(file.path())),
+                             Event(IN_ACCESS, file_wd)}));
+  }
 
-  EXPECT_THAT(splice(pipes[0], nullptr, fd.get(), nullptr, 1, /*flags=*/0),
+  EXPECT_THAT(splice(pipefds[0], nullptr, fd.get(), nullptr, 1, /*flags=*/0),
               SyscallSucceedsWithValue(1));
 
   events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
@@ -1847,8 +1850,8 @@ TEST(Inotify, SpliceOnWatchTarget) {
 }
 
 TEST(Inotify, SpliceOnInotifyFD) {
-  int pipes[2];
-  ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
+  int pipefds[2];
+  ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
 
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const FileDescriptor fd =
@@ -1864,11 +1867,11 @@ TEST(Inotify, SpliceOnInotifyFD) {
   char buf;
   EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
 
-  EXPECT_THAT(splice(fd.get(), nullptr, pipes[1], nullptr,
+  EXPECT_THAT(splice(fd.get(), nullptr, pipefds[1], nullptr,
                      sizeof(struct inotify_event) + 1, SPLICE_F_NONBLOCK),
               SyscallSucceedsWithValue(sizeof(struct inotify_event)));
 
-  const FileDescriptor read_fd(pipes[0]);
+  const FileDescriptor read_fd(pipefds[0]);
   const std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(read_fd.get()));
   ASSERT_THAT(events, Are({Event(IN_ACCESS, watcher)}));
@@ -1966,9 +1969,7 @@ TEST(Inotify, Xattr) {
 }
 
 TEST(Inotify, Exec) {
-  // TODO(gvisor.dev/issues/5348)
-  SKIP_IF(IsRunningOnGvisor());
-
+  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
   const int wd = ASSERT_NO_ERRNO_AND_VALUE(
