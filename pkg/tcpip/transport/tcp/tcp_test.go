@@ -4365,9 +4365,9 @@ func checkRecvBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 	t.Helper()
 
-	s, err := ep.GetSockOptInt(tcpip.SendBufferSizeOption)
+	s, err := ep.SocketOptions().GetSendBufferSize()
 	if err != nil {
-		t.Fatalf("GetSockOpt failed: %s", err)
+		t.Fatalf("GetSendBufferSize failed: %s", err)
 	}
 
 	if int(s) != v {
@@ -4473,9 +4473,7 @@ func TestMinMaxBufferSizes(t *testing.T) {
 
 	checkRecvBufferSize(t, ep, 200)
 
-	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 149); err != nil {
-		t.Fatalf("SetSockOptInt(SendBufferSizeOption, 299) failed: %s", err)
-	}
+	ep.SocketOptions().SetSendBufferSize(149, true, tcp.GetTCPSendBufferLimits)
 
 	checkSendBufferSize(t, ep, 300)
 
@@ -4487,9 +4485,7 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	// Values above max are capped at max and then doubled.
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20*2)
 
-	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 1+tcp.DefaultSendBufferSize*30); err != nil {
-		t.Fatalf("SetSockOptInt(SendBufferSizeOption) failed: %s", err)
-	}
+	ep.SocketOptions().SetSendBufferSize(1+tcp.DefaultSendBufferSize*30, true, tcp.GetTCPSendBufferLimits)
 
 	// Values above max are capped at max and then doubled.
 	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30*2)

@@ -14,7 +14,9 @@
 
 package stack
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
 const (
 	// MinBufferSize is the smallest size of a receive or send buffer.
@@ -29,14 +31,6 @@ const (
 	DefaultMaxBufferSize = 4 << 20 // 4 MiB
 )
 
-// SendBufferSizeOption is used by stack.(Stack*).Option/SetOption to
-// get/set the default, min and max send buffer sizes.
-type SendBufferSizeOption struct {
-	Min     int
-	Default int
-	Max     int
-}
-
 // ReceiveBufferSizeOption is used by stack.(Stack*).Option/SetOption to
 // get/set the default, min and max receive buffer sizes.
 type ReceiveBufferSizeOption struct {
@@ -48,7 +42,7 @@ type ReceiveBufferSizeOption struct {
 // SetOption allows setting stack wide options.
 func (s *Stack) SetOption(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
-	case SendBufferSizeOption:
+	case tcpip.SendBufferSizeOption:
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
@@ -88,7 +82,7 @@ func (s *Stack) SetOption(option interface{}) *tcpip.Error {
 // Option allows retrieving stack wide options.
 func (s *Stack) Option(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
-	case *SendBufferSizeOption:
+	case *tcpip.SendBufferSizeOption:
 		s.mu.RLock()
 		*v = s.sendBufferSize
 		s.mu.RUnlock()

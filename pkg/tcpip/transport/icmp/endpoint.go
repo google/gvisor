@@ -69,8 +69,7 @@ type endpoint struct {
 	rcvClosed     bool
 
 	// The following fields are protected by the mu mutex.
-	mu         sync.RWMutex `state:"nosave"`
-	sndBufSize int
+	mu sync.RWMutex `state:"nosave"`
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
 	state         endpointState
@@ -94,11 +93,17 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		},
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
-		sndBufSize:    32 * 1024,
 		state:         stateInitial,
 		uniqueID:      s.UniqueID(),
 	}
-	ep.ops.InitHandler(ep)
+	ep.ops.InitHandler(ep, ep.stack)
+	ep.ops.SetSendBufferSize(32*1024, false /* notify */, tcpip.GetStackSendBufferLimits)
+
+	// Override with stack defaults.
+	var ss tcpip.SendBufferSizeOption
+	if err := s.Option(&ss); err == nil {
+		ep.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, tcpip.GetStackSendBufferLimits)
+	}
 	return ep, nil
 }
 
@@ -362,11 +367,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 			v = p.data.Size()
 		}
 		e.rcvMu.Unlock()
-		return v, nil
-	case tcpip.SendBufferSizeOption:
-		e.mu.Lock()
-		v := e.sndBufSize
-		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.ReceiveBufferSizeOption:

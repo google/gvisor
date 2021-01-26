@@ -842,12 +842,32 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
 
 func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	switch opt {
-	case tcpip.SendBufferSizeOption:
 	case tcpip.ReceiveBufferSizeOption:
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
 	}
 	return nil
+}
+
+// IsUnixSocket implements tcpip.SocketOptionsHandler.IsUnixSocket.
+func (e *baseEndpoint) IsUnixSocket() bool {
+	return true
+}
+
+// GetSendBufferSize implements tcpip.SocketOptionsHandler.GetSendBufferSize.
+func (e *baseEndpoint) GetSendBufferSize() (int64, *tcpip.Error) {
+	e.Lock()
+	defer e.Unlock()
+
+	if !e.Connected() {
+		return -1, tcpip.ErrNotConnected
+	}
+
+	v := e.connected.SendMaxQueueSize()
+	if v < 0 {
+		return -1, tcpip.ErrQueueSizeNotSupported
+	}
+	return v, nil
 }
 
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
@@ -873,19 +893,6 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 			return -1, tcpip.ErrNotConnected
 		}
 		v := e.connected.SendQueuedSize()
-		e.Unlock()
-		if v < 0 {
-			return -1, tcpip.ErrQueueSizeNotSupported
-		}
-		return int(v), nil
-
-	case tcpip.SendBufferSizeOption:
-		e.Lock()
-		if !e.Connected() {
-			e.Unlock()
-			return -1, tcpip.ErrNotConnected
-		}
-		v := e.connected.SendMaxQueueSize()
 		e.Unlock()
 		if v < 0 {
 			return -1, tcpip.ErrQueueSizeNotSupported
