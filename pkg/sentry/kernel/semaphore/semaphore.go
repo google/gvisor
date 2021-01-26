@@ -40,6 +40,9 @@ const (
 
 	// Maximum number of semaphores in all semaphroe sets.
 	semsTotalMax = linux.SEMMNS
+
+	// Maximum value that can be recorded for semaphore adjustment.
+	semAdjValueMax = linux.SEMAEM
 )
 
 // Registry maintains a set of semaphores that can be found by key or ID.
@@ -83,6 +86,10 @@ type Set struct {
 	// sems holds all semaphores in the set. The slice itself is immutable after
 	// it's been set, however each 'sem' object in the slice requires 'mu' lock.
 	sems []sem
+
+	// semAdjs maintains sempahore value adjustments within a semaphore set.
+	// The map's key is pid, the map's values are adjustments to the corresponding semaphroe values in sems via semop operation.
+	semAdjs map[int32][]int16
 
 	// dead is set to true when the set is removed and can't be reached anymore.
 	// All waiters must wake up and fail when set is dead.
@@ -270,6 +277,7 @@ func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.File
 		perms:      perms,
 		changeTime: ktime.NowFromContext(ctx),
 		sems:       make([]sem, nsems),
+		semAdjs:    make(map[int32][]int16),
 	}
 
 	// Find the next available ID.
@@ -315,6 +323,33 @@ func (r *Registry) FindByIndex(index int32) *Set {
 	return r.semaphores[id]
 }
 
+// UndoSemAdj undoes sem value semadjusts that are caused by the given process.
+func (r *Registry) UndoSemAdj(pid int32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, set := range r.semaphores {
+		set.mu.Lock()
+		if adjs, exist := set.semAdjs[pid]; exist {
+			for i, val := range adjs {
+				var semval int = int(set.sems[i].value) + int(val)
+				// If the sem value exceeds the maximum value or the minimum value of a sem's,
+				// set the value to the maximum value or minimum value.
+				if semval > valueMax {
+					set.sems[i].value = valueMax
+				} else if semval < -valueMax-1 {
+					set.sems[i].value = -valueMax - 1
+				} else {
+					set.sems[i].value = int16(semval)
+				}
+				set.sems[i].pid = pid
+			}
+		}
+		delete(set.semAdjs, pid)
+		set.mu.Unlock()
+	}
+}
+
 func (r *Registry) findByKey(key int32) *Set {
 	for _, v := range r.semaphores {
 		if v.key == key {
@@ -355,6 +390,14 @@ func (s *Set) findSem(num int32) *sem {
 		return nil
 	}
 	return &s.sems[num]
+}
+
+func (s *Set) findOrCreateSemAdjs(pid int32) []int16 {
+	if _, exist := s.semAdjs[pid]; !exist {
+		// Lazily initialize semAdjs entries when they are needed.
+		s.semAdjs[pid] = make([]int16, s.Size())
+	}
+	return s.semAdjs[pid]
 }
 
 // Size returns the number of semaphores in the set. Size is immutable.
@@ -406,7 +449,7 @@ func (s *Set) GetStat(creds *auth.Credentials) (*linux.SemidDS, error) {
 	return ds, nil
 }
 
-// SetVal overrides a semaphore value, waking up waiters as needed.
+// SetVal overrides a semaphore value, waking up waiters as needed, and undo entries are cleared for altered semaphores in all processes.
 func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid int32) error {
 	if val < 0 || val > valueMax {
 		return syserror.ERANGE
@@ -420,12 +463,16 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 		return syserror.EACCES
 	}
 
+	// findSem also protects the num is in range of semundo entries.
 	sem := s.findSem(num)
 	if sem == nil {
 		return syserror.ERANGE
 	}
 
-	// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
+	// Clear undo entries for the altered semaphore in all processes.
+	for _, semAdj := range s.semAdjs {
+		semAdj[num] = 0
+	}
 	sem.value = val
 	sem.pid = pid
 	s.changeTime = ktime.NowFromContext(ctx)
@@ -433,7 +480,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 	return nil
 }
 
-// SetValAll overrides all semaphores values, waking up waiters as needed. It also
+// SetValAll overrides all semaphores values, waking up waiters as needed, and undo entries are cleared for altrered semaphores in all processes. It also
 // sets semaphore's PID which was fixed in Linux 4.6.
 //
 // 'len(vals)' must be equal to 's.Size()'.
@@ -459,10 +506,13 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	for i, val := range vals {
 		sem := &s.sems[i]
 
-		// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
 		sem.value = int16(val)
 		sem.pid = pid
 		sem.wakeWaiters()
+	}
+	// Clear undo entries in all processes.
+	for semAdjPid := range s.semAdjs {
+		delete(s.semAdjs, semAdjPid)
 	}
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
@@ -594,8 +644,13 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (chan struct{}, int32, error) {
 	// Changes to semaphores go to this slice temporarily until they all succeed.
 	tmpVals := make([]int16, len(s.sems))
+	semAdjs := s.findOrCreateSemAdjs(pid)
+	tmpSemAdjs := make([]int, len(s.sems))
 	for i := range s.sems {
 		tmpVals[i] = s.sems[i].value
+	}
+	for i, v := range semAdjs {
+		tmpSemAdjs[i] = int(v)
 	}
 
 	for _, op := range ops {
@@ -633,18 +688,28 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 				if tmpVals[op.SemNum] > valueMax-op.SemOp {
 					return nil, 0, syserror.ERANGE
 				}
-			}
 
+			}
+			if op.SemFlg&linux.SEM_UNDO != 0 {
+				tmpSemAdjs[op.SemNum] -= int(op.SemOp)
+				// Handle out of range semaphore adjustment values.
+				if tmpSemAdjs[op.SemNum] < (-semAdjValueMax-1) || tmpSemAdjs[op.SemNum] > semAdjValueMax {
+					return nil, 0, syserror.ERANGE
+				}
+			}
 			tmpVals[op.SemNum] += op.SemOp
 		}
 	}
 
 	// All operations succeeded, apply them.
-	// TODO(gvisor.dev/issue/137): handle undo operations.
 	for i, v := range tmpVals {
 		s.sems[i].value = v
 		s.sems[i].wakeWaiters()
 		s.sems[i].pid = pid
+	}
+	// Apply semaphore value adjustments.
+	for i, v := range tmpSemAdjs {
+		semAdjs[i] = int16(v)
 	}
 	s.opTime = ktime.NowFromContext(ctx)
 	return nil, 0, nil

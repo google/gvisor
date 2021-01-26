@@ -281,6 +281,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		t.mountNamespaceVFS2 = nil
 	}
 	t.ipcns.DecRef(t)
+	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	t.ipcns.SemUndo(int32(pid))
 	t.mu.Unlock()
 
 	// If this is the last task to exit from the thread group, release the

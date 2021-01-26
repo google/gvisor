@@ -62,6 +62,11 @@ func (i *IPCNamespace) DecRef(ctx context.Context) {
 	})
 }
 
+// SemUndo undoes semaphore values when the process terminates.
+func (i *IPCNamespace) SemUndo(pid int32) {
+	i.semaphores.UndoSemAdj(pid)
+}
+
 // IPCNamespace returns the task's IPC namespace.
 func (t *Task) IPCNamespace() *IPCNamespace {
 	t.mu.Lock()
