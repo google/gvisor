@@ -94,7 +94,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	}
 
 	if e.associated {
-		if err := e.stack.RegisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e); err != nil {
+		if err := e.stack.RegisterRawTransportEndpoint(e.NetProto, e.TransProto, e); err != nil {
 			panic(err)
 		}
 	}
