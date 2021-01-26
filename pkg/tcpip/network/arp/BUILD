@@ -4,9 +4,13 @@ package(licenses = ["notice"])
 
 go_library(
     name = "arp",
-    srcs = ["arp.go"],
+    srcs = [
+        "arp.go",
+        "stats.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
@@ -31,5 +35,17 @@ go_test(
         "//pkg/tcpip/transport/icmp",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
+    ],
+)
+
+go_test(
+    name = "stats_test",
+    size = "small",
+    srcs = ["stats_test.go"],
+    library = ":arp",
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/network/testutil",
+        "//pkg/tcpip/stack",
     ],
 )

@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ipv4
+package arp
 
 import (
 	"reflect"
@@ -68,10 +68,10 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	ep.Close()
 
 	proto.mu.Lock()
-	_, hasEP := proto.mu.eps[nic.ID()]
+	_, hasEndpointAfterClose := proto.mu.eps[nic.ID()]
 	nicIDs = knownNICIDs(proto)
 	proto.mu.Unlock()
-	if hasEP {
+	if hasEndpointAfterClose {
 		t.Fatalf("unexpectedly found an endpoint mapped to the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
 	}
 }
@@ -87,13 +87,7 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	// expected to be bound by a MultiCounterStat.
 	refStack := s.Stats()
 	refEP := ep.stats.localStats
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IP).Elem(), reflect.ValueOf(&refStack.IP).Elem()}); err != nil {
-		t.Error(err)
-	}
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ICMP).Elem(), reflect.ValueOf(&refStack.ICMP.V4).Elem()}); err != nil {
-		t.Error(err)
-	}
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.igmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IGMP).Elem(), reflect.ValueOf(&refStack.IGMP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.arp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ARP).Elem(), reflect.ValueOf(&refStack.ARP).Elem()}); err != nil {
 		t.Error(err)
 	}
 }
