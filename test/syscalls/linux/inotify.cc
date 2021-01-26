@@ -782,6 +782,38 @@ TEST(Inotify, MoveWatchedTargetGeneratesEvents) {
   EXPECT_EQ(events[0].cookie, events[1].cookie);
 }
 
+// Tests that close events are only emitted when a file description drops its
+// last reference.
+TEST(Inotify, DupFD) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ALL_EVENTS));
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  FileDescriptor fd2 = ASSERT_NO_ERRNO_AND_VALUE(fd.Dup());
+
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_OPEN, wd),
+                      }));
+
+  fd.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  fd2.reset();
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_CLOSE_NOWRITE, wd),
+                      }));
+}
+
 TEST(Inotify, CoalesceEvents) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const FileDescriptor fd =
