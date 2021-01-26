@@ -235,14 +235,14 @@ func buildIPv6Route(local, remote tcpip.Address) (*stack.Route, *tcpip.Error) {
 	return s.FindRoute(nicID, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildDummyStackWithLinkEndpoint(t *testing.T) (*stack.Stack, *channel.Endpoint) {
+func buildDummyStackWithLinkEndpoint(t *testing.T, mtu uint32) (*stack.Stack, *channel.Endpoint) {
 	t.Helper()
 
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 	})
-	e := channel.New(0, 1280, "")
+	e := channel.New(1, mtu, "")
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
@@ -263,7 +263,7 @@ func buildDummyStackWithLinkEndpoint(t *testing.T) (*stack.Stack, *channel.Endpo
 func buildDummyStack(t *testing.T) *stack.Stack {
 	t.Helper()
 
-	s, _ := buildDummyStackWithLinkEndpoint(t)
+	s, _ := buildDummyStackWithLinkEndpoint(t, header.IPv6MinimumMTU)
 	return s
 }
 
@@ -416,7 +416,7 @@ func TestSourceAddressValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s, e := buildDummyStackWithLinkEndpoint(t)
+			s, e := buildDummyStackWithLinkEndpoint(t, header.IPv6MinimumMTU)
 			test.rxICMP(e, test.srcAddress)
 
 			var wantValid uint64
@@ -1490,7 +1490,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{test.protoFactory},
 					})
-					e := channel.New(1, 1280, "")
+					e := channel.New(1, header.IPv6MinimumMTU, "")
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
@@ -1523,6 +1523,249 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					test.checker(t, pkt.Pkt, subTest.srcAddr)
 				})
 			}
+		})
+	}
+}
+
+// Test that the included data in an ICMP error packet conforms to the
+// requirements of RFC 972, RFC 4443 section 2.4 and RFC 1812 Section 4.3.2.3
+func TestICMPInclusionSize(t *testing.T) {
+	const (
+		replyHeaderLength4 = header.IPv4MinimumSize + header.IPv4MinimumSize + header.ICMPv4MinimumSize
+		replyHeaderLength6 = header.IPv6MinimumSize + header.IPv6MinimumSize + header.ICMPv6MinimumSize
+		targetSize4        = header.IPv4MinimumProcessableDatagramSize
+		targetSize6        = header.IPv6MinimumMTU
+		// A protocol number that will cause an error response.
+		reservedProtocol = 254
+	)
+
+	// IPv4 function to create a IP packet and send it to the stack.
+	// The packet should generate an error response. We can do that by using an
+	// unknown transport protocol (254).
+	rxIPv4Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) buffer.View {
+		totalLen := header.IPv4MinimumSize + len(payload)
+		hdr := buffer.NewPrependable(header.IPv4MinimumSize)
+		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+		ip.Encode(&header.IPv4Fields{
+			TotalLength: uint16(totalLen),
+			Protocol:    reservedProtocol,
+			TTL:         ipv4.DefaultTTL,
+			SrcAddr:     src,
+			DstAddr:     localIPv4Addr,
+		})
+		ip.SetChecksum(^ip.CalculateChecksum())
+		vv := hdr.View().ToVectorisedView()
+		vv.AppendView(buffer.View(payload))
+		// Take a copy before InjectInbound takes ownership of vv
+		// as vv may be changed during the call.
+		v := vv.ToView()
+		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: vv,
+		}))
+		return v
+	}
+
+	// IPv6 function to create a packet and send it to the stack.
+	// The packet should be errant in a way that causes the stack to send an
+	// ICMP error response and have enough data to allow the testing of the
+	// inclusion of the errant packet. Use `unknown next header' to generate
+	// the error.
+	rxIPv6Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) buffer.View {
+		hdr := buffer.NewPrependable(header.IPv6MinimumSize)
+		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength:     uint16(len(payload)),
+			TransportProtocol: reservedProtocol,
+			HopLimit:          ipv6.DefaultTTL,
+			SrcAddr:           src,
+			DstAddr:           localIPv6Addr,
+		})
+		vv := hdr.View().ToVectorisedView()
+		vv.AppendView(buffer.View(payload))
+		// Take a copy before InjectInbound takes ownership of vv
+		// as vv may be changed during the call.
+		v := vv.ToView()
+
+		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: vv,
+		}))
+		return v
+	}
+
+	v4Checker := func(t *testing.T, pkt *stack.PacketBuffer, payload buffer.View) {
+		// We already know the entire packet is the right size so we can use its
+		// length to calculate the right payload size to check.
+		expectedPayloadLength := pkt.Size() - header.IPv4MinimumSize - header.ICMPv4MinimumSize
+		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(localIPv4Addr),
+			checker.DstAddr(remoteIPv4Addr),
+			checker.IPv4HeaderLength(header.IPv4MinimumSize),
+			checker.IPFullLength(uint16(header.IPv4MinimumSize+header.ICMPv4MinimumSize+expectedPayloadLength)),
+			checker.ICMPv4(
+				checker.ICMPv4Checksum(),
+				checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+				checker.ICMPv4Code(header.ICMPv4ProtoUnreachable),
+				checker.ICMPv4Payload(payload[:expectedPayloadLength]),
+			),
+		)
+	}
+
+	v6Checker := func(t *testing.T, pkt *stack.PacketBuffer, payload buffer.View) {
+		// We already know the entire packet is the right size so we can use its
+		// length to calculate the right payload size to check.
+		expectedPayloadLength := pkt.Size() - header.IPv6MinimumSize - header.ICMPv6MinimumSize
+		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+			checker.SrcAddr(localIPv6Addr),
+			checker.DstAddr(remoteIPv6Addr),
+			checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+expectedPayloadLength)),
+			checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6ParamProblem),
+				checker.ICMPv6Code(header.ICMPv6UnknownHeader),
+				checker.ICMPv6Payload(payload[:expectedPayloadLength]),
+			),
+		)
+	}
+	tests := []struct {
+		name          string
+		srcAddress    tcpip.Address
+		injector      func(*channel.Endpoint, tcpip.Address, []byte) buffer.View
+		checker       func(*testing.T, *stack.PacketBuffer, buffer.View)
+		payloadLength int    // Not including IP header.
+		linkMTU       uint32 // Largest IP packet that the link can send as payload.
+		replyLength   int    // Total size of IP/ICMP packet expected back.
+	}{
+		{
+			name:          "IPv4 exact match",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: targetSize4 - replyHeaderLength4,
+			linkMTU:       targetSize4,
+			replyLength:   targetSize4,
+		},
+		{
+			name:          "IPv4 larger MTU",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: targetSize4,
+			linkMTU:       targetSize4 + 1000,
+			replyLength:   targetSize4,
+		},
+		{
+			name:          "IPv4 smaller MTU",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: targetSize4,
+			linkMTU:       targetSize4 - 50,
+			replyLength:   targetSize4 - 50,
+		},
+		{
+			name:          "IPv4 payload exceeds",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: targetSize4 + 10,
+			linkMTU:       targetSize4,
+			replyLength:   targetSize4,
+		},
+		{
+			name:          "IPv4 1 byte less",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: targetSize4 - replyHeaderLength4 - 1,
+			linkMTU:       targetSize4,
+			replyLength:   targetSize4 - 1,
+		},
+		{
+			name:          "IPv4 No payload",
+			srcAddress:    remoteIPv4Addr,
+			injector:      rxIPv4Bad,
+			checker:       v4Checker,
+			payloadLength: 0,
+			linkMTU:       targetSize4,
+			replyLength:   replyHeaderLength4,
+		},
+		{
+			name:          "IPv6 exact match",
+			srcAddress:    remoteIPv6Addr,
+			injector:      rxIPv6Bad,
+			checker:       v6Checker,
+			payloadLength: targetSize6 - replyHeaderLength6,
+			linkMTU:       targetSize6,
+			replyLength:   targetSize6,
+		},
+		{
+			name:          "IPv6 larger MTU",
+			srcAddress:    remoteIPv6Addr,
+			injector:      rxIPv6Bad,
+			checker:       v6Checker,
+			payloadLength: targetSize6,
+			linkMTU:       targetSize6 + 400,
+			replyLength:   targetSize6,
+		},
+		// NB. No "smaller MTU" test here as less than 1280 is not permitted
+		// in IPv6.
+		{
+			name:          "IPv6 payload exceeds",
+			srcAddress:    remoteIPv6Addr,
+			injector:      rxIPv6Bad,
+			checker:       v6Checker,
+			payloadLength: targetSize6,
+			linkMTU:       targetSize6,
+			replyLength:   targetSize6,
+		},
+		{
+			name:          "IPv6 1 byte less",
+			srcAddress:    remoteIPv6Addr,
+			injector:      rxIPv6Bad,
+			checker:       v6Checker,
+			payloadLength: targetSize6 - replyHeaderLength6 - 1,
+			linkMTU:       targetSize6,
+			replyLength:   targetSize6 - 1,
+		},
+		{
+			name:          "IPv6 no payload",
+			srcAddress:    remoteIPv6Addr,
+			injector:      rxIPv6Bad,
+			checker:       v6Checker,
+			payloadLength: 0,
+			linkMTU:       targetSize6,
+			replyLength:   replyHeaderLength6,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, e := buildDummyStackWithLinkEndpoint(t, test.linkMTU)
+			// Allocate and initialize the payload view.
+			payload := buffer.NewView(test.payloadLength)
+			for i := 0; i < len(payload); i++ {
+				payload[i] = uint8(i)
+			}
+			// Default routes for IPv4&6 so ICMP can find a route to the remote
+			// node when attempting to send the ICMP error Reply.
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         nicID,
+				},
+				{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID,
+				},
+			})
+			v := test.injector(e, test.srcAddress, payload)
+			pkt, ok := e.Read()
+			if !ok {
+				t.Fatal("expected a packet to be written")
+			}
+			if got, want := pkt.Pkt.Size(), test.replyLength; got != want {
+				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
+			}
+			test.checker(t, pkt.Pkt, v)
 		})
 	}
 }

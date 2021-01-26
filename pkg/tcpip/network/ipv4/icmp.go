@@ -436,13 +436,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	// systems implement the RFC 1812 definition and not the original
 	// requirement. We treat 8 bytes as the minimum but will try send more.
 	mtu := int(route.MTU())
-	if mtu > header.IPv4MinimumProcessableDatagramSize {
-		mtu = header.IPv4MinimumProcessableDatagramSize
+	const maxIPData = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize
+	if mtu > maxIPData {
+		mtu = maxIPData
 	}
-	headerLen := int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize
-	available := int(mtu) - headerLen
+	available := mtu - header.ICMPv4MinimumSize
 
-	if available < header.IPv4MinimumSize+header.ICMPv4MinimumErrorPayloadSize {
+	if available < len(origIPHdr)+header.ICMPv4MinimumErrorPayloadSize {
 		return nil
 	}
 
@@ -465,7 +465,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	payload.CapLength(payloadLen)
 
 	icmpPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: headerLen,
+		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize,
 		Data:               payload,
 	})
 
