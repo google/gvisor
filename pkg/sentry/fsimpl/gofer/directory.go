@@ -90,6 +90,7 @@ type createSyntheticOpts struct {
 // * d.isDir().
 // * d does not already contain a child with the given name.
 func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
+	now := d.fs.clock.Now().Nanoseconds()
 	child := &dentry{
 		refs:      1, // held by d
 		fs:        d.fs,
@@ -98,6 +99,10 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
 		blockSize: usermem.PageSize, // arbitrary
+		atime:     now,
+		mtime:     now,
+		ctime:     now,
+		btime:     now,
 		readFD:    -1,
 		writeFD:   -1,
 		mmapFD:    -1,
