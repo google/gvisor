@@ -266,16 +266,16 @@ func TestEntryInitiallyUnknown(t *testing.T) {
 
 	// No probes should have been sent.
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, []entryTestProbeInfo(nil))
+	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, []testEntryEventInfo(nil)); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -299,16 +299,16 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 
 	// No probes should have been sent.
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, []entryTestProbeInfo(nil))
+	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, []testEntryEventInfo(nil)); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -333,10 +333,10 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	wantEvents := []testEntryEventInfo{
@@ -352,10 +352,10 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
 		nudDisp.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 		}
 	}
 }
@@ -374,10 +374,10 @@ func TestEntryUnknownToStale(t *testing.T) {
 	// No probes should have been sent.
 	runImmediatelyScheduledJobs(clock)
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, []entryTestProbeInfo(nil))
+	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	wantEvents := []testEntryEventInfo{
@@ -392,8 +392,8 @@ func TestEntryUnknownToStale(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -427,11 +427,11 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.probes = nil
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -453,10 +453,10 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -483,8 +483,8 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 
@@ -515,10 +515,10 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -553,8 +553,8 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -579,10 +579,10 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -620,8 +620,8 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -646,10 +646,10 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -684,8 +684,8 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -710,10 +710,10 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -744,8 +744,8 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -785,10 +785,10 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	wantEvents := []testEntryEventInfo{
@@ -812,8 +812,8 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 
@@ -850,10 +850,10 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -903,8 +903,8 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 
@@ -932,10 +932,10 @@ func TestEntryStaysReachableWhenProbeWithSameAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -977,8 +977,8 @@ func TestEntryStaysReachableWhenProbeWithSameAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1005,10 +1005,10 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1054,8 +1054,8 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 
@@ -1083,10 +1083,10 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1134,8 +1134,8 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1157,10 +1157,10 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1212,8 +1212,8 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1235,10 +1235,10 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1290,8 +1290,8 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1313,10 +1313,10 @@ func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1358,8 +1358,8 @@ func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1381,10 +1381,10 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1439,8 +1439,8 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1462,10 +1462,10 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1520,8 +1520,8 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1543,10 +1543,10 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1601,8 +1601,8 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1624,10 +1624,10 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1678,8 +1678,8 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1701,10 +1701,10 @@ func TestEntryStaleToDelay(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1752,8 +1752,8 @@ func TestEntryStaleToDelay(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1780,10 +1780,10 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1851,8 +1851,8 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1880,10 +1880,10 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -1958,8 +1958,8 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -1987,10 +1987,10 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -2065,8 +2065,8 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2088,10 +2088,10 @@ func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -2147,8 +2147,8 @@ func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2170,10 +2170,10 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -2231,8 +2231,8 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2254,10 +2254,10 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -2319,8 +2319,8 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2343,11 +2343,11 @@ func TestEntryDelayToProbe(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2372,10 +2372,10 @@ func TestEntryDelayToProbe(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2418,8 +2418,8 @@ func TestEntryDelayToProbe(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 
@@ -2448,11 +2448,11 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2474,10 +2474,10 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2539,8 +2539,8 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2563,11 +2563,11 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2589,10 +2589,10 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2658,8 +2658,8 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2682,11 +2682,11 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2709,10 +2709,10 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2772,8 +2772,8 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2806,10 +2806,10 @@ func TestEntryUnknownToStaleToProbeToReachable(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -2878,8 +2878,8 @@ func TestEntryUnknownToStaleToProbeToReachable(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -2907,11 +2907,11 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -2933,10 +2933,10 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3015,8 +3015,8 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -3044,11 +3044,11 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3070,10 +3070,10 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3149,8 +3149,8 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -3178,11 +3178,11 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3204,10 +3204,10 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3283,8 +3283,8 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -3309,11 +3309,11 @@ func TestEntryProbeToFailed(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 		}
 	}
 
@@ -3336,11 +3336,11 @@ func TestEntryProbeToFailed(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(linkRes.probes, wantProbes)
+		diff := cmp.Diff(wantProbes, linkRes.probes)
 		linkRes.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
-			t.Fatalf("link address resolver probe #%d mismatch (-got, +want):\n%s", i+1, diff)
+			t.Fatalf("link address resolver probe #%d mismatch (-want, +got):\n%s", i+1, diff)
 		}
 
 		e.mu.Lock()
@@ -3406,8 +3406,8 @@ func TestEntryProbeToFailed(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
@@ -3449,10 +3449,10 @@ func TestEntryFailedToIncomplete(t *testing.T) {
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(linkRes.probes, wantProbes)
+	diff := cmp.Diff(wantProbes, linkRes.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
-		t.Fatalf("link address resolver probes mismatch (-got, +want):\n%s", diff)
+		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
 	}
 
 	e.mu.Lock()
@@ -3498,8 +3498,8 @@ func TestEntryFailedToIncomplete(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(nudDisp.events, wantEvents, eventDiffOpts()...); diff != "" {
-		t.Errorf("nud dispatcher events mismatch (-got, +want):\n%s", diff)
+	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
 }
