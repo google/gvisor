@@ -880,14 +880,14 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
 	}
-	e.ops.InitHandler(e, e.stack)
+	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits)
 	e.ops.SetMulticastLoop(true)
 	e.ops.SetQuickAck(true)
-	e.ops.SetSendBufferSize(DefaultSendBufferSize, false /* notify */, GetTCPSendBufferLimits)
+	e.ops.SetSendBufferSize(DefaultSendBufferSize, false /* notify */)
 
 	var ss tcpip.TCPSendBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
-		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, GetTCPSendBufferLimits)
+		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */)
 	}
 
 	var rs tcpip.TCPReceiveBufferSizeRangeOption

@@ -96,13 +96,13 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		state:         stateInitial,
 		uniqueID:      s.UniqueID(),
 	}
-	ep.ops.InitHandler(ep, ep.stack)
-	ep.ops.SetSendBufferSize(32*1024, false /* notify */, tcpip.GetStackSendBufferLimits)
+	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits)
+	ep.ops.SetSendBufferSize(32*1024, false /* notify */)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
 	if err := s.Option(&ss); err == nil {
-		ep.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, tcpip.GetStackSendBufferLimits)
+		ep.ops.SetSendBufferSize(int64(ss.Default), false /* notify */)
 	}
 	return ep, nil
 }
