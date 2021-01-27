@@ -4473,7 +4473,7 @@ func TestMinMaxBufferSizes(t *testing.T) {
 
 	checkRecvBufferSize(t, ep, 200)
 
-	ep.SocketOptions().SetSendBufferSize(149, true, tcp.GetTCPSendBufferLimits)
+	ep.SocketOptions().SetSendBufferSize(149, true)
 
 	checkSendBufferSize(t, ep, 300)
 
@@ -4485,7 +4485,7 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	// Values above max are capped at max and then doubled.
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20*2)
 
-	ep.SocketOptions().SetSendBufferSize(1+tcp.DefaultSendBufferSize*30, true, tcp.GetTCPSendBufferLimits)
+	ep.SocketOptions().SetSendBufferSize(1+tcp.DefaultSendBufferSize*30, true)
 
 	// Values above max are capped at max and then doubled.
 	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30*2)

@@ -181,7 +181,7 @@ func (e *endpoint) afterLoad() {
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
-	e.ops.InitHandler(e, e.stack)
+	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits)
 	e.segmentQueue.thaw()
 	epState := e.origEndpointState
 	switch epState {

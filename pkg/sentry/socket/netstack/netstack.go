@@ -1615,20 +1615,15 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 			return syserr.ErrInvalidArgument
 		}
 
-		family, skType, skProto := s.Type()
+		family, _, _ := s.Type()
 		// TODO(gvisor.dev/issue/5132): We currently do not support
 		// setting this option for unix sockets.
 		if family == linux.AF_UNIX {
 			return nil
 		}
 
-		getBufferLimits := tcpip.GetStackSendBufferLimits
-		if isTCPSocket(skType, skProto) {
-			getBufferLimits = tcp.GetTCPSendBufferLimits
-		}
-
 		v := usermem.ByteOrder.Uint32(optVal)
-		ep.SocketOptions().SetSendBufferSize(int64(v), true, getBufferLimits)
+		ep.SocketOptions().SetSendBufferSize(int64(v), true)
 		return nil
 
 	case linux.SO_RCVBUF:

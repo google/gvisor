@@ -112,14 +112,14 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		rcvBufSizeMax: 32 * 1024,
 		associated:    associated,
 	}
-	e.ops.InitHandler(e, e.stack)
+	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits)
 	e.ops.SetHeaderIncluded(!associated)
-	e.ops.SetSendBufferSize(32*1024, false /* notify */, tcpip.GetStackSendBufferLimits)
+	e.ops.SetSendBufferSize(32*1024, false /* notify */)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
 	if err := s.Option(&ss); err == nil {
-		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */, tcpip.GetStackSendBufferLimits)
+		e.ops.SetSendBufferSize(int64(ss.Default), false /* notify */)
 	}
 
 	var rs stack.ReceiveBufferSizeOption
