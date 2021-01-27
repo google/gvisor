@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	libcontainercgroups "github.com/opencontainers/runc/libcontainer/cgroups"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -222,7 +223,54 @@ func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
 	}
 	defer mountinfo.Close()
 
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		return loadPathsHelperV2WithMountinfo(cgroup, mountinfo)
+	}
+
 	return loadPathsHelperWithMountinfo(cgroup, mountinfo)
+}
+
+func loadPathsHelperV2WithMountinfo(cgroup, mountinfo io.Reader) (map[string]string, error) {
+	paths := make(map[string]string)
+	controller := "cgroup2"
+
+	scanner := bufio.NewScanner(cgroup)
+	for scanner.Scan() {
+		// Format: ID::path
+		// Example: 0::/user.slice
+		tokens := strings.Split(scanner.Text(), ":")
+		if len(tokens) != 3 || len(tokens[1]) != 0 {
+			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
+		}
+		paths[controller] = tokens[2]
+		log.Warningf("got line %+v", scanner.Text())
+		log.Warningf("got paths %+v", paths)
+		break
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	mfScanner := bufio.NewScanner(mountinfo)
+	for mfScanner.Scan() {
+		txt := mfScanner.Text()
+		fields := strings.Fields(txt)
+		if len(fields) < 9 || fields[len(fields)-3] != "cgroup2" {
+			continue
+		}
+		root := fields[3]
+		cgroupPath := paths[controller]
+		relCgroupPath, err := filepath.Rel(root, cgroupPath)
+		if err != nil {
+			return nil, err
+		}
+		paths[controller] = relCgroupPath
+	}
+	if err := mfScanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return paths, nil
 }
 
 func loadPathsHelperWithMountinfo(cgroup, mountinfo io.Reader) (map[string]string, error) {
@@ -283,6 +331,8 @@ type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
 	Own     map[string]bool   `json:"own"`
+
+	v2manager *cgroupV2Manager
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
@@ -305,6 +355,7 @@ func NewFromPath(cgroupsPath string) (*Cgroup, error) {
 		}
 	}
 	own := make(map[string]bool)
+
 	return &Cgroup{
 		Name:    cgroupsPath,
 		Parents: parents,
@@ -312,11 +363,37 @@ func NewFromPath(cgroupsPath string) (*Cgroup, error) {
 	}, nil
 }
 
+func (c *Cgroup) cgroupv2Manager() (*cgroupV2Manager, error) {
+	if c.v2manager != nil {
+		return c.v2manager, nil
+	}
+	m, err := NewCgroupV2Manager(c.Name)
+	if err != nil {
+		return nil, err
+	}
+	c.v2manager = m
+	return c.v2manager, nil
+}
+
 // Install creates and configures cgroups according to 'res'. If cgroup path
 // already exists, it means that the caller has already provided a
 // pre-configured cgroups, and 'res' is ignored.
 func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	log.Debugf("Creating cgroup %q", c.Name)
+
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return err
+		}
+
+		owned, err := m.Install(c.Name, res)
+		// Mark that cgroup resources are owned by me.
+		for key, _ := range controllers {
+			c.Own[key] = owned
+		}
+		return err
+	}
 
 	// The Cleanup object cleans up partially created cgroups when an error occurs.
 	// Errors occuring during cleanup itself are ignored.
@@ -354,6 +431,21 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 // existed when Install() was called, Uninstall is a noop.
 func (c *Cgroup) Uninstall() error {
 	log.Debugf("Deleting cgroup %q", c.Name)
+
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return err
+		}
+
+		var owned bool
+		for _, v := range c.Own {
+			owned = v
+			break
+		}
+		return m.Uninstall(c.Name, owned)
+	}
+
 	for key := range controllers {
 		if !c.Own[key] {
 			// cgroup is managed by caller, don't touch it.
@@ -385,6 +477,15 @@ func (c *Cgroup) Uninstall() error {
 // Join adds the current process to the all controllers. Returns function that
 // restores cgroup to the original state.
 func (c *Cgroup) Join() (func(), error) {
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return func() {}, err
+		}
+
+		return m.Join(c.Name)
+	}
+
 	// First save the current state so it can be restored.
 	undo := func() {}
 	paths, err := LoadPaths("self")
@@ -432,6 +533,15 @@ func (c *Cgroup) Join() (func(), error) {
 
 // CPUQuota returns the CFS CPU quota.
 func (c *Cgroup) CPUQuota() (float64, error) {
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return -1, err
+		}
+
+		return m.CPUQuota(c.Name)
+	}
+
 	path := c.makePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")
 	if err != nil {
@@ -459,6 +569,15 @@ func (c *Cgroup) CPUUsage() (uint64, error) {
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
 func (c *Cgroup) NumCPU() (int, error) {
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return 0, err
+		}
+
+		return m.NumCPU(c.Name)
+	}
+
 	path := c.makePath("cpuset")
 	cpuset, err := getValue(path, "cpuset.cpus")
 	if err != nil {
@@ -469,6 +588,15 @@ func (c *Cgroup) NumCPU() (int, error) {
 
 // MemoryLimit returns the memory limit.
 func (c *Cgroup) MemoryLimit() (uint64, error) {
+	if libcontainercgroups.IsCgroup2UnifiedMode() {
+		m, err := c.cgroupv2Manager()
+		if err != nil {
+			return 0, err
+		}
+
+		return m.MemoryLimit(c.Name)
+	}
+
 	path := c.makePath("memory")
 	limStr, err := getValue(path, "memory.limit_in_bytes")
 	if err != nil {
