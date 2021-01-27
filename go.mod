@@ -9,8 +9,7 @@ require (
 	github.com/Microsoft/hcsshim v0.8.14 // indirect
 	github.com/cenkalti/backoff v1.1.1-0.20190506075156-2146c9339422 // indirect
 	github.com/containerd/cgroups v0.0.0-20201119153540-4cbc285b3327 // indirect
-	github.com/containerd/console v1.0.1 // indirect
-	github.com/containerd/containerd v1.3.9 // indirect
+	github.com/containerd/containerd v1.4.3 // indirect
 	github.com/containerd/continuity v0.0.0-20210208174643-50096c924a4e // indirect
 	github.com/containerd/fifo v0.0.0-20191213151349-ff969a566b00 // indirect
 	github.com/containerd/go-runc v0.0.0-20200220073739-7016d3ce2328 // indirect
@@ -34,18 +33,14 @@ require (
 	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a // indirect
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/opencontainers/runc v0.1.1 // indirect
-	github.com/opencontainers/runtime-spec v1.0.2 // indirect
+	github.com/opencontainers/runc v1.0.0-rc94 // indirect
 	github.com/pborman/uuid v1.2.0 // indirect
-	github.com/sirupsen/logrus v1.7.0 // indirect
-	github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2 // indirect
-	github.com/vishvananda/netlink v1.0.1-0.20190930145447-2ec5bdc52b86 // indirect
+	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5 // indirect
-	golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/api v0.36.0 // indirect
