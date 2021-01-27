@@ -41,7 +41,7 @@ You can run containers in gVisor via containerd's CRI.
 
 ### Install crictl
 
-Download and install the `crictl`` binary:
+Download and install the `crictl` binary:
 
 ```shell
 {
