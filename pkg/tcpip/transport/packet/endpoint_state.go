@@ -64,7 +64,7 @@ func (ep *endpoint) loadRcvBufSizeMax(max int) {
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad() {
 	ep.stack = stack.StackFromEnv
-	ep.ops.InitHandler(ep, ep.stack)
+	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits)
 
 	// TODO(gvisor.dev/173): Once bind is supported, choose the right NIC.
 	if err := ep.stack.RegisterPacketEndpoint(0, ep.netProto, ep); err != nil {

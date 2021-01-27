@@ -205,6 +205,11 @@ type SocketOptions struct {
 	// bindToDevice determines the device to which the socket is bound.
 	bindToDevice int32
 
+	// getSendBufferLimits provides the handler to get the min, default and
+	// max size for send buffer. It  is initialized at the creation time and
+	// will not change.
+	getSendBufferLimits GetSendBufferLimits `state:"manual"`
+
 	// sendBufferSize determines the send buffer size for this socket.
 	sendBufferSize int64
 
@@ -218,9 +223,10 @@ type SocketOptions struct {
 
 // InitHandler initializes the handler. This must be called before using the
 // socket options utility.
-func (so *SocketOptions) InitHandler(handler SocketOptionsHandler, stack StackHandler) {
+func (so *SocketOptions) InitHandler(handler SocketOptionsHandler, stack StackHandler, getSendBufferLimits GetSendBufferLimits) {
 	so.handler = handler
 	so.stackHandler = stack
+	so.getSendBufferLimits = getSendBufferLimits
 }
 
 func storeAtomicBool(addr *uint32, v bool) {
@@ -568,14 +574,17 @@ func (so *SocketOptions) GetSendBufferSize() (int64, *Error) {
 
 // SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
 // stack handler should be invoked to set the send buffer size.
-func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool, getBufferLimits GetSendBufferLimits) {
-	v := sendBufferSize
-	ss := getBufferLimits(so.stackHandler)
+func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
+	if so.handler.IsUnixSocket() {
+		return
+	}
 
+	v := sendBufferSize
 	if notify {
 		// TODO(b/176170271): Notify waiters after size has grown.
 		// Make sure the send buffer size is within the min and max
 		// allowed.
+		ss := so.getSendBufferLimits(so.stackHandler)
 		min := int64(ss.Min)
 		max := int64(ss.Max)
 		// Validate the send buffer size with min and max values.

@@ -91,7 +91,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	defer e.mu.Unlock()
 
 	e.stack = s
-	e.ops.InitHandler(e, e.stack)
+	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits)
 
 	for m := range e.multicastMemberships {
 		if err := e.stack.JoinGroup(e.NetProto, m.nicID, m.multicastAddr); err != nil {
