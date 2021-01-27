@@ -66,33 +66,39 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1))
 	ackProbe := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))
 
-	startProbeDuration := time.Second
-	current := startProbeDuration
-	first := time.Now()
 	// Ask the dut to send out data.
 	dut.Send(t, acceptFd, sampleData, 0)
+
+	var prev time.Duration
 	// Expect the dut to keep the connection alive as long as the remote is
 	// acknowledging the zero-window probes.
-	for i := 0; i < 5; i++ {
+	for i := 1; i <= 5; i++ {
 		start := time.Now()
 		// Expect zero-window probe with a timeout which is a function of the typical
 		// first retransmission time. The retransmission times is supposed to
 		// exponentially increase.
-		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: probeSeq}, nil, 2*current); err != nil {
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: probeSeq}, nil, time.Duration(i)*time.Second); err != nil {
 			t.Fatalf("expected a probe with sequence number %d: loop %d", probeSeq, i)
 		}
-		if i == 0 {
-			startProbeDuration = time.Now().Sub(first)
-			current = 2 * startProbeDuration
+		if i == 1 {
+			// Skip the first probe as computing transmit time for that is
+			// non-deterministic because of the arbitrary time taken for
+			// the dut to receive a send command and issue a send.
 			continue
 		}
-		// Check if the probes came at exponentially increasing intervals.
-		if got, want := time.Since(start), current-startProbeDuration; got < want {
+
+		// Check if the time taken to receive the probe from the dut is
+		// increasing exponentially. To avoid flakes, use a correction
+		// factor for the expected duration which accounts for any
+		// scheduling non-determinism.
+		const timeCorrection = 200 * time.Millisecond
+		got := time.Since(start)
+		if want := (2 * prev) - timeCorrection; prev != 0 && got < want {
 			t.Errorf("got zero probe %d after %s, want >= %s", i, got, want)
 		}
+		prev = got
 		// Acknowledge the zero-window probes from the dut.
 		conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
-		current *= 2
 	}
 	// Advertize non-zero window.
 	conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck)})
