@@ -238,3 +238,10 @@ func (f p9file) connect(ctx context.Context, flags p9.ConnectFlags) (*fd.FD, err
 	ctx.UninterruptibleSleepFinish(false)
 	return fdobj, err
 }
+
+func (f p9file) walkRevalidate(ctx context.Context, name string, path uint64) (p9.QID, p9file, p9.AttrMask, p9.Attr, error) {
+	ctx.UninterruptibleSleepStart(false)
+	qids, newfile, attrMask, attr, err := f.file.WalkRevalidate(name, path)
+	ctx.UninterruptibleSleepFinish(false)
+	return qids, p9file{newfile}, attrMask, attr, err
+}

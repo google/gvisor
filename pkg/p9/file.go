@@ -15,10 +15,15 @@
 package p9
 
 import (
+	"math"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/fd"
 )
+
+// QIDPathSkipCheck is used to indicate that revalidation check can be skipped
+// in WalkRevalidate().
+const QIDPathSkipCheck = math.MaxUint64
 
 // Attacher is provided by the server.
 type Attacher interface {
@@ -72,6 +77,17 @@ type File interface {
 	//
 	// On the server, WalkGetAttr has a read concurrency guarantee.
 	WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, error)
+
+	// WalkRevalidate is similar to WalkGetAttr with the following differences:
+	//   - Walks a single name at a time
+	//   - Returned file is nil if qidPath is different than QIDPathInvalid
+	//     and matches to QID.path of the file that should be returned. IOW, it
+	//     only validates that the file remains the same and returns refreshed
+	//     attributes.
+	//
+	// If qidPath is equal to QIDPathInvalid, then the call is equivalent to
+	// WalkGetAttr([]string{name}).
+	WalkRevalidate(name string, qidPath uint64) (QID, File, AttrMask, Attr, error)
 
 	// StatFS returns information about the file system associated with
 	// this file.
@@ -309,4 +325,17 @@ type DisallowServerCalls struct{}
 // Renamed implements File.Renamed.
 func (*clientFile) Renamed(File, string) {
 	panic("Renamed should not be called on the client")
+}
+
+// DefaultWalkRevalidate implements File.WalkRevalidate on top of File.WalkGetAttr.
+func DefaultWalkRevalidate(file File, name string, qidPath uint64) (QID, File, AttrMask, Attr, error) {
+	qids, f, valid, attr, err := file.WalkGetAttr([]string{name})
+	if err != nil {
+		return QID{}, nil, AttrMask{}, Attr{}, err
+	}
+	if qidPath != QIDPathSkipCheck && qidPath == qids[0].Path {
+		_ = f.Close()
+		return qids[0], nil, valid, attr, nil
+	}
+	return qids[0], f, valid, attr, nil
 }

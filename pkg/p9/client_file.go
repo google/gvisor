@@ -711,3 +711,37 @@ func (c *clientFile) Flush() error {
 
 	return c.client.sendRecv(&Tflushf{FID: c.fid}, &Rflushf{})
 }
+
+// WalkRevalidate implements File.WalkRevalidate.
+func (c *clientFile) WalkRevalidate(name string, path uint64) (QID, File, AttrMask, Attr, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return QID{}, nil, AttrMask{}, Attr{}, syscall.EBADF
+	}
+	if !VersionSupportsTwalkRevalidate(c.client.version) {
+		// If not supported, just perform a regular walk with no validation.
+		qids, file, valid, attr, err := c.WalkGetAttr([]string{name})
+		if err != nil {
+			return QID{}, nil, AttrMask{}, Attr{}, err
+		}
+		return qids[0], file, valid, attr, nil
+	}
+
+	newFID, ok := c.client.fidPool.Get()
+	if !ok {
+		return QID{}, nil, AttrMask{}, Attr{}, ErrOutOfFIDs
+	}
+
+	rrevalidate := RwalkRevalidate{}
+	if err := c.client.sendRecv(&TwalkRevalidate{FID: c.fid, NewFID: FID(newFID), Name: name, QIDPath: path}, &rrevalidate); err != nil {
+		c.client.fidPool.Put(newFID)
+		return QID{}, nil, AttrMask{}, Attr{}, err
+	}
+
+	var file File
+	if rrevalidate.ContainsFile {
+		file = c.client.newFile(FID(newFID))
+	} else {
+		c.client.fidPool.Put(newFID)
+	}
+	return rrevalidate.QID, file, rrevalidate.Valid, rrevalidate.Attr, nil
+}

@@ -1421,3 +1421,63 @@ func (t *Tchannel) handle(cs *connState) message {
 	}
 	return rchannel
 }
+
+// handle implements handler.handle.
+func (t *TwalkRevalidate) handle(cs *connState) message {
+	if err := checkSafeName(t.Name); err != nil {
+		return newErr(err)
+	}
+
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	var (
+		qid    QID
+		valid  AttrMask
+		attr   Attr
+		newRef *fidRef
+	)
+	if err := ref.safelyRead(func() error {
+		if ref.isDeleted() {
+			return syscall.EINVAL
+		}
+
+		var (
+			sf  File
+			err error
+		)
+		qid, sf, valid, attr, err = ref.file.WalkRevalidate(t.Name, t.QIDPath)
+		if err != nil {
+			return err
+		}
+		if sf != nil {
+			newRef = &fidRef{
+				server:   cs.server,
+				parent:   ref,
+				file:     sf,
+				mode:     attr.Mode.FileType(),
+				pathNode: ref.pathNode.pathNodeFor(t.Name),
+			}
+			ref.pathNode.addChild(newRef, t.Name)
+			ref.IncRef() // Acquire parent reference.
+		}
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+
+	// Install the new FID if WalkRevalidate returned a file.
+	if newRef != nil {
+		cs.InsertFID(t.NewFID, newRef)
+	}
+
+	return &RwalkRevalidate{
+		Valid:        valid,
+		Attr:         attr,
+		QID:          qid,
+		ContainsFile: newRef != nil,
+	}
+}

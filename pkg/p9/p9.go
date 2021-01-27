@@ -395,6 +395,8 @@ const (
 	MsgRallocate     MsgType = 139
 	MsgTsetattrclunk MsgType = 140
 	MsgRsetattrclunk MsgType = 141
+	MsgTrevalidate   MsgType = 142
+	MsgRrevalidate   MsgType = 143
 	MsgTchannel      MsgType = 250
 	MsgRchannel      MsgType = 251
 )

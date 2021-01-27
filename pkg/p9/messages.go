@@ -2552,6 +2552,92 @@ func (r *Rchannel) String() string {
 	return fmt.Sprintf("Rchannel{Offset: %d, Length: %d}", r.Offset, r.Length)
 }
 
+// TwalkRevalidate is a walk-revalidate request.
+type TwalkRevalidate struct {
+	// FID is the FID to be walked.
+	FID FID
+
+	// NewFID is the resulting FID.
+	NewFID FID
+
+	// Name is the name to be walked.
+	Name string
+
+	// QIDPath is the QID.path to compare to the file being walked.
+	QIDPath uint64
+}
+
+// decode implements encoder.decode.
+func (t *TwalkRevalidate) decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.NewFID = b.ReadFID()
+	t.Name = b.ReadString()
+	t.QIDPath = b.Read64()
+}
+
+// encode implements encoder.encode.
+func (t *TwalkRevalidate) encode(b *buffer) {
+	b.WriteFID(t.FID)
+	b.WriteFID(t.NewFID)
+	b.WriteString(t.Name)
+	b.Write64(t.QIDPath)
+}
+
+// Type implements message.Type.
+func (*TwalkRevalidate) Type() MsgType {
+	return MsgTrevalidate
+}
+
+// String implements fmt.Stringer.
+func (t *TwalkRevalidate) String() string {
+	return fmt.Sprintf("TwalkRevalidate{FID: %d, NewFID: %d, Name: %s, QIDPath: %d}", t.FID, t.NewFID, t.Name, t.QIDPath)
+}
+
+// RwalkRevalidate is a revalidate response.
+type RwalkRevalidate struct {
+	// Valid indicates which fields are valid in the Attr below.
+	Valid AttrMask
+
+	// Attr is the set of attribute for the the file walked to.
+	Attr Attr
+
+	// QID is the QID for the the file walked to.
+	QID QID
+
+	// ContainsFile is true if TwalkRevalidate is returning a file.
+	ContainsFile bool
+}
+
+// decode implements encoder.decode.
+func (r *RwalkRevalidate) decode(b *buffer) {
+	r.Valid.decode(b)
+	r.Attr.decode(b)
+	r.QID.decode(b)
+	r.ContainsFile = (b.Read8() != 0)
+}
+
+// encode implements encoder.encode.
+func (r *RwalkRevalidate) encode(b *buffer) {
+	r.Valid.encode(b)
+	r.Attr.encode(b)
+	r.QID.encode(b)
+	if r.ContainsFile {
+		b.Write8(1)
+	} else {
+		b.Write8(0)
+	}
+}
+
+// Type implements message.Type.
+func (*RwalkRevalidate) Type() MsgType {
+	return MsgRrevalidate
+}
+
+// String implements fmt.Stringer.
+func (r *RwalkRevalidate) String() string {
+	return fmt.Sprintf("RwalkRevalidate{Valid: %s, Attr: %s, QID: %v}", r.Valid, r.Attr, r.QID)
+}
+
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
@@ -2717,6 +2803,8 @@ func init() {
 	msgRegistry.register(MsgRallocate, func() message { return &Rallocate{} })
 	msgRegistry.register(MsgTsetattrclunk, func() message { return &Tsetattrclunk{} })
 	msgRegistry.register(MsgRsetattrclunk, func() message { return &Rsetattrclunk{} })
+	msgRegistry.register(MsgTrevalidate, func() message { return &TwalkRevalidate{} })
+	msgRegistry.register(MsgRrevalidate, func() message { return &RwalkRevalidate{} })
 	msgRegistry.register(MsgTchannel, func() message { return &Tchannel{} })
 	msgRegistry.register(MsgRchannel, func() message { return &Rchannel{} })
 }

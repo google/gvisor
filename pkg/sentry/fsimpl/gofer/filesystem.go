@@ -276,57 +276,69 @@ func (fs *filesystem) getChildLocked(ctx context.Context, vfsObj *vfs.VirtualFil
 // Preconditions: Same as getChildLocked, plus:
 // * !parent.isSynthetic().
 func (fs *filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.VirtualFilesystem, parent *dentry, name string, child *dentry, ds **[]*dentry) (*dentry, error) {
+	path := uint64(p9.QIDPathSkipCheck)
 	if child != nil {
+		path = child.qidPath
+
 		// Need to lock child.metadataMu because we might be updating child
 		// metadata. We need to hold the lock *before* getting metadata from the
 		// server and release it after updating local metadata.
 		child.metadataMu.Lock()
 	}
-	qid, file, attrMask, attr, err := parent.file.walkGetAttrOne(ctx, name)
-	if err != nil && err != syserror.ENOENT {
+
+	qid, file, attrMask, attr, err := parent.file.walkRevalidate(ctx, name, path)
+	switch err {
+	case nil:
+		// No error, break.
+
+	case syserror.ENOENT:
+		if child != nil {
+			child.metadataMu.Unlock()
+			if child.isSynthetic() {
+				// We have a synthetic file, and no remote file has arisen to
+				// replace it.
+				return child, nil
+			}
+			// The file at this path no longer exists. Invalidate the dentry, and
+			// re-evaluate its caching status (i.e. if it has 0 references, drop it)
+			vfsObj.InvalidateDentry(ctx, &child.vfsd)
+			*ds = appendDentry(*ds, child)
+		}
+		// No file exists at this path now. Cache the negative lookup if allowed.
+		parent.cacheNegativeLookupLocked(name)
+		return nil, nil
+
+	default:
 		if child != nil {
 			child.metadataMu.Unlock()
 		}
 		return nil, err
 	}
-	if child != nil {
-		if !file.isNil() && qid.Path == child.qidPath {
-			// The file at this path hasn't changed. Just update cached metadata.
-			file.close(ctx)
-			child.updateFromP9AttrsLocked(attrMask, &attr)
-			child.metadataMu.Unlock()
-			return child, nil
-		}
+
+	if file.isNil() {
+		// The file at this path hasn't changed. Just update cached metadata.
+		child.updateFromP9AttrsLocked(attrMask, &attr)
 		child.metadataMu.Unlock()
-		if file.isNil() && child.isSynthetic() {
-			// We have a synthetic file, and no remote file has arisen to
-			// replace it.
-			return child, nil
-		}
-		// The file at this path has changed or no longer exists. Mark the
-		// dentry invalidated, and re-evaluate its caching status (i.e. if it
-		// has 0 references, drop it). Wait to update parent.children until we
-		// know what to replace the existing dentry with (i.e. one of the
-		// returns below), to avoid a redundant map access.
+		return child, nil
+	}
+	if child != nil {
+		child.metadataMu.Unlock()
+
+		// The file at this path has changed. Invalidate the dentry, and re-evaluate
+		// its caching status (i.e. if it has 0 references, drop it).
 		vfsObj.InvalidateDentry(ctx, &child.vfsd)
 		if child.isSynthetic() {
-			// Normally we don't mark invalidated dentries as deleted since
-			// they may still exist (but at a different path), and also for
-			// consistency with Linux. However, synthetic files are guaranteed
-			// to become unreachable if their dentries are invalidated, so
-			// treat their invalidation as deletion.
+			// Normally we don't mark invalidated dentries as deleted since they may
+			// still exist (but at a different path), and also for consistency with
+			// Linux. However, synthetic files are guaranteed to become unreachable if
+			// their dentries are invalidated, so treat their invalidation as
+			// deletion.
 			child.setDeleted()
 			parent.syntheticChildren--
 			child.decRefNoCaching()
 			parent.dirents = nil
 		}
 		*ds = appendDentry(*ds, child)
-	}
-	if file.isNil() {
-		// No file exists at this path now. Cache the negative lookup if
-		// allowed.
-		parent.cacheNegativeLookupLocked(name)
-		return nil, nil
 	}
 	// Create a new dentry representing the file.
 	child, err = fs.newDentry(ctx, file, qid, attrMask, &attr)

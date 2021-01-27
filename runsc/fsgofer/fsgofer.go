@@ -590,6 +590,31 @@ func (l *localFile) walk(names []string) ([]p9.QID, p9.File, unix.Stat_t, error)
 	return qids, last, lastStat, nil
 }
 
+func (l *localFile) WalkRevalidate(name string, qidPath uint64) (p9.QID, p9.File, p9.AttrMask, p9.Attr, error) {
+	f, path, readable, err := openAnyFileFromParent(l, name)
+	if err != nil {
+		return p9.QID{}, nil, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+	stat, err := fstat(f.FD())
+	if err != nil {
+		_ = f.Close()
+		return p9.QID{}, nil, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+	mask, attr := l.fillAttr(&stat)
+	qid := l.attachPoint.makeQID(&stat)
+	if qid.Path != p9.QIDPathSkipCheck && qid.Path == qidPath {
+		_ = f.Close()
+		return qid, nil, mask, attr, nil
+	}
+
+	c, err := newLocalFile(l.attachPoint, f, path, readable, &stat)
+	if err != nil {
+		_ = f.Close()
+		return p9.QID{}, nil, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
+	}
+	return qid, c, mask, attr, nil
+}
+
 // StatFS implements p9.File.
 func (l *localFile) StatFS() (p9.FSStat, error) {
 	var s unix.Statfs_t
