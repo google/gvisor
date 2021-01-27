@@ -128,7 +128,7 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProv
 		idGenerator:  uid,
 		stype:        stype,
 	}
-	ep.ops.InitHandler(ep, nil)
+	ep.ops.InitHandler(ep, nil, nil)
 	return ep
 }
 
@@ -173,7 +173,7 @@ func NewExternal(ctx context.Context, stype linux.SockType, uid UniqueIDProvider
 		idGenerator:  uid,
 		stype:        stype,
 	}
-	ep.ops.InitHandler(ep, nil)
+	ep.ops.InitHandler(ep, nil, nil)
 	return ep
 }
 
@@ -296,7 +296,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		idGenerator: e.idGenerator,
 		stype:       e.stype,
 	}
-	ne.ops.InitHandler(ne, nil)
+	ne.ops.InitHandler(ne, nil, nil)
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
 	readQueue.InitRefs()

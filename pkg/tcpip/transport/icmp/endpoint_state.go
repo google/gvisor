@@ -69,7 +69,7 @@ func (e *endpoint) afterLoad() {
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
-	e.ops.InitHandler(e, e.stack)
+	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits)
 
 	if e.state != stateBound && e.state != stateConnected {
 		return

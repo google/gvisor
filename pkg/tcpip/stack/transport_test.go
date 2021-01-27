@@ -70,7 +70,7 @@ func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 
 func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, s *stack.Stack) tcpip.Endpoint {
 	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: s.UniqueID()}
-	ep.ops.InitHandler(ep, s)
+	ep.ops.InitHandler(ep, s, tcpip.GetStackSendBufferLimits)
 	return ep
 }
 
@@ -233,7 +233,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 		peerAddr: route.RemoteAddress,
 		route:    route,
 	}
-	ep.ops.InitHandler(ep, f.proto.stack)
+	ep.ops.InitHandler(ep, f.proto.stack, tcpip.GetStackSendBufferLimits)
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
