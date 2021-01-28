@@ -142,6 +142,25 @@ message ListenResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+// The events field is overloaded: when used for request, it is copied into the
+// events field of posix struct pollfd; when used for response, it is filled by
+// the revents field from the posix struct pollfd.
+message PollFd {
+  int32 fd = 1;
+  uint32 events = 2;
+}
+
+message PollRequest {
+  repeated PollFd pfds = 1;
+  int32 timeout_millis = 2;
+}
+
+message PollResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  repeated PollFd pfds = 3;
+}
+
 message SendRequest {
   int32 sockfd = 1;
   bytes buf = 2;
@@ -226,6 +245,10 @@ service Posix {
   rpc GetSockOpt(GetSockOptRequest) returns (GetSockOptResponse);
   // Call listen() on the DUT.
   rpc Listen(ListenRequest) returns (ListenResponse);
+  // Call poll() on the DUT. Only pollfds that have non-empty revents are
+  // returned, the only way to tie the response back to the original request
+  // is using the fd number.
+  rpc Poll(PollRequest) returns (PollResponse);
   // Call send() on the DUT.
   rpc Send(SendRequest) returns (SendResponse);
   // Call sendto() on the DUT.

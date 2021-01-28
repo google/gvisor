@@ -16,6 +16,7 @@
 #include <getopt.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,7 @@
 #include "include/grpcpp/security/server_credentials.h"
 #include "include/grpcpp/server_builder.h"
 #include "include/grpcpp/server_context.h"
+#include "absl/strings/str_format.h"
 #include "test/packetimpact/proto/posix_server.grpc.pb.h"
 #include "test/packetimpact/proto/posix_server.pb.h"
 
@@ -252,6 +254,44 @@ class PosixImpl final : public posix_server::Posix::Service {
     response->set_ret(listen(request->sockfd(), request->backlog()));
     if (response->ret() < 0) {
       response->set_errno_(errno);
+    }
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status Poll(::grpc::ServerContext *context,
+                      const ::posix_server::PollRequest *request,
+                      ::posix_server::PollResponse *response) override {
+    std::vector<struct pollfd> pfds;
+    pfds.reserve(request->pfds_size());
+    for (const auto &pfd : request->pfds()) {
+      pfds.push_back({
+          .fd = pfd.fd(),
+          .events = static_cast<short>(pfd.events()),
+      });
+    }
+    int ret = ::poll(pfds.data(), pfds.size(), request->timeout_millis());
+
+    response->set_ret(ret);
+    if (ret < 0) {
+      response->set_errno_(errno);
+    } else {
+      // Only pollfds that have non-empty revents are returned, the client can't
+      // rely on indexes of the request array.
+      for (const auto &pfd : pfds) {
+        if (pfd.revents) {
+          auto *proto_pfd = response->add_pfds();
+          proto_pfd->set_fd(pfd.fd);
+          proto_pfd->set_events(pfd.revents);
+        }
+      }
+      if (int ready = response->pfds_size(); ret != ready) {
+        return ::grpc::Status(
+            ::grpc::StatusCode::INTERNAL,
+            absl::StrFormat(
+                "poll's return value(%d) doesn't match the number of "
+                "file descriptors that are actually ready(%d)",
+                ret, ready));
+      }
     }
     return ::grpc::Status::OK;
   }
