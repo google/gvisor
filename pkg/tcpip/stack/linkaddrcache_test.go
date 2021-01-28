@@ -124,12 +124,12 @@ func TestCacheOverflow(t *testing.T) {
 		}
 	}
 	// The earliest entries should no longer be in the cache.
-	c.cache.Lock()
-	defer c.cache.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for i := len(testAddrs) - 1; i >= len(testAddrs)-linkAddrCacheSize; i-- {
 		e := testAddrs[i]
-		if entry, ok := c.cache.table[e.addr]; ok {
-			t.Errorf("unexpected entry at c.cache.table[%s]: %#v", e.addr, entry)
+		if entry, ok := c.mu.table[e.addr]; ok {
+			t.Errorf("unexpected entry at c.mu.table[%s]: %#v", e.addr, entry)
 		}
 	}
 }
@@ -163,10 +163,10 @@ func TestCacheConcurrent(t *testing.T) {
 	}
 
 	e = testAddrs[0]
-	c.cache.Lock()
-	defer c.cache.Unlock()
-	if entry, ok := c.cache.table[e.addr]; ok {
-		t.Errorf("unexpected entry at c.cache.table[%s]: %#v", e.addr, entry)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry, ok := c.mu.table[e.addr]; ok {
+		t.Errorf("unexpected entry at c.mu.table[%s]: %#v", e.addr, entry)
 	}
 }
 
