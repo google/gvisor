@@ -993,12 +993,54 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
+// CongestionControlState indicates the current congestion control state for
+// TCP sender.
+type CongestionControlState int
+
+const (
+	// Open indicates that the sender is receiving acks in order and
+	// no loss or dupACK's etc have been detected.
+	Open CongestionControlState = iota
+	// RTORecovery indicates that an RTO has occurred and the sender
+	// has entered an RTO based recovery phase.
+	RTORecovery
+	// FastRecovery indicates that the sender has entered FastRecovery
+	// based on receiving nDupAck's. This state is entered only when
+	// SACK is not in use.
+	FastRecovery
+	// SACKRecovery indicates that the sender has entered SACK based
+	// recovery.
+	SACKRecovery
+	// Disorder indicates the sender either received some SACK blocks
+	// or dupACK's.
+	Disorder
+)
+
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //
 // TODO(b/64800844): Add and populate stat fields.
 type TCPInfoOption struct {
-	RTT    time.Duration
+	// RTT is the smoothed round trip time.
+	RTT time.Duration
+
+	// RTTVar is the round trip time variation.
 	RTTVar time.Duration
+
+	// RTO is the retransmission timeout for the endpoint.
+	RTO time.Duration
+
+	// CcState is the congestion control state.
+	CcState CongestionControlState
+
+	// SndCwnd is the congestion window, in packets.
+	SndCwnd uint32
+
+	// SndSsthresh is the threshold between slow start and congestion
+	// avoidance.
+	SndSsthresh uint32
+
+	// ReorderSeen indicates if reordering is seen in the endpoint.
+	ReorderSeen bool
 }
 
 func (*TCPInfoOption) isGettableSocketOption() {}

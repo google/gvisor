@@ -48,28 +48,6 @@ const (
 	MaxRetries = 15
 )
 
-// ccState indicates the current congestion control state for this sender.
-type ccState int
-
-const (
-	// Open indicates that the sender is receiving acks in order and
-	// no loss or dupACK's etc have been detected.
-	Open ccState = iota
-	// RTORecovery indicates that an RTO has occurred and the sender
-	// has entered an RTO based recovery phase.
-	RTORecovery
-	// FastRecovery indicates that the sender has entered FastRecovery
-	// based on receiving nDupAck's. This state is entered only when
-	// SACK is not in use.
-	FastRecovery
-	// SACKRecovery indicates that the sender has entered SACK based
-	// recovery.
-	SACKRecovery
-	// Disorder indicates the sender either received some SACK blocks
-	// or dupACK's.
-	Disorder
-)
-
 // congestionControl is an interface that must be implemented by any supported
 // congestion control algorithm.
 type congestionControl interface {
@@ -204,7 +182,7 @@ type sender struct {
 	maxSentAck seqnum.Value
 
 	// state is the current state of congestion control for this endpoint.
-	state ccState
+	state tcpip.CongestionControlState
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
@@ -593,7 +571,7 @@ func (s *sender) retransmitTimerExpired() bool {
 		s.leaveRecovery()
 	}
 
-	s.state = RTORecovery
+	s.state = tcpip.RTORecovery
 	s.cc.HandleRTOExpired()
 
 	// Mark the next segment to be sent as the first unacknowledged one and
@@ -1018,7 +996,7 @@ func (s *sender) sendData() {
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
 	// the retrasmission timeout."
-	if !s.fr.active && s.state != RTORecovery && time.Now().Sub(s.lastSendTime) > s.rto {
+	if !s.fr.active && s.state != tcpip.RTORecovery && time.Now().Sub(s.lastSendTime) > s.rto {
 		if s.sndCwnd > InitialCwnd {
 			s.sndCwnd = InitialCwnd
 		}
@@ -1062,14 +1040,14 @@ func (s *sender) enterRecovery() {
 	s.fr.highRxt = s.sndUna
 	s.fr.rescueRxt = s.sndUna
 	if s.ep.sackPermitted {
-		s.state = SACKRecovery
+		s.state = tcpip.SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
 		// Set TLPRxtOut to false according to
 		// https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.6.1.
 		s.rc.tlpRxtOut = false
 		return
 	}
-	s.state = FastRecovery
+	s.state = tcpip.FastRecovery
 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
 
@@ -1166,7 +1144,7 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 		s.fr.highRxt = s.sndUna - 1
 		// Do run SetPipe() to calculate the outstanding segments.
 		s.SetPipe()
-		s.state = Disorder
+		s.state = tcpip.Disorder
 		return false
 	}
 
@@ -1464,7 +1442,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if !s.fr.active {
 			s.cc.Update(originalOutstanding - s.outstanding)
 			if s.fr.last.LessThan(s.sndUna) {
-				s.state = Open
+				s.state = tcpip.Open
 			}
 		}
 

@@ -2011,20 +2011,34 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 	}
 }
 
+func (e *endpoint) getTCPInfo() tcpip.TCPInfoOption {
+	info := tcpip.TCPInfoOption{}
+	e.LockUser()
+	snd := e.snd
+	if snd != nil {
+		// We do not calculate RTT before sending the data packets. If
+		// the connection did not send and receive data, then RTT will
+		// be zero.
+		snd.rtt.Lock()
+		info.RTT = snd.rtt.srtt
+		info.RTTVar = snd.rtt.rttvar
+		snd.rtt.Unlock()
+
+		info.RTO = snd.rto
+		info.CcState = snd.state
+		info.SndSsthresh = uint32(snd.sndSsthresh)
+		info.SndCwnd = uint32(snd.sndCwnd)
+		info.ReorderSeen = snd.rc.reorderSeen
+	}
+	e.UnlockUser()
+	return info
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
 	switch o := opt.(type) {
 	case *tcpip.TCPInfoOption:
-		*o = tcpip.TCPInfoOption{}
-		e.LockUser()
-		snd := e.snd
-		e.UnlockUser()
-		if snd != nil {
-			snd.rtt.Lock()
-			o.RTT = snd.rtt.srtt
-			o.RTTVar = snd.rtt.rttvar
-			snd.rtt.Unlock()
-		}
+		*o = e.getTCPInfo()
 
 	case *tcpip.KeepaliveIdleOption:
 		e.keepalive.Lock()
