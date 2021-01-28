@@ -34,6 +34,21 @@ func TestTcpNoAcceptCloseReset(t *testing.T) {
 	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
 	conn.Connect(t)
 	defer conn.Close(t)
+	// We need to wait for POLLIN event on listenFd to know the connection is
+	// established. Otherwise there could be a race when we issue the Close
+	// command prior to the DUT receiving the last ack of the handshake and
+	// it will only respond RST instead of RST+ACK.
+	timeout := time.Second
+	pfds := dut.Poll(t, []unix.PollFd{{Fd: listenFd, Events: unix.POLLIN}}, timeout)
+	if n := len(pfds); n != 1 {
+		t.Fatalf("poll returned %d ready file descriptors, expected 1", n)
+	}
+	if readyFd := pfds[0].Fd; readyFd != listenFd {
+		t.Fatalf("poll returned an fd %d that was not requested (%d)", readyFd, listenFd)
+	}
+	if got, want := pfds[0].Revents, int16(unix.POLLIN); got&want == 0 {
+		t.Fatalf("poll returned no events in our interest, got: %#b, want: %#b", got, want)
+	}
 	dut.Close(t, listenFd)
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {
 		t.Fatalf("expected a RST-ACK packet but got none: %s", err)

@@ -486,6 +486,56 @@ func (dut *DUT) ListenWithErrno(ctx context.Context, t *testing.T, sockfd, backl
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+// Poll calls poll on the DUT and causes a fatal test failure if it doesn't
+// succeed. If more control over error handling is needed, use PollWithErrno.
+// Only pollfds with non-empty revents are returned, the only way to tie the
+// response back to the original request is using the fd number.
+func (dut *DUT) Poll(t *testing.T, pfds []unix.PollFd, timeout time.Duration) []unix.PollFd {
+	t.Helper()
+
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if timeout >= 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout+RPCTimeout)
+		defer cancel()
+	}
+	ret, result, err := dut.PollWithErrno(ctx, t, pfds, timeout)
+	if ret < 0 {
+		t.Fatalf("failed to poll: %s", err)
+	}
+	return result
+}
+
+// PollWithErrno calls poll on the DUT.
+func (dut *DUT) PollWithErrno(ctx context.Context, t *testing.T, pfds []unix.PollFd, timeout time.Duration) (int32, []unix.PollFd, error) {
+	t.Helper()
+
+	req := pb.PollRequest{
+		TimeoutMillis: int32(timeout.Milliseconds()),
+	}
+	for _, pfd := range pfds {
+		req.Pfds = append(req.Pfds, &pb.PollFd{
+			Fd:     pfd.Fd,
+			Events: uint32(pfd.Events),
+		})
+	}
+	resp, err := dut.posixServer.Poll(ctx, &req)
+	if err != nil {
+		t.Fatalf("failed to call Poll: %s", err)
+	}
+	if ret, npfds := resp.GetRet(), len(resp.GetPfds()); ret >= 0 && int(ret) != npfds {
+		t.Fatalf("nonsensical poll response: ret(%d) != len(pfds)(%d)", ret, npfds)
+	}
+	var result []unix.PollFd
+	for _, protoPfd := range resp.GetPfds() {
+		result = append(result, unix.PollFd{
+			Fd:      protoPfd.GetFd(),
+			Revents: int16(protoPfd.GetEvents()),
+		})
+	}
+	return resp.GetRet(), result, syscall.Errno(resp.GetErrno_())
+}
+
 // Send calls send on the DUT and causes a fatal test failure if it doesn't
 // succeed. If more control over the timeout or error handling is needed, use
 // SendWithErrno.
