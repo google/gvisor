@@ -1098,6 +1098,29 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 		// TODO(b/64800844): Translate fields once they are added to
 		// tcpip.TCPInfoOption.
 		info := linux.TCPInfo{}
+		switch v.CcState {
+		case tcpip.RTORecovery:
+			info.CaState = linux.TCP_CA_Loss
+		case tcpip.FastRecovery, tcpip.SACKRecovery:
+			info.CaState = linux.TCP_CA_Recovery
+		case tcpip.Disorder:
+			info.CaState = linux.TCP_CA_Disorder
+		case tcpip.Open:
+			info.CaState = linux.TCP_CA_Open
+		}
+		info.RTO = uint32(v.RTO / time.Microsecond)
+		info.RTT = uint32(v.RTT / time.Microsecond)
+		info.RTTVar = uint32(v.RTTVar / time.Microsecond)
+		info.SndSsthresh = v.SndSsthresh
+		info.SndCwnd = v.SndCwnd
+
+		// In netstack reorderSeen is updated only when RACK is enabled.
+		// We only track whether the reordering is seen, which is
+		// different than Linux where reorderSeen is not specific to
+		// RACK and is incremented when a reordering event is seen.
+		if v.ReorderSeen {
+			info.ReordSeen = 1
+		}
 
 		// Linux truncates the output binary to outLen.
 		buf := t.CopyScratchBuffer(info.SizeBytes())

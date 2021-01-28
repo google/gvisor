@@ -162,7 +162,7 @@ func (s *sender) shouldSchedulePTO() bool {
 		// The connection supports SACK.
 		s.ep.sackPermitted &&
 		// The connection is not in loss recovery.
-		(s.state != RTORecovery && s.state != SACKRecovery) &&
+		(s.state != tcpip.RTORecovery && s.state != tcpip.SACKRecovery) &&
 		// The connection has no SACKed sequences in the SACK scoreboard.
 		s.ep.scoreboard.Sacked() == 0
 }
