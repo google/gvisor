@@ -31,51 +31,36 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-class PingSocket : public ::testing::Test {
- protected:
-  // Creates a socket to be used in tests.
-  void SetUp() override;
-
-  // Closes the socket created by SetUp().
-  void TearDown() override;
-
-  // The loopback address.
-  struct sockaddr_in addr_;
-};
-
-void PingSocket::SetUp() {
-  // On some hosts ping sockets are restricted to specific groups using the
-  // sysctl "ping_group_range".
-  int s = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-  if (s < 0 && errno == EPERM) {
-    GTEST_SKIP();
-  }
-  close(s);
-
-  addr_ = {};
-  // Just a random port as the destination port number is irrelevant for ping
-  // sockets.
-  addr_.sin_port = 12345;
-  addr_.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  addr_.sin_family = AF_INET;
-}
-
-void PingSocket::TearDown() {}
-
 // Test ICMP port exhaustion returns EAGAIN.
 //
 // We disable both random/cooperative S/R for this test as it makes way too many
 // syscalls.
-TEST_F(PingSocket, ICMPPortExhaustion_NoRandomSave) {
+TEST(PingSocket, ICMPPortExhaustion_NoRandomSave) {
   DisableSave ds;
+
+  {
+    auto s = Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (!s.ok()) {
+      ASSERT_EQ(s.error().errno_value(), EACCES);
+      GTEST_SKIP();
+    }
+  }
+
+  const struct sockaddr_in addr = {
+      .sin_family = AF_INET,
+      .sin_addr =
+          {
+              .s_addr = htonl(INADDR_LOOPBACK),
+          },
+  };
+
   std::vector<FileDescriptor> sockets;
   constexpr int kSockets = 65536;
-  addr_.sin_port = 0;
   for (int i = 0; i < kSockets; i++) {
     auto s =
         ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
-    int ret = connect(s.get(), reinterpret_cast<struct sockaddr*>(&addr_),
-                      sizeof(addr_));
+    int ret = connect(s.get(), reinterpret_cast<const struct sockaddr*>(&addr),
+                      sizeof(addr));
     if (ret == 0) {
       sockets.push_back(std::move(s));
       continue;
