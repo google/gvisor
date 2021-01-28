@@ -32,6 +32,10 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 	defer file.DecRef(t)
 
+	if file.StatusFlags()&linux.O_PATH != 0 {
+		return 0, nil, syserror.EBADF
+	}
+
 	// Handle ioctls that apply to all FDs.
 	switch args[1].Int() {
 	case linux.FIONCLEX:
