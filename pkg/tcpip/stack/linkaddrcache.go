@@ -83,32 +83,32 @@ type linkAddrEntry struct {
 
 	cache *linkAddrCache
 
-	// TODO(gvisor.dev/issue/5150): move these fields under mu.
-	// mu protects the fields below.
-	mu sync.RWMutex
+	mu struct {
+		sync.RWMutex
 
-	addr       tcpip.Address
-	linkAddr   tcpip.LinkAddress
-	expiration time.Time
-	s          entryState
+		addr       tcpip.Address
+		linkAddr   tcpip.LinkAddress
+		expiration time.Time
+		s          entryState
 
-	// done is closed when address resolution is complete. It is nil iff s is
-	// incomplete and resolution is not yet in progress.
-	done chan struct{}
+		// done is closed when address resolution is complete. It is nil iff s is
+		// incomplete and resolution is not yet in progress.
+		done chan struct{}
 
-	// onResolve is called with the result of address resolution.
-	onResolve []func(LinkResolutionResult)
+		// onResolve is called with the result of address resolution.
+		onResolve []func(LinkResolutionResult)
+	}
 }
 
 func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
 	res := LinkResolutionResult{LinkAddress: linkAddr, Success: len(linkAddr) != 0}
-	for _, callback := range e.onResolve {
+	for _, callback := range e.mu.onResolve {
 		callback(res)
 	}
-	e.onResolve = nil
-	if ch := e.done; ch != nil {
+	e.mu.onResolve = nil
+	if ch := e.mu.done; ch != nil {
 		close(ch)
-		e.done = nil
+		e.mu.done = nil
 		// Dequeue the pending packets in a new goroutine to not hold up the current
 		// goroutine as writing packets may be a costly operation.
 		//
@@ -129,14 +129,14 @@ func (e *linkAddrEntry) notifyCompletionLocked(linkAddr tcpip.LinkAddress) {
 //
 // Precondition: e.mu must be locked
 func (e *linkAddrEntry) changeStateLocked(ns entryState, expiration time.Time) {
-	if e.s == incomplete && ns == ready {
-		e.notifyCompletionLocked(e.linkAddr)
+	if e.mu.s == incomplete && ns == ready {
+		e.notifyCompletionLocked(e.mu.linkAddr)
 	}
 
-	if expiration.IsZero() || expiration.After(e.expiration) {
-		e.expiration = expiration
+	if expiration.IsZero() || expiration.After(e.mu.expiration) {
+		e.mu.expiration = expiration
 	}
-	e.s = ns
+	e.mu.s = ns
 }
 
 // add adds a k -> v mapping to the cache.
@@ -152,7 +152,7 @@ func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	entry.linkAddr = v
+	entry.mu.linkAddr = v
 	entry.changeStateLocked(ready, expiration)
 }
 
@@ -176,7 +176,7 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 		entry = c.cache.lru.Back()
 		entry.mu.Lock()
 
-		delete(c.cache.table, entry.addr)
+		delete(c.cache.table, entry.mu.addr)
 		c.cache.lru.Remove(entry)
 
 		// Wake waiters and mark the soon-to-be-reused entry as expired.
@@ -188,9 +188,11 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 
 	*entry = linkAddrEntry{
 		cache: c,
-		addr:  k,
-		s:     incomplete,
 	}
+	entry.mu.Lock()
+	entry.mu.addr = k
+	entry.mu.s = incomplete
+	entry.mu.Unlock()
 	c.cache.table[k] = entry
 	c.cache.lru.PushFront(entry)
 	return entry
@@ -204,27 +206,27 @@ func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localA
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	switch s := entry.s; s {
+	switch s := entry.mu.s; s {
 	case ready:
-		if !time.Now().After(entry.expiration) {
+		if !time.Now().After(entry.mu.expiration) {
 			// Not expired.
 			if onResolve != nil {
-				onResolve(LinkResolutionResult{LinkAddress: entry.linkAddr, Success: true})
+				onResolve(LinkResolutionResult{LinkAddress: entry.mu.linkAddr, Success: true})
 			}
-			return entry.linkAddr, nil, nil
+			return entry.mu.linkAddr, nil, nil
 		}
 
 		entry.changeStateLocked(incomplete, time.Time{})
 		fallthrough
 	case incomplete:
 		if onResolve != nil {
-			entry.onResolve = append(entry.onResolve, onResolve)
+			entry.mu.onResolve = append(entry.mu.onResolve, onResolve)
 		}
-		if entry.done == nil {
-			entry.done = make(chan struct{})
-			go c.startAddressResolution(k, linkRes, localAddr, nic, entry.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
+		if entry.mu.done == nil {
+			entry.mu.done = make(chan struct{})
+			go c.startAddressResolution(k, linkRes, localAddr, nic, entry.mu.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		}
-		return entry.linkAddr, entry.done, tcpip.ErrWouldBlock
+		return entry.mu.linkAddr, entry.mu.done, tcpip.ErrWouldBlock
 	default:
 		panic(fmt.Sprintf("invalid cache entry state: %s", s))
 	}
@@ -261,7 +263,7 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	switch s := entry.s; s {
+	switch s := entry.mu.s; s {
 	case ready:
 		// Entry was made ready by resolver.
 	case incomplete:
