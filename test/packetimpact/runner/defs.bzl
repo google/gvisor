@@ -175,9 +175,6 @@ ALL_TESTS = [
         name = "udp_discard_mcast_source_addr",
     ),
     PacketimpactTestInfo(
-        name = "udp_recv_mcast_bcast",
-    ),
-    PacketimpactTestInfo(
         name = "udp_any_addr_recv_unicast",
     ),
     PacketimpactTestInfo(

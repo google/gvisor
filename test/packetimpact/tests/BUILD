@@ -38,18 +38,6 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "udp_recv_mcast_bcast",
-    srcs = ["udp_recv_mcast_bcast_test.go"],
-    deps = [
-        "//pkg/tcpip",
-        "//pkg/tcpip/header",
-        "//test/packetimpact/testbench",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-packetimpact_testbench(
     name = "udp_any_addr_recv_unicast",
     srcs = ["udp_any_addr_recv_unicast_test.go"],
     deps = [
@@ -340,6 +328,8 @@ packetimpact_testbench(
     name = "udp_send_recv_dgram",
     srcs = ["udp_send_recv_dgram_test.go"],
     deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

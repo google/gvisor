@@ -544,7 +544,7 @@ func (dut *DUT) SendToWithErrno(ctx context.Context, t *testing.T, sockfd int32,
 	}
 	resp, err := dut.posixServer.SendTo(ctx, &req)
 	if err != nil {
-		t.Fatalf("faled to call SendTo: %s", err)
+		t.Fatalf("failed to call SendTo: %s", err)
 	}
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
