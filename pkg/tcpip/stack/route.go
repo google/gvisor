@@ -354,11 +354,6 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 		return fields, nil, nil
 	}
 
-	nextAddr := r.NextHop
-	if nextAddr == "" {
-		nextAddr = r.RemoteAddress
-	}
-
 	// If specified, the local address used for link address resolution must be an
 	// address on the outgoing interface.
 	var linkAddressResolutionRequestLocalAddr tcpip.Address
@@ -367,7 +362,7 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 	}
 
 	afterResolveFields := fields
-	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(nextAddr, linkAddressResolutionRequestLocalAddr, r.linkRes, func(r LinkResolutionResult) {
+	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(r.nextHop(), linkAddressResolutionRequestLocalAddr, r.linkRes, func(r LinkResolutionResult) {
 		if afterResolve != nil {
 			if r.Success {
 				afterResolveFields.RemoteLinkAddress = r.LinkAddress
@@ -380,6 +375,13 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 		fields.RemoteLinkAddress = linkAddr
 	}
 	return fields, ch, err
+}
+
+func (r *Route) nextHop() tcpip.Address {
+	if len(r.NextHop) == 0 {
+		return r.RemoteAddress
+	}
+	return r.NextHop
 }
 
 // local returns true if the route is a local route.
@@ -518,4 +520,13 @@ func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
 func (r *Route) IsOutboundBroadcast() bool {
 	// Only IPv4 has a notion of broadcast.
 	return r.isV4Broadcast(r.RemoteAddress)
+}
+
+// ConfirmReachable informs the network/link layer that the neighbour used for
+// the route is reachable.
+//
+// "Reachable" is defined as having full-duplex communication between the
+// local and remote ends of the route.
+func (r *Route) ConfirmReachable() {
+	r.outgoingNIC.confirmReachable(r.nextHop())
 }

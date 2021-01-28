@@ -174,10 +174,6 @@ type NUDHandler interface {
 	// HandleConfirmation processes an incoming neighbor confirmation (e.g. ARP
 	// reply or Neighbor Advertisement for ARP or NDP, respectively).
 	HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags)
-
-	// HandleUpperLevelConfirmation processes an incoming upper-level protocol
-	// (e.g. TCP acknowledgements) reachability confirmation.
-	HandleUpperLevelConfirmation(addr tcpip.Address)
 }
 
 // NUDConfigurations is the NUD configurations for the netstack. This is used
