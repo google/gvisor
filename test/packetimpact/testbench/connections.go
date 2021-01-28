@@ -1008,6 +1008,13 @@ func (conn *UDPIPv4) LocalAddr(t *testing.T) *unix.SockaddrInet4 {
 	return sa
 }
 
+// SrcPort returns the source port of this connection.
+func (conn *UDPIPv4) SrcPort(t *testing.T) uint16 {
+	t.Helper()
+
+	return *conn.udpState(t).out.SrcPort
+}
+
 // Send sends a packet with reasonable defaults, potentially overriding the UDP
 // layer and adding additionLayers.
 func (conn *UDPIPv4) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
@@ -1022,6 +1029,11 @@ func (conn *UDPIPv4) SendIP(t *testing.T, ip IPv4, udp UDP, additionalLayers ...
 	t.Helper()
 
 	(*Connection)(conn).send(t, Layers{&ip, &udp}, additionalLayers...)
+}
+
+// SendFrame sends a frame on the wire and updates the state of all layers.
+func (conn *UDPIPv4) SendFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) {
+	(*Connection)(conn).send(t, overrideLayers, additionalLayers...)
 }
 
 // Expect expects a frame with the UDP layer matching the provided UDP within
@@ -1051,6 +1063,14 @@ func (conn *UDPIPv4) ExpectData(t *testing.T, udp UDP, payload Payload, timeout 
 		expected = append(expected, &payload)
 	}
 	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
+}
+
+// ExpectFrame expects a frame that matches the provided Layers within the
+// timeout specified. If it doesn't arrive in time, an error is returned.
+func (conn *UDPIPv4) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
+	t.Helper()
+
+	return (*Connection)(conn).ExpectFrame(t, frame, timeout)
 }
 
 // Close frees associated resources held by the UDPIPv4 connection.
@@ -1136,6 +1156,13 @@ func (conn *UDPIPv6) LocalAddr(t *testing.T, zoneID uint32) *unix.SockaddrInet6 
 	return sa
 }
 
+// SrcPort returns the source port of this connection.
+func (conn *UDPIPv6) SrcPort(t *testing.T) uint16 {
+	t.Helper()
+
+	return *conn.udpState(t).out.SrcPort
+}
+
 // Send sends a packet with reasonable defaults, potentially overriding the UDP
 // layer and adding additionLayers.
 func (conn *UDPIPv6) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
@@ -1150,6 +1177,11 @@ func (conn *UDPIPv6) SendIPv6(t *testing.T, ip IPv6, udp UDP, additionalLayers .
 	t.Helper()
 
 	(*Connection)(conn).send(t, Layers{&ip, &udp}, additionalLayers...)
+}
+
+// SendFrame sends a frame on the wire and updates the state of all layers.
+func (conn *UDPIPv6) SendFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) {
+	(*Connection)(conn).send(t, overrideLayers, additionalLayers...)
 }
 
 // Expect expects a frame with the UDP layer matching the provided UDP within
@@ -1179,6 +1211,14 @@ func (conn *UDPIPv6) ExpectData(t *testing.T, udp UDP, payload Payload, timeout 
 		expected = append(expected, &payload)
 	}
 	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
+}
+
+// ExpectFrame expects a frame that matches the provided Layers within the
+// timeout specified. If it doesn't arrive in time, an error is returned.
+func (conn *UDPIPv6) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
+	t.Helper()
+
+	return (*Connection)(conn).ExpectFrame(t, frame, timeout)
 }
 
 // Close frees associated resources held by the UDPIPv6 connection.
