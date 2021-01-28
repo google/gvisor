@@ -371,6 +371,8 @@ type OrderedChildrenOptions struct {
 	// OrderedChildren may modify the tracked children. This applies to
 	// operations related to rename, unlink and rmdir. If an OrderedChildren is
 	// not writable, these operations all fail with EPERM.
+	//
+	// Note that writable users must implement the sticky bit (I_SVTX).
 	Writable bool
 }
 
@@ -556,7 +558,6 @@ func (o *OrderedChildren) Unlink(ctx context.Context, name string, child Inode) 
 		return err
 	}
 
-	// TODO(gvisor.dev/issue/3027): Check sticky bit before removing.
 	o.removeLocked(name)
 	return nil
 }
@@ -603,8 +604,8 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 	if err := o.checkExistingLocked(oldname, child); err != nil {
 		return err
 	}
+	o.removeLocked(oldname)
 
-	// TODO(gvisor.dev/issue/3027): Check sticky bit before removing.
 	dst.replaceChildLocked(ctx, newname, child)
 	return nil
 }
