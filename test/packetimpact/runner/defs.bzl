@@ -281,6 +281,9 @@ ALL_TESTS = [
         name = "tcp_rack",
         expect_netstack_failure = True,
     ),
+    PacketimpactTestInfo(
+        name = "tcp_info",
+    ),
 ]
 
 def validate_all_tests():

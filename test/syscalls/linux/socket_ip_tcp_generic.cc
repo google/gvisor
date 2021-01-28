@@ -65,6 +65,33 @@ TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceeds) {
               SyscallSucceeds());
 }
 
+TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char buf[10] = {};
+  ASSERT_THAT(RetryEINTR(send)(sockets->first_fd(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Wait until second_fd sees the data and then recv it.
+  struct pollfd poll_fd = {sockets->second_fd(), POLLIN, 0};
+  constexpr int kPollTimeoutMs = 2000;  // Wait up to 2 seconds for the data.
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  struct tcp_info opt = {};
+  socklen_t optLen = sizeof(opt);
+  ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_TCP, TCP_INFO, &opt, &optLen),
+              SyscallSucceeds());
+
+  // Validates the received tcp_info fields.
+  EXPECT_EQ(opt.tcpi_ca_state, 0);
+  EXPECT_GT(opt.tcpi_snd_cwnd, 0);
+  EXPECT_GT(opt.tcpi_rto, 0);
+}
+
 // This test validates that an RST is sent instead of a FIN when data is
 // unread on calls to close(2).
 TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadData) {
