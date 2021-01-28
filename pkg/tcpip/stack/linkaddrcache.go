@@ -45,7 +45,7 @@ type linkAddrCache struct {
 	// resolved before failing.
 	resolutionAttempts int
 
-	cache struct {
+	mu struct {
 		sync.Mutex
 		table map[tcpip.Address]*linkAddrEntry
 		lru   linkAddrEntryList
@@ -146,9 +146,9 @@ func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
 	// happened to be inserted into the cache.
 	expiration := time.Now().Add(c.ageLimit)
 
-	c.cache.Lock()
+	c.mu.Lock()
 	entry := c.getOrCreateEntryLocked(k)
-	c.cache.Unlock()
+	c.mu.Unlock()
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -166,18 +166,18 @@ func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
 // cache is not full, a new entry with state incomplete is allocated and
 // returned.
 func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
-	if entry, ok := c.cache.table[k]; ok {
-		c.cache.lru.Remove(entry)
-		c.cache.lru.PushFront(entry)
+	if entry, ok := c.mu.table[k]; ok {
+		c.mu.lru.Remove(entry)
+		c.mu.lru.PushFront(entry)
 		return entry
 	}
 	var entry *linkAddrEntry
-	if len(c.cache.table) == linkAddrCacheSize {
-		entry = c.cache.lru.Back()
+	if len(c.mu.table) == linkAddrCacheSize {
+		entry = c.mu.lru.Back()
 		entry.mu.Lock()
 
-		delete(c.cache.table, entry.mu.addr)
-		c.cache.lru.Remove(entry)
+		delete(c.mu.table, entry.mu.addr)
+		c.mu.lru.Remove(entry)
 
 		// Wake waiters and mark the soon-to-be-reused entry as expired.
 		entry.notifyCompletionLocked("" /* linkAddr */)
@@ -193,15 +193,15 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 	entry.mu.addr = k
 	entry.mu.s = incomplete
 	entry.mu.Unlock()
-	c.cache.table[k] = entry
-	c.cache.lru.PushFront(entry)
+	c.mu.table[k] = entry
+	c.mu.lru.PushFront(entry)
 	return entry
 }
 
 // get reports any known link address for k.
 func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
-	c.cache.Lock()
-	defer c.cache.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -253,9 +253,9 @@ func (c *linkAddrCache) startAddressResolution(k tcpip.Address, linkRes LinkAddr
 // succeeded and mark the entry accordingly. Returns true if request can stop,
 // false if another request should be sent.
 func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt int) bool {
-	c.cache.Lock()
-	defer c.cache.Unlock()
-	entry, ok := c.cache.table[k]
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.mu.table[k]
 	if !ok {
 		// Entry was evicted from the cache.
 		return true
@@ -273,7 +273,7 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt
 		}
 		// Max number of retries reached, delete entry.
 		entry.notifyCompletionLocked("" /* linkAddr */)
-		delete(c.cache.table, k)
+		delete(c.mu.table, k)
 	default:
 		panic(fmt.Sprintf("invalid cache entry state: %s", s))
 	}
@@ -287,6 +287,6 @@ func newLinkAddrCache(nic *NIC, ageLimit, resolutionTimeout time.Duration, resol
 		resolutionTimeout:  resolutionTimeout,
 		resolutionAttempts: resolutionAttempts,
 	}
-	c.cache.table = make(map[tcpip.Address]*linkAddrEntry, linkAddrCacheSize)
+	c.mu.table = make(map[tcpip.Address]*linkAddrEntry, linkAddrCacheSize)
 	return c
 }
