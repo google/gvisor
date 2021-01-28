@@ -207,6 +207,41 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
   return std::move(cleanup);
 }
 
+TEST(FcntlTest, FcntlDupWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
+
+  int new_fd;
+  // Dup the descriptor and make sure it's the same file.
+  EXPECT_THAT(new_fd = fcntl(fd.get(), F_DUPFD, 0), SyscallSucceeds());
+
+  FileDescriptor nfd = FileDescriptor(new_fd);
+  ASSERT_NE(fd.get(), nfd.get());
+  ASSERT_NO_ERRNO(CheckSameFile(fd, nfd));
+  EXPECT_THAT(fcntl(nfd.get(), F_GETFL), SyscallSucceedsWithValue(O_PATH));
+}
+
+TEST(FcntlTest, SetFileStatusFlagWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+
+  EXPECT_THAT(fcntl(fd.get(), F_SETFL, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(FcntlTest, BadFcntlsWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+
+  EXPECT_THAT(fcntl(fd.get(), F_SETOWN, 0), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd.get(), F_GETOWN, 0), SyscallFailsWithErrno(EBADF));
+
+  EXPECT_THAT(fcntl(fd.get(), F_SETOWN_EX, 0), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd.get(), F_GETOWN_EX, 0), SyscallFailsWithErrno(EBADF));
+}
+
 TEST(FcntlTest, SetCloExecBadFD) {
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
   FileDescriptor f = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
@@ -224,6 +259,32 @@ TEST(FcntlTest, SetCloExec) {
   // Set the FD_CLOEXEC flag.
   ASSERT_THAT(fcntl(fd.get(), F_SETFD, FD_CLOEXEC), SyscallSucceeds());
   ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(FD_CLOEXEC));
+}
+
+TEST(FcntlTest, SetCloExecWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  // Open a file descriptor with FD_CLOEXEC descriptor flag not set.
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+  ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(0));
+
+  // Set the FD_CLOEXEC flag.
+  ASSERT_THAT(fcntl(fd.get(), F_SETFD, FD_CLOEXEC), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(FD_CLOEXEC));
+}
+
+TEST(FcntlTest, DupFDCloExecWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  // Open a file descriptor with FD_CLOEXEC descriptor flag not set.
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_PATH));
+  int nfd;
+  ASSERT_THAT(nfd = fcntl(fd.get(), F_DUPFD_CLOEXEC, 0), SyscallSucceeds());
+  FileDescriptor dup_fd(nfd);
+
+  // Check for the FD_CLOEXEC flag.
+  ASSERT_THAT(fcntl(dup_fd.get(), F_GETFD),
+              SyscallSucceedsWithValue(FD_CLOEXEC));
 }
 
 TEST(FcntlTest, ClearCloExec) {
@@ -261,6 +322,22 @@ TEST(FcntlTest, GetAllFlags) {
 
   // Linux forces O_LARGEFILE on all 64-bit kernels and gVisor's is 64-bit.
   int expected = flags | kOLargeFile;
+
+  int rflags;
+  EXPECT_THAT(rflags = fcntl(fd.get(), F_GETFL), SyscallSucceeds());
+  EXPECT_EQ(rflags, expected);
+}
+
+// When O_PATH is specified in flags, flag bits other than O_CLOEXEC,
+// O_DIRECTORY, and O_NOFOLLOW are ignored.
+TEST(FcntlTest, GetOpathFlag) {
+  SKIP_IF(IsRunningWithVFS1());
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  int flags = O_RDWR | O_DIRECT | O_SYNC | O_NONBLOCK | O_APPEND | O_PATH |
+              O_NOFOLLOW | O_DIRECTORY;
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), flags));
+
+  int expected = O_PATH | O_NOFOLLOW | O_DIRECTORY;
 
   int rflags;
   EXPECT_THAT(rflags = fcntl(fd.get(), F_GETFL), SyscallSucceeds());
@@ -393,6 +470,22 @@ TEST_F(FcntlLockTest, SetLockBadOpenFlagsRead) {
   fl1.l_len = 0;
 
   EXPECT_THAT(fcntl(fd.get(), F_SETLK, &fl1), SyscallFailsWithErrno(EBADF));
+}
+
+TEST_F(FcntlLockTest, SetLockWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  struct flock fl0;
+  fl0.l_type = F_WRLCK;
+  fl0.l_whence = SEEK_SET;
+  fl0.l_start = 0;
+  fl0.l_len = 0;  // Lock all file
+
+  // Expect that setting a write lock using a Opath file descriptor
+  // won't work.
+  EXPECT_THAT(fcntl(fd.get(), F_SETLK, &fl0), SyscallFailsWithErrno(EBADF));
 }
 
 TEST_F(FcntlLockTest, SetLockUnlockOnNothing) {

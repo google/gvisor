@@ -45,6 +45,17 @@ TEST(FAdvise64Test, Basic) {
               SyscallSucceeds());
 }
 
+TEST(FAdvise64Test, FAdvise64WithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
+              SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
+              SyscallFailsWithErrno(EBADF));
+}
+
 TEST(FAdvise64Test, InvalidArgs) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));

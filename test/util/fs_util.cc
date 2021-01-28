@@ -663,5 +663,21 @@ PosixErrorOr<bool> IsOverlayfs(const std::string& path) {
   return stat.f_type == OVERLAYFS_SUPER_MAGIC;
 }
 
+PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
+  struct stat stat_result1, stat_result2;
+  int res = fstat(fd1.get(), &stat_result1);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("fstat ", fd1.get()));
+  }
+
+  res = fstat(fd2.get(), &stat_result2);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("fstat ", fd2.get()));
+  }
+  EXPECT_EQ(stat_result1.st_dev, stat_result2.st_dev);
+  EXPECT_EQ(stat_result1.st_ino, stat_result2.st_ino);
+
+  return NoError();
+}
 }  // namespace testing
 }  // namespace gvisor

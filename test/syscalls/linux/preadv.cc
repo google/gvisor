@@ -89,6 +89,20 @@ TEST(PreadvTest, MMConcurrencyStress) {
   // The test passes if it neither deadlocks nor crashes the OS.
 }
 
+// This test calls preadv with an O_PATH fd.
+TEST(PreadvTest, PreadvWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  struct iovec iov;
+  iov.iov_base = nullptr;
+  iov.iov_len = 0;
+
+  EXPECT_THAT(preadv(fd.get(), &iov, 1, 0), SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing

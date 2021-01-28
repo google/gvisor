@@ -76,6 +76,19 @@ TEST_F(IoctlTest, InvalidControlNumber) {
   EXPECT_THAT(ioctl(STDOUT_FILENO, 0), SyscallFailsWithErrno(ENOTTY));
 }
 
+TEST_F(IoctlTest, IoctlWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_PATH));
+
+  int set = 1;
+  EXPECT_THAT(ioctl(fd.get(), FIONBIO, &set), SyscallFailsWithErrno(EBADF));
+
+  EXPECT_THAT(ioctl(fd.get(), FIONCLEX), SyscallFailsWithErrno(EBADF));
+
+  EXPECT_THAT(ioctl(fd.get(), FIOCLEX), SyscallFailsWithErrno(EBADF));
+}
+
 TEST_F(IoctlTest, FIONBIOSucceeds) {
   EXPECT_FALSE(CheckNonBlocking(fd()));
   int set = 1;
