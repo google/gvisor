@@ -19,12 +19,14 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -724,6 +726,438 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			}
 			if diff := cmp.Diff(data, writer.Bytes()); diff != "" {
 				t.Errorf("read bytes mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type eventType int
+
+const (
+	entryAdded eventType = iota
+	entryChanged
+	entryRemoved
+)
+
+func (t eventType) String() string {
+	switch t {
+	case entryAdded:
+		return "add"
+	case entryChanged:
+		return "change"
+	case entryRemoved:
+		return "remove"
+	default:
+		return fmt.Sprintf("unknown (%d)", t)
+	}
+}
+
+type eventInfo struct {
+	eventType eventType
+	nicID     tcpip.NICID
+	entry     stack.NeighborEntry
+}
+
+func (e eventInfo) String() string {
+	return fmt.Sprintf("%s event for NIC #%d, %#v", e.eventType, e.nicID, e.entry)
+}
+
+var _ stack.NUDDispatcher = (*nudDispatcher)(nil)
+
+type nudDispatcher struct {
+	c chan eventInfo
+}
+
+func (d *nudDispatcher) OnNeighborAdded(nicID tcpip.NICID, entry stack.NeighborEntry) {
+	e := eventInfo{
+		eventType: entryAdded,
+		nicID:     nicID,
+		entry:     entry,
+	}
+	d.c <- e
+}
+
+func (d *nudDispatcher) OnNeighborChanged(nicID tcpip.NICID, entry stack.NeighborEntry) {
+	e := eventInfo{
+		eventType: entryChanged,
+		nicID:     nicID,
+		entry:     entry,
+	}
+	d.c <- e
+}
+
+func (d *nudDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.NeighborEntry) {
+	e := eventInfo{
+		eventType: entryRemoved,
+		nicID:     nicID,
+		entry:     entry,
+	}
+	d.c <- e
+}
+
+func (d *nudDispatcher) waitForEvent(want eventInfo) error {
+	if diff := cmp.Diff(want, <-d.c, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAtNanos")); diff != "" {
+		return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
+	}
+	return nil
+}
+
+// TestTCPConfirmNeighborReachability tests that TCP informs layers beneath it
+// that the neighbor used for a route is reachable.
+func TestTCPConfirmNeighborReachability(t *testing.T) {
+	tests := []struct {
+		name            string
+		netProto        tcpip.NetworkProtocolNumber
+		remoteAddr      tcpip.Address
+		neighborAddr    tcpip.Address
+		getEndpoints    func(*testing.T, *stack.Stack, *stack.Stack, *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{})
+		isHost1Listener bool
+	}{
+		{
+			name:         "IPv4 active connection through neighbor",
+			netProto:     ipv4.ProtocolNumber,
+			remoteAddr:   host2IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+		},
+		{
+			name:         "IPv6 active connection through neighbor",
+			netProto:     ipv6.ProtocolNumber,
+			remoteAddr:   host2IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+		},
+		{
+			name:         "IPv4 active connection to neighbor",
+			netProto:     ipv4.ProtocolNumber,
+			remoteAddr:   routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+		},
+		{
+			name:         "IPv6 active connection to neighbor",
+			netProto:     ipv6.ProtocolNumber,
+			remoteAddr:   routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+		},
+		{
+			name:         "IPv4 passive connection to neighbor",
+			netProto:     ipv4.ProtocolNumber,
+			remoteAddr:   host1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+			isHost1Listener: true,
+		},
+		{
+			name:         "IPv6 passive connection to neighbor",
+			netProto:     ipv6.ProtocolNumber,
+			remoteAddr:   host1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+			isHost1Listener: true,
+		},
+		{
+			name:         "IPv4 passive connection through neighbor",
+			netProto:     ipv4.ProtocolNumber,
+			remoteAddr:   host1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+			isHost1Listener: true,
+		},
+		{
+			name:         "IPv6 passive connection through neighbor",
+			netProto:     ipv6.ProtocolNumber,
+			remoteAddr:   host1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
+				var listenerWQ waiter.Queue
+				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
+				if err != nil {
+					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				var clientWQ waiter.Queue
+				clientWE, clientCH := waiter.NewChannelEntry(nil)
+				clientWQ.EventRegister(&clientWE, waiter.EventOut)
+				clientEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &clientWQ)
+				if err != nil {
+					listenerEP.Close()
+					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
+				}
+
+				return listenerEP, clientEP, clientCH
+			},
+			isHost1Listener: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			nudDisp := nudDispatcher{
+				c: make(chan eventInfo, 3),
+			}
+			stackOpts := stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+				Clock:              clock,
+				UseNeighborCache:   true,
+			}
+			host1StackOpts := stackOpts
+			host1StackOpts.NUDDisp = &nudDisp
+
+			host1Stack := stack.New(host1StackOpts)
+			routerStack := stack.New(stackOpts)
+			host2Stack := stack.New(stackOpts)
+			setupRoutedStacks(t, host1Stack, routerStack, host2Stack)
+
+			// Add a reachable dynamic entry to our neighbor table for the remote.
+			{
+				ch := make(chan stack.LinkResolutionResult, 1)
+				if err := host1Stack.GetLinkAddress(host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+					ch <- r
+				}); err != tcpip.ErrWouldBlock {
+					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.neighborAddr, test.netProto, err, tcpip.ErrWouldBlock)
+				}
+				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: linkAddr2, Success: true}, <-ch); diff != "" {
+					t.Fatalf("link resolution mismatch (-want +got):\n%s", diff)
+				}
+			}
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryAdded,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Incomplete, Addr: test.neighborAddr},
+			}); err != nil {
+				t.Fatalf("error waiting for initial NUD event: %s", err)
+			}
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for reachable NUD event: %s", err)
+			}
+
+			// Wait for the remote's neighbor entry to be stale before creating a
+			// TCP connection from host1 to some remote.
+			nudConfigs, err := host1Stack.NUDConfigurations(host1NICID)
+			if err != nil {
+				t.Fatalf("host1Stack.NUDConfigurations(%d): %s", host1NICID, err)
+			}
+			// The maximum reachable time for a neighbor is some maximum random factor
+			// applied to the base reachable time.
+			//
+			// See NUDConfigurations.BaseReachableTime for more information.
+			maxReachableTime := time.Duration(float32(nudConfigs.BaseReachableTime) * nudConfigs.MaxRandomFactor)
+			clock.Advance(maxReachableTime)
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for stale NUD event: %s", err)
+			}
+
+			listenerEP, clientEP, clientCH := test.getEndpoints(t, host1Stack, routerStack, host2Stack)
+			defer listenerEP.Close()
+			defer clientEP.Close()
+			listenerAddr := tcpip.FullAddress{Addr: test.remoteAddr, Port: 1234}
+			if err := listenerEP.Bind(listenerAddr); err != nil {
+				t.Fatalf("listenerEP.Bind(%#v): %s", listenerAddr, err)
+			}
+			if err := listenerEP.Listen(1); err != nil {
+				t.Fatalf("listenerEP.Listen(1): %s", err)
+			}
+			if err := clientEP.Connect(listenerAddr); err != tcpip.ErrConnectStarted {
+				t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", listenerAddr, err, tcpip.ErrConnectStarted)
+			}
+
+			// Wait for the TCP handshake to complete then make sure the neighbor is
+			// reachable without entering the probe state as TCP should provide NUD
+			// with confirmation that the neighbor is reachable (indicated by a
+			// successful 3-way handshake).
+			<-clientCH
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for delay NUD event: %s", err)
+			}
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for reachable NUD event: %s", err)
+			}
+
+			// Wait for the neighbor to be stale again then send data to the remote.
+			//
+			// On successful transmission, the neighbor should become reachable
+			// without probing the neighbor as a TCP ACK would be received which is an
+			// indication of the neighbor being reachable.
+			clock.Advance(maxReachableTime)
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for stale NUD event: %s", err)
+			}
+			var r bytes.Reader
+			r.Reset([]byte{0})
+			var wOpts tcpip.WriteOptions
+			if _, err := clientEP.Write(&r, wOpts); err != nil {
+				t.Errorf("clientEP.Write(_, %#v): %s", wOpts, err)
+			}
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for delay NUD event: %s", err)
+			}
+			if test.isHost1Listener {
+				// If host1 is not the client, host1 does not send any data so TCP
+				// has no way to know it is making forward progress. Because of this,
+				// TCP should not mark the route reachable and NUD should go through the
+				// probe state.
+				clock.Advance(nudConfigs.DelayFirstProbeTime)
+				if err := nudDisp.waitForEvent(eventInfo{
+					eventType: entryChanged,
+					nicID:     host1NICID,
+					entry:     stack.NeighborEntry{State: stack.Probe, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				}); err != nil {
+					t.Fatalf("error waiting for probe NUD event: %s", err)
+				}
+			}
+			if err := nudDisp.waitForEvent(eventInfo{
+				eventType: entryChanged,
+				nicID:     host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+			}); err != nil {
+				t.Fatalf("error waiting for reachable NUD event: %s", err)
 			}
 		})
 	}

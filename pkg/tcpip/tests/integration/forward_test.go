@@ -38,6 +38,181 @@ import (
 var _ stack.NetworkDispatcher = (*endpointWithDestinationCheck)(nil)
 var _ stack.LinkEndpoint = (*endpointWithDestinationCheck)(nil)
 
+const (
+	host1NICID   = 1
+	routerNICID1 = 2
+	routerNICID2 = 3
+	host2NICID   = 4
+)
+
+var (
+	host1IPv4Addr = tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+			PrefixLen: 24,
+		},
+	}
+	routerNIC1IPv4Addr = tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+			PrefixLen: 24,
+		},
+	}
+	routerNIC2IPv4Addr = tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
+			PrefixLen: 8,
+		},
+	}
+	host2IPv4Addr = tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("10.0.0.2").To4()),
+			PrefixLen: 8,
+		},
+	}
+	host1IPv6Addr = tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
+			PrefixLen: 64,
+		},
+	}
+	routerNIC1IPv6Addr = tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
+			PrefixLen: 64,
+		},
+	}
+	routerNIC2IPv6Addr = tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("b::1").To16()),
+			PrefixLen: 64,
+		},
+	}
+	host2IPv6Addr = tcpip.ProtocolAddress{
+		Protocol: ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.Address(net.ParseIP("b::2").To16()),
+			PrefixLen: 64,
+		},
+	}
+)
+
+func setupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.Stack) {
+	host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
+	routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
+
+	if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
+		t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
+	}
+	if err := routerStack.CreateNIC(routerNICID1, newEthernetEndpoint(routerNIC1)); err != nil {
+		t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID1, err)
+	}
+	if err := routerStack.CreateNIC(routerNICID2, newEthernetEndpoint(routerNIC2)); err != nil {
+		t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID2, err)
+	}
+	if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
+		t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
+	}
+
+	if err := routerStack.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
+		t.Fatalf("routerStack.SetForwarding(%d): %s", ipv4.ProtocolNumber, err)
+	}
+	if err := routerStack.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
+		t.Fatalf("routerStack.SetForwarding(%d): %s", ipv6.ProtocolNumber, err)
+	}
+
+	if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv4Addr); err != nil {
+		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv4Addr, err)
+	}
+	if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv4Addr); err != nil {
+		t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv4Addr, err)
+	}
+	if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv4Addr); err != nil {
+		t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv4Addr, err)
+	}
+	if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv4Addr); err != nil {
+		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv4Addr, err)
+	}
+	if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv6Addr); err != nil {
+		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv6Addr, err)
+	}
+	if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv6Addr); err != nil {
+		t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv6Addr, err)
+	}
+	if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv6Addr); err != nil {
+		t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv6Addr, err)
+	}
+	if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv6Addr); err != nil {
+		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv6Addr, err)
+	}
+
+	host1Stack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+			NIC:         host1NICID,
+		},
+		{
+			Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+			NIC:         host1NICID,
+		},
+		{
+			Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
+			Gateway:     routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			NIC:         host1NICID,
+		},
+		{
+			Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
+			Gateway:     routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			NIC:         host1NICID,
+		},
+	})
+	routerStack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: routerNIC1IPv4Addr.AddressWithPrefix.Subnet(),
+			NIC:         routerNICID1,
+		},
+		{
+			Destination: routerNIC1IPv6Addr.AddressWithPrefix.Subnet(),
+			NIC:         routerNICID1,
+		},
+		{
+			Destination: routerNIC2IPv4Addr.AddressWithPrefix.Subnet(),
+			NIC:         routerNICID2,
+		},
+		{
+			Destination: routerNIC2IPv6Addr.AddressWithPrefix.Subnet(),
+			NIC:         routerNICID2,
+		},
+	})
+	host2Stack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
+			NIC:         host2NICID,
+		},
+		{
+			Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
+			NIC:         host2NICID,
+		},
+		{
+			Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
+			Gateway:     routerNIC2IPv4Addr.AddressWithPrefix.Address,
+			NIC:         host2NICID,
+		},
+		{
+			Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
+			Gateway:     routerNIC2IPv6Addr.AddressWithPrefix.Address,
+			NIC:         host2NICID,
+		},
+	})
+}
+
 // newEthernetEndpoint returns an ethernet link endpoint that wraps an inner
 // link endpoint and checks the destination link address before delivering
 // network packets to the network dispatcher.
@@ -63,71 +238,7 @@ func (e *endpointWithDestinationCheck) DeliverNetworkPacket(src, dst tcpip.LinkA
 }
 
 func TestForwarding(t *testing.T) {
-	const (
-		host1NICID   = 1
-		routerNICID1 = 2
-		routerNICID2 = 3
-		host2NICID   = 4
-
-		listenPort = 8080
-	)
-
-	host1IPv4Addr := tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
-			PrefixLen: 24,
-		},
-	}
-	routerNIC1IPv4Addr := tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
-			PrefixLen: 24,
-		},
-	}
-	routerNIC2IPv4Addr := tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
-			PrefixLen: 8,
-		},
-	}
-	host2IPv4Addr := tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("10.0.0.2").To4()),
-			PrefixLen: 8,
-		},
-	}
-	host1IPv6Addr := tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
-			PrefixLen: 64,
-		},
-	}
-	routerNIC1IPv6Addr := tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
-			PrefixLen: 64,
-		},
-	}
-	routerNIC2IPv6Addr := tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("b::1").To16()),
-			PrefixLen: 64,
-		},
-	}
-	host2IPv6Addr := tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("b::2").To16()),
-			PrefixLen: 64,
-		},
-	}
+	const listenPort = 8080
 
 	type endpointAndAddresses struct {
 		serverEP         tcpip.Endpoint
@@ -294,113 +405,7 @@ func TestForwarding(t *testing.T) {
 					host1Stack := stack.New(stackOpts)
 					routerStack := stack.New(stackOpts)
 					host2Stack := stack.New(stackOpts)
-
-					host1NIC, routerNIC1 := pipe.New(linkAddr1, linkAddr2)
-					routerNIC2, host2NIC := pipe.New(linkAddr3, linkAddr4)
-
-					if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
-						t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
-					}
-					if err := routerStack.CreateNIC(routerNICID1, newEthernetEndpoint(routerNIC1)); err != nil {
-						t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID1, err)
-					}
-					if err := routerStack.CreateNIC(routerNICID2, newEthernetEndpoint(routerNIC2)); err != nil {
-						t.Fatalf("routerStack.CreateNIC(%d, _): %s", routerNICID2, err)
-					}
-					if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
-						t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
-					}
-
-					if err := routerStack.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-						t.Fatalf("routerStack.SetForwarding(%d): %s", ipv4.ProtocolNumber, err)
-					}
-					if err := routerStack.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-						t.Fatalf("routerStack.SetForwarding(%d): %s", ipv6.ProtocolNumber, err)
-					}
-
-					if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv4Addr); err != nil {
-						t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv4Addr, err)
-					}
-					if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv4Addr); err != nil {
-						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv4Addr, err)
-					}
-					if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv4Addr); err != nil {
-						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv4Addr, err)
-					}
-					if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv4Addr); err != nil {
-						t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv4Addr, err)
-					}
-					if err := host1Stack.AddProtocolAddress(host1NICID, host1IPv6Addr); err != nil {
-						t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, host1IPv6Addr, err)
-					}
-					if err := routerStack.AddProtocolAddress(routerNICID1, routerNIC1IPv6Addr); err != nil {
-						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID1, routerNIC1IPv6Addr, err)
-					}
-					if err := routerStack.AddProtocolAddress(routerNICID2, routerNIC2IPv6Addr); err != nil {
-						t.Fatalf("routerStack.AddProtocolAddress(%d, %#v): %s", routerNICID2, routerNIC2IPv6Addr, err)
-					}
-					if err := host2Stack.AddProtocolAddress(host2NICID, host2IPv6Addr); err != nil {
-						t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, host2IPv6Addr, err)
-					}
-
-					host1Stack.SetRouteTable([]tcpip.Route{
-						{
-							Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
-							NIC:         host1NICID,
-						},
-						{
-							Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
-							NIC:         host1NICID,
-						},
-						{
-							Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
-							Gateway:     routerNIC1IPv4Addr.AddressWithPrefix.Address,
-							NIC:         host1NICID,
-						},
-						{
-							Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
-							Gateway:     routerNIC1IPv6Addr.AddressWithPrefix.Address,
-							NIC:         host1NICID,
-						},
-					})
-					routerStack.SetRouteTable([]tcpip.Route{
-						{
-							Destination: routerNIC1IPv4Addr.AddressWithPrefix.Subnet(),
-							NIC:         routerNICID1,
-						},
-						{
-							Destination: routerNIC1IPv6Addr.AddressWithPrefix.Subnet(),
-							NIC:         routerNICID1,
-						},
-						{
-							Destination: routerNIC2IPv4Addr.AddressWithPrefix.Subnet(),
-							NIC:         routerNICID2,
-						},
-						{
-							Destination: routerNIC2IPv6Addr.AddressWithPrefix.Subnet(),
-							NIC:         routerNICID2,
-						},
-					})
-					host2Stack.SetRouteTable([]tcpip.Route{
-						{
-							Destination: host2IPv4Addr.AddressWithPrefix.Subnet(),
-							NIC:         host2NICID,
-						},
-						{
-							Destination: host2IPv6Addr.AddressWithPrefix.Subnet(),
-							NIC:         host2NICID,
-						},
-						{
-							Destination: host1IPv4Addr.AddressWithPrefix.Subnet(),
-							Gateway:     routerNIC2IPv4Addr.AddressWithPrefix.Address,
-							NIC:         host2NICID,
-						},
-						{
-							Destination: host1IPv6Addr.AddressWithPrefix.Subnet(),
-							Gateway:     routerNIC2IPv6Addr.AddressWithPrefix.Address,
-							NIC:         host2NICID,
-						},
-					})
+					setupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 					epsAndAddrs := test.epAndAddrs(t, host1Stack, routerStack, host2Stack, subTest.proto)
 					defer epsAndAddrs.serverEP.Close()

@@ -561,6 +561,12 @@ func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrBadLocalAddress
 }
 
+func (n *NIC) confirmReachable(addr tcpip.Address) {
+	if n := n.neigh; n != nil {
+		n.handleUpperLevelConfirmation(addr)
+	}
+}
+
 func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
 	if n.neigh != nil {
 		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
