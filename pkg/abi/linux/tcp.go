@@ -59,3 +59,12 @@ const (
 	MAX_TCP_KEEPINTVL = 32767
 	MAX_TCP_KEEPCNT   = 127
 )
+
+// Congestion control states from include/uapi/linux/tcp.h.
+const (
+	TCP_CA_Open     = 0
+	TCP_CA_Disorder = 1
+	TCP_CA_CWR      = 2
+	TCP_CA_Recovery = 3
+	TCP_CA_Loss     = 4
+)

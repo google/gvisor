@@ -416,6 +416,18 @@ type TCPInfo struct {
 	RwndLimited uint64
 	// SndBufLimited is the time in microseconds limited by send buffer.
 	SndBufLimited uint64
+
+	Delievered   uint32
+	DelieveredCe uint32
+
+	// BytesSent is RFC4898 tcpEStatsPerfHCDataOctetsOut.
+	BytesSent uint64
+	// BytesRetrans is RFC4898 tcpEStatsPerfOctetsRetrans.
+	BytesRetrans uint64
+	// DSACKDups is RFC4898 tcpEStatsStackDSACKDups.
+	DSACKDups uint32
+	// ReordSeen is the number of reordering events seen.
+	ReordSeen uint32
 }
 
 // SizeOfTCPInfo is the binary size of a TCPInfo struct.
