@@ -67,6 +67,7 @@ go_library(
     ],
     marshal = False,
     stateify = False,
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/goid",
     ],
