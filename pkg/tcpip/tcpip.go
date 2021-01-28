@@ -662,7 +662,7 @@ type Endpoint interface {
 	//		connected returns nil. Calling connect again results in ErrAlreadyConnected.
 	//	Anything else -- the attempt to connect failed.
 	//
-	// If address.Addr is empty, this means that Enpoint has to be
+	// If address.Addr is empty, this means that Endpoint has to be
 	// disconnected if this is supported, otherwise
 	// ErrAddressFamilyNotSupported must be returned.
 	Connect(address FullAddress) *Error
