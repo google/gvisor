@@ -77,6 +77,17 @@ TEST_F(Pwrite64, Overflow) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
+TEST_F(Pwrite64, Pwrite64WithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  std::vector<char> buf(1);
+  EXPECT_THAT(PwriteFd(fd.get(), buf.data(), 1, 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
 }  // namespace
 
 }  // namespace testing

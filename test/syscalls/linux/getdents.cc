@@ -429,6 +429,32 @@ TYPED_TEST(GetdentsTest, NotDir) {
               SyscallFailsWithErrno(ENOTDIR));
 }
 
+// Test that getdents returns EBADF when called on an opath file.
+TYPED_TEST(GetdentsTest, OpathFile) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  typename TestFixture::DirentBufferType dirents(256);
+  EXPECT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  dirents.Size()),
+              SyscallFailsWithErrno(EBADF));
+}
+
+// Test that getdents returns EBADF when called on an opath directory.
+TYPED_TEST(GetdentsTest, OpathDirectory) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_PATH | O_DIRECTORY));
+
+  typename TestFixture::DirentBufferType dirents(256);
+  ASSERT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  dirents.Size()),
+              SyscallFailsWithErrno(EBADF));
+}
+
 // Test that SEEK_SET to 0 causes getdents to re-read the entries.
 TYPED_TEST(GetdentsTest, SeekResetsCursor) {
   // . and .. should be in an otherwise empty directory.

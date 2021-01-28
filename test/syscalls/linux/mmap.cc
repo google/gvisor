@@ -930,6 +930,18 @@ TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
       SyscallFailsWithErrno(EACCES));
 }
 
+// Mmap not allowed on O_PATH FDs.
+TEST_F(MMapFileTest, MmapFileWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  uintptr_t addr;
+  EXPECT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_PRIVATE, fd.get(), 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
 // The FD must be readable.
 TEST_P(MMapFileParamTest, WriteOnlyFd) {
   const FileDescriptor fd =

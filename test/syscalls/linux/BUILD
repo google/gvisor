@@ -582,6 +582,7 @@ cc_binary(
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         gtest,
+        "//test/util:fs_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",

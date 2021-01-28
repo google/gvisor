@@ -45,7 +45,7 @@ namespace {
 // * O_CREAT
 // * O_DIRECTORY
 // * O_NOFOLLOW
-// * O_PATH <- Will we ever support this?
+// * O_PATH
 //
 // Special operations on open:
 // * O_EXCL
@@ -515,6 +515,26 @@ TEST_F(OpenTest, OpenWithStrangeFlags) {
   EXPECT_THAT(write(fd.get(), "x", 1), SyscallFailsWithErrno(EBADF));
   char c;
   EXPECT_THAT(read(fd.get(), &c, 1), SyscallFailsWithErrno(EBADF));
+}
+
+TEST_F(OpenTest, OpenWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  const DisableSave ds;  // Permissions are dropped.
+  std::string path = NewTempAbsPath();
+
+  // Create a file without user permissions.
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 055));
+
+  // Cannot open file as read only because we are owner and have no permissions
+  // set.
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+
+  // Can open file with O_PATH because don't need permissions on the object when
+  // opening with O_PATH.
+  ASSERT_NO_ERRNO(Open(path, O_PATH));
 }
 
 }  // namespace

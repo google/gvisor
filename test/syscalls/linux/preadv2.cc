@@ -226,6 +226,24 @@ TEST(Preadv2Test, TestUnreadableFile) {
               SyscallFailsWithErrno(EBADF));
 }
 
+// This test calls preadv2 with a file opened with O_PATH.
+TEST(Preadv2Test, Preadv2WithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(preadv2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  auto iov = absl::make_unique<struct iovec[]>(1);
+  iov[0].iov_base = nullptr;
+  iov[0].iov_len = 0;
+
+  EXPECT_THAT(preadv2(fd.get(), iov.get(), /*iovcnt=*/1, /*offset=*/0,
+                      /*flags=*/0),
+              SyscallFailsWithErrno(EBADF));
+}
+
 // Calling preadv2 with a non-negative offset calls preadv.  Calling preadv with
 // an unseekable file is not allowed. A pipe is used for an unseekable file.
 TEST(Preadv2Test, TestUnseekableFileInvalid) {

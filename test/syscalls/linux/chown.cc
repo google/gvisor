@@ -48,6 +48,36 @@ TEST(ChownTest, FchownatBadF) {
   ASSERT_THAT(fchownat(-1, "fff", 0, 0, 0), SyscallFailsWithErrno(EBADF));
 }
 
+TEST(ChownTest, FchownFileWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
+
+  ASSERT_THAT(fchown(fd.get(), geteuid(), getegid()),
+              SyscallFailsWithErrno(EBADF));
+}
+
+TEST(ChownTest, FchownDirWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
+
+  ASSERT_THAT(fchown(fd.get(), geteuid(), getegid()),
+              SyscallFailsWithErrno(EBADF));
+}
+
+TEST(ChownTest, FchownatWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  const auto dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
+  ASSERT_THAT(
+      fchownat(dirfd.get(), file.path().c_str(), geteuid(), getegid(), 0),
+      SyscallSucceeds());
+}
+
 TEST(ChownTest, FchownatEmptyPath) {
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =
@@ -209,6 +239,14 @@ INSTANTIATE_TEST_SUITE_P(
                             owner, group, 0);
           MaybeSave();
           return errorFromReturn("fchownat-dirfd", rc);
+        },
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          ASSIGN_OR_RETURN_ERRNO(auto dirfd, Open(std::string(Dirname(path)),
+                                                  O_DIRECTORY | O_PATH));
+          int rc = fchownat(dirfd.get(), std::string(Basename(path)).c_str(),
+                            owner, group, 0);
+          MaybeSave();
+          return errorFromReturn("fchownat-opathdirfd", rc);
         }));
 
 }  // namespace

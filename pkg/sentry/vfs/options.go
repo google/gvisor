@@ -129,7 +129,7 @@ type OpenOptions struct {
 	//
 	// FilesystemImpls are responsible for implementing the following flags:
 	// O_RDONLY, O_WRONLY, O_RDWR, O_APPEND, O_CREAT, O_DIRECT, O_DSYNC,
-	// O_EXCL, O_NOATIME, O_NOCTTY, O_NONBLOCK, O_PATH, O_SYNC, O_TMPFILE, and
+	// O_EXCL, O_NOATIME, O_NOCTTY, O_NONBLOCK, O_SYNC, O_TMPFILE, and
 	// O_TRUNC. VFS is responsible for handling O_DIRECTORY, O_LARGEFILE, and
 	// O_NOFOLLOW. VFS users are responsible for handling O_CLOEXEC, since file
 	// descriptors are mostly outside the scope of VFS.

@@ -221,6 +221,43 @@ TEST_F(StatTest, TrailingSlashNotCleanedReturnsENOTDIR) {
   EXPECT_THAT(lstat(bad_path.c_str(), &buf), SyscallFailsWithErrno(ENOTDIR));
 }
 
+TEST_F(StatTest, FstatFileWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  struct stat st;
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfile.path().c_str(), O_PATH));
+
+  // Stat the directory.
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+}
+
+TEST_F(StatTest, FstatDirWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  struct stat st;
+  TempPath tmpdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(tmpdir.path().c_str(), O_PATH | O_DIRECTORY));
+
+  // Stat the directory.
+  ASSERT_THAT(fstat(dirfd.get(), &st), SyscallSucceeds());
+}
+
+// fstatat with an O_PATH fd
+TEST_F(StatTest, FstatatDirWithOpath) {
+  SKIP_IF(IsRunningWithVFS1());
+  TempPath tmpdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(tmpdir.path().c_str(), O_PATH | O_DIRECTORY));
+  TempPath tmpfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  struct stat st = {};
+  EXPECT_THAT(fstatat(dirfd.get(), tmpfile.path().c_str(), &st, 0),
+              SyscallSucceeds());
+  EXPECT_FALSE(S_ISDIR(st.st_mode));
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+}
+
 // Test fstatating a symlink directory.
 TEST_F(StatTest, FstatatSymlinkDir) {
   // Create a directory and symlink to it.
