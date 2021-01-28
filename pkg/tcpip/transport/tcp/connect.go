@@ -1335,6 +1335,14 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		}
 	}
 
+	// Reaching this point means that we successfully completed the 3-way
+	// handshake with our peer.
+	//
+	// Completing the 3-way handshake is an indication that the route is valid
+	// and the remote is reachable as the only way we can complete a handshake
+	// is if our SYN reached the remote and their ACK reached us.
+	e.route.ConfirmReachable()
+
 	drained := e.drainDone != nil
 	if drained {
 		close(e.drainDone)
