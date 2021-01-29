@@ -25,5 +25,6 @@ go_test(
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

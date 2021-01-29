@@ -169,32 +169,32 @@ type Endpoint interface {
 	Type() linux.SockType
 
 	// GetLocalAddress returns the address to which the endpoint is bound.
-	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// GetRemoteAddress returns the address to which the endpoint is
 	// connected.
-	GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetRemoteAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// SetSockOpt sets a socket option.
-	SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error
+	SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error
 
 	// SetSockOptInt sets a socket option for simple cases when a value has
 	// the int type.
-	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error
 
 	// GetSockOpt gets a socket option.
-	GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error
+	GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error
 
 	// GetSockOptInt gets a socket option for simple cases when a return
 	// value has the int type.
-	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error)
 
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
 	State() uint32
 
 	// LastError clears and returns the last error reported by the endpoint.
-	LastError() *tcpip.Error
+	LastError() tcpip.Error
 
 	// SocketOptions returns the structure which contains all the socket
 	// level options.
@@ -580,7 +580,7 @@ type ConnectedEndpoint interface {
 	Passcred() bool
 
 	// GetLocalAddress implements Endpoint.GetLocalAddress.
-	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// Send sends a single message. This method does not block.
 	//
@@ -640,7 +640,7 @@ type connectedEndpoint struct {
 		Passcred() bool
 
 		// GetLocalAddress implements Endpoint.GetLocalAddress.
-		GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
+		GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
 
 		// Type implements Endpoint.Type.
 		Type() linux.SockType
@@ -655,7 +655,7 @@ func (e *connectedEndpoint) Passcred() bool {
 }
 
 // GetLocalAddress implements ConnectedEndpoint.GetLocalAddress.
-func (e *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (e *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 	return e.endpoint.GetLocalAddress()
 }
 
@@ -836,11 +836,11 @@ func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMess
 }
 
 // SetSockOpt sets a socket option.
-func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) *tcpip.Error {
+func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	return nil
 }
 
-func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
+func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	switch opt {
 	case tcpip.ReceiveBufferSizeOption:
 	default:
@@ -855,34 +855,34 @@ func (e *baseEndpoint) IsUnixSocket() bool {
 }
 
 // GetSendBufferSize implements tcpip.SocketOptionsHandler.GetSendBufferSize.
-func (e *baseEndpoint) GetSendBufferSize() (int64, *tcpip.Error) {
+func (e *baseEndpoint) GetSendBufferSize() (int64, tcpip.Error) {
 	e.Lock()
 	defer e.Unlock()
 
 	if !e.Connected() {
-		return -1, tcpip.ErrNotConnected
+		return -1, &tcpip.ErrNotConnected{}
 	}
 
 	v := e.connected.SendMaxQueueSize()
 	if v < 0 {
-		return -1, tcpip.ErrQueueSizeNotSupported
+		return -1, &tcpip.ErrQueueSizeNotSupported{}
 	}
 	return v, nil
 }
 
-func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
+func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
 		e.Lock()
 		if !e.Connected() {
 			e.Unlock()
-			return -1, tcpip.ErrNotConnected
+			return -1, &tcpip.ErrNotConnected{}
 		}
 		v = int(e.receiver.RecvQueuedSize())
 		e.Unlock()
 		if v < 0 {
-			return -1, tcpip.ErrQueueSizeNotSupported
+			return -1, &tcpip.ErrQueueSizeNotSupported{}
 		}
 		return v, nil
 
@@ -890,12 +890,12 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		e.Lock()
 		if !e.Connected() {
 			e.Unlock()
-			return -1, tcpip.ErrNotConnected
+			return -1, &tcpip.ErrNotConnected{}
 		}
 		v := e.connected.SendQueuedSize()
 		e.Unlock()
 		if v < 0 {
-			return -1, tcpip.ErrQueueSizeNotSupported
+			return -1, &tcpip.ErrQueueSizeNotSupported{}
 		}
 		return int(v), nil
 
@@ -903,29 +903,29 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error) {
 		e.Lock()
 		if e.receiver == nil {
 			e.Unlock()
-			return -1, tcpip.ErrNotConnected
+			return -1, &tcpip.ErrNotConnected{}
 		}
 		v := e.receiver.RecvMaxQueueSize()
 		e.Unlock()
 		if v < 0 {
-			return -1, tcpip.ErrQueueSizeNotSupported
+			return -1, &tcpip.ErrQueueSizeNotSupported{}
 		}
 		return int(v), nil
 
 	default:
 		log.Warningf("Unsupported socket option: %d", opt)
-		return -1, tcpip.ErrUnknownProtocolOption
+		return -1, &tcpip.ErrUnknownProtocolOption{}
 	}
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) *tcpip.Error {
+func (e *baseEndpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	log.Warningf("Unsupported socket option: %T", opt)
-	return tcpip.ErrUnknownProtocolOption
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // LastError implements Endpoint.LastError.
-func (*baseEndpoint) LastError() *tcpip.Error {
+func (*baseEndpoint) LastError() tcpip.Error {
 	return nil
 }
 
@@ -965,7 +965,7 @@ func (e *baseEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
 }
 
 // GetLocalAddress returns the bound path.
-func (e *baseEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (e *baseEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 	e.Lock()
 	defer e.Unlock()
 	return tcpip.FullAddress{Addr: tcpip.Address(e.path)}, nil
@@ -973,14 +973,14 @@ func (e *baseEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 
 // GetRemoteAddress returns the local address of the connected endpoint (if
 // available).
-func (e *baseEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (e *baseEndpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	e.Lock()
 	c := e.connected
 	e.Unlock()
 	if c != nil {
 		return c.GetLocalAddress()
 	}
-	return tcpip.FullAddress{}, tcpip.ErrNotConnected
+	return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
 }
 
 // Release implements BoundEndpoint.Release.

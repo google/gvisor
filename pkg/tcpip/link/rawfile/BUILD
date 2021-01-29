@@ -27,5 +27,6 @@ go_test(
     library = "rawfile",
     deps = [
         "//pkg/tcpip",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

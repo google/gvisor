@@ -69,7 +69,7 @@ func (r *ForwarderRequest) ID() stack.TransportEndpointID {
 }
 
 // CreateEndpoint creates a connected UDP endpoint for the session request.
-func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	netHdr := r.pkt.Network()
 	route, err := r.stack.FindRoute(r.pkt.NICID, netHdr.DestinationAddress(), netHdr.SourceAddress(), r.pkt.NetworkProtocolNumber, false /* multicastLoop */)
 	if err != nil {

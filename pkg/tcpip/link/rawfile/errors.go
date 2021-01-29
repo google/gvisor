@@ -17,7 +17,6 @@
 package rawfile
 
 import (
-	"fmt"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -25,48 +24,54 @@ import (
 
 const maxErrno = 134
 
-var translations [maxErrno]*tcpip.Error
-
 // TranslateErrno translate an errno from the syscall package into a
-// *tcpip.Error.
+// tcpip.Error.
 //
 // Valid, but unrecognized errnos will be translated to
-// tcpip.ErrInvalidEndpointState (EINVAL).
-func TranslateErrno(e syscall.Errno) *tcpip.Error {
-	if e > 0 && e < syscall.Errno(len(translations)) {
-		if err := translations[e]; err != nil {
-			return err
-		}
+// *tcpip.ErrInvalidEndpointState (EINVAL).
+func TranslateErrno(e syscall.Errno) tcpip.Error {
+	switch e {
+	case syscall.EEXIST:
+		return &tcpip.ErrDuplicateAddress{}
+	case syscall.ENETUNREACH:
+		return &tcpip.ErrNoRoute{}
+	case syscall.EINVAL:
+		return &tcpip.ErrInvalidEndpointState{}
+	case syscall.EALREADY:
+		return &tcpip.ErrAlreadyConnecting{}
+	case syscall.EISCONN:
+		return &tcpip.ErrAlreadyConnected{}
+	case syscall.EADDRINUSE:
+		return &tcpip.ErrPortInUse{}
+	case syscall.EADDRNOTAVAIL:
+		return &tcpip.ErrBadLocalAddress{}
+	case syscall.EPIPE:
+		return &tcpip.ErrClosedForSend{}
+	case syscall.EWOULDBLOCK:
+		return &tcpip.ErrWouldBlock{}
+	case syscall.ECONNREFUSED:
+		return &tcpip.ErrConnectionRefused{}
+	case syscall.ETIMEDOUT:
+		return &tcpip.ErrTimeout{}
+	case syscall.EINPROGRESS:
+		return &tcpip.ErrConnectStarted{}
+	case syscall.EDESTADDRREQ:
+		return &tcpip.ErrDestinationRequired{}
+	case syscall.ENOTSUP:
+		return &tcpip.ErrNotSupported{}
+	case syscall.ENOTTY:
+		return &tcpip.ErrQueueSizeNotSupported{}
+	case syscall.ENOTCONN:
+		return &tcpip.ErrNotConnected{}
+	case syscall.ECONNRESET:
+		return &tcpip.ErrConnectionReset{}
+	case syscall.ECONNABORTED:
+		return &tcpip.ErrConnectionAborted{}
+	case syscall.EMSGSIZE:
+		return &tcpip.ErrMessageTooLong{}
+	case syscall.ENOBUFS:
+		return &tcpip.ErrNoBufferSpace{}
+	default:
+		return &tcpip.ErrInvalidEndpointState{}
 	}
-	return tcpip.ErrInvalidEndpointState
-}
-
-func addTranslation(host syscall.Errno, trans *tcpip.Error) {
-	if translations[host] != nil {
-		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
-	}
-	translations[host] = trans
-}
-
-func init() {
-	addTranslation(syscall.EEXIST, tcpip.ErrDuplicateAddress)
-	addTranslation(syscall.ENETUNREACH, tcpip.ErrNoRoute)
-	addTranslation(syscall.EINVAL, tcpip.ErrInvalidEndpointState)
-	addTranslation(syscall.EALREADY, tcpip.ErrAlreadyConnecting)
-	addTranslation(syscall.EISCONN, tcpip.ErrAlreadyConnected)
-	addTranslation(syscall.EADDRINUSE, tcpip.ErrPortInUse)
-	addTranslation(syscall.EADDRNOTAVAIL, tcpip.ErrBadLocalAddress)
-	addTranslation(syscall.EPIPE, tcpip.ErrClosedForSend)
-	addTranslation(syscall.EWOULDBLOCK, tcpip.ErrWouldBlock)
-	addTranslation(syscall.ECONNREFUSED, tcpip.ErrConnectionRefused)
-	addTranslation(syscall.ETIMEDOUT, tcpip.ErrTimeout)
-	addTranslation(syscall.EINPROGRESS, tcpip.ErrConnectStarted)
-	addTranslation(syscall.EDESTADDRREQ, tcpip.ErrDestinationRequired)
-	addTranslation(syscall.ENOTSUP, tcpip.ErrNotSupported)
-	addTranslation(syscall.ENOTTY, tcpip.ErrQueueSizeNotSupported)
-	addTranslation(syscall.ENOTCONN, tcpip.ErrNotConnected)
-	addTranslation(syscall.ECONNRESET, tcpip.ErrConnectionReset)
-	addTranslation(syscall.ECONNABORTED, tcpip.ErrConnectionAborted)
-	addTranslation(syscall.EMSGSIZE, tcpip.ErrMessageTooLong)
-	addTranslation(syscall.ENOBUFS, tcpip.ErrNoBufferSpace)
 }

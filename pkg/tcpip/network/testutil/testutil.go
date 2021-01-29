@@ -35,7 +35,7 @@ type MockLinkEndpoint struct {
 	WrittenPackets []*stack.PacketBuffer
 
 	mtu          uint32
-	err          *tcpip.Error
+	err          tcpip.Error
 	allowPackets int
 }
 
@@ -43,7 +43,7 @@ type MockLinkEndpoint struct {
 //
 // err is the error that will be returned once allowPackets packets are written
 // to the endpoint.
-func NewMockLinkEndpoint(mtu uint32, err *tcpip.Error, allowPackets int) *MockLinkEndpoint {
+func NewMockLinkEndpoint(mtu uint32, err tcpip.Error, allowPackets int) *MockLinkEndpoint {
 	return &MockLinkEndpoint{
 		mtu:          mtu,
 		err:          err,
@@ -64,7 +64,7 @@ func (*MockLinkEndpoint) MaxHeaderLength() uint16 { return 0 }
 func (*MockLinkEndpoint) LinkAddress() tcpip.LinkAddress { return "" }
 
 // WritePacket implements LinkEndpoint.WritePacket.
-func (ep *MockLinkEndpoint) WritePacket(_ stack.RouteInfo, _ *stack.GSO, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (ep *MockLinkEndpoint) WritePacket(_ stack.RouteInfo, _ *stack.GSO, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if ep.allowPackets == 0 {
 		return ep.err
 	}
@@ -74,7 +74,7 @@ func (ep *MockLinkEndpoint) WritePacket(_ stack.RouteInfo, _ *stack.GSO, _ tcpip
 }
 
 // WritePackets implements LinkEndpoint.WritePackets.
-func (ep *MockLinkEndpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (ep *MockLinkEndpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	var n int
 
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {

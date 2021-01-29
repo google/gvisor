@@ -54,13 +54,13 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 }
 
 // NewEndpoint creates a new udp endpoint.
-func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return newEndpoint(p.stack, netProto, waiterQueue), nil
 }
 
 // NewRawEndpoint creates a new raw UDP endpoint. It implements
 // stack.TransportProtocol.NewRawEndpoint.
-func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return raw.NewEndpoint(p.stack, netProto, header.UDPProtocolNumber, waiterQueue)
 }
 
@@ -71,7 +71,7 @@ func (*protocol) MinimumPacketSize() int {
 
 // ParsePorts returns the source and destination ports stored in the given udp
 // packet.
-func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
+func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 	h := header.UDP(v)
 	return h.SourcePort(), h.DestinationPort(), nil
 }
@@ -94,13 +94,13 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
-func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Option implements stack.TransportProtocol.Option.
-func (*protocol) Option(tcpip.GettableTransportProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) Option(tcpip.GettableTransportProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Close implements stack.TransportProtocol.Close.

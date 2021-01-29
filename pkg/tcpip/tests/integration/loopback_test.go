@@ -37,7 +37,7 @@ var _ ipv6.NDPDispatcher = (*ndpDispatcher)(nil)
 
 type ndpDispatcher struct{}
 
-func (*ndpDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, *tcpip.Error) {
+func (*ndpDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, tcpip.Error) {
 }
 
 func (*ndpDispatcher) OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address) bool {
@@ -262,8 +262,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
 				}
-			} else if err != tcpip.ErrWouldBlock {
-				t.Fatalf("got rep.Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), tcpip.ErrWouldBlock)
+			} else if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+				t.Fatalf("got rep.Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), &tcpip.ErrWouldBlock{})
 			}
 		})
 	}
@@ -322,11 +322,14 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 	if err := s.RemoveAddress(nicID, protoAddr.AddressWithPrefix.Address); err != nil {
 		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
 	}
-	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               data.ToVectorisedView(),
-	})); err != tcpip.ErrInvalidEndpointState {
-		t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, tcpip.ErrInvalidEndpointState)
+	{
+		err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: int(r.MaxHeaderLength()),
+			Data:               data.ToVectorisedView(),
+		}))
+		if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
+			t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
+		}
 	}
 }
 
@@ -470,13 +473,17 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 				Addr: test.dstAddr,
 				Port: localPort,
 			}
-			if err := connectingEndpoint.Connect(connectAddr); err != tcpip.ErrConnectStarted {
-				t.Fatalf("connectingEndpoint.Connect(%#v): %s", connectAddr, err)
+			{
+				err := connectingEndpoint.Connect(connectAddr)
+				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+					t.Fatalf("connectingEndpoint.Connect(%#v): %s", connectAddr, err)
+				}
 			}
 
 			if !test.expectAccept {
-				if _, _, err := listeningEndpoint.Accept(nil); err != tcpip.ErrWouldBlock {
-					t.Fatalf("got listeningEndpoint.Accept(nil) = %s, want = %s", err, tcpip.ErrWouldBlock)
+				_, _, err := listeningEndpoint.Accept(nil)
+				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+					t.Fatalf("got listeningEndpoint.Accept(nil) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
 				}
 				return
 			}

@@ -117,7 +117,7 @@ func (a *AddressableEndpointState) releaseAddressStateLocked(addrState *addressS
 }
 
 // AddAndAcquirePermanentAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, *tcpip.Error) {
+func (a *AddressableEndpointState) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, tcpip.Error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ep, err := a.addAndAcquireAddressLocked(addr, peb, configType, deprecated, true /* permanent */)
@@ -143,10 +143,10 @@ func (a *AddressableEndpointState) AddAndAcquirePermanentAddress(addr tcpip.Addr
 
 // AddAndAcquireTemporaryAddress adds a temporary address.
 //
-// Returns tcpip.ErrDuplicateAddress if the address exists.
+// Returns *tcpip.ErrDuplicateAddress if the address exists.
 //
 // The temporary address's endpoint is acquired and returned.
-func (a *AddressableEndpointState) AddAndAcquireTemporaryAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior) (AddressEndpoint, *tcpip.Error) {
+func (a *AddressableEndpointState) AddAndAcquireTemporaryAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior) (AddressEndpoint, tcpip.Error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ep, err := a.addAndAcquireAddressLocked(addr, peb, AddressConfigStatic, false /* deprecated */, false /* permanent */)
@@ -176,11 +176,11 @@ func (a *AddressableEndpointState) AddAndAcquireTemporaryAddress(addr tcpip.Addr
 // If the addressable endpoint already has the address in a non-permanent state,
 // and addAndAcquireAddressLocked is adding a permanent address, that address is
 // promoted in place and its properties set to the properties provided. If the
-// address already exists in any other state, then tcpip.ErrDuplicateAddress is
+// address already exists in any other state, then *tcpip.ErrDuplicateAddress is
 // returned, regardless the kind of address that is being added.
 //
 // Precondition: a.mu must be write locked.
-func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated, permanent bool) (*addressState, *tcpip.Error) {
+func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated, permanent bool) (*addressState, tcpip.Error) {
 	// attemptAddToPrimary is false when the address is already in the primary
 	// address list.
 	attemptAddToPrimary := true
@@ -190,7 +190,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			// We are adding a non-permanent address but the address exists. No need
 			// to go any further since we can only promote existing temporary/expired
 			// addresses to permanent.
-			return nil, tcpip.ErrDuplicateAddress
+			return nil, &tcpip.ErrDuplicateAddress{}
 		}
 
 		addrState.mu.Lock()
@@ -198,7 +198,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			addrState.mu.Unlock()
 			// We are adding a permanent address but a permanent address already
 			// exists.
-			return nil, tcpip.ErrDuplicateAddress
+			return nil, &tcpip.ErrDuplicateAddress{}
 		}
 
 		if addrState.mu.refs == 0 {
@@ -293,7 +293,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 }
 
 // RemovePermanentAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) *tcpip.Error {
+func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.removePermanentAddressLocked(addr)
@@ -303,10 +303,10 @@ func (a *AddressableEndpointState) RemovePermanentAddress(addr tcpip.Address) *t
 // requirements.
 //
 // Precondition: a.mu must be write locked.
-func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
+func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Address) tcpip.Error {
 	addrState, ok := a.mu.endpoints[addr]
 	if !ok {
-		return tcpip.ErrBadLocalAddress
+		return &tcpip.ErrBadLocalAddress{}
 	}
 
 	return a.removePermanentEndpointLocked(addrState)
@@ -314,10 +314,10 @@ func (a *AddressableEndpointState) removePermanentAddressLocked(addr tcpip.Addre
 
 // RemovePermanentEndpoint removes the passed endpoint if it is associated with
 // a and permanent.
-func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) *tcpip.Error {
+func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) tcpip.Error {
 	addrState, ok := ep.(*addressState)
 	if !ok || addrState.addressableEndpointState != a {
-		return tcpip.ErrInvalidEndpointState
+		return &tcpip.ErrInvalidEndpointState{}
 	}
 
 	a.mu.Lock()
@@ -329,9 +329,9 @@ func (a *AddressableEndpointState) RemovePermanentEndpoint(ep AddressEndpoint) *
 // requirements.
 //
 // Precondition: a.mu must be write locked.
-func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addressState) *tcpip.Error {
+func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addressState) tcpip.Error {
 	if !addrState.GetKind().IsPermanent() {
-		return tcpip.ErrBadLocalAddress
+		return &tcpip.ErrBadLocalAddress{}
 	}
 
 	addrState.SetKind(PermanentExpired)
@@ -574,9 +574,11 @@ func (a *AddressableEndpointState) Cleanup() {
 	defer a.mu.Unlock()
 
 	for _, ep := range a.mu.endpoints {
-		// removePermanentEndpointLocked returns tcpip.ErrBadLocalAddress if ep is
+		// removePermanentEndpointLocked returns *tcpip.ErrBadLocalAddress if ep is
 		// not a permanent address.
-		if err := a.removePermanentEndpointLocked(ep); err != nil && err != tcpip.ErrBadLocalAddress {
+		switch err := a.removePermanentEndpointLocked(ep); err.(type) {
+		case nil, *tcpip.ErrBadLocalAddress:
+		default:
 			panic(fmt.Sprintf("unexpected error from removePermanentEndpointLocked(%s): %s", ep.addr, err))
 		}
 	}

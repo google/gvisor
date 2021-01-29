@@ -55,9 +55,9 @@ type endpoint struct {
 	stats         sharedStats
 }
 
-func (e *endpoint) Enable() *tcpip.Error {
+func (e *endpoint) Enable() tcpip.Error {
 	if !e.nic.Enabled() {
-		return tcpip.ErrNotPermitted
+		return &tcpip.ErrNotPermitted{}
 	}
 
 	e.setEnabled(true)
@@ -105,8 +105,8 @@ func (e *endpoint) Close() {
 	e.protocol.forgetEndpoint(e.nic.ID())
 }
 
-func (*endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) *tcpip.Error {
-	return tcpip.ErrNotSupported
+func (*endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
 }
 
 // NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
@@ -115,12 +115,12 @@ func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (*endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, *tcpip.Error) {
-	return 0, tcpip.ErrNotSupported
+func (*endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
+	return 0, &tcpip.ErrNotSupported{}
 }
 
-func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) *tcpip.Error {
-	return tcpip.ErrNotSupported
+func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
 }
 
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
@@ -276,14 +276,14 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
-func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) tcpip.Error {
 	nicID := nic.ID()
 
 	p.mu.Lock()
 	netEP, ok := p.mu.eps[nicID]
 	p.mu.Unlock()
 	if !ok {
-		return tcpip.ErrNotConnected
+		return &tcpip.ErrNotConnected{}
 	}
 
 	stats := netEP.stats.arp
@@ -295,18 +295,18 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	if len(localAddr) == 0 {
 		addr, ok := p.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
 		if !ok {
-			return tcpip.ErrUnknownNICID
+			return &tcpip.ErrUnknownNICID{}
 		}
 
 		if len(addr.Address) == 0 {
 			stats.outgoingRequestInterfaceHasNoLocalAddressErrors.Increment()
-			return tcpip.ErrNetworkUnreachable
+			return &tcpip.ErrNetworkUnreachable{}
 		}
 
 		localAddr = addr.Address
 	} else if p.stack.CheckLocalAddress(nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
 		stats.outgoingRequestBadLocalAddressErrors.Increment()
-		return tcpip.ErrBadLocalAddress
+		return &tcpip.ErrBadLocalAddress{}
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -345,13 +345,13 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 }
 
 // SetOption implements stack.NetworkProtocol.SetOption.
-func (*protocol) SetOption(tcpip.SettableNetworkProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) SetOption(tcpip.SettableNetworkProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Option implements stack.NetworkProtocol.Option.
-func (*protocol) Option(tcpip.GettableNetworkProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) Option(tcpip.GettableNetworkProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Close implements stack.TransportProtocol.Close.

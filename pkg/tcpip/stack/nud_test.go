@@ -65,8 +65,9 @@ func TestSetNUDConfigurationFailsForBadNICID(t *testing.T) {
 
 	// No NIC with ID 1 yet.
 	config := stack.NUDConfigurations{}
-	if err := s.SetNUDConfigurations(1, config); err != tcpip.ErrUnknownNICID {
-		t.Fatalf("got s.SetNDPConfigurations(1, %+v) = %v, want = %s", config, err, tcpip.ErrUnknownNICID)
+	err := s.SetNUDConfigurations(1, config)
+	if _, ok := err.(*tcpip.ErrUnknownNICID); !ok {
+		t.Fatalf("got s.SetNDPConfigurations(1, %+v) = %v, want = %s", config, err, &tcpip.ErrUnknownNICID{})
 	}
 }
 
@@ -90,8 +91,9 @@ func TestNUDConfigurationFailsForNotSupported(t *testing.T) {
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-	if _, err := s.NUDConfigurations(nicID); err != tcpip.ErrNotSupported {
-		t.Fatalf("got s.NDPConfigurations(%d) = %v, want = %s", nicID, err, tcpip.ErrNotSupported)
+	_, err := s.NUDConfigurations(nicID)
+	if _, ok := err.(*tcpip.ErrNotSupported); !ok {
+		t.Fatalf("got s.NDPConfigurations(%d) = %v, want = %s", nicID, err, &tcpip.ErrNotSupported{})
 	}
 }
 
@@ -117,8 +119,9 @@ func TestSetNUDConfigurationFailsForNotSupported(t *testing.T) {
 	}
 
 	config := stack.NUDConfigurations{}
-	if err := s.SetNUDConfigurations(nicID, config); err != tcpip.ErrNotSupported {
-		t.Fatalf("got s.SetNDPConfigurations(%d, %+v) = %v, want = %s", nicID, config, err, tcpip.ErrNotSupported)
+	err := s.SetNUDConfigurations(nicID, config)
+	if _, ok := err.(*tcpip.ErrNotSupported); !ok {
+		t.Fatalf("got s.SetNDPConfigurations(%d, %+v) = %v, want = %s", nicID, config, err, &tcpip.ErrNotSupported{})
 	}
 }
 

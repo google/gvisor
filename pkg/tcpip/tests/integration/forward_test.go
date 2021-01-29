@@ -340,7 +340,7 @@ func TestForwarding(t *testing.T) {
 	subTests := []struct {
 		name               string
 		proto              tcpip.TransportProtocolNumber
-		expectedConnectErr *tcpip.Error
+		expectedConnectErr tcpip.Error
 		setupServerSide    func(t *testing.T, ep tcpip.Endpoint, ch <-chan struct{}, clientAddr tcpip.FullAddress) (tcpip.Endpoint, chan struct{})
 		needRemoteAddr     bool
 	}{
@@ -361,7 +361,7 @@ func TestForwarding(t *testing.T) {
 		{
 			name:               "TCP",
 			proto:              tcp.ProtocolNumber,
-			expectedConnectErr: tcpip.ErrConnectStarted,
+			expectedConnectErr: &tcpip.ErrConnectStarted{},
 			setupServerSide: func(t *testing.T, ep tcpip.Endpoint, ch <-chan struct{}, clientAddr tcpip.FullAddress) (tcpip.Endpoint, chan struct{}) {
 				t.Helper()
 
@@ -371,7 +371,7 @@ func TestForwarding(t *testing.T) {
 				var addr tcpip.FullAddress
 				for {
 					newEP, wq, err := ep.Accept(&addr)
-					if err == tcpip.ErrWouldBlock {
+					if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 						<-ch
 						continue
 					}
@@ -420,8 +420,11 @@ func TestForwarding(t *testing.T) {
 						t.Fatalf("epsAndAddrs.clientEP.Bind(%#v): %s", clientAddr, err)
 					}
 
-					if err := epsAndAddrs.clientEP.Connect(serverAddr); err != subTest.expectedConnectErr {
-						t.Fatalf("got epsAndAddrs.clientEP.Connect(%#v) = %s, want = %s", serverAddr, err, subTest.expectedConnectErr)
+					{
+						err := epsAndAddrs.clientEP.Connect(serverAddr)
+						if diff := cmp.Diff(subTest.expectedConnectErr, err); diff != "" {
+							t.Fatalf("unexpected error from epsAndAddrs.clientEP.Connect(%#v), (-want, +got):\n%s", serverAddr, diff)
+						}
 					}
 					if addr, err := epsAndAddrs.clientEP.GetLocalAddress(); err != nil {
 						t.Fatalf("epsAndAddrs.clientEP.GetLocalAddress(): %s", err)

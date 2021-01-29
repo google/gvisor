@@ -58,7 +58,7 @@ func TestTimeouts(t *testing.T) {
 	}
 }
 
-func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
+func newLoopbackStack() (*stack.Stack, tcpip.Error) {
 	// Create the stack and add a NIC.
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
@@ -94,7 +94,7 @@ type testConnection struct {
 	ep tcpip.Endpoint
 }
 
-func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, *tcpip.Error) {
+func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, tcpip.Error) {
 	wq := &waiter.Queue{}
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
 	if err != nil {
@@ -105,7 +105,7 @@ func connect(s *stack.Stack, addr tcpip.FullAddress) (*testConnection, *tcpip.Er
 	wq.EventRegister(&entry, waiter.EventOut)
 
 	err = ep.Connect(addr)
-	if err == tcpip.ErrConnectStarted {
+	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
 		<-ch
 		err = ep.LastError()
 	}
@@ -660,11 +660,13 @@ func TestTCPDialError(t *testing.T) {
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
 
-	_, err := DialTCP(s, addr, ipv4.ProtocolNumber)
-	got, ok := err.(*net.OpError)
-	want := tcpip.ErrNoRoute
-	if !ok || got.Err.Error() != want.String() {
-		t.Errorf("Got DialTCP() = %v, want = %v", err, tcpip.ErrNoRoute)
+	switch _, err := DialTCP(s, addr, ipv4.ProtocolNumber); err := err.(type) {
+	case *net.OpError:
+		if err.Err.Error() != (&tcpip.ErrNoRoute{}).String() {
+			t.Errorf("got DialTCP() = %s, want = %s", err, &tcpip.ErrNoRoute{})
+		}
+	default:
+		t.Errorf("got DialTCP(...) = %v, want %s", err, &tcpip.ErrNoRoute{})
 	}
 }
 

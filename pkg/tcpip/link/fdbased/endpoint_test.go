@@ -95,7 +95,7 @@ func newContext(t *testing.T, opt *Options) *context {
 	}
 
 	done := make(chan struct{}, 2)
-	opt.ClosedFunc = func(*tcpip.Error) {
+	opt.ClosedFunc = func(tcpip.Error) {
 		done <- struct{}{}
 	}
 

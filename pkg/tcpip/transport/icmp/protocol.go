@@ -59,18 +59,18 @@ func (p *protocol) netProto() tcpip.NetworkProtocolNumber {
 
 // NewEndpoint creates a new icmp endpoint. It implements
 // stack.TransportProtocol.NewEndpoint.
-func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	if netProto != p.netProto() {
-		return nil, tcpip.ErrUnknownProtocol
+		return nil, &tcpip.ErrUnknownProtocol{}
 	}
 	return newEndpoint(p.stack, netProto, p.number, waiterQueue)
 }
 
 // NewRawEndpoint creates a new raw icmp endpoint. It implements
 // stack.TransportProtocol.NewRawEndpoint.
-func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	if netProto != p.netProto() {
-		return nil, tcpip.ErrUnknownProtocol
+		return nil, &tcpip.ErrUnknownProtocol{}
 	}
 	return raw.NewEndpoint(p.stack, netProto, p.number, waiterQueue)
 }
@@ -87,7 +87,7 @@ func (p *protocol) MinimumPacketSize() int {
 }
 
 // ParsePorts in case of ICMP sets src to 0, dst to ICMP ID, and err to nil.
-func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
+func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 	switch p.number {
 	case ProtocolNumber4:
 		hdr := header.ICMPv4(v)
@@ -106,13 +106,13 @@ func (*protocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, *stac
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
-func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) SetOption(tcpip.SettableTransportProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Option implements stack.TransportProtocol.Option.
-func (*protocol) Option(tcpip.GettableTransportProtocolOption) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+func (*protocol) Option(tcpip.GettableTransportProtocolOption) tcpip.Error {
+	return &tcpip.ErrUnknownProtocolOption{}
 }
 
 // Close implements stack.TransportProtocol.Close.

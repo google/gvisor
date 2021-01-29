@@ -586,7 +586,7 @@ func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int
 // is true then it sets the IP_V6ONLY option on the socket to make it a IPv6
 // only endpoint instead of a default dual stack socket.
 func (c *Context) CreateV6Endpoint(v6only bool) {
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &c.WQ)
 	if err != nil {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
@@ -689,7 +689,8 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	c.WQ.EventRegister(&waitEntry, waiter.EventOut)
 	defer c.WQ.EventUnregister(&waitEntry)
 
-	if err := c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort}); err != tcpip.ErrConnectStarted {
+	err := c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort})
+	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 		c.t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 
@@ -749,7 +750,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 // Create creates a TCP endpoint.
 func (c *Context) Create(epRcvBuf int) {
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
@@ -887,7 +888,7 @@ func (r *RawEndpoint) VerifyACKHasSACK(sackBlocks []header.SACKBlock) {
 // It also verifies where required(eg.Timestamp) that the ACK to the SYN-ACK
 // does not carry an option that was not requested.
 func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *RawEndpoint {
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		c.t.Fatalf("c.s.NewEndpoint(tcp, ipv4...) = %v", err)
@@ -903,7 +904,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 
 	testFullAddr := tcpip.FullAddress{Addr: TestAddr, Port: TestPort}
 	err = c.EP.Connect(testFullAddr)
-	if err != tcpip.ErrConnectStarted {
+	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 		c.t.Fatalf("c.ep.Connect(%v) = %v", testFullAddr, err)
 	}
 	// Receive SYN packet.
@@ -1054,7 +1055,7 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:

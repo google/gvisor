@@ -193,7 +193,7 @@ func (s *sender) schedulePTO() {
 
 // probeTimerExpired is the same as TLP_send_probe() as defined in
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.2.
-func (s *sender) probeTimerExpired() *tcpip.Error {
+func (s *sender) probeTimerExpired() tcpip.Error {
 	if !s.rc.probeTimer.checkExpiration() {
 		return nil
 	}

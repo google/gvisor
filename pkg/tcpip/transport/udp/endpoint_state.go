@@ -37,24 +37,6 @@ func (u *udpPacket) loadData(data buffer.VectorisedView) {
 	u.data = data
 }
 
-// saveLastError is invoked by stateify.
-func (e *endpoint) saveLastError() string {
-	if e.lastError == nil {
-		return ""
-	}
-
-	return e.lastError.String()
-}
-
-// loadLastError is invoked by stateify.
-func (e *endpoint) loadLastError(s string) {
-	if s == "" {
-		return
-	}
-
-	e.lastError = tcpip.StringToError(s)
-}
-
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	// Stop incoming packets from being handled (and mutate endpoint state).
@@ -114,7 +96,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		netProto = header.IPv6ProtocolNumber
 	}
 
-	var err *tcpip.Error
+	var err tcpip.Error
 	if state == StateConnected {
 		e.route, err = e.stack.FindRoute(e.RegisterNICID, e.ID.LocalAddress, e.ID.RemoteAddress, netProto, e.ops.GetMulticastLoop())
 		if err != nil {
@@ -123,7 +105,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	} else if len(e.ID.LocalAddress) != 0 && !e.isBroadcastOrMulticast(e.RegisterNICID, netProto, e.ID.LocalAddress) { // stateBound
 		// A local unicast address is specified, verify that it's valid.
 		if e.stack.CheckLocalAddress(e.RegisterNICID, netProto, e.ID.LocalAddress) == 0 {
-			panic(tcpip.ErrBadLocalAddress)
+			panic(&tcpip.ErrBadLocalAddress{})
 		}
 	}
 

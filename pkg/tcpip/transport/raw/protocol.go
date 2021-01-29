@@ -25,11 +25,11 @@ import (
 type EndpointFactory struct{}
 
 // NewUnassociatedEndpoint implements stack.RawFactory.NewUnassociatedEndpoint.
-func (EndpointFactory) NewUnassociatedEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (EndpointFactory) NewUnassociatedEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return newEndpoint(stack, netProto, transProto, waiterQueue, false /* associated */)
 }
 
 // NewPacketEndpoint implements stack.RawFactory.NewPacketEndpoint.
-func (EndpointFactory) NewPacketEndpoint(stack *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (EndpointFactory) NewPacketEndpoint(stack *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return packet.NewEndpoint(stack, cooked, netProto, waiterQueue)
 }
