@@ -459,17 +459,24 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 var _ tcpip.Payloader = (*limitedPayloader)(nil)
 
 type limitedPayloader struct {
-	io.LimitedReader
+	inner io.LimitedReader
+	err   error
 }
 
-func (l limitedPayloader) Len() int {
-	return int(l.N)
+func (l *limitedPayloader) Read(p []byte) (int, error) {
+	n, err := l.inner.Read(p)
+	l.err = err
+	return n, err
+}
+
+func (l *limitedPayloader) Len() int {
+	return int(l.inner.N)
 }
 
 // ReadFrom implements fs.FileOperations.ReadFrom.
 func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader, count int64) (int64, error) {
 	f := limitedPayloader{
-		LimitedReader: io.LimitedReader{
+		inner: io.LimitedReader{
 			R: r,
 			N: count,
 		},
@@ -480,7 +487,7 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 		Atomic: true,
 	})
 	if err == tcpip.ErrBadBuffer {
-		err = nil
+		return n, f.err
 	}
 	return n, syserr.TranslateNetstackError(err).ToError()
 }
