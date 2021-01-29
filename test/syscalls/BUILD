@@ -557,6 +557,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:setgid_test",
+)
+
+syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:splice_test",
 )
