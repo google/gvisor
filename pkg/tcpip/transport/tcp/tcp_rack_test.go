@@ -16,6 +16,7 @@ package tcp_test
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 	"time"
 
@@ -533,4 +534,65 @@ func TestRACKWithInvalidDSACKBlock(t *testing.T) {
 	// Wait for the probe function to finish processing the
 	// ACK before the test completes.
 	<-probeDone
+}
+
+func addReorderWindowCheckerProbe(c *context.Context, numACK int, probeDone chan error) {
+	var n int
+	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+		// Validate that RACK detects DSACK.
+		n++
+		if n < numACK {
+			return
+		}
+
+		if state.Sender.RACKState.ReoWnd == 0 || state.Sender.RACKState.ReoWnd > state.Sender.SRTT {
+			probeDone <- fmt.Errorf("got RACKState.ReoWnd: %v, expected it to be greater than 0 and less than %v", state.Sender.RACKState.ReoWnd, state.Sender.SRTT)
+			return
+		}
+
+		if state.Sender.RACKState.ReoWndIncr != 1 {
+			probeDone <- fmt.Errorf("got RACKState.ReoWndIncr: %v, want: 1", state.Sender.RACKState.ReoWndIncr)
+			return
+		}
+
+		if state.Sender.RACKState.ReoWndPersist > 0 {
+			probeDone <- fmt.Errorf("got RACKState.ReoWndPersist: %v, want: greater than 0", state.Sender.RACKState.ReoWndPersist)
+			return
+		}
+		probeDone <- nil
+	})
+}
+
+func TestRACKCheckReorderWindow(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	probeDone := make(chan error)
+	const ackNumToVerify = 3
+	addReorderWindowCheckerProbe(c, ackNumToVerify, probeDone)
+
+	const numPackets = 7
+	sendAndReceive(t, c, numPackets)
+
+	// Send ACK for #1 packet.
+	bytesRead := maxPayload
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	c.SendAck(seq, bytesRead)
+
+	// Missing [2-6] packets and SACK #7 packet.
+	seq = seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	start := c.IRS.Add(1 + seqnum.Size(6*maxPayload))
+	end := start.Add(seqnum.Size(maxPayload))
+	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
+
+	// Received delayed packets [2-6] which indicates there is reordering
+	// in the connection.
+	bytesRead += 6 * maxPayload
+	c.SendAck(seq, bytesRead)
+
+	// Wait for the probe function to finish processing the ACK before the
+	// test completes.
+	if err := <-probeDone; err != nil {
+		t.Fatalf("unexpected values for RACK variables: %v", err)
+	}
 }
