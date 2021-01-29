@@ -6,6 +6,728 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (e *ErrAborted) StateTypeName() string {
+	return "pkg/tcpip.ErrAborted"
+}
+
+func (e *ErrAborted) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrAborted) beforeSave() {}
+
+func (e *ErrAborted) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrAborted) afterLoad() {}
+
+func (e *ErrAborted) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrAddressFamilyNotSupported) StateTypeName() string {
+	return "pkg/tcpip.ErrAddressFamilyNotSupported"
+}
+
+func (e *ErrAddressFamilyNotSupported) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrAddressFamilyNotSupported) beforeSave() {}
+
+func (e *ErrAddressFamilyNotSupported) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrAddressFamilyNotSupported) afterLoad() {}
+
+func (e *ErrAddressFamilyNotSupported) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrAlreadyBound) StateTypeName() string {
+	return "pkg/tcpip.ErrAlreadyBound"
+}
+
+func (e *ErrAlreadyBound) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrAlreadyBound) beforeSave() {}
+
+func (e *ErrAlreadyBound) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrAlreadyBound) afterLoad() {}
+
+func (e *ErrAlreadyBound) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrAlreadyConnected) StateTypeName() string {
+	return "pkg/tcpip.ErrAlreadyConnected"
+}
+
+func (e *ErrAlreadyConnected) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrAlreadyConnected) beforeSave() {}
+
+func (e *ErrAlreadyConnected) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrAlreadyConnected) afterLoad() {}
+
+func (e *ErrAlreadyConnected) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrAlreadyConnecting) StateTypeName() string {
+	return "pkg/tcpip.ErrAlreadyConnecting"
+}
+
+func (e *ErrAlreadyConnecting) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrAlreadyConnecting) beforeSave() {}
+
+func (e *ErrAlreadyConnecting) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrAlreadyConnecting) afterLoad() {}
+
+func (e *ErrAlreadyConnecting) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrBadAddress) StateTypeName() string {
+	return "pkg/tcpip.ErrBadAddress"
+}
+
+func (e *ErrBadAddress) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrBadAddress) beforeSave() {}
+
+func (e *ErrBadAddress) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrBadAddress) afterLoad() {}
+
+func (e *ErrBadAddress) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrBadBuffer) StateTypeName() string {
+	return "pkg/tcpip.ErrBadBuffer"
+}
+
+func (e *ErrBadBuffer) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrBadBuffer) beforeSave() {}
+
+func (e *ErrBadBuffer) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrBadBuffer) afterLoad() {}
+
+func (e *ErrBadBuffer) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrBadLocalAddress) StateTypeName() string {
+	return "pkg/tcpip.ErrBadLocalAddress"
+}
+
+func (e *ErrBadLocalAddress) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrBadLocalAddress) beforeSave() {}
+
+func (e *ErrBadLocalAddress) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrBadLocalAddress) afterLoad() {}
+
+func (e *ErrBadLocalAddress) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrBroadcastDisabled) StateTypeName() string {
+	return "pkg/tcpip.ErrBroadcastDisabled"
+}
+
+func (e *ErrBroadcastDisabled) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrBroadcastDisabled) beforeSave() {}
+
+func (e *ErrBroadcastDisabled) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrBroadcastDisabled) afterLoad() {}
+
+func (e *ErrBroadcastDisabled) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrClosedForReceive) StateTypeName() string {
+	return "pkg/tcpip.ErrClosedForReceive"
+}
+
+func (e *ErrClosedForReceive) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrClosedForReceive) beforeSave() {}
+
+func (e *ErrClosedForReceive) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrClosedForReceive) afterLoad() {}
+
+func (e *ErrClosedForReceive) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrClosedForSend) StateTypeName() string {
+	return "pkg/tcpip.ErrClosedForSend"
+}
+
+func (e *ErrClosedForSend) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrClosedForSend) beforeSave() {}
+
+func (e *ErrClosedForSend) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrClosedForSend) afterLoad() {}
+
+func (e *ErrClosedForSend) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrConnectStarted) StateTypeName() string {
+	return "pkg/tcpip.ErrConnectStarted"
+}
+
+func (e *ErrConnectStarted) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrConnectStarted) beforeSave() {}
+
+func (e *ErrConnectStarted) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrConnectStarted) afterLoad() {}
+
+func (e *ErrConnectStarted) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrConnectionAborted) StateTypeName() string {
+	return "pkg/tcpip.ErrConnectionAborted"
+}
+
+func (e *ErrConnectionAborted) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrConnectionAborted) beforeSave() {}
+
+func (e *ErrConnectionAborted) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrConnectionAborted) afterLoad() {}
+
+func (e *ErrConnectionAborted) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrConnectionRefused) StateTypeName() string {
+	return "pkg/tcpip.ErrConnectionRefused"
+}
+
+func (e *ErrConnectionRefused) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrConnectionRefused) beforeSave() {}
+
+func (e *ErrConnectionRefused) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrConnectionRefused) afterLoad() {}
+
+func (e *ErrConnectionRefused) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrConnectionReset) StateTypeName() string {
+	return "pkg/tcpip.ErrConnectionReset"
+}
+
+func (e *ErrConnectionReset) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrConnectionReset) beforeSave() {}
+
+func (e *ErrConnectionReset) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrConnectionReset) afterLoad() {}
+
+func (e *ErrConnectionReset) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrDestinationRequired) StateTypeName() string {
+	return "pkg/tcpip.ErrDestinationRequired"
+}
+
+func (e *ErrDestinationRequired) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrDestinationRequired) beforeSave() {}
+
+func (e *ErrDestinationRequired) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrDestinationRequired) afterLoad() {}
+
+func (e *ErrDestinationRequired) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrDuplicateAddress) StateTypeName() string {
+	return "pkg/tcpip.ErrDuplicateAddress"
+}
+
+func (e *ErrDuplicateAddress) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrDuplicateAddress) beforeSave() {}
+
+func (e *ErrDuplicateAddress) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrDuplicateAddress) afterLoad() {}
+
+func (e *ErrDuplicateAddress) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrDuplicateNICID) StateTypeName() string {
+	return "pkg/tcpip.ErrDuplicateNICID"
+}
+
+func (e *ErrDuplicateNICID) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrDuplicateNICID) beforeSave() {}
+
+func (e *ErrDuplicateNICID) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrDuplicateNICID) afterLoad() {}
+
+func (e *ErrDuplicateNICID) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrInvalidEndpointState) StateTypeName() string {
+	return "pkg/tcpip.ErrInvalidEndpointState"
+}
+
+func (e *ErrInvalidEndpointState) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrInvalidEndpointState) beforeSave() {}
+
+func (e *ErrInvalidEndpointState) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrInvalidEndpointState) afterLoad() {}
+
+func (e *ErrInvalidEndpointState) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrInvalidOptionValue) StateTypeName() string {
+	return "pkg/tcpip.ErrInvalidOptionValue"
+}
+
+func (e *ErrInvalidOptionValue) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrInvalidOptionValue) beforeSave() {}
+
+func (e *ErrInvalidOptionValue) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrInvalidOptionValue) afterLoad() {}
+
+func (e *ErrInvalidOptionValue) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrMalformedHeader) StateTypeName() string {
+	return "pkg/tcpip.ErrMalformedHeader"
+}
+
+func (e *ErrMalformedHeader) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrMalformedHeader) beforeSave() {}
+
+func (e *ErrMalformedHeader) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrMalformedHeader) afterLoad() {}
+
+func (e *ErrMalformedHeader) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrMessageTooLong) StateTypeName() string {
+	return "pkg/tcpip.ErrMessageTooLong"
+}
+
+func (e *ErrMessageTooLong) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrMessageTooLong) beforeSave() {}
+
+func (e *ErrMessageTooLong) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrMessageTooLong) afterLoad() {}
+
+func (e *ErrMessageTooLong) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNetworkUnreachable) StateTypeName() string {
+	return "pkg/tcpip.ErrNetworkUnreachable"
+}
+
+func (e *ErrNetworkUnreachable) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNetworkUnreachable) beforeSave() {}
+
+func (e *ErrNetworkUnreachable) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNetworkUnreachable) afterLoad() {}
+
+func (e *ErrNetworkUnreachable) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNoBufferSpace) StateTypeName() string {
+	return "pkg/tcpip.ErrNoBufferSpace"
+}
+
+func (e *ErrNoBufferSpace) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNoBufferSpace) beforeSave() {}
+
+func (e *ErrNoBufferSpace) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNoBufferSpace) afterLoad() {}
+
+func (e *ErrNoBufferSpace) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNoPortAvailable) StateTypeName() string {
+	return "pkg/tcpip.ErrNoPortAvailable"
+}
+
+func (e *ErrNoPortAvailable) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNoPortAvailable) beforeSave() {}
+
+func (e *ErrNoPortAvailable) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNoPortAvailable) afterLoad() {}
+
+func (e *ErrNoPortAvailable) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNoRoute) StateTypeName() string {
+	return "pkg/tcpip.ErrNoRoute"
+}
+
+func (e *ErrNoRoute) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNoRoute) beforeSave() {}
+
+func (e *ErrNoRoute) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNoRoute) afterLoad() {}
+
+func (e *ErrNoRoute) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNoSuchFile) StateTypeName() string {
+	return "pkg/tcpip.ErrNoSuchFile"
+}
+
+func (e *ErrNoSuchFile) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNoSuchFile) beforeSave() {}
+
+func (e *ErrNoSuchFile) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNoSuchFile) afterLoad() {}
+
+func (e *ErrNoSuchFile) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNotConnected) StateTypeName() string {
+	return "pkg/tcpip.ErrNotConnected"
+}
+
+func (e *ErrNotConnected) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNotConnected) beforeSave() {}
+
+func (e *ErrNotConnected) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNotConnected) afterLoad() {}
+
+func (e *ErrNotConnected) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNotPermitted) StateTypeName() string {
+	return "pkg/tcpip.ErrNotPermitted"
+}
+
+func (e *ErrNotPermitted) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNotPermitted) beforeSave() {}
+
+func (e *ErrNotPermitted) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNotPermitted) afterLoad() {}
+
+func (e *ErrNotPermitted) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrNotSupported) StateTypeName() string {
+	return "pkg/tcpip.ErrNotSupported"
+}
+
+func (e *ErrNotSupported) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrNotSupported) beforeSave() {}
+
+func (e *ErrNotSupported) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrNotSupported) afterLoad() {}
+
+func (e *ErrNotSupported) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrPortInUse) StateTypeName() string {
+	return "pkg/tcpip.ErrPortInUse"
+}
+
+func (e *ErrPortInUse) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrPortInUse) beforeSave() {}
+
+func (e *ErrPortInUse) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrPortInUse) afterLoad() {}
+
+func (e *ErrPortInUse) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrQueueSizeNotSupported) StateTypeName() string {
+	return "pkg/tcpip.ErrQueueSizeNotSupported"
+}
+
+func (e *ErrQueueSizeNotSupported) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrQueueSizeNotSupported) beforeSave() {}
+
+func (e *ErrQueueSizeNotSupported) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrQueueSizeNotSupported) afterLoad() {}
+
+func (e *ErrQueueSizeNotSupported) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrTimeout) StateTypeName() string {
+	return "pkg/tcpip.ErrTimeout"
+}
+
+func (e *ErrTimeout) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrTimeout) beforeSave() {}
+
+func (e *ErrTimeout) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrTimeout) afterLoad() {}
+
+func (e *ErrTimeout) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrUnknownDevice) StateTypeName() string {
+	return "pkg/tcpip.ErrUnknownDevice"
+}
+
+func (e *ErrUnknownDevice) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrUnknownDevice) beforeSave() {}
+
+func (e *ErrUnknownDevice) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrUnknownDevice) afterLoad() {}
+
+func (e *ErrUnknownDevice) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrUnknownNICID) StateTypeName() string {
+	return "pkg/tcpip.ErrUnknownNICID"
+}
+
+func (e *ErrUnknownNICID) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrUnknownNICID) beforeSave() {}
+
+func (e *ErrUnknownNICID) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrUnknownNICID) afterLoad() {}
+
+func (e *ErrUnknownNICID) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrUnknownProtocol) StateTypeName() string {
+	return "pkg/tcpip.ErrUnknownProtocol"
+}
+
+func (e *ErrUnknownProtocol) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrUnknownProtocol) beforeSave() {}
+
+func (e *ErrUnknownProtocol) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrUnknownProtocol) afterLoad() {}
+
+func (e *ErrUnknownProtocol) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrUnknownProtocolOption) StateTypeName() string {
+	return "pkg/tcpip.ErrUnknownProtocolOption"
+}
+
+func (e *ErrUnknownProtocolOption) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrUnknownProtocolOption) beforeSave() {}
+
+func (e *ErrUnknownProtocolOption) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrUnknownProtocolOption) afterLoad() {}
+
+func (e *ErrUnknownProtocolOption) StateLoad(stateSourceObject state.Source) {
+}
+
+func (e *ErrWouldBlock) StateTypeName() string {
+	return "pkg/tcpip.ErrWouldBlock"
+}
+
+func (e *ErrWouldBlock) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrWouldBlock) beforeSave() {}
+
+func (e *ErrWouldBlock) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrWouldBlock) afterLoad() {}
+
+func (e *ErrWouldBlock) StateLoad(stateSourceObject state.Source) {
+}
+
 func (l *sockErrorList) StateTypeName() string {
 	return "pkg/tcpip.sockErrorList"
 }
@@ -194,32 +916,6 @@ func (s *SockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &s.NetProto)
 }
 
-func (e *Error) StateTypeName() string {
-	return "pkg/tcpip.Error"
-}
-
-func (e *Error) StateFields() []string {
-	return []string{
-		"msg",
-		"ignoreStats",
-	}
-}
-
-func (e *Error) beforeSave() {}
-
-func (e *Error) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.msg)
-	stateSinkObject.Save(1, &e.ignoreStats)
-}
-
-func (e *Error) afterLoad() {}
-
-func (e *Error) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.msg)
-	stateSourceObject.Load(1, &e.ignoreStats)
-}
-
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -390,11 +1086,48 @@ func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*ErrAborted)(nil))
+	state.Register((*ErrAddressFamilyNotSupported)(nil))
+	state.Register((*ErrAlreadyBound)(nil))
+	state.Register((*ErrAlreadyConnected)(nil))
+	state.Register((*ErrAlreadyConnecting)(nil))
+	state.Register((*ErrBadAddress)(nil))
+	state.Register((*ErrBadBuffer)(nil))
+	state.Register((*ErrBadLocalAddress)(nil))
+	state.Register((*ErrBroadcastDisabled)(nil))
+	state.Register((*ErrClosedForReceive)(nil))
+	state.Register((*ErrClosedForSend)(nil))
+	state.Register((*ErrConnectStarted)(nil))
+	state.Register((*ErrConnectionAborted)(nil))
+	state.Register((*ErrConnectionRefused)(nil))
+	state.Register((*ErrConnectionReset)(nil))
+	state.Register((*ErrDestinationRequired)(nil))
+	state.Register((*ErrDuplicateAddress)(nil))
+	state.Register((*ErrDuplicateNICID)(nil))
+	state.Register((*ErrInvalidEndpointState)(nil))
+	state.Register((*ErrInvalidOptionValue)(nil))
+	state.Register((*ErrMalformedHeader)(nil))
+	state.Register((*ErrMessageTooLong)(nil))
+	state.Register((*ErrNetworkUnreachable)(nil))
+	state.Register((*ErrNoBufferSpace)(nil))
+	state.Register((*ErrNoPortAvailable)(nil))
+	state.Register((*ErrNoRoute)(nil))
+	state.Register((*ErrNoSuchFile)(nil))
+	state.Register((*ErrNotConnected)(nil))
+	state.Register((*ErrNotPermitted)(nil))
+	state.Register((*ErrNotSupported)(nil))
+	state.Register((*ErrPortInUse)(nil))
+	state.Register((*ErrQueueSizeNotSupported)(nil))
+	state.Register((*ErrTimeout)(nil))
+	state.Register((*ErrUnknownDevice)(nil))
+	state.Register((*ErrUnknownNICID)(nil))
+	state.Register((*ErrUnknownProtocol)(nil))
+	state.Register((*ErrUnknownProtocolOption)(nil))
+	state.Register((*ErrWouldBlock)(nil))
 	state.Register((*sockErrorList)(nil))
 	state.Register((*sockErrorEntry)(nil))
 	state.Register((*SocketOptions)(nil))
 	state.Register((*SockError)(nil))
-	state.Register((*Error)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))

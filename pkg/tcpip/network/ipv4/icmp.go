@@ -310,7 +310,7 @@ func (*icmpReasonParamProblem) isICMPReason() {}
 // the problematic packet. It incorporates as much of that packet as
 // possible as well as any error metadata as is available. returnError
 // expects pkt to hold a valid IPv4 packet as per the wire format.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip.Error {
 	origIPHdr := header.IPv4(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -376,7 +376,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	netEP, ok := p.mu.eps[pkt.NICID]
 	p.mu.Unlock()
 	if !ok {
-		return tcpip.ErrNotConnected
+		return &tcpip.ErrNotConnected{}
 	}
 
 	sent := netEP.stats.icmp.packetsSent

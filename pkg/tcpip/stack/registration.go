@@ -172,10 +172,10 @@ type TransportProtocol interface {
 	Number() tcpip.TransportProtocolNumber
 
 	// NewEndpoint creates a new endpoint of the transport protocol.
-	NewEndpoint(netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+	NewEndpoint(netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error)
 
 	// NewRawEndpoint creates a new raw endpoint of the transport protocol.
-	NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+	NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error)
 
 	// MinimumPacketSize returns the minimum valid packet size of this
 	// transport protocol. The stack automatically drops any packets smaller
@@ -184,7 +184,7 @@ type TransportProtocol interface {
 
 	// ParsePorts returns the source and destination ports stored in a
 	// packet of this protocol.
-	ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error)
+	ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error)
 
 	// HandleUnknownDestinationPacket handles packets targeted at this
 	// protocol that don't match any existing endpoint. For example,
@@ -197,12 +197,12 @@ type TransportProtocol interface {
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
 	// provided option value is invalid.
-	SetOption(option tcpip.SettableTransportProtocolOption) *tcpip.Error
+	SetOption(option tcpip.SettableTransportProtocolOption) tcpip.Error
 
 	// Option allows retrieving protocol specific option values.
 	// Option returns an error if the option is not supported or the
 	// provided option value is invalid.
-	Option(option tcpip.GettableTransportProtocolOption) *tcpip.Error
+	Option(option tcpip.GettableTransportProtocolOption) tcpip.Error
 
 	// Close requests that any worker goroutines owned by the protocol
 	// stop.
@@ -289,10 +289,10 @@ type NetworkHeaderParams struct {
 // endpoints may associate themselves with the same identifier (group address).
 type GroupAddressableEndpoint interface {
 	// JoinGroup joins the specified group.
-	JoinGroup(group tcpip.Address) *tcpip.Error
+	JoinGroup(group tcpip.Address) tcpip.Error
 
 	// LeaveGroup attempts to leave the specified group.
-	LeaveGroup(group tcpip.Address) *tcpip.Error
+	LeaveGroup(group tcpip.Address) tcpip.Error
 
 	// IsInGroup returns true if the endpoint is a member of the specified group.
 	IsInGroup(group tcpip.Address) bool
@@ -440,17 +440,17 @@ func (k AddressKind) IsPermanent() bool {
 type AddressableEndpoint interface {
 	// AddAndAcquirePermanentAddress adds the passed permanent address.
 	//
-	// Returns tcpip.ErrDuplicateAddress if the address exists.
+	// Returns *tcpip.ErrDuplicateAddress if the address exists.
 	//
 	// Acquires and returns the AddressEndpoint for the added address.
-	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, *tcpip.Error)
+	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, tcpip.Error)
 
 	// RemovePermanentAddress removes the passed address if it is a permanent
 	// address.
 	//
-	// Returns tcpip.ErrBadLocalAddress if the endpoint does not have the passed
+	// Returns *tcpip.ErrBadLocalAddress if the endpoint does not have the passed
 	// permanent address.
-	RemovePermanentAddress(addr tcpip.Address) *tcpip.Error
+	RemovePermanentAddress(addr tcpip.Address) tcpip.Error
 
 	// MainAddress returns the endpoint's primary permanent address.
 	MainAddress() tcpip.AddressWithPrefix
@@ -512,14 +512,14 @@ type NetworkInterface interface {
 	Promiscuous() bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
-	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePacket writes a packet with the given protocol through the given
 	// route.
 	//
 	// WritePacket takes ownership of the packet buffer. The packet buffer's
 	// network and transport header must be set.
-	WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+	WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets with the given protocol through the given
 	// route. Must not be called with an empty list of packet buffers.
@@ -529,7 +529,7 @@ type NetworkInterface interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
-	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
+	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.
@@ -547,8 +547,8 @@ type NetworkEndpoint interface {
 	// Must only be called when the stack is in a state that allows the endpoint
 	// to send and receive packets.
 	//
-	// Returns tcpip.ErrNotPermitted if the endpoint cannot be enabled.
-	Enable() *tcpip.Error
+	// Returns *tcpip.ErrNotPermitted if the endpoint cannot be enabled.
+	Enable() tcpip.Error
 
 	// Enabled returns true if the endpoint is enabled.
 	Enabled() bool
@@ -574,16 +574,16 @@ type NetworkEndpoint interface {
 	// WritePacket writes a packet to the given destination address and
 	// protocol. It takes ownership of pkt. pkt.TransportHeader must have
 	// already been set.
-	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error
+	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets to the given destination address and
 	// protocol. pkts must not be zero length. It takes ownership of pkts and
 	// underlying packets.
-	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error)
+	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It takes ownership of pkt.
-	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) *tcpip.Error
+	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint. It sets pkt.NetworkHeader.
@@ -654,12 +654,12 @@ type NetworkProtocol interface {
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
 	// provided option value is invalid.
-	SetOption(option tcpip.SettableNetworkProtocolOption) *tcpip.Error
+	SetOption(option tcpip.SettableNetworkProtocolOption) tcpip.Error
 
 	// Option allows retrieving protocol specific option values.
 	// Option returns an error if the option is not supported or the
 	// provided option value is invalid.
-	Option(option tcpip.GettableNetworkProtocolOption) *tcpip.Error
+	Option(option tcpip.GettableNetworkProtocolOption) tcpip.Error
 
 	// Close requests that any worker goroutines owned by the protocol
 	// stop.
@@ -796,7 +796,7 @@ type LinkEndpoint interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) *tcpip.Error
+	WritePacket(RouteInfo, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets with the given protocol and route. Must not be
 	// called with an empty list of packet buffers.
@@ -806,7 +806,7 @@ type LinkEndpoint interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
-	WritePackets(RouteInfo, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
+	WritePackets(RouteInfo, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
@@ -821,7 +821,7 @@ type InjectableLinkEndpoint interface {
 	// link.
 	//
 	// dest is used by endpoints with multiple raw destinations.
-	InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error
+	InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error
 }
 
 // A LinkAddressResolver is an extension to a NetworkProtocol that
@@ -833,7 +833,7 @@ type LinkAddressResolver interface {
 	//
 	// The request is sent from the passed network interface. If the interface
 	// local address is unspecified, any interface local address may be used.
-	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic NetworkInterface) *tcpip.Error
+	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic NetworkInterface) tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
 	// requests. It either resolves the name immediately or returns the
@@ -858,11 +858,11 @@ type RawFactory interface {
 	// NewUnassociatedEndpoint produces endpoints for writing packets not
 	// associated with a particular transport protocol. Such endpoints can
 	// be used to write arbitrary packets that include the network header.
-	NewUnassociatedEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+	NewUnassociatedEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error)
 
 	// NewPacketEndpoint produces endpoints for reading and writing packets
 	// that include network and (when cooked is false) link layer headers.
-	NewPacketEndpoint(stack *Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+	NewPacketEndpoint(stack *Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error)
 }
 
 // GSOType is the type of GSO segments.

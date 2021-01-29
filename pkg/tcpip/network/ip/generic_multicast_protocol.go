@@ -174,10 +174,10 @@ type MulticastGroupProtocol interface {
 	//
 	// Returns false if the caller should queue the report to be sent later. Note,
 	// returning false does not mean that the receiver hit an error.
-	SendReport(groupAddress tcpip.Address) (sent bool, err *tcpip.Error)
+	SendReport(groupAddress tcpip.Address) (sent bool, err tcpip.Error)
 
 	// SendLeave sends a multicast leave for the specified group address.
-	SendLeave(groupAddress tcpip.Address) *tcpip.Error
+	SendLeave(groupAddress tcpip.Address) tcpip.Error
 }
 
 // GenericMulticastProtocolState is the per interface generic multicast protocol
