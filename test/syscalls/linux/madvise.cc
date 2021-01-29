@@ -179,9 +179,9 @@ TEST(MadviseDontforkTest, DontforkShared) {
     // First page is mapped in child and modifications are visible to parent
     // via the shared mapping.
     TEST_CHECK(IsMapped(ms1.addr()));
-    ExpectAllMappingBytes(ms1, 2);
+    CheckAllMappingBytes(ms1, 2);
     memset(ms1.ptr(), 1, kPageSize);
-    ExpectAllMappingBytes(ms1, 1);
+    CheckAllMappingBytes(ms1, 1);
 
     // Second page must not be mapped in child.
     TEST_CHECK(!IsMapped(ms2.addr()));
@@ -222,9 +222,9 @@ TEST(MadviseDontforkTest, DontforkAnonPrivate) {
     // page. The mapping is private so the modifications are not visible to
     // the parent.
     TEST_CHECK(IsMapped(mp1.addr()));
-    ExpectAllMappingBytes(mp1, 1);
+    CheckAllMappingBytes(mp1, 1);
     memset(mp1.ptr(), 11, kPageSize);
-    ExpectAllMappingBytes(mp1, 11);
+    CheckAllMappingBytes(mp1, 11);
 
     // Verify second page is not mapped.
     TEST_CHECK(!IsMapped(mp2.addr()));
@@ -233,9 +233,9 @@ TEST(MadviseDontforkTest, DontforkAnonPrivate) {
     // page. The mapping is private so the modifications are not visible to
     // the parent.
     TEST_CHECK(IsMapped(mp3.addr()));
-    ExpectAllMappingBytes(mp3, 3);
+    CheckAllMappingBytes(mp3, 3);
     memset(mp3.ptr(), 13, kPageSize);
-    ExpectAllMappingBytes(mp3, 13);
+    CheckAllMappingBytes(mp3, 13);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 

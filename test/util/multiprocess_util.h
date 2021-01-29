@@ -123,7 +123,8 @@ inline PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
 // Calls fn in a forked subprocess and returns the exit status of the
 // subprocess.
 //
-// fn must be async-signal-safe.
+// fn must be async-signal-safe. Use of ASSERT/EXPECT functions is prohibited.
+// Use TEST_CHECK variants instead.
 PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn);
 
 }  // namespace testing

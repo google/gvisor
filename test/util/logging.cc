@@ -69,9 +69,7 @@ int WriteNumber(int fd, uint32_t val) {
 }  // namespace
 
 void CheckFailure(const char* cond, size_t cond_size, const char* msg,
-                  size_t msg_size, bool include_errno) {
-  int saved_errno = errno;
-
+                  size_t msg_size, int errno_value) {
   constexpr char kCheckFailure[] = "Check failed: ";
   Write(2, kCheckFailure, sizeof(kCheckFailure) - 1);
   Write(2, cond, cond_size);
@@ -81,10 +79,10 @@ void CheckFailure(const char* cond, size_t cond_size, const char* msg,
     Write(2, msg, msg_size);
   }
 
-  if (include_errno) {
+  if (errno_value != 0) {
     constexpr char kErrnoMessage[] = " (errno ";
     Write(2, kErrnoMessage, sizeof(kErrnoMessage) - 1);
-    WriteNumber(2, saved_errno);
+    WriteNumber(2, errno_value);
     Write(2, ")", 1);
   }
 
