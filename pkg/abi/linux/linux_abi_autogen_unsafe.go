@@ -9048,9 +9048,9 @@ func (t *TCPInfo) MarshalBytes(dst []byte) {
     dst = dst[8:]
     usermem.ByteOrder.PutUint64(dst[:8], uint64(t.SndBufLimited))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(t.Delievered))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(t.Delivered))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(t.DelieveredCe))
+    usermem.ByteOrder.PutUint32(dst[:4], uint32(t.DeliveredCE))
     dst = dst[4:]
     usermem.ByteOrder.PutUint64(dst[:8], uint64(t.BytesSent))
     dst = dst[8:]
@@ -9156,9 +9156,9 @@ func (t *TCPInfo) UnmarshalBytes(src []byte) {
     src = src[8:]
     t.SndBufLimited = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    t.Delievered = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    t.Delivered = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    t.DelieveredCe = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    t.DeliveredCE = uint32(usermem.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     t.BytesSent = uint64(usermem.ByteOrder.Uint64(src[:8]))
     src = src[8:]
