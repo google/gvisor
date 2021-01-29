@@ -258,13 +258,8 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			highRxt:   iss,
 			rescueRxt: iss,
 		},
-		rc: rackControl{
-			fack: iss,
-		},
 		gso: ep.gso != nil,
 	}
-
-	s.rc.init()
 
 	if s.gso {
 		s.ep.gso.MSS = uint16(maxPayloadSize)
@@ -273,6 +268,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	s.cc = s.initCongestionControl(ep.cc)
 
 	s.lr = s.initLossRecovery()
+	s.rc.init(s, iss)
 
 	// A negative sndWndScale means that no scaling is in use, otherwise we
 	// store the scaling value.
@@ -1058,7 +1054,6 @@ func (s *sender) leaveRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.sndCwnd = s.sndSsthresh
-
 	s.cc.PostRecovery()
 }
 
@@ -1195,11 +1190,13 @@ func (s *sender) isDupAck(seg *segment) bool {
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 // steps 2 and 3.
 func (s *sender) walkSACK(rcvdSeg *segment) {
+	s.rc.setDSACKSeen(false)
+
 	// Look for DSACK block.
 	idx := 0
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
 	if checkDSACK(rcvdSeg) {
-		s.rc.setDSACKSeen()
+		s.rc.setDSACKSeen(true)
 		idx = 1
 		n--
 	}
@@ -1220,7 +1217,7 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 	for _, sb := range sackBlocks {
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
 			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
-				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
+				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
 				seg.acked = true
 				s.sackedOut += s.pCount(seg, s.maxPayloadSize)
@@ -1424,7 +1421,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			// Update the RACK fields if SACK is enabled.
 			if s.ep.sackPermitted && !seg.acked {
-				s.rc.update(seg, rcvdSeg, s.ep.tsOffset)
+				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
 			}
 
@@ -1454,6 +1451,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			s.cc.Update(originalOutstanding - s.outstanding)
 			if s.fr.last.LessThan(s.sndUna) {
 				s.state = tcpip.Open
+				// Update RACK when we are exiting fast or RTO
+				// recovery as described in the RFC
+				// draft-ietf-tcpm-rack-08 Section-7.2 Step 4.
+				s.rc.exitRecovery()
 			}
 		}
 
@@ -1476,6 +1477,12 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			s.rc.probeTimer.disable()
 		}
 	}
+
+	// Update RACK reorder window.
+	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
+	// * Upon receiving an ACK:
+	// * Step 4: Update RACK reordering window
+	s.rc.updateRACKReorderWindow(rcvdSeg)
 
 	// Now that we've popped all acknowledged data from the retransmit
 	// queue, retransmit if needed.
