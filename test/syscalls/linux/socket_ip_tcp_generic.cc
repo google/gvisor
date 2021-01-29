@@ -65,6 +65,9 @@ TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceeds) {
               SyscallSucceeds());
 }
 
+// Copied from include/net/tcp.h.
+constexpr int TCP_CA_OPEN = 0;
+
 TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -87,7 +90,7 @@ TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
               SyscallSucceeds());
 
   // Validates the received tcp_info fields.
-  EXPECT_EQ(opt.tcpi_ca_state, 0);
+  EXPECT_EQ(opt.tcpi_ca_state, TCP_CA_OPEN);
   EXPECT_GT(opt.tcpi_snd_cwnd, 0);
   EXPECT_GT(opt.tcpi_rto, 0);
 }
