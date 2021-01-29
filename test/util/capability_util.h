@@ -96,6 +96,19 @@ inline PosixError DropPermittedCapability(int cap) {
 
 PosixErrorOr<bool> CanCreateUserNamespace();
 
+class AutoCapability {
+ public:
+  AutoCapability(int cap, bool set) : cap_(cap), set_(set) {
+    EXPECT_NO_ERRNO(SetCapability(cap_, set_));
+  }
+
+  ~AutoCapability() { EXPECT_NO_ERRNO(SetCapability(cap_, !set_)); }
+
+ private:
+  int cap_;
+  bool set_;
+};
+
 }  // namespace testing
 }  // namespace gvisor
 #endif  // GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_

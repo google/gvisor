@@ -18,6 +18,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
@@ -341,6 +342,8 @@ TEST(ProcNetUnix, StreamSocketStateStateConnectedOnAccept) {
   int clientfd;
   ASSERT_THAT(clientfd = accept(sockets->first_fd(), nullptr, nullptr),
               SyscallSucceeds());
+  auto cleanup = Cleanup(
+      [clientfd]() { ASSERT_THAT(close(clientfd), SyscallSucceeds()); });
 
   // Find the entry for the accepted socket. UDS proc entries don't have a
   // remote address, so we distinguish the accepted socket from the listen
