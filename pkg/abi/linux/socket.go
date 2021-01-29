@@ -347,26 +347,57 @@ const SizeOfLinger = 8
 //
 // +marshal
 type TCPInfo struct {
-	State       uint8
-	CaState     uint8
+	// State is the state of the connection.
+	State uint8
+
+	// CaState is the congestion control state.
+	CaState uint8
+
+	// Retransmits is the number of retransmissions triggered by RTO.
 	Retransmits uint8
-	Probes      uint8
-	Backoff     uint8
-	Options     uint8
-	// WindowScale is the combination of snd_wscale (first 4 bits) and rcv_wscale (second 4 bits)
+
+	// Probes is the number of unanswered zero window probes.
+	Probes uint8
+
+	// BackOff indicates exponential backoff.
+	Backoff uint8
+
+	// Options indicates the options enabled for the connection.
+	Options uint8
+
+	// WindowScale is the combination of snd_wscale (first 4 bits) and
+	// rcv_wscale (second 4 bits)
 	WindowScale uint8
-	// DeliveryRateAppLimited is a boolean and only the first bit is meaningful.
+
+	// DeliveryRateAppLimited is a boolean and only the first bit is
+	// meaningful.
 	DeliveryRateAppLimited uint8
 
-	RTO    uint32
-	ATO    uint32
+	// RTO is the retransmission timeout.
+	RTO uint32
+
+	// ATO is the acknowledgement timeout interval.
+	ATO uint32
+
+	// SndMss is the send maximum segment size.
 	SndMss uint32
+
+	// RcvMss is the receive maximum segment size.
 	RcvMss uint32
 
+	// Unacked is the number of packets sent but not acknowledged.
 	Unacked uint32
-	Sacked  uint32
-	Lost    uint32
+
+	// Sacked is the number of packets which are selectively acknowledged.
+	Sacked uint32
+
+	// Lost is the number of packets marked as lost.
+	Lost uint32
+
+	// Retrans is the number of retransmitted packets.
 	Retrans uint32
+
+	// Fackets is not used and is always zero.
 	Fackets uint32
 
 	// Times.
@@ -385,48 +416,77 @@ type TCPInfo struct {
 	Advmss      uint32
 	Reordering  uint32
 
-	RcvRTT   uint32
+	// RcvRTT is the receiver round trip time.
+	RcvRTT uint32
+
+	// RcvSpace is the current buffer space available for receiving data.
 	RcvSpace uint32
 
+	// TotalRetrans is the total number of retransmits seen since the start
+	// of the connection.
 	TotalRetrans uint32
 
-	PacingRate    uint64
+	// PacingRate is the pacing rate in bytes per second.
+	PacingRate uint64
+
+	// MaxPacingRate is the maximum pacing rate.
 	MaxPacingRate uint64
+
 	// BytesAcked is RFC4898 tcpEStatsAppHCThruOctetsAcked.
 	BytesAcked uint64
+
 	// BytesReceived is RFC4898 tcpEStatsAppHCThruOctetsReceived.
 	BytesReceived uint64
+
 	// SegsOut is RFC4898 tcpEStatsPerfSegsOut.
 	SegsOut uint32
+
 	// SegsIn is RFC4898 tcpEStatsPerfSegsIn.
 	SegsIn uint32
 
+	// NotSentBytes is the amount of bytes in the write queue that are not
+	// yet sent.
 	NotSentBytes uint32
-	MinRTT       uint32
+
+	// MinRTT is the minimum round trip time seen in the connection.
+	MinRTT uint32
+
 	// DataSegsIn is RFC4898 tcpEStatsDataSegsIn.
 	DataSegsIn uint32
+
 	// DataSegsOut is RFC4898 tcpEStatsDataSegsOut.
 	DataSegsOut uint32
 
+	// DeliveryRate is the most recent delivery rate in bytes per second.
 	DeliveryRate uint64
 
 	// BusyTime is the time in microseconds busy sending data.
 	BusyTime uint64
+
 	// RwndLimited is the time in microseconds limited by receive window.
 	RwndLimited uint64
+
 	// SndBufLimited is the time in microseconds limited by send buffer.
 	SndBufLimited uint64
 
-	Delievered   uint32
-	DelieveredCe uint32
+	// Delivered is the total data packets delivered including retransmits.
+	Delivered uint32
+
+	// DeliveredCE is the total ECE marked data packets delivered including
+	// retransmits.
+	DeliveredCE uint32
 
 	// BytesSent is RFC4898 tcpEStatsPerfHCDataOctetsOut.
 	BytesSent uint64
+
 	// BytesRetrans is RFC4898 tcpEStatsPerfOctetsRetrans.
 	BytesRetrans uint64
+
 	// DSACKDups is RFC4898 tcpEStatsStackDSACKDups.
 	DSACKDups uint32
-	// ReordSeen is the number of reordering events seen.
+
+	// ReordSeen is the number of reordering events seen since the start of
+	// the connection.
 	ReordSeen uint32
 }
 
