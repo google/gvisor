@@ -114,20 +114,6 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 	}
 }
 
-func (f *packetsPendingLinkResolution) writePacketBuffer(r RouteInfo, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
-	switch pkt := pkt.(type) {
-	case *PacketBuffer:
-		if err := f.nic.writePacket(r, gso, proto, pkt); err != nil {
-			return 0, err
-		}
-		return 1, nil
-	case *PacketBufferList:
-		return f.nic.writePackets(r, gso, proto, *pkt)
-	default:
-		panic(fmt.Sprintf("unrecognized pending packet buffer type = %T", pkt))
-	}
-}
-
 // enqueue a packet to be sent once link resolution completes.
 //
 // If the maximum number of pending resolutions is reached, the packets
@@ -151,7 +137,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.N
 		// The route resolved immediately, so we don't need to wait for link
 		// resolution to send the packet.
 		f.mu.Unlock()
-		return f.writePacketBuffer(routeInfo, gso, proto, pkt)
+		return f.nic.writePacketBuffer(routeInfo, gso, proto, pkt)
 	case *tcpip.ErrWouldBlock:
 		// We need to wait for link resolution to complete.
 	default:
@@ -225,7 +211,7 @@ func (f *packetsPendingLinkResolution) dequeuePackets(packets []pendingPacket, l
 	for _, p := range packets {
 		if success {
 			p.routeInfo.RemoteLinkAddress = linkAddr
-			_, _ = f.writePacketBuffer(p.routeInfo, p.gso, p.proto, p.pkt)
+			_, _ = f.nic.writePacketBuffer(p.routeInfo, p.gso, p.proto, p.pkt)
 		} else {
 			f.incrementOutgoingPacketErrors(p.proto, p.pkt)
 
