@@ -57,7 +57,7 @@ import (
 // linkDispatcher reads packets from the link FD and dispatches them to the
 // NetworkDispatcher.
 type linkDispatcher interface {
-	dispatch() (bool, *tcpip.Error)
+	dispatch() (bool, tcpip.Error)
 }
 
 // PacketDispatchMode are the various supported methods of receiving and
@@ -118,7 +118,7 @@ type endpoint struct {
 
 	// closed is a function to be called when the FD's peer (if any) closes
 	// its end of the communication pipe.
-	closed func(*tcpip.Error)
+	closed func(tcpip.Error)
 
 	inboundDispatchers []linkDispatcher
 	dispatcher         stack.NetworkDispatcher
@@ -149,7 +149,7 @@ type Options struct {
 
 	// ClosedFunc is a function to be called when an endpoint's peer (if
 	// any) closes its end of the communication pipe.
-	ClosedFunc func(*tcpip.Error)
+	ClosedFunc func(tcpip.Error)
 
 	// Address is the link address for this endpoint. Only used if
 	// EthernetHeader is true.
@@ -411,7 +411,7 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.hdrSize > 0 {
 		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 	}
@@ -451,7 +451,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 	return rawfile.NonBlockingWriteIovec(fd, builder.Build())
 }
 
-func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tcpip.Error) {
+func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcpip.Error) {
 	// Send a batch of packets through batchFD.
 	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
 	for _, pkt := range batch {
@@ -518,7 +518,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, *tc
 //  - pkt.EgressRoute
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(_ stack.RouteInfo, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(_ stack.RouteInfo, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	// Preallocate to avoid repeated reallocation as we append to batch.
 	// batchSz is 47 because when SWGSO is in use then a single 65KB TCP
 	// segment can get split into 46 segments of 1420 bytes and a single 216
@@ -562,13 +562,13 @@ func viewsEqual(vs1, vs2 []buffer.View) bool {
 }
 
 // InjectOutobund implements stack.InjectableEndpoint.InjectOutbound.
-func (e *endpoint) InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error {
+func (e *endpoint) InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error {
 	return rawfile.NonBlockingWrite(e.fds[0], packet)
 }
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
 // them to the network stack.
-func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) *tcpip.Error {
+func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) tcpip.Error {
 	for {
 		cont, err := inboundDispatcher.dispatch()
 		if err != nil || !cont {

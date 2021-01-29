@@ -453,9 +453,9 @@ const (
 )
 
 // ScopeForIPv6Address returns the scope for an IPv6 address.
-func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
+func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, tcpip.Error) {
 	if len(addr) != IPv6AddressSize {
-		return GlobalScope, tcpip.ErrBadAddress
+		return GlobalScope, &tcpip.ErrBadAddress{}
 	}
 
 	switch {

@@ -257,7 +257,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 		name             string
 		netProto         tcpip.NetworkProtocolNumber
 		remoteAddr       tcpip.Address
-		expectedWriteErr *tcpip.Error
+		expectedWriteErr tcpip.Error
 		sockError        tcpip.SockError
 	}{
 		{
@@ -276,9 +276,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv4 without resolvable remote",
 			netProto:         ipv4.ProtocolNumber,
 			remoteAddr:       ipv4Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: tcpip.ErrNoRoute,
+			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
-				Err:       tcpip.ErrNoRoute,
+				Err:       &tcpip.ErrNoRoute{},
 				ErrType:   byte(header.ICMPv4DstUnreachable),
 				ErrCode:   byte(header.ICMPv4HostUnreachable),
 				ErrOrigin: tcpip.SockExtErrorOriginICMP,
@@ -298,9 +298,9 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			name:             "IPv6 without resolvable remote",
 			netProto:         ipv6.ProtocolNumber,
 			remoteAddr:       ipv6Addr3.AddressWithPrefix.Address,
-			expectedWriteErr: tcpip.ErrNoRoute,
+			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
-				Err:       tcpip.ErrNoRoute,
+				Err:       &tcpip.ErrNoRoute{},
 				ErrType:   byte(header.ICMPv6DstUnreachable),
 				ErrCode:   byte(header.ICMPv6AddressUnreachable),
 				ErrOrigin: tcpip.SockExtErrorOriginICMP6,
@@ -357,18 +357,24 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 
 			remoteAddr := listenerAddr
 			remoteAddr.Addr = test.remoteAddr
-			if err := clientEP.Connect(remoteAddr); err != tcpip.ErrConnectStarted {
-				t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", remoteAddr, err, tcpip.ErrConnectStarted)
+			{
+				err := clientEP.Connect(remoteAddr)
+				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", remoteAddr, err, &tcpip.ErrConnectStarted{})
+				}
 			}
 
 			// Wait for an error due to link resolution failing, or the endpoint to be
 			// writable.
 			<-ch
-			var r bytes.Reader
-			r.Reset([]byte{0})
-			var wOpts tcpip.WriteOptions
-			if n, err := clientEP.Write(&r, wOpts); err != test.expectedWriteErr {
-				t.Errorf("got clientEP.Write(_, %#v) = (%d, %s), want = (_, %s)", wOpts, n, err, test.expectedWriteErr)
+			{
+				var r bytes.Reader
+				r.Reset([]byte{0})
+				var wOpts tcpip.WriteOptions
+				_, err := clientEP.Write(&r, wOpts)
+				if diff := cmp.Diff(test.expectedWriteErr, err); diff != "" {
+					t.Errorf("unexpected error from clientEP.Write(_, %#v), (-want, +got):\n%s", wOpts, diff)
+				}
 			}
 
 			if test.expectedWriteErr == nil {
@@ -382,7 +388,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 
 			sockErrCmpOpts := []cmp.Option{
 				cmpopts.IgnoreUnexported(tcpip.SockError{}),
-				cmp.Comparer(func(a, b *tcpip.Error) bool {
+				cmp.Comparer(func(a, b tcpip.Error) bool {
 					// tcpip.Error holds an unexported field but the errors netstack uses
 					// are pre defined so we can simply compare pointers.
 					return a == b
@@ -455,10 +461,11 @@ func TestGetLinkAddress(t *testing.T) {
 					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
 
 					ch := make(chan stack.LinkResolutionResult, 1)
-					if err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+					err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
 						ch <- r
-					}); err != tcpip.ErrWouldBlock {
-						t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, tcpip.ErrWouldBlock)
+					})
+					if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+						t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
 					}
 					wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
 					if test.expectedOk {
@@ -572,10 +579,11 @@ func TestRouteResolvedFields(t *testing.T) {
 						wantUnresolvedRouteInfo := wantRouteInfo
 						wantUnresolvedRouteInfo.RemoteLinkAddress = ""
 
-						if err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
+						err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
 							ch <- r
-						}); err != tcpip.ErrWouldBlock {
-							t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, tcpip.ErrWouldBlock)
+						})
+						if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+							t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
 						}
 						if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: test.expectedSuccess}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
 							t.Errorf("route resolve result mismatch (-want +got):\n%s", diff)
@@ -618,7 +626,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 		name             string
 		netProto         tcpip.NetworkProtocolNumber
 		remoteAddr       tcpip.Address
-		expectedWriteErr *tcpip.Error
+		expectedWriteErr tcpip.Error
 	}{
 		{
 			name:             "IPv4",
@@ -705,7 +713,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				var rOpts tcpip.ReadOptions
 				res, err := serverEP.Read(&writer, rOpts)
 				if err != nil {
-					if err == tcpip.ErrWouldBlock {
+					if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 						// Should not have anymore bytes to read after we read the sent
 						// number of bytes.
 						if count == len(data) {
@@ -1034,10 +1042,11 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			// Add a reachable dynamic entry to our neighbor table for the remote.
 			{
 				ch := make(chan stack.LinkResolutionResult, 1)
-				if err := host1Stack.GetLinkAddress(host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+				err := host1Stack.GetLinkAddress(host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
 					ch <- r
-				}); err != tcpip.ErrWouldBlock {
-					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.neighborAddr, test.netProto, err, tcpip.ErrWouldBlock)
+				})
+				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.neighborAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
 				}
 				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: linkAddr2, Success: true}, <-ch); diff != "" {
 					t.Fatalf("link resolution mismatch (-want +got):\n%s", diff)
@@ -1088,8 +1097,11 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			if err := listenerEP.Listen(1); err != nil {
 				t.Fatalf("listenerEP.Listen(1): %s", err)
 			}
-			if err := clientEP.Connect(listenerAddr); err != tcpip.ErrConnectStarted {
-				t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", listenerAddr, err, tcpip.ErrConnectStarted)
+			{
+				err := clientEP.Connect(listenerAddr)
+				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", listenerAddr, err, &tcpip.ErrConnectStarted{})
+				}
 			}
 
 			// Wait for the TCP handshake to complete then make sure the neighbor is

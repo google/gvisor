@@ -20,34 +20,35 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func TestTranslateErrno(t *testing.T) {
 	for _, test := range []struct {
 		errno      syscall.Errno
-		translated *tcpip.Error
+		translated tcpip.Error
 	}{
 		{
 			errno:      syscall.Errno(0),
-			translated: tcpip.ErrInvalidEndpointState,
+			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
 			errno:      syscall.Errno(maxErrno),
-			translated: tcpip.ErrInvalidEndpointState,
+			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
 			errno:      syscall.Errno(514),
-			translated: tcpip.ErrInvalidEndpointState,
+			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
 			errno:      syscall.EEXIST,
-			translated: tcpip.ErrDuplicateAddress,
+			translated: &tcpip.ErrDuplicateAddress{},
 		},
 	} {
 		got := TranslateErrno(test.errno)
-		if got != test.translated {
-			t.Errorf("TranslateErrno(%q) = %q, want %q", test.errno, got, test.translated)
+		if diff := cmp.Diff(test.translated, got); diff != "" {
+			t.Errorf("unexpected result from TranslateErrno(%q), (-want, +got):\n%s", test.errno, diff)
 		}
 	}
 }

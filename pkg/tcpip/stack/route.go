@@ -331,7 +331,7 @@ type ResolvedFieldsResult struct {
 //
 // Note, the route will not cache the remote link address when address
 // resolution completes.
-func (r *Route) ResolvedFields(afterResolve func(ResolvedFieldsResult)) *tcpip.Error {
+func (r *Route) ResolvedFields(afterResolve func(ResolvedFieldsResult)) tcpip.Error {
 	_, _, err := r.resolvedFields(afterResolve)
 	return err
 }
@@ -342,7 +342,7 @@ func (r *Route) ResolvedFields(afterResolve func(ResolvedFieldsResult)) *tcpip.E
 //
 // The route's fields will also be returned, regardless of whether address
 // resolution is required or not.
-func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteInfo, <-chan struct{}, *tcpip.Error) {
+func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteInfo, <-chan struct{}, tcpip.Error) {
 	r.mu.RLock()
 	fields := r.fieldsLocked()
 	resolutionRequired := r.isResolutionRequiredRLocked()
@@ -429,9 +429,9 @@ func (r *Route) isValidForOutgoingRLocked() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error {
 	if !r.isValidForOutgoing() {
-		return tcpip.ErrInvalidEndpointState
+		return &tcpip.ErrInvalidEndpointState{}
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).WritePacket(r, gso, params, pkt)
@@ -439,9 +439,9 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt *PacketBuf
 
 // WritePackets writes a list of n packets through the given route and returns
 // the number of packets written.
-func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, *tcpip.Error) {
+func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error) {
 	if !r.isValidForOutgoing() {
-		return 0, tcpip.ErrInvalidEndpointState
+		return 0, &tcpip.ErrInvalidEndpointState{}
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).WritePackets(r, gso, pkts, params)
@@ -449,9 +449,9 @@ func (r *Route) WritePackets(gso *GSO, pkts PacketBufferList, params NetworkHead
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) tcpip.Error {
 	if !r.isValidForOutgoing() {
-		return tcpip.ErrInvalidEndpointState
+		return &tcpip.ErrInvalidEndpointState{}
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto).WriteHeaderIncludedPacket(r, pkt)

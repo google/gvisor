@@ -48,7 +48,7 @@ type ConnectingEndpoint interface {
 	Type() linux.SockType
 
 	// GetLocalAddress returns the bound path.
-	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// Locker protects the following methods. While locked, only the holder of
 	// the lock can change the return value of the protected methods.

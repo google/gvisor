@@ -37,7 +37,7 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 
 	// Start connection attempt, it must fail.
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if err != tcpip.ErrNoRoute {
+	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
 		t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 }
@@ -49,7 +49,7 @@ func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if err != tcpip.ErrConnectStarted {
+	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 		t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort})
-	if err != tcpip.ErrConnectStarted {
+	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 		t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 
@@ -391,7 +391,7 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	defer c.WQ.EventUnregister(&we)
 
 	nep, _, err := c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -525,7 +525,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 	var addr tcpip.FullAddress
 	_, _, err := c.EP.Accept(&addr)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -549,7 +549,7 @@ func TestV4AcceptOnV4(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
@@ -613,7 +613,7 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 	nep, _, err := c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -635,7 +635,7 @@ func TestV4ListenCloseOnV4(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)

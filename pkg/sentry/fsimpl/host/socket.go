@@ -201,7 +201,7 @@ func (c *ConnectedEndpoint) Passcred() bool {
 }
 
 // GetLocalAddress implements transport.ConnectedEndpoint.GetLocalAddress.
-func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 	return tcpip.FullAddress{Addr: tcpip.Address(c.addr)}, nil
 }
 

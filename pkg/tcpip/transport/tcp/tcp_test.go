@@ -48,7 +48,7 @@ type endpointTester struct {
 }
 
 // CheckReadError issues a read to the endpoint and checking for an error.
-func (e *endpointTester) CheckReadError(t *testing.T, want *tcpip.Error) {
+func (e *endpointTester) CheckReadError(t *testing.T, want tcpip.Error) {
 	t.Helper()
 	res, got := e.ep.Read(ioutil.Discard, tcpip.ReadOptions{})
 	if got != want {
@@ -87,7 +87,7 @@ func (e *endpointTester) CheckReadFull(t *testing.T, count int, notifyRead <-cha
 	}
 	for w.N != 0 {
 		_, err := e.ep.Read(&w, tcpip.ReadOptions{})
-		if err == tcpip.ErrWouldBlock {
+		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			// Wait for receive to be notified.
 			select {
 			case <-notifyRead:
@@ -128,8 +128,11 @@ func TestGiveUpConnect(t *testing.T) {
 	wq.EventRegister(&waitEntry, waiter.EventHUp)
 	defer wq.EventUnregister(&waitEntry)
 
-	if err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
-		t.Fatalf("got ep.Connect(...) = %s, want = %s", err, tcpip.ErrConnectStarted)
+	{
+		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+			t.Fatalf("got ep.Connect(...) = %v, want = %s", err, &tcpip.ErrConnectStarted{})
+		}
 	}
 
 	// Close the connection, wait for completion.
@@ -140,8 +143,11 @@ func TestGiveUpConnect(t *testing.T) {
 
 	// Call Connect again to retreive the handshake failure status
 	// and stats updates.
-	if err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrAborted {
-		t.Fatalf("got ep.Connect(...) = %s, want = %s", err, tcpip.ErrAborted)
+	{
+		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrAborted); !ok {
+			t.Fatalf("got ep.Connect(...) = %v, want = %s", err, &tcpip.ErrAborted{})
+		}
 	}
 
 	if got := c.Stack().Stats().TCP.FailedConnectionAttempts.Value(); got != 1 {
@@ -194,8 +200,11 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 	c.EP = ep
 	want := stats.TCP.FailedConnectionAttempts.Value() + 1
 
-	if err := c.EP.Connect(tcpip.FullAddress{NIC: 2, Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrNoRoute {
-		t.Errorf("got c.EP.Connect(...) = %s, want = %s", err, tcpip.ErrNoRoute)
+	{
+		err := c.EP.Connect(tcpip.FullAddress{NIC: 2, Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrNoRoute); !ok {
+			t.Errorf("got c.EP.Connect(...) = %v, want = %s", err, &tcpip.ErrNoRoute{})
+		}
 	}
 
 	if got := stats.TCP.FailedConnectionAttempts.Value(); got != want {
@@ -211,7 +220,7 @@ func TestCloseWithoutConnect(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -384,7 +393,7 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -925,8 +934,11 @@ func TestUserSuppliedMSSOnConnect(t *testing.T) {
 					ws := tcp.FindWndScale(seqnum.Size(rcvBufSize))
 
 					connectAddr := tcpip.FullAddress{Addr: ip.connectAddr, Port: context.TestPort}
-					if err := c.EP.Connect(connectAddr); err != tcpip.ErrConnectStarted {
-						t.Fatalf("Connect(%+v): %s", connectAddr, err)
+					{
+						err := c.EP.Connect(connectAddr)
+						if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+							t.Fatalf("Connect(%+v): %s", connectAddr, err)
+						}
 					}
 
 					// Receive SYN packet with our user supplied MSS.
@@ -1442,7 +1454,8 @@ func TestConnectBindToDevice(t *testing.T) {
 			c.WQ.EventRegister(&waitEntry, waiter.EventOut)
 			defer c.WQ.EventUnregister(&waitEntry)
 
-			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
+			err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 				t.Fatalf("unexpected return value from Connect: %s", err)
 			}
 
@@ -1502,8 +1515,9 @@ func TestSynSent(t *testing.T) {
 			defer c.WQ.EventUnregister(&waitEntry)
 
 			addr := tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}
-			if err := c.EP.Connect(addr); err != tcpip.ErrConnectStarted {
-				t.Fatalf("got Connect(%+v) = %s, want %s", addr, err, tcpip.ErrConnectStarted)
+			err := c.EP.Connect(addr)
+			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+				t.Fatalf("got Connect(%+v) = %v, want %s", addr, err, &tcpip.ErrConnectStarted{})
 			}
 
 			// Receive SYN packet.
@@ -1548,9 +1562,9 @@ func TestSynSent(t *testing.T) {
 
 			ept := endpointTester{c.EP}
 			if test.reset {
-				ept.CheckReadError(t, tcpip.ErrConnectionRefused)
+				ept.CheckReadError(t, &tcpip.ErrConnectionRefused{})
 			} else {
-				ept.CheckReadError(t, tcpip.ErrAborted)
+				ept.CheckReadError(t, &tcpip.ErrAborted{})
 			}
 
 			if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
@@ -1576,7 +1590,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Send second half of data first, with seqnum 3 ahead of expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1601,7 +1615,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 
 	// Wait 200ms and check that no data has been received.
 	time.Sleep(200 * time.Millisecond)
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Send the first 3 bytes now.
 	c.SendPacket(data[:3], &context.Headers{
@@ -1640,7 +1654,7 @@ func TestOutOfOrderFlood(t *testing.T) {
 	c.CreateConnected(789, 30000, rcvBufSz)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Send 100 packets before the actual one that is expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
@@ -1716,7 +1730,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -1784,7 +1798,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -1866,13 +1880,13 @@ func TestShutdownRead(t *testing.T) {
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
 		t.Fatalf("Shutdown failed: %s", err)
 	}
 
-	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
+	ept.CheckReadError(t, &tcpip.ErrClosedForReceive{})
 	var want uint64 = 1
 	if got := c.EP.Stats().(*tcp.Stats).ReadErrors.ReadClosed.Value(); got != want {
 		t.Fatalf("got EP stats Stats.ReadErrors.ReadClosed got %d want %d", got, want)
@@ -1891,7 +1905,7 @@ func TestFullWindowReceive(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Fill up the window w/ tcp.SegOverheadFactor*rcvBufSz as netstack multiplies
 	// the provided buffer value by tcp.SegOverheadFactor to calculate the actual
@@ -2052,7 +2066,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Send a 1 byte payload so that we can record the current receive window.
 	// Send a payload of half the size of rcvBufSize.
@@ -2370,7 +2384,7 @@ func TestScaledWindowAccept(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -2443,7 +2457,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -2958,7 +2972,7 @@ func TestSetTTL(t *testing.T) {
 			c := context.New(t, 65535)
 			defer c.Cleanup()
 
-			var err *tcpip.Error
+			var err tcpip.Error
 			c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %s", err)
@@ -2968,8 +2982,11 @@ func TestSetTTL(t *testing.T) {
 				t.Fatalf("SetSockOptInt(TTLOption, %d) failed: %s", wantTTL, err)
 			}
 
-			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
-				t.Fatalf("unexpected return value from Connect: %s", err)
+			{
+				err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+					t.Fatalf("unexpected return value from Connect: %s", err)
+				}
 			}
 
 			// Receive SYN packet.
@@ -3029,7 +3046,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -3085,7 +3102,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -3110,9 +3127,9 @@ func TestForwarderSendMSSLessThanMTU(t *testing.T) {
 	defer c.Cleanup()
 
 	s := c.Stack()
-	ch := make(chan *tcpip.Error, 1)
+	ch := make(chan tcpip.Error, 1)
 	f := tcp.NewForwarder(s, 65536, 10, func(r *tcp.ForwarderRequest) {
-		var err *tcpip.Error
+		var err tcpip.Error
 		c.EP, err = r.CreateEndpoint(&c.WQ)
 		ch <- err
 	})
@@ -3141,7 +3158,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -3160,8 +3177,11 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventOut)
 	defer c.WQ.EventUnregister(&we)
 
-	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
-		t.Fatalf("got c.EP.Connect(...) = %s, want = %s", err, tcpip.ErrConnectStarted)
+	{
+		err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+			t.Fatalf("got c.EP.Connect(...) = %v, want = %s", err, &tcpip.ErrConnectStarted{})
+		}
 	}
 
 	// Receive SYN packet.
@@ -3271,22 +3291,23 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 loop:
 	for {
-		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err {
-		case tcpip.ErrWouldBlock:
+		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err.(type) {
+		case *tcpip.ErrWouldBlock:
 			select {
 			case <-ch:
 				// Expect the state to be StateError and subsequent Reads to fail with HardError.
-				if _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err != tcpip.ErrConnectionReset {
-					t.Fatalf("got c.EP.Read() = %s, want = %s", err, tcpip.ErrConnectionReset)
+				_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
+				if _, ok := err.(*tcpip.ErrConnectionReset); !ok {
+					t.Fatalf("got c.EP.Read() = %v, want = %s", err, &tcpip.ErrConnectionReset{})
 				}
 				break loop
 			case <-time.After(1 * time.Second):
 				t.Fatalf("Timed out waiting for reset to arrive")
 			}
-		case tcpip.ErrConnectionReset:
+		case *tcpip.ErrConnectionReset:
 			break loop
 		default:
-			t.Fatalf("got c.EP.Read(nil) = %s, want = %s", err, tcpip.ErrConnectionReset)
+			t.Fatalf("got c.EP.Read(nil) = %v, want = %s", err, &tcpip.ErrConnectionReset{})
 		}
 	}
 
@@ -3325,8 +3346,9 @@ func TestSendOnResetConnection(t *testing.T) {
 	// Try to write.
 	var r bytes.Reader
 	r.Reset(make([]byte, 10))
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != tcpip.ErrConnectionReset {
-		t.Fatalf("got c.EP.Write(...) = %s, want = %s", err, tcpip.ErrConnectionReset)
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if _, ok := err.(*tcpip.ErrConnectionReset); !ok {
+		t.Fatalf("got c.EP.Write(...) = %v, want = %s", err, &tcpip.ErrConnectionReset{})
 	}
 }
 
@@ -4184,7 +4206,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Shutdown immediately for write, check that we get a FIN.
 	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
@@ -4263,10 +4285,13 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Now that we drained the queue, check that functions fail with the
 	// right error code.
-	ept.CheckReadError(t, tcpip.ErrClosedForReceive)
+	ept.CheckReadError(t, &tcpip.ErrClosedForReceive{})
 	var buf bytes.Buffer
-	if _, err := c.EP.Read(&buf, tcpip.ReadOptions{Peek: true}); err != tcpip.ErrClosedForReceive {
-		t.Fatalf("c.EP.Read(_, {Peek: true}) = %v, %s; want _, %s", res, err, tcpip.ErrClosedForReceive)
+	{
+		_, err := c.EP.Read(&buf, tcpip.ReadOptions{Peek: true})
+		if _, ok := err.(*tcpip.ErrClosedForReceive); !ok {
+			t.Fatalf("c.EP.Read(_, {Peek: true}) = %v, %s; want _, %s", res, err, &tcpip.ErrClosedForReceive{})
+		}
 	}
 }
 
@@ -4277,7 +4302,7 @@ func TestReusePort(t *testing.T) {
 	defer c.Cleanup()
 
 	// First case, just an endpoint that was bound.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %s", err)
@@ -4307,8 +4332,11 @@ func TestReusePort(t *testing.T) {
 	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
-	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
-		t.Fatalf("got c.EP.Connect(...) = %s, want = %s", err, tcpip.ErrConnectStarted)
+	{
+		err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+			t.Fatalf("got c.EP.Connect(...) = %v, want = %s", err, &tcpip.ErrConnectStarted{})
+		}
 	}
 	c.EP.Close()
 
@@ -4515,11 +4543,11 @@ func TestBindToDeviceOption(t *testing.T) {
 	testActions := []struct {
 		name                 string
 		setBindToDevice      *tcpip.NICID
-		setBindToDeviceError *tcpip.Error
+		setBindToDeviceError tcpip.Error
 		getBindToDevice      int32
 	}{
 		{"GetDefaultValue", nil, nil, 0},
-		{"BindToNonExistent", nicIDPtr(999), tcpip.ErrUnknownDevice, 0},
+		{"BindToNonExistent", nicIDPtr(999), &tcpip.ErrUnknownDevice{}, 0},
 		{"BindToExistent", nicIDPtr(321), nil, 321},
 		{"UnbindToDevice", nicIDPtr(0), nil, 0},
 	}
@@ -4539,7 +4567,7 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 }
 
-func makeStack() (*stack.Stack, *tcpip.Error) {
+func makeStack() (*stack.Stack, tcpip.Error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
@@ -4609,8 +4637,11 @@ func TestSelfConnect(t *testing.T) {
 	wq.EventRegister(&waitEntry, waiter.EventOut)
 	defer wq.EventUnregister(&waitEntry)
 
-	if err := ep.Connect(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != tcpip.ErrConnectStarted {
-		t.Fatalf("got ep.Connect(...) = %s, want = %s", err, tcpip.ErrConnectStarted)
+	{
+		err := ep.Connect(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort})
+		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+			t.Fatalf("got ep.Connect(...) = %v, want = %s", err, &tcpip.ErrConnectStarted{})
+		}
 	}
 
 	<-notifyCh
@@ -4762,9 +4793,9 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 													t.Fatalf("Bind(%d) failed: %s", i, err)
 												}
 											}
-											want := tcpip.ErrConnectStarted
+											var want tcpip.Error = &tcpip.ErrConnectStarted{}
 											if collides {
-												want = tcpip.ErrNoPortAvailable
+												want = &tcpip.ErrNoPortAvailable{}
 											}
 											if err := makeEP(candidateNetwork).Connect(tcpip.FullAddress{Addr: address(t, candidateAddressType, false), Port: 31337}); err != want {
 												t.Fatalf("got ep.Connect(..) = %s, want = %s", err, want)
@@ -4889,11 +4920,11 @@ func TestTCPEndpointProbe(t *testing.T) {
 func TestStackSetCongestionControl(t *testing.T) {
 	testCases := []struct {
 		cc  tcpip.CongestionControlOption
-		err *tcpip.Error
+		err tcpip.Error
 	}{
 		{"reno", nil},
 		{"cubic", nil},
-		{"blahblah", tcpip.ErrNoSuchFile},
+		{"blahblah", &tcpip.ErrNoSuchFile{}},
 	}
 
 	for _, tc := range testCases {
@@ -4975,11 +5006,11 @@ func TestStackSetAvailableCongestionControl(t *testing.T) {
 func TestEndpointSetCongestionControl(t *testing.T) {
 	testCases := []struct {
 		cc  tcpip.CongestionControlOption
-		err *tcpip.Error
+		err tcpip.Error
 	}{
 		{"reno", nil},
 		{"cubic", nil},
-		{"blahblah", tcpip.ErrNoSuchFile},
+		{"blahblah", &tcpip.ErrNoSuchFile{}},
 	}
 
 	for _, connected := range []bool{false, true} {
@@ -4989,7 +5020,7 @@ func TestEndpointSetCongestionControl(t *testing.T) {
 				defer c.Cleanup()
 
 				// Create TCP endpoint.
-				var err *tcpip.Error
+				var err tcpip.Error
 				c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 				if err != nil {
 					t.Fatalf("NewEndpoint failed: %s", err)
@@ -5085,7 +5116,7 @@ func TestKeepalive(t *testing.T) {
 
 	// Check that the connection is still alive.
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Send some data and wait before ACKing it. Keepalives should be disabled
 	// during this period.
@@ -5176,7 +5207,7 @@ func TestKeepalive(t *testing.T) {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout.Value() = %d, want = 1", got)
 	}
 
-	ept.CheckReadError(t, tcpip.ErrTimeout)
+	ept.CheckReadError(t, &tcpip.ErrTimeout{})
 
 	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
 		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
@@ -5283,7 +5314,7 @@ func TestListenBacklogFull(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -5326,7 +5357,7 @@ func TestListenBacklogFull(t *testing.T) {
 
 	for i := 0; i < listenBacklog; i++ {
 		_, _, err = c.EP.Accept(nil)
-		if err == tcpip.ErrWouldBlock {
+		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			// Wait for connection to be established.
 			select {
 			case <-ch:
@@ -5343,7 +5374,7 @@ func TestListenBacklogFull(t *testing.T) {
 
 	// Now verify that there are no more connections that can be accepted.
 	_, _, err = c.EP.Accept(nil)
-	if err != tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		select {
 		case <-ch:
 			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
@@ -5355,7 +5386,7 @@ func TestListenBacklogFull(t *testing.T) {
 	executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 
 	newEP, _, err := c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -5598,7 +5629,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -5673,7 +5704,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	newEP, _, err := c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -5709,7 +5740,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	}
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -5750,7 +5781,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	_, _, err = c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -5766,7 +5797,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 
 	// Now verify that there are no more connections that can be accepted.
 	_, _, err = c.EP.Accept(nil)
-	if err != tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		select {
 		case <-ch:
 			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
@@ -5780,7 +5811,7 @@ func TestSYNRetransmit(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -5824,7 +5855,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create TCP endpoint.
-	var err *tcpip.Error
+	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %s", err)
@@ -5899,12 +5930,13 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	})
 
 	newEP, _, err := c.EP.Accept(nil)
-
-	if err != nil && err != tcpip.ErrWouldBlock {
+	switch err.(type) {
+	case nil, *tcpip.ErrWouldBlock:
+	default:
 		t.Fatalf("Accept failed: %s", err)
 	}
 
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Try to accept the connections in the backlog.
 		we, ch := waiter.NewChannelEntry(nil)
 		c.WQ.EventRegister(&we, waiter.EventIn)
@@ -5972,7 +6004,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 
 	// Verify that there is only one acceptable connection at this point.
 	_, _, err = c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6042,7 +6074,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 
 	// Now check that there is one acceptable connections.
 	_, _, err = c.EP.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6074,7 +6106,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	}
 
 	ept := endpointTester{ep}
-	ept.CheckReadError(t, tcpip.ErrNotConnected)
+	ept.CheckReadError(t, &tcpip.ErrNotConnected{})
 	if got := ep.Stats().(*tcp.Stats).ReadErrors.NotConnected.Value(); got != 1 {
 		t.Errorf("got EP stats Stats.ReadErrors.NotConnected got %d want %d", got, 1)
 	}
@@ -6094,7 +6126,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	aep, _, err := ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6110,8 +6142,11 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	if got, want := tcp.EndpointState(aep.State()), tcp.StateEstablished; got != want {
 		t.Errorf("unexpected endpoint state: want %s, got %s", want, got)
 	}
-	if err := aep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrAlreadyConnected {
-		t.Errorf("unexpected error attempting to call connect on an established endpoint, got: %s, want: %s", err, tcpip.ErrAlreadyConnected)
+	{
+		err := aep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if _, ok := err.(*tcpip.ErrAlreadyConnected); !ok {
+			t.Errorf("unexpected error attempting to call connect on an established endpoint, got: %v, want: %s", err, &tcpip.ErrAlreadyConnected{})
+		}
 	}
 	// Listening endpoint remains in listen state.
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
@@ -6230,7 +6265,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// window increases to the full available buffer size.
 	for {
 		_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-		if err == tcpip.ErrWouldBlock {
+		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			break
 		}
 	}
@@ -6354,7 +6389,7 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		totalCopied := 0
 		for {
 			res, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-			if err == tcpip.ErrWouldBlock {
+			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 				break
 			}
 			totalCopied += res.Count
@@ -6546,7 +6581,7 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6665,7 +6700,7 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6772,7 +6807,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6862,7 +6897,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 
 	// Try to accept the connection.
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -6936,7 +6971,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7086,7 +7121,7 @@ func TestTCPCloseWithData(t *testing.T) {
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -7277,7 +7312,7 @@ func TestTCPUserTimeout(t *testing.T) {
 	)
 
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrTimeout)
+	ept.CheckReadError(t, &tcpip.ErrTimeout{})
 
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
@@ -7321,7 +7356,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 
 	// Check that the connection is still alive.
 	ept := endpointTester{c.EP}
-	ept.CheckReadError(t, tcpip.ErrWouldBlock)
+	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
 	// Now receive 1 keepalives, but don't ACK it.
 	b := c.GetPacket()
@@ -7360,7 +7395,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		),
 	)
 
-	ept.CheckReadError(t, tcpip.ErrTimeout)
+	ept.CheckReadError(t, &tcpip.ErrTimeout{})
 	if got, want := c.Stack().Stats().TCP.EstablishedTimedout.Value(), origEstablishedTimedout+1; got != want {
 		t.Errorf("got c.Stack().Stats().TCP.EstablishedTimedout = %d, want = %d", got, want)
 	}
@@ -7515,8 +7550,9 @@ func TestTCPDeferAccept(t *testing.T) {
 
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
-	if _, _, err := c.EP.Accept(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Accept(nil) = %s, want: %s", err, tcpip.ErrWouldBlock)
+	_, _, err := c.EP.Accept(nil)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("got c.EP.Accept(nil) = %v, want: %s", err, &tcpip.ErrWouldBlock{})
 	}
 
 	// Send data. This should result in an acceptable endpoint.
@@ -7573,8 +7609,9 @@ func TestTCPDeferAcceptTimeout(t *testing.T) {
 
 	irs, iss := executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
 
-	if _, _, err := c.EP.Accept(nil); err != tcpip.ErrWouldBlock {
-		t.Fatalf("got c.EP.Accept(nil) = %s, want: %s", err, tcpip.ErrWouldBlock)
+	_, _, err := c.EP.Accept(nil)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("got c.EP.Accept(nil) = %v, want: %s", err, &tcpip.ErrWouldBlock{})
 	}
 
 	// Sleep for a little of the tcpDeferAccept timeout.
@@ -7696,13 +7733,13 @@ func TestSetStackTimeWaitReuse(t *testing.T) {
 	s := c.Stack()
 	testCases := []struct {
 		v   int
-		err *tcpip.Error
+		err tcpip.Error
 	}{
 		{int(tcpip.TCPTimeWaitReuseDisabled), nil},
 		{int(tcpip.TCPTimeWaitReuseGlobal), nil},
 		{int(tcpip.TCPTimeWaitReuseLoopbackOnly), nil},
-		{int(tcpip.TCPTimeWaitReuseLoopbackOnly) + 1, tcpip.ErrInvalidOptionValue},
-		{int(tcpip.TCPTimeWaitReuseDisabled) - 1, tcpip.ErrInvalidOptionValue},
+		{int(tcpip.TCPTimeWaitReuseLoopbackOnly) + 1, &tcpip.ErrInvalidOptionValue{}},
+		{int(tcpip.TCPTimeWaitReuseDisabled) - 1, &tcpip.ErrInvalidOptionValue{}},
 	}
 
 	for _, tc := range testCases {

@@ -231,7 +231,9 @@ func (n *NIC) disableLocked() {
 	//
 	// This matches linux's behaviour at the time of writing:
 	// https://github.com/torvalds/linux/blob/71c061d2443814de15e177489d5cc00a4a253ef3/net/core/neighbour.c#L371
-	if err := n.clearNeighbors(); err != nil && err != tcpip.ErrNotSupported {
+	switch err := n.clearNeighbors(); err.(type) {
+	case nil, *tcpip.ErrNotSupported:
+	default:
 		panic(fmt.Sprintf("n.clearNeighbors(): %s", err))
 	}
 
@@ -246,7 +248,7 @@ func (n *NIC) disableLocked() {
 // address (ff02::1), start DAD for permanent addresses, and start soliciting
 // routers if the stack is not operating as a router. If the stack is also
 // configured to auto-generate a link-local address, one will be generated.
-func (n *NIC) enable() *tcpip.Error {
+func (n *NIC) enable() tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -266,7 +268,7 @@ func (n *NIC) enable() *tcpip.Error {
 // remove detaches NIC from the link endpoint and releases network endpoint
 // resources. This guarantees no packets between this NIC and the network
 // stack.
-func (n *NIC) remove() *tcpip.Error {
+func (n *NIC) remove() tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -302,11 +304,12 @@ func (n *NIC) IsLoopback() bool {
 }
 
 // WritePacket implements NetworkLinkEndpoint.
-func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
 	return err
 }
-func (n *NIC) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, *tcpip.Error) {
+
+func (n *NIC) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	// As per relevant RFCs, we should queue packets while we wait for link
 	// resolution to complete.
 	//
@@ -328,14 +331,14 @@ func (n *NIC) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProt
 }
 
 // WritePacketToRemote implements NetworkInterface.
-func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (n *NIC) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	var r RouteInfo
 	r.NetProto = protocol
 	r.RemoteLinkAddress = remoteLinkAddr
 	return n.writePacket(r, gso, protocol, pkt)
 }
 
-func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) *tcpip.Error {
+func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
@@ -352,11 +355,11 @@ func (n *NIC) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 }
 
 // WritePackets implements NetworkLinkEndpoint.
-func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (n *NIC) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	return n.enqueuePacketBuffer(r, gso, protocol, &pkts)
 }
 
-func (n *NIC) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, *tcpip.Error) {
+func (n *NIC) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		pkt.EgressRoute = r
 		pkt.GSOOptions = gso
@@ -472,15 +475,15 @@ func (n *NIC) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, 
 
 // addAddress adds a new address to n, so that it starts accepting packets
 // targeted at the given address (and network protocol).
-func (n *NIC) addAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
+func (n *NIC) addAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) tcpip.Error {
 	ep, ok := n.networkEndpoints[protocolAddress.Protocol]
 	if !ok {
-		return tcpip.ErrUnknownProtocol
+		return &tcpip.ErrUnknownProtocol{}
 	}
 
 	addressableEndpoint, ok := ep.(AddressableEndpoint)
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	addressEndpoint, err := addressableEndpoint.AddAndAcquirePermanentAddress(protocolAddress.AddressWithPrefix, peb, AddressConfigStatic, false /* deprecated */)
@@ -544,21 +547,22 @@ func (n *NIC) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWit
 }
 
 // removeAddress removes an address from n.
-func (n *NIC) removeAddress(addr tcpip.Address) *tcpip.Error {
+func (n *NIC) removeAddress(addr tcpip.Address) tcpip.Error {
 	for _, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
 		if !ok {
 			continue
 		}
 
-		if err := addressableEndpoint.RemovePermanentAddress(addr); err == tcpip.ErrBadLocalAddress {
+		switch err := addressableEndpoint.RemovePermanentAddress(addr); err.(type) {
+		case *tcpip.ErrBadLocalAddress:
 			continue
-		} else {
+		default:
 			return err
 		}
 	}
 
-	return tcpip.ErrBadLocalAddress
+	return &tcpip.ErrBadLocalAddress{}
 }
 
 func (n *NIC) confirmReachable(addr tcpip.Address) {
@@ -567,7 +571,7 @@ func (n *NIC) confirmReachable(addr tcpip.Address) {
 	}
 }
 
-func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
 	if n.neigh != nil {
 		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
 		return entry.LinkAddr, ch, err
@@ -576,37 +580,37 @@ func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes Link
 	return n.linkAddrCache.get(addr, linkRes, localAddr, n, onResolve)
 }
 
-func (n *NIC) neighbors() ([]NeighborEntry, *tcpip.Error) {
+func (n *NIC) neighbors() ([]NeighborEntry, tcpip.Error) {
 	if n.neigh == nil {
-		return nil, tcpip.ErrNotSupported
+		return nil, &tcpip.ErrNotSupported{}
 	}
 
 	return n.neigh.entries(), nil
 }
 
-func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) *tcpip.Error {
+func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) tcpip.Error {
 	if n.neigh == nil {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	n.neigh.addStaticEntry(addr, linkAddress)
 	return nil
 }
 
-func (n *NIC) removeNeighbor(addr tcpip.Address) *tcpip.Error {
+func (n *NIC) removeNeighbor(addr tcpip.Address) tcpip.Error {
 	if n.neigh == nil {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	if !n.neigh.removeEntry(addr) {
-		return tcpip.ErrBadAddress
+		return &tcpip.ErrBadAddress{}
 	}
 	return nil
 }
 
-func (n *NIC) clearNeighbors() *tcpip.Error {
+func (n *NIC) clearNeighbors() tcpip.Error {
 	if n.neigh == nil {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	n.neigh.clear()
@@ -615,7 +619,7 @@ func (n *NIC) clearNeighbors() *tcpip.Error {
 
 // joinGroup adds a new endpoint for the given multicast address, if none
 // exists yet. Otherwise it just increments its count.
-func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
+func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	// TODO(b/143102137): When implementing MLD, make sure MLD packets are
 	// not sent unless a valid link-local address is available for use on n
 	// as an MLD packet's source address must be a link-local address as
@@ -623,12 +627,12 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	gep, ok := ep.(GroupAddressableEndpoint)
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	return gep.JoinGroup(addr)
@@ -636,15 +640,15 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 
 // leaveGroup decrements the count for the given multicast address, and when it
 // reaches zero removes the endpoint for this address.
-func (n *NIC) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
+func (n *NIC) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	ep, ok := n.networkEndpoints[protocol]
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	gep, ok := ep.(GroupAddressableEndpoint)
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 
 	return gep.LeaveGroup(addr)
@@ -894,9 +898,9 @@ func (n *NIC) Name() string {
 }
 
 // nudConfigs gets the NUD configurations for n.
-func (n *NIC) nudConfigs() (NUDConfigurations, *tcpip.Error) {
+func (n *NIC) nudConfigs() (NUDConfigurations, tcpip.Error) {
 	if n.neigh == nil {
-		return NUDConfigurations{}, tcpip.ErrNotSupported
+		return NUDConfigurations{}, &tcpip.ErrNotSupported{}
 	}
 	return n.neigh.config(), nil
 }
@@ -905,22 +909,22 @@ func (n *NIC) nudConfigs() (NUDConfigurations, *tcpip.Error) {
 //
 // Note, if c contains invalid NUD configuration values, it will be fixed to
 // use default values for the erroneous values.
-func (n *NIC) setNUDConfigs(c NUDConfigurations) *tcpip.Error {
+func (n *NIC) setNUDConfigs(c NUDConfigurations) tcpip.Error {
 	if n.neigh == nil {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 	c.resetInvalidFields()
 	n.neigh.setConfig(c)
 	return nil
 }
 
-func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) *tcpip.Error {
+func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
 	eps, ok := n.mu.packetEPs[netProto]
 	if !ok {
-		return tcpip.ErrNotSupported
+		return &tcpip.ErrNotSupported{}
 	}
 	eps.add(ep)
 

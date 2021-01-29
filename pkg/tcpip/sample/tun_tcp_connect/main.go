@@ -175,7 +175,7 @@ func main() {
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 	wq.EventRegister(&waitEntry, waiter.EventOut)
 	terr := ep.Connect(remote)
-	if terr == tcpip.ErrConnectStarted {
+	if _, ok := terr.(*tcpip.ErrConnectStarted); ok {
 		fmt.Println("Connect is pending...")
 		<-notifyCh
 		terr = ep.LastError()
@@ -198,11 +198,11 @@ func main() {
 	for {
 		_, err := ep.Read(os.Stdout, tcpip.ReadOptions{})
 		if err != nil {
-			if err == tcpip.ErrClosedForReceive {
+			if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
 				break
 			}
 
-			if err == tcpip.ErrWouldBlock {
+			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 				<-notifyCh
 				continue
 			}

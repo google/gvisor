@@ -52,7 +52,7 @@ func GetMTU(name string) (uint32, error) {
 
 // NonBlockingWrite writes the given buffer to a file descriptor. It fails if
 // partial data is written.
-func NonBlockingWrite(fd int, buf []byte) *tcpip.Error {
+func NonBlockingWrite(fd int, buf []byte) tcpip.Error {
 	var ptr unsafe.Pointer
 	if len(buf) > 0 {
 		ptr = unsafe.Pointer(&buf[0])
@@ -68,7 +68,7 @@ func NonBlockingWrite(fd int, buf []byte) *tcpip.Error {
 
 // NonBlockingWriteIovec writes iovec to a file descriptor in a single syscall.
 // It fails if partial data is written.
-func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) *tcpip.Error {
+func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) tcpip.Error {
 	iovecLen := uintptr(len(iovec))
 	_, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
 	if e != 0 {
@@ -78,7 +78,7 @@ func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) *tcpip.Error {
 }
 
 // NonBlockingSendMMsg sends multiple messages on a socket.
-func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
+func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
 	n, _, e := syscall.RawSyscall6(unix.SYS_SENDMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
 	if e != 0 {
 		return 0, TranslateErrno(e)
@@ -97,7 +97,7 @@ type PollEvent struct {
 // BlockingRead reads from a file descriptor that is set up as non-blocking. If
 // no data is available, it will block in a poll() syscall until the file
 // descriptor becomes readable.
-func BlockingRead(fd int, b []byte) (int, *tcpip.Error) {
+func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 	for {
 		n, _, e := syscall.RawSyscall(syscall.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
 		if e == 0 {
@@ -119,7 +119,7 @@ func BlockingRead(fd int, b []byte) (int, *tcpip.Error) {
 // BlockingReadv reads from a file descriptor that is set up as non-blocking and
 // stores the data in a list of iovecs buffers. If no data is available, it will
 // block in a poll() syscall until the file descriptor becomes readable.
-func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, *tcpip.Error) {
+func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, tcpip.Error) {
 	for {
 		n, _, e := syscall.RawSyscall(syscall.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 		if e == 0 {
@@ -149,7 +149,7 @@ type MMsgHdr struct {
 // and stores the received messages in a slice of MMsgHdr structures. If no data
 // is available, it will block in a poll() syscall until the file descriptor
 // becomes readable.
-func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
+func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
 	for {
 		n, _, e := syscall.RawSyscall6(syscall.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
 		if e == 0 {

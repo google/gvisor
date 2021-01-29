@@ -241,7 +241,7 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error)
+	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err tcpip.Error)
 
 	// OnDefaultRouterDiscovered is called when a new default router is
 	// discovered. Implementations must return true if the newly discovered
@@ -614,10 +614,10 @@ type slaacPrefixState struct {
 // tentative.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) *tcpip.Error {
+func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
-		return tcpip.ErrAddressFamilyNotSupported
+		return &tcpip.ErrAddressFamilyNotSupported{}
 	}
 
 	if addressEndpoint.GetKind() != stack.PermanentTentative {
@@ -666,7 +666,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 
 			dadDone := remaining == 0
 
-			var err *tcpip.Error
+			var err tcpip.Error
 			if !dadDone {
 				err = ndp.sendDADPacket(addr, addressEndpoint)
 			}
@@ -717,7 +717,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 // addr.
 //
 // addr must be a tentative IPv6 address on ndp's IPv6 endpoint.
-func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) *tcpip.Error {
+func (ndp *ndpState) sendDADPacket(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 
 	icmp := header.ICMPv6(buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize))

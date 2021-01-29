@@ -237,7 +237,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 				//
 				// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 				// address is detected for an assigned address.
-				if err := e.dupTentativeAddrDetected(targetAddr); err != nil && err != tcpip.ErrBadAddress && err != tcpip.ErrInvalidEndpointState {
+				switch err := e.dupTentativeAddrDetected(targetAddr); err.(type) {
+				case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
+				default:
 					panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
 				}
 			}
@@ -413,10 +415,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			//
 			// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 			// address is detected for an assigned address.
-			if err := e.dupTentativeAddrDetected(targetAddr); err != nil && err != tcpip.ErrBadAddress && err != tcpip.ErrInvalidEndpointState {
+			switch err := e.dupTentativeAddrDetected(targetAddr); err.(type) {
+			case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
+				return
+			default:
 				panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
 			}
-			return
 		}
 
 		it, err := na.Options().Iter(false /* check */)
@@ -687,14 +691,14 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
-func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) *tcpip.Error {
+func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) tcpip.Error {
 	nicID := nic.ID()
 
 	p.mu.Lock()
 	netEP, ok := p.mu.eps[nicID]
 	p.mu.Unlock()
 	if !ok {
-		return tcpip.ErrNotConnected
+		return &tcpip.ErrNotConnected{}
 	}
 
 	remoteAddr := targetAddr
@@ -706,12 +710,12 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	if len(localAddr) == 0 {
 		addressEndpoint := netEP.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
 		if addressEndpoint == nil {
-			return tcpip.ErrNetworkUnreachable
+			return &tcpip.ErrNetworkUnreachable{}
 		}
 
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 	} else if p.stack.CheckLocalAddress(nicID, ProtocolNumber, localAddr) == 0 {
-		return tcpip.ErrBadLocalAddress
+		return &tcpip.ErrBadLocalAddress{}
 	}
 
 	optsSerializer := header.NDPOptionsSerializer{
@@ -813,7 +817,7 @@ func (*icmpReasonReassemblyTimeout) isICMPReason() {}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpip.Error {
+func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip.Error {
 	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
@@ -884,7 +888,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) *tcpi
 	netEP, ok := p.mu.eps[pkt.NICID]
 	p.mu.Unlock()
 	if !ok {
-		return tcpip.ErrNotConnected
+		return &tcpip.ErrNotConnected{}
 	}
 
 	sent := netEP.stats.icmp.packetsSent

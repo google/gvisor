@@ -48,7 +48,7 @@ type testLinkAddressResolver struct {
 	onLinkAddressRequest func()
 }
 
-func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) *tcpip.Error {
+func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
 	// TODO(gvisor.dev/issue/5141): Use a fake clock.
 	time.AfterFunc(r.delay, func() { r.fakeRequest(targetAddr) })
 	if f := r.onLinkAddressRequest; f != nil {
@@ -77,13 +77,13 @@ func (*testLinkAddressResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumbe
 	return 1
 }
 
-func getBlocking(c *linkAddrCache, addr tcpip.Address, linkRes LinkAddressResolver) (tcpip.LinkAddress, *tcpip.Error) {
+func getBlocking(c *linkAddrCache, addr tcpip.Address, linkRes LinkAddressResolver) (tcpip.LinkAddress, tcpip.Error) {
 	var attemptedResolution bool
 	for {
 		got, ch, err := c.get(addr, linkRes, "", nil, nil)
-		if err == tcpip.ErrWouldBlock {
+		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			if attemptedResolution {
-				return got, tcpip.ErrTimeout
+				return got, &tcpip.ErrTimeout{}
 			}
 			attemptedResolution = true
 			<-ch
@@ -177,7 +177,8 @@ func TestCacheAgeLimit(t *testing.T) {
 	e := testAddrs[0]
 	c.AddLinkAddress(e.addr, e.linkAddr)
 	time.Sleep(50 * time.Millisecond)
-	if _, _, err := c.get(e.addr, linkRes, "", nil, nil); err != tcpip.ErrWouldBlock {
+	_, _, err := c.get(e.addr, linkRes, "", nil, nil)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Errorf("got c.get(%s, _, '', nil, nil) = %s, want = ErrWouldBlock", e.addr, err)
 	}
 }
@@ -259,8 +260,9 @@ func TestCacheResolutionFailed(t *testing.T) {
 	before := atomic.LoadUint32(&requestCount)
 
 	e.addr += "2"
-	if a, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrTimeout {
-		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
+	a, err := getBlocking(c, e.addr, linkRes)
+	if _, ok := err.(*tcpip.ErrTimeout); !ok {
+		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
 	}
 
 	if got, want := int(atomic.LoadUint32(&requestCount)-before), c.resolutionAttempts; got != want {
@@ -275,7 +277,8 @@ func TestCacheResolutionTimeout(t *testing.T) {
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
 	e := testAddrs[0]
-	if a, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrTimeout {
-		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, tcpip.ErrTimeout)
+	a, err := getBlocking(c, e.addr, linkRes)
+	if _, ok := err.(*tcpip.ErrTimeout); !ok {
+		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
 	}
 }

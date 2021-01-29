@@ -90,7 +90,7 @@ type testNDPDispatcher struct {
 	addr tcpip.Address
 }
 
-func (*testNDPDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, *tcpip.Error) {
+func (*testNDPDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, tcpip.Error) {
 }
 
 func (t *testNDPDispatcher) OnDefaultRouterDiscovered(_ tcpip.NICID, addr tcpip.Address) bool {
@@ -242,17 +242,19 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			})
 
 			wantInvalid := uint64(0)
-			wantErr := (*tcpip.Error)(nil)
 			wantSucccess := true
 			if len(test.expectedLinkAddr) == 0 {
 				wantInvalid = 1
-				wantErr = tcpip.ErrWouldBlock
 				wantSucccess = false
+				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, &tcpip.ErrWouldBlock{})
+				}
+			} else {
+				if err != nil {
+					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = nil", nicID, lladdr1, lladdr0, ProtocolNumber, err)
+				}
 			}
 
-			if err != wantErr {
-				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, wantErr)
-			}
 			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Success: wantSucccess}, <-ch); diff != "" {
 				t.Errorf("linkResolutionResult mismatch (-want +got):\n%s", diff)
 			}
@@ -801,17 +803,19 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			})
 
 			wantInvalid := uint64(0)
-			wantErr := (*tcpip.Error)(nil)
 			wantSucccess := true
 			if len(test.expectedLinkAddr) == 0 {
 				wantInvalid = 1
-				wantErr = tcpip.ErrWouldBlock
 				wantSucccess = false
+				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, &tcpip.ErrWouldBlock{})
+				}
+			} else {
+				if err != nil {
+					t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = nil", nicID, lladdr1, lladdr0, ProtocolNumber, err)
+				}
 			}
 
-			if err != wantErr {
-				t.Errorf("got s.GetLinkAddress(%d, %s, %s, %d, _) = %s, want = %s", nicID, lladdr1, lladdr0, ProtocolNumber, err, wantErr)
-			}
 			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Success: wantSucccess}, <-ch); diff != "" {
 				t.Errorf("linkResolutionResult mismatch (-want +got):\n%s", diff)
 			}

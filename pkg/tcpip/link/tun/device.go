@@ -149,10 +149,10 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 		err := s.CreateNICWithOptions(endpoint.nicID, endpoint, stack.NICOptions{
 			Name: endpoint.name,
 		})
-		switch err {
+		switch err.(type) {
 		case nil:
 			return endpoint, nil
-		case tcpip.ErrDuplicateNICID:
+		case *tcpip.ErrDuplicateNICID:
 			// Race detected: A NIC has been created in between.
 			continue
 		default:

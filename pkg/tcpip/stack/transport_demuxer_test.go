@@ -175,9 +175,9 @@ func TestTransportDemuxerRegister(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		proto tcpip.NetworkProtocolNumber
-		want  *tcpip.Error
+		want  tcpip.Error
 	}{
-		{"failure", ipv6.ProtocolNumber, tcpip.ErrUnknownProtocol},
+		{"failure", ipv6.ProtocolNumber, &tcpip.ErrUnknownProtocol{}},
 		{"success", ipv4.ProtocolNumber, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						defer wq.EventUnregister(&we)
 						defer close(ch)
 
-						var err *tcpip.Error
+						var err tcpip.Error
 						ep, err := c.s.NewEndpoint(udp.ProtocolNumber, netProtoNum, &wq)
 						if err != nil {
 							t.Fatalf("NewEndpoint failed: %s", err)

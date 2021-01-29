@@ -139,7 +139,7 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 }
 
 // dispatch reads one packet from the file descriptor and dispatches it.
-func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
+func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 	n, err := rawfile.BlockingReadv(d.fd, d.buf.nextIovecs())
 	if n == 0 || err != nil {
 		return false, err
@@ -226,7 +226,7 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 
 // recvMMsgDispatch reads more than one packet at a time from the file
 // descriptor and dispatches it.
-func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
+func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 	// Fill message headers.
 	for k := range d.msgHdrs {
 		if d.msgHdrs[k].Msg.Iovlen > 0 {

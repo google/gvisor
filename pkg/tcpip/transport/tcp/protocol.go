@@ -161,13 +161,13 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 }
 
 // NewEndpoint creates a new tcp endpoint.
-func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return newEndpoint(p.stack, netProto, waiterQueue), nil
 }
 
 // NewRawEndpoint creates a new raw TCP endpoint. Raw TCP sockets are currently
 // unsupported. It implements stack.TransportProtocol.NewRawEndpoint.
-func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (p *protocol) NewRawEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return raw.NewEndpoint(p.stack, netProto, header.TCPProtocolNumber, waiterQueue)
 }
 
@@ -178,7 +178,7 @@ func (*protocol) MinimumPacketSize() int {
 
 // ParsePorts returns the source and destination ports stored in the given tcp
 // packet.
-func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
+func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 	h := header.TCP(v)
 	return h.SourcePort(), h.DestinationPort(), nil
 }
@@ -216,7 +216,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 // replyWithReset replies to the given segment with a reset segment.
 //
 // If the passed TTL is 0, then the route's default TTL will be used.
-func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) *tcpip.Error {
+func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
 	route, err := stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
@@ -261,7 +261,7 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) *tcpip.Error
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
-func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpip.Error {
+func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.TCPSACKEnabled:
 		p.mu.Lock()
@@ -283,7 +283,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 
 	case *tcpip.TCPSendBufferSizeRangeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 		p.mu.Lock()
 		p.sendBufferSize = *v
@@ -292,7 +292,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 
 	case *tcpip.TCPReceiveBufferSizeRangeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 		p.mu.Lock()
 		p.recvBufferSize = *v
@@ -310,7 +310,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 		}
 		// linux returns ENOENT when an invalid congestion control
 		// is specified.
-		return tcpip.ErrNoSuchFile
+		return &tcpip.ErrNoSuchFile{}
 
 	case *tcpip.TCPModerateReceiveBufferOption:
 		p.mu.Lock()
@@ -340,7 +340,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 
 	case *tcpip.TCPTimeWaitReuseOption:
 		if *v < tcpip.TCPTimeWaitReuseDisabled || *v > tcpip.TCPTimeWaitReuseLoopbackOnly {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 		p.mu.Lock()
 		p.timeWaitReuse = *v
@@ -381,7 +381,7 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 
 	case *tcpip.TCPSynRetriesOption:
 		if *v < 1 || *v > 255 {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 		p.mu.Lock()
 		p.synRetries = uint8(*v)
@@ -389,12 +389,12 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) *tcpi
 		return nil
 
 	default:
-		return tcpip.ErrUnknownProtocolOption
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 }
 
 // Option implements stack.TransportProtocol.Option.
-func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) *tcpip.Error {
+func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.TCPSACKEnabled:
 		p.mu.RLock()
@@ -493,7 +493,7 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) *tcpip.E
 		return nil
 
 	default:
-		return tcpip.ErrUnknownProtocolOption
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 }
 

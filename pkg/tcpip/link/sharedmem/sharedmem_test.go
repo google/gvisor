@@ -425,8 +425,9 @@ func TestFillTxQueue(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
-		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -493,8 +494,9 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
-		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -538,8 +540,8 @@ func TestFillTxMemory(t *testing.T) {
 		Data:               buf.ToVectorisedView(),
 	})
 	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
-	if want := tcpip.ErrWouldBlock; err != want {
-		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
 }
 
@@ -579,8 +581,9 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
-		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != want {
-			t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+		err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 		}
 	}
 

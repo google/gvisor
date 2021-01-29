@@ -47,141 +47,6 @@ import (
 // Using header.IPv4AddressSize would cause an import cycle.
 const ipv4AddressSize = 4
 
-// Error represents an error in the netstack error space. Using a special type
-// ensures that errors outside of this space are not accidentally introduced.
-//
-// All errors must have unique msg strings.
-//
-// +stateify savable
-type Error struct {
-	msg string
-
-	ignoreStats bool
-}
-
-// String implements fmt.Stringer.String.
-func (e *Error) String() string {
-	if e == nil {
-		return "<nil>"
-	}
-	return e.msg
-}
-
-// IgnoreStats indicates whether this error type should be included in failure
-// counts in tcpip.Stats structs.
-func (e *Error) IgnoreStats() bool {
-	return e.ignoreStats
-}
-
-// Errors that can be returned by the network stack.
-var (
-	ErrUnknownProtocol           = &Error{msg: "unknown protocol"}
-	ErrUnknownNICID              = &Error{msg: "unknown nic id"}
-	ErrUnknownDevice             = &Error{msg: "unknown device"}
-	ErrUnknownProtocolOption     = &Error{msg: "unknown option for protocol"}
-	ErrDuplicateNICID            = &Error{msg: "duplicate nic id"}
-	ErrDuplicateAddress          = &Error{msg: "duplicate address"}
-	ErrNoRoute                   = &Error{msg: "no route"}
-	ErrBadLinkEndpoint           = &Error{msg: "bad link layer endpoint"}
-	ErrAlreadyBound              = &Error{msg: "endpoint already bound", ignoreStats: true}
-	ErrInvalidEndpointState      = &Error{msg: "endpoint is in invalid state"}
-	ErrAlreadyConnecting         = &Error{msg: "endpoint is already connecting", ignoreStats: true}
-	ErrAlreadyConnected          = &Error{msg: "endpoint is already connected", ignoreStats: true}
-	ErrNoPortAvailable           = &Error{msg: "no ports are available"}
-	ErrPortInUse                 = &Error{msg: "port is in use"}
-	ErrBadLocalAddress           = &Error{msg: "bad local address"}
-	ErrClosedForSend             = &Error{msg: "endpoint is closed for send"}
-	ErrClosedForReceive          = &Error{msg: "endpoint is closed for receive"}
-	ErrWouldBlock                = &Error{msg: "operation would block", ignoreStats: true}
-	ErrConnectionRefused         = &Error{msg: "connection was refused"}
-	ErrTimeout                   = &Error{msg: "operation timed out"}
-	ErrAborted                   = &Error{msg: "operation aborted"}
-	ErrConnectStarted            = &Error{msg: "connection attempt started", ignoreStats: true}
-	ErrDestinationRequired       = &Error{msg: "destination address is required"}
-	ErrNotSupported              = &Error{msg: "operation not supported"}
-	ErrQueueSizeNotSupported     = &Error{msg: "queue size querying not supported"}
-	ErrNotConnected              = &Error{msg: "endpoint not connected"}
-	ErrConnectionReset           = &Error{msg: "connection reset by peer"}
-	ErrConnectionAborted         = &Error{msg: "connection aborted"}
-	ErrNoSuchFile                = &Error{msg: "no such file"}
-	ErrInvalidOptionValue        = &Error{msg: "invalid option value specified"}
-	ErrBadAddress                = &Error{msg: "bad address"}
-	ErrNetworkUnreachable        = &Error{msg: "network is unreachable"}
-	ErrMessageTooLong            = &Error{msg: "message too long"}
-	ErrNoBufferSpace             = &Error{msg: "no buffer space available"}
-	ErrBroadcastDisabled         = &Error{msg: "broadcast socket option disabled"}
-	ErrNotPermitted              = &Error{msg: "operation not permitted"}
-	ErrAddressFamilyNotSupported = &Error{msg: "address family not supported by protocol"}
-	ErrMalformedHeader           = &Error{msg: "header is malformed"}
-	ErrBadBuffer                 = &Error{msg: "bad buffer"}
-)
-
-var messageToError map[string]*Error
-
-var populate sync.Once
-
-// StringToError converts an error message to the error.
-func StringToError(s string) *Error {
-	populate.Do(func() {
-		var errors = []*Error{
-			ErrUnknownProtocol,
-			ErrUnknownNICID,
-			ErrUnknownDevice,
-			ErrUnknownProtocolOption,
-			ErrDuplicateNICID,
-			ErrDuplicateAddress,
-			ErrNoRoute,
-			ErrBadLinkEndpoint,
-			ErrAlreadyBound,
-			ErrInvalidEndpointState,
-			ErrAlreadyConnecting,
-			ErrAlreadyConnected,
-			ErrNoPortAvailable,
-			ErrPortInUse,
-			ErrBadLocalAddress,
-			ErrClosedForSend,
-			ErrClosedForReceive,
-			ErrWouldBlock,
-			ErrConnectionRefused,
-			ErrTimeout,
-			ErrAborted,
-			ErrConnectStarted,
-			ErrDestinationRequired,
-			ErrNotSupported,
-			ErrQueueSizeNotSupported,
-			ErrNotConnected,
-			ErrConnectionReset,
-			ErrConnectionAborted,
-			ErrNoSuchFile,
-			ErrInvalidOptionValue,
-			ErrBadAddress,
-			ErrNetworkUnreachable,
-			ErrMessageTooLong,
-			ErrNoBufferSpace,
-			ErrBroadcastDisabled,
-			ErrNotPermitted,
-			ErrAddressFamilyNotSupported,
-			ErrMalformedHeader,
-			ErrBadBuffer,
-		}
-
-		messageToError = make(map[string]*Error)
-		for _, e := range errors {
-			if messageToError[e.String()] != nil {
-				panic("tcpip errors with duplicated message: " + e.String())
-			}
-			messageToError[e.String()] = e
-		}
-	})
-
-	e, ok := messageToError[s]
-	if !ok {
-		panic("unknown error message: " + s)
-	}
-
-	return e
-}
-
 // Errors related to Subnet
 var (
 	errSubnetLengthMismatch = errors.New("subnet length of address and mask differ")
@@ -633,7 +498,7 @@ type Endpoint interface {
 	// If non-zero number of bytes are successfully read and written to dst, err
 	// must be nil. Otherwise, if dst failed to write anything, ErrBadBuffer
 	// should be returned.
-	Read(dst io.Writer, opts ReadOptions) (res ReadResult, err *Error)
+	Read(io.Writer, ReadOptions) (ReadResult, Error)
 
 	// Write writes data to the endpoint's peer. This method does not block if
 	// the data cannot be written.
@@ -648,7 +513,7 @@ type Endpoint interface {
 	// stream (TCP) Endpoints may return partial writes, and even then only
 	// in the case where writing additional data would block. Other Endpoints
 	// will either write the entire message or return an error.
-	Write(Payloader, WriteOptions) (int64, *Error)
+	Write(Payloader, WriteOptions) (int64, Error)
 
 	// Connect connects the endpoint to its peer. Specifying a NIC is
 	// optional.
@@ -665,18 +530,18 @@ type Endpoint interface {
 	// If address.Addr is empty, this means that Endpoint has to be
 	// disconnected if this is supported, otherwise
 	// ErrAddressFamilyNotSupported must be returned.
-	Connect(address FullAddress) *Error
+	Connect(address FullAddress) Error
 
 	// Disconnect disconnects the endpoint from its peer.
-	Disconnect() *Error
+	Disconnect() Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
-	Shutdown(flags ShutdownFlags) *Error
+	Shutdown(flags ShutdownFlags) Error
 
 	// Listen puts the endpoint in "listen" mode, which allows it to accept
 	// new connections.
-	Listen(backlog int) *Error
+	Listen(backlog int) Error
 
 	// Accept returns a new endpoint if a peer has established a connection
 	// to an endpoint previously set to listen mode. This method does not
@@ -686,36 +551,36 @@ type Endpoint interface {
 	//
 	// If peerAddr is not nil then it is populated with the peer address of the
 	// returned endpoint.
-	Accept(peerAddr *FullAddress) (Endpoint, *waiter.Queue, *Error)
+	Accept(peerAddr *FullAddress) (Endpoint, *waiter.Queue, Error)
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.
-	Bind(address FullAddress) *Error
+	Bind(address FullAddress) Error
 
 	// GetLocalAddress returns the address to which the endpoint is bound.
-	GetLocalAddress() (FullAddress, *Error)
+	GetLocalAddress() (FullAddress, Error)
 
 	// GetRemoteAddress returns the address to which the endpoint is
 	// connected.
-	GetRemoteAddress() (FullAddress, *Error)
+	GetRemoteAddress() (FullAddress, Error)
 
 	// Readiness returns the current readiness of the endpoint. For example,
 	// if waiter.EventIn is set, the endpoint is immediately readable.
 	Readiness(mask waiter.EventMask) waiter.EventMask
 
 	// SetSockOpt sets a socket option.
-	SetSockOpt(opt SettableSocketOption) *Error
+	SetSockOpt(opt SettableSocketOption) Error
 
 	// SetSockOptInt sets a socket option, for simple cases where a value
 	// has the int type.
-	SetSockOptInt(opt SockOptInt, v int) *Error
+	SetSockOptInt(opt SockOptInt, v int) Error
 
 	// GetSockOpt gets a socket option.
-	GetSockOpt(opt GettableSocketOption) *Error
+	GetSockOpt(opt GettableSocketOption) Error
 
 	// GetSockOptInt gets a socket option for simple cases where a return
 	// value has the int type.
-	GetSockOptInt(SockOptInt) (int, *Error)
+	GetSockOptInt(SockOptInt) (int, Error)
 
 	// State returns a socket's lifecycle state. The returned value is
 	// protocol-specific and is primarily used for diagnostics.
@@ -738,7 +603,7 @@ type Endpoint interface {
 	SetOwner(owner PacketOwner)
 
 	// LastError clears and returns the last error reported by the endpoint.
-	LastError() *Error
+	LastError() Error
 
 	// SocketOptions returns the structure which contains all the socket
 	// level options.

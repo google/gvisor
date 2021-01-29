@@ -39,7 +39,7 @@ type testIPv6Endpoint struct {
 	invalidatedRtr tcpip.Address
 }
 
-func (*testIPv6Endpoint) Enable() *tcpip.Error {
+func (*testIPv6Endpoint) Enable() tcpip.Error {
 	return nil
 }
 
@@ -65,21 +65,21 @@ func (e *testIPv6Endpoint) MaxHeaderLength() uint16 {
 }
 
 // WritePacket implements NetworkEndpoint.WritePacket.
-func (*testIPv6Endpoint) WritePacket(*Route, *GSO, NetworkHeaderParams, *PacketBuffer) *tcpip.Error {
+func (*testIPv6Endpoint) WritePacket(*Route, *GSO, NetworkHeaderParams, *PacketBuffer) tcpip.Error {
 	return nil
 }
 
 // WritePackets implements NetworkEndpoint.WritePackets.
-func (*testIPv6Endpoint) WritePackets(*Route, *GSO, PacketBufferList, NetworkHeaderParams) (int, *tcpip.Error) {
+func (*testIPv6Endpoint) WritePackets(*Route, *GSO, PacketBufferList, NetworkHeaderParams) (int, tcpip.Error) {
 	// Our tests don't use this so we don't support it.
-	return 0, tcpip.ErrNotSupported
+	return 0, &tcpip.ErrNotSupported{}
 }
 
 // WriteHeaderIncludedPacket implements
 // NetworkEndpoint.WriteHeaderIncludedPacket.
-func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) *tcpip.Error {
+func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) tcpip.Error {
 	// Our tests don't use this so we don't support it.
-	return tcpip.ErrNotSupported
+	return &tcpip.ErrNotSupported{}
 }
 
 // HandlePacket implements NetworkEndpoint.HandlePacket.
@@ -149,12 +149,12 @@ func (p *testIPv6Protocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache,
 }
 
 // SetOption implements NetworkProtocol.SetOption.
-func (*testIPv6Protocol) SetOption(tcpip.SettableNetworkProtocolOption) *tcpip.Error {
+func (*testIPv6Protocol) SetOption(tcpip.SettableNetworkProtocolOption) tcpip.Error {
 	return nil
 }
 
 // Option implements NetworkProtocol.Option.
-func (*testIPv6Protocol) Option(tcpip.GettableNetworkProtocolOption) *tcpip.Error {
+func (*testIPv6Protocol) Option(tcpip.GettableNetworkProtocolOption) tcpip.Error {
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (*testIPv6Protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements LinkAddressResolver.
-func (*testIPv6Protocol) LinkAddressRequest(_, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) *tcpip.Error {
+func (*testIPv6Protocol) LinkAddressRequest(_, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
 	return nil
 }
 

@@ -479,8 +479,8 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				if diff := cmp.Diff(data, buf.Bytes()); diff != "" {
 					t.Errorf("got UDP payload mismatch (-want +got):\n%s", diff)
 				}
-			} else if err != tcpip.ErrWouldBlock {
-				t.Fatalf("got Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), tcpip.ErrWouldBlock)
+			} else if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+				t.Fatalf("got Read = (%v, %s) [with data %x], want = (_, %s)", res, err, buf.Bytes(), &tcpip.ErrWouldBlock{})
 			}
 		})
 	}
@@ -761,8 +761,11 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					if err := ep.SetSockOpt(&removeOpt); err != nil {
 						t.Fatalf("ep.SetSockOpt(&%#v): %s", removeOpt, err)
 					}
-					if _, err := ep.Read(&buf, tcpip.ReadOptions{}); err != tcpip.ErrWouldBlock {
-						t.Fatalf("got ep.Read = (_, %s), want = (_, %s)", err, tcpip.ErrWouldBlock)
+					{
+						_, err := ep.Read(&buf, tcpip.ReadOptions{})
+						if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+							t.Fatalf("got ep.Read = (_, %s), want = (_, %s)", err, &tcpip.ErrWouldBlock{})
+						}
 					}
 				})
 			}
