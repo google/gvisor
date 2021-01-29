@@ -148,10 +148,10 @@ func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
 
 	c.mu.Lock()
 	entry := c.getOrCreateEntryLocked(k)
-	c.mu.Unlock()
-
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	c.mu.Unlock()
+
 	entry.mu.linkAddr = v
 	entry.changeStateLocked(ready, expiration)
 }
@@ -201,10 +201,10 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 // get reports any known link address for k.
 func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	c.mu.Unlock()
 
 	switch s := entry.mu.s; s {
 	case ready:
