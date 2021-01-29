@@ -309,25 +309,47 @@ func (n *NIC) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumb
 	return err
 }
 
+func (n *NIC) writePacketBuffer(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+	switch pkt := pkt.(type) {
+	case *PacketBuffer:
+		if err := n.writePacket(r, gso, protocol, pkt); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	case *PacketBufferList:
+		return n.writePackets(r, gso, protocol, *pkt)
+	default:
+		panic(fmt.Sprintf("unrecognized pending packet buffer type = %T", pkt))
+	}
+}
+
 func (n *NIC) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
-	// As per relevant RFCs, we should queue packets while we wait for link
-	// resolution to complete.
-	//
-	// RFC 1122 section 2.3.2.2 (for IPv4):
-	//   The link layer SHOULD save (rather than discard) at least
-	//   one (the latest) packet of each set of packets destined to
-	//   the same unresolved IP address, and transmit the saved
-	//   packet when the address has been resolved.
-	//
-	// RFC 4861 section 7.2.2 (for IPv6):
-	//   While waiting for address resolution to complete, the sender MUST, for
-	//   each neighbor, retain a small queue of packets waiting for address
-	//   resolution to complete. The queue MUST hold at least one packet, and MAY
-	//   contain more. However, the number of queued packets per neighbor SHOULD
-	//   be limited to some small value. When a queue overflows, the new arrival
-	//   SHOULD replace the oldest entry. Once address resolution completes, the
-	//   node transmits any queued packets.
-	return n.linkResQueue.enqueue(r, gso, protocol, pkt)
+	routeInfo, _, err := r.resolvedFields(nil)
+	switch err.(type) {
+	case nil:
+		return n.writePacketBuffer(routeInfo, gso, protocol, pkt)
+	case *tcpip.ErrWouldBlock:
+		// As per relevant RFCs, we should queue packets while we wait for link
+		// resolution to complete.
+		//
+		// RFC 1122 section 2.3.2.2 (for IPv4):
+		//   The link layer SHOULD save (rather than discard) at least
+		//   one (the latest) packet of each set of packets destined to
+		//   the same unresolved IP address, and transmit the saved
+		//   packet when the address has been resolved.
+		//
+		// RFC 4861 section 7.2.2 (for IPv6):
+		//   While waiting for address resolution to complete, the sender MUST, for
+		//   each neighbor, retain a small queue of packets waiting for address
+		//   resolution to complete. The queue MUST hold at least one packet, and
+		//   MAY contain more. However, the number of queued packets per neighbor
+		//   SHOULD be limited to some small value. When a queue overflows, the new
+		//   arrival SHOULD replace the oldest entry. Once address resolution
+		//   completes, the node transmits any queued packets.
+		return n.linkResQueue.enqueue(r, gso, protocol, pkt)
+	default:
+		return 0, err
+	}
 }
 
 // WritePacketToRemote implements NetworkInterface.
