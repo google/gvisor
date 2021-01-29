@@ -299,10 +299,15 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		src = src.TakeFirst64(limit)
 	}
 
-	// Do a buffered write. See rationale in PRead.
 	if d.cachedMetadataAuthoritative() {
-		d.touchCMtime()
+		if fd.isRegularFile {
+			d.touchCMtimeLocked()
+		} else {
+			d.touchCMtime()
+		}
 	}
+
+	// Do a buffered write. See rationale in PRead.
 	buf := make([]byte, src.NumBytes())
 	copied, copyErr := src.CopyIn(ctx, buf)
 	if copied == 0 && copyErr != nil {
