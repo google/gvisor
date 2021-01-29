@@ -25,6 +25,39 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
+var debianMountinfo = `
+35 24 0:30 / /sys/fs/cgroup ro shared:9 - tmpfs tmpfs ro
+36 35 0:31 / /sys/fs/cgroup/unified rw shared:10 - cgroup2 cgroup2 rw
+37 35 0:32 / /sys/fs/cgroup/systemd rw - cgroup cgroup rw,name=systemd
+41 35 0:36 / /sys/fs/cgroup/cpu,cpuacct rw shared:16 - cgroup cgroup rw,cpu,cpuacct
+42 35 0:37 / /sys/fs/cgroup/freezer rw shared:17 - cgroup cgroup rw,freezer
+43 35 0:38 / /sys/fs/cgroup/hugetlb rw shared:18 - cgroup cgroup rw,hugetlb
+44 35 0:39 / /sys/fs/cgroup/cpuset rw shared:19 - cgroup cgroup rw,cpuset
+45 35 0:40 / /sys/fs/cgroup/net_cls,net_prio rw shared:20 - cgroup cgroup rw,net_cls,net_prio
+46 35 0:41 / /sys/fs/cgroup/pids rw shared:21 - cgroup cgroup rw,pids
+47 35 0:42 / /sys/fs/cgroup/perf_event rw shared:22 - cgroup cgroup rw,perf_event
+48 35 0:43 / /sys/fs/cgroup/memory rw shared:23 - cgroup cgroup rw,memory
+49 35 0:44 / /sys/fs/cgroup/blkio rw shared:24 - cgroup cgroup rw,blkio
+50 35 0:45 / /sys/fs/cgroup/devices rw shared:25 - cgroup cgroup rw,devices
+51 35 0:46 / /sys/fs/cgroup/rdma rw shared:26 - cgroup cgroup rw,rdma
+`
+
+var dindMountinfo = `
+1305 1304 0:64 / /sys/fs/cgroup rw - tmpfs tmpfs rw,mode=755
+1306 1305 0:32 /docker/136 /sys/fs/cgroup/systemd ro master:11 - cgroup cgroup rw,xattr,name=systemd
+1307 1305 0:36 /docker/136 /sys/fs/cgroup/cpu,cpuacct ro master:16 - cgroup cgroup rw,cpu,cpuacct
+1308 1305 0:37 /docker/136 /sys/fs/cgroup/freezer ro master:17 - cgroup cgroup rw,freezer
+1309 1305 0:38 /docker/136 /sys/fs/cgroup/hugetlb ro master:18 - cgroup cgroup rw,hugetlb
+1310 1305 0:39 /docker/136 /sys/fs/cgroup/cpuset ro master:19 - cgroup cgroup rw,cpuset
+1311 1305 0:40 /docker/136 /sys/fs/cgroup/net_cls,net_prio ro master:20 - cgroup cgroup rw,net_cls,net_prio
+1312 1305 0:41 /docker/136 /sys/fs/cgroup/pids ro master:21 - cgroup cgroup rw,pids
+1313 1305 0:42 /docker/136 /sys/fs/cgroup/perf_event ro master:22 - cgroup cgroup rw,perf_event
+1314 1305 0:43 /docker/136 /sys/fs/cgroup/memory ro master:23 - cgroup cgroup rw,memory
+1316 1305 0:44 /docker/136 /sys/fs/cgroup/blkio ro master:24 - cgroup cgroup rw,blkio
+1317 1305 0:45 /docker/136 /sys/fs/cgroup/devices ro master:25 - cgroup cgroup rw,devices
+1318 1305 0:46 / /sys/fs/cgroup/rdma ro master:26 - cgroup cgroup rw,rdma
+`
+
 func TestUninstallEnoent(t *testing.T) {
 	c := Cgroup{
 		// set a non-existent name
@@ -653,60 +686,110 @@ func TestPids(t *testing.T) {
 
 func TestLoadPaths(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		cgroups string
-		want    map[string]string
-		err     string
+		name      string
+		cgroups   string
+		mountinfo string
+		want      map[string]string
+		err       string
 	}{
 		{
-			name:    "abs-path",
-			cgroups: "0:ctr:/path",
-			want:    map[string]string{"ctr": "/path"},
+			name:      "abs-path-unknown-controller",
+			cgroups:   "0:ctr:/path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"ctr": "/path"},
 		},
 		{
-			name:    "rel-path",
-			cgroups: "0:ctr:rel-path",
-			want:    map[string]string{"ctr": "rel-path"},
+			name:      "rel-path",
+			cgroups:   "0:ctr:rel-path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"ctr": "rel-path"},
 		},
 		{
-			name:    "non-controller",
-			cgroups: "0:name=systemd:/path",
-			want:    map[string]string{"systemd": "/path"},
+			name:      "non-controller",
+			cgroups:   "0:name=systemd:/path",
+			mountinfo: debianMountinfo,
+			want:      map[string]string{"systemd": "path"},
 		},
 		{
-			name: "empty",
+			name:      "empty",
+			mountinfo: debianMountinfo,
 		},
 		{
 			name: "multiple",
 			cgroups: "0:ctr0:/path0\n" +
 				"1:ctr1:/path1\n" +
 				"2::/empty\n",
+			mountinfo: debianMountinfo,
 			want: map[string]string{
 				"ctr0": "/path0",
 				"ctr1": "/path1",
 			},
 		},
 		{
-			name:    "missing-field",
-			cgroups: "0:nopath\n",
-			err:     "invalid cgroups file",
+			name:      "missing-field",
+			cgroups:   "0:nopath\n",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
 		},
 		{
-			name:    "too-many-fields",
-			cgroups: "0:ctr:/path:extra\n",
-			err:     "invalid cgroups file",
+			name:      "too-many-fields",
+			cgroups:   "0:ctr:/path:extra\n",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
 		},
 		{
 			name: "multiple-malformed",
 			cgroups: "0:ctr0:/path0\n" +
 				"1:ctr1:/path1\n" +
 				"2:\n",
-			err: "invalid cgroups file",
+			mountinfo: debianMountinfo,
+			err:       "invalid cgroups file",
+		},
+		{
+			name: "nested-cgroup",
+			cgroups: `9:memory:/docker/136
+2:cpu,cpuacct:/docker/136
+1:name=systemd:/docker/136
+0::/system.slice/containerd.service`,
+			mountinfo: dindMountinfo,
+			// we want relative path to /sys/fs/cgroup inside the nested container.
+			// Subcroup inside the container will be created at /sys/fs/cgroup/cpu
+			// This will be /sys/fs/cgroup/cpu/docker/136/CGROUP_NAME
+			// outside the container
+			want: map[string]string{
+				"memory":  ".",
+				"cpu":     ".",
+				"cpuacct": ".",
+				"systemd": ".",
+			},
+		},
+		{
+			name:      "nested-cgroup-submount",
+			cgroups:   "9:memory:/docker/136/test",
+			mountinfo: dindMountinfo,
+			want: map[string]string{
+				"memory": "test",
+			},
+		},
+		{
+			name:      "invalid-mount-info",
+			cgroups:   "0:memory:/path",
+			mountinfo: "41 35 0:36 / /sys/fs/cgroup/memory rw shared:16 - invalid",
+			want: map[string]string{
+				"memory": "/path",
+			},
+		},
+		{
+			name:      "invalid-rel-path-in-proc-cgroup",
+			cgroups:   "9:memory:./invalid",
+			mountinfo: dindMountinfo,
+			err:       "can't make ./invalid relative to /docker/136",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := strings.NewReader(tc.cgroups)
-			got, err := loadPathsHelper(r)
+			mountinfo := strings.NewReader(tc.mountinfo)
+			got, err := loadPathsHelperWithMountinfo(r, mountinfo)
 			if len(tc.err) == 0 {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
