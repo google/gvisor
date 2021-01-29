@@ -126,6 +126,16 @@ type multicastGroupState struct {
 	//
 	// Must not be nil.
 	delayedReportJob *tcpip.Job
+
+	// delyedReportJobFiresAt is the time when the delayed report job will fire.
+	//
+	// A zero value indicates that the job is not scheduled.
+	delayedReportJobFiresAt time.Time
+}
+
+func (m *multicastGroupState) cancelDelayedReportJob() {
+	m.delayedReportJob.Cancel()
+	m.delayedReportJobFiresAt = time.Time{}
 }
 
 // GenericMulticastProtocolOptions holds options for the generic multicast
@@ -428,7 +438,7 @@ func (g *GenericMulticastProtocolState) HandleReportLocked(groupAddress tcpip.Ad
 	//   on that interface, it stops its timer and does not send a Report for
 	//   that address, thus suppressing duplicate reports on the link.
 	if info, ok := g.memberships[groupAddress]; ok && info.state.isDelayingMember() {
-		info.delayedReportJob.Cancel()
+		info.cancelDelayedReportJob()
 		info.lastToSendReport = false
 		info.state = idleMember
 		g.memberships[groupAddress] = info
@@ -603,7 +613,7 @@ func (g *GenericMulticastProtocolState) transitionToNonMemberLocked(groupAddress
 		return
 	}
 
-	info.delayedReportJob.Cancel()
+	info.cancelDelayedReportJob()
 	g.maybeSendLeave(groupAddress, info.lastToSendReport)
 	info.lastToSendReport = false
 	info.state = nonMember
@@ -645,14 +655,24 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddr
 	//   If a timer for any address is already running, it is reset to the new
 	//   random value only if the requested Maximum Response Delay is less than
 	//   the remaining value of the running timer.
+	now := time.Unix(0 /* seconds */, g.opts.Clock.NowNanoseconds())
 	if info.state == delayingMember {
-		// TODO: Reset the timer if time remaining is greater than maxResponseTime.
-		return
+		if info.delayedReportJobFiresAt.IsZero() {
+			panic(fmt.Sprintf("delayed report unscheduled while in the delaying member state; group = %s", groupAddress))
+		}
+
+		if info.delayedReportJobFiresAt.Sub(now) <= maxResponseTime {
+			// The timer is scheduled to fire before the maximum response time so we
+			// leave our timer as is.
+			return
+		}
 	}
 
 	info.state = delayingMember
-	info.delayedReportJob.Cancel()
-	info.delayedReportJob.Schedule(g.calculateDelayTimerDuration(maxResponseTime))
+	info.cancelDelayedReportJob()
+	maxResponseTime = g.calculateDelayTimerDuration(maxResponseTime)
+	info.delayedReportJob.Schedule(maxResponseTime)
+	info.delayedReportJobFiresAt = now.Add(maxResponseTime)
 }
 
 // calculateDelayTimerDuration returns a random time between (0, maxRespTime].
