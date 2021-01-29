@@ -408,40 +408,46 @@ func TestHandleReport(t *testing.T) {
 
 func TestHandleQuery(t *testing.T) {
 	tests := []struct {
-		name             string
-		queryAddr        tcpip.Address
-		maxDelay         time.Duration
-		expectReportsFor []tcpip.Address
+		name                    string
+		queryAddr               tcpip.Address
+		maxDelay                time.Duration
+		expectQueriedReportsFor []tcpip.Address
+		expectDelayedReportsFor []tcpip.Address
 	}{
 		{
-			name:             "Unpecified empty",
-			queryAddr:        "",
-			maxDelay:         0,
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			name:                    "Unpecified empty",
+			queryAddr:               "",
+			maxDelay:                0,
+			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: nil,
 		},
 		{
-			name:             "Unpecified any",
-			queryAddr:        "\x00",
-			maxDelay:         1,
-			expectReportsFor: []tcpip.Address{addr1, addr2},
+			name:                    "Unpecified any",
+			queryAddr:               "\x00",
+			maxDelay:                1,
+			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
+			expectDelayedReportsFor: nil,
 		},
 		{
-			name:             "Specified",
-			queryAddr:        addr1,
-			maxDelay:         2,
-			expectReportsFor: []tcpip.Address{addr1},
+			name:                    "Specified",
+			queryAddr:               addr1,
+			maxDelay:                2,
+			expectQueriedReportsFor: []tcpip.Address{addr1},
+			expectDelayedReportsFor: []tcpip.Address{addr2},
 		},
 		{
-			name:             "Specified all-nodes",
-			queryAddr:        addr3,
-			maxDelay:         3,
-			expectReportsFor: nil,
+			name:                    "Specified all-nodes",
+			queryAddr:               addr3,
+			maxDelay:                3,
+			expectQueriedReportsFor: nil,
+			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
 		},
 		{
-			name:             "Specified other",
-			queryAddr:        addr4,
-			maxDelay:         4,
-			expectReportsFor: nil,
+			name:                    "Specified other",
+			queryAddr:               addr4,
+			maxDelay:                4,
+			expectQueriedReportsFor: nil,
+			expectDelayedReportsFor: []tcpip.Address{addr1, addr2},
 		},
 	}
 
@@ -469,20 +475,20 @@ func TestHandleQuery(t *testing.T) {
 			if diff := mgp.check(nil /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
-			// Generic multicast protocol timers are expected to take the job mutex.
-			clock.Advance(maxUnsolicitedReportDelay)
-			if diff := mgp.check([]tcpip.Address{addr1, addr2} /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+
+			// Receiving a query should make us reschedule our delayed report timer
+			// to some time within the new max response delay.
+			mgp.handleQuery(test.queryAddr, test.maxDelay)
+			clock.Advance(test.maxDelay)
+			if diff := mgp.check(test.expectQueriedReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
-			// Receiving a query should make us schedule a new delayed report if it
-			// is a query directed at us or a general query.
-			mgp.handleQuery(test.queryAddr, test.maxDelay)
-			if len(test.expectReportsFor) != 0 {
-				clock.Advance(test.maxDelay)
-				if diff := mgp.check(test.expectReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
-					t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-				}
+			// The groups that were not affected by the query should still send a
+			// report after the max unsolicited report delay.
+			clock.Advance(maxUnsolicitedReportDelay)
+			if diff := mgp.check(test.expectDelayedReportsFor /* sendReportGroupAddresses */, nil /* sendLeaveGroupAddresses */); diff != "" {
+				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
 			// Should have no more messages to send.
