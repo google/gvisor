@@ -26,12 +26,18 @@
 namespace gvisor {
 namespace testing {
 
+// PosixError must be async-signal-safe.
 class ABSL_MUST_USE_RESULT PosixError {
  public:
   PosixError() {}
+
   explicit PosixError(int errno_value) : errno_(errno_value) {}
-  PosixError(int errno_value, std::string msg)
-      : errno_(errno_value), msg_(std::move(msg)) {}
+
+  PosixError(int errno_value, std::string_view msg) : errno_(errno_value) {
+    // Check that `msg` will fit, leaving room for '\0' at the end.
+    TEST_CHECK(msg.size() < sizeof(msg_));
+    msg.copy(msg_, msg.size());
+  }
 
   PosixError(PosixError&& other) = default;
   PosixError& operator=(PosixError&& other) = default;
@@ -45,7 +51,7 @@ class ABSL_MUST_USE_RESULT PosixError {
   const PosixError& error() const { return *this; }
 
   int errno_value() const { return errno_; }
-  std::string message() const { return msg_; }
+  const char* message() const { return msg_; }
 
   // ToString produces a full string representation of this posix error
   // including the printable representation of the errno and the error message.
@@ -58,7 +64,7 @@ class ABSL_MUST_USE_RESULT PosixError {
 
  private:
   int errno_ = 0;
-  std::string msg_;
+  char msg_[1024] = {};
 };
 
 template <typename T>

@@ -50,7 +50,7 @@ std::string PosixError::ToString() const {
   ret = absl::StrCat("PosixError(errno=", errno_, " ", res, ")");
 #endif
 
-  if (!msg_.empty()) {
+  if (strnlen(msg_, sizeof(msg_)) > 0) {
     ret.append(" ");
     ret.append(msg_);
   }

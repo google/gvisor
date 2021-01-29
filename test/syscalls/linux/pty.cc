@@ -1338,6 +1338,7 @@ TEST_F(JobControlTest, SetTTYDifferentSession) {
     TEST_PCHECK(waitpid(grandchild, &gcwstatus, 0) == grandchild);
     TEST_PCHECK(gcwstatus == 0);
   });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, ReleaseTTY) {
@@ -1515,7 +1516,8 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
 // - creates a child process in a new process group
 // - sets that child as the foreground process group
 // - kills its child and sets itself as the foreground process group.
-TEST_F(JobControlTest, SetForegroundProcessGroup) {
+// TODO(gvisor.dev/issue/5357): Fix and enable.
+TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
@@ -1557,6 +1559,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroup) {
     TEST_PCHECK(pgid = getpgid(0) == 0);
     TEST_PCHECK(!tcsetpgrp(replica_.get(), pgid));
   });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupWrongTTY) {
@@ -1576,8 +1579,9 @@ TEST_F(JobControlTest, SetForegroundProcessGroupNegPgid) {
   ASSERT_NO_ERRNO(ret);
 }
 
-TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
-  auto ret = RunInChild([=]() {
+// TODO(gvisor.dev/issue/5357): Fix and enable.
+TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroupEmptyProcessGroup) {
+  auto res = RunInChild([=]() {
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
     // Create a new process, put it in a new process group, make that group the
@@ -1595,6 +1599,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
     TEST_PCHECK(ioctl(replica_.get(), TIOCSPGRP, &grandchild) != 0 &&
                 errno == ESRCH);
   });
+  ASSERT_NO_ERRNO(res);
 }
 
 TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
