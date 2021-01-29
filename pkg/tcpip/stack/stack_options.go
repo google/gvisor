@@ -40,17 +40,17 @@ type ReceiveBufferSizeOption struct {
 }
 
 // SetOption allows setting stack wide options.
-func (s *Stack) SetOption(option interface{}) *tcpip.Error {
+func (s *Stack) SetOption(option interface{}) tcpip.Error {
 	switch v := option.(type) {
 	case tcpip.SendBufferSizeOption:
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 
 		if v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 
 		s.mu.Lock()
@@ -62,11 +62,11 @@ func (s *Stack) SetOption(option interface{}) *tcpip.Error {
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 
 		if v.Default < v.Min || v.Default > v.Max {
-			return tcpip.ErrInvalidOptionValue
+			return &tcpip.ErrInvalidOptionValue{}
 		}
 
 		s.mu.Lock()
@@ -75,12 +75,12 @@ func (s *Stack) SetOption(option interface{}) *tcpip.Error {
 		return nil
 
 	default:
-		return tcpip.ErrUnknownProtocolOption
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 }
 
 // Option allows retrieving stack wide options.
-func (s *Stack) Option(option interface{}) *tcpip.Error {
+func (s *Stack) Option(option interface{}) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.SendBufferSizeOption:
 		s.mu.RLock()
@@ -95,6 +95,6 @@ func (s *Stack) Option(option interface{}) *tcpip.Error {
 		return nil
 
 	default:
-		return tcpip.ErrUnknownProtocolOption
+		return &tcpip.ErrUnknownProtocolOption{}
 	}
 }

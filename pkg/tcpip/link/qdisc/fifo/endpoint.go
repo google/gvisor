@@ -150,7 +150,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) *tcpip.Error {
+func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	pkt.EgressRoute = r
@@ -158,7 +158,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 	if !d.q.enqueue(pkt) {
-		return tcpip.ErrNoBufferSpace
+		return &tcpip.ErrNoBufferSpace{}
 	}
 	d.newPacketWaker.Assert()
 	return nil
@@ -171,7 +171,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 //  - pkt.EgressRoute
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
 		d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
@@ -180,7 +180,7 @@ func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.Pa
 			if enqueued > 0 {
 				d.newPacketWaker.Assert()
 			}
-			return enqueued, tcpip.ErrNoBufferSpace
+			return enqueued, &tcpip.ErrNoBufferSpace{}
 		}
 		pkt = nxt
 		enqueued++

@@ -226,7 +226,7 @@ func (h *handshake) checkAck(s *segment) bool {
 
 // synSentState handles a segment received when the TCP 3-way handshake is in
 // the SYN-SENT state.
-func (h *handshake) synSentState(s *segment) *tcpip.Error {
+func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// RFC 793, page 37, states that in the SYN-SENT state, a reset is
 	// acceptable if the ack field acknowledges the SYN.
 	if s.flagIsSet(header.TCPFlagRst) {
@@ -237,7 +237,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 			h.ep.workerCleanup = true
 			// Although the RFC above calls out ECONNRESET, Linux actually returns
 			// ECONNREFUSED here so we do as well.
-			return tcpip.ErrConnectionRefused
+			return &tcpip.ErrConnectionRefused{}
 		}
 		return nil
 	}
@@ -314,12 +314,12 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
-func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
+func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	if s.flagIsSet(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
 		// is acceptable if the sequence number is in the window.
 		if s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
-			return tcpip.ErrConnectionRefused
+			return &tcpip.ErrConnectionRefused{}
 		}
 		return nil
 	}
@@ -349,7 +349,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
 
 		if !h.active {
-			return tcpip.ErrInvalidEndpointState
+			return &tcpip.ErrInvalidEndpointState{}
 		}
 
 		h.resetState()
@@ -412,7 +412,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 	return nil
 }
 
-func (h *handshake) handleSegment(s *segment) *tcpip.Error {
+func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
 	if !s.flagIsSet(header.TCPFlagSyn) && h.sndWndScale > 0 {
 		h.sndWnd <<= uint8(h.sndWndScale)
@@ -429,7 +429,7 @@ func (h *handshake) handleSegment(s *segment) *tcpip.Error {
 
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
-func (h *handshake) processSegments() *tcpip.Error {
+func (h *handshake) processSegments() tcpip.Error {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := h.ep.segmentQueue.dequeue()
 		if s == nil {
@@ -505,7 +505,7 @@ func (h *handshake) start() {
 }
 
 // complete completes the TCP 3-way handshake initiated by h.start().
-func (h *handshake) complete() *tcpip.Error {
+func (h *handshake) complete() tcpip.Error {
 	// Set up the wakers.
 	var s sleep.Sleeper
 	resendWaker := sleep.Waker{}
@@ -555,7 +555,7 @@ func (h *handshake) complete() *tcpip.Error {
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
 			if (n&notifyClose)|(n&notifyAbort) != 0 {
-				return tcpip.ErrAborted
+				return &tcpip.ErrAborted{}
 			}
 			if n&notifyDrain != 0 {
 				for !h.ep.segmentQueue.empty() {
@@ -593,19 +593,19 @@ type backoffTimer struct {
 	t          *time.Timer
 }
 
-func newBackoffTimer(timeout, maxTimeout time.Duration, f func()) (*backoffTimer, *tcpip.Error) {
+func newBackoffTimer(timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
 	if timeout > maxTimeout {
-		return nil, tcpip.ErrTimeout
+		return nil, &tcpip.ErrTimeout{}
 	}
 	bt := &backoffTimer{timeout: timeout, maxTimeout: maxTimeout}
 	bt.t = time.AfterFunc(timeout, f)
 	return bt, nil
 }
 
-func (bt *backoffTimer) reset() *tcpip.Error {
+func (bt *backoffTimer) reset() tcpip.Error {
 	bt.timeout *= 2
 	if bt.timeout > MaxRTO {
-		return tcpip.ErrTimeout
+		return &tcpip.ErrTimeout{}
 	}
 	bt.t.Reset(bt.timeout)
 	return nil
@@ -706,7 +706,7 @@ type tcpFields struct {
 	txHash uint32
 }
 
-func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) *tcpip.Error {
+func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
 	tf.opts = makeSynOptions(opts)
 	// We ignore SYN send errors and let the callers re-attempt send.
 	if err := e.sendTCP(r, tf, buffer.VectorisedView{}, nil); err != nil {
@@ -716,7 +716,7 @@ func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 	return nil
 }
 
-func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) *tcpip.Error {
+func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) tcpip.Error {
 	tf.txHash = e.txHash
 	if err := sendTCP(r, tf, data, gso, e.owner); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
@@ -755,7 +755,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 	}
 }
 
-func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
+func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	// We need to shallow clone the VectorisedView here as ReadToView will
 	// split the VectorisedView and Trim underlying views as it splits. Not
 	// doing the clone here will cause the underlying views of data itself
@@ -803,7 +803,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) *tcpip.Error {
+func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
@@ -875,7 +875,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 }
 
 // sendRaw sends a TCP segment to the endpoint's peer.
-func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
+func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
@@ -941,12 +941,14 @@ func (e *endpoint) handleClose() {
 // error code and sends a RST if and only if the error is not ErrConnectionReset
 // indicating that the connection is being reset due to receiving a RST. This
 // method must only be called from the protocol goroutine.
-func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
+func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
 	e.setEndpointState(StateError)
 	e.hardError = err
-	if err != tcpip.ErrConnectionReset && err != tcpip.ErrTimeout {
+	switch err.(type) {
+	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
+	default:
 		// The exact sequence number to be used for the RST is the same as the
 		// one used by Linux. We need to handle the case of window being shrunk
 		// which can cause sndNxt to be outside the acceptable window on the
@@ -1056,7 +1058,7 @@ func (e *endpoint) drainClosingSegmentQueue() {
 	}
 }
 
-func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
+func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 	if e.rcv.acceptable(s.sequenceNumber, 0) {
 		// RFC 793, page 37 states that "in all states
 		// except SYN-SENT, all reset (RST) segments are
@@ -1084,7 +1086,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 		//  delete the TCB, and return.
 		case StateCloseWait:
 			e.transitionToStateCloseLocked()
-			e.hardError = tcpip.ErrAborted
+			e.hardError = &tcpip.ErrAborted{}
 			e.notifyProtocolGoroutine(notifyTickleWorker)
 			return false, nil
 		default:
@@ -1097,14 +1099,14 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 			// handleSegment is invoked from the processor goroutine
 			// rather than the worker goroutine.
 			e.notifyProtocolGoroutine(notifyResetByPeer)
-			return false, tcpip.ErrConnectionReset
+			return false, &tcpip.ErrConnectionReset{}
 		}
 	}
 	return true, nil
 }
 
 // handleSegments processes all inbound segments.
-func (e *endpoint) handleSegments(fastPath bool) *tcpip.Error {
+func (e *endpoint) handleSegments(fastPath bool) tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		if e.EndpointState().closed() {
@@ -1151,7 +1153,7 @@ func (e *endpoint) probeSegment() {
 
 // handleSegment handles a given segment and notifies the worker goroutine if
 // if the connection should be terminated.
-func (e *endpoint) handleSegment(s *segment) (cont bool, err *tcpip.Error) {
+func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
 	defer e.probeSegment()
@@ -1225,7 +1227,7 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err *tcpip.Error) {
 // keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
 // keepalive packets periodically when the connection is idle. If we don't hear
 // from the other side after a number of tries, we terminate the connection.
-func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
+func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
 	e.keepalive.Lock()
@@ -1239,13 +1241,13 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 	if userTimeout != 0 && time.Since(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
-		return tcpip.ErrTimeout
+		return &tcpip.ErrTimeout{}
 	}
 
 	if e.keepalive.unacked >= e.keepalive.count {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
-		return tcpip.ErrTimeout
+		return &tcpip.ErrTimeout{}
 	}
 
 	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with
@@ -1289,7 +1291,7 @@ func (e *endpoint) disableKeepaliveTimer() {
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
 // goroutine and is responsible for sending segments and handling received
 // segments.
-func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) *tcpip.Error {
+func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) tcpip.Error {
 	e.mu.Lock()
 	var closeTimer *time.Timer
 	var closeWaker sleep.Waker
@@ -1355,25 +1357,25 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	// wakes up.
 	funcs := []struct {
 		w *sleep.Waker
-		f func() *tcpip.Error
+		f func() tcpip.Error
 	}{
 		{
 			w: &e.sndWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				e.handleWrite()
 				return nil
 			},
 		},
 		{
 			w: &e.sndCloseWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				e.handleClose()
 				return nil
 			},
 		},
 		{
 			w: &closeWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				// This means the socket is being closed due
 				// to the TCP-FIN-WAIT2 timeout was hit. Just
 				// mark the socket as closed.
@@ -1384,10 +1386,10 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		},
 		{
 			w: &e.snd.resendWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				if !e.snd.retransmitTimerExpired() {
 					e.stack.Stats().TCP.EstablishedTimedout.Increment()
-					return tcpip.ErrTimeout
+					return &tcpip.ErrTimeout{}
 				}
 				return nil
 			},
@@ -1398,7 +1400,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		},
 		{
 			w: &e.newSegmentWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				return e.handleSegments(false /* fastPath */)
 			},
 		},
@@ -1408,7 +1410,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		},
 		{
 			w: &e.notificationWaker,
-			f: func() *tcpip.Error {
+			f: func() tcpip.Error {
 				n := e.fetchNotifications()
 				if n&notifyNonZeroReceiveWindow != 0 {
 					e.rcv.nonZeroWindow()
@@ -1425,11 +1427,11 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 				}
 
 				if n&notifyReset != 0 || n&notifyAbort != 0 {
-					return tcpip.ErrConnectionAborted
+					return &tcpip.ErrConnectionAborted{}
 				}
 
 				if n&notifyResetByPeer != 0 {
-					return tcpip.ErrConnectionReset
+					return &tcpip.ErrConnectionReset{}
 				}
 
 				if n&notifyClose != 0 && closeTimer == nil {
@@ -1508,7 +1510,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 
 	// Main loop. Handle segments until both send and receive ends of the
 	// connection have completed.
-	cleanupOnError := func(err *tcpip.Error) {
+	cleanupOnError := func(err tcpip.Error) {
 		e.stack.Stats().TCP.CurrentConnected.Decrement()
 		e.workerCleanup = true
 		if err != nil {

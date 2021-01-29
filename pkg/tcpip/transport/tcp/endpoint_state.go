@@ -59,7 +59,7 @@ func (e *endpoint) beforeSave() {
 					Err: fmt.Errorf("endpoint cannot be saved in connected state: local %s:%d, remote %s:%d", e.ID.LocalAddress, e.ID.LocalPort, e.ID.RemoteAddress, e.ID.RemotePort),
 				})
 			}
-			e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
 			e.mu.Unlock()
 			e.Close()
 			e.mu.Lock()
@@ -232,7 +232,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		// Reset the scoreboard to reinitialize the sack information as
 		// we do not restore SACK information.
 		e.scoreboard.Reset()
-		if err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}, false, e.workerRunning); err != tcpip.ErrConnectStarted {
+		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}, false, e.workerRunning)
+		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			panic("endpoint connecting failed: " + err.String())
 		}
 		e.mu.Lock()
@@ -269,7 +270,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectedLoading.Wait()
 			listenLoading.Wait()
 			bind()
-			if err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}); err != tcpip.ErrConnectStarted {
+			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort})
+			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 				panic("endpoint connecting failed: " + err.String())
 			}
 			connectingLoading.Done()
@@ -296,24 +298,6 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	}
 }
 
-// saveLastError is invoked by stateify.
-func (e *endpoint) saveLastError() string {
-	if e.lastError == nil {
-		return ""
-	}
-
-	return e.lastError.String()
-}
-
-// loadLastError is invoked by stateify.
-func (e *endpoint) loadLastError(s string) {
-	if s == "" {
-		return
-	}
-
-	e.lastError = tcpip.StringToError(s)
-}
-
 // saveRecentTSTime is invoked by stateify.
 func (e *endpoint) saveRecentTSTime() unixTime {
 	return unixTime{e.recentTSTime.Unix(), e.recentTSTime.UnixNano()}
@@ -322,24 +306,6 @@ func (e *endpoint) saveRecentTSTime() unixTime {
 // loadRecentTSTime is invoked by stateify.
 func (e *endpoint) loadRecentTSTime(unix unixTime) {
 	e.recentTSTime = time.Unix(unix.second, unix.nano)
-}
-
-// saveHardError is invoked by stateify.
-func (e *endpoint) saveHardError() string {
-	if e.hardError == nil {
-		return ""
-	}
-
-	return e.hardError.String()
-}
-
-// loadHardError is invoked by stateify.
-func (e *endpoint) loadHardError(s string) {
-	if s == "" {
-		return
-	}
-
-	e.hardError = tcpip.StringToError(s)
 }
 
 // saveMeasureTime is invoked by stateify.

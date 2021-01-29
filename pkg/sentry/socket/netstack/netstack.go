@@ -251,11 +251,11 @@ var errStackType = syserr.New("expected but did not receive a netstack.Stack", l
 type commonEndpoint interface {
 	// GetLocalAddress implements tcpip.Endpoint.GetLocalAddress and
 	// transport.Endpoint.GetLocalAddress.
-	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress and
 	// transport.Endpoint.GetRemoteAddress.
-	GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error)
+	GetRemoteAddress() (tcpip.FullAddress, tcpip.Error)
 
 	// Readiness implements tcpip.Endpoint.Readiness and
 	// transport.Endpoint.Readiness.
@@ -263,19 +263,19 @@ type commonEndpoint interface {
 
 	// SetSockOpt implements tcpip.Endpoint.SetSockOpt and
 	// transport.Endpoint.SetSockOpt.
-	SetSockOpt(tcpip.SettableSocketOption) *tcpip.Error
+	SetSockOpt(tcpip.SettableSocketOption) tcpip.Error
 
 	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
 	// transport.Endpoint.SetSockOptInt.
-	SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error
+	SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error
 
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
-	GetSockOpt(tcpip.GettableSocketOption) *tcpip.Error
+	GetSockOpt(tcpip.GettableSocketOption) tcpip.Error
 
 	// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt and
 	// transport.Endpoint.GetSockOpt.
-	GetSockOptInt(opt tcpip.SockOptInt) (int, *tcpip.Error)
+	GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error)
 
 	// State returns a socket's lifecycle state. The returned value is
 	// protocol-specific and is primarily used for diagnostics.
@@ -283,7 +283,7 @@ type commonEndpoint interface {
 
 	// LastError implements tcpip.Endpoint.LastError and
 	// transport.Endpoint.LastError.
-	LastError() *tcpip.Error
+	LastError() tcpip.Error
 
 	// SocketOptions implements tcpip.Endpoint.SocketOptions and
 	// transport.Endpoint.SocketOptions.
@@ -442,7 +442,7 @@ func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Write
 func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	r := src.Reader(ctx)
 	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
-	if err == tcpip.ErrWouldBlock {
+	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		return 0, syserror.ErrWouldBlock
 	}
 	if err != nil {
@@ -486,7 +486,7 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 		// so we can't release the lock while copying data.
 		Atomic: true,
 	})
-	if err == tcpip.ErrBadBuffer {
+	if _, ok := err.(*tcpip.ErrBadBuffer); ok {
 		return n, f.err
 	}
 	return n, syserr.TranslateNetstackError(err).ToError()
@@ -533,7 +533,7 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 
 	if family == linux.AF_UNSPEC {
 		err := s.Endpoint.Disconnect()
-		if err == tcpip.ErrNotSupported {
+		if _, ok := err.(*tcpip.ErrNotSupported); ok {
 			return syserr.ErrAddressFamilyNotSupported
 		}
 		return syserr.TranslateNetstackError(err)
@@ -555,15 +555,16 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	s.EventRegister(&e, waiter.EventOut)
 	defer s.EventUnregister(&e)
 
-	if err := s.Endpoint.Connect(addr); err != tcpip.ErrConnectStarted && err != tcpip.ErrAlreadyConnecting {
+	switch err := s.Endpoint.Connect(addr); err.(type) {
+	case *tcpip.ErrConnectStarted, *tcpip.ErrAlreadyConnecting:
+	case *tcpip.ErrNoPortAvailable:
 		if (s.family == unix.AF_INET || s.family == unix.AF_INET6) && s.skType == linux.SOCK_STREAM {
 			// TCP unlike UDP returns EADDRNOTAVAIL when it can't
 			// find an available local ephemeral port.
-			if err == tcpip.ErrNoPortAvailable {
-				return syserr.ErrAddressNotAvailable
-			}
+			return syserr.ErrAddressNotAvailable
 		}
-
+		return syserr.TranslateNetstackError(err)
+	default:
 		return syserr.TranslateNetstackError(err)
 	}
 
@@ -621,16 +622,16 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 
 	// Issue the bind request to the endpoint.
 	err := s.Endpoint.Bind(addr)
-	if err == tcpip.ErrNoPortAvailable {
+	if _, ok := err.(*tcpip.ErrNoPortAvailable); ok {
 		// Bind always returns EADDRINUSE irrespective of if the specified port was
 		// already bound or if an ephemeral port was requested but none were
 		// available.
 		//
-		// tcpip.ErrNoPortAvailable is mapped to EAGAIN in syserr package because
+		// *tcpip.ErrNoPortAvailable is mapped to EAGAIN in syserr package because
 		// UDP connect returns EAGAIN on ephemeral port exhaustion.
 		//
 		// TCP connect returns EADDRNOTAVAIL on ephemeral port exhaustion.
-		err = tcpip.ErrPortInUse
+		err = &tcpip.ErrPortInUse{}
 	}
 
 	return syserr.TranslateNetstackError(err)
@@ -653,7 +654,8 @@ func (s *socketOpsCommon) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAdd
 	// Try to accept the connection again; if it fails, then wait until we
 	// get a notification.
 	for {
-		if ep, wq, err := s.Endpoint.Accept(peerAddr); err != tcpip.ErrWouldBlock {
+		ep, wq, err := s.Endpoint.Accept(peerAddr)
+		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			return ep, wq, syserr.TranslateNetstackError(err)
 		}
 
@@ -672,7 +674,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	}
 	ep, wq, terr := s.Endpoint.Accept(peerAddr)
 	if terr != nil {
-		if terr != tcpip.ErrWouldBlock || !blocking {
+		if _, ok := terr.(*tcpip.ErrWouldBlock); !ok || !blocking {
 			return 0, nil, 0, syserr.TranslateNetstackError(terr)
 		}
 
@@ -2564,7 +2566,7 @@ func (s *socketOpsCommon) nonBlockingRead(ctx context.Context, dst usermem.IOSeq
 	defer s.readMu.Unlock()
 
 	res, err := s.Endpoint.Read(w, readOptions)
-	if err == tcpip.ErrBadBuffer && dst.NumBytes() == 0 {
+	if _, ok := err.(*tcpip.ErrBadBuffer); ok && dst.NumBytes() == 0 {
 		err = nil
 	}
 	if err != nil {
@@ -2820,13 +2822,15 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		if flags&linux.MSG_DONTWAIT != 0 {
 			return int(total), syserr.TranslateNetstackError(err)
 		}
-		switch err {
+		block := true
+		switch err.(type) {
 		case nil:
-			if total == src.NumBytes() {
-				break
-			}
-			fallthrough
-		case tcpip.ErrWouldBlock:
+			block = total != src.NumBytes()
+		case *tcpip.ErrWouldBlock:
+		default:
+			block = false
+		}
+		if block {
 			if ch == nil {
 				// We'll have to block. Register for notification and keep trying to
 				// send all the data.

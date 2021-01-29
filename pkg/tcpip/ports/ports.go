@@ -329,7 +329,7 @@ func NewPortManager() *PortManager {
 // possible ephemeral ports, allowing the caller to decide whether a given port
 // is suitable for its needs, and stopping when a port is found or an error
 // occurs.
-func (s *PortManager) PickEphemeralPort(testPort func(p uint16) (bool, *tcpip.Error)) (port uint16, err *tcpip.Error) {
+func (s *PortManager) PickEphemeralPort(testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
 	offset := uint32(rand.Int31n(numEphemeralPorts))
 	return s.pickEphemeralPort(offset, numEphemeralPorts, testPort)
 }
@@ -348,7 +348,7 @@ func (s *PortManager) incPortHint() {
 // iterates over all ephemeral ports, allowing the caller to decide whether a
 // given port is suitable for its needs and stopping when a port is found or an
 // error occurs.
-func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uint16) (bool, *tcpip.Error)) (port uint16, err *tcpip.Error) {
+func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
 	p, err := s.pickEphemeralPort(s.portHint()+offset, numEphemeralPorts, testPort)
 	if err == nil {
 		s.incPortHint()
@@ -361,7 +361,7 @@ func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uin
 // and iterates over the number of ports specified by count and allows the
 // caller to decide whether a given port is suitable for its needs, and stopping
 // when a port is found or an error occurs.
-func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p uint16) (bool, *tcpip.Error)) (port uint16, err *tcpip.Error) {
+func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
 	for i := uint32(0); i < count; i++ {
 		port = uint16(FirstEphemeral + (offset+i)%count)
 		ok, err := testPort(port)
@@ -374,7 +374,7 @@ func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p ui
 		}
 	}
 
-	return 0, tcpip.ErrNoPortAvailable
+	return 0, &tcpip.ErrNoPortAvailable{}
 }
 
 // IsPortAvailable tests if the given port is available on all given protocols.
@@ -404,7 +404,7 @@ func (s *PortManager) isPortAvailableLocked(networks []tcpip.NetworkProtocolNumb
 // An optional testPort closure can be passed in which if provided will be used
 // to test if the picked port can be used. The function should return true if
 // the port is safe to use, false otherwise.
-func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID, dest tcpip.FullAddress, testPort func(port uint16) bool) (reservedPort uint16, err *tcpip.Error) {
+func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16, flags Flags, bindToDevice tcpip.NICID, dest tcpip.FullAddress, testPort func(port uint16) bool) (reservedPort uint16, err tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -414,17 +414,17 @@ func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transp
 	// protocols.
 	if port != 0 {
 		if !s.reserveSpecificPort(networks, transport, addr, port, flags, bindToDevice, dst) {
-			return 0, tcpip.ErrPortInUse
+			return 0, &tcpip.ErrPortInUse{}
 		}
 		if testPort != nil && !testPort(port) {
 			s.releasePortLocked(networks, transport, addr, port, flags.Bits(), bindToDevice, dst)
-			return 0, tcpip.ErrPortInUse
+			return 0, &tcpip.ErrPortInUse{}
 		}
 		return port, nil
 	}
 
 	// A port wasn't specified, so try to find one.
-	return s.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
+	return s.PickEphemeralPort(func(p uint16) (bool, tcpip.Error) {
 		if !s.reserveSpecificPort(networks, transport, addr, p, flags, bindToDevice, dst) {
 			return false, nil
 		}

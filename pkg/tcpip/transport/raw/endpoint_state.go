@@ -73,7 +73,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	// If the endpoint is connected, re-connect.
 	if e.connected {
-		var err *tcpip.Error
+		var err tcpip.Error
 		// TODO(gvisor.dev/issue/4906): Properly restore the route with the right
 		// remote address. We used to pass e.remote.RemoteAddress which was
 		// effectively the empty address but since moving e.route to hold a pointer
@@ -89,7 +89,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	// If the endpoint is bound, re-bind.
 	if e.bound {
 		if e.stack.CheckLocalAddress(e.RegisterNICID, e.NetProto, e.BindAddr) == 0 {
-			panic(tcpip.ErrBadLocalAddress)
+			panic(&tcpip.ErrBadLocalAddress{})
 		}
 	}
 

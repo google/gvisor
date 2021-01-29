@@ -114,7 +114,7 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 	}
 }
 
-func (f *packetsPendingLinkResolution) writePacketBuffer(r RouteInfo, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, *tcpip.Error) {
+func (f *packetsPendingLinkResolution) writePacketBuffer(r RouteInfo, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	switch pkt := pkt.(type) {
 	case *PacketBuffer:
 		if err := f.nic.writePacket(r, gso, proto, pkt); err != nil {
@@ -133,7 +133,7 @@ func (f *packetsPendingLinkResolution) writePacketBuffer(r RouteInfo, gso *GSO, 
 // If the maximum number of pending resolutions is reached, the packets
 // associated with the oldest link resolution will be dequeued as if they failed
 // link resolution.
-func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, *tcpip.Error) {
+func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	f.mu.Lock()
 	// Make sure we attempt resolution while holding f's lock so that we avoid
 	// a race where link resolution completes before we enqueue the packets.
@@ -146,13 +146,13 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.N
 	// To make sure B does not interleave with A and C, we make sure A and C are
 	// done while holding the lock.
 	routeInfo, ch, err := r.resolvedFields(nil)
-	switch err {
+	switch err.(type) {
 	case nil:
 		// The route resolved immediately, so we don't need to wait for link
 		// resolution to send the packet.
 		f.mu.Unlock()
 		return f.writePacketBuffer(routeInfo, gso, proto, pkt)
-	case tcpip.ErrWouldBlock:
+	case *tcpip.ErrWouldBlock:
 		// We need to wait for link resolution to complete.
 	default:
 		f.mu.Unlock()

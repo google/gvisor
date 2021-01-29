@@ -87,8 +87,6 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
 	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
-	var lastErrorValue string = e.saveLastError()
-	stateSinkObject.SaveValue(16, lastErrorValue)
 	stateSinkObject.Save(0, &e.TransportEndpointInfo)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.waiterQueue)
@@ -104,6 +102,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &e.multicastAddr)
 	stateSinkObject.Save(14, &e.multicastNICID)
 	stateSinkObject.Save(15, &e.portFlags)
+	stateSinkObject.Save(16, &e.lastError)
 	stateSinkObject.Save(17, &e.boundBindToDevice)
 	stateSinkObject.Save(18, &e.boundPortFlags)
 	stateSinkObject.Save(19, &e.sendTOS)
@@ -130,6 +129,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &e.multicastAddr)
 	stateSourceObject.Load(14, &e.multicastNICID)
 	stateSourceObject.Load(15, &e.portFlags)
+	stateSourceObject.Load(16, &e.lastError)
 	stateSourceObject.Load(17, &e.boundBindToDevice)
 	stateSourceObject.Load(18, &e.boundPortFlags)
 	stateSourceObject.Load(19, &e.sendTOS)
@@ -139,7 +139,6 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(23, &e.owner)
 	stateSourceObject.Load(24, &e.ops)
 	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
-	stateSourceObject.LoadValue(16, new(string), func(y interface{}) { e.loadLastError(y.(string)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

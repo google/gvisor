@@ -118,7 +118,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 
 	// Create the endpoint.
 	var ep tcpip.Endpoint
-	var e *tcpip.Error
+	var e tcpip.Error
 	wq := &waiter.Queue{}
 	if stype == linux.SOCK_RAW {
 		ep, e = eps.Stack.NewRawEndpoint(transProto, p.netProto, wq, associated)

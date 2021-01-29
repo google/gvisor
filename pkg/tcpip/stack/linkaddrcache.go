@@ -199,7 +199,7 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 }
 
 // get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, nic NetworkInterface, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.getOrCreateEntryLocked(k)
@@ -226,7 +226,7 @@ func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localA
 			entry.mu.done = make(chan struct{})
 			go c.startAddressResolution(k, linkRes, localAddr, nic, entry.mu.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		}
-		return entry.mu.linkAddr, entry.mu.done, tcpip.ErrWouldBlock
+		return entry.mu.linkAddr, entry.mu.done, &tcpip.ErrWouldBlock{}
 	default:
 		panic(fmt.Sprintf("invalid cache entry state: %s", s))
 	}

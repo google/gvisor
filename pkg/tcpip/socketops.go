@@ -46,16 +46,16 @@ type SocketOptionsHandler interface {
 	OnCorkOptionSet(v bool)
 
 	// LastError is invoked when SO_ERROR is read for an endpoint.
-	LastError() *Error
+	LastError() Error
 
 	// UpdateLastError updates the endpoint specific last error field.
-	UpdateLastError(err *Error)
+	UpdateLastError(err Error)
 
 	// HasNIC is invoked to check if the NIC is valid for SO_BINDTODEVICE.
 	HasNIC(v int32) bool
 
 	// GetSendBufferSize is invoked to get the SO_SNDBUFSIZE.
-	GetSendBufferSize() (int64, *Error)
+	GetSendBufferSize() (int64, Error)
 
 	// IsUnixSocket is invoked to check if the socket is of unix domain.
 	IsUnixSocket() bool
@@ -83,12 +83,12 @@ func (*DefaultSocketOptionsHandler) OnDelayOptionSet(bool) {}
 func (*DefaultSocketOptionsHandler) OnCorkOptionSet(bool) {}
 
 // LastError implements SocketOptionsHandler.LastError.
-func (*DefaultSocketOptionsHandler) LastError() *Error {
+func (*DefaultSocketOptionsHandler) LastError() Error {
 	return nil
 }
 
 // UpdateLastError implements SocketOptionsHandler.UpdateLastError.
-func (*DefaultSocketOptionsHandler) UpdateLastError(*Error) {}
+func (*DefaultSocketOptionsHandler) UpdateLastError(Error) {}
 
 // HasNIC implements SocketOptionsHandler.HasNIC.
 func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
@@ -96,7 +96,7 @@ func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
 }
 
 // GetSendBufferSize implements SocketOptionsHandler.GetSendBufferSize.
-func (*DefaultSocketOptionsHandler) GetSendBufferSize() (int64, *Error) {
+func (*DefaultSocketOptionsHandler) GetSendBufferSize() (int64, Error) {
 	return 0, nil
 }
 
@@ -109,11 +109,11 @@ func (*DefaultSocketOptionsHandler) IsUnixSocket() bool {
 // implemented by the stack.
 type StackHandler interface {
 	// Option allows retrieving stack wide options.
-	Option(option interface{}) *Error
+	Option(option interface{}) Error
 
 	// TransportProtocolOption allows retrieving individual protocol level
 	// option values.
-	TransportProtocolOption(proto TransportProtocolNumber, option GettableTransportProtocolOption) *Error
+	TransportProtocolOption(proto TransportProtocolNumber, option GettableTransportProtocolOption) Error
 }
 
 // SocketOptions contains all the variables which store values for SOL_SOCKET,
@@ -238,7 +238,7 @@ func storeAtomicBool(addr *uint32, v bool) {
 }
 
 // SetLastError sets the last error for a socket.
-func (so *SocketOptions) SetLastError(err *Error) {
+func (so *SocketOptions) SetLastError(err Error) {
 	so.handler.UpdateLastError(err)
 }
 
@@ -423,7 +423,7 @@ func (so *SocketOptions) SetRecvError(v bool) {
 }
 
 // GetLastError gets value for SO_ERROR option.
-func (so *SocketOptions) GetLastError() *Error {
+func (so *SocketOptions) GetLastError() Error {
 	return so.handler.LastError()
 }
 
@@ -480,7 +480,7 @@ type SockError struct {
 	sockErrorEntry
 
 	// Err is the error caused by the errant packet.
-	Err *Error
+	Err Error
 	// ErrOrigin indicates the error origin.
 	ErrOrigin SockErrOrigin
 	// ErrType is the type in the ICMP header.
@@ -538,7 +538,7 @@ func (so *SocketOptions) QueueErr(err *SockError) {
 }
 
 // QueueLocalErr queues a local error onto the local queue.
-func (so *SocketOptions) QueueLocalErr(err *Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload []byte) {
+func (so *SocketOptions) QueueLocalErr(err Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload []byte) {
 	so.QueueErr(&SockError{
 		Err:       err,
 		ErrOrigin: SockExtErrorOriginLocal,
@@ -555,9 +555,9 @@ func (so *SocketOptions) GetBindToDevice() int32 {
 }
 
 // SetBindToDevice sets value for SO_BINDTODEVICE option.
-func (so *SocketOptions) SetBindToDevice(bindToDevice int32) *Error {
+func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 	if !so.handler.HasNIC(bindToDevice) {
-		return ErrUnknownDevice
+		return &ErrUnknownDevice{}
 	}
 
 	atomic.StoreInt32(&so.bindToDevice, bindToDevice)
@@ -565,7 +565,7 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) *Error {
 }
 
 // GetSendBufferSize gets value for SO_SNDBUF option.
-func (so *SocketOptions) GetSendBufferSize() (int64, *Error) {
+func (so *SocketOptions) GetSendBufferSize() (int64, Error) {
 	if so.handler.IsUnixSocket() {
 		return so.handler.GetSendBufferSize()
 	}

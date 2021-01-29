@@ -129,7 +129,7 @@ type packetMMapDispatcher struct {
 	ringOffset int
 }
 
-func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, *tcpip.Error) {
+func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
 		event := rawfile.PollEvent{
@@ -163,7 +163,7 @@ func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, *tcpip.Error) {
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
-func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
+func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	pkt, err := d.readMMappedPacket()
 	if err != nil {
 		return false, err
