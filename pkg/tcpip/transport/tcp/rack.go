@@ -22,12 +22,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
-// wcDelayedACKTimeout is the recommended maximum delayed ACK timer value as
-// defined in https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.
-// It stands for worst case delayed ACK timer (WCDelAckT). When FlightSize is
-// 1, PTO is inflated by WCDelAckT time to compensate for a potential long
-// delayed ACK timer at the receiver.
-const wcDelayedACKTimeout = 200 * time.Millisecond
+const (
+	// wcDelayedACKTimeout is the recommended maximum delayed ACK timer
+	// value as defined in the RFC. It stands for worst case delayed ACK
+	// timer (WCDelAckT). When FlightSize is 1, PTO is inflated by
+	// WCDelAckT time to compensate for a potential long delayed ACK timer
+	// at the receiver.
+	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.
+	wcDelayedACKTimeout = 200 * time.Millisecond
+
+	// tcpRACKRecoveryThreshold is the number of loss recoveries for which
+	// the reorder window is inflated and after that the reorder window is
+	// reset to its initial value of minRTT/4.
+	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2.
+	tcpRACKRecoveryThreshold = 16
+)
 
 // RACK is a loss detection algorithm used in TCP to detect packet loss and
 // reordering using transmission timestamp of the packets instead of packet or
@@ -44,6 +53,11 @@ type rackControl struct {
 	// endSequence is the ending TCP sequence number of rackControl.seg.
 	endSequence seqnum.Value
 
+	// exitedRecovery indicates if the connection is exiting loss recovery.
+	// This flag is set if the sender is leaving the recovery after
+	// receiving an ACK and is reset during updating of reorder window.
+	exitedRecovery bool
+
 	// fack is the highest selectively or cumulatively acknowledged
 	// sequence.
 	fack seqnum.Value
@@ -51,15 +65,30 @@ type rackControl struct {
 	// minRTT is the estimated minimum RTT of the connection.
 	minRTT time.Duration
 
+	// reorderSeen indicates if reordering has been detected on this
+	// connection.
+	reorderSeen bool
+
+	// reoWnd is the reordering window time used for recording packet
+	// transmission times. It is used to defer the moment at which RACK
+	// marks a packet lost.
+	reoWnd time.Duration
+
+	// reoWndIncr is the multiplier applied to adjust reorder window.
+	reoWndIncr uint8
+
+	// reoWndPersist is the number of loss recoveries before resetting
+	// reorder window.
+	reoWndPersist int8
+
 	// rtt is the RTT of the most recently delivered packet on the
 	// connection (either cumulatively acknowledged or selectively
 	// acknowledged) that was not marked invalid as a possible spurious
 	// retransmission.
 	rtt time.Duration
 
-	// reorderSeen indicates if reordering has been detected on this
-	// connection.
-	reorderSeen bool
+	// rttSeq is the SND.NXT when rtt is updated.
+	rttSeq seqnum.Value
 
 	// xmitTime is the latest transmission timestamp of rackControl.seg.
 	xmitTime time.Time `state:".(unixTime)"`
@@ -75,29 +104,36 @@ type rackControl struct {
 	// tlpHighRxt the value of sender.sndNxt at the time of sending
 	// a TLP retransmission.
 	tlpHighRxt seqnum.Value
+
+	// snd is a reference to the sender.
+	snd *sender
 }
 
 // init initializes RACK specific fields.
-func (rc *rackControl) init() {
+func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
+	rc.fack = iss
+	rc.reoWndIncr = 1
+	rc.snd = snd
 	rc.probeTimer.init(&rc.probeWaker)
 }
 
 // update will update the RACK related fields when an ACK has been received.
-// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-func (rc *rackControl) update(seg *segment, ackSeg *segment, offset uint32) {
+// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
+func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	rtt := time.Now().Sub(seg.xmitTime)
+	tsOffset := rc.snd.ep.tsOffset
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
 	// spurious inference which is determined by below checks:
-	// 1. When Timestamping option is available, if the TSVal is less than the
-	// transmit time of the most recent retransmitted packet.
+	// 1. When Timestamping option is available, if the TSVal is less than
+	// the transmit time of the most recent retransmitted packet.
 	// 2. When RTT calculated for the packet is less than the smoothed RTT
 	// for the connection.
 	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 	// step 2
 	if seg.xmitCount > 1 {
 		if ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
-			if ackSeg.parsedOptions.TSEcr < tcpTimeStamp(seg.xmitTime, offset) {
+			if ackSeg.parsedOptions.TSEcr < tcpTimeStamp(seg.xmitTime, tsOffset) {
 				return
 			}
 		}
@@ -149,9 +185,8 @@ func (rc *rackControl) detectReorder(seg *segment) {
 	}
 }
 
-// setDSACKSeen updates rack control if duplicate SACK is seen by the connection.
-func (rc *rackControl) setDSACKSeen() {
-	rc.dsackSeen = true
+func (rc *rackControl) setDSACKSeen(dsackSeen bool) {
+	rc.dsackSeen = dsackSeen
 }
 
 // shouldSchedulePTO dictates whether we should schedule a PTO or not.
@@ -271,4 +306,83 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 			s.leaveRecovery()
 		}
 	}
+}
+
+// updateRACKReorderWindow updates the reorder window.
+// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
+// * Step 4: Update RACK reordering window
+//   To handle the prevalent small degree of reordering, RACK.reo_wnd serves as
+//   an allowance for settling time before marking a packet lost. RACK starts
+//   initially with a conservative window of min_RTT/4. If no reordering has
+//   been observed RACK uses reo_wnd of zero during loss recovery, in order to
+//   retransmit quickly, or when the number of DUPACKs exceeds the classic
+//   DUPACKthreshold.
+func (rc *rackControl) updateRACKReorderWindow(ackSeg *segment) {
+	dsackSeen := rc.dsackSeen
+	snd := rc.snd
+
+	// React to DSACK once per round trip.
+	// If SND.UNA < RACK.rtt_seq:
+	//   RACK.dsack = false
+	if snd.sndUna.LessThan(rc.rttSeq) {
+		dsackSeen = false
+	}
+
+	// If RACK.dsack:
+	//   RACK.reo_wnd_incr += 1
+	//   RACK.dsack = false
+	//   RACK.rtt_seq = SND.NXT
+	//   RACK.reo_wnd_persist = 16
+	if dsackSeen {
+		rc.reoWndIncr++
+		dsackSeen = false
+		rc.rttSeq = snd.sndNxt
+		rc.reoWndPersist = tcpRACKRecoveryThreshold
+	} else if rc.exitedRecovery {
+		// Else if exiting loss recovery:
+		//   RACK.reo_wnd_persist -= 1
+		//   If RACK.reo_wnd_persist <= 0:
+		//      RACK.reo_wnd_incr = 1
+		rc.reoWndPersist--
+		if rc.reoWndPersist <= 0 {
+			rc.reoWndIncr = 1
+		}
+		rc.exitedRecovery = false
+	}
+
+	// Reorder window is zero during loss recovery, or when the number of
+	// DUPACKs exceeds the classic DUPACKthreshold.
+	// If RACK.reord is FALSE:
+	//   If in loss recovery:  (If in fast or timeout recovery)
+	//      RACK.reo_wnd = 0
+	//      Return
+	//   Else if RACK.pkts_sacked >= RACK.dupthresh:
+	//     RACK.reo_wnd = 0
+	//     return
+	if !rc.reorderSeen {
+		if snd.state == tcpip.RTORecovery || snd.state == tcpip.SACKRecovery {
+			rc.reoWnd = 0
+			return
+		}
+
+		if snd.sackedOut >= nDupAckThreshold {
+			rc.reoWnd = 0
+			return
+		}
+	}
+
+	// Calculate reorder window.
+	// RACK.reo_wnd = RACK.min_RTT / 4 * RACK.reo_wnd_incr
+	// RACK.reo_wnd = min(RACK.reo_wnd, SRTT)
+	snd.rtt.Lock()
+	srtt := snd.rtt.srtt
+	snd.rtt.Unlock()
+	rc.reoWnd = time.Duration((int64(rc.minRTT) / 4) * int64(rc.reoWndIncr))
+	if srtt < rc.reoWnd {
+		rc.reoWnd = srtt
+	}
+}
+
+func (rc *rackControl) exitRecovery() {
+	rc.exitedRecovery = true
 }

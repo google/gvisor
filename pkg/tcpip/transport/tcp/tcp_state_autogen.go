@@ -393,13 +393,19 @@ func (rc *rackControl) StateFields() []string {
 	return []string{
 		"dsackSeen",
 		"endSequence",
+		"exitedRecovery",
 		"fack",
 		"minRTT",
-		"rtt",
 		"reorderSeen",
+		"reoWnd",
+		"reoWndIncr",
+		"reoWndPersist",
+		"rtt",
+		"rttSeq",
 		"xmitTime",
 		"tlpRxtOut",
 		"tlpHighRxt",
+		"snd",
 	}
 }
 
@@ -408,27 +414,39 @@ func (rc *rackControl) beforeSave() {}
 func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	rc.beforeSave()
 	var xmitTimeValue unixTime = rc.saveXmitTime()
-	stateSinkObject.SaveValue(6, xmitTimeValue)
+	stateSinkObject.SaveValue(11, xmitTimeValue)
 	stateSinkObject.Save(0, &rc.dsackSeen)
 	stateSinkObject.Save(1, &rc.endSequence)
-	stateSinkObject.Save(2, &rc.fack)
-	stateSinkObject.Save(3, &rc.minRTT)
-	stateSinkObject.Save(4, &rc.rtt)
+	stateSinkObject.Save(2, &rc.exitedRecovery)
+	stateSinkObject.Save(3, &rc.fack)
+	stateSinkObject.Save(4, &rc.minRTT)
 	stateSinkObject.Save(5, &rc.reorderSeen)
-	stateSinkObject.Save(7, &rc.tlpRxtOut)
-	stateSinkObject.Save(8, &rc.tlpHighRxt)
+	stateSinkObject.Save(6, &rc.reoWnd)
+	stateSinkObject.Save(7, &rc.reoWndIncr)
+	stateSinkObject.Save(8, &rc.reoWndPersist)
+	stateSinkObject.Save(9, &rc.rtt)
+	stateSinkObject.Save(10, &rc.rttSeq)
+	stateSinkObject.Save(12, &rc.tlpRxtOut)
+	stateSinkObject.Save(13, &rc.tlpHighRxt)
+	stateSinkObject.Save(14, &rc.snd)
 }
 
 func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rc.dsackSeen)
 	stateSourceObject.Load(1, &rc.endSequence)
-	stateSourceObject.Load(2, &rc.fack)
-	stateSourceObject.Load(3, &rc.minRTT)
-	stateSourceObject.Load(4, &rc.rtt)
+	stateSourceObject.Load(2, &rc.exitedRecovery)
+	stateSourceObject.Load(3, &rc.fack)
+	stateSourceObject.Load(4, &rc.minRTT)
 	stateSourceObject.Load(5, &rc.reorderSeen)
-	stateSourceObject.Load(7, &rc.tlpRxtOut)
-	stateSourceObject.Load(8, &rc.tlpHighRxt)
-	stateSourceObject.LoadValue(6, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
+	stateSourceObject.Load(6, &rc.reoWnd)
+	stateSourceObject.Load(7, &rc.reoWndIncr)
+	stateSourceObject.Load(8, &rc.reoWndPersist)
+	stateSourceObject.Load(9, &rc.rtt)
+	stateSourceObject.Load(10, &rc.rttSeq)
+	stateSourceObject.Load(12, &rc.tlpRxtOut)
+	stateSourceObject.Load(13, &rc.tlpHighRxt)
+	stateSourceObject.Load(14, &rc.snd)
+	stateSourceObject.LoadValue(11, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
 	stateSourceObject.AfterLoad(rc.afterLoad)
 }
 
