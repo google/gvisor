@@ -23,6 +23,8 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -32,6 +34,16 @@ ABSL_FLAG(int32_t, scratch_uid1, 65534, "first scratch UID");
 ABSL_FLAG(int32_t, scratch_uid2, 65533, "second scratch UID");
 ABSL_FLAG(int32_t, scratch_gid1, 65534, "first scratch GID");
 ABSL_FLAG(int32_t, scratch_gid2, 65533, "second scratch GID");
+
+// Force use of syscall instead of glibc set*id() wrappers because we want to
+// apply to the current task only. libc sets all threads in a process because
+// "POSIX requires that all threads in a process share the same credentials."
+#define setuid USE_SYSCALL_INSTEAD
+#define setgid USE_SYSCALL_INSTEAD
+#define setreuid USE_SYSCALL_INSTEAD
+#define setregid USE_SYSCALL_INSTEAD
+#define setresuid USE_SYSCALL_INSTEAD
+#define setresgid USE_SYSCALL_INSTEAD
 
 using ::testing::UnorderedElementsAreArray;
 
@@ -137,21 +149,31 @@ TEST(UidGidRootTest, Setuid) {
 TEST(UidGidRootTest, Setgid) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
-  EXPECT_THAT(setgid(-1), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(syscall(SYS_setgid, -1), SyscallFailsWithErrno(EINVAL));
 
-  const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
-  ASSERT_THAT(setgid(gid), SyscallSucceeds());
-  EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
+  ScopedThread([&] {
+    const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
+    EXPECT_THAT(syscall(SYS_setgid, gid), SyscallSucceeds());
+    EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
+  });
 }
 
 TEST(UidGidRootTest, SetgidNotFromThreadGroupLeader) {
+#pragma push_macro("allow_setgid")
+#undef setgid
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
+
+  int old_gid = getgid();
+  auto clean = Cleanup([old_gid] { setgid(old_gid); });
 
   const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
   // NOTE(b/64676707): Do setgid in a separate thread so that we can test if
   // info.si_pid is set correctly.
   ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
   EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
+
+#pragma pop_macro("allow_setgid")
 }
 
 TEST(UidGidRootTest, Setreuid) {
@@ -159,27 +181,25 @@ TEST(UidGidRootTest, Setreuid) {
 
   // "Supplying a value of -1 for either the real or effective user ID forces
   // the system to leave that ID unchanged." - setreuid(2)
-  EXPECT_THAT(setreuid(-1, -1), SyscallSucceeds());
+  EXPECT_THAT(syscall(SYS_setreuid, -1, -1), SyscallSucceeds());
+
   EXPECT_NO_ERRNO(CheckUIDs(0, 0, 0));
 
   // Do setuid in a separate thread so that after finishing this test, the
-  // process can still open files the test harness created before starting this
-  // test. Otherwise, the files are created by root (UID before the test), but
-  // cannot be opened by the `uid` set below after the test. After calling
-  // setuid(non-zero-UID), there is no way to get root privileges back.
+  // process can still open files the test harness created before starting
+  // this test. Otherwise, the files are created by root (UID before the
+  // test), but cannot be opened by the `uid` set below after the test. After
+  // calling setuid(non-zero-UID), there is no way to get root privileges
+  // back.
   ScopedThread([&] {
     const uid_t ruid = absl::GetFlag(FLAGS_scratch_uid1);
     const uid_t euid = absl::GetFlag(FLAGS_scratch_uid2);
 
-    // Use syscall instead of glibc setuid wrapper because we want this setuid
-    // call to only apply to this task. posix threads, however, require that all
-    // threads have the same UIDs, so using the setuid wrapper sets all threads'
-    // real UID.
     EXPECT_THAT(syscall(SYS_setreuid, ruid, euid), SyscallSucceeds());
 
     // "If the real user ID is set or the effective user ID is set to a value
-    // not equal to the previous real user ID, the saved set-user-ID will be set
-    // to the new effective user ID." - setreuid(2)
+    // not equal to the previous real user ID, the saved set-user-ID will be
+    // set to the new effective user ID." - setreuid(2)
     EXPECT_NO_ERRNO(CheckUIDs(ruid, euid, euid));
   });
 }
@@ -187,13 +207,15 @@ TEST(UidGidRootTest, Setreuid) {
 TEST(UidGidRootTest, Setregid) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
-  EXPECT_THAT(setregid(-1, -1), SyscallSucceeds());
+  EXPECT_THAT(syscall(SYS_setregid, -1, -1), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckGIDs(0, 0, 0));
 
-  const gid_t rgid = absl::GetFlag(FLAGS_scratch_gid1);
-  const gid_t egid = absl::GetFlag(FLAGS_scratch_gid2);
-  ASSERT_THAT(setregid(rgid, egid), SyscallSucceeds());
-  EXPECT_NO_ERRNO(CheckGIDs(rgid, egid, egid));
+  ScopedThread([&] {
+    const gid_t rgid = absl::GetFlag(FLAGS_scratch_gid1);
+    const gid_t egid = absl::GetFlag(FLAGS_scratch_gid2);
+    ASSERT_THAT(syscall(SYS_setregid, rgid, egid), SyscallSucceeds());
+    EXPECT_NO_ERRNO(CheckGIDs(rgid, egid, egid));
+  });
 }
 
 TEST(UidGidRootTest, Setresuid) {
@@ -201,23 +223,24 @@ TEST(UidGidRootTest, Setresuid) {
 
   // "If one of the arguments equals -1, the corresponding value is not
   // changed." - setresuid(2)
-  EXPECT_THAT(setresuid(-1, -1, -1), SyscallSucceeds());
+  EXPECT_THAT(syscall(SYS_setresuid, -1, -1, -1), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckUIDs(0, 0, 0));
 
   // Do setuid in a separate thread so that after finishing this test, the
-  // process can still open files the test harness created before starting this
-  // test. Otherwise, the files are created by root (UID before the test), but
-  // cannot be opened by the `uid` set below after the test. After calling
-  // setuid(non-zero-UID), there is no way to get root privileges back.
+  // process can still open files the test harness created before starting
+  // this test. Otherwise, the files are created by root (UID before the
+  // test), but cannot be opened by the `uid` set below after the test. After
+  // calling setuid(non-zero-UID), there is no way to get root privileges
+  // back.
   ScopedThread([&] {
     const uid_t ruid = 12345;
     const uid_t euid = 23456;
     const uid_t suid = 34567;
 
     // Use syscall instead of glibc setuid wrapper because we want this setuid
-    // call to only apply to this task. posix threads, however, require that all
-    // threads have the same UIDs, so using the setuid wrapper sets all threads'
-    // real UID.
+    // call to only apply to this task. posix threads, however, require that
+    // all threads have the same UIDs, so using the setuid wrapper sets all
+    // threads' real UID.
     EXPECT_THAT(syscall(SYS_setresuid, ruid, euid, suid), SyscallSucceeds());
     EXPECT_NO_ERRNO(CheckUIDs(ruid, euid, suid));
   });
@@ -226,14 +249,16 @@ TEST(UidGidRootTest, Setresuid) {
 TEST(UidGidRootTest, Setresgid) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
-  EXPECT_THAT(setresgid(-1, -1, -1), SyscallSucceeds());
+  EXPECT_THAT(syscall(SYS_setresgid, -1, -1, -1), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckGIDs(0, 0, 0));
 
-  const gid_t rgid = 12345;
-  const gid_t egid = 23456;
-  const gid_t sgid = 34567;
-  ASSERT_THAT(setresgid(rgid, egid, sgid), SyscallSucceeds());
-  EXPECT_NO_ERRNO(CheckGIDs(rgid, egid, sgid));
+  ScopedThread([&] {
+    const gid_t rgid = 12345;
+    const gid_t egid = 23456;
+    const gid_t sgid = 34567;
+    ASSERT_THAT(syscall(SYS_setresgid, rgid, egid, sgid), SyscallSucceeds());
+    EXPECT_NO_ERRNO(CheckGIDs(rgid, egid, sgid));
+  });
 }
 
 TEST(UidGidRootTest, Setgroups) {
@@ -254,14 +279,14 @@ TEST(UidGidRootTest, Setuid_prlimit) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
   // Do seteuid in a separate thread so that after finishing this test, the
-  // process can still open files the test harness created before starting this
-  // test. Otherwise, the files are created by root (UID before the test), but
-  // cannot be opened by the `uid` set below after the test.
+  // process can still open files the test harness created before starting
+  // this test. Otherwise, the files are created by root (UID before the
+  // test), but cannot be opened by the `uid` set below after the test.
   ScopedThread([&] {
-    // Use syscall instead of glibc setuid wrapper because we want this seteuid
-    // call to only apply to this task. POSIX threads, however, require that all
-    // threads have the same UIDs, so using the seteuid wrapper sets all
-    // threads' UID.
+    // Use syscall instead of glibc setuid wrapper because we want this
+    // seteuid call to only apply to this task. POSIX threads, however,
+    // require that all threads have the same UIDs, so using the seteuid
+    // wrapper sets all threads' UID.
     EXPECT_THAT(syscall(SYS_setreuid, -1, 65534), SyscallSucceeds());
 
     // Despite the UID change, we should be able to get our own limits.

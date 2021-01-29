@@ -96,6 +96,21 @@ void CheckFailure(const char* cond, size_t cond_size, const char* msg,
     std::move(_expr_result).ValueOrDie();       \
   })
 
+// cond must be greater or equal than 0. Used to test result of syscalls.
+//
+// This macro is async-signal-safe.
+#define TEST_CHECK_SUCCESS(cond) TEST_PCHECK((cond) >= 0)
+
+// cond must be -1 and errno must match errno_value. Used to test errors from
+// syscalls.
+//
+// This macro is async-signal-safe.
+#define TEST_CHECK_ERRNO(cond, errno_value)                                   \
+  do {                                                                        \
+    TEST_PCHECK((cond) == -1);                                                \
+    TEST_PCHECK_MSG(errno == (errno_value), #cond " expected " #errno_value); \
+  } while (0)
+
 }  // namespace testing
 }  // namespace gvisor
 

@@ -23,6 +23,7 @@
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 
@@ -93,59 +94,66 @@ TEST(GetrusageTest, Grandchild) {
 // Verifies that processes ignoring SIGCHLD do not have updated child maxrss
 // updated.
 TEST(GetrusageTest, IgnoreSIGCHLD) {
-  struct sigaction sa;
-  sa.sa_handler = SIG_IGN;
-  sa.sa_flags = 0;
-  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGCHLD, sa));
-  pid_t pid = fork();
-  if (pid == 0) {
+  const auto rest = [] {
+    struct sigaction sa;
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    auto cleanup = TEST_CHECK_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGCHLD, sa));
+    pid_t pid = fork();
+    if (pid == 0) {
+      struct rusage rusage_self;
+      TEST_PCHECK(getrusage(RUSAGE_SELF, &rusage_self) == 0);
+      // The child has consumed some memory.
+      TEST_CHECK(rusage_self.ru_maxrss != 0);
+      _exit(0);
+    }
+    TEST_CHECK_SUCCESS(pid);
+    int status;
+    TEST_CHECK_ERRNO(RetryEINTR(waitpid)(pid, &status, 0), ECHILD);
     struct rusage rusage_self;
-    TEST_PCHECK(getrusage(RUSAGE_SELF, &rusage_self) == 0);
-    // The child has consumed some memory.
-    TEST_CHECK(rusage_self.ru_maxrss != 0);
-    _exit(0);
-  }
-  ASSERT_THAT(pid, SyscallSucceeds());
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
-              SyscallFailsWithErrno(ECHILD));
-  struct rusage rusage_self;
-  ASSERT_THAT(getrusage(RUSAGE_SELF, &rusage_self), SyscallSucceeds());
-  struct rusage rusage_children;
-  ASSERT_THAT(getrusage(RUSAGE_CHILDREN, &rusage_children), SyscallSucceeds());
-  // The parent has consumed some memory.
-  EXPECT_GT(rusage_self.ru_maxrss, 0);
-  // The child's maxrss should not have propagated up.
-  EXPECT_EQ(rusage_children.ru_maxrss, 0);
+    TEST_CHECK_SUCCESS(getrusage(RUSAGE_SELF, &rusage_self));
+    struct rusage rusage_children;
+    TEST_CHECK_SUCCESS(getrusage(RUSAGE_CHILDREN, &rusage_children));
+    // The parent has consumed some memory.
+    TEST_CHECK(rusage_self.ru_maxrss > 0);
+    // The child's maxrss should not have propagated up.
+    TEST_CHECK(rusage_children.ru_maxrss == 0);
+  };
+  // Execute inside a forked process so that rusage_children is clean.
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Verifies that zombie processes do not update their parent's maxrss. Only
 // reaped processes should do this.
 TEST(GetrusageTest, IgnoreZombie) {
-  pid_t pid = fork();
-  if (pid == 0) {
+  const auto rest = [] {
+    pid_t pid = fork();
+    if (pid == 0) {
+      struct rusage rusage_self;
+      TEST_PCHECK(getrusage(RUSAGE_SELF, &rusage_self) == 0);
+      struct rusage rusage_children;
+      TEST_PCHECK(getrusage(RUSAGE_CHILDREN, &rusage_children) == 0);
+      // The child has consumed some memory.
+      TEST_CHECK(rusage_self.ru_maxrss != 0);
+      // The child has no children of its own.
+      TEST_CHECK(rusage_children.ru_maxrss == 0);
+      _exit(0);
+    }
+    TEST_CHECK_SUCCESS(pid);
+    // Give the child time to exit. Because we don't call wait, the child should
+    // remain a zombie.
+    absl::SleepFor(absl::Seconds(5));
     struct rusage rusage_self;
-    TEST_PCHECK(getrusage(RUSAGE_SELF, &rusage_self) == 0);
+    TEST_CHECK_SUCCESS(getrusage(RUSAGE_SELF, &rusage_self));
     struct rusage rusage_children;
-    TEST_PCHECK(getrusage(RUSAGE_CHILDREN, &rusage_children) == 0);
-    // The child has consumed some memory.
-    TEST_CHECK(rusage_self.ru_maxrss != 0);
-    // The child has no children of its own.
+    TEST_CHECK_SUCCESS(getrusage(RUSAGE_CHILDREN, &rusage_children));
+    // The parent has consumed some memory.
+    TEST_CHECK(rusage_self.ru_maxrss > 0);
+    // The child has consumed some memory, but hasn't been reaped.
     TEST_CHECK(rusage_children.ru_maxrss == 0);
-    _exit(0);
-  }
-  ASSERT_THAT(pid, SyscallSucceeds());
-  // Give the child time to exit. Because we don't call wait, the child should
-  // remain a zombie.
-  absl::SleepFor(absl::Seconds(5));
-  struct rusage rusage_self;
-  ASSERT_THAT(getrusage(RUSAGE_SELF, &rusage_self), SyscallSucceeds());
-  struct rusage rusage_children;
-  ASSERT_THAT(getrusage(RUSAGE_CHILDREN, &rusage_children), SyscallSucceeds());
-  // The parent has consumed some memory.
-  EXPECT_GT(rusage_self.ru_maxrss, 0);
-  // The child has consumed some memory, but hasn't been reaped.
-  EXPECT_EQ(rusage_children.ru_maxrss, 0);
+  };
+  // Execute inside a forked process so that rusage_children is clean.
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 TEST(GetrusageTest, Wait4) {
