@@ -167,10 +167,10 @@ type linkResolutionResult struct {
 	ok       bool
 }
 
-// TestNeighorSolicitationWithSourceLinkLayerOption tests that receiving a
+// TestNeighborSolicitationWithSourceLinkLayerOption tests that receiving a
 // valid NDP NS message with the Source Link Layer Address option results in a
 // new entry in the link address cache for the sender of the message.
-func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
+func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 	const nicID = 1
 
 	tests := []struct {
@@ -265,11 +265,11 @@ func TestNeighorSolicitationWithSourceLinkLayerOption(t *testing.T) {
 	}
 }
 
-// TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache tests
+// TestNeighborSolicitationWithSourceLinkLayerOptionUsingNeighborCache tests
 // that receiving a valid NDP NS message with the Source Link Layer Address
 // option results in a new entry in the link address cache for the sender of
 // the message.
-func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testing.T) {
+func TestNeighborSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testing.T) {
 	const nicID = 1
 
 	tests := []struct {
@@ -382,7 +382,7 @@ func TestNeighorSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *testi
 	}
 }
 
-func TestNeighorSolicitationResponse(t *testing.T) {
+func TestNeighborSolicitationResponse(t *testing.T) {
 	const nicID = 1
 	nicAddr := lladdr0
 	remoteAddr := lladdr1
@@ -721,10 +721,10 @@ func TestNeighorSolicitationResponse(t *testing.T) {
 	}
 }
 
-// TestNeighorAdvertisementWithTargetLinkLayerOption tests that receiving a
+// TestNeighborAdvertisementWithTargetLinkLayerOption tests that receiving a
 // valid NDP NA message with the Target Link Layer Address option results in a
 // new entry in the link address cache for the target of the message.
-func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
+func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 	const nicID = 1
 
 	tests := []struct {
@@ -826,11 +826,11 @@ func TestNeighorAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 	}
 }
 
-// TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache tests
+// TestNeighborAdvertisementWithTargetLinkLayerOptionUsingNeighborCache tests
 // that receiving a valid NDP NA message with the Target Link Layer Address
 // option does not result in a new entry in the neighbor cache for the target
 // of the message.
-func TestNeighorAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *testing.T) {
+func TestNeighborAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *testing.T) {
 	const nicID = 1
 
 	tests := []struct {
@@ -1170,6 +1170,118 @@ func TestNDPValidation(t *testing.T) {
 		})
 	}
 
+}
+
+// TestNeighborAdvertisementValidation tests that the NIC validates received
+// Neighbor Advertisements.
+//
+// In particular, if the IP Destination Address is a multicast address, and the
+// Solicited flag is not zero, the Neighbor Advertisement is invalid and should
+// be discarded.
+func TestNeighborAdvertisementValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		ipDstAddr     tcpip.Address
+		solicitedFlag bool
+		valid         bool
+	}{
+		{
+			name:          "Multicast IP destination address with Solicited flag set",
+			ipDstAddr:     header.IPv6AllNodesMulticastAddress,
+			solicitedFlag: true,
+			valid:         false,
+		},
+		{
+			name:          "Multicast IP destination address with Solicited flag unset",
+			ipDstAddr:     header.IPv6AllNodesMulticastAddress,
+			solicitedFlag: false,
+			valid:         true,
+		},
+		{
+			name:          "Unicast IP destination address with Solicited flag set",
+			ipDstAddr:     lladdr0,
+			solicitedFlag: true,
+			valid:         true,
+		},
+		{
+			name:          "Unicast IP destination address with Solicited flag unset",
+			ipDstAddr:     lladdr0,
+			solicitedFlag: false,
+			valid:         true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+				UseNeighborCache: true,
+			})
+			e := channel.New(0, header.IPv6MinimumMTU, linkAddr0)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			}
+
+			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize
+			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+			pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
+			pkt.SetType(header.ICMPv6NeighborAdvert)
+			na := header.NDPNeighborAdvert(pkt.MessageBody())
+			na.SetTargetAddress(lladdr1)
+			na.SetSolicitedFlag(test.solicitedFlag)
+			pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, test.ipDstAddr, buffer.VectorisedView{}))
+			payloadLength := hdr.UsedLength()
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: header.ICMPv6ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           lladdr1,
+				DstAddr:           test.ipDstAddr,
+			})
+
+			stats := s.Stats().ICMP.V6.PacketsReceived
+			invalid := stats.Invalid
+			rxNA := stats.NeighborAdvert
+
+			if got := rxNA.Value(); got != 0 {
+				t.Fatalf("got rxNA = %d, want = 0", got)
+			}
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+
+			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: hdr.View().ToVectorisedView(),
+			}))
+
+			if got := rxNA.Value(); got != 1 {
+				t.Fatalf("got rxNA = %d, want = 1", got)
+			}
+			var wantInvalid uint64 = 1
+			if test.valid {
+				wantInvalid = 0
+			}
+			if got := invalid.Value(); got != wantInvalid {
+				t.Fatalf("got invalid = %d, want = %d", got, wantInvalid)
+			}
+			// As per RFC 4861 section 7.2.5:
+			//   When a valid Neighbor Advertisement is received ...
+			//   If no entry exists, the advertisement SHOULD be silently discarded.
+			//   There is no need to create an entry if none exists, since the
+			//   recipient has apparently not initiated any communication with the
+			//   target.
+			if neighbors, err := s.Neighbors(nicID); err != nil {
+				t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+			} else if len(neighbors) != 0 {
+				t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+			}
+		})
+	}
 }
 
 // TestRouterAdvertValidation tests that when the NIC is configured to handle
