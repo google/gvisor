@@ -445,6 +445,17 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			return
 		}
 
+		// As per RFC 4861 section 7.1.2:
+		//   A node MUST silently discard any received Neighbor Advertisement
+		//   messages that do not satisfy all of the following validity checks:
+		//    ...
+		//    - If the IP Destination Address is a multicast address the
+		// 	    Solicited flag is zero.
+		if header.IsV6MulticastAddress(dstAddr) && na.SolicitedFlag() {
+			received.invalid.Increment()
+			return
+		}
+
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
 		if e.nud == nil {
