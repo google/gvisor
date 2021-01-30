@@ -16,7 +16,6 @@ package fragmentation
 
 import (
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -112,20 +111,20 @@ func TestFragmentationProcess(t *testing.T) {
 			f := NewFragmentation(minBlockSize, 1024, 512, reassembleTimeout, &faketime.NullClock{}, nil)
 			firstFragmentProto := c.in[0].proto
 			for i, in := range c.in {
-				vv, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
+				resPkt, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
 				if err != nil {
 					t.Fatalf("f.Process(%+v, %d, %d, %t, %d, %#v) failed: %s",
 						in.id, in.first, in.last, in.more, in.proto, in.pkt, err)
-				}
-				if !reflect.DeepEqual(vv, c.out[i].vv) {
-					t.Errorf("got Process(%+v, %d, %d, %t, %d, %#v) = (%X, _, _, _), want = (%X, _, _, _)",
-						in.id, in.first, in.last, in.more, in.proto, in.pkt, vv.ToView(), c.out[i].vv.ToView())
 				}
 				if done != c.out[i].done {
 					t.Errorf("got Process(%+v, %d, %d, %t, %d, _) = (_, _, %t, _), want = (_, _, %t, _)",
 						in.id, in.first, in.last, in.more, in.proto, done, c.out[i].done)
 				}
 				if c.out[i].done {
+					if diff := cmp.Diff(c.out[i].vv.ToOwnedView(), resPkt.Data.ToOwnedView()); diff != "" {
+						t.Errorf("got Process(%+v, %d, %d, %t, %d, %#v) result mismatch (-want, +got):\n%s",
+							in.id, in.first, in.last, in.more, in.proto, in.pkt, diff)
+					}
 					if firstFragmentProto != proto {
 						t.Errorf("got Process(%+v, %d, %d, %t, %d, _) = (_, %d, _, _), want = (_, %d, _, _)",
 							in.id, in.first, in.last, in.more, in.proto, proto, firstFragmentProto)
@@ -173,9 +172,17 @@ func TestReassemblingTimeout(t *testing.T) {
 		// reassembly is done after the fragment is processd.
 		expectDone bool
 
-		// sizeAfterEvent is the expected size of the fragmentation instance after
-		// the event.
-		sizeAfterEvent int
+		// memSizeAfterEvent is the expected memory size of the fragmentation
+		// instance after the event.
+		memSizeAfterEvent int
+	}
+
+	memSizeOfFrags := func(frags ...*fragment) int {
+		var size int
+		for _, frag := range frags {
+			size += pkt(len(frag.data), frag.data).MemSize()
+		}
+		return size
 	}
 
 	half1 := &fragment{first: 0, last: 0, more: true, data: "0"}
@@ -189,16 +196,16 @@ func TestReassemblingTimeout(t *testing.T) {
 			name: "half1 and half2 are reassembled successfully",
 			events: []event{
 				{
-					name:           "half1",
-					fragment:       half1,
-					expectDone:     false,
-					sizeAfterEvent: 1,
+					name:              "half1",
+					fragment:          half1,
+					expectDone:        false,
+					memSizeAfterEvent: memSizeOfFrags(half1),
 				},
 				{
-					name:           "half2",
-					fragment:       half2,
-					expectDone:     true,
-					sizeAfterEvent: 0,
+					name:              "half2",
+					fragment:          half2,
+					expectDone:        true,
+					memSizeAfterEvent: 0,
 				},
 			},
 		},
@@ -206,36 +213,36 @@ func TestReassemblingTimeout(t *testing.T) {
 			name: "half1 timeout, half2 timeout",
 			events: []event{
 				{
-					name:           "half1",
-					fragment:       half1,
-					expectDone:     false,
-					sizeAfterEvent: 1,
+					name:              "half1",
+					fragment:          half1,
+					expectDone:        false,
+					memSizeAfterEvent: memSizeOfFrags(half1),
 				},
 				{
-					name:           "half1 just before reassembly timeout",
-					clockAdvance:   reassemblyTimeout - 1,
-					sizeAfterEvent: 1,
+					name:              "half1 just before reassembly timeout",
+					clockAdvance:      reassemblyTimeout - 1,
+					memSizeAfterEvent: memSizeOfFrags(half1),
 				},
 				{
-					name:           "half1 reassembly timeout",
-					clockAdvance:   1,
-					sizeAfterEvent: 0,
+					name:              "half1 reassembly timeout",
+					clockAdvance:      1,
+					memSizeAfterEvent: 0,
 				},
 				{
-					name:           "half2",
-					fragment:       half2,
-					expectDone:     false,
-					sizeAfterEvent: 1,
+					name:              "half2",
+					fragment:          half2,
+					expectDone:        false,
+					memSizeAfterEvent: memSizeOfFrags(half2),
 				},
 				{
-					name:           "half2 just before reassembly timeout",
-					clockAdvance:   reassemblyTimeout - 1,
-					sizeAfterEvent: 1,
+					name:              "half2 just before reassembly timeout",
+					clockAdvance:      reassemblyTimeout - 1,
+					memSizeAfterEvent: memSizeOfFrags(half2),
 				},
 				{
-					name:           "half2 reassembly timeout",
-					clockAdvance:   1,
-					sizeAfterEvent: 0,
+					name:              "half2 reassembly timeout",
+					clockAdvance:      1,
+					memSizeAfterEvent: 0,
 				},
 			},
 		},
@@ -255,8 +262,8 @@ func TestReassemblingTimeout(t *testing.T) {
 						t.Fatalf("%s: got done = %t, want = %t", event.name, done, event.expectDone)
 					}
 				}
-				if got, want := f.size, event.sizeAfterEvent; got != want {
-					t.Errorf("%s: got f.size = %d, want = %d", event.name, got, want)
+				if got, want := f.memSize, event.memSizeAfterEvent; got != want {
+					t.Errorf("%s: got f.memSize = %d, want = %d", event.name, got, want)
 				}
 			}
 		})
@@ -264,7 +271,9 @@ func TestReassemblingTimeout(t *testing.T) {
 }
 
 func TestMemoryLimits(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 3, 1, reassembleTimeout, &faketime.NullClock{}, nil)
+	lowLimit := pkt(1, "0").MemSize()
+	highLimit := 3 * lowLimit // Allow at most 3 such packets.
+	f := NewFragmentation(minBlockSize, highLimit, lowLimit, reassembleTimeout, &faketime.NullClock{}, nil)
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, pkt(1, "0"))
 	// Send first fragment with id = 1.
@@ -288,15 +297,14 @@ func TestMemoryLimits(t *testing.T) {
 }
 
 func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
-	f := NewFragmentation(minBlockSize, 1, 0, reassembleTimeout, &faketime.NullClock{}, nil)
+	memSize := pkt(1, "0").MemSize()
+	f := NewFragmentation(minBlockSize, memSize, 0, reassembleTimeout, &faketime.NullClock{}, nil)
 	// Send first fragment with id = 0.
 	f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0"))
 	// Send the same packet again.
 	f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0"))
 
-	got := f.size
-	want := 1
-	if got != want {
+	if got, want := f.memSize, memSize; got != want {
 		t.Errorf("Wrong size, duplicates are not handled correctly: got=%d, want=%d.", got, want)
 	}
 }

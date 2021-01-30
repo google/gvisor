@@ -20,6 +20,7 @@ import (
 	"io"
 	"reflect"
 	"testing"
+	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -576,5 +577,17 @@ func TestAppendView(t *testing.T) {
 		if got, want := tc.vv, tc.want; !reflect.DeepEqual(got, want) {
 			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
 		}
+	}
+}
+
+func TestMemSize(t *testing.T) {
+	const perViewCap = 128
+	views := make([]buffer.View, 2, 32)
+	views[0] = make(buffer.View, 10, perViewCap)
+	views[1] = make(buffer.View, 20, perViewCap)
+	vv := buffer.NewVectorisedView(30, views)
+	want := int(unsafe.Sizeof(vv)) + cap(views)*int(unsafe.Sizeof(views)) + 2*perViewCap
+	if got := vv.MemSize(); got != want {
+		t.Errorf("vv.MemSize() = %d, want %d", got, want)
 	}
 }

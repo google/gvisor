@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -2058,7 +2059,7 @@ func TestReceiveFragments(t *testing.T) {
 	// the fragment block size of 8 (RFC 791 section 3.1 page 14).
 	ipv4Payload3Addr1ToAddr2 := udpGen(127, 3, addr1, addr2)
 	udpPayload3Addr1ToAddr2 := ipv4Payload3Addr1ToAddr2[header.UDPMinimumSize:]
-	// Used to test the max reassembled payload length (65,535 octets).
+	// Used to test the max reassembled IPv4 payload length.
 	ipv4Payload4Addr1ToAddr2 := udpGen(header.UDPMaximumSize-header.UDPMinimumSize, 4, addr1, addr2)
 	udpPayload4Addr1ToAddr2 := ipv4Payload4Addr1ToAddr2[header.UDPMinimumSize:]
 
@@ -2406,6 +2407,7 @@ func TestReceiveFragments(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				RawFactory:         raw.EndpointFactory{},
 			})
 			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -2430,6 +2432,13 @@ func TestReceiveFragments(t *testing.T) {
 			if err := ep.Bind(bindAddr); err != nil {
 				t.Fatalf("Bind(%+v): %s", bindAddr, err)
 			}
+
+			// Bring up a raw endpoint so we can examine network headers.
+			epRaw, err := s.NewRawEndpoint(udp.ProtocolNumber, header.IPv4ProtocolNumber, &wq, true /* associated */)
+			if err != nil {
+				t.Fatalf("NewRawEndpoint(%d, %d, _, true): %s", udp.ProtocolNumber, header.IPv4ProtocolNumber, err)
+			}
+			defer epRaw.Close()
 
 			// Prepare and send the fragments.
 			for _, frag := range test.fragments {
@@ -2462,10 +2471,11 @@ func TestReceiveFragments(t *testing.T) {
 			}
 
 			for i, expectedPayload := range test.expectedPayloads {
+				// Check UDP payload delivered by UDP endpoint.
 				var buf bytes.Buffer
 				result, err := ep.Read(&buf, tcpip.ReadOptions{})
 				if err != nil {
-					t.Fatalf("(i=%d) Read: %s", i, err)
+					t.Fatalf("(i=%d) ep.Read: %s", i, err)
 				}
 				if diff := cmp.Diff(tcpip.ReadResult{
 					Count: len(expectedPayload),
@@ -2474,7 +2484,24 @@ func TestReceiveFragments(t *testing.T) {
 					t.Errorf("(i=%d) ep.Read: unexpected result (-want +got):\n%s", i, diff)
 				}
 				if diff := cmp.Diff(expectedPayload, buf.Bytes()); diff != "" {
-					t.Errorf("(i=%d) got UDP payload mismatch (-want +got):\n%s", i, diff)
+					t.Errorf("(i=%d) ep.Read: UDP payload mismatch (-want +got):\n%s", i, diff)
+				}
+
+				// Check IPv4 header in packet delivered by raw endpoint.
+				buf.Reset()
+				result, err = epRaw.Read(&buf, tcpip.ReadOptions{})
+				if err != nil {
+					t.Fatalf("(i=%d) epRaw.Read: %s", i, err)
+				}
+				// Reassambly does not take care of checksum. Here we write our own
+				// check routine instead of using checker.IPv4.
+				ip := header.IPv4(buf.Bytes())
+				for _, check := range []checker.NetworkChecker{
+					checker.FragmentFlags(0),
+					checker.FragmentOffset(0),
+					checker.IPFullLength(uint16(header.IPv4MinimumSize + header.UDPMinimumSize + len(expectedPayload))),
+				} {
+					check(t, []header.Network{ip})
 				}
 			}
 

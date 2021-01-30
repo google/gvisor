@@ -239,6 +239,16 @@ func (vv *VectorisedView) Size() int {
 	return vv.size
 }
 
+// MemSize returns the estimation size of the vv in memory, including backing
+// buffer data.
+func (vv *VectorisedView) MemSize() int {
+	var size int
+	for _, v := range vv.views {
+		size += cap(v)
+	}
+	return size + cap(vv.views)*viewStructSize + vectorisedViewStructSize
+}
+
 // ToView returns a single view containing the content of the vectorised view.
 //
 // If the vectorised view contains a single view, that view will be returned
