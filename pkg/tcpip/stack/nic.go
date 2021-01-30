@@ -42,7 +42,8 @@ type NIC struct {
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
-	networkEndpoints map[tcpip.NetworkProtocolNumber]NetworkEndpoint
+	networkEndpoints  map[tcpip.NetworkProtocolNumber]NetworkEndpoint
+	linkAddrResolvers map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
 	//
@@ -133,12 +134,13 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	nic := &NIC{
 		LinkEndpoint: ep,
 
-		stack:            stack,
-		id:               id,
-		name:             name,
-		context:          ctx,
-		stats:            makeNICStats(),
-		networkEndpoints: make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		stack:             stack,
+		id:                id,
+		name:              name,
+		context:           ctx,
+		stats:             makeNICStats(),
+		networkEndpoints:  make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		linkAddrResolvers: make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 	}
 	nic.linkResQueue.init(nic)
 	nic.linkAddrCache = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
@@ -146,7 +148,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 
 	// Check for Neighbor Unreachability Detection support.
 	var nud NUDHandler
-	if ep.Capabilities()&CapabilityResolutionRequired != 0 && len(stack.linkAddrResolvers) != 0 && stack.useNeighborCache {
+	if ep.Capabilities()&CapabilityResolutionRequired != 0 && stack.useNeighborCache {
 		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
 		nic.neigh = &neighborCache{
 			nic:   nic,
@@ -170,7 +172,13 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = new(packetEndpointList)
-		nic.networkEndpoints[netNum] = netProto.NewEndpoint(nic, nic.linkAddrCache, nud, nic)
+
+		netEP := netProto.NewEndpoint(nic, nic.linkAddrCache, nud, nic)
+		nic.networkEndpoints[netNum] = netEP
+
+		if r, ok := netEP.(LinkAddressResolver); ok {
+			nic.linkAddrResolvers[r.LinkAddressProtocol()] = r
+		}
 	}
 
 	nic.LinkEndpoint.Attach(nic)
@@ -593,13 +601,28 @@ func (n *NIC) confirmReachable(addr tcpip.Address) {
 	}
 }
 
+func (n *NIC) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
+	linkRes, ok := n.linkAddrResolvers[protocol]
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+
+	if linkAddr, ok := linkRes.ResolveStaticAddress(addr); ok {
+		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Success: true})
+		return nil
+	}
+
+	_, _, err := n.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
+	return err
+}
+
 func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
 	if n.neigh != nil {
 		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
 		return entry.LinkAddr, ch, err
 	}
 
-	return n.linkAddrCache.get(addr, linkRes, localAddr, n, onResolve)
+	return n.linkAddrCache.get(addr, linkRes, localAddr, onResolve)
 }
 
 func (n *NIC) neighbors() ([]NeighborEntry, tcpip.Error) {
