@@ -84,7 +84,7 @@ type Fragmentation struct {
 	lowLimit       int
 	reassemblers   map[FragmentID]*reassembler
 	rList          reassemblerList
-	size           int
+	memSize        int
 	timeout        time.Duration
 	blockSize      uint16
 	clock          tcpip.Clock
@@ -156,22 +156,22 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // the protocol to identify a fragment.
 func (f *Fragmentation) Process(
 	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (
-	buffer.VectorisedView, uint8, bool, error) {
+	*stack.PacketBuffer, uint8, bool, error) {
 	if first > last {
-		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
 
 	if first%f.blockSize != 0 {
-		return buffer.VectorisedView{}, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
 	}
 
 	fragmentSize := last - first + 1
 	if more && fragmentSize%f.blockSize != 0 {
-		return buffer.VectorisedView{}, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
 	}
 
 	if l := pkt.Data.Size(); l != int(fragmentSize) {
-		return buffer.VectorisedView{}, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
 	}
 
 	f.mu.Lock()
@@ -190,24 +190,24 @@ func (f *Fragmentation) Process(
 	}
 	f.mu.Unlock()
 
-	res, firstFragmentProto, done, consumed, err := r.process(first, last, more, proto, pkt)
+	resPkt, firstFragmentProto, done, memConsumed, err := r.process(first, last, more, proto, pkt)
 	if err != nil {
 		// We probably got an invalid sequence of fragments. Just
 		// discard the reassembler and move on.
 		f.mu.Lock()
 		f.release(r, false /* timedOut */)
 		f.mu.Unlock()
-		return buffer.VectorisedView{}, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
+		return nil, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
 	}
 	f.mu.Lock()
-	f.size += consumed
+	f.memSize += memConsumed
 	if done {
 		f.release(r, false /* timedOut */)
 	}
 	// Evict reassemblers if we are consuming more memory than highLimit until
 	// we reach lowLimit.
-	if f.size > f.highLimit {
-		for f.size > f.lowLimit {
+	if f.memSize > f.highLimit {
+		for f.memSize > f.lowLimit {
 			tail := f.rList.Back()
 			if tail == nil {
 				break
@@ -216,7 +216,7 @@ func (f *Fragmentation) Process(
 		}
 	}
 	f.mu.Unlock()
-	return res, firstFragmentProto, done, nil
+	return resPkt, firstFragmentProto, done, nil
 }
 
 func (f *Fragmentation) release(r *reassembler, timedOut bool) {
@@ -228,10 +228,10 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 
 	delete(f.reassemblers, r.id)
 	f.rList.Remove(r)
-	f.size -= r.size
-	if f.size < 0 {
-		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.size)
-		f.size = 0
+	f.memSize -= r.memSize
+	if f.memSize < 0 {
+		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.memSize)
+		f.memSize = 0
 	}
 
 	if h := f.timeoutHandler; timedOut && h != nil {
