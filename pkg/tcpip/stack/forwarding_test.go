@@ -41,6 +41,7 @@ const (
 	protocolNumberOffset = 2
 )
 
+var _ LinkAddressResolver = (*fwdTestNetworkEndpoint)(nil)
 var _ NetworkEndpoint = (*fwdTestNetworkEndpoint)(nil)
 
 // fwdTestNetworkEndpoint is a network-layer protocol endpoint.
@@ -153,7 +154,6 @@ type fwdTestNetworkEndpointStats struct{}
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
 func (*fwdTestNetworkEndpointStats) IsNetworkEndpointStats() {}
 
-var _ LinkAddressResolver = (*fwdTestNetworkProtocol)(nil)
 var _ NetworkProtocol = (*fwdTestNetworkProtocol)(nil)
 
 // fwdTestNetworkProtocol is a network-layer protocol that implements Address
@@ -219,23 +219,23 @@ func (*fwdTestNetworkProtocol) Close() {}
 
 func (*fwdTestNetworkProtocol) Wait() {}
 
-func (f *fwdTestNetworkProtocol) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
-	if f.onLinkAddressResolved != nil {
-		time.AfterFunc(f.addrResolveDelay, func() {
-			f.onLinkAddressResolved(f.addrCache, f.neigh, addr, remoteLinkAddr)
+func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
+	if fn := f.proto.onLinkAddressResolved; fn != nil {
+		time.AfterFunc(f.proto.addrResolveDelay, func() {
+			fn(f.proto.addrCache, f.proto.neigh, addr, remoteLinkAddr)
 		})
 	}
 	return nil
 }
 
-func (f *fwdTestNetworkProtocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-	if f.onResolveStaticAddress != nil {
-		return f.onResolveStaticAddress(addr)
+func (f *fwdTestNetworkEndpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+	if fn := f.proto.onResolveStaticAddress; fn != nil {
+		return fn(addr)
 	}
 	return "", false
 }
 
-func (*fwdTestNetworkProtocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
+func (*fwdTestNetworkEndpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return fwdTestNetNumber
 }
 

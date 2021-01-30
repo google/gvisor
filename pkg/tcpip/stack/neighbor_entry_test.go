@@ -193,7 +193,7 @@ func (p entryTestProbeInfo) String() string {
 
 // LinkAddressRequest sends a request for the LinkAddress of addr. Broadcasts
 // to the local network if linkAddr is the zero value.
-func (r *entryTestLinkResolver) LinkAddressRequest(targetAddr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
+func (r *entryTestLinkResolver) LinkAddressRequest(targetAddr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
 	p := entryTestProbeInfo{
 		RemoteAddress:     targetAddr,
 		RemoteLinkAddress: linkAddr,

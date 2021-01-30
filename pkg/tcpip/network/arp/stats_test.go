@@ -34,48 +34,6 @@ func (t *testInterface) ID() tcpip.NICID {
 	return t.nicID
 }
 
-func knownNICIDs(proto *protocol) []tcpip.NICID {
-	var nicIDs []tcpip.NICID
-
-	for k := range proto.mu.eps {
-		nicIDs = append(nicIDs, k)
-	}
-
-	return nicIDs
-}
-
-func TestClearEndpointFromProtocolOnClose(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
-	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
-	nic := testInterface{nicID: 1}
-	ep := proto.NewEndpoint(&nic, nil, nil, nil).(*endpoint)
-	var nicIDs []tcpip.NICID
-
-	proto.mu.Lock()
-	foundEP, hasEndpointBeforeClose := proto.mu.eps[nic.ID()]
-	nicIDs = knownNICIDs(proto)
-	proto.mu.Unlock()
-
-	if !hasEndpointBeforeClose {
-		t.Fatalf("expected to find the nic id %d in the protocol's endpoint map (%v)", nic.ID(), nicIDs)
-	}
-	if foundEP != ep {
-		t.Fatalf("found an incorrect endpoint mapped to nic id %d", nic.ID())
-	}
-
-	ep.Close()
-
-	proto.mu.Lock()
-	_, hasEndpointAfterClose := proto.mu.eps[nic.ID()]
-	nicIDs = knownNICIDs(proto)
-	proto.mu.Unlock()
-	if hasEndpointAfterClose {
-		t.Fatalf("unexpectedly found an endpoint mapped to the nic id %d in the protocol's known nic ids (%v)", nic.ID(), nicIDs)
-	}
-}
-
 func TestMultiCounterStatsInitialization(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},

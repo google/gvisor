@@ -72,43 +72,17 @@ func TestSetNUDConfigurationFailsForBadNICID(t *testing.T) {
 }
 
 // TestNUDConfigurationFailsForNotSupported tests to make sure we get a
-// NotSupported error if we attempt to retrieve NUD configurations when the
-// stack doesn't support NUD.
+// NotSupported error if we attempt to retrieve or set NUD configurations when
+// the stack doesn't support NUD.
 //
 // The stack will report to not support NUD if a neighbor cache for a given NIC
 // is not allocated. The networking stack will only allocate neighbor caches if
-// a protocol providing link address resolution is specified (e.g. ARP, IPv6).
+// the NIC requires link resolution.
 func TestNUDConfigurationFailsForNotSupported(t *testing.T) {
 	const nicID = 1
 
 	e := channel.New(0, 1280, linkAddr1)
-	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-
-	s := stack.New(stack.Options{
-		NUDConfigs:       stack.DefaultNUDConfigurations(),
-		UseNeighborCache: true,
-	})
-	if err := s.CreateNIC(nicID, e); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
-	}
-	_, err := s.NUDConfigurations(nicID)
-	if _, ok := err.(*tcpip.ErrNotSupported); !ok {
-		t.Fatalf("got s.NDPConfigurations(%d) = %v, want = %s", nicID, err, &tcpip.ErrNotSupported{})
-	}
-}
-
-// TestNUDConfigurationFailsForNotSupported tests to make sure we get a
-// NotSupported error if we attempt to set NUD configurations when the stack
-// doesn't support NUD.
-//
-// The stack will report to not support NUD if a neighbor cache for a given NIC
-// is not allocated. The networking stack will only allocate neighbor caches if
-// a protocol providing link address resolution is specified (e.g. ARP, IPv6).
-func TestSetNUDConfigurationFailsForNotSupported(t *testing.T) {
-	const nicID = 1
-
-	e := channel.New(0, 1280, linkAddr1)
-	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	e.LinkEPCapabilities &^= stack.CapabilityResolutionRequired
 
 	s := stack.New(stack.Options{
 		NUDConfigs:       stack.DefaultNUDConfigurations(),
@@ -118,11 +92,20 @@ func TestSetNUDConfigurationFailsForNotSupported(t *testing.T) {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	config := stack.NUDConfigurations{}
-	err := s.SetNUDConfigurations(nicID, config)
-	if _, ok := err.(*tcpip.ErrNotSupported); !ok {
-		t.Fatalf("got s.SetNDPConfigurations(%d, %+v) = %v, want = %s", nicID, config, err, &tcpip.ErrNotSupported{})
-	}
+	t.Run("Get", func(t *testing.T) {
+		_, err := s.NUDConfigurations(nicID)
+		if _, ok := err.(*tcpip.ErrNotSupported); !ok {
+			t.Fatalf("got s.NDPConfigurations(%d) = %v, want = %s", nicID, err, &tcpip.ErrNotSupported{})
+		}
+	})
+
+	t.Run("Set", func(t *testing.T) {
+		config := stack.NUDConfigurations{}
+		err := s.SetNUDConfigurations(nicID, config)
+		if _, ok := err.(*tcpip.ErrNotSupported); !ok {
+			t.Fatalf("got s.SetNDPConfigurations(%d, %+v) = %v, want = %s", nicID, config, err, &tcpip.ErrNotSupported{})
+		}
+	})
 }
 
 // TestDefaultNUDConfigurationIsValid verifies that calling

@@ -111,8 +111,6 @@ type testIPv6EndpointStats struct{}
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
 func (*testIPv6EndpointStats) IsNetworkEndpointStats() {}
 
-var _ LinkAddressResolver = (*testIPv6Protocol)(nil)
-
 // We use this instead of ipv6.protocol because the ipv6 package depends on
 // the stack package which this test lives in, causing a cyclic dependency.
 type testIPv6Protocol struct{}
@@ -167,24 +165,6 @@ func (*testIPv6Protocol) Wait() {}
 // Parse implements NetworkProtocol.Parse.
 func (*testIPv6Protocol) Parse(*PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
 	return 0, false, false
-}
-
-// LinkAddressProtocol implements LinkAddressResolver.
-func (*testIPv6Protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
-	return header.IPv6ProtocolNumber
-}
-
-// LinkAddressRequest implements LinkAddressResolver.
-func (*testIPv6Protocol) LinkAddressRequest(_, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
-	return nil
-}
-
-// ResolveStaticAddress implements LinkAddressResolver.
-func (*testIPv6Protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-	if header.IsV6MulticastAddress(addr) {
-		return header.EthernetAddressFromMulticastIPv6Address(addr), true
-	}
-	return "", false
 }
 
 func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {

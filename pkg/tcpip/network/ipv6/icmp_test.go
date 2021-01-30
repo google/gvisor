@@ -1346,29 +1346,32 @@ func TestLinkAddressRequest(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
-			p := s.NetworkProtocolInstance(ProtocolNumber)
-			linkRes, ok := p.(stack.LinkAddressResolver)
-			if !ok {
-				t.Fatalf("expected IPv6 protocol to implement stack.LinkAddressResolver")
-			}
 
 			linkEP := channel.New(defaultChannelSize, defaultMTU, linkAddr0)
 			if err := s.CreateNIC(nicID, linkEP); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
+
+			ep, err := s.GetNetworkEndpoint(nicID, ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, ProtocolNumber, err)
+			}
+			linkRes, ok := ep.(stack.LinkAddressResolver)
+			if !ok {
+				t.Fatalf("expected %T to implement stack.LinkAddressResolver", ep)
+			}
+
 			if len(test.nicAddr) != 0 {
 				if err := s.AddAddress(nicID, ProtocolNumber, test.nicAddr); err != nil {
 					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, test.nicAddr, err)
 				}
 			}
 
-			// We pass a test network interface to LinkAddressRequest with the same NIC
-			// ID and link endpoint used by the NIC we created earlier so that we can
-			// mock a link address request and observe the packets sent to the link
-			// endpoint even though the stack uses the real NIC.
-			err := linkRes.LinkAddressRequest(lladdr0, test.localAddr, test.remoteLinkAddr, &testInterface{LinkEndpoint: linkEP, nicID: nicID})
-			if diff := cmp.Diff(test.expectedErr, err); diff != "" {
-				t.Fatalf("unexpected error from p.LinkAddressRequest(%s, %s, %s, _), (-want, +got):\n%s", lladdr0, test.localAddr, test.remoteLinkAddr, diff)
+			{
+				err := linkRes.LinkAddressRequest(lladdr0, test.localAddr, test.remoteLinkAddr)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Fatalf("unexpected error from p.LinkAddressRequest(%s, %s, %s, _), (-want, +got):\n%s", lladdr0, test.localAddr, test.remoteLinkAddr, diff)
+				}
 			}
 
 			if test.expectedErr != nil {

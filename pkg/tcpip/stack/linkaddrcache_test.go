@@ -48,7 +48,7 @@ type testLinkAddressResolver struct {
 	onLinkAddressRequest func()
 }
 
-func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress, _ NetworkInterface) tcpip.Error {
+func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _ tcpip.LinkAddress) tcpip.Error {
 	// TODO(gvisor.dev/issue/5141): Use a fake clock.
 	time.AfterFunc(r.delay, func() { r.fakeRequest(targetAddr) })
 	if f := r.onLinkAddressRequest; f != nil {
@@ -80,7 +80,7 @@ func (*testLinkAddressResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumbe
 func getBlocking(c *linkAddrCache, addr tcpip.Address, linkRes LinkAddressResolver) (tcpip.LinkAddress, tcpip.Error) {
 	var attemptedResolution bool
 	for {
-		got, ch, err := c.get(addr, linkRes, "", nil, nil)
+		got, ch, err := c.get(addr, linkRes, "", nil)
 		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			if attemptedResolution {
 				return got, &tcpip.ErrTimeout{}
@@ -104,23 +104,23 @@ func TestCacheOverflow(t *testing.T) {
 	for i := len(testAddrs) - 1; i >= 0; i-- {
 		e := testAddrs[i]
 		c.AddLinkAddress(e.addr, e.linkAddr)
-		got, _, err := c.get(e.addr, nil, "", nil, nil)
+		got, _, err := c.get(e.addr, nil, "", nil)
 		if err != nil {
-			t.Errorf("insert %d, c.get(%s, nil, '', nil, nil): %s", i, e.addr, err)
+			t.Errorf("insert %d, c.get(%s, nil, '', nil): %s", i, e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("insert %d, got c.get(%s, nil, '', nil, nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
+			t.Errorf("insert %d, got c.get(%s, nil, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
 		}
 	}
 	// Expect to find at least half of the most recent entries.
 	for i := 0; i < linkAddrCacheSize/2; i++ {
 		e := testAddrs[i]
-		got, _, err := c.get(e.addr, nil, "", nil, nil)
+		got, _, err := c.get(e.addr, nil, "", nil)
 		if err != nil {
-			t.Errorf("check %d, c.get(%s, nil, '', nil, nil): %s", i, e.addr, err)
+			t.Errorf("check %d, c.get(%s, nil, '', nil): %s", i, e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("check %d, got c.get(%s, nil, '', nil, nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
+			t.Errorf("check %d, got c.get(%s, nil, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
 		}
 	}
 	// The earliest entries should no longer be in the cache.
@@ -154,12 +154,12 @@ func TestCacheConcurrent(t *testing.T) {
 	// can fit in the cache, so our eviction strategy requires that
 	// the last entry be present and the first be missing.
 	e := testAddrs[len(testAddrs)-1]
-	got, _, err := c.get(e.addr, linkRes, "", nil, nil)
+	got, _, err := c.get(e.addr, linkRes, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, _, '', nil, nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, _, '', nil): %s", e.addr, err)
 	}
 	if got != e.linkAddr {
-		t.Errorf("got c.get(%s, _, '', nil, nil) = %s, want = %s", e.addr, got, e.linkAddr)
+		t.Errorf("got c.get(%s, _, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
 	e = testAddrs[0]
@@ -177,9 +177,9 @@ func TestCacheAgeLimit(t *testing.T) {
 	e := testAddrs[0]
 	c.AddLinkAddress(e.addr, e.linkAddr)
 	time.Sleep(50 * time.Millisecond)
-	_, _, err := c.get(e.addr, linkRes, "", nil, nil)
+	_, _, err := c.get(e.addr, linkRes, "", nil)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Errorf("got c.get(%s, _, '', nil, nil) = %s, want = ErrWouldBlock", e.addr, err)
+		t.Errorf("got c.get(%s, _, '', nil) = %s, want = ErrWouldBlock", e.addr, err)
 	}
 }
 
@@ -188,21 +188,21 @@ func TestCacheReplace(t *testing.T) {
 	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
 	c.AddLinkAddress(e.addr, e.linkAddr)
-	got, _, err := c.get(e.addr, nil, "", nil, nil)
+	got, _, err := c.get(e.addr, nil, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, nil, '', nil, nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)
 	}
 	if got != e.linkAddr {
-		t.Errorf("got c.get(%s, nil, '', nil, nil) = %s, want = %s", e.addr, got, e.linkAddr)
+		t.Errorf("got c.get(%s, nil, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
 	c.AddLinkAddress(e.addr, l2)
-	got, _, err = c.get(e.addr, nil, "", nil, nil)
+	got, _, err = c.get(e.addr, nil, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, nil, '', nil, nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)
 	}
 	if got != l2 {
-		t.Errorf("got c.get(%s, nil, '', nil, nil) = %s, want = %s", e.addr, got, l2)
+		t.Errorf("got c.get(%s, nil, '', nil) = %s, want = %s", e.addr, got, l2)
 	}
 }
 
@@ -228,12 +228,12 @@ func TestCacheResolution(t *testing.T) {
 	// Check that after resolved, address stays in the cache and never returns WouldBlock.
 	for i := 0; i < 10; i++ {
 		e := testAddrs[len(testAddrs)-1]
-		got, _, err := c.get(e.addr, linkRes, "", nil, nil)
+		got, _, err := c.get(e.addr, linkRes, "", nil)
 		if err != nil {
-			t.Errorf("c.get(%s, _, '', nil, nil): %s", e.addr, err)
+			t.Errorf("c.get(%s, _, '', nil): %s", e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("got c.get(%s, _, '', nil, nil) = %s, want = %s", e.addr, got, e.linkAddr)
+			t.Errorf("got c.get(%s, _, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 		}
 	}
 }

@@ -530,52 +530,19 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 	}
 }
 
-var _ stack.NetworkInterface = (*testInterface)(nil)
+var _ stack.LinkEndpoint = (*testLinkEndpoint)(nil)
 
-type testInterface struct {
+type testLinkEndpoint struct {
 	stack.LinkEndpoint
-
-	nicID tcpip.NICID
 
 	writeErr tcpip.Error
 }
 
-func (t *testInterface) ID() tcpip.NICID {
-	return t.nicID
-}
-
-func (*testInterface) IsLoopback() bool {
-	return false
-}
-
-func (*testInterface) Name() string {
-	return ""
-}
-
-func (*testInterface) Enabled() bool {
-	return true
-}
-
-func (*testInterface) Promiscuous() bool {
-	return false
-}
-
-func (t *testInterface) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	return t.LinkEndpoint.WritePacket(r.Fields(), gso, protocol, pkt)
-}
-
-func (t *testInterface) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return t.LinkEndpoint.WritePackets(r.Fields(), gso, pkts, protocol)
-}
-
-func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testLinkEndpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if t.writeErr != nil {
 		return t.writeErr
 	}
 
-	var r stack.RouteInfo
-	r.NetProto = protocol
-	r.RemoteLinkAddress = remoteLinkAddr
 	return t.LinkEndpoint.WritePacket(r, gso, protocol, pkt)
 }
 
@@ -709,15 +676,18 @@ func TestLinkAddressRequest(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
 			})
-			p := s.NetworkProtocolInstance(arp.ProtocolNumber)
-			linkRes, ok := p.(stack.LinkAddressResolver)
-			if !ok {
-				t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
+			linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
+			if err := s.CreateNIC(nicID, &testLinkEndpoint{LinkEndpoint: linkEP, writeErr: test.linkErr}); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
 
-			linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
-			if err := s.CreateNIC(nicID, linkEP); err != nil {
-				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+			ep, err := s.GetNetworkEndpoint(nicID, arp.ProtocolNumber)
+			if err != nil {
+				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, arp.ProtocolNumber, err)
+			}
+			linkRes, ok := ep.(stack.LinkAddressResolver)
+			if !ok {
+				t.Fatalf("expected %T to implement stack.LinkAddressResolver", ep)
 			}
 
 			if len(test.nicAddr) != 0 {
@@ -726,15 +696,11 @@ func TestLinkAddressRequest(t *testing.T) {
 				}
 			}
 
-			// We pass a test network interface to LinkAddressRequest with the same
-			// NIC ID and link endpoint used by the NIC we created earlier so that we
-			// can mock a link address request and observe the packets sent to the
-			// link endpoint even though the stack uses the real NIC to validate the
-			// local address.
-			iface := testInterface{LinkEndpoint: linkEP, nicID: nicID, writeErr: test.linkErr}
-			err := linkRes.LinkAddressRequest(remoteAddr, test.localAddr, test.remoteLinkAddr, &iface)
-			if diff := cmp.Diff(test.expectedErr, err); diff != "" {
-				t.Fatalf("unexpected error from p.LinkAddressRequest(%s, %s, %s, _), (-want, +got):\n%s", remoteAddr, test.localAddr, test.remoteLinkAddr, diff)
+			{
+				err := linkRes.LinkAddressRequest(remoteAddr, test.localAddr, test.remoteLinkAddr)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Fatalf("unexpected error from p.LinkAddressRequest(%s, %s, %s, _), (-want, +got):\n%s", remoteAddr, test.localAddr, test.remoteLinkAddr, diff)
+				}
 			}
 
 			if got := s.Stats().ARP.OutgoingRequestsSent.Value(); got != test.expectedRequestsSent {
@@ -780,21 +746,5 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, remoteAddr)
 			}
 		})
-	}
-}
-
-func TestLinkAddressRequestWithoutNIC(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
-	})
-	p := s.NetworkProtocolInstance(arp.ProtocolNumber)
-	linkRes, ok := p.(stack.LinkAddressResolver)
-	if !ok {
-		t.Fatal("expected ARP protocol to implement stack.LinkAddressResolver")
-	}
-
-	err := linkRes.LinkAddressRequest(remoteAddr, "", remoteLinkAddr, &testInterface{nicID: nicID})
-	if _, ok := err.(*tcpip.ErrNotConnected); !ok {
-		t.Fatalf("got p.LinkAddressRequest(%s, %s, %s, _) = %s, want = %s", remoteAddr, "", remoteLinkAddr, err, &tcpip.ErrNotConnected{})
 	}
 }

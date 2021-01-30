@@ -376,7 +376,6 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
-	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
 	// rawFactory creates raw endpoints. If nil, raw endpoints are
 	// disabled. It is set during Stack creation and is immutable.
@@ -635,7 +634,6 @@ func New(opts Options) *Stack {
 	s := &Stack{
 		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		linkAddrResolvers:  make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 		nics:               make(map[tcpip.NICID]*NIC),
 		cleanupEndpoints:   make(map[TransportEndpoint]struct{}),
 		PortManager:        ports.NewPortManager(),
@@ -666,9 +664,6 @@ func New(opts Options) *Stack {
 	for _, netProtoFactory := range opts.NetworkProtocols {
 		netProto := netProtoFactory(s)
 		s.networkProtocols[netProto.Number()] = netProto
-		if r, ok := netProto.(LinkAddressResolver); ok {
-			s.linkAddrResolvers[r.LinkAddressProtocol()] = r
-		}
 	}
 
 	// Add specified transport protocols.
@@ -1561,18 +1556,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	linkRes, ok := s.linkAddrResolvers[protocol]
-	if !ok {
-		return &tcpip.ErrNotSupported{}
-	}
-
-	if linkAddr, ok := linkRes.ResolveStaticAddress(addr); ok {
-		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Success: true})
-		return nil
-	}
-
-	_, _, err := nic.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
-	return err
+	return nic.getLinkAddress(addr, localAddr, protocol, onResolve)
 }
 
 // Neighbors returns all IP to MAC address associations.

@@ -174,7 +174,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 	}
 
 	if r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes, ok := r.outgoingNIC.stack.linkAddrResolvers[r.NetProto]; ok {
+		if linkRes, ok := r.outgoingNIC.linkAddrResolvers[r.NetProto]; ok {
 			r.linkRes = linkRes
 		}
 	}
