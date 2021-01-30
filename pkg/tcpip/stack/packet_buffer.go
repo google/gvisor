@@ -187,6 +187,12 @@ func (pk *PacketBuffer) Size() int {
 	return pk.HeaderSize() + pk.Data.Size()
 }
 
+// MemSize returns the estimation size of the pk in memory, including backing
+// buffer data.
+func (pk *PacketBuffer) MemSize() int {
+	return pk.HeaderSize() + pk.Data.MemSize() + packetBufferStructSize
+}
+
 // Views returns the underlying storage of the whole packet.
 func (pk *PacketBuffer) Views() []buffer.View {
 	// Optimization for outbound packets that headers are in pk.header.

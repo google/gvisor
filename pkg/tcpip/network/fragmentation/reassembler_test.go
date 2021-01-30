@@ -15,6 +15,7 @@
 package fragmentation
 
 import (
+	"bytes"
 	"math"
 	"testing"
 
@@ -44,16 +45,21 @@ func TestReassemblerProcess(t *testing.T) {
 		return payload
 	}
 
-	pkt := func(size int) *stack.PacketBuffer {
+	pkt := func(sizes ...int) *stack.PacketBuffer {
+		var vv buffer.VectorisedView
+		for _, size := range sizes {
+			vv.AppendView(v(size))
+		}
 		return stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: v(size).ToVectorisedView(),
+			Data: vv,
 		})
 	}
 
 	var tests = []struct {
-		name   string
-		params []processParams
-		want   []hole
+		name    string
+		params  []processParams
+		want    []hole
+		wantPkt *stack.PacketBuffer
 	}{
 		{
 			name:   "No fragments",
@@ -64,7 +70,7 @@ func TestReassemblerProcess(t *testing.T) {
 			name:   "One fragment at beginning",
 			params: []processParams{{first: 0, last: 1, more: true, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 0, last: 1, filled: true, final: false, data: v(2)},
+				{first: 0, last: 1, filled: true, final: false, pkt: pkt(2)},
 				{first: 2, last: math.MaxUint16, filled: false, final: true},
 			},
 		},
@@ -72,7 +78,7 @@ func TestReassemblerProcess(t *testing.T) {
 			name:   "One fragment in the middle",
 			params: []processParams{{first: 1, last: 2, more: true, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 1, last: 2, filled: true, final: false, data: v(2)},
+				{first: 1, last: 2, filled: true, final: false, pkt: pkt(2)},
 				{first: 0, last: 0, filled: false, final: false},
 				{first: 3, last: math.MaxUint16, filled: false, final: true},
 			},
@@ -81,7 +87,7 @@ func TestReassemblerProcess(t *testing.T) {
 			name:   "One fragment at the end",
 			params: []processParams{{first: 1, last: 2, more: false, pkt: pkt(2), wantDone: false, wantError: nil}},
 			want: []hole{
-				{first: 1, last: 2, filled: true, final: true, data: v(2)},
+				{first: 1, last: 2, filled: true, final: true, pkt: pkt(2)},
 				{first: 0, last: 0, filled: false},
 			},
 		},
@@ -89,8 +95,9 @@ func TestReassemblerProcess(t *testing.T) {
 			name:   "One fragment completing a packet",
 			params: []processParams{{first: 0, last: 1, more: false, pkt: pkt(2), wantDone: true, wantError: nil}},
 			want: []hole{
-				{first: 0, last: 1, filled: true, final: true, data: v(2)},
+				{first: 0, last: 1, filled: true, final: true},
 			},
+			wantPkt: pkt(2),
 		},
 		{
 			name: "Two fragments completing a packet",
@@ -99,9 +106,10 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 2, last: 3, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
 			},
 			want: []hole{
-				{first: 0, last: 1, filled: true, final: false, data: v(2)},
-				{first: 2, last: 3, filled: true, final: true, data: v(2)},
+				{first: 0, last: 1, filled: true, final: false},
+				{first: 2, last: 3, filled: true, final: true},
 			},
+			wantPkt: pkt(2, 2),
 		},
 		{
 			name: "Two fragments completing a packet with a duplicate",
@@ -111,9 +119,10 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 2, last: 3, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
 			},
 			want: []hole{
-				{first: 0, last: 1, filled: true, final: false, data: v(2)},
-				{first: 2, last: 3, filled: true, final: true, data: v(2)},
+				{first: 0, last: 1, filled: true, final: false},
+				{first: 2, last: 3, filled: true, final: true},
 			},
+			wantPkt: pkt(2, 2),
 		},
 		{
 			name: "Two fragments completing a packet with a partial duplicate",
@@ -123,9 +132,10 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 4, last: 5, more: false, pkt: pkt(2), wantDone: true, wantError: nil},
 			},
 			want: []hole{
-				{first: 0, last: 3, filled: true, final: false, data: v(4)},
-				{first: 4, last: 5, filled: true, final: true, data: v(2)},
+				{first: 0, last: 3, filled: true, final: false},
+				{first: 4, last: 5, filled: true, final: true},
 			},
+			wantPkt: pkt(4, 2),
 		},
 		{
 			name: "Two overlapping fragments",
@@ -134,7 +144,7 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 5, last: 15, more: false, pkt: pkt(11), wantDone: false, wantError: ErrFragmentOverlap},
 			},
 			want: []hole{
-				{first: 0, last: 10, filled: true, final: false, data: v(11)},
+				{first: 0, last: 10, filled: true, final: false, pkt: pkt(11)},
 				{first: 11, last: math.MaxUint16, filled: false, final: true},
 			},
 		},
@@ -145,7 +155,7 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 0, last: 9, more: false, pkt: pkt(10), wantDone: false, wantError: ErrFragmentConflict},
 			},
 			want: []hole{
-				{first: 10, last: 14, filled: true, final: true, data: v(5)},
+				{first: 10, last: 14, filled: true, final: true, pkt: pkt(5)},
 				{first: 0, last: 9, filled: false, final: false},
 			},
 		},
@@ -156,7 +166,7 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 10, last: 14, more: false, pkt: pkt(5), wantDone: false, wantError: nil},
 			},
 			want: []hole{
-				{first: 5, last: 14, filled: true, final: true, data: v(10)},
+				{first: 5, last: 14, filled: true, final: true, pkt: pkt(10)},
 				{first: 0, last: 4, filled: false, final: false},
 			},
 		},
@@ -167,7 +177,7 @@ func TestReassemblerProcess(t *testing.T) {
 				{first: 10, last: 13, more: false, pkt: pkt(4), wantDone: false, wantError: ErrFragmentConflict},
 			},
 			want: []hole{
-				{first: 5, last: 14, filled: true, final: true, data: v(10)},
+				{first: 5, last: 14, filled: true, final: true, pkt: pkt(10)},
 				{first: 0, last: 4, filled: false, final: false},
 			},
 		},
@@ -176,14 +186,47 @@ func TestReassemblerProcess(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			r := newReassembler(FragmentID{}, &faketime.NullClock{})
+			var resPkt *stack.PacketBuffer
+			var isDone bool
 			for _, param := range test.params {
-				_, _, done, _, err := r.process(param.first, param.last, param.more, proto, param.pkt)
+				pkt, _, done, _, err := r.process(param.first, param.last, param.more, proto, param.pkt)
 				if done != param.wantDone || err != param.wantError {
 					t.Errorf("got r.process(%d, %d, %t, %d, _) = (_, _, %t, _, %v), want = (%t, %v)", param.first, param.last, param.more, proto, done, err, param.wantDone, param.wantError)
 				}
+				if done {
+					resPkt = pkt
+					isDone = true
+				}
 			}
-			if diff := cmp.Diff(test.want, r.holes, cmp.AllowUnexported(hole{})); diff != "" {
-				t.Errorf("r.holes mismatch (-want +got):\n%s", diff)
+
+			ignorePkt := func(a, b *stack.PacketBuffer) bool { return true }
+			cmpPktData := func(a, b *stack.PacketBuffer) bool {
+				if a == nil || b == nil {
+					return a == b
+				}
+				return bytes.Equal(a.Data.ToOwnedView(), b.Data.ToOwnedView())
+			}
+
+			if isDone {
+				if diff := cmp.Diff(
+					test.want, r.holes,
+					cmp.AllowUnexported(hole{}),
+					// Do not compare pkt in hole. Data will be altered.
+					cmp.Comparer(ignorePkt),
+				); diff != "" {
+					t.Errorf("r.holes mismatch (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(test.wantPkt, resPkt, cmp.Comparer(cmpPktData)); diff != "" {
+					t.Errorf("Reassembled pkt mismatch (-want +got):\n%s", diff)
+				}
+			} else {
+				if diff := cmp.Diff(
+					test.want, r.holes,
+					cmp.AllowUnexported(hole{}),
+					cmp.Comparer(cmpPktData),
+				); diff != "" {
+					t.Errorf("r.holes mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}

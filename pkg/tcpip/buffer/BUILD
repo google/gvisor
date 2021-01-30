@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "prependable.go",
         "view.go",
+        "view_unsafe.go",
     ],
     visibility = ["//visibility:public"],
 )

@@ -740,7 +740,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		proto := h.Protocol()
-		data, _, ready, err := e.protocol.fragmentation.Process(
+		resPkt, _, ready, err := e.protocol.fragmentation.Process(
 			// As per RFC 791 section 2.3, the identification value is unique
 			// for a source-destination pair and protocol.
 			fragmentation.FragmentID{
@@ -763,7 +763,8 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		if !ready {
 			return
 		}
-		pkt.Data = data
+		pkt = resPkt
+		h = header.IPv4(pkt.NetworkHeader().View())
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.

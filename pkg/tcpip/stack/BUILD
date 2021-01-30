@@ -72,6 +72,7 @@ go_library(
         "nud.go",
         "packet_buffer.go",
         "packet_buffer_list.go",
+        "packet_buffer_unsafe.go",
         "pending_packets.go",
         "rand.go",
         "registration.go",
