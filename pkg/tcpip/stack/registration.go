@@ -824,16 +824,12 @@ type InjectableLinkEndpoint interface {
 	InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error
 }
 
-// A LinkAddressResolver is an extension to a NetworkProtocol that
-// can resolve link addresses.
+// A LinkAddressResolver handles link address resolution for a network protocol.
 type LinkAddressResolver interface {
 	// LinkAddressRequest sends a request for the link address of the target
 	// address. The request is broadcasted on the local network if a remote link
 	// address is not provided.
-	//
-	// The request is sent from the passed network interface. If the interface
-	// local address is unspecified, any interface local address may be used.
-	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic NetworkInterface) tcpip.Error
+	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
 	// requests. It either resolves the name immediately or returns the

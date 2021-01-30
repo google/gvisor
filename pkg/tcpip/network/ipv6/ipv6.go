@@ -164,6 +164,7 @@ func getLabel(addr tcpip.Address) uint8 {
 	panic(fmt.Sprintf("should have a label for address = %s", addr))
 }
 
+var _ stack.LinkAddressResolver = (*endpoint)(nil)
 var _ stack.LinkResolvableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)

@@ -290,7 +290,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			received.invalid.Increment()
 			return
 		} else if e.nud != nil {
-			e.nud.HandleProbe(srcAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e.protocol)
+			e.nud.HandleProbe(srcAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e)
 		} else {
 			e.linkAddrCache.AddLinkAddress(srcAddr, sourceLinkAddr)
 		}
@@ -578,7 +578,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			if e.nud != nil {
 				// A RS with a specified source IP address modifies the NUD state
 				// machine in the same way a reachability probe would.
-				e.nud.HandleProbe(srcAddr, ProtocolNumber, sourceLinkAddr, e.protocol)
+				e.nud.HandleProbe(srcAddr, ProtocolNumber, sourceLinkAddr, e)
 			}
 		}
 
@@ -628,7 +628,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
 		if len(sourceLinkAddr) != 0 && e.nud != nil {
-			e.nud.HandleProbe(routerAddr, ProtocolNumber, sourceLinkAddr, e.protocol)
+			e.nud.HandleProbe(routerAddr, ProtocolNumber, sourceLinkAddr, e)
 		}
 
 		e.mu.Lock()
@@ -694,24 +694,13 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 	}
 }
 
-var _ stack.LinkAddressResolver = (*protocol)(nil)
-
 // LinkAddressProtocol implements stack.LinkAddressResolver.
-func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
+func (*endpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return header.IPv6ProtocolNumber
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
-func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, nic stack.NetworkInterface) tcpip.Error {
-	nicID := nic.ID()
-
-	p.mu.Lock()
-	netEP, ok := p.mu.eps[nicID]
-	p.mu.Unlock()
-	if !ok {
-		return &tcpip.ErrNotConnected{}
-	}
-
+func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
 	remoteAddr := targetAddr
 	if len(remoteLinkAddr) == 0 {
 		remoteAddr = header.SolicitedNodeAddr(targetAddr)
@@ -719,22 +708,22 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	}
 
 	if len(localAddr) == 0 {
-		addressEndpoint := netEP.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
+		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
 		if addressEndpoint == nil {
 			return &tcpip.ErrNetworkUnreachable{}
 		}
 
 		localAddr = addressEndpoint.AddressWithPrefix().Address
-	} else if p.stack.CheckLocalAddress(nicID, ProtocolNumber, localAddr) == 0 {
+	} else if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, localAddr) == 0 {
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
 	optsSerializer := header.NDPOptionsSerializer{
-		header.NDPSourceLinkLayerAddressOption(nic.LinkAddress()),
+		header.NDPSourceLinkLayerAddressOption(e.nic.LinkAddress()),
 	}
 	neighborSolicitSize := header.ICMPv6NeighborSolicitMinimumSize + optsSerializer.Length()
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(nic.MaxHeaderLength()) + header.IPv6FixedHeaderSize + neighborSolicitSize,
+		ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.IPv6FixedHeaderSize + neighborSolicitSize,
 	})
 	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
@@ -751,9 +740,9 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 		panic(fmt.Sprintf("failed to add IP header: %s", err))
 	}
 
-	stat := netEP.stats.icmp.packetsSent
+	stat := e.stats.icmp.packetsSent
 
-	if err := nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
+	if err := e.nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
 		stat.dropped.Increment()
 		return err
 	}
@@ -763,7 +752,7 @@ func (p *protocol) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
-func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
 	if header.IsV6MulticastAddress(addr) {
 		return header.EthernetAddressFromMulticastIPv6Address(addr), true
 	}
