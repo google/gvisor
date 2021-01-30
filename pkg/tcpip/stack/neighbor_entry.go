@@ -254,7 +254,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				return
 			}
 
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, "" /* localAddr */, e.neigh.LinkAddr, e.nic); err != nil {
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, "" /* localAddr */, e.neigh.LinkAddr); err != nil {
 				e.dispatchRemoveEventLocked()
 				e.setStateLocked(Failed)
 				return
@@ -340,7 +340,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			//  address SHOULD be placed in the IP Source Address of the outgoing
 			//  solicitation.
 			//
-			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, localAddr, "", e.nic); err != nil {
+			if err := e.linkRes.LinkAddressRequest(e.neigh.Addr, localAddr, ""); err != nil {
 				// There is no need to log the error here; the NUD implementation may
 				// assume a working link. A valid link should be the responsibility of
 				// the NIC/stack.LinkEndpoint.
