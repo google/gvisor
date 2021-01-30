@@ -101,10 +101,10 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	})
 }
 
-// TestIgmpV1Present tests the handling of the case where an IGMPv1 router is
-// present on the network. The IGMP stack will then send IGMPv1 Membership
-// reports for backwards compatibility.
-func TestIgmpV1Present(t *testing.T) {
+// TestIGMPV1Present tests the node's ability to fallback to V1 when a V1
+// router is detected. V1 present status is expected to be reset when the NIC
+// cycles.
+func TestIGMPV1Present(t *testing.T) {
 	e, s, clock := createStack(t, true)
 	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, addr); err != nil {
 		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
@@ -116,14 +116,16 @@ func TestIgmpV1Present(t *testing.T) {
 
 	// This NIC will send an IGMPv2 report immediately, before this test can get
 	// the IGMPv1 General Membership Query in.
-	p, ok := e.Read()
-	if !ok {
-		t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
+	{
+		p, ok := e.Read()
+		if !ok {
+			t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
+		}
+		if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 1 {
+			t.Fatalf("got V2MembershipReport messages sent = %d, want = 1", got)
+		}
+		validateIgmpPacket(t, p, multicastAddr, header.IGMPv2MembershipReport, 0, multicastAddr)
 	}
-	if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 1 {
-		t.Fatalf("got V2MembershipReport messages sent = %d, want = 1", got)
-	}
-	validateIgmpPacket(t, p, multicastAddr, header.IGMPv2MembershipReport, 0, multicastAddr)
 	if t.Failed() {
 		t.FailNow()
 	}
@@ -145,19 +147,38 @@ func TestIgmpV1Present(t *testing.T) {
 
 	// Verify the solicited Membership Report is sent. Now that this NIC has seen
 	// an IGMPv1 query, it should send an IGMPv1 Membership Report.
-	p, ok = e.Read()
-	if ok {
+	if p, ok := e.Read(); ok {
 		t.Fatalf("sent unexpected packet, expected V1MembershipReport only after advancing the clock = %+v", p.Pkt)
 	}
 	clock.Advance(ipv4.UnsolicitedReportIntervalMax)
-	p, ok = e.Read()
-	if !ok {
-		t.Fatal("unable to Read IGMP packet, expected V1MembershipReport")
+	{
+		p, ok := e.Read()
+		if !ok {
+			t.Fatal("unable to Read IGMP packet, expected V1MembershipReport")
+		}
+		if got := s.Stats().IGMP.PacketsSent.V1MembershipReport.Value(); got != 1 {
+			t.Fatalf("got V1MembershipReport messages sent = %d, want = 1", got)
+		}
+		validateIgmpPacket(t, p, multicastAddr, header.IGMPv1MembershipReport, 0, multicastAddr)
 	}
-	if got := s.Stats().IGMP.PacketsSent.V1MembershipReport.Value(); got != 1 {
-		t.Fatalf("got V1MembershipReport messages sent = %d, want = 1", got)
+
+	// Cycling the interface should reset the V1 present flag.
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
 	}
-	validateIgmpPacket(t, p, multicastAddr, header.IGMPv1MembershipReport, 0, multicastAddr)
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	{
+		p, ok := e.Read()
+		if !ok {
+			t.Fatal("unable to Read IGMP packet, expected V2MembershipReport")
+		}
+		if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != 2 {
+			t.Fatalf("got V2MembershipReport messages sent = %d, want = 2", got)
+		}
+		validateIgmpPacket(t, p, multicastAddr, header.IGMPv2MembershipReport, 0, multicastAddr)
+	}
 }
 
 func TestSendQueuedIGMPReports(t *testing.T) {
