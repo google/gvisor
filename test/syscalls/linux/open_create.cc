@@ -22,6 +22,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
@@ -31,85 +32,60 @@ namespace testing {
 
 namespace {
 TEST(CreateTest, TmpFile) {
-  int fd;
-  EXPECT_THAT(fd = open(JoinPath(GetAbsoluteTestTmpdir(), "a").c_str(),
-                        O_RDWR | O_CREAT, 0666),
-              SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "a"), O_RDWR | O_CREAT, 0666));
 }
 
 TEST(CreateTest, ExistingFile) {
-  int fd;
-  EXPECT_THAT(
-      fd = open(JoinPath(GetAbsoluteTestTmpdir(), "ExistingFile").c_str(),
-                O_RDWR | O_CREAT, 0666),
-      SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
-
-  EXPECT_THAT(
-      fd = open(JoinPath(GetAbsoluteTestTmpdir(), "ExistingFile").c_str(),
-                O_RDWR | O_CREAT, 0666),
-      SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto path = JoinPath(dir.path(), "ExistingFile");
+  EXPECT_NO_ERRNO(Open(path, O_RDWR | O_CREAT, 0666));
+  EXPECT_NO_ERRNO(Open(path, O_RDWR | O_CREAT, 0666));
 }
 
 TEST(CreateTest, CreateAtFile) {
-  int dirfd;
-  EXPECT_THAT(dirfd = open(GetAbsoluteTestTmpdir().c_str(), O_DIRECTORY, 0666),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto dirfd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY, 0666));
+  EXPECT_THAT(openat(dirfd.get(), "CreateAtFile", O_RDWR | O_CREAT, 0666),
               SyscallSucceeds());
-  EXPECT_THAT(openat(dirfd, "CreateAtFile", O_RDWR | O_CREAT, 0666),
-              SyscallSucceeds());
-  EXPECT_THAT(close(dirfd), SyscallSucceeds());
 }
 
 TEST(CreateTest, HonorsUmask_NoRandomSave) {
   const DisableSave ds;  // file cannot be re-opened as writable.
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempUmask mask(0222);
-  int fd;
-  ASSERT_THAT(
-      fd = open(JoinPath(GetAbsoluteTestTmpdir(), "UmaskedFile").c_str(),
-                O_RDWR | O_CREAT, 0666),
-      SyscallSucceeds());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "UmaskedFile"), O_RDWR | O_CREAT, 0666));
   struct stat statbuf;
-  ASSERT_THAT(fstat(fd, &statbuf), SyscallSucceeds());
+  ASSERT_THAT(fstat(fd.get(), &statbuf), SyscallSucceeds());
   EXPECT_EQ(0444, statbuf.st_mode & 0777);
-  EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
 TEST(CreateTest, CreateExclusively) {
-  std::string filename = NewTempAbsPath();
-
-  int fd;
-  ASSERT_THAT(fd = open(filename.c_str(), O_CREAT | O_RDWR, 0644),
-              SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
-
-  EXPECT_THAT(open(filename.c_str(), O_CREAT | O_EXCL | O_RDWR, 0644),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto path = JoinPath(dir.path(), "foo");
+  EXPECT_NO_ERRNO(Open(path, O_CREAT | O_RDWR, 0644));
+  EXPECT_THAT(open(path.c_str(), O_CREAT | O_EXCL | O_RDWR, 0644),
               SyscallFailsWithErrno(EEXIST));
 }
 
 TEST(CreateTest, CreatWithOTrunc) {
-  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
-  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
-  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC, 0666),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(open(dir.path().c_str(), O_CREAT | O_TRUNC, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
 TEST(CreateTest, CreatDirWithOTruncAndReadOnly) {
-  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
-  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
-  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(open(dir.path().c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
 TEST(CreateTest, CreatFileWithOTruncAndReadOnly) {
-  std::string dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
-  int dirfd;
-  ASSERT_THAT(dirfd = open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
-              SyscallSucceeds());
-  ASSERT_THAT(open(dirpath.c_str(), O_CREAT | O_TRUNC | O_RDONLY, 0666),
-              SyscallSucceeds());
-  ASSERT_THAT(close(dirfd), SyscallSucceeds());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto path = JoinPath(dir.path(), "foo");
+  ASSERT_NO_ERRNO(Open(path, O_RDWR | O_CREAT, 0666));
+  ASSERT_NO_ERRNO(Open(path, O_CREAT | O_TRUNC | O_RDONLY, 0666));
 }
 
 TEST(CreateTest, CreateFailsOnDirWithoutWritePerms) {

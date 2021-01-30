@@ -75,55 +75,52 @@ class OpenTest : public FileTest {
 };
 
 TEST_F(OpenTest, OTrunc) {
-  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
-  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
-  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC, 0666),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(open(dir.path().c_str(), O_TRUNC, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
 TEST_F(OpenTest, OTruncAndReadOnlyDir) {
-  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncd");
-  ASSERT_THAT(mkdir(dirpath.c_str(), 0777), SyscallSucceeds());
-  ASSERT_THAT(open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666),
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(open(dir.path().c_str(), O_TRUNC | O_RDONLY, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
 TEST_F(OpenTest, OTruncAndReadOnlyFile) {
-  auto dirpath = JoinPath(GetAbsoluteTestTmpdir(), "truncfile");
-  const FileDescriptor existing =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(dirpath.c_str(), O_RDWR | O_CREAT, 0666));
-  const FileDescriptor otrunc = ASSERT_NO_ERRNO_AND_VALUE(
-      Open(dirpath.c_str(), O_TRUNC | O_RDONLY, 0666));
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto path = JoinPath(dir.path(), "foo");
+  EXPECT_NO_ERRNO(Open(path, O_RDWR | O_CREAT, 0666));
+  EXPECT_NO_ERRNO(Open(path, O_TRUNC | O_RDONLY, 0666));
 }
 
 TEST_F(OpenTest, OCreateDirectory) {
   SKIP_IF(IsRunningWithVFS1());
-  auto dirpath = GetAbsoluteTestTmpdir();
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Normal case: existing directory.
-  ASSERT_THAT(open(dirpath.c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().c_str(), O_RDWR | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on existing directory.
-  ASSERT_THAT(open(dirpath.append("/").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDWR | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on non-existing directory.
-  ASSERT_THAT(open(JoinPath(dirpath, "non-existent").append("/").c_str(),
+  ASSERT_THAT(open(JoinPath(dir.path(), "non-existent").append("/").c_str(),
                    O_RDWR | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // "." special case.
-  ASSERT_THAT(open(JoinPath(dirpath, ".").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(JoinPath(dir.path(), ".").c_str(), O_RDWR | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
 TEST_F(OpenTest, MustCreateExisting) {
-  auto dirPath = GetAbsoluteTestTmpdir();
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Existing directory.
-  ASSERT_THAT(open(dirPath.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
+  ASSERT_THAT(open(dir.path().c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
               SyscallFailsWithErrno(EEXIST));
 
   // Existing file.
-  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dirPath));
+  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
   ASSERT_THAT(open(newFile.path().c_str(), O_RDWR | O_CREAT | O_EXCL, 0666),
               SyscallFailsWithErrno(EEXIST));
 }
@@ -206,7 +203,8 @@ TEST_F(OpenTest, AtAbsPath) {
 }
 
 TEST_F(OpenTest, OpenNoFollowSymlink) {
-  const std::string link_path = JoinPath(GetAbsoluteTestTmpdir(), "link");
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string link_path = JoinPath(dir.path().c_str(), "link");
   ASSERT_THAT(symlink(test_file_name_.c_str(), link_path.c_str()),
               SyscallSucceeds());
   auto cleanup = Cleanup([link_path]() {
@@ -227,8 +225,7 @@ TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {
   //
   // We will then open tmp_folder/sym_folder/file with O_NOFOLLOW and it
   // should succeed as O_NOFOLLOW only applies to the final path component.
-  auto tmp_path =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto tmp_path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto sym_path = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), tmp_path.path()));
   auto file_path =
@@ -246,8 +243,7 @@ TEST_F(OpenTest, OpenNoFollowStillFollowsLinksInPath) {
 //
 // open("root/child/symlink/root/child/file")
 TEST_F(OpenTest, SymlinkRecurse) {
-  auto root =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
   auto symlink = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(child.path(), "../.."));
@@ -481,12 +477,8 @@ TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
   const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
-  int fd;
   // Create a file without user permissions.
-  EXPECT_THAT(  // SAVE_BELOW
-      fd = open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 055),
-      SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  EXPECT_NO_ERRNO(Open(path, O_CREAT | O_TRUNC | O_WRONLY, 055));
 
   // Cannot open file because we are owner and have no permissions set.
   EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
@@ -495,8 +487,7 @@ TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
   EXPECT_THAT(chmod(path.c_str(), 0755), SyscallSucceeds());
 
   // Now we can open the file again.
-  EXPECT_THAT(fd = open(path.c_str(), O_RDWR), SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  EXPECT_NO_ERRNO(Open(path, O_RDWR));
 }
 
 TEST_F(OpenTest, OpenNonDirectoryWithTrailingSlash) {
