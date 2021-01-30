@@ -1383,6 +1383,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         gtest,
+        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:temp_umask",
         "//test/util:test_main",
