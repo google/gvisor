@@ -215,6 +215,11 @@ func (igmp *igmpState) setV1Present(v bool) {
 	}
 }
 
+func (igmp *igmpState) resetV1Present() {
+	igmp.igmpV1Job.Cancel()
+	igmp.setV1Present(false)
+}
+
 // handleMembershipQuery handles a membership query.
 //
 // Precondition: igmp.ep.mu must be locked.
