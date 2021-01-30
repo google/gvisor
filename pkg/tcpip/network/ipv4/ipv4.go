@@ -229,6 +229,12 @@ func (e *endpoint) disableLocked() {
 		panic(fmt.Sprintf("unexpected error when removing address = %s: %s", ipv4BroadcastAddr.Address, err))
 	}
 
+	// Reset the IGMP V1 present flag.
+	//
+	// If the node comes back up on the same network, it will re-learn that it
+	// needs to perform IGMPv1.
+	e.mu.igmp.resetV1Present()
+
 	if !e.setEnabled(false) {
 		panic("should have only done work to disable the endpoint if it was enabled")
 	}
