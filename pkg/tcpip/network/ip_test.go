@@ -311,6 +311,12 @@ func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.N
 	return &tcpip.ErrNotSupported{}
 }
 
+func (*testInterface) HandleNeighborProbe(tcpip.Address, tcpip.LinkAddress, stack.LinkAddressResolver) {
+}
+
+func (*testInterface) HandleNeighborConfirmation(tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) {
+}
+
 func TestSourceAddressValidation(t *testing.T) {
 	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
@@ -465,7 +471,7 @@ func TestEnableWhenNICDisabled(t *testing.T) {
 
 			// We pass nil for all parameters except the NetworkInterface and Stack
 			// since Enable only depends on these.
-			ep := p.NewEndpoint(&nic, nil, nil, nil)
+			ep := p.NewEndpoint(&nic, nil)
 
 			// The endpoint should initially be disabled, regardless the NIC's enabled
 			// status.
@@ -527,7 +533,7 @@ func TestIPv4Send(t *testing.T) {
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, nil)
+	ep := proto.NewEndpoint(&nic, nil)
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
@@ -661,7 +667,7 @@ func TestReceive(t *testing.T) {
 					v4: test.v4,
 				},
 			}
-			ep := s.NetworkProtocolInstance(test.protoNum).NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := s.NetworkProtocolInstance(test.protoNum).NewEndpoint(&nic, &nic.testObject)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -722,7 +728,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, &nic.testObject)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -811,7 +817,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 			v4: true,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+	ep := proto.NewEndpoint(&nic, &nic.testObject)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -906,7 +912,7 @@ func TestIPv6Send(t *testing.T) {
 			t: t,
 		},
 	}
-	ep := proto.NewEndpoint(&nic, nil, nil, nil)
+	ep := proto.NewEndpoint(&nic, nil)
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -979,7 +985,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 					t: t,
 				},
 			}
-			ep := proto.NewEndpoint(&nic, nil, nil, &nic.testObject)
+			ep := proto.NewEndpoint(&nic, &nic.testObject)
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {

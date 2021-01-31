@@ -231,7 +231,7 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 		stats: makeNICStats(),
 	}
 	nic.networkEndpoints = map[tcpip.NetworkProtocolNumber]NetworkEndpoint{
-		header.IPv6ProtocolNumber: (&testIPv6Protocol{}).NewEndpoint(&nic, nil, nil, nil),
+		header.IPv6ProtocolNumber: (&testIPv6Protocol{}).NewEndpoint(&nic, nil),
 	}
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -240,12 +240,13 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 	entry := newNeighborEntry(&nic, entryTestAddr1 /* remoteAddr */, nudState, &linkRes)
 
 	// Stub out the neighbor cache to verify deletion from the cache.
-	nic.neigh = &neighborCache{
+	neigh := &neighborCache{
 		nic:   &nic,
 		state: nudState,
 		cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
 	}
-	nic.neigh.cache[entryTestAddr1] = entry
+	neigh.cache[entryTestAddr1] = entry
+	nic.neighborTable = neigh
 
 	return entry, &disp, &linkRes, clock
 }

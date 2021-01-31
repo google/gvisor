@@ -1614,7 +1614,7 @@ func TestTTL(t *testing.T) {
 				s := stack.New(stack.Options{
 					NetworkProtocols: []stack.NetworkProtocolFactory{p},
 				})
-				ep := s.NetworkProtocolInstance(n).NewEndpoint(&testInterface{}, nil, nil, nil)
+				ep := s.NetworkProtocolInstance(n).NewEndpoint(&testInterface{}, nil)
 				wantTTL = ep.DefaultTTL()
 				ep.Close()
 			}

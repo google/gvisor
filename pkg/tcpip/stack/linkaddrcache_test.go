@@ -60,7 +60,7 @@ func (r *testLinkAddressResolver) LinkAddressRequest(targetAddr, _ tcpip.Address
 func (r *testLinkAddressResolver) fakeRequest(addr tcpip.Address) {
 	for _, ta := range testAddrs {
 		if ta.addr == addr {
-			r.cache.AddLinkAddress(ta.addr, ta.linkAddr)
+			r.cache.add(ta.addr, ta.linkAddr)
 			break
 		}
 	}
@@ -103,7 +103,7 @@ func TestCacheOverflow(t *testing.T) {
 	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
 	for i := len(testAddrs) - 1; i >= 0; i-- {
 		e := testAddrs[i]
-		c.AddLinkAddress(e.addr, e.linkAddr)
+		c.add(e.addr, e.linkAddr)
 		got, _, err := c.get(e.addr, nil, "", nil)
 		if err != nil {
 			t.Errorf("insert %d, c.get(%s, nil, '', nil): %s", i, e.addr, err)
@@ -143,7 +143,7 @@ func TestCacheConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			for _, e := range testAddrs {
-				c.AddLinkAddress(e.addr, e.linkAddr)
+				c.add(e.addr, e.linkAddr)
 			}
 			wg.Done()
 		}()
@@ -175,7 +175,7 @@ func TestCacheAgeLimit(t *testing.T) {
 	linkRes := &testLinkAddressResolver{cache: c}
 
 	e := testAddrs[0]
-	c.AddLinkAddress(e.addr, e.linkAddr)
+	c.add(e.addr, e.linkAddr)
 	time.Sleep(50 * time.Millisecond)
 	_, _, err := c.get(e.addr, linkRes, "", nil)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
@@ -187,7 +187,7 @@ func TestCacheReplace(t *testing.T) {
 	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
 	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
-	c.AddLinkAddress(e.addr, e.linkAddr)
+	c.add(e.addr, e.linkAddr)
 	got, _, err := c.get(e.addr, nil, "", nil)
 	if err != nil {
 		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)
@@ -196,7 +196,7 @@ func TestCacheReplace(t *testing.T) {
 		t.Errorf("got c.get(%s, nil, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
-	c.AddLinkAddress(e.addr, l2)
+	c.add(e.addr, l2)
 	got, _, err = c.get(e.addr, nil, "", nil)
 	if err != nil {
 		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)

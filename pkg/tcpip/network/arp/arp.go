@@ -50,10 +50,8 @@ type endpoint struct {
 	// Must be accessed using atomic operations.
 	enabled uint32
 
-	nic           stack.NetworkInterface
-	linkAddrCache stack.LinkAddressCache
-	nud           stack.NUDHandler
-	stats         sharedStats
+	nic   stack.NetworkInterface
+	stats sharedStats
 }
 
 func (e *endpoint) Enable() tcpip.Error {
@@ -150,11 +148,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		remoteAddr := tcpip.Address(h.ProtocolAddressSender())
 		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
-		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(remoteAddr, remoteLinkAddr)
-		} else {
-			e.nud.HandleProbe(remoteAddr, ProtocolNumber, remoteLinkAddr, e)
-		}
+		e.nic.HandleNeighborProbe(remoteAddr, remoteLinkAddr, e)
 
 		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
@@ -194,14 +188,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		addr := tcpip.Address(h.ProtocolAddressSender())
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
-		if e.nud == nil {
-			e.linkAddrCache.AddLinkAddress(addr, linkAddr)
-			return
-		}
-
 		// The solicited, override, and isRouter flags are not available for ARP;
 		// they are only available for IPv6 Neighbor Advertisements.
-		e.nud.HandleConfirmation(addr, linkAddr, stack.ReachabilityConfirmationFlags{
+		e.nic.HandleNeighborConfirmation(addr, linkAddr, stack.ReachabilityConfirmationFlags{
 			// Solicited and unsolicited (also referred to as gratuitous) ARP Replies
 			// are handled equivalently to a solicited Neighbor Advertisement.
 			Solicited: true,
@@ -234,12 +223,10 @@ func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
 	return "", ""
 }
 
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
-		protocol:      p,
-		nic:           nic,
-		linkAddrCache: linkAddrCache,
-		nud:           nud,
+		protocol: p,
+		nic:      nic,
 	}
 
 	tcpip.InitStatCounters(reflect.ValueOf(&e.stats.localStats).Elem())

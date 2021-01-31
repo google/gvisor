@@ -91,7 +91,6 @@ func newTestNeighborCache(nudDisp NUDDispatcher, config NUDConfigurations, clock
 		state: NewNUDState(config, rng),
 		cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
 	}
-	neigh.nic.neigh = neigh
 	return neigh
 }
 
@@ -212,7 +211,7 @@ func (r *testNeighborResolver) LinkAddressRequest(targetAddr, _ tcpip.Address, _
 // fakeRequest emulates handling a response for a link address request.
 func (r *testNeighborResolver) fakeRequest(addr tcpip.Address) {
 	if entry, ok := r.entries.entryByAddr(addr); ok {
-		r.neigh.HandleConfirmation(addr, entry.LinkAddr, ReachabilityConfirmationFlags{
+		r.neigh.handleConfirmation(addr, entry.LinkAddr, ReachabilityConfirmationFlags{
 			Solicited: true,
 			Override:  false,
 			IsRouter:  false,
@@ -1473,7 +1472,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 		updatedLinkAddr = entry.LinkAddr
 	}
 	store.set(0, updatedLinkAddr)
-	neigh.HandleConfirmation(entry.Addr, updatedLinkAddr, ReachabilityConfirmationFlags{
+	neigh.handleConfirmation(entry.Addr, updatedLinkAddr, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,

@@ -2796,14 +2796,8 @@ func stackAndNdpDispatcherWithDefaultRoute(t *testing.T, nicID tcpip.NICID, useN
 		NIC:         nicID,
 	}})
 
-	if useNeighborCache {
-		if err := s.AddStaticNeighbor(nicID, llAddr3, linkAddr3); err != nil {
-			t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, llAddr3, linkAddr3, err)
-		}
-	} else {
-		if err := s.AddLinkAddress(nicID, llAddr3, linkAddr3); err != nil {
-			t.Fatalf("s.AddLinkAddress(%d, %s, %s): %s", nicID, llAddr3, linkAddr3, err)
-		}
+	if err := s.AddStaticNeighbor(nicID, llAddr3, linkAddr3); err != nil {
+		t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, llAddr3, linkAddr3, err)
 	}
 	return ndpDisp, e, s
 }
