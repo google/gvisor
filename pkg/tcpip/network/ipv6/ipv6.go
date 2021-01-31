@@ -173,13 +173,11 @@ var _ stack.NDPEndpoint = (*endpoint)(nil)
 var _ NDPEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
-	nic           stack.NetworkInterface
-	linkAddrCache stack.LinkAddressCache
-	nud           stack.NUDHandler
-	dispatcher    stack.TransportDispatcher
-	protocol      *protocol
-	stack         *stack.Stack
-	stats         sharedStats
+	nic        stack.NetworkInterface
+	dispatcher stack.TransportDispatcher
+	protocol   *protocol
+	stack      *stack.Stack
+	stats      sharedStats
 
 	// enabled is set to 1 when the endpoint is enabled and 0 when it is
 	// disabled.
@@ -1733,13 +1731,11 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 }
 
 // NewEndpoint creates a new ipv6 endpoint.
-func (p *protocol) NewEndpoint(nic stack.NetworkInterface, linkAddrCache stack.LinkAddressCache, nud stack.NUDHandler, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
+func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.TransportDispatcher) stack.NetworkEndpoint {
 	e := &endpoint{
-		nic:           nic,
-		linkAddrCache: linkAddrCache,
-		nud:           nud,
-		dispatcher:    dispatcher,
-		protocol:      p,
+		nic:        nic,
+		dispatcher: dispatcher,
+		protocol:   p,
 	}
 	e.mu.Lock()
 	e.mu.addressableEndpointState.Init(e)

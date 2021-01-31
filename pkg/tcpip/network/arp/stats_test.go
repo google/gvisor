@@ -40,7 +40,7 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	})
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
-	ep := proto.NewEndpoint(&nic, nil, nil, nil).(*endpoint)
+	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
 	// At this point, the Stack's stats and the NetworkEndpoint's stats are
 	// expected to be bound by a MultiCounterStat.
 	refStack := s.Stats()

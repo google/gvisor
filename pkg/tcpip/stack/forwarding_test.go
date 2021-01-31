@@ -161,10 +161,9 @@ var _ NetworkProtocol = (*fwdTestNetworkProtocol)(nil)
 type fwdTestNetworkProtocol struct {
 	stack *Stack
 
-	addrCache              *linkAddrCache
-	neigh                  *neighborCache
+	neighborTable          neighborTable
 	addrResolveDelay       time.Duration
-	onLinkAddressResolved  func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress)
+	onLinkAddressResolved  func(neighborTable, tcpip.Address, tcpip.LinkAddress)
 	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
 
 	mu struct {
@@ -197,7 +196,7 @@ func (*fwdTestNetworkProtocol) Parse(pkt *PacketBuffer) (tcpip.TransportProtocol
 	return tcpip.TransportProtocolNumber(netHeader[protocolNumberOffset]), true, true
 }
 
-func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, _ LinkAddressCache, _ NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint {
+func (f *fwdTestNetworkProtocol) NewEndpoint(nic NetworkInterface, dispatcher TransportDispatcher) NetworkEndpoint {
 	e := &fwdTestNetworkEndpoint{
 		nic:        nic,
 		proto:      f,
@@ -222,7 +221,7 @@ func (*fwdTestNetworkProtocol) Wait() {}
 func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
 	if fn := f.proto.onLinkAddressResolved; fn != nil {
 		time.AfterFunc(f.proto.addrResolveDelay, func() {
-			fn(f.proto.addrCache, f.proto.neigh, addr, remoteLinkAddr)
+			fn(f.proto.neighborTable, addr, remoteLinkAddr)
 		})
 	}
 	return nil
@@ -401,12 +400,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 	if !ok {
 		t.Fatal("NIC 2 does not exist")
 	}
-	if useNeighborCache {
-		// Control the neighbor cache for NIC 2.
-		proto.neigh = nic.neigh
-	} else {
-		proto.addrCache = nic.linkAddrCache
-	}
+	proto.neighborTable = nic.neighborTable
 
 	// Route all packets to NIC 2.
 	{
@@ -482,43 +476,35 @@ func TestForwardingWithFakeResolver(t *testing.T) {
 	tests := []struct {
 		name             string
 		useNeighborCache bool
-		proto            *fwdTestNetworkProtocol
 	}{
 		{
 			name:             "linkAddrCache",
 			useNeighborCache: false,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
-					// Any address will be resolved to the link address "c".
-					cache.AddLinkAddress(addr, "c")
-				},
-			},
 		},
 		{
 			name:             "neighborCache",
 			useNeighborCache: true,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(remoteLinkAddr) != 0 {
-						t.Fatalf("got remoteLinkAddr=%q, want unspecified", remoteLinkAddr)
-					}
-					// Any address will be resolved to the link address "c".
-					neigh.HandleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ep1, ep2 := fwdTestNetFactory(t, test.proto, test.useNeighborCache)
+			proto := fwdTestNetworkProtocol{
+				addrResolveDelay: 500 * time.Millisecond,
+				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+					t.Helper()
+					if len(linkAddr) != 0 {
+						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+					}
+					// Any address will be resolved to the link address "c".
+					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+						Solicited: true,
+						Override:  false,
+						IsRouter:  false,
+					})
+				},
+			}
+			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
 
 			// Inject an inbound packet to address 3 on NIC 1, and see if it is
 			// forwarded to NIC 2.
@@ -573,7 +559,7 @@ func TestForwardingWithNoResolver(t *testing.T) {
 func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 	proto := &fwdTestNetworkProtocol{
 		addrResolveDelay: 50 * time.Millisecond,
-		onLinkAddressResolved: func(*linkAddrCache, *neighborCache, tcpip.Address, tcpip.LinkAddress) {
+		onLinkAddressResolved: func(neighborTable, tcpip.Address, tcpip.LinkAddress) {
 			// Don't resolve the link address.
 		},
 	}
@@ -606,49 +592,38 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	tests := []struct {
 		name             string
 		useNeighborCache bool
-		proto            *fwdTestNetworkProtocol
 	}{
 		{
 			name:             "linkAddrCache",
 			useNeighborCache: false,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
-					// Only packets to address 3 will be resolved to the
-					// link address "c".
-					if addr == "\x03" {
-						cache.AddLinkAddress(addr, "c")
-					}
-				},
-			},
 		},
 		{
 			name:             "neighborCache",
 			useNeighborCache: true,
-			proto: &fwdTestNetworkProtocol{
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proto := fwdTestNetworkProtocol{
 				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
+				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
 					t.Helper()
-					if len(remoteLinkAddr) != 0 {
-						t.Fatalf("got remoteLinkAddr=%q, want unspecified", remoteLinkAddr)
+					if len(linkAddr) != 0 {
+						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
 					}
 					// Only packets to address 3 will be resolved to the
 					// link address "c".
 					if addr == "\x03" {
-						neigh.HandleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+						neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
 							Solicited: true,
 							Override:  false,
 							IsRouter:  false,
 						})
 					}
 				},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ep1, ep2 := fwdTestNetFactory(t, test.proto, test.useNeighborCache)
+			}
+			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
 
 			// Inject an inbound packet to address 4 on NIC 1. This packet should
 			// not be forwarded.
@@ -693,43 +668,35 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 	tests := []struct {
 		name             string
 		useNeighborCache bool
-		proto            *fwdTestNetworkProtocol
 	}{
 		{
 			name:             "linkAddrCache",
 			useNeighborCache: false,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
-					// Any packets will be resolved to the link address "c".
-					cache.AddLinkAddress(addr, "c")
-				},
-			},
 		},
 		{
 			name:             "neighborCache",
 			useNeighborCache: true,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(remoteLinkAddr) != 0 {
-						t.Fatalf("got remoteLinkAddr=%q, want unspecified", remoteLinkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.HandleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ep1, ep2 := fwdTestNetFactory(t, test.proto, test.useNeighborCache)
+			proto := fwdTestNetworkProtocol{
+				addrResolveDelay: 500 * time.Millisecond,
+				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+					t.Helper()
+					if len(linkAddr) != 0 {
+						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+					}
+					// Any packets will be resolved to the link address "c".
+					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+						Solicited: true,
+						Override:  false,
+						IsRouter:  false,
+					})
+				},
+			}
+			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
 
 			// Inject two inbound packets to address 3 on NIC 1.
 			for i := 0; i < 2; i++ {
@@ -769,43 +736,35 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 	tests := []struct {
 		name             string
 		useNeighborCache bool
-		proto            *fwdTestNetworkProtocol
 	}{
 		{
 			name:             "linkAddrCache",
 			useNeighborCache: false,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
-					// Any packets will be resolved to the link address "c".
-					cache.AddLinkAddress(addr, "c")
-				},
-			},
 		},
 		{
 			name:             "neighborCache",
 			useNeighborCache: true,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(remoteLinkAddr) != 0 {
-						t.Fatalf("got remoteLinkAddr=%q, want unspecified", remoteLinkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.HandleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ep1, ep2 := fwdTestNetFactory(t, test.proto, test.useNeighborCache)
+			proto := fwdTestNetworkProtocol{
+				addrResolveDelay: 500 * time.Millisecond,
+				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+					t.Helper()
+					if len(linkAddr) != 0 {
+						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+					}
+					// Any packets will be resolved to the link address "c".
+					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+						Solicited: true,
+						Override:  false,
+						IsRouter:  false,
+					})
+				},
+			}
+			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
 
 			for i := 0; i < maxPendingPacketsPerResolution+5; i++ {
 				// Inject inbound 'maxPendingPacketsPerResolution + 5' packets on NIC 1.
@@ -864,38 +823,31 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 		{
 			name:             "linkAddrCache",
 			useNeighborCache: false,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, _ tcpip.LinkAddress) {
-					// Any packets will be resolved to the link address "c".
-					cache.AddLinkAddress(addr, "c")
-				},
-			},
 		},
 		{
 			name:             "neighborCache",
 			useNeighborCache: true,
-			proto: &fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(cache *linkAddrCache, neigh *neighborCache, addr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(remoteLinkAddr) != 0 {
-						t.Fatalf("got remoteLinkAddr=%q, want unspecified", remoteLinkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.HandleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ep1, ep2 := fwdTestNetFactory(t, test.proto, test.useNeighborCache)
+			proto := fwdTestNetworkProtocol{
+				addrResolveDelay: 500 * time.Millisecond,
+				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+					t.Helper()
+					if len(linkAddr) != 0 {
+						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+					}
+					// Any packets will be resolved to the link address "c".
+					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+						Solicited: true,
+						Override:  false,
+						IsRouter:  false,
+					})
+				},
+			}
+			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
 
 			for i := 0; i < maxPendingResolutions+5; i++ {
 				// Inject inbound 'maxPendingResolutions + 5' packets on NIC 1.

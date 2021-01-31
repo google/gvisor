@@ -63,7 +63,7 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address, useNeig
 		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 	}
 
-	ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{})
+	ep := netProto.NewEndpoint(&testInterface{}, &stubDispatcher{})
 	if err := ep.Enable(); err != nil {
 		t.Fatalf("ep.Enable(): %s", err)
 	}
@@ -199,6 +199,7 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr0)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -760,6 +761,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
 			e := channel.New(0, 1280, linkAddr0)
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}

@@ -93,34 +93,13 @@ func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *st
 	return stack.TransportPacketHandled
 }
 
-var _ stack.LinkAddressCache = (*stubLinkAddressCache)(nil)
-
-type stubLinkAddressCache struct{}
-
-func (*stubLinkAddressCache) AddLinkAddress(tcpip.Address, tcpip.LinkAddress) {}
-
-type stubNUDHandler struct {
-	probeCount        int
-	confirmationCount int
-}
-
-var _ stack.NUDHandler = (*stubNUDHandler)(nil)
-
-func (s *stubNUDHandler) HandleProbe(tcpip.Address, tcpip.NetworkProtocolNumber, tcpip.LinkAddress, stack.LinkAddressResolver) {
-	s.probeCount++
-}
-
-func (s *stubNUDHandler) HandleConfirmation(tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) {
-	s.confirmationCount++
-}
-
-func (*stubNUDHandler) HandleUpperLevelConfirmation(tcpip.Address) {
-}
-
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
 	stack.LinkEndpoint
+
+	probeCount        int
+	confirmationCount int
 
 	nicID tcpip.NICID
 }
@@ -158,6 +137,14 @@ func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gs
 	r.NetProto = protocol
 	r.RemoteLinkAddress = remoteLinkAddr
 	return t.LinkEndpoint.WritePacket(r, gso, protocol, pkt)
+}
+
+func (t *testInterface) HandleNeighborProbe(tcpip.Address, tcpip.LinkAddress, stack.LinkAddressResolver) {
+	t.probeCount++
+}
+
+func (t *testInterface) HandleNeighborConfirmation(tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) {
+	t.confirmationCount++
 }
 
 func TestICMPCounts(t *testing.T) {
@@ -202,7 +189,7 @@ func TestICMPCounts(t *testing.T) {
 			if netProto == nil {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
-			ep := netProto.NewEndpoint(&testInterface{}, &stubLinkAddressCache{}, &stubNUDHandler{}, &stubDispatcher{})
+			ep := netProto.NewEndpoint(&testInterface{}, &stubDispatcher{})
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -360,7 +347,7 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 	if netProto == nil {
 		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 	}
-	ep := netProto.NewEndpoint(&testInterface{}, nil, &stubNUDHandler{}, &stubDispatcher{})
+	ep := netProto.NewEndpoint(&testInterface{}, &stubDispatcher{})
 	defer ep.Close()
 
 	if err := ep.Enable(); err != nil {
@@ -1801,8 +1788,9 @@ func TestCallsToNeighborCache(t *testing.T) {
 			if netProto == nil {
 				t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
 			}
-			nudHandler := &stubNUDHandler{}
-			ep := netProto.NewEndpoint(&testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}, &stubLinkAddressCache{}, nudHandler, &stubDispatcher{})
+
+			testInterface := testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}
+			ep := netProto.NewEndpoint(&testInterface, &stubDispatcher{})
 			defer ep.Close()
 
 			if err := ep.Enable(); err != nil {
@@ -1837,11 +1825,11 @@ func TestCallsToNeighborCache(t *testing.T) {
 			ep.HandlePacket(pkt)
 
 			// Confirm the endpoint calls the correct NUDHandler method.
-			if nudHandler.probeCount != test.wantProbeCount {
-				t.Errorf("got nudHandler.probeCount = %d, want = %d", nudHandler.probeCount, test.wantProbeCount)
+			if testInterface.probeCount != test.wantProbeCount {
+				t.Errorf("got testInterface.probeCount = %d, want = %d", testInterface.probeCount, test.wantProbeCount)
 			}
-			if nudHandler.confirmationCount != test.wantConfirmationCount {
-				t.Errorf("got nudHandler.confirmationCount = %d, want = %d", nudHandler.confirmationCount, test.wantConfirmationCount)
+			if testInterface.confirmationCount != test.wantConfirmationCount {
+				t.Errorf("got testInterface.confirmationCount = %d, want = %d", testInterface.confirmationCount, test.wantConfirmationCount)
 			}
 		})
 	}

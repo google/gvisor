@@ -16,7 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"math/rand"
 	"reflect"
 	"sync/atomic"
 
@@ -24,6 +23,21 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
+
+type neighborTable interface {
+	neighbors() ([]NeighborEntry, tcpip.Error)
+	addStaticEntry(tcpip.Address, tcpip.LinkAddress)
+	get(addr tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error)
+	remove(tcpip.Address) tcpip.Error
+	removeAll() tcpip.Error
+
+	handleProbe(tcpip.Address, tcpip.LinkAddress, LinkAddressResolver)
+	handleConfirmation(tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags)
+	handleUpperLevelConfirmation(tcpip.Address)
+
+	nudConfig() (NUDConfigurations, tcpip.Error)
+	setNUDConfig(NUDConfigurations) tcpip.Error
+}
 
 var _ NetworkInterface = (*NIC)(nil)
 
@@ -38,7 +52,6 @@ type NIC struct {
 	context NICContext
 
 	stats NICStats
-	neigh *neighborCache
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
@@ -54,7 +67,7 @@ type NIC struct {
 	// complete.
 	linkResQueue packetsPendingLinkResolution
 
-	linkAddrCache *linkAddrCache
+	neighborTable neighborTable
 
 	mu struct {
 		sync.RWMutex
@@ -143,26 +156,20 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		linkAddrResolvers: make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 	}
 	nic.linkResQueue.init(nic)
-	nic.linkAddrCache = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
-	// Check for Neighbor Unreachability Detection support.
-	var nud NUDHandler
-	if ep.Capabilities()&CapabilityResolutionRequired != 0 && stack.useNeighborCache {
-		rng := rand.New(rand.NewSource(stack.clock.NowNanoseconds()))
-		nic.neigh = &neighborCache{
-			nic:   nic,
-			state: NewNUDState(stack.nudConfigs, rng),
-			cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-		}
+	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
 
-		// An interface value that holds a nil pointer but non-nil type is not the
-		// same as the nil interface. Because of this, nud must only be assignd if
-		// nic.neigh is non-nil since a nil reference to a neighborCache is not
-		// valid.
-		//
-		// See https://golang.org/doc/faq#nil_error for more information.
-		nud = nic.neigh
+	if resolutionRequired {
+		if stack.useNeighborCache {
+			nic.neighborTable = &neighborCache{
+				nic:   nic,
+				state: NewNUDState(stack.nudConfigs, stack.randomGenerator),
+				cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
+			}
+		} else {
+			nic.neighborTable = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
+		}
 	}
 
 	// Register supported packet and network endpoint protocols.
@@ -173,11 +180,13 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		netNum := netProto.Number()
 		nic.mu.packetEPs[netNum] = new(packetEndpointList)
 
-		netEP := netProto.NewEndpoint(nic, nic.linkAddrCache, nud, nic)
+		netEP := netProto.NewEndpoint(nic, nic)
 		nic.networkEndpoints[netNum] = netEP
 
-		if r, ok := netEP.(LinkAddressResolver); ok {
-			nic.linkAddrResolvers[r.LinkAddressProtocol()] = r
+		if resolutionRequired {
+			if r, ok := netEP.(LinkAddressResolver); ok {
+				nic.linkAddrResolvers[r.LinkAddressProtocol()] = r
+			}
 		}
 	}
 
@@ -596,8 +605,8 @@ func (n *NIC) removeAddress(addr tcpip.Address) tcpip.Error {
 }
 
 func (n *NIC) confirmReachable(addr tcpip.Address) {
-	if n := n.neigh; n != nil {
-		n.handleUpperLevelConfirmation(addr)
+	if n.neighborTable != nil {
+		n.neighborTable.handleUpperLevelConfirmation(addr)
 	}
 }
 
@@ -617,49 +626,44 @@ func (n *NIC) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.Netwo
 }
 
 func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
-	if n.neigh != nil {
-		entry, ch, err := n.neigh.entry(addr, localAddr, linkRes, onResolve)
-		return entry.LinkAddr, ch, err
+	if n.neighborTable != nil {
+		return n.neighborTable.get(addr, linkRes, localAddr, onResolve)
 	}
 
-	return n.linkAddrCache.get(addr, linkRes, localAddr, onResolve)
+	return "", nil, &tcpip.ErrNotSupported{}
 }
 
 func (n *NIC) neighbors() ([]NeighborEntry, tcpip.Error) {
-	if n.neigh == nil {
-		return nil, &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		return n.neighborTable.neighbors()
 	}
 
-	return n.neigh.entries(), nil
+	return nil, &tcpip.ErrNotSupported{}
 }
 
 func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) tcpip.Error {
-	if n.neigh == nil {
-		return &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		n.neighborTable.addStaticEntry(addr, linkAddress)
+		return nil
 	}
 
-	n.neigh.addStaticEntry(addr, linkAddress)
-	return nil
+	return &tcpip.ErrNotSupported{}
 }
 
 func (n *NIC) removeNeighbor(addr tcpip.Address) tcpip.Error {
-	if n.neigh == nil {
-		return &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		return n.neighborTable.remove(addr)
 	}
 
-	if !n.neigh.removeEntry(addr) {
-		return &tcpip.ErrBadAddress{}
-	}
-	return nil
+	return &tcpip.ErrNotSupported{}
 }
 
 func (n *NIC) clearNeighbors() tcpip.Error {
-	if n.neigh == nil {
-		return &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		return n.neighborTable.removeAll()
 	}
 
-	n.neigh.clear()
-	return nil
+	return &tcpip.ErrNotSupported{}
 }
 
 // joinGroup adds a new endpoint for the given multicast address, if none
@@ -944,10 +948,11 @@ func (n *NIC) Name() string {
 
 // nudConfigs gets the NUD configurations for n.
 func (n *NIC) nudConfigs() (NUDConfigurations, tcpip.Error) {
-	if n.neigh == nil {
-		return NUDConfigurations{}, &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		return n.neighborTable.nudConfig()
 	}
-	return n.neigh.config(), nil
+
+	return NUDConfigurations{}, &tcpip.ErrNotSupported{}
 }
 
 // setNUDConfigs sets the NUD configurations for n.
@@ -955,12 +960,12 @@ func (n *NIC) nudConfigs() (NUDConfigurations, tcpip.Error) {
 // Note, if c contains invalid NUD configuration values, it will be fixed to
 // use default values for the erroneous values.
 func (n *NIC) setNUDConfigs(c NUDConfigurations) tcpip.Error {
-	if n.neigh == nil {
-		return &tcpip.ErrNotSupported{}
+	if n.neighborTable != nil {
+		c.resetInvalidFields()
+		return n.neighborTable.setNUDConfig(c)
 	}
-	c.resetInvalidFields()
-	n.neigh.setConfig(c)
-	return nil
+
+	return &tcpip.ErrNotSupported{}
 }
 
 func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) tcpip.Error {
@@ -995,4 +1000,18 @@ func (n *NIC) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
 	spoofing := n.mu.spoofing
 	n.mu.RUnlock()
 	return n.Enabled() && ep.IsAssigned(spoofing)
+}
+
+// HandleNeighborProbe implements NetworkInterface.
+func (n *NIC) HandleNeighborProbe(addr tcpip.Address, linkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
+	if n.neighborTable != nil {
+		n.neighborTable.handleProbe(addr, linkAddr, linkRes)
+	}
+}
+
+// HandleNeighborConfirmation implements NetworkInterface.
+func (n *NIC) HandleNeighborConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
+	if n.neighborTable != nil {
+		n.neighborTable.handleConfirmation(addr, linkAddr, flags)
+	}
 }
