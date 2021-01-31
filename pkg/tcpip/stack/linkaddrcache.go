@@ -32,6 +32,8 @@ const linkAddrCacheSize = 512 // max cache entries
 type linkAddrCache struct {
 	nic *NIC
 
+	linkRes LinkAddressResolver
+
 	// ageLimit is how long a cache entry is valid for.
 	ageLimit time.Duration
 
@@ -196,10 +198,10 @@ func (c *linkAddrCache) getOrCreateEntryLocked(k tcpip.Address) *linkAddrEntry {
 	return entry
 }
 
-// get reports any known link address for k.
-func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
+// get reports any known link address for addr.
+func (c *linkAddrCache) get(addr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
 	c.mu.Lock()
-	entry := c.getOrCreateEntryLocked(k)
+	entry := c.getOrCreateEntryLocked(addr)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	c.mu.Unlock()
@@ -222,7 +224,7 @@ func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localA
 		}
 		if entry.mu.done == nil {
 			entry.mu.done = make(chan struct{})
-			go c.startAddressResolution(k, linkRes, localAddr, entry.mu.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
+			go c.startAddressResolution(addr, localAddr, entry.mu.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		}
 		return entry.mu.linkAddr, entry.mu.done, &tcpip.ErrWouldBlock{}
 	default:
@@ -230,11 +232,11 @@ func (c *linkAddrCache) get(k tcpip.Address, linkRes LinkAddressResolver, localA
 	}
 }
 
-func (c *linkAddrCache) startAddressResolution(k tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, done <-chan struct{}) {
+func (c *linkAddrCache) startAddressResolution(k tcpip.Address, localAddr tcpip.Address, done <-chan struct{}) {
 	for i := 0; ; i++ {
 		// Send link request, then wait for the timeout limit and check
 		// whether the request succeeded.
-		linkRes.LinkAddressRequest(k, localAddr, "" /* linkAddr */)
+		c.linkRes.LinkAddressRequest(k, localAddr, "" /* linkAddr */)
 
 		select {
 		case now := <-time.After(c.resolutionTimeout):
@@ -278,15 +280,18 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt
 	return true
 }
 
-func newLinkAddrCache(nic *NIC, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int) *linkAddrCache {
-	c := &linkAddrCache{
+func (c *linkAddrCache) init(nic *NIC, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int, linkRes LinkAddressResolver) {
+	*c = linkAddrCache{
 		nic:                nic,
+		linkRes:            linkRes,
 		ageLimit:           ageLimit,
 		resolutionTimeout:  resolutionTimeout,
 		resolutionAttempts: resolutionAttempts,
 	}
+
+	c.mu.Lock()
 	c.mu.table = make(map[tcpip.Address]*linkAddrEntry, linkAddrCacheSize)
-	return c
+	c.mu.Unlock()
 }
 
 var _ neighborTable = (*linkAddrCache)(nil)
@@ -307,7 +312,7 @@ func (*linkAddrCache) removeAll() tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
-func (c *linkAddrCache) handleProbe(addr tcpip.Address, linkAddr tcpip.LinkAddress, _ LinkAddressResolver) {
+func (c *linkAddrCache) handleProbe(addr tcpip.Address, linkAddr tcpip.LinkAddress) {
 	if len(linkAddr) != 0 {
 		// NUD allows probes without a link address but linkAddrCache
 		// is a simple neighbor table which does not implement NUD.

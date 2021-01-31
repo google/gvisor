@@ -148,7 +148,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		remoteAddr := tcpip.Address(h.ProtocolAddressSender())
 		remoteLinkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
-		e.nic.HandleNeighborProbe(remoteAddr, remoteLinkAddr, e)
+		switch err := e.nic.HandleNeighborProbe(header.IPv4ProtocolNumber, remoteAddr, remoteLinkAddr); err.(type) {
+		case nil:
+		case *tcpip.ErrNotSupported:
+			// The stack may support ARP but the NIC may not need link resolution.
+		default:
+			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
+		}
 
 		respPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.ARPSize,
@@ -190,7 +196,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 		// The solicited, override, and isRouter flags are not available for ARP;
 		// they are only available for IPv6 Neighbor Advertisements.
-		e.nic.HandleNeighborConfirmation(addr, linkAddr, stack.ReachabilityConfirmationFlags{
+		switch err := e.nic.HandleNeighborConfirmation(header.IPv4ProtocolNumber, addr, linkAddr, stack.ReachabilityConfirmationFlags{
 			// Solicited and unsolicited (also referred to as gratuitous) ARP Replies
 			// are handled equivalently to a solicited Neighbor Advertisement.
 			Solicited: true,
@@ -199,7 +205,13 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			Override: false,
 			// ARP does not distinguish between router and non-router hosts.
 			IsRouter: false,
-		})
+		}); err.(type) {
+		case nil:
+		case *tcpip.ErrNotSupported:
+		// The stack may support ARP but the NIC may not need link resolution.
+		default:
+			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor confirmation message: %s", err))
+		}
 	}
 }
 
