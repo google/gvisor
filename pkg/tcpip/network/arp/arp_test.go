@@ -491,9 +491,9 @@ func TestDirectRequestWithNeighborCache(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			neighbors, err := c.s.Neighbors(nicID)
+			neighbors, err := c.s.Neighbors(nicID, ipv4.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("c.s.Neighbors(%d): %s", nicID, err)
+				t.Fatalf("c.s.Neighbors(%d, %d): %s", nicID, ipv4.ProtocolNumber, err)
 			}
 
 			neighborByAddr := make(map[tcpip.Address]stack.NeighborEntry)

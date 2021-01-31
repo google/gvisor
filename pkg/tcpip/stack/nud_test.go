@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -52,66 +54,146 @@ func (f *fakeRand) Float32() float32 {
 	return f.num
 }
 
-// TestSetNUDConfigurationFailsForBadNICID tests to make sure we get an error if
-// we attempt to update NUD configurations using an invalid NICID.
-func TestSetNUDConfigurationFailsForBadNICID(t *testing.T) {
-	s := stack.New(stack.Options{
-		// A neighbor cache is required to store NUDConfigurations. The networking
-		// stack will only allocate neighbor caches if a protocol providing link
-		// address resolution is specified (e.g. ARP or IPv6).
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-		UseNeighborCache: true,
-	})
-
-	// No NIC with ID 1 yet.
-	config := stack.NUDConfigurations{}
-	err := s.SetNUDConfigurations(1, config)
-	if _, ok := err.(*tcpip.ErrUnknownNICID); !ok {
-		t.Fatalf("got s.SetNDPConfigurations(1, %+v) = %v, want = %s", config, err, &tcpip.ErrUnknownNICID{})
-	}
-}
-
-// TestNUDConfigurationFailsForNotSupported tests to make sure we get a
-// NotSupported error if we attempt to retrieve or set NUD configurations when
-// the stack doesn't support NUD.
-//
-// The stack will report to not support NUD if a neighbor cache for a given NIC
-// is not allocated. The networking stack will only allocate neighbor caches if
-// the NIC requires link resolution.
-func TestNUDConfigurationFailsForNotSupported(t *testing.T) {
+func TestNUDFunctions(t *testing.T) {
 	const nicID = 1
 
-	e := channel.New(0, 1280, linkAddr1)
-	e.LinkEPCapabilities &^= stack.CapabilityResolutionRequired
-
-	s := stack.New(stack.Options{
-		NUDConfigs:       stack.DefaultNUDConfigurations(),
-		UseNeighborCache: true,
-	})
-	if err := s.CreateNIC(nicID, e); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	tests := []struct {
+		name                  string
+		nicID                 tcpip.NICID
+		netProtoFactory       []stack.NetworkProtocolFactory
+		extraLinkCapabilities stack.LinkEndpointCapabilities
+		expectedErr           tcpip.Error
+	}{
+		{
+			name:                  "Invalid NICID",
+			nicID:                 nicID + 1,
+			netProtoFactory:       []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+			extraLinkCapabilities: stack.CapabilityResolutionRequired,
+			expectedErr:           &tcpip.ErrUnknownNICID{},
+		},
+		{
+			name:        "No network protocol",
+			nicID:       nicID,
+			expectedErr: &tcpip.ErrNotSupported{},
+		},
+		{
+			name:            "With IPv6",
+			nicID:           nicID,
+			netProtoFactory: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+			expectedErr:     &tcpip.ErrNotSupported{},
+		},
+		{
+			name:                  "With resolution capability",
+			nicID:                 nicID,
+			extraLinkCapabilities: stack.CapabilityResolutionRequired,
+			expectedErr:           &tcpip.ErrNotSupported{},
+		},
+		{
+			name:                  "With IPv6 and resolution capability",
+			nicID:                 nicID,
+			netProtoFactory:       []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+			extraLinkCapabilities: stack.CapabilityResolutionRequired,
+		},
 	}
 
-	t.Run("Get", func(t *testing.T) {
-		_, err := s.NUDConfigurations(nicID)
-		if _, ok := err.(*tcpip.ErrNotSupported); !ok {
-			t.Fatalf("got s.NDPConfigurations(%d) = %v, want = %s", nicID, err, &tcpip.ErrNotSupported{})
-		}
-	})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			s := stack.New(stack.Options{
+				NUDConfigs:       stack.DefaultNUDConfigurations(),
+				UseNeighborCache: true,
+				NetworkProtocols: test.netProtoFactory,
+				Clock:            clock,
+			})
 
-	t.Run("Set", func(t *testing.T) {
-		config := stack.NUDConfigurations{}
-		err := s.SetNUDConfigurations(nicID, config)
-		if _, ok := err.(*tcpip.ErrNotSupported); !ok {
-			t.Fatalf("got s.SetNDPConfigurations(%d, %+v) = %v, want = %s", nicID, config, err, &tcpip.ErrNotSupported{})
-		}
-	})
+			e := channel.New(0, 0, linkAddr1)
+			e.LinkEPCapabilities &^= stack.CapabilityResolutionRequired
+			e.LinkEPCapabilities |= test.extraLinkCapabilities
+
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+
+			configs := stack.DefaultNUDConfigurations()
+			configs.BaseReachableTime = time.Hour
+
+			{
+				err := s.SetNUDConfigurations(test.nicID, ipv6.ProtocolNumber, configs)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Errorf("s.SetNUDConfigurations(%d, %d, _) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+				}
+			}
+
+			{
+				gotConfigs, err := s.NUDConfigurations(test.nicID, ipv6.ProtocolNumber)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Errorf("s.NUDConfigurations(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+				} else if test.expectedErr == nil {
+					if diff := cmp.Diff(configs, gotConfigs); diff != "" {
+						t.Errorf("got configs mismatch (-want +got):\n%s", diff)
+					}
+				}
+			}
+
+			for _, addr := range []tcpip.Address{llAddr1, llAddr2} {
+				{
+					err := s.AddStaticNeighbor(test.nicID, ipv6.ProtocolNumber, addr, linkAddr1)
+					if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+						t.Errorf("s.AddStaticNeighbor(%d, %d, %s, %s) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, addr, linkAddr1, diff)
+					}
+				}
+			}
+
+			{
+				wantErr := test.expectedErr
+				for i := 0; i < 2; i++ {
+					{
+						err := s.RemoveNeighbor(test.nicID, ipv6.ProtocolNumber, llAddr1)
+						if diff := cmp.Diff(wantErr, err); diff != "" {
+							t.Errorf("s.RemoveNeighbor(%d, %d, '') error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+						}
+					}
+
+					if test.expectedErr != nil {
+						break
+					}
+
+					// Removing a neighbor that does not exist should give us a bad address
+					// error.
+					wantErr = &tcpip.ErrBadAddress{}
+				}
+			}
+
+			{
+				neighbors, err := s.Neighbors(test.nicID, ipv6.ProtocolNumber)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Errorf("s.Neigbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+				} else if test.expectedErr == nil {
+					if diff := cmp.Diff(
+						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAtNanos: clock.NowNanoseconds()}},
+						neighbors,
+					); diff != "" {
+						t.Errorf("neighbors mismatch (-want +got):\n%s", diff)
+					}
+				}
+			}
+
+			{
+				err := s.ClearNeighbors(test.nicID, ipv6.ProtocolNumber)
+				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
+					t.Errorf("s.ClearNeigbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+				} else if test.expectedErr == nil {
+					if neighbors, err := s.Neighbors(test.nicID, ipv6.ProtocolNumber); err != nil {
+						t.Errorf("s.Neighbors(%d, %d): %s", test.nicID, ipv6.ProtocolNumber, err)
+					} else if len(neighbors) != 0 {
+						t.Errorf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+					}
+				}
+			}
+		})
+	}
 }
 
-// TestDefaultNUDConfigurationIsValid verifies that calling
-// resetInvalidFields() on the result of DefaultNUDConfigurations() does not
-// change anything. DefaultNUDConfigurations() should return a valid
-// NUDConfigurations.
 func TestDefaultNUDConfigurations(t *testing.T) {
 	const nicID = 1
 
@@ -129,12 +211,12 @@ func TestDefaultNUDConfigurations(t *testing.T) {
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-	c, err := s.NUDConfigurations(nicID)
+	c, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 	if err != nil {
-		t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+		t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 	}
 	if got, want := c, stack.DefaultNUDConfigurations(); got != want {
-		t.Errorf("got stack.NUDConfigurations(%d) = %+v, want = %+v", nicID, got, want)
+		t.Errorf("got stack.NUDConfigurations(%d, %d) = %+v, want = %+v", nicID, ipv6.ProtocolNumber, got, want)
 	}
 }
 
@@ -184,9 +266,9 @@ func TestNUDConfigurationsBaseReachableTime(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.BaseReachableTime; got != test.want {
 				t.Errorf("got BaseReachableTime = %q, want = %q", got, test.want)
@@ -241,9 +323,9 @@ func TestNUDConfigurationsMinRandomFactor(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MinRandomFactor; got != test.want {
 				t.Errorf("got MinRandomFactor = %f, want = %f", got, test.want)
@@ -321,9 +403,9 @@ func TestNUDConfigurationsMaxRandomFactor(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MaxRandomFactor; got != test.want {
 				t.Errorf("got MaxRandomFactor = %f, want = %f", got, test.want)
@@ -383,9 +465,9 @@ func TestNUDConfigurationsRetransmitTimer(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.RetransmitTimer; got != test.want {
 				t.Errorf("got RetransmitTimer = %q, want = %q", got, test.want)
@@ -435,9 +517,9 @@ func TestNUDConfigurationsDelayFirstProbeTime(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.DelayFirstProbeTime; got != test.want {
 				t.Errorf("got DelayFirstProbeTime = %q, want = %q", got, test.want)
@@ -487,9 +569,9 @@ func TestNUDConfigurationsMaxMulticastProbes(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MaxMulticastProbes; got != test.want {
 				t.Errorf("got MaxMulticastProbes = %q, want = %q", got, test.want)
@@ -539,9 +621,9 @@ func TestNUDConfigurationsMaxUnicastProbes(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			sc, err := s.NUDConfigurations(nicID)
+			sc, err := s.NUDConfigurations(nicID, ipv6.ProtocolNumber)
 			if err != nil {
-				t.Fatalf("got stack.NUDConfigurations(%d) = %s", nicID, err)
+				t.Fatalf("got stack.NUDConfigurations(%d, %d) = %s", nicID, ipv6.ProtocolNumber, err)
 			}
 			if got := sc.MaxUnicastProbes; got != test.want {
 				t.Errorf("got MaxUnicastProbes = %q, want = %q", got, test.want)

@@ -311,10 +311,12 @@ func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.N
 	return &tcpip.ErrNotSupported{}
 }
 
-func (*testInterface) HandleNeighborProbe(tcpip.Address, tcpip.LinkAddress, stack.LinkAddressResolver) {
+func (*testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error {
+	return nil
 }
 
-func (*testInterface) HandleNeighborConfirmation(tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) {
+func (*testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) tcpip.Error {
+	return nil
 }
 
 func TestSourceAddressValidation(t *testing.T) {

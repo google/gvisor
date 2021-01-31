@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -4313,9 +4314,11 @@ func TestClearNeighborCacheOnNICDisable(t *testing.T) {
 		linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 	)
 
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
 		UseNeighborCache: true,
+		Clock:            clock,
 	})
 	e := channel.New(0, 0, "")
 	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
@@ -4323,36 +4326,56 @@ func TestClearNeighborCacheOnNICDisable(t *testing.T) {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	if err := s.AddStaticNeighbor(nicID, ipv4Addr, linkAddr); err != nil {
-		t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, ipv4Addr, linkAddr, err)
+	addrs := []struct {
+		proto tcpip.NetworkProtocolNumber
+		addr  tcpip.Address
+	}{
+		{
+			proto: ipv4.ProtocolNumber,
+			addr:  ipv4Addr,
+		},
+		{
+			proto: ipv6.ProtocolNumber,
+			addr:  ipv6Addr,
+		},
 	}
-	if err := s.AddStaticNeighbor(nicID, ipv6Addr, linkAddr); err != nil {
-		t.Fatalf("s.AddStaticNeighbor(%d, %s, %s): %s", nicID, ipv6Addr, linkAddr, err)
-	}
-	if neighbors, err := s.Neighbors(nicID); err != nil {
-		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
-	} else if len(neighbors) != 2 {
-		t.Fatalf("got len(neighbors) = %d, want = 2; neighbors = %#v", len(neighbors), neighbors)
+	for _, addr := range addrs {
+		if err := s.AddStaticNeighbor(nicID, addr.proto, addr.addr, linkAddr); err != nil {
+			t.Fatalf("s.AddStaticNeighbor(%d, %d, %s, %s): %s", nicID, addr.proto, addr.addr, linkAddr, err)
+		}
+
+		if neighbors, err := s.Neighbors(nicID, addr.proto); err != nil {
+			t.Fatalf("s.Neighbors(%d, %d): %s", nicID, addr.proto, err)
+		} else if diff := cmp.Diff(
+			[]stack.NeighborEntry{{Addr: addr.addr, LinkAddr: linkAddr, State: stack.Static, UpdatedAtNanos: clock.NowNanoseconds()}},
+			neighbors,
+		); diff != "" {
+			t.Fatalf("proto=%d neighbors mismatch (-want +got):\n%s", addr.proto, diff)
+		}
 	}
 
 	// Disabling the NIC should clear the neighbor table.
 	if err := s.DisableNIC(nicID); err != nil {
 		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
 	}
-	if neighbors, err := s.Neighbors(nicID); err != nil {
-		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
-	} else if len(neighbors) != 0 {
-		t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+	for _, addr := range addrs {
+		if neighbors, err := s.Neighbors(nicID, addr.proto); err != nil {
+			t.Fatalf("s.Neighbors(%d, %d): %s", nicID, addr.proto, err)
+		} else if len(neighbors) != 0 {
+			t.Fatalf("got proto=%d len(neighbors) = %d, want = 0; neighbors = %#v", addr.proto, len(neighbors), neighbors)
+		}
 	}
 
 	// Enabling the NIC should have an empty neighbor table.
 	if err := s.EnableNIC(nicID); err != nil {
 		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
 	}
-	if neighbors, err := s.Neighbors(nicID); err != nil {
-		t.Fatalf("s.Neighbors(%d): %s", nicID, err)
-	} else if len(neighbors) != 0 {
-		t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
+	for _, addr := range addrs {
+		if neighbors, err := s.Neighbors(nicID, addr.proto); err != nil {
+			t.Fatalf("s.Neighbors(%d, %d): %s", nicID, addr.proto, err)
+		} else if len(neighbors) != 0 {
+			t.Fatalf("got proto=%d len(neighbors) = %d, want = 0; neighbors = %#v", addr.proto, len(neighbors), neighbors)
+		}
 	}
 }
 

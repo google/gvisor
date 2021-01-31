@@ -290,7 +290,13 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			received.invalid.Increment()
 			return
 		} else {
-			e.nic.HandleNeighborProbe(srcAddr, sourceLinkAddr, e)
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err.(type) {
+			case nil:
+			case *tcpip.ErrNotSupported:
+			// The stack may support ICMPv6 but the NIC may not need link resolution.
+			default:
+				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
+			}
 		}
 
 		// As per RFC 4861 section 7.1.1:
@@ -456,11 +462,17 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
-		e.nic.HandleNeighborConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
+		switch err := e.nic.HandleNeighborConfirmation(ProtocolNumber, targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
 			Solicited: na.SolicitedFlag(),
 			Override:  na.OverrideFlag(),
 			IsRouter:  na.RouterFlag(),
-		})
+		}); err.(type) {
+		case nil:
+		case *tcpip.ErrNotSupported:
+		// The stack may support ICMPv6 but the NIC may not need link resolution.
+		default:
+			panic(fmt.Sprintf("unexpected error when informing NIC of neighbor confirmation message: %s", err))
+		}
 
 	case header.ICMPv6EchoRequest:
 		received.echoRequest.Increment()
@@ -566,9 +578,15 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 				return
 			}
 
-			// A RS with a specified source IP address modifies the NUD state
-			// machine in the same way a reachability probe would.
-			e.nic.HandleNeighborProbe(srcAddr, sourceLinkAddr, e)
+			// A RS with a specified source IP address modifies the neighbor table
+			// in the same way a regular probe would.
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, srcAddr, sourceLinkAddr); err.(type) {
+			case nil:
+			case *tcpip.ErrNotSupported:
+			// The stack may support ICMPv6 but the NIC may not need link resolution.
+			default:
+				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
+			}
 		}
 
 	case header.ICMPv6RouterAdvert:
@@ -617,7 +635,13 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
 		if len(sourceLinkAddr) != 0 {
-			e.nic.HandleNeighborProbe(routerAddr, sourceLinkAddr, e)
+			switch err := e.nic.HandleNeighborProbe(ProtocolNumber, routerAddr, sourceLinkAddr); err.(type) {
+			case nil:
+			case *tcpip.ErrNotSupported:
+			// The stack may support ICMPv6 but the NIC may not need link resolution.
+			default:
+				panic(fmt.Sprintf("unexpected error when informing NIC of neighbor probe message: %s", err))
+			}
 		}
 
 		e.mu.Lock()

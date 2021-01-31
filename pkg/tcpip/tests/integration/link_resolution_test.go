@@ -1069,9 +1069,9 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 
 			// Wait for the remote's neighbor entry to be stale before creating a
 			// TCP connection from host1 to some remote.
-			nudConfigs, err := host1Stack.NUDConfigurations(host1NICID)
+			nudConfigs, err := host1Stack.NUDConfigurations(host1NICID, test.netProto)
 			if err != nil {
-				t.Fatalf("host1Stack.NUDConfigurations(%d): %s", host1NICID, err)
+				t.Fatalf("host1Stack.NUDConfigurations(%d, %d): %s", host1NICID, test.netProto, err)
 			}
 			// The maximum reachable time for a neighbor is some maximum random factor
 			// applied to the base reachable time.

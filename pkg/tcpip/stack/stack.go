@@ -1560,7 +1560,7 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 }
 
 // Neighbors returns all IP to MAC address associations.
-func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, tcpip.Error) {
+func (s *Stack) Neighbors(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber) ([]NeighborEntry, tcpip.Error) {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
@@ -1569,11 +1569,11 @@ func (s *Stack) Neighbors(nicID tcpip.NICID) ([]NeighborEntry, tcpip.Error) {
 		return nil, &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.neighbors()
+	return nic.neighbors(protocol)
 }
 
 // AddStaticNeighbor statically associates an IP address to a MAC address.
-func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
+func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
@@ -1582,13 +1582,13 @@ func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, addr tcpip.Address, linkAdd
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.addStaticNeighbor(addr, linkAddr)
+	return nic.addStaticNeighbor(addr, protocol, linkAddr)
 }
 
 // RemoveNeighbor removes an IP to MAC address association previously created
 // either automically or by AddStaticNeighbor. Returns ErrBadAddress if there
 // is no association with the provided address.
-func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, addr tcpip.Address) tcpip.Error {
+func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
@@ -1597,11 +1597,11 @@ func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, addr tcpip.Address) tcpip.Erro
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.removeNeighbor(addr)
+	return nic.removeNeighbor(protocol, addr)
 }
 
 // ClearNeighbors removes all IP to MAC address associations.
-func (s *Stack) ClearNeighbors(nicID tcpip.NICID) tcpip.Error {
+func (s *Stack) ClearNeighbors(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()
@@ -1610,7 +1610,7 @@ func (s *Stack) ClearNeighbors(nicID tcpip.NICID) tcpip.Error {
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.clearNeighbors()
+	return nic.clearNeighbors(protocol)
 }
 
 // RegisterTransportEndpoint registers the given endpoint with the stack
@@ -1980,7 +1980,7 @@ func (s *Stack) GetNetworkEndpoint(nicID tcpip.NICID, proto tcpip.NetworkProtoco
 }
 
 // NUDConfigurations gets the per-interface NUD configurations.
-func (s *Stack) NUDConfigurations(id tcpip.NICID) (NUDConfigurations, tcpip.Error) {
+func (s *Stack) NUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocolNumber) (NUDConfigurations, tcpip.Error) {
 	s.mu.RLock()
 	nic, ok := s.nics[id]
 	s.mu.RUnlock()
@@ -1989,14 +1989,14 @@ func (s *Stack) NUDConfigurations(id tcpip.NICID) (NUDConfigurations, tcpip.Erro
 		return NUDConfigurations{}, &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.nudConfigs()
+	return nic.nudConfigs(proto)
 }
 
 // SetNUDConfigurations sets the per-interface NUD configurations.
 //
 // Note, if c contains invalid NUD configuration values, it will be fixed to
 // use default values for the erroneous values.
-func (s *Stack) SetNUDConfigurations(id tcpip.NICID, c NUDConfigurations) tcpip.Error {
+func (s *Stack) SetNUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocolNumber, c NUDConfigurations) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[id]
 	s.mu.RUnlock()
@@ -2005,7 +2005,7 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, c NUDConfigurations) tcpip.
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.setNUDConfigs(c)
+	return nic.setNUDConfigs(proto, c)
 }
 
 // Seed returns a 32 bit value that can be used as a seed value for port
