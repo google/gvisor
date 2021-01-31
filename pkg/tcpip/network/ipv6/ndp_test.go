@@ -338,18 +338,18 @@ func TestNeighborSolicitationWithSourceLinkLayerOptionUsingNeighborCache(t *test
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
-			neighbors, err := s.Neighbors(nicID)
+			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
-				t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+				t.Fatalf("s.Neighbors(%d, %d): %s", nicID, ProtocolNumber, err)
 			}
 
 			neighborByAddr := make(map[tcpip.Address]stack.NeighborEntry)
 			for _, n := range neighbors {
 				if existing, ok := neighborByAddr[n.Addr]; ok {
 					if diff := cmp.Diff(existing, n); diff != "" {
-						t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, diff)
+						t.Fatalf("s.Neighbors(%d, %d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, ProtocolNumber, diff)
 					}
-					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %#v", nicID, existing)
+					t.Fatalf("s.Neighbors(%d, %d) returned unexpected duplicate neighbor entry: %#v", nicID, ProtocolNumber, existing)
 				}
 				neighborByAddr[n.Addr] = n
 			}
@@ -907,18 +907,18 @@ func TestNeighborAdvertisementWithTargetLinkLayerOptionUsingNeighborCache(t *tes
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
-			neighbors, err := s.Neighbors(nicID)
+			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
-				t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+				t.Fatalf("s.Neighbors(%d, %d): %s", nicID, ProtocolNumber, err)
 			}
 
 			neighborByAddr := make(map[tcpip.Address]stack.NeighborEntry)
 			for _, n := range neighbors {
 				if existing, ok := neighborByAddr[n.Addr]; ok {
 					if diff := cmp.Diff(existing, n); diff != "" {
-						t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, diff)
+						t.Fatalf("s.Neighbors(%d, %d) returned unexpected duplicate neighbor entry (-existing +got):\n%s", nicID, ProtocolNumber, diff)
 					}
-					t.Fatalf("s.Neighbors(%d) returned unexpected duplicate neighbor entry: %#v", nicID, existing)
+					t.Fatalf("s.Neighbors(%d, %d) returned unexpected duplicate neighbor entry: %#v", nicID, ProtocolNumber, existing)
 				}
 				neighborByAddr[n.Addr] = n
 			}
@@ -1277,8 +1277,8 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			//   There is no need to create an entry if none exists, since the
 			//   recipient has apparently not initiated any communication with the
 			//   target.
-			if neighbors, err := s.Neighbors(nicID); err != nil {
-				t.Fatalf("s.Neighbors(%d): %s", nicID, err)
+			if neighbors, err := s.Neighbors(nicID, ProtocolNumber); err != nil {
+				t.Fatalf("s.Neighbors(%d, %d): %s", nicID, ProtocolNumber, err)
 			} else if len(neighbors) != 0 {
 				t.Fatalf("got len(neighbors) = %d, want = 0; neighbors = %#v", len(neighbors), neighbors)
 			}

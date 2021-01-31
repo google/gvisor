@@ -27,11 +27,11 @@ import (
 type neighborTable interface {
 	neighbors() ([]NeighborEntry, tcpip.Error)
 	addStaticEntry(tcpip.Address, tcpip.LinkAddress)
-	get(addr tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error)
+	get(addr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error)
 	remove(tcpip.Address) tcpip.Error
 	removeAll() tcpip.Error
 
-	handleProbe(tcpip.Address, tcpip.LinkAddress, LinkAddressResolver)
+	handleProbe(tcpip.Address, tcpip.LinkAddress)
 	handleConfirmation(tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags)
 	handleUpperLevelConfirmation(tcpip.Address)
 
@@ -40,6 +40,20 @@ type neighborTable interface {
 }
 
 var _ NetworkInterface = (*NIC)(nil)
+
+type linkResolver struct {
+	resolver LinkAddressResolver
+
+	neighborTable neighborTable
+}
+
+func (l *linkResolver) getNeighborLinkAddress(addr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
+	return l.neighborTable.get(addr, localAddr, onResolve)
+}
+
+func (l *linkResolver) confirmReachable(addr tcpip.Address) {
+	l.neighborTable.handleUpperLevelConfirmation(addr)
+}
 
 // NIC represents a "network interface card" to which the networking stack is
 // attached.
@@ -56,7 +70,7 @@ type NIC struct {
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
 	networkEndpoints  map[tcpip.NetworkProtocolNumber]NetworkEndpoint
-	linkAddrResolvers map[tcpip.NetworkProtocolNumber]LinkAddressResolver
+	linkAddrResolvers map[tcpip.NetworkProtocolNumber]linkResolver
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
 	//
@@ -66,8 +80,6 @@ type NIC struct {
 	// linkResQueue holds packets that are waiting for link resolution to
 	// complete.
 	linkResQueue packetsPendingLinkResolution
-
-	neighborTable neighborTable
 
 	mu struct {
 		sync.RWMutex
@@ -153,24 +165,12 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		context:           ctx,
 		stats:             makeNICStats(),
 		networkEndpoints:  make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrResolvers: make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
+		linkAddrResolvers: make(map[tcpip.NetworkProtocolNumber]linkResolver),
 	}
 	nic.linkResQueue.init(nic)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
-
-	if resolutionRequired {
-		if stack.useNeighborCache {
-			nic.neighborTable = &neighborCache{
-				nic:   nic,
-				state: NewNUDState(stack.nudConfigs, stack.randomGenerator),
-				cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-			}
-		} else {
-			nic.neighborTable = newLinkAddrCache(nic, ageLimit, resolutionTimeout, resolutionAttempts)
-		}
-	}
 
 	// Register supported packet and network endpoint protocols.
 	for _, netProto := range header.Ethertypes {
@@ -185,7 +185,24 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 
 		if resolutionRequired {
 			if r, ok := netEP.(LinkAddressResolver); ok {
-				nic.linkAddrResolvers[r.LinkAddressProtocol()] = r
+				l := linkResolver{
+					resolver: r,
+				}
+
+				if stack.useNeighborCache {
+					l.neighborTable = &neighborCache{
+						nic:     nic,
+						state:   NewNUDState(stack.nudConfigs, stack.randomGenerator),
+						linkRes: r,
+
+						cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
+					}
+				} else {
+					cache := new(linkAddrCache)
+					cache.init(nic, ageLimit, resolutionTimeout, resolutionAttempts, r)
+					l.neighborTable = cache
+				}
+				nic.linkAddrResolvers[r.LinkAddressProtocol()] = l
 			}
 		}
 	}
@@ -240,18 +257,19 @@ func (n *NIC) disableLocked() {
 
 	for _, ep := range n.networkEndpoints {
 		ep.Disable()
-	}
 
-	// Clear the neighbour table (including static entries) as we cannot guarantee
-	// that the current neighbour table will be valid when the NIC is enabled
-	// again.
-	//
-	// This matches linux's behaviour at the time of writing:
-	// https://github.com/torvalds/linux/blob/71c061d2443814de15e177489d5cc00a4a253ef3/net/core/neighbour.c#L371
-	switch err := n.clearNeighbors(); err.(type) {
-	case nil, *tcpip.ErrNotSupported:
-	default:
-		panic(fmt.Sprintf("n.clearNeighbors(): %s", err))
+		// Clear the neighbour table (including static entries) as we cannot
+		// guarantee that the current neighbour table will be valid when the NIC is
+		// enabled again.
+		//
+		// This matches linux's behaviour at the time of writing:
+		// https://github.com/torvalds/linux/blob/71c061d2443814de15e177489d5cc00a4a253ef3/net/core/neighbour.c#L371
+		netProto := ep.NetworkProtocolNumber()
+		switch err := n.clearNeighbors(netProto); err.(type) {
+		case nil, *tcpip.ErrNotSupported:
+		default:
+			panic(fmt.Sprintf("n.clearNeighbors(%d): %s", netProto, err))
+		}
 	}
 
 	if !n.setEnabled(false) {
@@ -604,63 +622,49 @@ func (n *NIC) removeAddress(addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrBadLocalAddress{}
 }
 
-func (n *NIC) confirmReachable(addr tcpip.Address) {
-	if n.neighborTable != nil {
-		n.neighborTable.handleUpperLevelConfirmation(addr)
-	}
-}
-
 func (n *NIC) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
 	linkRes, ok := n.linkAddrResolvers[protocol]
 	if !ok {
 		return &tcpip.ErrNotSupported{}
 	}
 
-	if linkAddr, ok := linkRes.ResolveStaticAddress(addr); ok {
+	if linkAddr, ok := linkRes.resolver.ResolveStaticAddress(addr); ok {
 		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Success: true})
 		return nil
 	}
 
-	_, _, err := n.getNeighborLinkAddress(addr, localAddr, linkRes, onResolve)
+	_, _, err := linkRes.getNeighborLinkAddress(addr, localAddr, onResolve)
 	return err
 }
 
-func (n *NIC) getNeighborLinkAddress(addr, localAddr tcpip.Address, linkRes LinkAddressResolver, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
-	if n.neighborTable != nil {
-		return n.neighborTable.get(addr, linkRes, localAddr, onResolve)
-	}
-
-	return "", nil, &tcpip.ErrNotSupported{}
-}
-
-func (n *NIC) neighbors() ([]NeighborEntry, tcpip.Error) {
-	if n.neighborTable != nil {
-		return n.neighborTable.neighbors()
+func (n *NIC) neighbors(protocol tcpip.NetworkProtocolNumber) ([]NeighborEntry, tcpip.Error) {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
+		return linkRes.neighborTable.neighbors()
 	}
 
 	return nil, &tcpip.ErrNotSupported{}
 }
 
-func (n *NIC) addStaticNeighbor(addr tcpip.Address, linkAddress tcpip.LinkAddress) tcpip.Error {
-	if n.neighborTable != nil {
-		n.neighborTable.addStaticEntry(addr, linkAddress)
+func (n *NIC) addStaticNeighbor(addr tcpip.Address, protocol tcpip.NetworkProtocolNumber, linkAddress tcpip.LinkAddress) tcpip.Error {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
+		linkRes.neighborTable.addStaticEntry(addr, linkAddress)
 		return nil
 	}
 
 	return &tcpip.ErrNotSupported{}
 }
 
-func (n *NIC) removeNeighbor(addr tcpip.Address) tcpip.Error {
-	if n.neighborTable != nil {
-		return n.neighborTable.remove(addr)
+func (n *NIC) removeNeighbor(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
+		return linkRes.neighborTable.remove(addr)
 	}
 
 	return &tcpip.ErrNotSupported{}
 }
 
-func (n *NIC) clearNeighbors() tcpip.Error {
-	if n.neighborTable != nil {
-		return n.neighborTable.removeAll()
+func (n *NIC) clearNeighbors(protocol tcpip.NetworkProtocolNumber) tcpip.Error {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
+		return linkRes.neighborTable.removeAll()
 	}
 
 	return &tcpip.ErrNotSupported{}
@@ -947,9 +951,9 @@ func (n *NIC) Name() string {
 }
 
 // nudConfigs gets the NUD configurations for n.
-func (n *NIC) nudConfigs() (NUDConfigurations, tcpip.Error) {
-	if n.neighborTable != nil {
-		return n.neighborTable.nudConfig()
+func (n *NIC) nudConfigs(protocol tcpip.NetworkProtocolNumber) (NUDConfigurations, tcpip.Error) {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
+		return linkRes.neighborTable.nudConfig()
 	}
 
 	return NUDConfigurations{}, &tcpip.ErrNotSupported{}
@@ -959,10 +963,10 @@ func (n *NIC) nudConfigs() (NUDConfigurations, tcpip.Error) {
 //
 // Note, if c contains invalid NUD configuration values, it will be fixed to
 // use default values for the erroneous values.
-func (n *NIC) setNUDConfigs(c NUDConfigurations) tcpip.Error {
-	if n.neighborTable != nil {
+func (n *NIC) setNUDConfigs(protocol tcpip.NetworkProtocolNumber, c NUDConfigurations) tcpip.Error {
+	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
 		c.resetInvalidFields()
-		return n.neighborTable.setNUDConfig(c)
+		return linkRes.neighborTable.setNUDConfig(c)
 	}
 
 	return &tcpip.ErrNotSupported{}
@@ -1003,15 +1007,21 @@ func (n *NIC) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
 }
 
 // HandleNeighborProbe implements NetworkInterface.
-func (n *NIC) HandleNeighborProbe(addr tcpip.Address, linkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
-	if n.neighborTable != nil {
-		n.neighborTable.handleProbe(addr, linkAddr, linkRes)
+func (n *NIC) HandleNeighborProbe(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
+	if l, ok := n.linkAddrResolvers[protocol]; ok {
+		l.neighborTable.handleProbe(addr, linkAddr)
+		return nil
 	}
+
+	return &tcpip.ErrNotSupported{}
 }
 
 // HandleNeighborConfirmation implements NetworkInterface.
-func (n *NIC) HandleNeighborConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
-	if n.neighborTable != nil {
-		n.neighborTable.handleConfirmation(addr, linkAddr, flags)
+func (n *NIC) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) tcpip.Error {
+	if l, ok := n.linkAddrResolvers[protocol]; ok {
+		l.neighborTable.handleConfirmation(addr, linkAddr, flags)
+		return nil
 	}
+
+	return &tcpip.ErrNotSupported{}
 }

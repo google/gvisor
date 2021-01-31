@@ -230,23 +230,30 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 		},
 		stats: makeNICStats(),
 	}
+	netEP := (&testIPv6Protocol{}).NewEndpoint(&nic, nil)
 	nic.networkEndpoints = map[tcpip.NetworkProtocolNumber]NetworkEndpoint{
-		header.IPv6ProtocolNumber: (&testIPv6Protocol{}).NewEndpoint(&nic, nil),
+		header.IPv6ProtocolNumber: netEP,
 	}
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	nudState := NewNUDState(c, rng)
-	linkRes := entryTestLinkResolver{}
-	entry := newNeighborEntry(&nic, entryTestAddr1 /* remoteAddr */, nudState, &linkRes)
-
+	var linkRes entryTestLinkResolver
 	// Stub out the neighbor cache to verify deletion from the cache.
 	neigh := &neighborCache{
-		nic:   &nic,
-		state: nudState,
-		cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
+		nic:     &nic,
+		state:   nudState,
+		linkRes: &linkRes,
+		cache:   make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
 	}
+	l := linkResolver{
+		resolver:      &linkRes,
+		neighborTable: neigh,
+	}
+	entry := newNeighborEntry(neigh, entryTestAddr1 /* remoteAddr */, nudState)
 	neigh.cache[entryTestAddr1] = entry
-	nic.neighborTable = neigh
+	nic.linkAddrResolvers = map[tcpip.NetworkProtocolNumber]linkResolver{
+		header.IPv6ProtocolNumber: l,
+	}
 
 	return entry, &disp, &linkRes, clock
 }
@@ -836,7 +843,7 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	c := DefaultNUDConfigurations()
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
 
-	ipv6EP := e.nic.networkEndpoints[header.IPv6ProtocolNumber].(*testIPv6Endpoint)
+	ipv6EP := e.cache.nic.networkEndpoints[header.IPv6ProtocolNumber].(*testIPv6Endpoint)
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)

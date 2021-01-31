@@ -77,10 +77,10 @@ func (*testLinkAddressResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumbe
 	return 1
 }
 
-func getBlocking(c *linkAddrCache, addr tcpip.Address, linkRes LinkAddressResolver) (tcpip.LinkAddress, tcpip.Error) {
+func getBlocking(c *linkAddrCache, addr tcpip.Address) (tcpip.LinkAddress, tcpip.Error) {
 	var attemptedResolution bool
 	for {
-		got, ch, err := c.get(addr, linkRes, "", nil)
+		got, ch, err := c.get(addr, "", nil)
 		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 			if attemptedResolution {
 				return got, &tcpip.ErrTimeout{}
@@ -100,27 +100,28 @@ func newEmptyNIC() *NIC {
 }
 
 func TestCacheOverflow(t *testing.T) {
-	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
+	var c linkAddrCache
+	c.init(newEmptyNIC(), 1<<63-1, 1*time.Second, 3, nil)
 	for i := len(testAddrs) - 1; i >= 0; i-- {
 		e := testAddrs[i]
 		c.add(e.addr, e.linkAddr)
-		got, _, err := c.get(e.addr, nil, "", nil)
+		got, _, err := c.get(e.addr, "", nil)
 		if err != nil {
-			t.Errorf("insert %d, c.get(%s, nil, '', nil): %s", i, e.addr, err)
+			t.Errorf("insert %d, c.get(%s, '', nil): %s", i, e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("insert %d, got c.get(%s, nil, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
+			t.Errorf("insert %d, got c.get(%s, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
 		}
 	}
 	// Expect to find at least half of the most recent entries.
 	for i := 0; i < linkAddrCacheSize/2; i++ {
 		e := testAddrs[i]
-		got, _, err := c.get(e.addr, nil, "", nil)
+		got, _, err := c.get(e.addr, "", nil)
 		if err != nil {
-			t.Errorf("check %d, c.get(%s, nil, '', nil): %s", i, e.addr, err)
+			t.Errorf("check %d, c.get(%s, '', nil): %s", i, e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("check %d, got c.get(%s, nil, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
+			t.Errorf("check %d, got c.get(%s, '', nil) = %s, want = %s", i, e.addr, got, e.linkAddr)
 		}
 	}
 	// The earliest entries should no longer be in the cache.
@@ -135,8 +136,9 @@ func TestCacheOverflow(t *testing.T) {
 }
 
 func TestCacheConcurrent(t *testing.T) {
-	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
-	linkRes := &testLinkAddressResolver{cache: c}
+	var c linkAddrCache
+	linkRes := &testLinkAddressResolver{cache: &c}
+	c.init(newEmptyNIC(), 1<<63-1, 1*time.Second, 3, linkRes)
 
 	var wg sync.WaitGroup
 	for r := 0; r < 16; r++ {
@@ -154,12 +156,12 @@ func TestCacheConcurrent(t *testing.T) {
 	// can fit in the cache, so our eviction strategy requires that
 	// the last entry be present and the first be missing.
 	e := testAddrs[len(testAddrs)-1]
-	got, _, err := c.get(e.addr, linkRes, "", nil)
+	got, _, err := c.get(e.addr, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, _, '', nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, '', nil): %s", e.addr, err)
 	}
 	if got != e.linkAddr {
-		t.Errorf("got c.get(%s, _, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
+		t.Errorf("got c.get(%s, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
 	e = testAddrs[0]
@@ -171,38 +173,40 @@ func TestCacheConcurrent(t *testing.T) {
 }
 
 func TestCacheAgeLimit(t *testing.T) {
-	c := newLinkAddrCache(newEmptyNIC(), 1*time.Millisecond, 1*time.Second, 3)
-	linkRes := &testLinkAddressResolver{cache: c}
+	var c linkAddrCache
+	linkRes := &testLinkAddressResolver{cache: &c}
+	c.init(newEmptyNIC(), 1*time.Millisecond, 1*time.Second, 3, linkRes)
 
 	e := testAddrs[0]
 	c.add(e.addr, e.linkAddr)
 	time.Sleep(50 * time.Millisecond)
-	_, _, err := c.get(e.addr, linkRes, "", nil)
+	_, _, err := c.get(e.addr, "", nil)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Errorf("got c.get(%s, _, '', nil) = %s, want = ErrWouldBlock", e.addr, err)
+		t.Errorf("got c.get(%s, '', nil) = %s, want = ErrWouldBlock", e.addr, err)
 	}
 }
 
 func TestCacheReplace(t *testing.T) {
-	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 1*time.Second, 3)
+	var c linkAddrCache
+	c.init(newEmptyNIC(), 1<<63-1, 1*time.Second, 3, nil)
 	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
 	c.add(e.addr, e.linkAddr)
-	got, _, err := c.get(e.addr, nil, "", nil)
+	got, _, err := c.get(e.addr, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, '', nil): %s", e.addr, err)
 	}
 	if got != e.linkAddr {
-		t.Errorf("got c.get(%s, nil, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
+		t.Errorf("got c.get(%s, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
 	c.add(e.addr, l2)
-	got, _, err = c.get(e.addr, nil, "", nil)
+	got, _, err = c.get(e.addr, "", nil)
 	if err != nil {
-		t.Errorf("c.get(%s, nil, '', nil): %s", e.addr, err)
+		t.Errorf("c.get(%s, '', nil): %s", e.addr, err)
 	}
 	if got != l2 {
-		t.Errorf("got c.get(%s, nil, '', nil) = %s, want = %s", e.addr, got, l2)
+		t.Errorf("got c.get(%s, '', nil) = %s, want = %s", e.addr, got, l2)
 	}
 }
 
@@ -213,34 +217,36 @@ func TestCacheResolution(t *testing.T) {
 	//
 	// Using a large resolution timeout decreases the probability of experiencing
 	// this race condition and does not affect how long this test takes to run.
-	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, math.MaxInt64, 1)
-	linkRes := &testLinkAddressResolver{cache: c}
+	var c linkAddrCache
+	linkRes := &testLinkAddressResolver{cache: &c}
+	c.init(newEmptyNIC(), 1<<63-1, math.MaxInt64, 1, linkRes)
 	for i, ta := range testAddrs {
-		got, err := getBlocking(c, ta.addr, linkRes)
+		got, err := getBlocking(&c, ta.addr)
 		if err != nil {
-			t.Errorf("check %d, getBlocking(_, %s, _): %s", i, ta.addr, err)
+			t.Errorf("check %d, getBlocking(_, %s): %s", i, ta.addr, err)
 		}
 		if got != ta.linkAddr {
-			t.Errorf("check %d, got getBlocking(_, %s, _) = %s, want = %s", i, ta.addr, got, ta.linkAddr)
+			t.Errorf("check %d, got getBlocking(_, %s) = %s, want = %s", i, ta.addr, got, ta.linkAddr)
 		}
 	}
 
 	// Check that after resolved, address stays in the cache and never returns WouldBlock.
 	for i := 0; i < 10; i++ {
 		e := testAddrs[len(testAddrs)-1]
-		got, _, err := c.get(e.addr, linkRes, "", nil)
+		got, _, err := c.get(e.addr, "", nil)
 		if err != nil {
-			t.Errorf("c.get(%s, _, '', nil): %s", e.addr, err)
+			t.Errorf("c.get(%s, '', nil): %s", e.addr, err)
 		}
 		if got != e.linkAddr {
-			t.Errorf("got c.get(%s, _, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
+			t.Errorf("got c.get(%s, '', nil) = %s, want = %s", e.addr, got, e.linkAddr)
 		}
 	}
 }
 
 func TestCacheResolutionFailed(t *testing.T) {
-	c := newLinkAddrCache(newEmptyNIC(), 1<<63-1, 10*time.Millisecond, 5)
-	linkRes := &testLinkAddressResolver{cache: c}
+	var c linkAddrCache
+	linkRes := &testLinkAddressResolver{cache: &c}
+	c.init(newEmptyNIC(), 1<<63-1, 10*time.Millisecond, 5, linkRes)
 
 	var requestCount uint32
 	linkRes.onLinkAddressRequest = func() {
@@ -249,20 +255,20 @@ func TestCacheResolutionFailed(t *testing.T) {
 
 	// First, sanity check that resolution is working...
 	e := testAddrs[0]
-	got, err := getBlocking(c, e.addr, linkRes)
+	got, err := getBlocking(&c, e.addr)
 	if err != nil {
-		t.Errorf("getBlocking(_, %s, _): %s", e.addr, err)
+		t.Errorf("getBlocking(_, %s): %s", e.addr, err)
 	}
 	if got != e.linkAddr {
-		t.Errorf("got getBlocking(_, %s, _) = %s, want = %s", e.addr, got, e.linkAddr)
+		t.Errorf("got getBlocking(_, %s) = %s, want = %s", e.addr, got, e.linkAddr)
 	}
 
 	before := atomic.LoadUint32(&requestCount)
 
 	e.addr += "2"
-	a, err := getBlocking(c, e.addr, linkRes)
+	a, err := getBlocking(&c, e.addr)
 	if _, ok := err.(*tcpip.ErrTimeout); !ok {
-		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
+		t.Errorf("got getBlocking(_, %s) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
 	}
 
 	if got, want := int(atomic.LoadUint32(&requestCount)-before), c.resolutionAttempts; got != want {
@@ -273,12 +279,13 @@ func TestCacheResolutionFailed(t *testing.T) {
 func TestCacheResolutionTimeout(t *testing.T) {
 	resolverDelay := 500 * time.Millisecond
 	expiration := resolverDelay / 10
-	c := newLinkAddrCache(newEmptyNIC(), expiration, 1*time.Millisecond, 3)
-	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
+	var c linkAddrCache
+	linkRes := &testLinkAddressResolver{cache: &c, delay: resolverDelay}
+	c.init(newEmptyNIC(), expiration, 1*time.Millisecond, 3, linkRes)
 
 	e := testAddrs[0]
-	a, err := getBlocking(c, e.addr, linkRes)
+	a, err := getBlocking(&c, e.addr)
 	if _, ok := err.(*tcpip.ErrTimeout); !ok {
-		t.Errorf("got getBlocking(_, %s, _) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
+		t.Errorf("got getBlocking(_, %s) = (%s, %s), want = (_, %s)", e.addr, a, err, &tcpip.ErrTimeout{})
 	}
 }

@@ -536,11 +536,11 @@ type NetworkInterface interface {
 	//
 	// HandleNeighborProbe assumes that the probe is valid for the network
 	// interface the probe was received on.
-	HandleNeighborProbe(tcpip.Address, tcpip.LinkAddress, LinkAddressResolver)
+	HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress) tcpip.Error
 
 	// HandleNeighborConfirmation processes an incoming neighbor confirmation
 	// (e.g. ARP reply or NDP Neighbor Advertisement).
-	HandleNeighborConfirmation(tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags)
+	HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags) tcpip.Error
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.

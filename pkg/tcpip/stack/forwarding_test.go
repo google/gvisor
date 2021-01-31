@@ -400,7 +400,10 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 	if !ok {
 		t.Fatal("NIC 2 does not exist")
 	}
-	proto.neighborTable = nic.neighborTable
+
+	if l, ok := nic.linkAddrResolvers[fwdTestNetNumber]; ok {
+		proto.neighborTable = l.neighborTable
+	}
 
 	// Route all packets to NIC 2.
 	{
