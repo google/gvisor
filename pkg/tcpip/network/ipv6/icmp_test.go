@@ -492,8 +492,6 @@ func visitStats(v reflect.Value, f func(string, *tcpip.StatCounter)) {
 }
 
 type testContext struct {
-	t *testing.T
-
 	s0 *stack.Stack
 	s1 *stack.Stack
 
@@ -511,8 +509,6 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 
 func newTestContext(t *testing.T) *testContext {
 	c := &testContext{
-		t: t,
-
 		s0: stack.New(stack.Options{
 			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
@@ -566,21 +562,19 @@ func newTestContext(t *testing.T) *testContext {
 		}},
 	)
 
-	t.Cleanup(c.cleanup)
+	t.Cleanup(func() {
+		if err := c.s0.RemoveNIC(nicID); err != nil {
+			t.Errorf("c.s0.RemoveNIC(%d): %s", nicID, err)
+		}
+		if err := c.s1.RemoveNIC(nicID); err != nil {
+			t.Errorf("c.s1.RemoveNIC(%d): %s", nicID, err)
+		}
+
+		c.linkEP0.Close()
+		c.linkEP1.Close()
+	})
 
 	return c
-}
-
-func (c *testContext) cleanup() {
-	if err := c.s0.RemoveNIC(nicID); err != nil {
-		c.t.Errorf("c.s0.RemoveNIC(%d): %s", nicID, err)
-	}
-	if err := c.s1.RemoveNIC(nicID); err != nil {
-		c.t.Errorf("c.s1.RemoveNIC(%d): %s", nicID, err)
-	}
-
-	c.linkEP0.Close()
-	c.linkEP1.Close()
 }
 
 type routeArgs struct {
