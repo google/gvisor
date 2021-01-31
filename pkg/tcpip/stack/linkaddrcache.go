@@ -24,8 +24,6 @@ import (
 
 const linkAddrCacheSize = 512 // max cache entries
 
-var _ LinkAddressCache = (*linkAddrCache)(nil)
-
 // linkAddrCache is a fixed-sized cache mapping IP addresses to link addresses.
 //
 // The entries are stored in a ring buffer, oldest entry replaced first.
@@ -140,7 +138,7 @@ func (e *linkAddrEntry) changeStateLocked(ns entryState, expiration time.Time) {
 }
 
 // add adds a k -> v mapping to the cache.
-func (c *linkAddrCache) AddLinkAddress(k tcpip.Address, v tcpip.LinkAddress) {
+func (c *linkAddrCache) add(k tcpip.Address, v tcpip.LinkAddress) {
 	// Calculate expiration time before acquiring the lock, since expiration is
 	// relative to the time when information was learned, rather than when it
 	// happened to be inserted into the cache.
@@ -289,4 +287,68 @@ func newLinkAddrCache(nic *NIC, ageLimit, resolutionTimeout time.Duration, resol
 	}
 	c.mu.table = make(map[tcpip.Address]*linkAddrEntry, linkAddrCacheSize)
 	return c
+}
+
+var _ neighborTable = (*linkAddrCache)(nil)
+
+func (*linkAddrCache) neighbors() ([]NeighborEntry, tcpip.Error) {
+	return nil, &tcpip.ErrNotSupported{}
+}
+
+func (c *linkAddrCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+	c.add(addr, linkAddr)
+}
+
+func (*linkAddrCache) remove(addr tcpip.Address) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
+}
+
+func (*linkAddrCache) removeAll() tcpip.Error {
+	return &tcpip.ErrNotSupported{}
+}
+
+func (c *linkAddrCache) handleProbe(addr tcpip.Address, linkAddr tcpip.LinkAddress, _ LinkAddressResolver) {
+	if len(linkAddr) != 0 {
+		// NUD allows probes without a link address but linkAddrCache
+		// is a simple neighbor table which does not implement NUD.
+		//
+		// As per RFC 4861 section 4.3,
+		//
+		//   Source link-layer address
+		//               The link-layer address for the sender. MUST NOT be
+		//               included when the source IP address is the
+		//               unspecified address. Otherwise, on link layers
+		//               that have addresses this option MUST be included in
+		//               multicast solicitations and SHOULD be included in
+		//               unicast solicitations.
+		c.add(addr, linkAddr)
+	}
+}
+
+func (c *linkAddrCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
+	if len(linkAddr) != 0 {
+		// NUD allows confirmations without a link address but linkAddrCache
+		// is a simple neighbor table which does not implement NUD.
+		//
+		// As per RFC 4861 section 4.4,
+		//
+		//   Target link-layer address
+		//               The link-layer address for the target, i.e., the
+		//               sender of the advertisement. This option MUST be
+		//               included on link layers that have addresses when
+		//               responding to multicast solicitations. When
+		//               responding to a unicast Neighbor Solicitation this
+		//               option SHOULD be included.
+		c.add(addr, linkAddr)
+	}
+}
+
+func (c *linkAddrCache) handleUpperLevelConfirmation(tcpip.Address) {}
+
+func (*linkAddrCache) nudConfig() (NUDConfigurations, tcpip.Error) {
+	return NUDConfigurations{}, &tcpip.ErrNotSupported{}
+}
+
+func (*linkAddrCache) setNUDConfig(NUDConfigurations) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
 }

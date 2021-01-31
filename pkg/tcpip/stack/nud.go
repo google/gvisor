@@ -161,21 +161,6 @@ type ReachabilityConfirmationFlags struct {
 	IsRouter bool
 }
 
-// NUDHandler communicates external events to the Neighbor Unreachability
-// Detection state machine, which is implemented per-interface. This is used by
-// network endpoints to inform the Neighbor Cache of probes and confirmations.
-type NUDHandler interface {
-	// HandleProbe processes an incoming neighbor probe (e.g. ARP request or
-	// Neighbor Solicitation for ARP or NDP, respectively). Validation of the
-	// probe needs to be performed before calling this function since the
-	// Neighbor Cache doesn't have access to view the NIC's assigned addresses.
-	HandleProbe(remoteAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver)
-
-	// HandleConfirmation processes an incoming neighbor confirmation (e.g. ARP
-	// reply or Neighbor Advertisement for ARP or NDP, respectively).
-	HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags)
-}
-
 // NUDConfigurations is the NUD configurations for the netstack. This is used
 // by the neighbor cache to operate the NUD state machine on each device in the
 // local network.

@@ -530,6 +530,17 @@ type NetworkInterface interface {
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
 	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+
+	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
+	// request or NDP Neighbor Solicitation).
+	//
+	// HandleNeighborProbe assumes that the probe is valid for the network
+	// interface the probe was received on.
+	HandleNeighborProbe(tcpip.Address, tcpip.LinkAddress, LinkAddressResolver)
+
+	// HandleNeighborConfirmation processes an incoming neighbor confirmation
+	// (e.g. ARP reply or NDP Neighbor Advertisement).
+	HandleNeighborConfirmation(tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags)
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.
@@ -649,7 +660,7 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nic NetworkInterface, linkAddrCache LinkAddressCache, nud NUDHandler, dispatcher TransportDispatcher) NetworkEndpoint
+	NewEndpoint(nic NetworkInterface, dispatcher TransportDispatcher) NetworkEndpoint
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -841,12 +852,6 @@ type LinkAddressResolver interface {
 	// LinkAddressProtocol returns the network protocol of the
 	// addresses this resolver can resolve.
 	LinkAddressProtocol() tcpip.NetworkProtocolNumber
-}
-
-// A LinkAddressCache caches link addresses.
-type LinkAddressCache interface {
-	// AddLinkAddress adds a link address to the cache.
-	AddLinkAddress(addr tcpip.Address, linkAddr tcpip.LinkAddress)
 }
 
 // RawFactory produces endpoints for writing various types of raw packets.
