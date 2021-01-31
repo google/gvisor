@@ -53,7 +53,7 @@ type Route struct {
 
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
-	linkRes LinkAddressResolver
+	linkRes linkResolver
 }
 
 type routeInfo struct {
@@ -184,11 +184,11 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		return r
 	}
 
-	if r.linkRes == nil {
+	if r.linkRes.resolver == nil {
 		return r
 	}
 
-	if linkAddr, ok := r.linkRes.ResolveStaticAddress(r.RemoteAddress); ok {
+	if linkAddr, ok := r.linkRes.resolver.ResolveStaticAddress(r.RemoteAddress); ok {
 		r.ResolveWith(linkAddr)
 		return r
 	}
@@ -362,7 +362,7 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 	}
 
 	afterResolveFields := fields
-	linkAddr, ch, err := r.outgoingNIC.getNeighborLinkAddress(r.nextHop(), linkAddressResolutionRequestLocalAddr, r.linkRes, func(r LinkResolutionResult) {
+	linkAddr, ch, err := r.linkRes.getNeighborLinkAddress(r.nextHop(), linkAddressResolutionRequestLocalAddr, func(r LinkResolutionResult) {
 		if afterResolve != nil {
 			if r.Success {
 				afterResolveFields.RemoteLinkAddress = r.LinkAddress
@@ -400,7 +400,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 func (r *Route) isResolutionRequiredRLocked() bool {
-	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes != nil && r.isValidForOutgoingRLocked() && !r.local()
+	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes.resolver != nil && r.isValidForOutgoingRLocked() && !r.local()
 }
 
 func (r *Route) isValidForOutgoing() bool {
@@ -528,5 +528,7 @@ func (r *Route) IsOutboundBroadcast() bool {
 // "Reachable" is defined as having full-duplex communication between the
 // local and remote ends of the route.
 func (r *Route) ConfirmReachable() {
-	r.outgoingNIC.confirmReachable(r.nextHop())
+	if r.linkRes.resolver != nil {
+		r.linkRes.confirmReachable(r.nextHop())
+	}
 }
