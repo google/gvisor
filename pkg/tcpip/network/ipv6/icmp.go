@@ -289,10 +289,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		} else if unspecifiedSource {
 			received.invalid.Increment()
 			return
-		} else if e.nud != nil {
-			e.nud.HandleProbe(srcAddr, header.IPv6ProtocolNumber, sourceLinkAddr, e)
 		} else {
-			e.linkAddrCache.AddLinkAddress(srcAddr, sourceLinkAddr)
+			e.nic.HandleNeighborProbe(srcAddr, sourceLinkAddr, e)
 		}
 
 		// As per RFC 4861 section 7.1.1:
@@ -458,14 +456,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 
 		// If the NA message has the target link layer option, update the link
 		// address cache with the link address for the target of the message.
-		if e.nud == nil {
-			if len(targetLinkAddr) != 0 {
-				e.linkAddrCache.AddLinkAddress(targetAddr, targetLinkAddr)
-			}
-			return
-		}
-
-		e.nud.HandleConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
+		e.nic.HandleNeighborConfirmation(targetAddr, targetLinkAddr, stack.ReachabilityConfirmationFlags{
 			Solicited: na.SolicitedFlag(),
 			Override:  na.OverrideFlag(),
 			IsRouter:  na.RouterFlag(),
@@ -575,11 +566,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 				return
 			}
 
-			if e.nud != nil {
-				// A RS with a specified source IP address modifies the NUD state
-				// machine in the same way a reachability probe would.
-				e.nud.HandleProbe(srcAddr, ProtocolNumber, sourceLinkAddr, e)
-			}
+			// A RS with a specified source IP address modifies the NUD state
+			// machine in the same way a reachability probe would.
+			e.nic.HandleNeighborProbe(srcAddr, sourceLinkAddr, e)
 		}
 
 	case header.ICMPv6RouterAdvert:
@@ -627,8 +616,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 
 		// If the RA has the source link layer option, update the link address
 		// cache with the link address for the advertised router.
-		if len(sourceLinkAddr) != 0 && e.nud != nil {
-			e.nud.HandleProbe(routerAddr, ProtocolNumber, sourceLinkAddr, e)
+		if len(sourceLinkAddr) != 0 {
+			e.nic.HandleNeighborProbe(routerAddr, sourceLinkAddr, e)
 		}
 
 		e.mu.Lock()

@@ -1526,20 +1526,6 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) tcpip.Error {
 	return nil
 }
 
-// AddLinkAddress adds a link address for the neighbor on the specified NIC.
-func (s *Stack) AddLinkAddress(nicID tcpip.NICID, neighbor tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic, ok := s.nics[nicID]
-	if !ok {
-		return &tcpip.ErrUnknownNICID{}
-	}
-
-	nic.linkAddrCache.AddLinkAddress(neighbor, linkAddr)
-	return nil
-}
-
 // LinkResolutionResult is the result of a link address resolution attempt.
 type LinkResolutionResult struct {
 	LinkAddress tcpip.LinkAddress

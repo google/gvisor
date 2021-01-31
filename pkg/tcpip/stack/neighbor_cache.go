@@ -42,8 +42,6 @@ type NeighborStats struct {
 //  2. Static entries are explicitly added by a user and have no expiration.
 //     Their state is always Static. The amount of static entries stored in the
 //     cache is unbounded.
-//
-// neighborCache implements NUDHandler.
 type neighborCache struct {
 	nic   *NIC
 	state *NUDState
@@ -61,8 +59,6 @@ type neighborCache struct {
 		count uint16
 	}
 }
-
-var _ NUDHandler = (*neighborCache)(nil)
 
 // getOrCreateEntry retrieves a cache entry associated with addr. The
 // returned entry is always refreshed in the cache (it is reachable via the
@@ -263,27 +259,45 @@ func (n *neighborCache) setConfig(config NUDConfigurations) {
 	n.state.SetConfig(config)
 }
 
-// HandleProbe implements NUDHandler.HandleProbe by following the logic defined
-// in RFC 4861 section 7.2.3. Validation of the probe is expected to be handled
-// by the caller.
-func (n *neighborCache) HandleProbe(remoteAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
+var _ neighborTable = (*neighborCache)(nil)
+
+func (n *neighborCache) neighbors() ([]NeighborEntry, tcpip.Error) {
+	return n.entries(), nil
+}
+
+func (n *neighborCache) get(addr tcpip.Address, linkRes LinkAddressResolver, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (tcpip.LinkAddress, <-chan struct{}, tcpip.Error) {
+	entry, ch, err := n.entry(addr, localAddr, linkRes, onResolve)
+	return entry.LinkAddr, ch, err
+}
+
+func (n *neighborCache) remove(addr tcpip.Address) tcpip.Error {
+	if !n.removeEntry(addr) {
+		return &tcpip.ErrBadAddress{}
+	}
+
+	return nil
+}
+
+func (n *neighborCache) removeAll() tcpip.Error {
+	n.clear()
+	return nil
+}
+
+// handleProbe handles a neighbor probe as defined by RFC 4861 section 7.2.3.
+//
+// Validation of the probe is expected to be handled by the caller.
+func (n *neighborCache) handleProbe(remoteAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, linkRes LinkAddressResolver) {
 	entry := n.getOrCreateEntry(remoteAddr, linkRes)
 	entry.mu.Lock()
 	entry.handleProbeLocked(remoteLinkAddr)
 	entry.mu.Unlock()
 }
 
-// HandleConfirmation implements NUDHandler.HandleConfirmation by following the
-// logic defined in RFC 4861 section 7.2.5.
+// handleConfirmation handles a neighbor confirmation as defined by
+// RFC 4861 section 7.2.5.
 //
-// TODO(gvisor.dev/issue/2277): To protect against ARP poisoning and other
-// attacks against NDP functions, Secure Neighbor Discovery (SEND) Protocol
-// should be deployed where preventing access to the broadcast segment might
-// not be possible. SEND uses RSA key pairs to produce cryptographically
-// generated addresses, as defined in RFC 3972, Cryptographically Generated
-// Addresses (CGA). This ensures that the claimed source of an NDP message is
-// the owner of the claimed address.
-func (n *neighborCache) HandleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
+// Validation of the confirmation is expected to be handled by the caller.
+func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
 	n.mu.RLock()
 	entry, ok := n.cache[addr]
 	n.mu.RUnlock()
@@ -308,4 +322,13 @@ func (n *neighborCache) handleUpperLevelConfirmation(addr tcpip.Address) {
 		entry.handleUpperLevelConfirmationLocked()
 		entry.mu.Unlock()
 	}
+}
+
+func (n *neighborCache) nudConfig() (NUDConfigurations, tcpip.Error) {
+	return n.config(), nil
+}
+
+func (n *neighborCache) setNUDConfig(c NUDConfigurations) tcpip.Error {
+	n.setConfig(c)
+	return nil
 }
