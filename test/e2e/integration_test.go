@@ -434,18 +434,7 @@ func TestTmpMount(t *testing.T) {
 // runsc to hide the incoherence of FDs opened before and after overlayfs
 // copy-up on the host.
 func TestHostOverlayfsCopyUp(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	if got, err := d.Run(ctx, dockerutil.RunOpts{
-		Image:   "basic/hostoverlaytest",
-		WorkDir: "/root",
-	}, "./test_copy_up"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	} else if got != "" {
-		t.Errorf("test failed:\n%s", got)
-	}
+	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_copy_up test_copy_up.c && ./test_copy_up")
 }
 
 // TestHostOverlayfsRewindDir tests that rewinddir() "causes the directory
@@ -460,36 +449,14 @@ func TestHostOverlayfsCopyUp(t *testing.T) {
 // automated tests yield newly-added files from readdir() even if the fsgofer
 // does not explicitly rewinddir(), but overlayfs does not.
 func TestHostOverlayfsRewindDir(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	if got, err := d.Run(ctx, dockerutil.RunOpts{
-		Image:   "basic/hostoverlaytest",
-		WorkDir: "/root",
-	}, "./test_rewinddir"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	} else if got != "" {
-		t.Errorf("test failed:\n%s", got)
-	}
+	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_rewinddir test_rewinddir.c && ./test_rewinddir")
 }
 
 // Basic test for linkat(2). Syscall tests requires CAP_DAC_READ_SEARCH and it
 // cannot use tricks like userns as root. For this reason, run a basic link test
 // to ensure some coverage.
 func TestLink(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	if got, err := d.Run(ctx, dockerutil.RunOpts{
-		Image:   "basic/linktest",
-		WorkDir: "/root",
-	}, "./link_test"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	} else if got != "" {
-		t.Errorf("test failed:\n%s", got)
-	}
+	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o link_test link_test.c && ./link_test")
 }
 
 // This test ensures we can run ping without errors.
@@ -500,17 +467,7 @@ func TestPing4Loopback(t *testing.T) {
 		t.Skip("hostnet only supports TCP/UDP sockets, so ping is not supported.")
 	}
 
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	if got, err := d.Run(ctx, dockerutil.RunOpts{
-		Image: "basic/ping4test",
-	}, "/root/ping4.sh"); err != nil {
-		t.Fatalf("docker run failed: %s", err)
-	} else if got != "" {
-		t.Errorf("test failed:\n%s", got)
-	}
+	runIntegrationTest(t, nil, "./ping4.sh")
 }
 
 // This test ensures we can enable ipv6 on loopback and run ping6 without
@@ -522,20 +479,25 @@ func TestPing6Loopback(t *testing.T) {
 		t.Skip("hostnet only supports TCP/UDP sockets, so ping6 is not supported.")
 	}
 
+	// The CAP_NET_ADMIN capability is required to use the `ip` utility, which
+	// we use to enable ipv6 on loopback.
+	//
+	// By default, ipv6 loopback is not enabled by runsc, because docker does
+	// not assign an ipv6 address to the test container.
+	runIntegrationTest(t, []string{"NET_ADMIN"}, "./ping6.sh")
+}
+
+func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
 	if got, err := d.Run(ctx, dockerutil.RunOpts{
-		Image: "basic/ping6test",
-		// The CAP_NET_ADMIN capability is required to use the `ip` utility, which
-		// we use to enable ipv6 on loopback.
-		//
-		// By default, ipv6 loopback is not enabled by runsc, because docker does
-		// not assign an ipv6 address to the test container.
-		CapAdd: []string{"NET_ADMIN"},
-	}, "/root/ping6.sh"); err != nil {
-		t.Fatalf("docker run failed: %s", err)
+		Image:   "basic/integrationtest",
+		WorkDir: "/root",
+		CapAdd:  capAdd,
+	}, args...); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	} else if got != "" {
 		t.Errorf("test failed:\n%s", got)
 	}
