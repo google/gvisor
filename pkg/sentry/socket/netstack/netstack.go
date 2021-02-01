@@ -2666,9 +2666,9 @@ func (s *socketOpsCommon) dequeueErr() *tcpip.SockError {
 	}
 
 	// Update socket error to reflect ICMP errors in queue.
-	if nextErr := so.PeekErr(); nextErr != nil && nextErr.ErrOrigin.IsICMPErr() {
+	if nextErr := so.PeekErr(); nextErr != nil && nextErr.Cause.Origin().IsICMPErr() {
 		so.SetLastError(nextErr.Err)
-	} else if err.ErrOrigin.IsICMPErr() {
+	} else if err.Cause.Origin().IsICMPErr() {
 		so.SetLastError(nil)
 	}
 	return err

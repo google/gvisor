@@ -1322,7 +1322,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
-func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -1338,12 +1338,9 @@ func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extr
 		}
 
 		e.SocketOptions().QueueErr(&tcpip.SockError{
-			Err:       err,
-			ErrOrigin: header.ICMPOriginFromNetProto(pkt.NetworkProtocolNumber),
-			ErrType:   errType,
-			ErrCode:   errCode,
-			ErrInfo:   extra,
-			Payload:   payload,
+			Err:     err,
+			Cause:   transErr,
+			Payload: payload,
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
 				Addr: e.ID.RemoteAddress,
@@ -1362,24 +1359,13 @@ func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extr
 	e.waiterQueue.Notify(waiter.EventErr)
 }
 
-// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
-	if typ == stack.ControlPortUnreachable {
+// HandleError implements stack.TransportEndpoint.
+func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	// TODO(gvisor.dev/issues/5270): Handle all transport errors.
+	switch transErr.Kind() {
+	case stack.DestinationPortUnreachableTransportError:
 		if e.EndpointState() == StateConnected {
-			var errType byte
-			var errCode byte
-			switch pkt.NetworkProtocolNumber {
-			case header.IPv4ProtocolNumber:
-				errType = byte(header.ICMPv4DstUnreachable)
-				errCode = byte(header.ICMPv4PortUnreachable)
-			case header.IPv6ProtocolNumber:
-				errType = byte(header.ICMPv6DstUnreachable)
-				errCode = byte(header.ICMPv6PortUnreachable)
-			default:
-				panic(fmt.Sprintf("unsupported net proto for infering ICMP type and code: %d", pkt.NetworkProtocolNumber))
-			}
-			e.onICMPError(&tcpip.ErrConnectionRefused{}, errType, errCode, extra, pkt)
-			return
+			e.onICMPError(&tcpip.ErrConnectionRefused{}, transErr, pkt)
 		}
 	}
 }

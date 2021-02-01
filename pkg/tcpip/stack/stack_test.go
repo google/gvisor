@@ -138,12 +138,15 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			return
 		}
 		pkt.Data.TrimFront(fakeNetHeaderLen)
-		f.dispatcher.DeliverTransportControlPacket(
+		f.dispatcher.DeliverTransportError(
 			tcpip.Address(nb[srcAddrOffset:srcAddrOffset+1]),
 			tcpip.Address(nb[dstAddrOffset:dstAddrOffset+1]),
 			fakeNetNumber,
 			tcpip.TransportProtocolNumber(nb[protocolNumberOffset]),
-			stack.ControlPortUnreachable, 0, pkt)
+			// Nothing checks the error.
+			nil, /* transport error */
+			pkt,
+		)
 		return
 	}
 

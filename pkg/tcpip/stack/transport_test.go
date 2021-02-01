@@ -237,7 +237,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
-func (f *fakeTransportEndpoint) HandleControlPacket(stack.ControlType, uint32, *stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }

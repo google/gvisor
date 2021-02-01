@@ -59,6 +59,14 @@ var localIPv6AddrWithPrefix = tcpip.AddressWithPrefix{
 	PrefixLen: 120,
 }
 
+type transportError struct {
+	origin tcpip.SockErrOrigin
+	typ    uint8
+	code   uint8
+	info   uint32
+	kind   stack.TransportErrorKind
+}
+
 // testObject implements two interfaces: LinkEndpoint and TransportDispatcher.
 // The former is used to pretend that it's a link endpoint so that we can
 // inspect packets written by the network endpoints. The latter is used to
@@ -74,8 +82,7 @@ type testObject struct {
 	srcAddr  tcpip.Address
 	dstAddr  tcpip.Address
 	v4       bool
-	typ      stack.ControlType
-	extra    uint32
+	transErr transportError
 
 	dataCalls    int
 	controlCalls int
@@ -119,16 +126,23 @@ func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumb
 	return stack.TransportPacketHandled
 }
 
-// DeliverTransportControlPacket is called by network endpoints after parsing
+// DeliverTransportError is called by network endpoints after parsing
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
-func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	t.checkValues(trans, pkt.Data, remote, local)
-	if typ != t.typ {
-		t.t.Errorf("typ = %v, want %v", typ, t.typ)
-	}
-	if extra != t.extra {
-		t.t.Errorf("extra = %v, want %v", extra, t.extra)
+	if diff := cmp.Diff(
+		t.transErr,
+		transportError{
+			origin: transErr.Origin(),
+			typ:    transErr.Type(),
+			code:   transErr.Code(),
+			info:   transErr.Info(),
+			kind:   transErr.Kind(),
+		},
+		cmp.AllowUnexported(transportError{}),
+	); diff != "" {
+		t.t.Errorf("transport error mismatch (-want +got):\n%s", diff)
 	}
 	t.controlCalls++
 }
@@ -702,24 +716,81 @@ func TestReceive(t *testing.T) {
 }
 
 func TestIPv4ReceiveControl(t *testing.T) {
-	const mtu = 0xbeef - header.IPv4MinimumSize
+	const (
+		mtu     = 0xbeef - header.IPv4MinimumSize
+		dataLen = 8
+	)
+
 	cases := []struct {
 		name           string
 		expectedCount  int
 		fragmentOffset uint16
 		code           header.ICMPv4Code
-		expectedTyp    stack.ControlType
-		expectedExtra  uint32
+		transErr       transportError
 		trunc          int
 	}{
-		{"FragmentationNeeded", 1, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, 0},
-		{"Truncated (10 bytes missing)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, 10},
-		{"Truncated (missing IPv4 header)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, header.IPv4MinimumSize + 8},
-		{"Truncated (missing 'extra info')", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, 4 + header.IPv4MinimumSize + 8},
-		{"Truncated (missing ICMP header)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, header.ICMPv4MinimumSize + header.IPv4MinimumSize + 8},
-		{"Port unreachable", 1, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Non-zero fragment offset", 0, 100, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Zero-length packet", 0, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv4MinimumSize + header.ICMPv4MinimumSize + 8},
+		{
+			name:           "FragmentationNeeded",
+			expectedCount:  1,
+			fragmentOffset: 0,
+			code:           header.ICMPv4FragmentationNeeded,
+			transErr: transportError{
+				origin: tcpip.SockExtErrorOriginICMP,
+				typ:    uint8(header.ICMPv4DstUnreachable),
+				code:   uint8(header.ICMPv4FragmentationNeeded),
+				info:   mtu,
+				kind:   stack.PacketTooBigTransportError,
+			},
+			trunc: 0,
+		},
+		{
+			name:           "Truncated (missing IPv4 header)",
+			expectedCount:  0,
+			fragmentOffset: 0,
+			code:           header.ICMPv4FragmentationNeeded,
+			trunc:          header.IPv4MinimumSize + header.ICMPv4MinimumSize,
+		},
+		{
+			name:           "Truncated (partial offending packet's IP header)",
+			expectedCount:  0,
+			fragmentOffset: 0,
+			code:           header.ICMPv4FragmentationNeeded,
+			trunc:          header.IPv4MinimumSize + header.ICMPv4MinimumSize + header.IPv4MinimumSize - 1,
+		},
+		{
+			name:           "Truncated (partial offending packet's data)",
+			expectedCount:  0,
+			fragmentOffset: 0,
+			code:           header.ICMPv4FragmentationNeeded,
+			trunc:          header.ICMPv4MinimumSize + header.ICMPv4MinimumSize + header.IPv4MinimumSize + dataLen - 1,
+		},
+		{
+			name:           "Port unreachable",
+			expectedCount:  1,
+			fragmentOffset: 0,
+			code:           header.ICMPv4PortUnreachable,
+			transErr: transportError{
+				origin: tcpip.SockExtErrorOriginICMP,
+				typ:    uint8(header.ICMPv4DstUnreachable),
+				code:   uint8(header.ICMPv4PortUnreachable),
+				kind:   stack.DestinationPortUnreachableTransportError,
+			},
+			trunc: 0,
+		},
+		{
+			name:           "Non-zero fragment offset",
+			expectedCount:  0,
+			fragmentOffset: 100,
+			code:           header.ICMPv4PortUnreachable,
+			trunc:          0,
+		},
+		{
+			name:           "Zero-length packet",
+			expectedCount:  0,
+			fragmentOffset: 100,
+			code:           header.ICMPv4PortUnreachable,
+			trunc:          2*header.IPv4MinimumSize + header.ICMPv4MinimumSize + dataLen,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -738,7 +809,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			}
 
 			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
-			view := buffer.NewView(dataOffset + 8)
+			view := buffer.NewView(dataOffset + dataLen)
 
 			// Create the outer IPv4 header.
 			ip := header.IPv4(view)
@@ -785,8 +856,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			nic.testObject.srcAddr = remoteIPv4Addr
 			nic.testObject.dstAddr = localIPv4Addr
 			nic.testObject.contents = view[dataOffset:]
-			nic.testObject.typ = c.expectedTyp
-			nic.testObject.extra = c.expectedExtra
+			nic.testObject.transErr = c.transErr
 
 			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
 			if !ok {
@@ -953,30 +1023,112 @@ func TestIPv6Send(t *testing.T) {
 }
 
 func TestIPv6ReceiveControl(t *testing.T) {
+	const (
+		mtu          = 0xffff
+		outerSrcAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa"
+		dataLen      = 8
+	)
+
 	newUint16 := func(v uint16) *uint16 { return &v }
 
-	const mtu = 0xffff
-	const outerSrcAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa"
+	portUnreachableTransErr := transportError{
+		origin: tcpip.SockExtErrorOriginICMP6,
+		typ:    uint8(header.ICMPv6DstUnreachable),
+		code:   uint8(header.ICMPv6PortUnreachable),
+		kind:   stack.DestinationPortUnreachableTransportError,
+	}
+
 	cases := []struct {
 		name           string
 		expectedCount  int
 		fragmentOffset *uint16
 		typ            header.ICMPv6Type
 		code           header.ICMPv6Code
-		expectedTyp    stack.ControlType
-		expectedExtra  uint32
+		transErr       transportError
 		trunc          int
 	}{
-		{"PacketTooBig", 1, nil, header.ICMPv6PacketTooBig, 0, stack.ControlPacketTooBig, mtu, 0},
-		{"Truncated (10 bytes missing)", 0, nil, header.ICMPv6PacketTooBig, 0, stack.ControlPacketTooBig, mtu, 10},
-		{"Truncated (missing IPv6 header)", 0, nil, header.ICMPv6PacketTooBig, 0, stack.ControlPacketTooBig, mtu, header.IPv6MinimumSize + 8},
-		{"Truncated PacketTooBig (missing 'extra info')", 0, nil, header.ICMPv6PacketTooBig, 0, stack.ControlPacketTooBig, mtu, 4 + header.IPv6MinimumSize + 8},
-		{"Truncated (missing ICMP header)", 0, nil, header.ICMPv6PacketTooBig, 0, stack.ControlPacketTooBig, mtu, header.ICMPv6PacketTooBigMinimumSize + header.IPv6MinimumSize + 8},
-		{"Port unreachable", 1, nil, header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Truncated DstUnreachable (missing 'extra info')", 0, nil, header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 4 + header.IPv6MinimumSize + 8},
-		{"Fragmented, zero offset", 1, newUint16(0), header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Non-zero fragment offset", 0, newUint16(100), header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Zero-length packet", 0, nil, header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv6MinimumSize + header.ICMPv6DstUnreachableMinimumSize + 8},
+		{
+			name:           "PacketTooBig",
+			expectedCount:  1,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6PacketTooBig,
+			code:           header.ICMPv6UnusedCode,
+			transErr: transportError{
+				origin: tcpip.SockExtErrorOriginICMP6,
+				typ:    uint8(header.ICMPv6PacketTooBig),
+				code:   uint8(header.ICMPv6UnusedCode),
+				info:   mtu,
+				kind:   stack.PacketTooBigTransportError,
+			},
+			trunc: 0,
+		},
+		{
+			name:           "Truncated (missing offending packet's IPv6 header)",
+			expectedCount:  0,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6PacketTooBig,
+			code:           header.ICMPv6UnusedCode,
+			trunc:          header.IPv6MinimumSize + header.ICMPv6PacketTooBigMinimumSize,
+		},
+		{
+			name:           "Truncated PacketTooBig (partial offending packet's IPv6 header)",
+			expectedCount:  0,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6PacketTooBig,
+			code:           header.ICMPv6UnusedCode,
+			trunc:          header.IPv6MinimumSize + header.ICMPv6PacketTooBigMinimumSize + header.IPv6MinimumSize - 1,
+		},
+		{
+			name:           "Truncated (partial offending packet's data)",
+			expectedCount:  0,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6PacketTooBig,
+			code:           header.ICMPv6UnusedCode,
+			trunc:          header.IPv6MinimumSize + header.ICMPv6PacketTooBigMinimumSize + header.IPv6MinimumSize + dataLen - 1,
+		},
+		{
+			name:           "Port unreachable",
+			expectedCount:  1,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6DstUnreachable,
+			code:           header.ICMPv6PortUnreachable,
+			transErr:       portUnreachableTransErr,
+			trunc:          0,
+		},
+		{
+			name:           "Truncated DstPortUnreachable (partial offending packet's IP header)",
+			expectedCount:  0,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6DstUnreachable,
+			code:           header.ICMPv6PortUnreachable,
+			trunc:          header.IPv6MinimumSize + header.ICMPv6DstUnreachableMinimumSize + header.IPv6MinimumSize - 1,
+		},
+		{
+			name:           "DstPortUnreachable for Fragmented, zero offset",
+			expectedCount:  1,
+			fragmentOffset: newUint16(0),
+			typ:            header.ICMPv6DstUnreachable,
+			code:           header.ICMPv6PortUnreachable,
+			transErr:       portUnreachableTransErr,
+			trunc:          0,
+		},
+		{
+			name:           "DstPortUnreachable for Non-zero fragment offset",
+			expectedCount:  0,
+			fragmentOffset: newUint16(100),
+			typ:            header.ICMPv6DstUnreachable,
+			code:           header.ICMPv6PortUnreachable,
+			transErr:       portUnreachableTransErr,
+			trunc:          0,
+		},
+		{
+			name:           "Zero-length packet",
+			expectedCount:  0,
+			fragmentOffset: nil,
+			typ:            header.ICMPv6DstUnreachable,
+			code:           header.ICMPv6PortUnreachable,
+			trunc:          2*header.IPv6MinimumSize + header.ICMPv6DstUnreachableMinimumSize + dataLen,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -998,7 +1150,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			if c.fragmentOffset != nil {
 				dataOffset += header.IPv6FragmentHeaderSize
 			}
-			view := buffer.NewView(dataOffset + 8)
+			view := buffer.NewView(dataOffset + dataLen)
 
 			// Create the outer IPv6 header.
 			ip := header.IPv6(view)
@@ -1049,8 +1201,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			nic.testObject.srcAddr = remoteIPv6Addr
 			nic.testObject.dstAddr = localIPv6Addr
 			nic.testObject.contents = view[dataOffset:]
-			nic.testObject.typ = c.expectedTyp
-			nic.testObject.extra = c.expectedExtra
+			nic.testObject.transErr = c.transErr
 
 			// Set ICMPv6 checksum.
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))

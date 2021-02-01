@@ -247,6 +247,14 @@ func TestPing(t *testing.T) {
 	}
 }
 
+type transportError struct {
+	origin tcpip.SockErrOrigin
+	typ    uint8
+	code   uint8
+	info   uint32
+	kind   stack.TransportErrorKind
+}
+
 func TestTCPLinkResolutionFailure(t *testing.T) {
 	const (
 		host1NICID = 1
@@ -259,6 +267,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 		remoteAddr       tcpip.Address
 		expectedWriteErr tcpip.Error
 		sockError        tcpip.SockError
+		transErr         transportError
 	}{
 		{
 			name:             "IPv4 with resolvable remote",
@@ -278,10 +287,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			remoteAddr:       ipv4Addr3.AddressWithPrefix.Address,
 			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
-				Err:       &tcpip.ErrNoRoute{},
-				ErrType:   byte(header.ICMPv4DstUnreachable),
-				ErrCode:   byte(header.ICMPv4HostUnreachable),
-				ErrOrigin: tcpip.SockExtErrorOriginICMP,
+				Err: &tcpip.ErrNoRoute{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: ipv4Addr3.AddressWithPrefix.Address,
@@ -293,6 +299,12 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 				},
 				NetProto: ipv4.ProtocolNumber,
 			},
+			transErr: transportError{
+				origin: tcpip.SockExtErrorOriginICMP,
+				typ:    uint8(header.ICMPv4DstUnreachable),
+				code:   uint8(header.ICMPv4HostUnreachable),
+				kind:   stack.DestinationHostUnreachableTransportError,
+			},
 		},
 		{
 			name:             "IPv6 without resolvable remote",
@@ -300,10 +312,7 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 			remoteAddr:       ipv6Addr3.AddressWithPrefix.Address,
 			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
-				Err:       &tcpip.ErrNoRoute{},
-				ErrType:   byte(header.ICMPv6DstUnreachable),
-				ErrCode:   byte(header.ICMPv6AddressUnreachable),
-				ErrOrigin: tcpip.SockExtErrorOriginICMP6,
+				Err: &tcpip.ErrNoRoute{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
 					Addr: ipv6Addr3.AddressWithPrefix.Address,
@@ -314,6 +323,12 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 					Addr: ipv6Addr1.AddressWithPrefix.Address,
 				},
 				NetProto: ipv6.ProtocolNumber,
+			},
+			transErr: transportError{
+				origin: tcpip.SockExtErrorOriginICMP6,
+				typ:    uint8(header.ICMPv6DstUnreachable),
+				code:   uint8(header.ICMPv6AddressUnreachable),
+				kind:   stack.DestinationHostUnreachableTransportError,
 			},
 		},
 	}
@@ -393,9 +408,12 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 					// are pre defined so we can simply compare pointers.
 					return a == b
 				}),
-				// Ignore the payload since we do not know the TCP seq/ack numbers.
 				checker.IgnoreCmpPath(
+					// Ignore the payload since we do not know the TCP seq/ack numbers.
 					"Payload",
+					// Ignore the cause since we will compare its properties separately
+					// since the concrete type of the cause is unknown.
+					"Cause",
 				),
 			}
 
@@ -405,6 +423,24 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 				test.sockError.Offender.Port = addr.Port
 			}
 			if diff := cmp.Diff(&test.sockError, sockErr, sockErrCmpOpts...); diff != "" {
+				t.Errorf("socket error mismatch (-want +got):\n%s", diff)
+			}
+
+			transErr, ok := sockErr.Cause.(stack.TransportError)
+			if !ok {
+				t.Fatalf("socket error cause is not a transport error; cause = %#v", sockErr.Cause)
+			}
+			if diff := cmp.Diff(
+				test.transErr,
+				transportError{
+					origin: transErr.Origin(),
+					typ:    transErr.Type(),
+					code:   transErr.Code(),
+					info:   transErr.Info(),
+					kind:   transErr.Kind(),
+				},
+				cmp.AllowUnexported(transportError{}),
+			); diff != "" {
 				t.Errorf("socket error mismatch (-want +got):\n%s", diff)
 			}
 		})

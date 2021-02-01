@@ -23,11 +23,136 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// icmpv6DestinationUnreachableSockError is a general ICMPv6 Destination
+// Unreachable error.
+//
+// +stateify savable
+type icmpv6DestinationUnreachableSockError struct{}
+
+// Origin implements tcpip.SockErrorCause.
+func (*icmpv6DestinationUnreachableSockError) Origin() tcpip.SockErrOrigin {
+	return tcpip.SockExtErrorOriginICMP6
+}
+
+// Type implements tcpip.SockErrorCause.
+func (*icmpv6DestinationUnreachableSockError) Type() uint8 {
+	return uint8(header.ICMPv6DstUnreachable)
+}
+
+// Info implements tcpip.SockErrorCause.
+func (*icmpv6DestinationUnreachableSockError) Info() uint32 {
+	return 0
+}
+
+var _ stack.TransportError = (*icmpv6DestinationNetworkUnreachableSockError)(nil)
+
+// icmpv6DestinationNetworkUnreachableSockError is an ICMPv6 Destination Network
+// Unreachable error.
+//
+// It indicates that the destination network is unreachable.
+//
+// +stateify savable
+type icmpv6DestinationNetworkUnreachableSockError struct {
+	icmpv6DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv6DestinationNetworkUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv6NetworkUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv6DestinationNetworkUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationNetworkUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv6DestinationPortUnreachableSockError)(nil)
+
+// icmpv6DestinationPortUnreachableSockError is an ICMPv6 Destination Port
+// Unreachable error.
+//
+// It indicates that a packet reached the destination host, but the transport
+// protocol was not active on the destination port.
+//
+// +stateify savable
+type icmpv6DestinationPortUnreachableSockError struct {
+	icmpv6DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv6DestinationPortUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv6PortUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv6DestinationPortUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationPortUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv6DestinationAddressUnreachableSockError)(nil)
+
+// icmpv6DestinationAddressUnreachableSockError is an ICMPv6 Destination Address
+// Unreachable error.
+//
+// It indicates that a packet was not able to reach the destination.
+//
+// +stateify savable
+type icmpv6DestinationAddressUnreachableSockError struct {
+	icmpv6DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv6DestinationAddressUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv6AddressUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv6DestinationAddressUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationHostUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv6PacketTooBigSockError)(nil)
+
+// icmpv6PacketTooBigSockError is an ICMPv6 Packet Too Big error.
+//
+// It indicates that a link exists on the path to the destination with an MTU
+// that is too small to carry the packet.
+//
+// +stateify savable
+type icmpv6PacketTooBigSockError struct {
+	mtu uint32
+}
+
+// Origin implements tcpip.SockErrorCause.
+func (*icmpv6PacketTooBigSockError) Origin() tcpip.SockErrOrigin {
+	return tcpip.SockExtErrorOriginICMP6
+}
+
+// Type implements tcpip.SockErrorCause.
+func (*icmpv6PacketTooBigSockError) Type() uint8 {
+	return uint8(header.ICMPv6PacketTooBig)
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv6PacketTooBigSockError) Code() uint8 {
+	return uint8(header.ICMPv6UnusedCode)
+}
+
+// Info implements tcpip.SockErrorCause.
+func (e *icmpv6PacketTooBigSockError) Info() uint32 {
+	return e.mtu
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv6PacketTooBigSockError) Kind() stack.TransportErrorKind {
+	return stack.PacketTooBigTransportError
+}
+
 // handleControl handles the case when an ICMP packet contains the headers of
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return
@@ -67,8 +192,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 		p = fragHdr.TransportProtocol()
 	}
 
-	// Deliver the control packet to the transport endpoint.
-	e.dispatcher.DeliverTransportControlPacket(src, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
+	e.dispatcher.DeliverTransportError(src, hdr.DestinationAddress(), ProtocolNumber, p, transErr, pkt)
 }
 
 // getLinkAddrOption searches NDP options for a given link address option using
@@ -175,7 +299,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		if err != nil {
 			networkMTU = 0
 		}
-		e.handleControl(stack.ControlPacketTooBig, networkMTU, pkt)
+		e.handleControl(&icmpv6PacketTooBigSockError{mtu: networkMTU}, pkt)
 
 	case header.ICMPv6DstUnreachable:
 		received.dstUnreachable.Increment()
@@ -187,11 +311,10 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		pkt.Data.TrimFront(header.ICMPv6DstUnreachableMinimumSize)
 		switch header.ICMPv6(hdr).Code() {
 		case header.ICMPv6NetworkUnreachable:
-			e.handleControl(stack.ControlNetworkUnreachable, 0, pkt)
+			e.handleControl(&icmpv6DestinationNetworkUnreachableSockError{}, pkt)
 		case header.ICMPv6PortUnreachable:
-			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
+			e.handleControl(&icmpv6DestinationPortUnreachableSockError{}, pkt)
 		}
-
 	case header.ICMPv6NeighborSolicit:
 		received.neighborSolicit.Increment()
 		if !isNDPValid() || pkt.Data.Size() < header.ICMPv6NeighborSolicitMinimumSize {
