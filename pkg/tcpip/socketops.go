@@ -473,6 +473,48 @@ func (origin SockErrOrigin) IsICMPErr() bool {
 	return origin == SockExtErrorOriginICMP || origin == SockExtErrorOriginICMP6
 }
 
+// SockErrorCause is the cause of a socket error.
+type SockErrorCause interface {
+	// Origin is the source of the error.
+	Origin() SockErrOrigin
+
+	// Type is the origin specific type of error.
+	Type() uint8
+
+	// Code is the origin and type specific error code.
+	Code() uint8
+
+	// Info is any extra information about the error.
+	Info() uint32
+}
+
+// LocalSockError is a socket error that originated from the local host.
+//
+// +stateify savable
+type LocalSockError struct {
+	info uint32
+}
+
+// Origin implements SockErrorCause.
+func (*LocalSockError) Origin() SockErrOrigin {
+	return SockExtErrorOriginLocal
+}
+
+// Type implements SockErrorCause.
+func (*LocalSockError) Type() uint8 {
+	return 0
+}
+
+// Code implements SockErrorCause.
+func (*LocalSockError) Code() uint8 {
+	return 0
+}
+
+// Info implements SockErrorCause.
+func (l *LocalSockError) Info() uint32 {
+	return l.info
+}
+
 // SockError represents a queue entry in the per-socket error queue.
 //
 // +stateify savable
@@ -481,14 +523,8 @@ type SockError struct {
 
 	// Err is the error caused by the errant packet.
 	Err Error
-	// ErrOrigin indicates the error origin.
-	ErrOrigin SockErrOrigin
-	// ErrType is the type in the ICMP header.
-	ErrType uint8
-	// ErrCode is the code in the ICMP header.
-	ErrCode uint8
-	// ErrInfo is additional info about the error.
-	ErrInfo uint32
+	// Cause is the detailed cause of the error.
+	Cause SockErrorCause
 
 	// Payload is the errant packet's payload.
 	Payload []byte
@@ -540,12 +576,11 @@ func (so *SocketOptions) QueueErr(err *SockError) {
 // QueueLocalErr queues a local error onto the local queue.
 func (so *SocketOptions) QueueLocalErr(err Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload []byte) {
 	so.QueueErr(&SockError{
-		Err:       err,
-		ErrOrigin: SockExtErrorOriginLocal,
-		ErrInfo:   info,
-		Payload:   payload,
-		Dst:       dst,
-		NetProto:  net,
+		Err:      err,
+		Cause:    &LocalSockError{info: info},
+		Payload:  payload,
+		Dst:      dst,
+		NetProto: net,
 	})
 }
 

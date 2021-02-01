@@ -23,11 +23,108 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// icmpv4DestinationUnreachableSockError is a general ICMPv4 Destination
+// Unreachable error.
+//
+// +stateify savable
+type icmpv4DestinationUnreachableSockError struct{}
+
+// Origin implements tcpip.SockErrorCause.
+func (*icmpv4DestinationUnreachableSockError) Origin() tcpip.SockErrOrigin {
+	return tcpip.SockExtErrorOriginICMP
+}
+
+// Type implements tcpip.SockErrorCause.
+func (*icmpv4DestinationUnreachableSockError) Type() uint8 {
+	return uint8(header.ICMPv4DstUnreachable)
+}
+
+// Info implements tcpip.SockErrorCause.
+func (*icmpv4DestinationUnreachableSockError) Info() uint32 {
+	return 0
+}
+
+var _ stack.TransportError = (*icmpv4DestinationHostUnreachableSockError)(nil)
+
+// icmpv4DestinationHostUnreachableSockError is an ICMPv4 Destination Host
+// Unreachable error.
+//
+// It indicates that a packet was not able to reach the destination host.
+//
+// +stateify savable
+type icmpv4DestinationHostUnreachableSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4DestinationHostUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv4HostUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4DestinationHostUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationHostUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv4DestinationPortUnreachableSockError)(nil)
+
+// icmpv4DestinationPortUnreachableSockError is an ICMPv4 Destination Port
+// Unreachable error.
+//
+// It indicates that a packet reached the destination host, but the transport
+// protocol was not active on the destination port.
+//
+// +stateify savable
+type icmpv4DestinationPortUnreachableSockError struct {
+	icmpv4DestinationUnreachableSockError
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4DestinationPortUnreachableSockError) Code() uint8 {
+	return uint8(header.ICMPv4PortUnreachable)
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4DestinationPortUnreachableSockError) Kind() stack.TransportErrorKind {
+	return stack.DestinationPortUnreachableTransportError
+}
+
+var _ stack.TransportError = (*icmpv4FragmentationNeededSockError)(nil)
+
+// icmpv4FragmentationNeededSockError is an ICMPv4 Destination Unreachable error
+// due to fragmentation being required but the packet was set to not be
+// fragmented.
+//
+// It indicates that a link exists on the path to the destination with an MTU
+// that is too small to carry the packet.
+//
+// +stateify savable
+type icmpv4FragmentationNeededSockError struct {
+	icmpv4DestinationUnreachableSockError
+
+	mtu uint32
+}
+
+// Code implements tcpip.SockErrorCause.
+func (*icmpv4FragmentationNeededSockError) Code() uint8 {
+	return uint8(header.ICMPv4FragmentationNeeded)
+}
+
+// Info implements tcpip.SockErrorCause.
+func (e *icmpv4FragmentationNeededSockError) Info() uint32 {
+	return e.mtu
+}
+
+// Kind implements stack.TransportError.
+func (*icmpv4FragmentationNeededSockError) Kind() stack.TransportErrorKind {
+	return stack.PacketTooBigTransportError
+}
+
 // handleControl handles the case when an ICMP error packet contains the headers
 // of the original packet that caused the ICMP one to be sent. This information
 // is used to find out which transport endpoint must be notified about the ICMP
 // packet. We only expect the payload, not the enclosing ICMP packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.PacketBuffer) {
 	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
 	if !ok {
 		return
@@ -54,10 +151,10 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt *stack
 		return
 	}
 
-	// Skip the ip header, then deliver control message.
+	// Skip the ip header, then deliver the error.
 	pkt.Data.TrimFront(hlen)
 	p := hdr.TransportProtocol()
-	e.dispatcher.DeliverTransportControlPacket(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
+	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, errInfo, pkt)
 }
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
@@ -222,19 +319,16 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		pkt.Data.TrimFront(header.ICMPv4MinimumSize)
 		switch h.Code() {
 		case header.ICMPv4HostUnreachable:
-			e.handleControl(stack.ControlNoRoute, 0, pkt)
-
+			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
 		case header.ICMPv4PortUnreachable:
-			e.handleControl(stack.ControlPortUnreachable, 0, pkt)
-
+			e.handleControl(&icmpv4DestinationPortUnreachableSockError{}, pkt)
 		case header.ICMPv4FragmentationNeeded:
 			networkMTU, err := calculateNetworkMTU(uint32(h.MTU()), header.IPv4MinimumSize)
 			if err != nil {
 				networkMTU = 0
 			}
-			e.handleControl(stack.ControlPacketTooBig, networkMTU, pkt)
+			e.handleControl(&icmpv4FragmentationNeededSockError{mtu: networkMTU}, pkt)
 		}
-
 	case header.ICMPv4SrcQuench:
 		received.srcQuench.Increment()
 

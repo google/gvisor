@@ -49,36 +49,44 @@ type TransportEndpointID struct {
 	RemoteAddress tcpip.Address
 }
 
-// ControlType is the type of network control message.
-type ControlType int
-
-// The following are the allowed values for ControlType values.
-// TODO(http://gvisor.dev/issue/3210): Support time exceeded messages.
-const (
-	// ControlAddressUnreachable indicates that an IPv6 packet did not reach its
-	// destination as the destination address was unreachable.
-	//
-	// This maps to the ICMPv6 Destination Ureachable Code 3 error; see
-	// RFC 4443 section 3.1 for more details.
-	ControlAddressUnreachable ControlType = iota
-	ControlNetworkUnreachable
-	// ControlNoRoute indicates that an IPv4 packet did not reach its destination
-	// because the destination host was unreachable.
-	//
-	// This maps to the ICMPv4 Destination Ureachable Code 1 error; see
-	// RFC 791's Destination Unreachable Message section (page 4) for more
-	// details.
-	ControlNoRoute
-	ControlPacketTooBig
-	ControlPortUnreachable
-	ControlUnknown
-)
-
 // NetworkPacketInfo holds information about a network layer packet.
 type NetworkPacketInfo struct {
 	// LocalAddressBroadcast is true if the packet's local address is a broadcast
 	// address.
 	LocalAddressBroadcast bool
+}
+
+// TransportErrorKind enumerates error types that are handled by the transport
+// layer.
+type TransportErrorKind int
+
+const (
+	// PacketTooBigTransportError indicates that a packet did not reach its
+	// destination because a link on the path to the destination had an MTU that
+	// was too small to carry the packet.
+	PacketTooBigTransportError TransportErrorKind = iota
+
+	// DestinationHostUnreachableTransportError indicates that the destination
+	// host was unreachable.
+	DestinationHostUnreachableTransportError
+
+	// DestinationPortUnreachableTransportError indicates that a packet reached
+	// the destination host, but the transport protocol was not active on the
+	// destination port.
+	DestinationPortUnreachableTransportError
+
+	// DestinationNetworkUnreachableTransportError indicates that the destination
+	// network was unreachable.
+	DestinationNetworkUnreachableTransportError
+)
+
+// TransportError is a marker interface for errors that may be handled by the
+// transport layer.
+type TransportError interface {
+	tcpip.SockErrorCause
+
+	// Kind returns the type of the transport error.
+	Kind() TransportErrorKind
 }
 
 // TransportEndpoint is the interface that needs to be implemented by transport
@@ -93,10 +101,10 @@ type TransportEndpoint interface {
 	// HandlePacket takes ownership of the packet.
 	HandlePacket(TransportEndpointID, *PacketBuffer)
 
-	// HandleControlPacket is called by the stack when new control (e.g.
-	// ICMP) packets arrive to this transport endpoint.
-	// HandleControlPacket takes ownership of pkt.
-	HandleControlPacket(typ ControlType, extra uint32, pkt *PacketBuffer)
+	// HandleError is called when the transport endpoint receives an error.
+	//
+	// HandleError takes ownership of the packet buffer.
+	HandleError(TransportError, *PacketBuffer)
 
 	// Abort initiates an expedited endpoint teardown. It puts the endpoint
 	// in a closed state and frees all resources associated with it. This
@@ -248,14 +256,11 @@ type TransportDispatcher interface {
 	// DeliverTransportPacket takes ownership of the packet.
 	DeliverTransportPacket(tcpip.TransportProtocolNumber, *PacketBuffer) TransportPacketDisposition
 
-	// DeliverTransportControlPacket delivers control packets to the
-	// appropriate transport protocol endpoint.
+	// DeliverTransportError delivers an error to the appropriate transport
+	// endpoint.
 	//
-	// pkt.NetworkHeader must be set before calling
-	// DeliverTransportControlPacket.
-	//
-	// DeliverTransportControlPacket takes ownership of pkt.
-	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt *PacketBuffer)
+	// DeliverTransportError takes ownership of the packet buffer.
+	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
 }
 
 // PacketLooping specifies where an outbound packet should be sent.

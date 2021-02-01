@@ -81,10 +81,10 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 
 	ee := linux.SockExtendedErr{
 		Errno:  uint32(syserr.TranslateNetstackError(sockErr.Err).ToLinux().Number()),
-		Origin: errOriginToLinux(sockErr.ErrOrigin),
-		Type:   sockErr.ErrType,
-		Code:   sockErr.ErrCode,
-		Info:   sockErr.ErrInfo,
+		Origin: errOriginToLinux(sockErr.Cause.Origin()),
+		Type:   sockErr.Cause.Type(),
+		Code:   sockErr.Cause.Code(),
+		Info:   sockErr.Cause.Info(),
 	}
 
 	switch sockErr.NetProto {
