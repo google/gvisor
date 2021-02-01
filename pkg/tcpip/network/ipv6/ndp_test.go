@@ -759,6 +759,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+				UseLinkAddrCache: true,
 			})
 			e := channel.New(0, 1280, linkAddr0)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
