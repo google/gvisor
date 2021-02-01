@@ -911,9 +911,8 @@ func (n *NIC) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 	}
 }
 
-// DeliverTransportControlPacket delivers control packets to the appropriate
-// transport protocol endpoint.
-func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt *PacketBuffer) {
+// DeliverTransportError implements TransportDispatcher.
+func (n *NIC) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr TransportError, pkt *PacketBuffer) {
 	state, ok := n.stack.transportProtocols[trans]
 	if !ok {
 		return
@@ -935,7 +934,7 @@ func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcp
 	}
 
 	id := TransportEndpointID{srcPort, local, dstPort, remote}
-	if n.stack.demux.deliverControlPacket(n, net, trans, typ, extra, pkt, id) {
+	if n.stack.demux.deliverError(n, net, trans, transErr, pkt, id) {
 		return
 	}
 }

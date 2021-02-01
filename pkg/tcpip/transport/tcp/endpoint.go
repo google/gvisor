@@ -2683,7 +2683,7 @@ func (e *endpoint) enqueueSegment(s *segment) bool {
 	return true
 }
 
-func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extra uint32, pkt *stack.PacketBuffer) {
+func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -2692,11 +2692,8 @@ func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extr
 	// Update the error queue if IP_RECVERR is enabled.
 	if e.SocketOptions().GetRecvError() {
 		e.SocketOptions().QueueErr(&tcpip.SockError{
-			Err:       err,
-			ErrOrigin: header.ICMPOriginFromNetProto(pkt.NetworkProtocolNumber),
-			ErrType:   errType,
-			ErrCode:   errCode,
-			ErrInfo:   extra,
+			Err:   err,
+			Cause: transErr,
 			// Linux passes the payload with the TCP header. We don't know if the TCP
 			// header even exists, it may not for fragmented packets.
 			Payload: pkt.Data.ToView(),
@@ -2718,27 +2715,26 @@ func (e *endpoint) onICMPError(err tcpip.Error, errType byte, errCode byte, extr
 	e.notifyProtocolGoroutine(notifyError)
 }
 
-// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
-	switch typ {
-	case stack.ControlPacketTooBig:
+// HandleError implements stack.TransportEndpoint.
+func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	handlePacketTooBig := func(mtu uint32) {
 		e.sndBufMu.Lock()
 		e.packetTooBigCount++
-		if v := int(extra); v < e.sndMTU {
+		if v := int(mtu); v < e.sndMTU {
 			e.sndMTU = v
 		}
 		e.sndBufMu.Unlock()
-
 		e.notifyProtocolGoroutine(notifyMTUChanged)
+	}
 
-	case stack.ControlNoRoute:
-		e.onICMPError(&tcpip.ErrNoRoute{}, byte(header.ICMPv4DstUnreachable), byte(header.ICMPv4HostUnreachable), extra, pkt)
-
-	case stack.ControlAddressUnreachable:
-		e.onICMPError(&tcpip.ErrNoRoute{}, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6AddressUnreachable), extra, pkt)
-
-	case stack.ControlNetworkUnreachable:
-		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, byte(header.ICMPv6DstUnreachable), byte(header.ICMPv6NetworkUnreachable), extra, pkt)
+	// TODO(gvisor.dev/issues/5270): Handle all transport errors.
+	switch transErr.Kind() {
+	case stack.PacketTooBigTransportError:
+		handlePacketTooBig(transErr.Info())
+	case stack.DestinationHostUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrNoRoute{}, transErr, pkt)
+	case stack.DestinationNetworkUnreachableTransportError:
+		e.onICMPError(&tcpip.ErrNetworkUnreachable{}, transErr, pkt)
 	}
 }
 

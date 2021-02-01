@@ -182,9 +182,8 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *Packet
 	epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
-// handleControlPacket delivers a control packet to the transport endpoint
-// identified by id.
-func (epsByNIC *endpointsByNIC) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, pkt *PacketBuffer) {
+// handleError delivers an error to the transport endpoint identified by id.
+func (epsByNIC *endpointsByNIC) handleError(n *NIC, id TransportEndpointID, transErr TransportError, pkt *PacketBuffer) {
 	epsByNIC.mu.RLock()
 	defer epsByNIC.mu.RUnlock()
 
@@ -200,7 +199,7 @@ func (epsByNIC *endpointsByNIC) handleControlPacket(n *NIC, id TransportEndpoint
 	// broadcast like we are doing with handlePacket above?
 
 	// multiPortEndpoints are guaranteed to have at least one element.
-	selectEndpoint(id, mpep, epsByNIC.seed).HandleControlPacket(typ, extra, pkt)
+	selectEndpoint(id, mpep, epsByNIC.seed).HandleError(transErr, pkt)
 }
 
 // registerEndpoint returns true if it succeeds. It fails and returns
@@ -596,9 +595,11 @@ func (d *transportDemuxer) deliverRawPacket(protocol tcpip.TransportProtocolNumb
 	return foundRaw
 }
 
-// deliverControlPacket attempts to deliver the given control packet. Returns
-// true if it found an endpoint, false otherwise.
-func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt *PacketBuffer, id TransportEndpointID) bool {
+// deliverError attempts to deliver the given error to the appropriate transport
+// endpoint.
+//
+// Returns true if the error was delivered.
+func (d *transportDemuxer) deliverError(n *NIC, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr TransportError, pkt *PacketBuffer, id TransportEndpointID) bool {
 	eps, ok := d.protocol[protocolIDs{net, trans}]
 	if !ok {
 		return false
@@ -611,7 +612,7 @@ func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtoco
 		return false
 	}
 
-	ep.handleControlPacket(n, id, typ, extra, pkt)
+	ep.handleError(n, id, transErr, pkt)
 	return true
 }
 

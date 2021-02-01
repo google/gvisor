@@ -778,9 +778,8 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 }
 
-// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(typ stack.ControlType, extra uint32, pkt *stack.PacketBuffer) {
-}
+// HandleError implements stack.TransportEndpoint.
+func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.

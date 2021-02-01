@@ -156,3 +156,4 @@ analyzers:
     internal:
       exclude:
         - pkg/sentry/fs/fdpipe/pipe_opener_test.go # False positive.
+        - pkg/tcpip/tests/integration/link_resolution_test.go # False positive.
