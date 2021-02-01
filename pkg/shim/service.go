@@ -28,6 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/containerd/cgroups"
 	cgroupsstats "github.com/containerd/cgroups/stats/v1"
+	cgroupsv2 "github.com/containerd/cgroups/v2"
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -35,6 +36,9 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/pkg/oom"
+	oomv1 "github.com/containerd/containerd/pkg/oom/v1"
+	oomv2 "github.com/containerd/containerd/pkg/oom/v2"
 	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/containerd/runtime"
@@ -80,17 +84,26 @@ const (
 // New returns a new shim service that can be used via GRPC.
 func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (shim.Shim, error) {
 	log.L.Debugf("service.New, id: %s", id)
+	var (
+		ep   oom.Watcher
+		opts shim.Opts
+		err  error
+	)
 
-	var opts shim.Opts
 	if ctxOpts := ctx.Value(shim.OptsKey{}); ctxOpts != nil {
 		opts = ctxOpts.(shim.Opts)
 	}
 
-	ep, err := newOOMEpoller(publisher)
+	if cgroups.Mode() == cgroups.Unified {
+		ep, err = oomv2.New(publisher)
+	} else {
+		ep, err = oomv1.New(publisher)
+	}
 	if err != nil {
 		return nil, err
 	}
-	go ep.run(ctx)
+
+	go ep.Run(ctx)
 	s := &service{
 		id:             id,
 		processes:      make(map[string]process.Process),
@@ -158,7 +171,7 @@ type service struct {
 	ec chan proc.Exit
 
 	// oomPoller monitors the sandbox's cgroup for OOM notifications.
-	oomPoller *epoller
+	oomPoller oom.Watcher
 
 	// cancel is a function that needs to be called before the shim stops. The
 	// function is provided by the caller to New().
@@ -461,11 +474,23 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 	// sandbox create since the sandbox process will be created here.
 	pid := process.Pid()
 	if pid > 0 {
-		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		var (
+			cg  interface{}
+			err error
+		)
+		if cgroups.Mode() == cgroups.Unified {
+			var cgPath string
+			cgPath, err = cgroupsv2.PidGroupPath(pid)
+			if err == nil {
+				cg, err = cgroupsv2.LoadManager("/sys/fs/cgroup", cgPath)
+			}
+		} else {
+			cg, err = cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("loading cgroup for %d: %w", pid, err)
 		}
-		if err := s.oomPoller.add(s.id, cg); err != nil {
+		if err := s.oomPoller.Add(s.id, cg); err != nil {
 			return nil, fmt.Errorf("add cg to OOM monitor: %w", err)
 		}
 	}
