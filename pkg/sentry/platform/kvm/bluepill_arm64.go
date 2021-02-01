@@ -19,6 +19,7 @@ package kvm
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
@@ -107,6 +108,14 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
 	regs := c.Registers()
+
+	// Is this a fast-path call?
+	if regs.Rax == linux.SYS_FUTEX && regs.Rdi == linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG {
+		ring0.Hypercall()
+		return
+	}
+
+	// Need to rewind to redo.
 	if regs.Regs[8] != ^uint64(0) {
 		regs.Pc -= 4 // Rewind.
 	}
@@ -146,4 +155,17 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 	}
 
 	ring0.Halt()
+}
+
+// bluepillArchSyscall handles an inline system call.
+//
+//go:nosplit
+func bluepillArchSyscall(c *vCPU) {
+	regs := c.CPU.Registers()
+	r, _, errno := syscall.RawSyscall(regs.Regs[0], regs.Regs[1], regs.Regs[2], regs.Regs[3], regs.Regs[4], regs.Regs[5])
+	if errno != 0 {
+		regs.Regs[0] = -errno
+	} else {
+		regs.Regs[0] = r
+	}
 }

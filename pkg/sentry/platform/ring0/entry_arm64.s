@@ -424,7 +424,7 @@ TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0-8
 TEXT ·Shutdown(SB),NOSPLIT,$0
 	// PSCI EVENT.
 	MOVD $0x84000009, R0
-	HVC $0
+	HVC $0 // _KVM_HYPERCALL_EXIT.
 
 // See kernel.go.
 TEXT ·Current(SB),NOSPLIT,$0-8
@@ -767,3 +767,8 @@ TEXT ·Vectors(SB),NOSPLIT,$0
 	B ·El0_fiq_invalid(SB)
 	PCALIGN $128
 	B ·El0_error_invalid(SB)
+
+// See kernel.go.
+TEXT ·Hypercall(SB),NOSPLIT,$0
+	HVC $1 // _KVM_HYPERCALL_SYSCALL.
+	RET

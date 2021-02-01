@@ -169,8 +169,8 @@ func bluepillHandler(context unsafe.Pointer) {
 			// are not mapped). We would actually prefer that no
 			// emulation occur, and don't mind at all if it fails.
 		case _KVM_EXIT_HYPERCALL:
-			c.die(bluepillArchContext(context), "hypercall")
-			return
+			// A hypercall is used to execute an inline system call.
+			bluepillArchSyscall(c)
 		case _KVM_EXIT_DEBUG:
 			c.die(bluepillArchContext(context), "debug")
 			return
@@ -182,6 +182,10 @@ func bluepillHandler(context unsafe.Pointer) {
 			if getHypercallID(physical) == _KVM_HYPERCALL_VMEXIT {
 				bluepillGuestExit(c, context)
 				return
+			}
+			if getHypercallID(physical) == _KVM_HYPERCALL_SYSCALL {
+				bluepillArchSyscall(c)
+				break // Continue main loop.
 			}
 
 			// Increment the fault count.

@@ -53,8 +53,7 @@ func Vectors()
 // The CPU state will be set to c.Registers().
 func Start()
 func kernelExitToEl1()
-
 func kernelExitToEl0()
 
-// Shutdown execution
+// Shutdown execution.
 func Shutdown()
