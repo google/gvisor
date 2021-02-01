@@ -152,7 +152,7 @@ nogo: ## Surfaces all nogo findings.
 .PHONY: nogo
 
 gazelle: ## Runs gazelle to update WORKSPACE.
-	@$(call run,//:gazelle update-repos -from_file=go.mod -prune)
+	@$(call run,//:gazelle,update-repos -from_file=go.mod -prune)
 .PHONY: gazelle
 
 ##
