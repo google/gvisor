@@ -866,6 +866,29 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(21, &so.linger)
 }
 
+func (l *LocalSockError) StateTypeName() string {
+	return "pkg/tcpip.LocalSockError"
+}
+
+func (l *LocalSockError) StateFields() []string {
+	return []string{
+		"info",
+	}
+}
+
+func (l *LocalSockError) beforeSave() {}
+
+func (l *LocalSockError) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.info)
+}
+
+func (l *LocalSockError) afterLoad() {}
+
+func (l *LocalSockError) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.info)
+}
+
 func (s *SockError) StateTypeName() string {
 	return "pkg/tcpip.SockError"
 }
@@ -874,10 +897,7 @@ func (s *SockError) StateFields() []string {
 	return []string{
 		"sockErrorEntry",
 		"Err",
-		"ErrOrigin",
-		"ErrType",
-		"ErrCode",
-		"ErrInfo",
+		"Cause",
 		"Payload",
 		"Dst",
 		"Offender",
@@ -891,14 +911,11 @@ func (s *SockError) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.sockErrorEntry)
 	stateSinkObject.Save(1, &s.Err)
-	stateSinkObject.Save(2, &s.ErrOrigin)
-	stateSinkObject.Save(3, &s.ErrType)
-	stateSinkObject.Save(4, &s.ErrCode)
-	stateSinkObject.Save(5, &s.ErrInfo)
-	stateSinkObject.Save(6, &s.Payload)
-	stateSinkObject.Save(7, &s.Dst)
-	stateSinkObject.Save(8, &s.Offender)
-	stateSinkObject.Save(9, &s.NetProto)
+	stateSinkObject.Save(2, &s.Cause)
+	stateSinkObject.Save(3, &s.Payload)
+	stateSinkObject.Save(4, &s.Dst)
+	stateSinkObject.Save(5, &s.Offender)
+	stateSinkObject.Save(6, &s.NetProto)
 }
 
 func (s *SockError) afterLoad() {}
@@ -906,14 +923,11 @@ func (s *SockError) afterLoad() {}
 func (s *SockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.sockErrorEntry)
 	stateSourceObject.Load(1, &s.Err)
-	stateSourceObject.Load(2, &s.ErrOrigin)
-	stateSourceObject.Load(3, &s.ErrType)
-	stateSourceObject.Load(4, &s.ErrCode)
-	stateSourceObject.Load(5, &s.ErrInfo)
-	stateSourceObject.Load(6, &s.Payload)
-	stateSourceObject.Load(7, &s.Dst)
-	stateSourceObject.Load(8, &s.Offender)
-	stateSourceObject.Load(9, &s.NetProto)
+	stateSourceObject.Load(2, &s.Cause)
+	stateSourceObject.Load(3, &s.Payload)
+	stateSourceObject.Load(4, &s.Dst)
+	stateSourceObject.Load(5, &s.Offender)
+	stateSourceObject.Load(6, &s.NetProto)
 }
 
 func (f *FullAddress) StateTypeName() string {
@@ -1127,6 +1141,7 @@ func init() {
 	state.Register((*sockErrorList)(nil))
 	state.Register((*sockErrorEntry)(nil))
 	state.Register((*SocketOptions)(nil))
+	state.Register((*LocalSockError)(nil))
 	state.Register((*SockError)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))

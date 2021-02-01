@@ -235,7 +235,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	})
 	pkt.NICID = e.nic.ID()
 	pkt.NetworkProtocolNumber = ProtocolNumber
-	e.handleControl(stack.ControlAddressUnreachable, 0, pkt)
+	e.handleControl(&icmpv6DestinationAddressUnreachableSockError{}, pkt)
 }
 
 // onAddressAssignedLocked handles an address being assigned.

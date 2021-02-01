@@ -101,7 +101,7 @@ func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
 	// Use the same control type as an ICMPv4 destination host unreachable error
 	// since the host is considered unreachable if we cannot resolve the link
 	// address to the next hop.
-	e.handleControl(stack.ControlNoRoute, 0, pkt)
+	e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
