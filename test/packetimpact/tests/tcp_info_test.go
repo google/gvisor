@@ -55,6 +55,9 @@ func TestTCPInfo(t *testing.T) {
 
 	info := linux.TCPInfo{}
 	infoBytes := dut.GetSockOpt(t, acceptFD, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
+	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
+		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
+	}
 	binary.Unmarshal(infoBytes, usermem.ByteOrder, &info)
 
 	rtt := time.Duration(info.RTT) * time.Microsecond
@@ -93,6 +96,9 @@ func TestTCPInfo(t *testing.T) {
 
 	info = linux.TCPInfo{}
 	infoBytes = dut.GetSockOpt(t, acceptFD, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
+	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
+		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
+	}
 	binary.Unmarshal(infoBytes, usermem.ByteOrder, &info)
 	if info.CaState != linux.TCP_CA_Loss {
 		t.Errorf("expected the connection to be in loss recovery, got: %v want: %v", info.CaState, linux.TCP_CA_Loss)
