@@ -135,13 +135,23 @@ func TestUDP(t *testing.T) {
 							copy(addr.Addr[:], tc.sendTo.To16())
 							destSockaddr = &addr
 						}
-						if got, want := dut.SendTo(t, socketFD, payload, 0, destSockaddr), len(payload); int(got) != want {
+						ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
+						defer cancel()
+
+						ret, err := dut.SendToWithErrno(ctx, t, socketFD, payload, 0, destSockaddr)
+						// If we are not expecting data, sendto may fail with ENETUNREACH because socket
+						// is not bound to a NIC and there are no other routes.
+						if got, want := err, syscall.ENETUNREACH; !tc.expectData && ret == -1 && got != want {
+							t.Fatalf("got dut.SendTo errno = %s, want %s", got, want)
+						}
+						// However if we do expect data, sendto must not fail.
+						if got, want := int(ret), len(payload); tc.expectData && got != want {
 							t.Fatalf("got dut.SendTo = %d, want %d", got, want)
 						}
 						layers = append(layers, &testbench.Payload{
 							Bytes: payload,
 						})
-						_, err := conn.ExpectFrame(t, layers, time.Second)
+						_, err = conn.ExpectFrame(t, layers, time.Second)
 
 						if !tc.expectData && err == nil {
 							t.Fatal("received unexpected packet, socket is not bound to device")
