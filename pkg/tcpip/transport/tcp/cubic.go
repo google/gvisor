@@ -178,8 +178,8 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 	return int(cwnd)
 }
 
-// HandleNDupAcks implements congestionControl.HandleNDupAcks.
-func (c *cubicState) HandleNDupAcks() {
+// HandleLossDetected implements congestionControl.HandleLossDetected.
+func (c *cubicState) HandleLossDetected() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.5
 	c.numCongestionEvents++
 	c.t = time.Now()

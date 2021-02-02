@@ -301,7 +301,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 			// Step 2. Either the original packet or the retransmission (in the
 			// form of a probe) was lost. Invoke a congestion control response
 			// equivalent to fast recovery.
-			s.cc.HandleNDupAcks()
+			s.cc.HandleLossDetected()
 			s.enterRecovery()
 			s.leaveRecovery()
 		}
