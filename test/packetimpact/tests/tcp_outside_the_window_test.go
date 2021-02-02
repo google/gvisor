@@ -84,6 +84,24 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 			if tt.expectACK && err != nil {
 				t.Fatalf("expected an ACK packet within %s but got none: %s", timeout, err)
 			}
+			// Data packets w/o SYN bits are always acked by Linux. Netstack ACK's data packets
+			// always right now. So only send a second segment and test for no ACK for packets
+			// with no data.
+			if tt.expectACK && tt.payload == nil {
+				// Sending another out-of-window segment immediately should not trigger
+				// an ACK if less than 500ms(default rate limit for out-of-window ACKs)
+				// has passed since the last ACK was sent.
+				t.Logf("sending another segment")
+				conn.Send(t, testbench.TCP{
+					Flags:  testbench.Uint8(tt.tcpFlags),
+					SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
+				}, tt.payload...)
+				timeout := 3 * time.Second
+				gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
+				if err == nil {
+					t.Fatalf("expected no ACK packet but got one: %s", gotACK)
+				}
+			}
 			if !tt.expectACK && gotACK != nil {
 				t.Fatalf("expected no ACK packet within %s but got one: %s", timeout, gotACK)
 			}

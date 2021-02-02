@@ -688,6 +688,10 @@ type endpoint struct {
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
+
+	// lastOutOfWindowAckTime is the time at which the an ACK was sent in response
+	// to an out of window segment being received by this endpoint.
+	lastOutOfWindowAckTime time.Time `state:".(unixTime)"`
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -3124,4 +3128,20 @@ func GetTCPSendBufferLimits(s tcpip.StackHandler) tcpip.SendBufferSizeOption {
 		Default: ss.Default,
 		Max:     ss.Max,
 	}
+}
+
+// allowOutOfWindowAck returns true if an out-of-window ACK can be sent now.
+func (e *endpoint) allowOutOfWindowAck() bool {
+	var limit stack.TCPInvalidRateLimitOption
+	if err := e.stack.Option(&limit); err != nil {
+		panic(fmt.Sprintf("e.stack.Option(%+v) failed with error: %s", limit, err))
+	}
+
+	now := time.Now()
+	if now.Sub(e.lastOutOfWindowAckTime) < time.Duration(limit) {
+		return false
+	}
+
+	e.lastOutOfWindowAckTime = now
+	return true
 }

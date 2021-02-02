@@ -1168,6 +1168,42 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
   EXPECT_EQ(read_bytes, kBufSz);
 }
 
+TEST_P(SimpleTcpSocketTest, SelfConnectSend_NoRandomSave) {
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  constexpr int max_seg = 256;
+  ASSERT_THAT(
+      setsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &max_seg, sizeof(max_seg)),
+      SyscallSucceeds());
+
+  ASSERT_THAT(bind(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+  // Get the bound port.
+  ASSERT_THAT(
+      getsockname(s.get(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+      SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(
+                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+
+  std::vector<char> writebuf(512 << 10);  // 512 KiB.
+
+  // Try to send the whole thing.
+  int n;
+  ASSERT_THAT(n = SendFd(s.get(), writebuf.data(), writebuf.size(), 0),
+              SyscallSucceeds());
+
+  // We should have written the whole thing.
+  EXPECT_EQ(n, writebuf.size());
+  EXPECT_THAT(shutdown(s.get(), SHUT_WR), SyscallSucceedsWithValue(0));
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   const FileDescriptor listener =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));

@@ -15,6 +15,8 @@
 package stack
 
 import (
+	"time"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -29,6 +31,10 @@ const (
 	// DefaultMaxBufferSize is the default maximum permitted size of a
 	// send/receive buffer.
 	DefaultMaxBufferSize = 4 << 20 // 4 MiB
+
+	// defaultTCPInvalidRateLimit is the default value for
+	// stack.TCPInvalidRateLimit.
+	defaultTCPInvalidRateLimit = 500 * time.Millisecond
 )
 
 // ReceiveBufferSizeOption is used by stack.(Stack*).Option/SetOption to
@@ -38,6 +44,10 @@ type ReceiveBufferSizeOption struct {
 	Default int
 	Max     int
 }
+
+// TCPInvalidRateLimitOption is used by stack.(Stack*).Option/SetOption to get/set
+// stack.tcpInvalidRateLimit.
+type TCPInvalidRateLimitOption time.Duration
 
 // SetOption allows setting stack wide options.
 func (s *Stack) SetOption(option interface{}) tcpip.Error {
@@ -74,6 +84,15 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 		s.mu.Unlock()
 		return nil
 
+	case TCPInvalidRateLimitOption:
+		if v < 0 {
+			return &tcpip.ErrInvalidOptionValue{}
+		}
+		s.mu.Lock()
+		s.tcpInvalidRateLimit = time.Duration(v)
+		s.mu.Unlock()
+		return nil
+
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
 	}
@@ -91,6 +110,12 @@ func (s *Stack) Option(option interface{}) tcpip.Error {
 	case *ReceiveBufferSizeOption:
 		s.mu.RLock()
 		*v = s.receiveBufferSize
+		s.mu.RUnlock()
+		return nil
+
+	case *TCPInvalidRateLimitOption:
+		s.mu.RLock()
+		*v = TCPInvalidRateLimitOption(s.tcpInvalidRateLimit)
 		s.mu.RUnlock()
 		return nil
 
