@@ -119,7 +119,11 @@ for dir in "${root}"/pool/*/binary-*; do
   arches+=("${arch}")
   repo_packages="${release}"/main/"${name}"
   mkdir -p "${repo_packages}"
-  (cd "${root}" && apt-ftparchive --arch "${arch}" packages pool > "${repo_packages}"/Packages)
+  (cd "${root}" && apt-ftparchive packages "${dir##${root}/}" > "${repo_packages}"/Packages)
+  if ! [[ -s "${repo_packages}"/Packages ]]; then
+    echo "Packages file is size zero." >&2
+    exit 1
+  fi
   (cd "${repo_packages}" && cat Packages | gzip > Packages.gz)
   (cd "${repo_packages}" && cat Packages | xz > Packages.xz)
 done
