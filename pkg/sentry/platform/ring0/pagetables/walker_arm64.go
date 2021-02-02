@@ -16,104 +16,10 @@
 
 package pagetables
 
-// Visitor is a generic type.
-type Visitor interface {
-	// visit is called on each PTE.
-	visit(start uintptr, pte *PTE, align uintptr)
-
-	// requiresAlloc indicates that new entries should be allocated within
-	// the walked range.
-	requiresAlloc() bool
-
-	// requiresSplit indicates that entries in the given range should be
-	// split if they are huge or jumbo pages.
-	requiresSplit() bool
-}
-
-// Walker walks page tables.
-type Walker struct {
-	// pageTables are the tables to walk.
-	pageTables *PageTables
-
-	// Visitor is the set of arguments.
-	visitor Visitor
-}
-
-// iterateRange iterates over all appropriate levels of page tables for the given range.
-//
-// If requiresAlloc is true, then Set _must_ be called on all given PTEs. The
-// exception is sect pages. If a valid sect page (huge or jumbo) cannot be
-// installed, then the walk will continue to individual entries.
-//
-// This algorithm will attempt to maximize the use of sect pages whenever
-// possible. Whether a sect page is provided will be clear through the range
-// provided in the callback.
-//
-// Note that if requiresAlloc is true, then no gaps will be present. However,
-// if alloc is not set, then the iteration will likely be full of gaps.
-//
-// Note that this function should generally be avoided in favor of Map, Unmap,
-// etc. when not necessary.
-//
-// Precondition: start must be page-aligned.
-//
-// Precondition: start must be less than end.
-//
-// Precondition: If requiresAlloc is true, then start and end should not span
-// non-canonical ranges. If they do, a panic will result.
-//
-//go:nosplit
-func (w *Walker) iterateRange(start, end uintptr) {
-	if start%pteSize != 0 {
-		panic("unaligned start")
-	}
-	if end < start {
-		panic("start > end")
-	}
-	if start < lowerTop {
-		if end <= lowerTop {
-			w.iterateRangeCanonical(start, end)
-		} else if end > lowerTop && end <= upperBottom {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(start, lowerTop)
-		} else {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(start, lowerTop)
-			w.iterateRangeCanonical(upperBottom, end)
-		}
-	} else if start < upperBottom {
-		if end <= upperBottom {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-		} else {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(upperBottom, end)
-		}
-	} else {
-		w.iterateRangeCanonical(start, end)
-	}
-}
-
-// next returns the next address quantized by the given size.
-//
-//go:nosplit
-func next(start uintptr, size uintptr) uintptr {
-	start &= ^(size - 1)
-	start += size
-	return start
-}
-
 // iterateRangeCanonical walks a canonical range.
 //
 //go:nosplit
-func (w *Walker) iterateRangeCanonical(start, end uintptr) {
+func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 	pgdEntryIndex := w.pageTables.root
 	if start >= upperBottom {
 		pgdEntryIndex = w.pageTables.archPageTables.root
@@ -160,7 +66,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 				// new page for the pmd.
 				if start&(pudSize-1) == 0 && end-start >= pudSize {
 					pudEntry.SetSect()
-					w.visitor.visit(uintptr(start), pudEntry, pudSize-1)
+					if !w.visitor.visit(uintptr(start), pudEntry, pudSize-1) {
+						return false
+					}
 					if pudEntry.Valid() {
 						start = next(start, pudSize)
 						continue
@@ -185,7 +93,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					pudEntry.setPageTable(w.pageTables, pmdEntries)
 				} else {
 					// A sect page to be checked directly.
-					w.visitor.visit(uintptr(start), pudEntry, pudSize-1)
+					if !w.visitor.visit(uintptr(start), pudEntry, pudSize-1) {
+						return false
+					}
 
 					// Might have been cleared.
 					if !pudEntry.Valid() {
@@ -222,7 +132,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					// As above, we can skip allocating a new page.
 					if start&(pmdSize-1) == 0 && end-start >= pmdSize {
 						pmdEntry.SetSect()
-						w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1)
+						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1) {
+							return false
+						}
 						if pmdEntry.Valid() {
 							start = next(start, pmdSize)
 							continue
@@ -246,7 +158,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 						pmdEntry.setPageTable(w.pageTables, pteEntries)
 					} else {
 						// A huge page to be checked directly.
-						w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1)
+						if !w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1) {
+							return false
+						}
 
 						// Might have been cleared.
 						if !pmdEntry.Valid() {
@@ -276,7 +190,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					}
 
 					// At this point, we are guaranteed that start%pteSize == 0.
-					w.visitor.visit(uintptr(start), pteEntry, pteSize-1)
+					if !w.visitor.visit(uintptr(start), pteEntry, pteSize-1) {
+						return false
+					}
 					if !pteEntry.Valid() {
 						if w.visitor.requiresAlloc() {
 							panic("PTE not set after iteration with requiresAlloc!")
@@ -311,4 +227,5 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 			w.pageTables.Allocator.FreePTEs(pudEntries)
 		}
 	}
+	return true
 }

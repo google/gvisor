@@ -156,18 +156,17 @@ func (p *PTE) IsSect() bool {
 //
 //go:nosplit
 func (p *PTE) Set(addr uintptr, opts MapOpts) {
-	if !opts.AccessType.Any() {
-		p.Clear()
-		return
-	}
-	v := (addr &^ optionMask) | protDefault | nG | readOnly
-
+	v := (addr &^ optionMask) | nG | readOnly | protDefault
 	if p.IsSect() {
 		// Note that this is inherited from the previous instance. Set
 		// does not change the value of Sect. See above.
 		v |= typeSect
 	} else {
 		v |= typePage
+	}
+	if !opts.AccessType.Any() {
+		// Leave as non-valid if no access is available.
+		v &^= pteValid
 	}
 
 	if opts.Global {

@@ -9,7 +9,10 @@ package(licenses = ["notice"])
     # architecture builds.
     go_template(
         name = "generic_walker_%s" % arch,
-        srcs = ["walker_%s.go" % arch],
+        srcs = [
+            "walker_generic.go",
+            "walker_%s.go" % arch,
+        ],
         opt_types = [
             "Visitor",
         ],
@@ -50,6 +53,7 @@ go_library(
         "pcids_x86.go",
         "walker_amd64.go",
         "walker_arm64.go",
+        "walker_generic.go",
         ":walker_empty_amd64",
         ":walker_empty_arm64",
         ":walker_lookup_amd64",
