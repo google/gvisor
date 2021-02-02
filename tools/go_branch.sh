@@ -48,7 +48,7 @@ readonly module origpwd othersrc
 # Build an amd64 & arm64 gopath.
 declare -r go_amd64="${tmp_dir}/amd64"
 declare -r go_arm64="${tmp_dir}/arm64"
-make build BAZEL_OPTIONS="" TARGETS="//:gopath" 2>/dev/null
+make build BAZEL_OPTIONS="" TARGETS="//:gopath"
 rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_amd64}"
 make build BAZEL_OPTIONS=--config=cross-aarch64 TARGETS="//:gopath" 2>/dev/null
 rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_arm64}"

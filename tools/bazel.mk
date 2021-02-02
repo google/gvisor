@@ -75,6 +75,7 @@ UID := $(shell id -u ${USER})
 GID := $(shell id -g ${USER})
 USERADD_OPTIONS :=
 DOCKER_RUN_OPTIONS :=
+DOCKER_RUN_OPTIONS += --rm
 DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
 DOCKER_RUN_OPTIONS += --entrypoint ""
 DOCKER_RUN_OPTIONS += --init
@@ -160,15 +161,13 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
-# Note: when starting the bazel server, we tie the life of the container to the
-# bazel server's life, so that the container disappears naturally.
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
 	@$(call header,DOCKER RUN)
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
-	@mkdir -p $(GCLOUD_CONFIG)
 	@mkdir -p $(BAZEL_CACHE)
-	@docker run -d --rm --name $(DOCKER_NAME) \
+	@mkdir -p $(GCLOUD_CONFIG)
+	@docker run -d --name $(DOCKER_NAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
 	  $(DOCKER_RUN_OPTIONS) \

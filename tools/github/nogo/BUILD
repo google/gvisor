@@ -11,6 +11,6 @@ go_library(
     ],
     deps = [
         "//tools/nogo",
-        "@com_github_google_go_github_v28//github:go_default_library",
+        "@com_github_google_go_github_v32//github:go_default_library",
     ],
 )
