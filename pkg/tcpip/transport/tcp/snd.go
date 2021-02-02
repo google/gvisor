@@ -51,9 +51,10 @@ const (
 // congestionControl is an interface that must be implemented by any supported
 // congestion control algorithm.
 type congestionControl interface {
-	// HandleNDupAcks is invoked when sender.dupAckCount >= nDupAckThreshold
-	// just before entering fast retransmit.
-	HandleNDupAcks()
+	// HandleLossDetected is invoked when the loss is detected by RACK or
+	// sender.dupAckCount >= nDupAckThreshold just before entering fast
+	// retransmit.
+	HandleLossDetected()
 
 	// HandleRTOExpired is invoked when the retransmit timer expires.
 	HandleRTOExpired()
@@ -1152,7 +1153,7 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 		s.dupAckCount = 0
 		return false
 	}
-	s.cc.HandleNDupAcks()
+	s.cc.HandleLossDetected()
 	s.enterRecovery()
 	s.dupAckCount = 0
 	return true
