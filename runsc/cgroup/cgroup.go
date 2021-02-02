@@ -243,8 +243,6 @@ func loadPathsHelperV2WithMountinfo(cgroup, mountinfo io.Reader) (map[string]str
 			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
 		}
 		paths[controller] = tokens[2]
-		log.Warningf("got line %+v", scanner.Text())
-		log.Warningf("got paths %+v", paths)
 		break
 	}
 	if err := scanner.Err(); err != nil {
