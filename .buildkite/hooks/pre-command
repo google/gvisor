@@ -32,3 +32,11 @@ fi
 
 # Clear existing profiles.
 sudo rm -rf /tmp/profile
+
+# Fix any Go permissions.
+if [[ -d "${HOME}/.cache/go-build" ]]; then
+  sudo chown -R "$(id -u):$(id -g)" "${HOME}/.cache/go-build"
+fi
+fi [[ -d "${HOME}/go" ]]; then
+  sudo chown -R "$(id -u):$(id -g)" "${HOME}/go"
+fi
