@@ -79,10 +79,10 @@ func (r *renoState) Update(packetsAcked int) {
 	r.updateCongestionAvoidance(packetsAcked)
 }
 
-// HandleNDupAcks implements congestionControl.HandleNDupAcks.
-func (r *renoState) HandleNDupAcks() {
-	// A retransmit was triggered due to nDupAckThreshold
-	// being hit. Reduce our slow start threshold.
+// HandleLossDetected implements congestionControl.HandleLossDetected.
+func (r *renoState) HandleLossDetected() {
+	// A retransmit was triggered due to nDupAckThreshold or when RACK
+	// detected loss. Reduce our slow start threshold.
 	r.reduceSlowStartThreshold()
 }
 
