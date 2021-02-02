@@ -64,8 +64,8 @@ go_library(
         ":walker_unmap_arm64",
     ],
     visibility = [
+        "//pkg/ring0:__subpackages__",
         "//pkg/sentry/platform/kvm:__subpackages__",
-        "//pkg/sentry/platform/ring0:__subpackages__",
     ],
     deps = [
         "//pkg/sync",

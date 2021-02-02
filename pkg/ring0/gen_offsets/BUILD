@@ -7,14 +7,14 @@ go_template_instance(
     name = "defs_impl_arm64",
     out = "defs_impl_arm64.go",
     package = "main",
-    template = "//pkg/sentry/platform/ring0:defs_arm64",
+    template = "//pkg/ring0:defs_arm64",
 )
 
 go_template_instance(
     name = "defs_impl_amd64",
     out = "defs_impl_amd64.go",
     package = "main",
-    template = "//pkg/sentry/platform/ring0:defs_amd64",
+    template = "//pkg/ring0:defs_amd64",
 )
 
 go_binary(
@@ -28,13 +28,13 @@ go_binary(
     # pass the sentry deps test.
     system_malloc = True,
     visibility = [
+        "//pkg/ring0:__pkg__",
         "//pkg/sentry/platform/kvm:__pkg__",
-        "//pkg/sentry/platform/ring0:__pkg__",
     ],
     deps = [
         "//pkg/cpuid",
+        "//pkg/ring0/pagetables",
         "//pkg/sentry/arch",
-        "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],
 )

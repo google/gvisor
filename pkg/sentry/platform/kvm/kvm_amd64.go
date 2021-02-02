@@ -18,7 +18,7 @@ package kvm
 
 import (
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/ring0"
 )
 
 // userRegs represents KVM user registers.

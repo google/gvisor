@@ -17,7 +17,6 @@
 package ring0
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
