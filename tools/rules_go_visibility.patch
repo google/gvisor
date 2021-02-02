@@ -1,0 +1,22 @@
+diff --git a/third_party/org_golang_x_tools-gazelle.patch b/third_party/org_golang_x_tools-gazelle.patch
+index 7bdacff5..2fe9ce93 100644
+--- a/third_party/org_golang_x_tools-gazelle.patch
++++ b/third_party/org_golang_x_tools-gazelle.patch
+@@ -2054,7 +2054,7 @@ diff -urN b/go/analysis/internal/facts/BUILD.bazel c/go/analysis/internal/facts/
+ +        "imports.go",
+ +    ],
+ +    importpath = "golang.org/x/tools/go/analysis/internal/facts",
+-+    visibility = ["//go/analysis:__subpackages__"],
+++    visibility = ["//visibility:public"],
+ +    deps = [
+ +        "//go/analysis",
+ +        "//go/types/objectpath",
+@@ -2078,7 +2078,7 @@ diff -urN b/go/analysis/internal/facts/BUILD.bazel c/go/analysis/internal/facts/
+ +alias(
+ +    name = "go_default_library",
+ +    actual = ":facts",
+-+    visibility = ["//go/analysis:__subpackages__"],
+++    visibility = ["//visibility:public"],
+ +)
+ +
+ +go_test(

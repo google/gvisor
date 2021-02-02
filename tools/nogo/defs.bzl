@@ -188,6 +188,14 @@ def _nogo_aspect_impl(target, ctx):
     # All work is done in the shadow properties for go rules. For a proto
     # library, we simply skip the analysis portion but still need to return a
     # valid NogoInfo to reference the generated binary.
+    #
+    # Note that we almost exclusively use go_library, not go_tool_library.
+    # This is because nogo is manually annotated, so the go_tool_library kind
+    # is not needed to avoid dependency loops. Unfortunately, bazel coverdata
+    # is exported *only* as a go_tool_library. This does not cause a problem,
+    # since there is guaranteed to be no conflict. However for consistency,
+    # we should not introduce new go_tool_library dependencies unless strictly
+    # necessary.
     if ctx.rule.kind in ("go_library", "go_tool_library", "go_binary", "go_test"):
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
