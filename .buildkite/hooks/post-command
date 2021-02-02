@@ -51,6 +51,9 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   # Attempt to clear the cache and shut down.
   make clean || echo "make clean failed with code $?"
   make bazel-shutdown || echo "make bazel-shutdown failed with code $?"
+  # Attempt to clear any Go cache.
+  sudo rm -rf "${HOME}/.cache/go-build"
+  sudo rm -rf "${HOME}/go"
 fi
 
 # Kill any running containers (clear state).
