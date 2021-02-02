@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
 // dieArchSetup initializes the state for dieTrampoline.
