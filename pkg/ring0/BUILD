@@ -43,16 +43,16 @@ arch_genrule(
     name = "entry_impl_amd64",
     srcs = ["entry_amd64.s"],
     outs = ["entry_impl_amd64.s"],
-    cmd = "(echo -e '// build +amd64\\n' && QEMU $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(location entry_amd64.s)) > $@",
-    tools = ["//pkg/sentry/platform/ring0/gen_offsets"],
+    cmd = "(echo -e '// build +amd64\\n' && QEMU $(location //pkg/ring0/gen_offsets) && cat $(location entry_amd64.s)) > $@",
+    tools = ["//pkg/ring0/gen_offsets"],
 )
 
 arch_genrule(
     name = "entry_impl_arm64",
     srcs = ["entry_arm64.s"],
     outs = ["entry_impl_arm64.s"],
-    cmd = "(echo -e '// build +arm64\\n' && QEMU $(location //pkg/sentry/platform/ring0/gen_offsets) && cat $(location entry_arm64.s)) > $@",
-    tools = ["//pkg/sentry/platform/ring0/gen_offsets"],
+    cmd = "(echo -e '// build +arm64\\n' && QEMU $(location //pkg/ring0/gen_offsets) && cat $(location entry_arm64.s)) > $@",
+    tools = ["//pkg/ring0/gen_offsets"],
 )
 
 go_library(
@@ -77,9 +77,9 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/cpuid",
+        "//pkg/ring0/pagetables",
         "//pkg/safecopy",
         "//pkg/sentry/arch",
-        "//pkg/sentry/platform/ring0/pagetables",
         "//pkg/usermem",
     ],
 )
