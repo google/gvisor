@@ -1548,3 +1548,13 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq
 
 	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
 }
+
+// maybeSendOutOfWindowAck sends an ACK if we are not being rate limited
+// currently.
+func (s *sender) maybeSendOutOfWindowAck(seg *segment) {
+	// Data packets are unlikely to be part of an ACK loop. So always send
+	// an ACK for a packet w/ data.
+	if seg.payloadSize() > 0 || s.ep.allowOutOfWindowAck() {
+		s.sendAck()
+	}
+}

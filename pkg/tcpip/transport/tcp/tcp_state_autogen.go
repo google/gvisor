@@ -217,6 +217,7 @@ func (e *endpoint) StateFields() []string {
 		"txHash",
 		"owner",
 		"ops",
+		"lastOutOfWindowAckTime",
 	}
 }
 
@@ -228,6 +229,8 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(26, recentTSTimeValue)
 	var acceptedChanValue []*endpoint = e.saveAcceptedChan()
 	stateSinkObject.SaveValue(49, acceptedChanValue)
+	var lastOutOfWindowAckTimeValue unixTime = e.saveLastOutOfWindowAckTime()
+	stateSinkObject.SaveValue(61, lastOutOfWindowAckTimeValue)
 	stateSinkObject.Save(0, &e.EndpointInfo)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.waiterQueue)
@@ -350,6 +353,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(13, new(EndpointState), func(y interface{}) { e.loadState(y.(EndpointState)) })
 	stateSourceObject.LoadValue(26, new(unixTime), func(y interface{}) { e.loadRecentTSTime(y.(unixTime)) })
 	stateSourceObject.LoadValue(49, new([]*endpoint), func(y interface{}) { e.loadAcceptedChan(y.([]*endpoint)) })
+	stateSourceObject.LoadValue(61, new(unixTime), func(y interface{}) { e.loadLastOutOfWindowAckTime(y.(unixTime)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

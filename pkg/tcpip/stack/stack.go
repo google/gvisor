@@ -458,6 +458,18 @@ type Stack struct {
 	// receiveBufferSize holds the min/default/max receive buffer sizes for
 	// endpoints other than TCP.
 	receiveBufferSize ReceiveBufferSizeOption
+
+	// tcpInvalidRateLimit is the maximal rate for sending duplicate
+	// acknowledgements in response to incoming TCP packets that are for an existing
+	// connection but that are invalid due to any of the following reasons:
+	//
+	//   a) out-of-window sequence number.
+	//   b) out-of-window acknowledgement number.
+	//   c) PAWS check failure (when implemented).
+	//
+	// This is required to prevent potential ACK loops.
+	// Setting this to 0 will disable all rate limiting.
+	tcpInvalidRateLimit time.Duration
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -668,6 +680,7 @@ func New(opts Options) *Stack {
 			Default: DefaultBufferSize,
 			Max:     DefaultMaxBufferSize,
 		},
+		tcpInvalidRateLimit: defaultTCPInvalidRateLimit,
 	}
 
 	// Add specified network protocols.

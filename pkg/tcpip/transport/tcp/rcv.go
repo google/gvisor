@@ -385,7 +385,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// fails, we ignore the packet:
 		// https://github.com/torvalds/linux/blob/v5.8/net/ipv4/tcp_input.c#L5591
 		if r.ep.snd.sndNxt.LessThan(s.ackNumber) {
-			r.ep.snd.sendAck()
+			r.ep.snd.maybeSendOutOfWindowAck(s)
 			return true, nil
 		}
 
@@ -454,7 +454,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// send an ACK and stop further processing of the segment.
 	// This is according to RFC 793, page 68.
 	if !r.acceptable(segSeq, segLen) {
-		r.ep.snd.sendAck()
+		r.ep.snd.maybeSendOutOfWindowAck(s)
 		return true, nil
 	}
 
