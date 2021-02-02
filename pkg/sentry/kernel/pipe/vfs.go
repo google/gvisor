@@ -368,17 +368,15 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst
 	})
 }
 
-// CopyOutFrom implements usermem.IO.CopyOutFrom.
+// CopyOutFrom implements usermem.IO.CopyOutFrom. Note that it is the caller's
+// responsibility to call fd.pipe.Notify(waiter.EventIn) after the write is
+// completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
-	n, err := fd.pipe.writeLocked(ars.NumBytes(), func(dsts safemem.BlockSeq) (uint64, error) {
+	return fd.pipe.writeLocked(ars.NumBytes(), func(dsts safemem.BlockSeq) (uint64, error) {
 		return src.ReadToBlocks(dsts)
 	})
-	if n > 0 {
-		fd.pipe.Notify(waiter.EventIn)
-	}
-	return n, err
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
