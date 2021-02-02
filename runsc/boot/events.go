@@ -15,21 +15,30 @@
 package boot
 
 import (
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
+
+// EventOut is the return type of the Event command.
+type EventOut struct {
+	Event Event `json:"event"`
+
+	// ContainerUsage maps each container ID to its total CPU usage.
+	ContainerUsage map[string]uint64 `json:"containerUsage"`
+}
 
 // Event struct for encoding the event data to JSON. Corresponds to runc's
 // main.event struct.
 type Event struct {
-	Type string      `json:"type"`
-	ID   string      `json:"id"`
-	Data interface{} `json:"data,omitempty"`
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Data Stats  `json:"data"`
 }
 
 // Stats is the runc specific stats structure for stability when encoding and
 // decoding stats.
 type Stats struct {
+	CPU    CPU    `json:"cpu"`
 	Memory Memory `json:"memory"`
 	Pids   Pids   `json:"pids"`
 }
@@ -58,24 +67,42 @@ type Memory struct {
 	Raw       map[string]uint64 `json:"raw,omitempty"`
 }
 
-// Event gets the events from the container.
-func (cm *containerManager) Event(_ *struct{}, out *Event) error {
-	stats := &Stats{}
-	stats.populateMemory(cm.l.k)
-	stats.populatePIDs(cm.l.k)
-	*out = Event{Type: "stats", Data: stats}
-	return nil
+// CPU contains stats on the CPU.
+type CPU struct {
+	Usage CPUUsage `json:"usage"`
 }
 
-func (s *Stats) populateMemory(k *kernel.Kernel) {
-	mem := k.MemoryFile()
+// CPUUsage contains stats on CPU usage.
+type CPUUsage struct {
+	Kernel uint64   `json:"kernel,omitempty"`
+	User   uint64   `json:"user,omitempty"`
+	Total  uint64   `json:"total,omitempty"`
+	PerCPU []uint64 `json:"percpu,omitempty"`
+}
+
+// Event gets the events from the container.
+func (cm *containerManager) Event(_ *struct{}, out *EventOut) error {
+	*out = EventOut{
+		Event: Event{
+			Type: "stats",
+		},
+	}
+
+	// Memory usage.
+	// TODO(gvisor.dev/issue/172): Per-container accounting.
+	mem := cm.l.k.MemoryFile()
 	mem.UpdateUsage()
 	_, totalUsage := usage.MemoryAccounting.Copy()
-	s.Memory.Usage = MemoryEntry{
+	out.Event.Data.Memory.Usage = MemoryEntry{
 		Usage: totalUsage,
 	}
-}
 
-func (s *Stats) populatePIDs(k *kernel.Kernel) {
-	s.Pids.Current = uint64(len(k.TaskSet().Root.ThreadGroups()))
+	// PIDs.
+	// TODO(gvisor.dev/issue/172): Per-container accounting.
+	out.Event.Data.Pids.Current = uint64(len(cm.l.k.TaskSet().Root.ThreadGroups()))
+
+	// CPU usage by container.
+	out.ContainerUsage = control.ContainerUsage(cm.l.k)
+
+	return nil
 }

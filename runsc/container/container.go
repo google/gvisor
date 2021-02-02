@@ -486,12 +486,20 @@ func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 }
 
 // Event returns events for the container.
-func (c *Container) Event() (*boot.Event, error) {
+func (c *Container) Event() (*boot.EventOut, error) {
 	log.Debugf("Getting events for container, cid: %s", c.ID)
 	if err := c.requireStatus("get events for", Created, Running, Paused); err != nil {
 		return nil, err
 	}
-	return c.Sandbox.Event(c.ID)
+	event, err := c.Sandbox.Event(c.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Some stats can utilize host cgroups for accuracy.
+	c.populateStats(event)
+
+	return event, nil
 }
 
 // SandboxPid returns the Pid of the sandbox the container is running in, or -1 if the
@@ -1109,4 +1117,55 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 		return fmt.Errorf("setting oom_score_adj to %q: %v", scoreAdj, err)
 	}
 	return nil
+}
+
+// populateStats populates event with stats estimates based on cgroups and the
+// sentry's accounting.
+// TODO(gvisor.dev/issue/172): This is an estimation; we should do more
+// detailed accounting.
+func (c *Container) populateStats(event *boot.EventOut) {
+	// The events command, when run for all running containers, should
+	// account for the full cgroup CPU usage. We split cgroup usage
+	// proportionally according to the sentry-internal usage measurements,
+	// only counting Running containers.
+	log.Warningf("event.ContainerUsage: %v", event.ContainerUsage)
+	var containerUsage uint64
+	var allContainersUsage uint64
+	for ID, usage := range event.ContainerUsage {
+		allContainersUsage += usage
+		if ID == c.ID {
+			containerUsage = usage
+		}
+	}
+
+	cgroup, err := c.Sandbox.FindCgroup()
+	if err != nil {
+		// No cgroup, so rely purely on the sentry's accounting.
+		log.Warningf("events: no cgroups")
+		event.Event.Data.CPU.Usage.Total = containerUsage
+		return
+	}
+
+	// Get the host cgroup CPU usage.
+	cgroupsUsage, err := cgroup.CPUUsage()
+	if err != nil {
+		// No cgroup usage, so rely purely on the sentry's accounting.
+		log.Warningf("events: failed when getting cgroup CPU usage for container: %v", err)
+		event.Event.Data.CPU.Usage.Total = containerUsage
+		return
+	}
+
+	// If the sentry reports no memory usage, fall back on cgroups and
+	// split usage equally across containers.
+	if allContainersUsage == 0 {
+		log.Warningf("events: no sentry CPU usage reported")
+		allContainersUsage = cgroupsUsage
+		containerUsage = cgroupsUsage / uint64(len(event.ContainerUsage))
+	}
+
+	log.Warningf("%f, %f, %f", containerUsage, cgroupsUsage, allContainersUsage)
+	// Scaling can easily overflow a uint64 (e.g. a containerUsage and
+	// cgroupsUsage of 16 seconds each will overflow), so use floats.
+	event.Event.Data.CPU.Usage.Total = uint64(float64(containerUsage) * (float64(cgroupsUsage) / float64(allContainersUsage)))
+	return
 }

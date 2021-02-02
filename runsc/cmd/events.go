@@ -93,9 +93,9 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 
 		// err must be preserved because it is used below when breaking
 		// out of the loop.
-		b, err := json.Marshal(ev)
+		b, err := json.Marshal(ev.Event)
 		if err != nil {
-			log.Warningf("Error while marshalling event %v: %v", ev, err)
+			log.Warningf("Error while marshalling event %v: %v", ev.Event, err)
 		} else {
 			os.Stdout.Write(b)
 		}
