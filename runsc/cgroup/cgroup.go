@@ -281,8 +281,13 @@ func New(spec *specs.Spec) (*Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
 		return nil, nil
 	}
+	return NewFromPath(spec.Linux.CgroupsPath)
+}
+
+// NewFromPath creates a new Cgroup instance.
+func NewFromPath(cgroupsPath string) (*Cgroup, error) {
 	var parents map[string]string
-	if !filepath.IsAbs(spec.Linux.CgroupsPath) {
+	if !filepath.IsAbs(cgroupsPath) {
 		var err error
 		parents, err = LoadPaths("self")
 		if err != nil {
@@ -291,7 +296,7 @@ func New(spec *specs.Spec) (*Cgroup, error) {
 	}
 	own := make(map[string]bool)
 	return &Cgroup{
-		Name:    spec.Linux.CgroupsPath,
+		Name:    cgroupsPath,
 		Parents: parents,
 		Own:     own,
 	}, nil
@@ -389,6 +394,9 @@ func (c *Cgroup) Join() (func(), error) {
 	undo = func() {
 		for _, path := range undoPaths {
 			log.Debugf("Restoring cgroup %q", path)
+			// Writing the value 0 to a cgroup.procs file causes
+			// the writing process to be moved to the corresponding
+			// cgroup. - cgroups(7).
 			if err := setValue(path, "cgroup.procs", "0"); err != nil {
 				log.Warningf("Error restoring cgroup %q: %v", path, err)
 			}
@@ -399,6 +407,9 @@ func (c *Cgroup) Join() (func(), error) {
 	for key, cfg := range controllers {
 		path := c.makePath(key)
 		log.Debugf("Joining cgroup %q", path)
+		// Writing the value 0 to a cgroup.procs file causes the
+		// writing process to be moved to the corresponding cgroup.
+		// - cgroups(7).
 		if err := setValue(path, "cgroup.procs", "0"); err != nil {
 			if cfg.optional && os.IsNotExist(err) {
 				continue
@@ -424,6 +435,16 @@ func (c *Cgroup) CPUQuota() (float64, error) {
 		return -1, err
 	}
 	return float64(quota) / float64(period), nil
+}
+
+// CPUUsage returns the total CPU usage of the cgroup.
+func (c *Cgroup) CPUUsage() (uint64, error) {
+	path := c.makePath("cpuacct")
+	usage, err := getValue(path, "cpuacct.usage")
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseUint(strings.TrimSpace(usage), 10, 64)
 }
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.

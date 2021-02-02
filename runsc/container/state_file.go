@@ -49,7 +49,7 @@ type LoadOpts struct {
 // Returns ErrNotExist if no container is found. Returns error in case more than
 // one containers matching the ID prefix is found.
 func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
-	//log.Debugf("Load container, rootDir: %q, partial cid: %s", rootDir, partialID)
+	log.Debugf("Load container, rootDir: %q, id: %+v, opts: %+v", rootDir, id, opts)
 	if !opts.Exact {
 		var err error
 		id, err = findContainerID(rootDir, id.ContainerID)
