@@ -308,6 +308,22 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	return pl, nil
 }
 
+// FindCgroup returns the sandbox's Cgroup, or an error if it does not have one.
+func (s *Sandbox) FindCgroup() (*cgroup.Cgroup, error) {
+	paths, err := cgroup.LoadPaths(strconv.Itoa(s.Pid))
+	if err != nil {
+		return nil, err
+	}
+	// runsc places sandboxes in the same cgroup for each controller, so we
+	// pick an arbitrary controller here to get the cgroup path.
+	const controller = "cpuacct"
+	controllerPath, ok := paths[controller]
+	if !ok {
+		return nil, fmt.Errorf("no %q controller found", controller)
+	}
+	return cgroup.NewFromPath(controllerPath)
+}
+
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
 func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
@@ -327,7 +343,7 @@ func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
 }
 
 // Event retrieves stats about the sandbox such as memory and CPU utilization.
-func (s *Sandbox) Event(cid string) (*boot.Event, error) {
+func (s *Sandbox) Event(cid string) (*boot.EventOut, error) {
 	log.Debugf("Getting events for container %q in sandbox %q", cid, s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -335,13 +351,13 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	}
 	defer conn.Close()
 
-	var e boot.Event
+	var e boot.EventOut
 	// TODO(b/129292330): Pass in the container id (cid) here. The sandbox
 	// should return events only for that container.
 	if err := conn.Call(boot.ContainerEvent, nil, &e); err != nil {
 		return nil, fmt.Errorf("retrieving event data from sandbox: %v", err)
 	}
-	e.ID = cid
+	e.Event.ID = cid
 	return &e, nil
 }
 

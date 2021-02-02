@@ -102,7 +102,7 @@ type containerInfo struct {
 	goferFDs []*fd.FD
 }
 
-// Loader keeps state needed to start the kernel and run the container..
+// Loader keeps state needed to start the kernel and run the container.
 type Loader struct {
 	// k is the kernel.
 	k *kernel.Kernel

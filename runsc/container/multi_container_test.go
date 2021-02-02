@@ -15,7 +15,6 @@
 package container
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -322,8 +321,8 @@ func TestMultiContainerWait(t *testing.T) {
 	}
 }
 
-// TestExecWait ensures what we can wait containers and individual processes in the
-// sandbox that have already exited.
+// TestExecWait ensures what we can wait on containers and individual processes
+// in the sandbox that have already exited.
 func TestExecWait(t *testing.T) {
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -1743,8 +1742,9 @@ func TestMultiContainerEvent(t *testing.T) {
 
 	// Setup the containers.
 	sleep := []string{"/bin/sleep", "100"}
+	busy := []string{"/bin/bash", "-c", "i=0 ; while true ; do (( i += 1 )) ; done"}
 	quick := []string{"/bin/true"}
-	podSpec, ids := createSpecs(sleep, sleep, quick)
+	podSpec, ids := createSpecs(sleep, busy, quick)
 	containers, cleanup, err := startContainers(conf, podSpec, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -1755,37 +1755,58 @@ func TestMultiContainerEvent(t *testing.T) {
 		t.Logf("Running containerd %s", cont.ID)
 	}
 
-	// Wait for last container to stabilize the process count that is checked
-	// further below.
+	// Wait for last container to stabilize the process count that is
+	// checked further below.
 	if ws, err := containers[2].Wait(); err != nil || ws != 0 {
 		t.Fatalf("Container.Wait, status: %v, err: %v", ws, err)
 	}
+	expectedPL := []*control.Process{
+		newProcessBuilder().Cmd("sleep").Process(),
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		t.Errorf("failed to wait for sleep to start: %v", err)
+	}
+	expectedPL = []*control.Process{
+		newProcessBuilder().Cmd("bash").Process(),
+	}
+	if err := waitForProcessList(containers[1], expectedPL); err != nil {
+		t.Errorf("failed to wait for bash to start: %v", err)
+	}
 
 	// Check events for running containers.
+	var prevUsage uint64
 	for _, cont := range containers[:2] {
-		evt, err := cont.Event()
+		ret, err := cont.Event()
 		if err != nil {
 			t.Errorf("Container.Events(): %v", err)
 		}
+		evt := ret.Event
 		if want := "stats"; evt.Type != want {
-			t.Errorf("Wrong event type, want: %s, got :%s", want, evt.Type)
+			t.Errorf("Wrong event type, want: %s, got: %s", want, evt.Type)
 		}
 		if cont.ID != evt.ID {
-			t.Errorf("Wrong container ID, want: %s, got :%s", cont.ID, evt.ID)
-		}
-		// Event.Data is an interface, so it comes from the wire was
-		// map[string]string. Marshal and unmarshall again to the correc type.
-		data, err := json.Marshal(evt.Data)
-		if err != nil {
-			t.Fatalf("invalid event data: %v", err)
-		}
-		var stats boot.Stats
-		if err := json.Unmarshal(data, &stats); err != nil {
-			t.Fatalf("invalid event data: %v", err)
+			t.Errorf("Wrong container ID, want: %s, got: %s", cont.ID, evt.ID)
 		}
 		// One process per remaining container.
-		if want := uint64(2); stats.Pids.Current != want {
-			t.Errorf("Wrong number of PIDs, want: %d, got :%d", want, stats.Pids.Current)
+		if got, want := evt.Data.Pids.Current, uint64(2); got != want {
+			t.Errorf("Wrong number of PIDs, want: %d, got: %d", want, got)
+		}
+
+		// Both remaining containers should have nonzero usage, and
+		// 'busy' should have higher usage than 'sleep'.
+		usage := evt.Data.CPU.Usage.Total
+		if usage == 0 {
+			t.Errorf("Running container should report nonzero CPU usage, but got %d", usage)
+		}
+		if usage <= prevUsage {
+			t.Errorf("Expected container %s to use more than %d ns of CPU, but used %d", cont.ID, prevUsage, usage)
+		}
+		t.Logf("Container %s usage: %d", cont.ID, usage)
+		prevUsage = usage
+
+		// The exited container should have a usage of zero.
+		if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
+			t.Errorf("Exited container should report 0 CPU usage, but got %d", exited)
 		}
 	}
 
