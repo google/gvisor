@@ -333,7 +333,9 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	// number and "After sending the acknowledgment, drop the unacceptable
 	// segment and return."
 	if !s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
-		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
+		if h.ep.allowOutOfWindowAck() {
+			h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
+		}
 		return nil
 	}
 
@@ -1185,8 +1187,7 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
 		// endpoint MUST terminate its connection.  The local TCP endpoint
 		// should then rely on SYN retransmission from the remote end to
 		// re-establish the connection.
-
-		e.snd.sendAck()
+		e.snd.maybeSendOutOfWindowAck(s)
 	} else if s.flagIsSet(header.TCPFlagAck) {
 		// Patch the window size in the segment according to the
 		// send window scale.

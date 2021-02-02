@@ -6302,6 +6302,13 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 
 	// Enable Auto-tuning.
 	stk := c.Stack()
+	// Disable out of window rate limiting for this test by setting it to 0 as we
+	// use out of window ACKs to measure the advertised window.
+	var tcpInvalidRateLimit stack.TCPInvalidRateLimitOption
+	if err := stk.SetOption(tcpInvalidRateLimit); err != nil {
+		t.Fatalf("e.stack.SetOption(%#v) = %s", tcpInvalidRateLimit, err)
+	}
+
 	const receiveBufferSize = 80 << 10 // 80KB.
 	const maxReceiveBufferSize = receiveBufferSize * 10
 	{

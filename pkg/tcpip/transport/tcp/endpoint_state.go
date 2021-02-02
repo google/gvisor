@@ -308,6 +308,16 @@ func (e *endpoint) loadRecentTSTime(unix unixTime) {
 	e.recentTSTime = time.Unix(unix.second, unix.nano)
 }
 
+// saveLastOutOfWindowAckTime is invoked by stateify.
+func (e *endpoint) saveLastOutOfWindowAckTime() unixTime {
+	return unixTime{e.lastOutOfWindowAckTime.Unix(), e.lastOutOfWindowAckTime.UnixNano()}
+}
+
+// loadLastOutOfWindowAckTime is invoked by stateify.
+func (e *endpoint) loadLastOutOfWindowAckTime(unix unixTime) {
+	e.lastOutOfWindowAckTime = time.Unix(unix.second, unix.nano)
+}
+
 // saveMeasureTime is invoked by stateify.
 func (r *rcvBufAutoTuneParams) saveMeasureTime() unixTime {
 	return unixTime{r.measureTime.Unix(), r.measureTime.UnixNano()}
