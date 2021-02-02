@@ -122,7 +122,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("true")
 			spec.Process.Terminal = true
@@ -164,7 +164,7 @@ func TestConsoleSocket(t *testing.T) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestMultiContainerConsoleSocket(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -495,7 +495,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 
 // Test that terminal works with root and sub-containers.
 func TestMultiContainerTerminal(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {

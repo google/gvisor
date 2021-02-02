@@ -312,8 +312,7 @@ var (
 	all       = append(noOverlay, overlay)
 )
 
-// configs generates different configurations to run tests.
-func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
+func configsHelper(t *testing.T, opts ...configOption) map[string]*config.Config {
 	// Always load the default config.
 	cs := make(map[string]*config.Config)
 	testutil.TestConfig(t)
@@ -339,10 +338,12 @@ func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 	return cs
 }
 
-// TODO(gvisor.dev/issue/1624): Merge with configs when VFS2 is the default.
-func configsWithVFS2(t *testing.T, opts ...configOption) map[string]*config.Config {
-	all := configs(t, opts...)
-	for key, value := range configs(t, opts...) {
+// configs generates different configurations to run tests.
+//
+// TODO(gvisor.dev/issue/1624): Remove VFS1 dimension.
+func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
+	all := configsHelper(t, opts...)
+	for key, value := range configsHelper(t, opts...) {
 		value.VFS2 = true
 		all[key+"VFS2"] = value
 	}
@@ -358,7 +359,7 @@ func TestLifecycle(t *testing.T) {
 	childReaper.Start()
 	defer childReaper.Stop()
 
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			// The container will just sleep for a long time.  We will kill it before
 			// it finishes sleeping.
@@ -529,7 +530,7 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -654,7 +655,7 @@ func doAppExitStatus(t *testing.T, vfs2 bool) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "exec-test")
 			if err != nil {
@@ -783,7 +784,7 @@ func TestExec(t *testing.T) {
 // TestExecProcList verifies that a container can exec a new program and it
 // shows correcly in the process list.
 func TestExecProcList(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
 			spec := testutil.NewSpecWithArgs("sleep", "100")
@@ -854,7 +855,7 @@ func TestExecProcList(t *testing.T) {
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			app, err := testutil.FindFile("test/cmd/test_app/test_app")
 			if err != nil {
@@ -930,7 +931,6 @@ func TestKillPid(t *testing.T) {
 // number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	// TODO(gvisor.dev/issue/1663): Add VFS when S/R support is added.
 	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
@@ -1092,7 +1092,6 @@ func TestCheckpointRestore(t *testing.T) {
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	// TODO(gvisor.dev/issue/1663): Add VFS when S/R support is added.
 	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			// UDS path is limited to 108 chars for compatibility with older systems.
@@ -1230,7 +1229,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // recreated. Then it resumes the container, verify that the file gets created
 // again.
 func TestPauseResume(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, noOverlay...) {
+	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "lock")
 			if err != nil {
@@ -1373,7 +1372,7 @@ func TestCapabilities(t *testing.T) {
 	uid := auth.KUID(os.Getuid() + 1)
 	gid := auth.KGID(os.Getgid() + 1)
 
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("sleep", "100")
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -1446,7 +1445,7 @@ func TestCapabilities(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, noOverlay...) {
+	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/true")
 
@@ -1490,7 +1489,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
 			if err != nil {
@@ -1521,7 +1520,7 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("sleep", "100")
 			spec.Root.Readonly = true
@@ -1569,7 +1568,7 @@ func TestReadonlyRoot(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
 			if err != nil {
@@ -1628,7 +1627,7 @@ func TestReadonlyMount(t *testing.T) {
 }
 
 func TestUIDMap(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, noOverlay...) {
+	for name, conf := range configs(t, noOverlay...) {
 		t.Run(name, func(t *testing.T) {
 			testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
 			if err != nil {
@@ -1916,7 +1915,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			// Run a shell that sleeps for 1 second and then exits with a
 			// non-zero code.
@@ -2058,7 +2057,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
 			if err != nil {
@@ -2173,7 +2172,7 @@ func TestMountPropagation(t *testing.T) {
 }
 
 func TestMountSymlink(t *testing.T) {
-	for name, conf := range configsWithVFS2(t, all...) {
+	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
 			if err != nil {
