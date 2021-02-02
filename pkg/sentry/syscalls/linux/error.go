@@ -134,8 +134,8 @@ func handleIOErrorImpl(t *kernel.Task, partialResult bool, err, intr error, op s
 		// Similar to EPIPE. Return what we wrote this time, and let
 		// ENOSPC be returned on the next call.
 		return true, nil
-	case syserror.ECONNRESET:
-		// For TCP sendfile connections, we may have a reset. But we
+	case syserror.ECONNRESET, syserror.ETIMEDOUT:
+		// For TCP sendfile connections, we may have a reset or timeout. But we
 		// should just return n as the result.
 		return true, nil
 	case syserror.ErrWouldBlock:
