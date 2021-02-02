@@ -16,6 +16,7 @@ package mitigate
 
 import (
 	"fmt"
+	"io/ioutil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,16 +32,104 @@ const (
 )
 
 const (
-	processorKey = "processor"
-	vendorIDKey  = "vendor_id"
-	cpuFamilyKey = "cpu family"
-	modelKey     = "model"
-	coreIDKey    = "core id"
-	bugsKey      = "bugs"
+	processorKey  = "processor"
+	vendorIDKey   = "vendor_id"
+	cpuFamilyKey  = "cpu family"
+	modelKey      = "model"
+	physicalIDKey = "physical id"
+	coreIDKey     = "core id"
+	bugsKey       = "bugs"
 )
 
-// getCPUSet returns cpu structs from reading /proc/cpuinfo.
-func getCPUSet(data string) ([]*cpu, error) {
+const (
+	cpuOnlineTemplate = "/sys/devices/system/cpu/cpu%d/online"
+)
+
+// cpuSet contains a map of all CPUs on the system, mapped
+// by Physical ID and CoreIDs. threads with the same
+// Core and Physical ID are Hyperthread pairs.
+type cpuSet map[cpuID]*threadGroup
+
+// newCPUSet creates a CPUSet from data read from /proc/cpuinfo.
+func newCPUSet(data []byte, vulnerable func(*thread) bool) (cpuSet, error) {
+	processors, err := getThreads(string(data))
+	if err != nil {
+		return nil, err
+	}
+
+	set := make(cpuSet)
+	for _, p := range processors {
+		// Each ID is of the form physicalID:coreID. Hyperthread pairs
+		// have identical physical and core IDs. We need to match
+		// Hyperthread pairs so that we can shutdown all but one per
+		// pair.
+		core, ok := set[p.id]
+		if !ok {
+			core = &threadGroup{}
+			set[p.id] = core
+		}
+		core.isVulnerable = core.isVulnerable || vulnerable(p)
+		core.threads = append(core.threads, p)
+	}
+	return set, nil
+}
+
+// String implements the String method for CPUSet.
+func (c cpuSet) String() string {
+	ret := ""
+	for _, tg := range c {
+		ret += fmt.Sprintf("%s\n", tg)
+	}
+	return ret
+}
+
+// getRemainingList returns the list of threads that will remain active
+// after mitigation.
+func (c cpuSet) getRemainingList() []*thread {
+	threads := make([]*thread, 0, len(c))
+	for _, core := range c {
+		// If we're vulnerable, take only one thread from the pair.
+		if core.isVulnerable {
+			threads = append(threads, core.threads[0])
+			continue
+		}
+		// Otherwise don't shutdown anything.
+		threads = append(threads, core.threads...)
+	}
+	return threads
+}
+
+// getShutdownList returns the list of threads that will be shutdown on
+// mitigation.
+func (c cpuSet) getShutdownList() []*thread {
+	threads := make([]*thread, 0)
+	for _, core := range c {
+		// Only if we're vulnerable do shutdown anything. In this case,
+		// shutdown all but the first entry.
+		if core.isVulnerable && len(core.threads) > 1 {
+			threads = append(threads, core.threads[1:]...)
+		}
+	}
+	return threads
+}
+
+// threadGroup represents Hyperthread pairs on the same physical/core ID.
+type threadGroup struct {
+	threads      []*thread
+	isVulnerable bool
+}
+
+// String implements the String method for threadGroup.
+func (c *threadGroup) String() string {
+	ret := fmt.Sprintf("ThreadGroup:\nIsVulnerable: %t\n", c.isVulnerable)
+	for _, processor := range c.threads {
+		ret += fmt.Sprintf("%s\n", processor)
+	}
+	return ret
+}
+
+// getThreads returns threads structs from reading /proc/cpuinfo.
+func getThreads(data string) ([]*thread, error) {
 	// Each processor entry should start with the
 	// processor key. Find the beginings of each.
 	r := buildRegex(processorKey, `\d+`)
@@ -56,13 +145,13 @@ func getCPUSet(data string) ([]*cpu, error) {
 	// indexes (e.g. data[index[i], index[i+1]]).
 	// There should be len(indicies) - 1 CPUs
 	// since the last index is the end of the string.
-	var cpus = make([]*cpu, 0, len(indices)-1)
+	var cpus = make([]*thread, 0, len(indices)-1)
 	// Find each string that represents a CPU. These begin "processor".
 	for i := 1; i < len(indices); i++ {
 		start := indices[i-1][0]
 		end := indices[i][0]
 		// Parse the CPU entry, which should be between start/end.
-		c, err := getCPU(data[start:end])
+		c, err := newThread(data[start:end])
 		if err != nil {
 			return nil, err
 		}
@@ -71,18 +160,25 @@ func getCPUSet(data string) ([]*cpu, error) {
 	return cpus, nil
 }
 
+// cpuID for each thread is defined by the physical and
+// core IDs. If equal, two threads are Hyperthread pairs.
+type cpuID struct {
+	physicalID int64
+	coreID     int64
+}
+
 // type cpu represents pertinent info about a cpu.
-type cpu struct {
+type thread struct {
 	processorNumber int64               // the processor number of this CPU.
 	vendorID        string              // the vendorID of CPU (e.g. AuthenticAMD).
 	cpuFamily       int64               // CPU family number (e.g. 6 for CascadeLake/Skylake).
 	model           int64               // CPU model number (e.g. 85 for CascadeLake/Skylake).
-	coreID          int64               // This CPU's core id to match Hyperthread Pairs
+	id              cpuID               // id for this thread
 	bugs            map[string]struct{} // map of vulnerabilities parsed from the 'bugs' field.
 }
 
-// getCPU parses a CPU from a single cpu entry from /proc/cpuinfo.
-func getCPU(data string) (*cpu, error) {
+// newThread parses a CPU from a single cpu entry from /proc/cpuinfo.
+func newThread(data string) (*thread, error) {
 	processor, err := parseProcessor(data)
 	if err != nil {
 		return nil, err
@@ -103,6 +199,11 @@ func getCPU(data string) (*cpu, error) {
 		return nil, err
 	}
 
+	physicalID, err := parsePhysicalID(data)
+	if err != nil {
+		return nil, err
+	}
+
 	coreID, err := parseCoreID(data)
 	if err != nil {
 		return nil, err
@@ -113,14 +214,39 @@ func getCPU(data string) (*cpu, error) {
 		return nil, err
 	}
 
-	return &cpu{
+	return &thread{
 		processorNumber: processor,
 		vendorID:        vendorID,
 		cpuFamily:       cpuFamily,
 		model:           model,
-		coreID:          coreID,
-		bugs:            bugs,
+		id: cpuID{
+			physicalID: physicalID,
+			coreID:     coreID,
+		},
+		bugs: bugs,
 	}, nil
+}
+
+// String implements the String method for thread.
+func (t *thread) String() string {
+	template := `CPU: %d
+CPU ID: %+v
+Vendor: %s
+Family/Model: %d/%d
+Bugs: %s
+`
+	bugs := make([]string, 0)
+	for bug := range t.bugs {
+		bugs = append(bugs, bug)
+	}
+
+	return fmt.Sprintf(template, t.processorNumber, t.id, t.vendorID, t.cpuFamily, t.model, strings.Join(bugs, ","))
+}
+
+// shutdown turns off the CPU by writing 0 to /sys/devices/cpu/cpu{N}/online.
+func (t *thread) shutdown() error {
+	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
+	return ioutil.WriteFile(cpuPath, []byte{'0'}, 0644)
 }
 
 // List of pertinent side channel vulnerablilites.
@@ -134,35 +260,46 @@ var vulnerabilities = []string{
 }
 
 // isVulnerable checks if a CPU is vulnerable to pertinent bugs.
-func (c *cpu) isVulnerable() bool {
+func (t *thread) isVulnerable() bool {
 	for _, bug := range vulnerabilities {
-		if _, ok := c.bugs[bug]; ok {
+		if _, ok := t.bugs[bug]; ok {
 			return true
 		}
 	}
 	return false
 }
 
+// isActive checks if a CPU is active from /sys/devices/system/cpu/cpu{N}/online
+// If the file does not exist (ioutil returns in error), we assume the CPU is on.
+func (t *thread) isActive() bool {
+	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
+	data, err := ioutil.ReadFile(cpuPath)
+	if err != nil {
+		return true
+	}
+	return len(data) > 0 && data[0] != '0'
+}
+
 // similarTo checks family/model/bugs fields for equality of two
 // processors.
-func (c *cpu) similarTo(other *cpu) bool {
-	if c.vendorID != other.vendorID {
+func (t *thread) similarTo(other *thread) bool {
+	if t.vendorID != other.vendorID {
 		return false
 	}
 
-	if other.cpuFamily != c.cpuFamily {
+	if other.cpuFamily != t.cpuFamily {
 		return false
 	}
 
-	if other.model != c.model {
+	if other.model != t.model {
 		return false
 	}
 
-	if len(other.bugs) != len(c.bugs) {
+	if len(other.bugs) != len(t.bugs) {
 		return false
 	}
 
-	for bug := range c.bugs {
+	for bug := range t.bugs {
 		if _, ok := other.bugs[bug]; !ok {
 			return false
 		}
@@ -188,6 +325,11 @@ func parseCPUFamily(data string) (int64, error) {
 // parseModel grabs the model field from /proc/cpuinfo output.
 func parseModel(data string) (int64, error) {
 	return parseIntegerResult(data, modelKey)
+}
+
+// parsePhysicalID parses the physical id field.
+func parsePhysicalID(data string) (int64, error) {
+	return parseIntegerResult(data, physicalIDKey)
 }
 
 // parseCoreID parses the core id field.
