@@ -16,104 +16,10 @@
 
 package pagetables
 
-// Visitor is a generic type.
-type Visitor interface {
-	// visit is called on each PTE.
-	visit(start uintptr, pte *PTE, align uintptr)
-
-	// requiresAlloc indicates that new entries should be allocated within
-	// the walked range.
-	requiresAlloc() bool
-
-	// requiresSplit indicates that entries in the given range should be
-	// split if they are huge or jumbo pages.
-	requiresSplit() bool
-}
-
-// Walker walks page tables.
-type Walker struct {
-	// pageTables are the tables to walk.
-	pageTables *PageTables
-
-	// Visitor is the set of arguments.
-	visitor Visitor
-}
-
-// iterateRange iterates over all appropriate levels of page tables for the given range.
-//
-// If requiresAlloc is true, then Set _must_ be called on all given PTEs. The
-// exception is super pages. If a valid super page (huge or jumbo) cannot be
-// installed, then the walk will continue to individual entries.
-//
-// This algorithm will attempt to maximize the use of super pages whenever
-// possible. Whether a super page is provided will be clear through the range
-// provided in the callback.
-//
-// Note that if requiresAlloc is true, then no gaps will be present. However,
-// if alloc is not set, then the iteration will likely be full of gaps.
-//
-// Note that this function should generally be avoided in favor of Map, Unmap,
-// etc. when not necessary.
-//
-// Precondition: start must be page-aligned.
-//
-// Precondition: start must be less than end.
-//
-// Precondition: If requiresAlloc is true, then start and end should not span
-// non-canonical ranges. If they do, a panic will result.
-//
-//go:nosplit
-func (w *Walker) iterateRange(start, end uintptr) {
-	if start%pteSize != 0 {
-		panic("unaligned start")
-	}
-	if end < start {
-		panic("start > end")
-	}
-	if start < lowerTop {
-		if end <= lowerTop {
-			w.iterateRangeCanonical(start, end)
-		} else if end > lowerTop && end <= upperBottom {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(start, lowerTop)
-		} else {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(start, lowerTop)
-			w.iterateRangeCanonical(upperBottom, end)
-		}
-	} else if start < upperBottom {
-		if end <= upperBottom {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-		} else {
-			if w.visitor.requiresAlloc() {
-				panic("alloc spans non-canonical range")
-			}
-			w.iterateRangeCanonical(upperBottom, end)
-		}
-	} else {
-		w.iterateRangeCanonical(start, end)
-	}
-}
-
-// next returns the next address quantized by the given size.
-//
-//go:nosplit
-func next(start uintptr, size uintptr) uintptr {
-	start &= ^(size - 1)
-	start += size
-	return start
-}
-
 // iterateRangeCanonical walks a canonical range.
 //
 //go:nosplit
-func (w *Walker) iterateRangeCanonical(start, end uintptr) {
+func (w *Walker) iterateRangeCanonical(start, end uintptr) bool {
 	for pgdIndex := uint16((start & pgdMask) >> pgdShift); start < end && pgdIndex < entriesPerPage; pgdIndex++ {
 		var (
 			pgdEntry   = &w.pageTables.root[pgdIndex]
@@ -127,10 +33,10 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 			}
 
 			// Allocate a new pgd.
-			pudEntries = w.pageTables.Allocator.NewPTEs()
+			pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
 			pgdEntry.setPageTable(w.pageTables, pudEntries)
 		} else {
-			pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
+			pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
 		}
 
 		// Map the next level.
@@ -155,7 +61,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 				// new page for the pmd.
 				if start&(pudSize-1) == 0 && end-start >= pudSize {
 					pudEntry.SetSuper()
-					w.visitor.visit(uintptr(start), pudEntry, pudSize-1)
+					if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
+						return false
+					}
 					if pudEntry.Valid() {
 						start = next(start, pudSize)
 						continue
@@ -163,14 +71,14 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 				}
 
 				// Allocate a new pud.
-				pmdEntries = w.pageTables.Allocator.NewPTEs()
+				pmdEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 				pudEntry.setPageTable(w.pageTables, pmdEntries)
 
 			} else if pudEntry.IsSuper() {
 				// Does this page need to be split?
 				if w.visitor.requiresSplit() && (start&(pudSize-1) != 0 || end < next(start, pudSize)) {
 					// Install the relevant entries.
-					pmdEntries = w.pageTables.Allocator.NewPTEs()
+					pmdEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 					for index := uint16(0); index < entriesPerPage; index++ {
 						pmdEntries[index].SetSuper()
 						pmdEntries[index].Set(
@@ -180,7 +88,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					pudEntry.setPageTable(w.pageTables, pmdEntries)
 				} else {
 					// A super page to be checked directly.
-					w.visitor.visit(uintptr(start), pudEntry, pudSize-1)
+					if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
+						return false
+					}
 
 					// Might have been cleared.
 					if !pudEntry.Valid() {
@@ -192,7 +102,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					continue
 				}
 			} else {
-				pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address())
+				pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address()) // escapes: see above.
 			}
 
 			// Map the next level, since this is valid.
@@ -216,7 +126,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					// As above, we can skip allocating a new page.
 					if start&(pmdSize-1) == 0 && end-start >= pmdSize {
 						pmdEntry.SetSuper()
-						w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1)
+						if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
+							return false
+						}
 						if pmdEntry.Valid() {
 							start = next(start, pmdSize)
 							continue
@@ -224,7 +136,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					}
 
 					// Allocate a new pmd.
-					pteEntries = w.pageTables.Allocator.NewPTEs()
+					pteEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 					pmdEntry.setPageTable(w.pageTables, pteEntries)
 
 				} else if pmdEntry.IsSuper() {
@@ -240,7 +152,9 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 						pmdEntry.setPageTable(w.pageTables, pteEntries)
 					} else {
 						// A huge page to be checked directly.
-						w.visitor.visit(uintptr(start), pmdEntry, pmdSize-1)
+						if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
+							return false
+						}
 
 						// Might have been cleared.
 						if !pmdEntry.Valid() {
@@ -252,7 +166,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 						continue
 					}
 				} else {
-					pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address())
+					pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address()) // escapes: see above.
 				}
 
 				// Map the next level, since this is valid.
@@ -269,11 +183,10 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 					}
 
 					// At this point, we are guaranteed that start%pteSize == 0.
-					w.visitor.visit(uintptr(start), pteEntry, pteSize-1)
-					if !pteEntry.Valid() {
-						if w.visitor.requiresAlloc() {
-							panic("PTE not set after iteration with requiresAlloc!")
-						}
+					if !w.visitor.visit(uintptr(start&^(pteSize-1)), pteEntry, pteSize-1) {
+						return false
+					}
+					if !pteEntry.Valid() && !w.visitor.requiresAlloc() {
 						clearPTEEntries++
 					}
 
@@ -285,7 +198,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 				// Check if we no longer need this page.
 				if clearPTEEntries == entriesPerPage {
 					pmdEntry.Clear()
-					w.pageTables.Allocator.FreePTEs(pteEntries)
+					w.pageTables.Allocator.FreePTEs(pteEntries) // escapes: see above.
 					clearPMDEntries++
 				}
 			}
@@ -293,7 +206,7 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 			// Check if we no longer need this page.
 			if clearPMDEntries == entriesPerPage {
 				pudEntry.Clear()
-				w.pageTables.Allocator.FreePTEs(pmdEntries)
+				w.pageTables.Allocator.FreePTEs(pmdEntries) // escapes: see above.
 				clearPUDEntries++
 			}
 		}
@@ -301,7 +214,8 @@ func (w *Walker) iterateRangeCanonical(start, end uintptr) {
 		// Check if we no longer need this page.
 		if clearPUDEntries == entriesPerPage {
 			pgdEntry.Clear()
-			w.pageTables.Allocator.FreePTEs(pudEntries)
+			w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
 		}
 	}
+	return true
 }

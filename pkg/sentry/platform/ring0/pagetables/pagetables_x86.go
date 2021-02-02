@@ -137,7 +137,10 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 		p.Clear()
 		return
 	}
-	v := (addr &^ optionMask) | present | accessed
+	v := (addr &^ optionMask)
+	if opts.AccessType.Any() {
+		v |= present | accessed
+	}
 	if opts.User {
 		v |= user
 	}
