@@ -151,10 +151,6 @@ nogo: ## Surfaces all nogo findings.
 	@$(call run,//tools/github $(foreach dir,$(BUILD_ROOTS),-path=$(CURDIR)/$(dir)) -dry-run nogo)
 .PHONY: nogo
 
-gazelle: ## Runs gazelle to update WORKSPACE.
-	@$(call run,//:gazelle,update-repos -from_file=go.mod -prune)
-.PHONY: gazelle
-
 ##
 ## Canonical build and test targets.
 ##
