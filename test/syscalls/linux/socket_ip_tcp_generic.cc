@@ -88,6 +88,7 @@ TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
   socklen_t optLen = sizeof(opt);
   ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_TCP, TCP_INFO, &opt, &optLen),
               SyscallSucceeds());
+  ASSERT_EQ(optLen, sizeof(opt));
 
   // Validates the received tcp_info fields.
   EXPECT_EQ(opt.tcpi_ca_state, TCP_CA_OPEN);
