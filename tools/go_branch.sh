@@ -16,14 +16,25 @@
 
 set -xeou pipefail
 
+# Remember our current directory.
+declare orig_dir
+orig_dir=$(pwd)
+readonly orig_dir
+
+# Record the current working commit.
+declare head
+head=$(git describe --always)
+readonly head
+
 # Create a temporary working directory, and ensure that this directory and all
 # subdirectories are cleaned up upon exit.
 declare tmp_dir
 tmp_dir=$(mktemp -d)
 readonly tmp_dir
 finish() {
-  cd / # Leave tmp_dir.
-  rm -rf "${tmp_dir}"
+  cd "${orig_dir}"          # Leave tmp_dir.
+  rm -rf "${tmp_dir}"       # Remove all contents.
+  git checkout -f "${head}" # Restore commit.
 }
 trap finish EXIT
 
@@ -69,11 +80,6 @@ cross_check "${go_amd64}" "${go_arm64}"
 declare -r go_merged="${tmp_dir}/merged"
 rsync --recursive "${go_amd64}/" "${go_merged}"
 rsync --recursive "${go_arm64}/" "${go_merged}"
-
-# Record the current working commit.
-declare head
-head=$(git describe --always)
-readonly head
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch
