@@ -43,6 +43,7 @@ const (
 
 // InitArch does some additional initialization related to the architecture.
 //
+// +checkescape:hard,stack
 //go:nosplit
 func (p *PageTables) InitArch(allocator Allocator) {
 	if p.upperSharedPageTables != nil {
@@ -50,6 +51,7 @@ func (p *PageTables) InitArch(allocator Allocator) {
 	}
 }
 
+//go:nosplit
 func pgdIndex(upperStart uintptr) uintptr {
 	if upperStart&(pgdSize-1) != 0 {
 		panic("upperStart should be pgd size aligned")

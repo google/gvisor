@@ -44,6 +44,7 @@ const (
 
 // InitArch does some additional initialization related to the architecture.
 //
+// +checkescape:hard,stack
 //go:nosplit
 func (p *PageTables) InitArch(allocator Allocator) {
 	if p.upperSharedPageTables != nil {

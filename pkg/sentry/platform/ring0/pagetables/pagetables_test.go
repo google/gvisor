@@ -34,7 +34,7 @@ type checkVisitor struct {
 	failed   string    // Output.
 }
 
-func (v *checkVisitor) visit(start uintptr, pte *PTE, align uintptr) {
+func (v *checkVisitor) visit(start uintptr, pte *PTE, align uintptr) bool {
 	v.found = append(v.found, mapping{
 		start:  start,
 		length: align + 1,
@@ -43,7 +43,7 @@ func (v *checkVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 	})
 	if v.failed != "" {
 		// Don't keep looking for errors.
-		return
+		return false
 	}
 
 	if v.current >= len(v.expected) {
@@ -58,6 +58,7 @@ func (v *checkVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 		v.failed = "opts didn't match"
 	}
 	v.current++
+	return true
 }
 
 func (*checkVisitor) requiresAlloc() bool { return false }
