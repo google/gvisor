@@ -19,6 +19,7 @@ package kvm
 import (
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
@@ -68,9 +69,18 @@ func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
 //go:nosplit
 func (c *vCPU) KernelSyscall() {
 	regs := c.Registers()
+
+	// Is this a fast-path call?
+	if regs.Rax == linux.SYS_FUTEX && regs.Rdi == linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG {
+		ring0.Hypercall()
+		return
+	}
+
+	// Need to rewind to redo.
 	if regs.Rax != ^uint64(0) {
 		regs.Rip -= 2 // Rewind.
 	}
+
 	// We only trigger a bluepill entry in the bluepill function, and can
 	// therefore be guaranteed that there is no floating point state to be
 	// loaded on resuming from halt. We only worry about saving on exit.
@@ -126,4 +136,17 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	// where the guest data has been serialized, the kernel will restore
 	// from this new pointer value.
 	context.Fpstate = uint64(uintptrValue((*byte)(c.floatingPointState)))
+}
+
+// bluepillArchSyscall handles an inline system call.
+//
+//go:nosplit
+func bluepillArchSyscall(c *vCPU) {
+	regs := c.CPU.Registers()
+	r, _, errno := syscall.RawSyscall(regs.Rax, regs.Rdi, regs.Rsi, regs.Rdx, regs.R10, regs.R8, regs.R9)
+	if errno != 0 {
+		regs.Rax = -errno
+	} else {
+		regs.Rax = r
+	}
 }

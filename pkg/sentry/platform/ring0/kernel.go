@@ -24,6 +24,9 @@ func (k *Kernel) Init(maxCPUs int) {
 // Halt halts execution.
 func Halt()
 
+// Hypercall executes a hypercall instruction.
+func Hypercall()
+
 // defaultHooks implements hooks.
 type defaultHooks struct{}
 

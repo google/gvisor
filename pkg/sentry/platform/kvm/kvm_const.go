@@ -93,5 +93,6 @@ const (
 	//
 	// _KVM_HYPERCALL_VMEXIT is only used on arm64 for now.
 	_KVM_HYPERCALL_VMEXIT int = iota
+	_KVM_HYPERCALL_SYSCALL
 	_KVM_HYPERCALL_MAX
 )

@@ -369,3 +369,8 @@ EXCEPTION_WITHOUT_ERROR(SIMDFloatingPointException, ·simdFloatingPointException
 EXCEPTION_WITHOUT_ERROR(VirtualizationException, ·virtualizationException(SB))
 EXCEPTION_WITH_ERROR(SecurityException, ·securityException(SB))
 EXCEPTION_WITHOUT_ERROR(SyscallInt80, ·syscallInt80(SB))
+
+// See kernel.go.
+TEXT ·Hypercall(SB),NOSPLIT,$0
+	BYTE $0x0F; BYTE $0x01; BYTE $0xC1;
+	RET
