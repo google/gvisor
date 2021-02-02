@@ -1,0 +1,15 @@
+diff --git a/language/go/generate.go b/language/go/generate.go
+index 2892948..feb4ad6 100644
+--- a/language/go/generate.go
++++ b/language/go/generate.go
+@@ -691,6 +691,10 @@ func (g *generator) setImportAttrs(r *rule.Rule, importPath string) {
+ }
+ 
+ func (g *generator) commonVisibility(importPath string) []string {
++	if importPath == "golang.org/x/tools/go/analysis/internal/facts" {
++		// Imported by nogo main. We add a visibility exception.
++		return []string{"//visibility:public"}
++	}
+ 	// If the Bazel package name (rel) contains "internal", add visibility for
+ 	// subpackages of the parent.
+ 	// If the import path contains "internal" but rel does not, this is

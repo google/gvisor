@@ -8,7 +8,7 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 http_file(
     name = "google_root_pem",
     urls = [
-        "https://pki.goog/roots.pem"
+        "https://pki.goog/roots.pem",
     ],
 )
 
@@ -36,9 +36,11 @@ http_archive(
     name = "io_bazel_rules_go",
     patch_args = ["-p1"],
     patches = [
+        # Ensure we don't destroy the facts visibility.
+        "//tools:rules_go_visibility.patch",
         # Newer versions of the rules_go rules will automatically strip test
         # binaries of symbols, which we don't want.
-        "//tools:rules_go.patch",
+        "//tools:rules_go_symbols.patch",
     ],
     sha256 = "8e9434015ff8f3d6962cb8f016230ea7acc1ac402b760a8d66ff54dc11673ca6",
     urls = [
@@ -51,9 +53,13 @@ http_archive(
     name = "bazel_gazelle",
     patch_args = ["-p1"],
     patches = [
+        # Fix permissions for facts for go_library, not just tool library.
+        # This is actually a no-op with the hacky patch above, but should
+        # slightly future proof this mechanism.
+        "//tools:bazel_gazelle_generate.patch",
         # False positive output complaining about Go logrus versions spam the
         # logs. Strip this message in this case. Does not affect control flow.
-        "//tools:bazel_gazelle.patch",
+        "//tools:bazel_gazelle_noise.patch",
     ],
     sha256 = "b85f48fa105c4403326e9525ad2b2cc437babaa6e15a3fc0b1dbab0ab064bc7c",
     urls = [
