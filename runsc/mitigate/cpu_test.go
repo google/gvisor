@@ -15,26 +15,163 @@
 package mitigate
 
 import (
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
 )
 
-// CPU info for a Intel CascadeLake processor. Both Skylake and CascadeLake have
-// the same family/model numbers, but with different bugs (e.g. skylake has
-// cpu_meltdown).
-var cascadeLake = &cpu{
-	vendorID:  "GenuineIntel",
-	cpuFamily: 6,
-	model:     85,
-	bugs: map[string]struct{}{
-		"spectre_v1":        struct{}{},
-		"spectre_v2":        struct{}{},
-		"spec_store_bypass": struct{}{},
-		mds:                 struct{}{},
-		swapgs:              struct{}{},
-		taa:                 struct{}{},
-	},
+// cpuTestCase represents data from CPUs that will be mitigated.
+type cpuTestCase struct {
+	name           string
+	vendorID       string
+	family         int
+	model          int
+	modelName      string
+	bugs           string
+	physicalCores  int
+	cores          int
+	threadsPerCore int
+}
+
+var cascadeLake4 = cpuTestCase{
+	name:           "CascadeLake",
+	vendorID:       "GenuineIntel",
+	family:         6,
+	model:          85,
+	modelName:      "Intel(R) Xeon(R) CPU",
+	bugs:           "spectre_v1 spectre_v2 spec_store_bypass mds swapgs taa",
+	physicalCores:  1,
+	cores:          2,
+	threadsPerCore: 2,
+}
+
+var haswell2 = cpuTestCase{
+	name:           "Haswell",
+	vendorID:       "GenuineIntel",
+	family:         6,
+	model:          63,
+	modelName:      "Intel(R) Xeon(R) CPU",
+	bugs:           "cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs",
+	physicalCores:  1,
+	cores:          1,
+	threadsPerCore: 2,
+}
+
+var haswell2core = cpuTestCase{
+	name:           "Haswell2Physical",
+	vendorID:       "GenuineIntel",
+	family:         6,
+	model:          63,
+	modelName:      "Intel(R) Xeon(R) CPU",
+	bugs:           "cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs",
+	physicalCores:  2,
+	cores:          1,
+	threadsPerCore: 1,
+}
+
+var amd8 = cpuTestCase{
+	name:           "AMD",
+	vendorID:       "AuthenticAMD",
+	family:         23,
+	model:          49,
+	modelName:      "AMD EPYC 7B12",
+	bugs:           "sysret_ss_attrs spectre_v1 spectre_v2 spec_store_bypass",
+	physicalCores:  4,
+	cores:          1,
+	threadsPerCore: 2,
+}
+
+// makeCPUString makes a string formated like /proc/cpuinfo for each cpuTestCase
+func (tc cpuTestCase) makeCPUString() string {
+	template := `processor	: %d
+vendor_id	: %s
+cpu family	: %d
+model		: %d
+model name	: %s
+physical id  : %d
+core id		: %d
+cpu cores	: %d
+bugs		: %s
+`
+	ret := ``
+	for i := 0; i < tc.physicalCores; i++ {
+		for j := 0; j < tc.cores; j++ {
+			for k := 0; k < tc.threadsPerCore; k++ {
+				processorNum := (i*tc.cores+j)*tc.threadsPerCore + k
+				ret += fmt.Sprintf(template,
+					processorNum,              /*processor*/
+					tc.vendorID,               /*vendor_id*/
+					tc.family,                 /*cpu family*/
+					tc.model,                  /*model*/
+					tc.modelName,              /*model name*/
+					i,                         /*physical id*/
+					j,                         /*core id*/
+					tc.cores*tc.physicalCores, /*cpu cores*/
+					tc.bugs /*bugs*/)
+			}
+		}
+	}
+	return ret
+}
+
+// TestMockCPUSet tests mock cpu test cases against the cpuSet functions.
+func TestMockCPUSet(t *testing.T) {
+	for _, tc := range []struct {
+		testCase     cpuTestCase
+		isVulnerable bool
+	}{
+		{
+			testCase:     amd8,
+			isVulnerable: false,
+		},
+		{
+			testCase:     haswell2,
+			isVulnerable: true,
+		},
+		{
+			testCase:     haswell2core,
+			isVulnerable: true,
+		},
+
+		{
+			testCase:     cascadeLake4,
+			isVulnerable: true,
+		},
+	} {
+		t.Run(tc.testCase.name, func(t *testing.T) {
+			data := tc.testCase.makeCPUString()
+			vulnerable := func(t *thread) bool {
+				return t.isVulnerable()
+			}
+			set, err := newCPUSet([]byte(data), vulnerable)
+			if err != nil {
+				t.Fatalf("Failed to ")
+			}
+			remaining := set.getRemainingList()
+			// In the non-vulnerable case, no cores should be shutdown so all should remain.
+			want := tc.testCase.physicalCores * tc.testCase.cores * tc.testCase.threadsPerCore
+			if tc.isVulnerable {
+				want = tc.testCase.physicalCores * tc.testCase.cores
+			}
+
+			if want != len(remaining) {
+				t.Fatalf("Failed to shutdown the correct number of cores: want: %d got: %d", want, len(remaining))
+			}
+
+			if !tc.isVulnerable {
+				return
+			}
+
+			// If the set is vulnerable, we expect only 1 thread per hyperthread pair.
+			for _, r := range remaining {
+				if _, ok := set[r.id]; !ok {
+					t.Fatalf("Entry %+v not in map, there must be two entries in the same thread group.", r)
+				}
+				delete(set, r.id)
+			}
+		})
+	}
 }
 
 // TestGetCPU tests basic parsing of single CPU strings from reading
@@ -44,15 +181,19 @@ func TestGetCPU(t *testing.T) {
 vendor_id	: GenuineIntel
 cpu family	: 6
 model		: 85
+physical id: 0
 core id		: 0
 bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa itlb_multihit
 `
-	want := cpu{
+	want := thread{
 		processorNumber: 0,
 		vendorID:        "GenuineIntel",
 		cpuFamily:       6,
 		model:           85,
-		coreID:          0,
+		id: cpuID{
+			physicalID: 0,
+			coreID:     0,
+		},
 		bugs: map[string]struct{}{
 			"cpu_meltdown":      struct{}{},
 			"spectre_v1":        struct{}{},
@@ -66,7 +207,7 @@ bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa
 		},
 	}
 
-	got, err := getCPU(data)
+	got, err := newThread(data)
 	if err != nil {
 		t.Fatalf("getCpu failed with error: %v", err)
 	}
@@ -81,7 +222,7 @@ bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa
 }
 
 func TestInvalid(t *testing.T) {
-	result, err := getCPUSet(`something not a processor`)
+	result, err := getThreads(`something not a processor`)
 	if err == nil {
 		t.Fatalf("getCPU set didn't return an error: %+v", result)
 	}
@@ -148,7 +289,7 @@ cache_alignment	: 64
 address sizes	: 46 bits physical, 48 bits virtual
 power management:
 `
-	cpuSet, err := getCPUSet(data)
+	cpuSet, err := getThreads(data)
 	if err != nil {
 		t.Fatalf("getCPUSet failed: %v", err)
 	}
@@ -158,7 +299,7 @@ power management:
 		t.Fatalf("Num CPU mismatch: want: %d, got: %d", wantCPULen, len(cpuSet))
 	}
 
-	wantCPU := cpu{
+	wantCPU := thread{
 		vendorID:  "GenuineIntel",
 		cpuFamily: 6,
 		model:     63,
@@ -187,7 +328,11 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("Failed to read cpuinfo: %v", err)
 	}
 
-	set, err := getCPUSet(string(data))
+	vulnerable := func(t *thread) bool {
+		return t.isVulnerable()
+	}
+
+	set, err := newCPUSet(data, vulnerable)
 	if err != nil {
 		t.Fatalf("Failed to parse CPU data %v\n%s", err, data)
 	}
@@ -196,9 +341,7 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("Failed to parse any CPUs: %d", len(set))
 	}
 
-	for _, c := range set {
-		t.Logf("CPU: %+v: %t", c, c.isVulnerable())
-	}
+	t.Log(set)
 }
 
 // TestVulnerable tests if the isVulnerable method is correct
@@ -332,17 +475,13 @@ power management:`
 			cpuString:  skylake,
 			vulnerable: true,
 		}, {
-			name:       "cascadeLake",
-			cpuString:  cascade,
-			vulnerable: false,
-		}, {
 			name:       "amd",
 			cpuString:  amd,
 			vulnerable: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			set, err := getCPUSet(tc.cpuString)
+			set, err := getThreads(tc.cpuString)
 			if err != nil {
 				t.Fatalf("Failed to getCPUSet:%v\n %s", err, tc.cpuString)
 			}
@@ -353,9 +492,6 @@ power management:`
 
 			for _, c := range set {
 				got := func() bool {
-					if cascadeLake.similarTo(c) {
-						return false
-					}
 					return c.isVulnerable()
 				}()
 
