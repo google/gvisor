@@ -34,6 +34,14 @@ const (
 	mtu              = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
 )
 
+func setStackRACKPermitted(t *testing.T, c *context.Context) {
+	t.Helper()
+	opt := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
+	if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &opt); err != nil {
+		t.Fatalf("c.s.SetTransportProtocolOption(%d, &%v(%v)): %s", header.TCPProtocolNumber, opt, opt, err)
+	}
+}
+
 // TestRACKUpdate tests the RACK related fields are updated when an ACK is
 // received on a SACK enabled connection.
 func TestRACKUpdate(t *testing.T) {
@@ -60,6 +68,7 @@ func TestRACKUpdate(t *testing.T) {
 		close(probeDone)
 	})
 	setStackSACKPermitted(t, c, true)
+	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 
 	data := make([]byte, maxPayload)
@@ -116,6 +125,7 @@ func TestRACKDetectReorder(t *testing.T) {
 		close(probeDone)
 	})
 	setStackSACKPermitted(t, c, true)
+	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 	data := make([]byte, ackNumToVerify*maxPayload)
 	for i := range data {
@@ -148,6 +158,7 @@ func TestRACKDetectReorder(t *testing.T) {
 
 func sendAndReceive(t *testing.T, c *context.Context, numPackets int) []byte {
 	setStackSACKPermitted(t, c, true)
+	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 
 	data := make([]byte, numPackets*maxPayload)

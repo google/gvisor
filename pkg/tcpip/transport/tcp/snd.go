@@ -1320,7 +1320,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//   unacknowledged and also never retransmitted sequence below
 		//   RACK.fack, then the corresponding packet has been
 		//   reordered and RACK.reord is set to TRUE.
-		s.walkSACK(rcvdSeg)
+		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+			s.walkSACK(rcvdSeg)
+		}
 		s.SetPipe()
 	}
 
@@ -1339,7 +1341,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	}
 
 	// See if TLP based recovery was successful.
-	s.detectTLPRecovery(ack, rcvdSeg)
+	if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+		s.detectTLPRecovery(ack, rcvdSeg)
+	}
 
 	// Stash away the current window size.
 	s.sndWnd = rcvdSeg.window
@@ -1421,7 +1425,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			}
 
 			// Update the RACK fields if SACK is enabled.
-			if s.ep.sackPermitted && !seg.acked {
+			if s.ep.sackPermitted && !seg.acked && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
 			}
@@ -1455,7 +1459,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				// Update RACK when we are exiting fast or RTO
 				// recovery as described in the RFC
 				// draft-ietf-tcpm-rack-08 Section-7.2 Step 4.
-				s.rc.exitRecovery()
+				if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+					s.rc.exitRecovery()
+				}
 			}
 		}
 
@@ -1483,7 +1489,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 	// * Upon receiving an ACK:
 	// * Step 4: Update RACK reordering window
-	s.rc.updateRACKReorderWindow(rcvdSeg)
+	if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+		s.rc.updateRACKReorderWindow(rcvdSeg)
+	}
 
 	// Now that we've popped all acknowledged data from the retransmit
 	// queue, retransmit if needed.
