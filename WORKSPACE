@@ -57,9 +57,6 @@ http_archive(
         # This is actually a no-op with the hacky patch above, but should
         # slightly future proof this mechanism.
         "//tools:bazel_gazelle_generate.patch",
-        # False positive output complaining about Go logrus versions spam the
-        # logs. Strip this message in this case. Does not affect control flow.
-        "//tools:bazel_gazelle_noise.patch",
     ],
     sha256 = "222e49f034ca7a1d1231422cdb67066b885819885c356673cb1f72f748a3c9d4",
     urls = [
