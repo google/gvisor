@@ -283,6 +283,7 @@ disabled_plugins = ["restart"]
   runtime_type = "io.containerd.` + containerdRuntime + `.v1"
 [plugins.cri.containerd.runtimes.` + containerdRuntime + `.options]
   TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
+  ConfigPath = "/etc/containerd/runsc/config.toml"
 `
 
 // setup sets up before a test. Specifically it:
