@@ -487,6 +487,20 @@ func TestPing6Loopback(t *testing.T) {
 	runIntegrationTest(t, []string{"NET_ADMIN"}, "./ping6.sh")
 }
 
+// This test checks that the owner of the sticky directory can delete files
+// inside it belonging to other users. It also checks that the owner of a file
+// can always delete its file when the file is inside a sticky directory owned
+// by another user.
+func TestStickyDir(t *testing.T) {
+	if vfs2Used, err := dockerutil.UsingVFS2(); err != nil {
+		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2Used {
+		t.Skip("sticky bit test fails on VFS1.")
+	}
+
+	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_sticky test_sticky.c && ./test_sticky")
+}
+
 func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
