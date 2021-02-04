@@ -1068,7 +1068,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
-	if err := vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&oldParent.mode)), auth.KUID(atomic.LoadUint32(&renamed.uid))); err != nil {
+	if err := oldParent.mayDelete(creds, renamed); err != nil {
 		return err
 	}
 	if renamed.isDir() {
@@ -1317,7 +1317,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if !child.isDir() {
 		return syserror.ENOTDIR
 	}
-	if err := vfs.CheckDeleteSticky(rp.Credentials(), linux.FileMode(atomic.LoadUint32(&parent.mode)), auth.KUID(atomic.LoadUint32(&child.uid))); err != nil {
+	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
 	child.dirMu.Lock()
@@ -1584,7 +1584,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		if child.isDir() {
 			return syserror.EISDIR
 		}
-		if err := vfs.CheckDeleteSticky(rp.Credentials(), linux.FileMode(parentMode), auth.KUID(atomic.LoadUint32(&child.uid))); err != nil {
+		if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 			return err
 		}
 		if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {

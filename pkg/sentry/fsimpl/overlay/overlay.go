@@ -760,6 +760,16 @@ func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	}
 }
 
+func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
+	return vfs.CheckDeleteSticky(
+		creds,
+		linux.FileMode(atomic.LoadUint32(&d.mode)),
+		auth.KUID(atomic.LoadUint32(&d.uid)),
+		auth.KUID(atomic.LoadUint32(&child.uid)),
+		auth.KGID(atomic.LoadUint32(&child.gid)),
+	)
+}
+
 // fileDescription is embedded by overlay implementations of
 // vfs.FileDescriptionImpl.
 //
