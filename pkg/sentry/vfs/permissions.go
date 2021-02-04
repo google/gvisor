@@ -243,11 +243,13 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 // the given file mode, and if so, checks whether creds has permission to
 // remove a file owned by childKUID from a directory with the given mode.
 // CheckDeleteSticky is consistent with fs/linux.h:check_sticky().
-func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, childKUID auth.KUID) error {
+func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, parentKUID auth.KUID, childKUID auth.KUID, childKGID auth.KGID) error {
 	if parentMode&linux.ModeSticky == 0 {
 		return nil
 	}
-	if CanActAsOwner(creds, childKUID) {
+	if creds.EffectiveKUID == childKUID ||
+		creds.EffectiveKUID == parentKUID ||
+		HasCapabilityOnFile(creds, linux.CAP_FOWNER, childKUID, childKGID) {
 		return nil
 	}
 	return syserror.EPERM
