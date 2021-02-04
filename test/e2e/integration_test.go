@@ -430,6 +430,39 @@ func TestTmpMount(t *testing.T) {
 	}
 }
 
+// TestSyntheticDirs checks that submounts can be created inside a readonly
+// mount even if the target path does not exist.
+func TestSyntheticDirs(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		// Make the root read-only to force use of synthetic dirs
+		// inside the root gofer mount.
+		ReadOnly: true,
+		Mounts: []mount.Mount{
+			// Mount inside read-only gofer-backed root.
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/foo/bar/baz",
+			},
+			// Mount inside sysfs, which always uses synthetic dirs
+			// for submounts.
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/sys/foo/bar/baz",
+			},
+		},
+	}
+	// Make sure the directories exist.
+	if _, err := d.Run(ctx, opts, "ls", "/foo/bar/baz", "/sys/foo/bar/baz"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+}
+
 // TestHostOverlayfsCopyUp tests that the --overlayfs-stale-read option causes
 // runsc to hide the incoherence of FDs opened before and after overlayfs
 // copy-up on the host.
