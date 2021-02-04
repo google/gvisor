@@ -1216,7 +1216,13 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 }
 
 func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
-	return vfs.CheckDeleteSticky(creds, linux.FileMode(atomic.LoadUint32(&d.mode)), auth.KUID(atomic.LoadUint32(&child.uid)))
+	return vfs.CheckDeleteSticky(
+		creds,
+		linux.FileMode(atomic.LoadUint32(&d.mode)),
+		auth.KUID(atomic.LoadUint32(&d.uid)),
+		auth.KUID(atomic.LoadUint32(&child.uid)),
+		auth.KGID(atomic.LoadUint32(&child.gid)),
+	)
 }
 
 func dentryUIDFromP9UID(uid p9.UID) uint32 {
