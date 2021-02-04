@@ -526,7 +526,7 @@ void TestListenWhileConnect(const TestParam& param,
   stopListen(listen_fd);
 
   for (auto& client : clients) {
-    const int kTimeout = 10000;
+    constexpr int kTimeout = 10000;
     struct pollfd pfd = {
         .fd = client.get(),
         .events = POLLIN,
@@ -942,7 +942,7 @@ void setupTimeWaitClose(const TestAddress* listener,
   // shutdown to trigger TIME_WAIT.
   ASSERT_THAT(shutdown(active_closefd.get(), SHUT_WR), SyscallSucceeds());
   {
-    const int kTimeout = 10000;
+    constexpr int kTimeout = 10000;
     struct pollfd pfd = {
         .fd = passive_closefd.get(),
         .events = POLLIN,
@@ -1186,7 +1186,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   ASSERT_EQ(addrlen, listener.addr_len);
 
   // Wait for accept_fd to process the RST.
-  const int kTimeout = 10000;
+  constexpr int kTimeout = 10000;
   struct pollfd pfd = {
       .fd = accept_fd.get(),
       .events = POLLIN,
