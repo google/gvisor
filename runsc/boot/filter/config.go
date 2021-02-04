@@ -100,6 +100,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.MatchAny{},
 		},
 	},
+	// getcpu is used by some versions of the Go runtime and by the hostcpu
+	// package on arm64.
+	unix.SYS_GETCPU: []seccomp.Rule{
+		{
+			seccomp.MatchAny{},
+			seccomp.EqualTo(0),
+			seccomp.EqualTo(0),
+		},
+	},
 	syscall.SYS_GETPID: {},
 	unix.SYS_GETRANDOM: {},
 	syscall.SYS_GETSOCKOPT: []seccomp.Rule{
