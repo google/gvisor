@@ -27,6 +27,12 @@ else
   declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.18.0}
 fi
 
+# containerd < 1.4 doesn't work with cgroupv2 setup, so we check for that here
+if [[ $(stat -f -c %t /sys/fs/cgroup | grep -qFw 63677270) && "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -lt 4 ]]; then
+	echo "containerd < 1.4 does not work with cgroup2"
+	exit 1
+fi
+
 # Helper for Go packages below.
 install_helper() {
   PACKAGE="${1}"
