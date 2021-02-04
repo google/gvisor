@@ -298,19 +298,21 @@ func createCgroupConfigFromResources(name string, r *specs.LinuxResources) (*lib
 		if r.BlockIO.LeafWeight != nil {
 			c.Resources.BlkioLeafWeight = *r.BlockIO.LeafWeight
 		}
-		if r.BlockIO.WeightDevice != nil {
-			for _, wd := range r.BlockIO.WeightDevice {
-				var weight, leafWeight uint16
-				if wd.Weight != nil {
-					weight = *wd.Weight
-				}
-				if wd.LeafWeight != nil {
-					leafWeight = *wd.LeafWeight
-				}
-				weightDevice := libcontainerconfigs.NewWeightDevice(wd.Major, wd.Minor, weight, leafWeight)
-				c.Resources.BlkioWeightDevice = append(c.Resources.BlkioWeightDevice, weightDevice)
-			}
-		}
+		// FIXME: enable blkio weight. Currently it's setting wrong value
+		// https://github.com/opencontainers/runc/pull/2786
+		// if r.BlockIO.WeightDevice != nil {
+		//   for _, wd := range r.BlockIO.WeightDevice {
+		//     var weight, leafWeight uint16
+		//     if wd.Weight != nil {
+		//       weight = *wd.Weight
+		//     }
+		//     if wd.LeafWeight != nil {
+		//       leafWeight = *wd.LeafWeight
+		//     }
+		//     weightDevice := libcontainerconfigs.NewWeightDevice(wd.Major, wd.Minor, weight, leafWeight)
+		//     c.Resources.BlkioWeightDevice = append(c.Resources.BlkioWeightDevice, weightDevice)
+		//   }
+		// }
 		if r.BlockIO.ThrottleReadBpsDevice != nil {
 			for _, td := range r.BlockIO.ThrottleReadBpsDevice {
 				rate := td.Rate
