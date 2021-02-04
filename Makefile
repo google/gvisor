@@ -113,6 +113,12 @@ RUNTIME_BIN     := $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR := $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    := $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
 
+ifeq ($(shell stat -f -c "%T" /sys/fs/cgroup 2>/dev/null),cgroup2fs)
+CGROUPV2 := true
+else
+CGROUPV2 := false
+endif
+
 $(RUNTIME_BIN): # See below.
 	@mkdir -p "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
@@ -204,7 +210,7 @@ tests: unit-tests nogo-tests container-tests syscall-tests
 
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
-integration-tests: do-tests kvm-tests containerd-test-1.3.9
+integration-tests: do-tests kvm-tests containerd-tests-min
 .PHONY: integration-tests
 
 network-tests: ## Run all networking integration tests.
@@ -320,10 +326,19 @@ else
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 
+ifeq ($(CGROUPV2),false)
+containerd-tests-min: containerd-test-1.3.9
+else
+containerd-tests-min: containerd-test-1.4.3
+endif
+
 # The shim builds with containerd 1.3.9 and it's not backward compatible. Test
 # with 1.3.9 and newer versions.
+# When run under cgroupv2 environment, skip 1.3.9 as it does not support cgroupv2
 containerd-tests: ## Runs all supported containerd version tests.
+ifeq ($(CGROUPV2),false)
 containerd-tests: containerd-test-1.3.9
+endif
 containerd-tests: containerd-test-1.4.3
 containerd-tests: containerd-test-1.5.4
 
