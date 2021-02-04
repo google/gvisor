@@ -1,5 +1,7 @@
 FROM gcr.io/syzkaller/env
 
+# This image is mostly for investigating syzkaller crashes, so let's install
+# developer tools.
 RUN apt update && apt install -y git vim strace gdb procps
 
 WORKDIR  /syzkaller/gopath/src/github.com/google/syzkaller
