@@ -116,6 +116,10 @@ type sender struct {
 	// that have been sent but not yet acknowledged.
 	outstanding int
 
+	// outstandingPrev is the previous value of outstanding just before
+	// entering recovery.
+	outstandingPrev int
+
 	// sackedOut is the number of packets which are selectively acked.
 	sackedOut int
 
@@ -203,6 +207,8 @@ type rtt struct {
 	srtt       time.Duration
 	rttvar     time.Duration
 	srttInited bool
+	srttPrev   time.Duration
+	rttvarPrev time.Duration
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
@@ -235,6 +241,18 @@ type fastRecovery struct {
 	// available for transmission.
 	// See: RFC 6675 Section 2 for details.
 	rescueRxt seqnum.Value
+
+	// spuriousRecovery is the SpuriousRecovery variable described in
+	// RFC3522 Section 3.2.
+	spuriousRecovery uint8
+
+	// retransmitTS is the RetransmitTS variable described in RFC3522
+	// Section 3.2.
+	retransmitTS uint32
+
+	// firstAck is set to true when Eifel detection is started and false
+	// after first acceptable ACK is recieved.
+	firstAck bool
 }
 
 func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
@@ -478,6 +496,7 @@ func (s *sender) resendSegment() {
 		// to the highest sequence number in the retransmitted segment.
 		s.fr.highRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
 		s.fr.rescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
+		s.fr.retransmitTS = s.ep.timestamp()
 		s.sendSegment(seg)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
 		s.ep.stats.SendErrors.FastRetransmit.Increment()
@@ -566,6 +585,13 @@ func (s *sender) retransmitTimerExpired() bool {
 		// Leave the state. We don't need to update ssthresh because it
 		// has already been updated when entered fast-recovery.
 		s.leaveRecovery()
+	}
+
+	s.initializeSpuriousRecovery()
+	// Do not re-initialize eifel detection TS on subsequent RTO's while
+	// in recovery.
+	if s.state != tcpip.RTORecovery {
+		s.fr.retransmitTS = s.ep.timestamp()
 	}
 
 	s.state = tcpip.RTORecovery
@@ -1024,6 +1050,9 @@ func (s *sender) sendData() {
 
 func (s *sender) enterRecovery() {
 	s.fr.active = true
+
+	s.initializeSpuriousRecovery()
+
 	// Save state to reflect we're now in fast recovery.
 	//
 	// See : https://tools.ietf.org/html/rfc5681#section-3.2 Step 3.
@@ -1272,6 +1301,71 @@ func checkDSACK(rcvdSeg *segment) bool {
 	return false
 }
 
+// Intialize the variables before entering recovery for Eifel detection.
+// See: https://tools.ietf.org/html/rfc3522#section-3.2
+func (s *sender) initializeSpuriousRecovery() {
+	s.fr.firstAck = true
+	// Before the variables cwnd and ssthresh get updated when loss recovery
+	// is initiated, set a "pipe_prev" variable as follows:
+	//     pipe_prev <- max (FlightSize, ssthresh)
+	s.outstandingPrev = s.outstanding
+	if s.outstandingPrev < s.sndSsthresh {
+		s.outstandingPrev = s.sndSsthresh
+	}
+
+	// Set a "SRTT_prev" variable and a "RTTVAR_prev" variable as follows:
+	//     SRTT_prev <- SRTT + (2 * G)
+	//     RTTVAR_prev <- RTTVAR
+	s.rtt.Lock()
+	s.rtt.srttPrev = s.rtt.srtt + 2*time.Second
+	s.rtt.rttvarPrev = s.rtt.rttvar
+	s.rtt.Unlock()
+}
+
+// Detect if we have entered the recovery without any real loss using Eifel
+// detection algorithm.
+// See: https://tools.ietf.org/html/rfc3522#section-3.2.
+func (s *sender) detectSpuriousRecovery(rcvdSeg *segment) {
+	s.fr.firstAck = false
+	if s.ep.sendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
+		// Check if the value of the Timestamp Echo Reply field of the
+		// acceptable ACK's Timestamps option is smaller than the value
+		// of RetransmitTS.
+		if rcvdSeg.parsedOptions.TSEcr < s.fr.retransmitTS {
+			// Check the following:
+			// * ACK does not carry a DSACK option.
+			// * ACK does not acknowledge all outstanding data.
+			if !checkDSACK(rcvdSeg) && s.outstanding != 0 {
+				if s.state == tcpip.RTORecovery {
+					s.fr.spuriousRecovery = 1
+					return
+				}
+				s.fr.spuriousRecovery = nDupAckThreshold + 1
+			}
+		}
+	}
+}
+
+// Respond to the Eifel detection algorithm using Eifel response.
+// See: https://tools.ietf.org/html/rfc4015#section-3.1.
+func (s *sender) responseToSpuriousRecovery() {
+	if s.fr.spuriousRecovery == 1 {
+		// Move writeNext to sndNxt and reset congestion control state
+		// as per eifel response algorithm if in RTO recovery.
+		for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+			if seg.flags != 0 {
+				s.writeNext = seg
+				break
+			}
+		}
+	}
+
+	// Reverse the congestion control state.
+	s.sndCwnd = s.outstanding + InitialCwnd
+	s.sndSsthresh = s.outstandingPrev
+	s.fr.spuriousRecovery = 0
+}
+
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
@@ -1327,6 +1421,12 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	}
 
 	ack := rcvdSeg.ackNumber
+
+	inRecovery := s.state == tcpip.RTORecovery || s.state == tcpip.FastRecovery || s.state == tcpip.SACKRecovery
+	if inRecovery && s.fr.firstAck {
+		s.detectSpuriousRecovery(rcvdSeg)
+	}
+
 	fastRetransmit := false
 	// Do not leave fast recovery, if the ACK is out of range.
 	if s.fr.active {
@@ -1491,6 +1591,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// * Step 4: Update RACK reordering window
 	if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 		s.rc.updateRACKReorderWindow(rcvdSeg)
+	}
+
+	if s.fr.spuriousRecovery != 0 {
+		s.responseToSpuriousRecovery()
 	}
 
 	// Now that we've popped all acknowledged data from the retransmit

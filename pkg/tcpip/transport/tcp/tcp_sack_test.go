@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -633,4 +634,165 @@ func TestSACKUpdateSackedOut(t *testing.T) {
 	// Wait for the probe function to finish processing the ACK before the
 	// test completes.
 	<-probeDone
+}
+
+func sendAndReceiveWithReturnOptions(t *testing.T, c *context.Context, data []byte) []byte {
+	bytesRead := 0
+	var options []byte
+	numPackets := 0
+	dataLen := 5 * maxPayload
+	for bytesRead != dataLen {
+		b := c.GetPacket()
+		numPackets++
+		tcpHdr := header.TCP(header.IPv4(b).Payload())
+		payloadLen := len(tcpHdr.Payload())
+		checker.IPv4(t, b,
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPSeqNum(uint32(c.IRS)+1+uint32(bytesRead)),
+				checker.TCPAckNum(context.TestInitialSequenceNumber+1),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			),
+		)
+
+		pdata := data[bytesRead : bytesRead+payloadLen]
+		if p := tcpHdr.Payload(); !bytes.Equal(pdata, p) {
+			t.Fatalf("got data = %v, want = %v", p, pdata)
+		}
+		if bytesRead == 0 {
+			if c.TimeStampEnabled {
+				// If timestamp option is enabled, echo back the timestamp and increment
+				// the TSEcr value included in the packet and send that back as the TSVal.
+				parsedOpts := tcpHdr.ParsedOptions()
+				tsOpt := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+				header.EncodeTSOption(parsedOpts.TSEcr+1, parsedOpts.TSVal, tsOpt[2:])
+				options = tsOpt[:]
+			}
+		}
+		bytesRead += payloadLen
+		// Timestamps are at millisecond granularity.
+		time.Sleep(time.Millisecond)
+	}
+
+	return options
+}
+
+func TestSACKEifelWithDupACK(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+
+	data := make([]byte, 5*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	options := sendAndReceiveWithReturnOptions(t, c, data)
+
+	// Send three duplicate ACKs.
+	rcvWnd := seqnum.Size(30000)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	start := c.IRS.Add(seqnum.Size(1 + maxPayload))
+	end := start.Add(seqnum.Size(maxPayload))
+	for i := 0; i < 3; i++ {
+		sackBlocks := []header.SACKBlock{{start, end}}
+		options := make([]byte, 40)
+		offset := 0
+		offset += header.EncodeNOP(options[offset:])
+		offset += header.EncodeNOP(options[offset:])
+		offset += header.EncodeSACKBlocks(sackBlocks, options[offset:])
+
+		// Acknowledge the data.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  seq,
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  rcvWnd,
+			TCPOpts: options,
+		})
+		end = end.Add(seqnum.Size(maxPayload))
+	}
+
+	// Receive the retransmitted packet.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	// Acknowledge the data.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1 + seqnum.Size(4*maxPayload)),
+		RcvWnd:  rcvWnd,
+		TCPOpts: options,
+	})
+
+	time.Sleep(time.Second)
+
+	info := tcpip.TCPInfoOption{}
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	if info.CcState != tcpip.SACKRecovery || info.SndCwnd < tcp.InitialCwnd {
+		t.Fatalf("Undo spurious recovery did not happen, state: %v, sndcwnd: %v", info.CcState, info.SndCwnd)
+	}
+}
+
+func TestSACKEifelWithRTO(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	setStackSACKPermitted(t, c, true)
+	createConnectedWithSACKAndTS(c)
+
+	data := make([]byte, 5*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	options := sendAndReceiveWithReturnOptions(t, c, data)
+
+	// Receive the retransmitted packet.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	// Acknowledge the data.
+	rcvWnd := seqnum.Size(30000)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1 + seqnum.Size(maxPayload)),
+		RcvWnd:  rcvWnd,
+		TCPOpts: options,
+	})
+
+	time.Sleep(time.Second)
+
+	info := tcpip.TCPInfoOption{}
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
+	}
+	if info.CcState != tcpip.RTORecovery || info.SndCwnd < tcp.InitialCwnd {
+		t.Fatalf("Undo spurious recovery did not happen, state: %v, sndcwnd: %v", info.CcState, info.SndCwnd)
+	}
 }

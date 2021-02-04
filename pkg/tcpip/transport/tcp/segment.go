@@ -78,6 +78,10 @@ type segment struct {
 	xmitTime  time.Time `state:".(unixTime)"`
 	xmitCount uint32
 
+	// retransmitTS is the timestamp of the last retransmission of this segment.
+	// This is the 'RetransmitTS' variable defined in RFC3522 Section 3.2.
+	retransmitTS uint32
+
 	// acked indicates if the segment has already been SACKed.
 	acked bool
 
