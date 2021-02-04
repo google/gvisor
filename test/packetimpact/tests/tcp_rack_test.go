@@ -168,9 +168,10 @@ func TestRACKTLPLost(t *testing.T) {
 	closeSACKConnection(t, dut, conn, acceptFd, listenFd)
 }
 
-// TestRACKTLPWithSACK tests TLP by acknowledging out of order packets.
+// TestRACKWithSACK tests that RACK marks the packets as lost after receiving
+// the ACK for retransmitted packets.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-8.1
-func TestRACKTLPWithSACK(t *testing.T) {
+func TestRACKWithSACK(t *testing.T) {
 	dut, conn, acceptFd, listenFd := createSACKConnection(t)
 	seqNum1 := *conn.RemoteSeqNum(t)
 
@@ -180,8 +181,9 @@ func TestRACKTLPWithSACK(t *testing.T) {
 
 	// We are not sending ACK for these packets.
 	const numPkts = 3
-	lastSent := sendAndReceive(t, dut, conn, numPkts, acceptFd, false /* sendACK */)
+	sendAndReceive(t, dut, conn, numPkts, acceptFd, false /* sendACK */)
 
+	time.Sleep(simulatedRTT)
 	// SACK for #2 packet.
 	sackBlock := make([]byte, 40)
 	start := seqNum1.Add(seqnum.Size(payloadSize))
@@ -194,31 +196,24 @@ func TestRACKTLPWithSACK(t *testing.T) {
 	}}, sackBlock[sbOff:])
 	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
-	// RACK marks #1 packet as lost and retransmits it.
-	if _, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(seqNum1))}, time.Second); err != nil {
+	rtt, _ := getRTTAndRTO(t, dut, acceptFd)
+	timeout := 2 * rtt
+	// RACK marks #1 packet as lost after RTT+reorderWindow(RTT/4) and
+	// retransmits it.
+	if _, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(seqNum1))}, timeout); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 
+	time.Sleep(simulatedRTT)
 	// ACK for #1 packet.
 	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))})
 
-	// Probe Timeout (PTO) should be two times RTT. TLP will trigger for #3
-	// packet. RACK adds an additional timeout of 200ms if the number of
-	// outstanding packets is equal to 1.
-	rtt, rto := getRTTAndRTO(t, dut, acceptFd)
-	pto := rtt*2 + (200 * time.Millisecond)
-	if rto < pto {
-		pto = rto
-	}
-	// We expect the 3rd packet (the last unacknowledged packet) to be
-	// retransmitted.
-	tlpProbe := testbench.Uint32(uint32(seqNum1) + uint32((numPkts-1)*payloadSize))
-	if _, err := conn.Expect(t, testbench.TCP{SeqNum: tlpProbe}, time.Second); err != nil {
+	// RACK considers transmission times of the packets to mark them lost.
+	// As the 3rd packet was sent before the retransmitted 1st packet, RACK
+	// marks it as lost and retransmits it..
+	expectedSeqNum := testbench.Uint32(uint32(seqNum1) + uint32((numPkts-1)*payloadSize))
+	if _, err := conn.Expect(t, testbench.TCP{SeqNum: expectedSeqNum}, timeout); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
-	}
-	diff := time.Now().Sub(lastSent)
-	if diff < pto {
-		t.Fatalf("expected payload was received before the probe timeout, got: %v, want: %v", diff, pto)
 	}
 	closeSACKConnection(t, dut, conn, acceptFd, listenFd)
 }
