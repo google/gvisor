@@ -434,7 +434,7 @@ func TestTmpMount(t *testing.T) {
 // runsc to hide the incoherence of FDs opened before and after overlayfs
 // copy-up on the host.
 func TestHostOverlayfsCopyUp(t *testing.T) {
-	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_copy_up test_copy_up.c && ./test_copy_up")
+	runIntegrationTest(t, nil, "./test_copy_up")
 }
 
 // TestHostOverlayfsRewindDir tests that rewinddir() "causes the directory
@@ -449,14 +449,14 @@ func TestHostOverlayfsCopyUp(t *testing.T) {
 // automated tests yield newly-added files from readdir() even if the fsgofer
 // does not explicitly rewinddir(), but overlayfs does not.
 func TestHostOverlayfsRewindDir(t *testing.T) {
-	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_rewinddir test_rewinddir.c && ./test_rewinddir")
+	runIntegrationTest(t, nil, "./test_rewinddir")
 }
 
 // Basic test for linkat(2). Syscall tests requires CAP_DAC_READ_SEARCH and it
 // cannot use tricks like userns as root. For this reason, run a basic link test
 // to ensure some coverage.
 func TestLink(t *testing.T) {
-	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o link_test link_test.c && ./link_test")
+	runIntegrationTest(t, nil, "./link_test")
 }
 
 // This test ensures we can run ping without errors.
@@ -498,7 +498,7 @@ func TestStickyDir(t *testing.T) {
 		t.Skip("sticky bit test fails on VFS1.")
 	}
 
-	runIntegrationTest(t, nil, "sh", "-c", "gcc -O2 -o test_sticky test_sticky.c && ./test_sticky")
+	runIntegrationTest(t, nil, "./test_sticky")
 }
 
 func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
