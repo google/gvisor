@@ -180,16 +180,9 @@ func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer 
 
 // IterateDir implements fs.DirIterator.IterateDir.
 func (f *fileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
-	if f.dirinfo == nil {
-		f.dirinfo = new(dirInfo)
-		f.dirinfo.buf = make([]byte, usermem.PageSize)
-	}
-	entries, err := f.iops.readdirAll(f.dirinfo)
-	if err != nil {
-		return offset, err
-	}
-	count, err := fs.GenericReaddir(dirCtx, fs.NewSortedDentryMap(entries))
-	return offset + count, err
+	// We only support non-directory file descriptors that have been
+	// imported, so just claim that this isn't a directory, even if it is.
+	return offset, syscall.ENOTDIR
 }
 
 // Write implements fs.FileOperations.Write.

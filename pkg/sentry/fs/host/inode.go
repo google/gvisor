@@ -411,10 +411,3 @@ func (i *inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}
-
-// readdirAll returns all of the directory entries in i.
-func (i *inodeOperations) readdirAll(d *dirInfo) (map[string]fs.DentAttr, error) {
-	// We only support non-directory file descriptors that have been
-	// imported, so just claim that this isn't a directory, even if it is.
-	return nil, syscall.ENOTDIR
-}
