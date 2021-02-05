@@ -235,7 +235,7 @@ func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) tcpip.Error
 	// If iptables is being enabled, initialize the conntrack table and
 	// reaper.
 	if !it.modified {
-		it.connections.buckets = make([]bucket, numBuckets)
+		it.connections.init()
 		it.startReaper(reaperDelay)
 	}
 	it.modified = true
