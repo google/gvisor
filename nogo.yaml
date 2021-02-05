@@ -147,6 +147,11 @@ analyzers:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
+  ST1019:
+    generated:
+      exclude:
+        # package ".../kubeapi/core/v1/v1" is being imported more than once
+        - generated.gen.pb.go
   ST1021:
     internal:
       suppress:
