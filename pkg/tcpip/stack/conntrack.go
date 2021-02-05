@@ -231,6 +231,12 @@ func newConn(orig, reply tupleID, manip manipType, hook Hook) *conn {
 	return &conn
 }
 
+func (ct *ConnTrack) init() {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	ct.buckets = make([]bucket, numBuckets)
+}
+
 // connFor gets the conn for pkt if it exists, or returns nil
 // if it does not. It returns an error when pkt does not contain a valid TCP
 // header.
