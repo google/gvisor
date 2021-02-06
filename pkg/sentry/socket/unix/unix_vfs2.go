@@ -95,8 +95,7 @@ func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint3
 // DecRef implements RefCounter.DecRef.
 func (s *SocketVFS2) DecRef(ctx context.Context) {
 	s.socketVFS2Refs.DecRef(func() {
-		t := kernel.TaskFromContext(ctx)
-		t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+		kernel.KernelFromContext(ctx).DeleteSocketVFS2(&s.vfsfd)
 		s.ep.Close(ctx)
 		if s.abstractNamespace != nil {
 			s.abstractNamespace.Remove(s.abstractName, s)
