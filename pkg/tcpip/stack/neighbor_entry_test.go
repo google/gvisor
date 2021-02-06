@@ -220,7 +220,7 @@ func (r *entryTestLinkResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumbe
 func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *entryTestLinkResolver, *faketime.ManualClock) {
 	clock := faketime.NewManualClock()
 	disp := testNUDDispatcher{}
-	nic := NIC{
+	nic := nic{
 		LinkEndpoint: nil, // entryTestLinkResolver doesn't use a LinkEndpoint
 
 		id: entryTestNICID,

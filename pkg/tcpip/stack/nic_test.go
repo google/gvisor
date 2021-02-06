@@ -170,7 +170,7 @@ func (*testIPv6Protocol) Parse(*PacketBuffer) (tcpip.TransportProtocolNumber, bo
 func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 	// When the NIC is disabled, the only field that matters is the stats field.
 	// This test is limited to stats counter checks.
-	nic := NIC{
+	nic := nic{
 		stats: makeNICStats(),
 	}
 

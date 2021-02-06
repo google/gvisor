@@ -85,7 +85,7 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 		delay:   typicalLatency,
 	}
 	linkRes.neigh = &neighborCache{
-		nic: &NIC{
+		nic: &nic{
 			stack: &Stack{
 				clock:   clock,
 				nudDisp: nudDisp,
