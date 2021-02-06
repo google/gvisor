@@ -777,6 +777,28 @@ func TestExec(t *testing.T) {
 					}
 				})
 			}
+
+			// Test for exec failure with an non-existent file.
+			t.Run("nonexist", func(t *testing.T) {
+				// b/179114837 found by Syzkaller that causes nil pointer panic when
+				// trying to dec-ref an unix socket FD.
+				fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer syscall.Close(fds[0])
+
+				_, err = cont.executeSync(&control.ExecArgs{
+					Argv: []string{"/nonexist"},
+					FilePayload: urpc.FilePayload{
+						Files: []*os.File{os.NewFile(uintptr(fds[1]), "sock")},
+					},
+				})
+				want := "failed to load /nonexist"
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Errorf("executeSync: want err containing %q; got err = %q", want, err)
+				}
+			})
 		})
 	}
 }

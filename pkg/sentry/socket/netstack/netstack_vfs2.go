@@ -79,8 +79,7 @@ func NewVFS2(t *kernel.Task, family int, skType linux.SockType, protocol int, qu
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (s *SocketVFS2) Release(ctx context.Context) {
-	t := kernel.TaskFromContext(ctx)
-	t.Kernel().DeleteSocketVFS2(&s.vfsfd)
+	kernel.KernelFromContext(ctx).DeleteSocketVFS2(&s.vfsfd)
 	s.socketOpsCommon.Release(ctx)
 }
 
