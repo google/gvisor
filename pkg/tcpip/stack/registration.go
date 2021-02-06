@@ -514,7 +514,18 @@ type NetworkInterface interface {
 	Enabled() bool
 
 	// Promiscuous returns true if the interface is in promiscuous mode.
+	//
+	// When in promiscuous mode, the interface should accept all packets.
 	Promiscuous() bool
+
+	// Spoofing returns true if the interface is in spoofing mode.
+	//
+	// When in spoofing mode, the interface should consider all addresses as
+	// assigned to it.
+	Spoofing() bool
+
+	// CheckLocalAddress returns true if the address exists on the interface.
+	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
 	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
