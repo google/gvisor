@@ -225,8 +225,10 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 
 		id: entryTestNICID,
 		stack: &Stack{
-			clock:   clock,
-			nudDisp: &disp,
+			clock:           clock,
+			nudDisp:         &disp,
+			nudConfigs:      c,
+			randomGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
 		},
 		stats: makeNICStats(),
 	}
@@ -235,22 +237,17 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 		header.IPv6ProtocolNumber: netEP,
 	}
 
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	nudState := NewNUDState(c, rng)
 	var linkRes entryTestLinkResolver
 	// Stub out the neighbor cache to verify deletion from the cache.
-	neigh := &neighborCache{
-		nic:     &nic,
-		state:   nudState,
-		linkRes: &linkRes,
-		cache:   make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-	}
+	neigh := newNeighborCache(&nic, &linkRes)
 	l := linkResolver{
 		resolver:      &linkRes,
 		neighborTable: neigh,
 	}
-	entry := newNeighborEntry(neigh, entryTestAddr1 /* remoteAddr */, nudState)
-	neigh.cache[entryTestAddr1] = entry
+	entry := newNeighborEntry(neigh, entryTestAddr1 /* remoteAddr */, neigh.state)
+	neigh.mu.Lock()
+	neigh.mu.cache[entryTestAddr1] = entry
+	neigh.mu.Unlock()
 	nic.linkAddrResolvers = map[tcpip.NetworkProtocolNumber]linkResolver{
 		header.IPv6ProtocolNumber: l,
 	}
@@ -265,8 +262,8 @@ func TestEntryInitiallyUnknown(t *testing.T) {
 	e, nudDisp, linkRes, clock := entryTestSetup(c)
 
 	e.mu.Lock()
-	if e.neigh.State != Unknown {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Unknown)
+	if e.mu.neigh.State != Unknown {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Unknown)
 	}
 	e.mu.Unlock()
 
@@ -298,8 +295,8 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Unknown {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Unknown)
+	if e.mu.neigh.State != Unknown {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Unknown)
 	}
 	e.mu.Unlock()
 
@@ -327,8 +324,8 @@ func TestEntryUnknownToIncomplete(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -374,8 +371,8 @@ func TestEntryUnknownToStale(t *testing.T) {
 
 	e.mu.Lock()
 	e.handleProbeLocked(entryTestLinkAddr1)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -413,10 +410,10 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
-	updatedAtNanos := e.neigh.UpdatedAtNanos
+	updatedAtNanos := e.mu.neigh.UpdatedAtNanos
 	e.mu.Unlock()
 
 	clock.Advance(c.RetransmitTimer)
@@ -443,8 +440,8 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if got, want := e.neigh.UpdatedAtNanos, updatedAtNanos; got != want {
-		t.Errorf("got e.neigh.UpdatedAt = %q, want = %q", got, want)
+	if got, want := e.mu.neigh.UpdatedAtNanos, updatedAtNanos; got != want {
+		t.Errorf("got e.mu.neigh.UpdatedAt = %q, want = %q", got, want)
 	}
 	e.mu.Unlock()
 
@@ -497,8 +494,8 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if got, notWant := e.neigh.UpdatedAtNanos, updatedAtNanos; got == notWant {
-		t.Errorf("expected e.neigh.UpdatedAt to change, got = %q", got)
+	if got, notWant := e.mu.neigh.UpdatedAtNanos, updatedAtNanos; got == notWant {
+		t.Errorf("expected e.mu.neigh.UpdatedAt to change, got = %q", got)
 	}
 	e.mu.Unlock()
 }
@@ -509,8 +506,8 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -535,8 +532,8 @@ func TestEntryIncompleteToReachable(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -573,8 +570,8 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -599,11 +596,11 @@ func TestEntryIncompleteToReachableWithRouterFlag(t *testing.T) {
 		Override:  false,
 		IsRouter:  true,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if !e.isRouter {
-		t.Errorf("got e.isRouter = %t, want = true", e.isRouter)
+	if !e.mu.isRouter {
+		t.Errorf("got e.mu.isRouter = %t, want = true", e.mu.isRouter)
 	}
 	e.mu.Unlock()
 
@@ -640,8 +637,8 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -666,8 +663,8 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -704,8 +701,8 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -726,8 +723,8 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 
 	e.mu.Lock()
 	e.handleProbeLocked(entryTestLinkAddr1)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -765,8 +762,8 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -826,8 +823,8 @@ func TestEntryIncompleteToFailed(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if e.neigh.State != Failed {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
+	if e.mu.neigh.State != Failed {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Failed)
 	}
 	e.mu.Unlock()
 }
@@ -870,11 +867,11 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		Override:  false,
 		IsRouter:  true,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if got, want := e.isRouter, true; got != want {
-		t.Errorf("got e.isRouter = %t, want = %t", got, want)
+	if got, want := e.mu.isRouter, true; got != want {
+		t.Errorf("got e.mu.isRouter = %t, want = %t", got, want)
 	}
 
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
@@ -882,11 +879,11 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if got, want := e.isRouter, false; got != want {
-		t.Errorf("got e.isRouter = %t, want = %t", got, want)
+	if got, want := e.mu.isRouter, false; got != want {
+		t.Errorf("got e.mu.isRouter = %t, want = %t", got, want)
 	}
-	if ipv6EP.invalidatedRtr != e.neigh.Addr {
-		t.Errorf("got ipv6EP.invalidatedRtr = %s, want = %s", ipv6EP.invalidatedRtr, e.neigh.Addr)
+	if ipv6EP.invalidatedRtr != e.mu.neigh.Addr {
+		t.Errorf("got ipv6EP.invalidatedRtr = %s, want = %s", ipv6EP.invalidatedRtr, e.mu.neigh.Addr)
 	}
 	e.mu.Unlock()
 
@@ -917,8 +914,8 @@ func TestEntryStaysReachableWhenConfirmationWithRouterFlag(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 }
@@ -952,15 +949,15 @@ func TestEntryStaysReachableWhenProbeWithSameAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.handleProbeLocked(entryTestLinkAddr1)
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr1 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr1)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr1 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr1)
 	}
 	e.mu.Unlock()
 
@@ -1025,8 +1022,8 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -1068,8 +1065,8 @@ func TestEntryReachableToStaleWhenTimeout(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 }
@@ -1103,12 +1100,12 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.handleProbeLocked(entryTestLinkAddr2)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -1177,16 +1174,16 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -1255,16 +1252,16 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -1333,15 +1330,15 @@ func TestEntryStaysStaleWhenProbeWithSameAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handleProbeLocked(entryTestLinkAddr1)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr1 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr1)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr1 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr1)
 	}
 	e.mu.Unlock()
 
@@ -1401,19 +1398,19 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr2 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr2)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr2 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr2)
 	}
 	e.mu.Unlock()
 
@@ -1482,19 +1479,19 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handleConfirmationLocked("" /* linkAddr */, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr1 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr1)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr1 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr1)
 	}
 	e.mu.Unlock()
 
@@ -1563,19 +1560,19 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr2 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr2)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr2 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr2)
 	}
 	e.mu.Unlock()
 
@@ -1644,15 +1641,15 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handleProbeLocked(entryTestLinkAddr2)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr2 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr2)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr2 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr2)
 	}
 	e.mu.Unlock()
 
@@ -1721,12 +1718,12 @@ func TestEntryStaleToDelay(t *testing.T) {
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -1801,12 +1798,12 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleUpperLevelConfirmationLocked()
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -1901,19 +1898,19 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr2 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr2)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr2 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr2)
 	}
 	e.mu.Unlock()
 
@@ -2008,19 +2005,19 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleConfirmationLocked("" /* linkAddr */, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr1 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr1)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr1 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr1)
 	}
 	e.mu.Unlock()
 
@@ -2109,19 +2106,19 @@ func TestEntryStaysDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
-	if e.neigh.LinkAddr != entryTestLinkAddr1 {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", e.neigh.LinkAddr, entryTestLinkAddr1)
+	if e.mu.neigh.LinkAddr != entryTestLinkAddr1 {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", e.mu.neigh.LinkAddr, entryTestLinkAddr1)
 	}
 	e.mu.Unlock()
 
@@ -2191,12 +2188,12 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleProbeLocked(entryTestLinkAddr2)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2275,16 +2272,16 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2366,8 +2363,8 @@ func TestEntryDelayToProbe(t *testing.T) {
 		IsRouter:  false,
 	})
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Delay {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Delay)
+	if e.mu.neigh.State != Delay {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Delay)
 	}
 	e.mu.Unlock()
 
@@ -2432,8 +2429,8 @@ func TestEntryDelayToProbe(t *testing.T) {
 	nudDisp.mu.Unlock()
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.mu.Unlock()
 }
@@ -2490,12 +2487,12 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleProbeLocked(entryTestLinkAddr2)
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2605,16 +2602,16 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Stale {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Stale)
+	if e.mu.neigh.State != Stale {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Stale)
 	}
 	e.mu.Unlock()
 
@@ -2725,19 +2722,19 @@ func TestEntryStaysProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: false,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
-	if got, want := e.neigh.LinkAddr, entryTestLinkAddr1; got != want {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
+	if got, want := e.mu.neigh.LinkAddr, entryTestLinkAddr1; got != want {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", got, want)
 	}
 	e.mu.Unlock()
 
@@ -2821,19 +2818,19 @@ func TestEntryUnknownToStaleToProbeToReachable(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if got, want := e.neigh.LinkAddr, entryTestLinkAddr2; got != want {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
+	if got, want := e.mu.neigh.LinkAddr, entryTestLinkAddr2; got != want {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", got, want)
 	}
 	e.mu.Unlock()
 
@@ -2949,19 +2946,19 @@ func TestEntryProbeToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr2, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  true,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
-	if got, want := e.neigh.LinkAddr, entryTestLinkAddr2; got != want {
-		t.Errorf("got e.neigh.LinkAddr = %q, want = %q", got, want)
+	if got, want := e.mu.neigh.LinkAddr, entryTestLinkAddr2; got != want {
+		t.Errorf("got e.mu.neigh.LinkAddr = %q, want = %q", got, want)
 	}
 	e.mu.Unlock()
 
@@ -3086,16 +3083,16 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithSameAddress(t *testin
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked(entryTestLinkAddr1, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -3220,16 +3217,16 @@ func TestEntryProbeToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Probe {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+	if e.mu.neigh.State != Probe {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 	}
 	e.handleConfirmationLocked("" /* linkAddr */, ReachabilityConfirmationFlags{
 		Solicited: true,
 		Override:  false,
 		IsRouter:  false,
 	})
-	if e.neigh.State != Reachable {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Reachable)
+	if e.mu.neigh.State != Reachable {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Reachable)
 	}
 	e.mu.Unlock()
 
@@ -3352,8 +3349,8 @@ func TestEntryProbeToFailed(t *testing.T) {
 		}
 
 		e.mu.Lock()
-		if e.neigh.State != Probe {
-			t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Probe)
+		if e.mu.neigh.State != Probe {
+			t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Probe)
 		}
 		e.mu.Unlock()
 	}
@@ -3361,8 +3358,8 @@ func TestEntryProbeToFailed(t *testing.T) {
 	// Wait for the last probe to expire, causing a transition to Failed.
 	clock.Advance(c.RetransmitTimer)
 	e.mu.Lock()
-	if e.neigh.State != Failed {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
+	if e.mu.neigh.State != Failed {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Failed)
 	}
 	e.mu.Unlock()
 
@@ -3429,8 +3426,8 @@ func TestEntryFailedToIncomplete(t *testing.T) {
 	// their expected state.
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
@@ -3464,15 +3461,15 @@ func TestEntryFailedToIncomplete(t *testing.T) {
 	}
 
 	e.mu.Lock()
-	if e.neigh.State != Failed {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Failed)
+	if e.mu.neigh.State != Failed {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Failed)
 	}
 	e.mu.Unlock()
 
 	e.mu.Lock()
 	e.handlePacketQueuedLocked(entryTestAddr2)
-	if e.neigh.State != Incomplete {
-		t.Errorf("got e.neigh.State = %q, want = %q", e.neigh.State, Incomplete)
+	if e.mu.neigh.State != Incomplete {
+		t.Errorf("got e.mu.neigh.State = %q, want = %q", e.mu.neigh.State, Incomplete)
 	}
 	e.mu.Unlock()
 
