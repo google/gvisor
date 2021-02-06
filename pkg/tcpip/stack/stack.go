@@ -2063,24 +2063,6 @@ func generateRandInt64() int64 {
 	return v
 }
 
-// FindNetworkEndpoint returns the network endpoint for the given address.
-//
-// Returns nil if the address is not associated with any network endpoint.
-func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, address tcpip.Address) NetworkEndpoint {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, nic := range s.nics {
-		addressEndpoint := nic.getAddressOrCreateTempInner(netProto, address, false /* createTemp */, NeverPrimaryEndpoint)
-		if addressEndpoint == nil {
-			continue
-		}
-		addressEndpoint.DecRef()
-		return nic.getNetworkEndpoint(netProto)
-	}
-	return nil
-}
-
 // FindNICNameFromID returns the name of the NIC for the given NICID.
 func (s *Stack) FindNICNameFromID(id tcpip.NICID) string {
 	s.mu.RLock()

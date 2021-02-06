@@ -130,6 +130,20 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 	return e
 }
 
+func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, e := range p.mu.eps {
+		if addressEndpoint := e.AcquireAssignedAddress(addr, false /* allowTemp */, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
+			addressEndpoint.DecRef()
+			return e
+		}
+	}
+
+	return nil
+}
+
 func (p *protocol) forgetEndpoint(nicID tcpip.NICID) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -347,10 +361,10 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.Netw
 	// short circuits broadcasts before they are sent out to other hosts.
 	if pkt.NatDone {
 		netHeader := header.IPv4(pkt.NetworkHeader().View())
-		if ep := e.protocol.stack.FindNetworkEndpoint(ProtocolNumber, netHeader.DestinationAddress()); ep != nil {
+		if ep := e.protocol.findEndpointWithAddress(netHeader.DestinationAddress()); ep != nil {
 			// Since we rewrote the packet but it is being routed back to us, we
 			// can safely assume the checksum is valid.
-			ep.(*endpoint).handleLocalPacket(pkt, true /* canSkipRXChecksum */)
+			ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
 			return nil
 		}
 	}
@@ -449,7 +463,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 	// The NAT-ed packets may now be destined for us.
 	locallyDelivered := 0
 	for pkt := range natPkts {
-		ep := e.protocol.stack.FindNetworkEndpoint(ProtocolNumber, header.IPv4(pkt.NetworkHeader().View()).DestinationAddress())
+		ep := e.protocol.findEndpointWithAddress(header.IPv4(pkt.NetworkHeader().View()).DestinationAddress())
 		if ep == nil {
 			// The NAT-ed packet is still destined for some remote node.
 			continue
@@ -459,7 +473,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 		pkts.Remove(pkt)
 
 		// Deliver the packet locally.
-		ep.(*endpoint).handleLocalPacket(pkt, true)
+		ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
 		locallyDelivered++
 
 	}
@@ -550,8 +564,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
-	if ep := e.protocol.stack.FindNetworkEndpoint(ProtocolNumber, dstAddr); ep != nil {
-		ep.(*endpoint).handlePacket(pkt)
+	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
+		ep.handlePacket(pkt)
 		return nil
 	}
 
