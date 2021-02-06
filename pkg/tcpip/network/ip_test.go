@@ -314,6 +314,10 @@ func (*testInterface) Promiscuous() bool {
 	return false
 }
 
+func (*testInterface) Spoofing() bool {
+	return false
+}
+
 func (t *testInterface) setEnabled(v bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -330,6 +334,10 @@ func (*testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.Add
 
 func (*testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) tcpip.Error {
 	return nil
+}
+
+func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool {
+	return false
 }
 
 func TestSourceAddressValidation(t *testing.T) {
