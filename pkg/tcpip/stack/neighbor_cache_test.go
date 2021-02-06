@@ -84,19 +84,16 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 		entries: newTestEntryStore(),
 		delay:   typicalLatency,
 	}
-	linkRes.neigh = &neighborCache{
-		nic: &nic{
-			stack: &Stack{
-				clock:   clock,
-				nudDisp: nudDisp,
-			},
-			id:    1,
-			stats: makeNICStats(),
+	linkRes.neigh = newNeighborCache(&nic{
+		stack: &Stack{
+			clock:           clock,
+			nudDisp:         nudDisp,
+			nudConfigs:      config,
+			randomGenerator: rng,
 		},
-		state:   NewNUDState(config, rng),
-		linkRes: linkRes,
-		cache:   make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-	}
+		id:    1,
+		stats: makeNICStats(),
+	}, linkRes)
 	return linkRes
 }
 
