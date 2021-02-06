@@ -120,6 +120,18 @@ func (*icmpv4FragmentationNeededSockError) Kind() stack.TransportErrorKind {
 	return stack.PacketTooBigTransportError
 }
 
+func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
+	if e.nic.Spoofing() {
+		return true
+	}
+
+	if addressEndpoint := e.AcquireAssignedAddress(addr, false, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
+		addressEndpoint.DecRef()
+		return true
+	}
+	return false
+}
+
 // handleControl handles the case when an ICMP error packet contains the headers
 // of the original packet that caused the ICMP one to be sent. This information
 // is used to find out which transport endpoint must be notified about the ICMP
@@ -139,7 +151,7 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 	// Drop packet if it doesn't have the basic IPv4 header or if the
 	// original source address doesn't match an address we own.
 	srcAddr := hdr.SourceAddress()
-	if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, srcAddr) == 0 {
+	if !e.checkLocalAddress(srcAddr) {
 		return
 	}
 

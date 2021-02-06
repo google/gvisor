@@ -441,6 +441,13 @@ func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Unlock()
 }
 
+// Spoofing implements NetworkInterface.
+func (n *NIC) Spoofing() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.mu.spoofing
+}
+
 // primaryAddress returns an address that can be used to communicate with
 // remoteAddr.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr tcpip.Address) AssignableAddressEndpoint {
@@ -993,4 +1000,18 @@ func (n *NIC) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, a
 	}
 
 	return &tcpip.ErrNotSupported{}
+}
+
+// CheckLocalAddress implements NetworkInterface.
+func (n *NIC) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	if n.Spoofing() {
+		return true
+	}
+
+	if addressEndpoint := n.getAddressOrCreateTempInner(protocol, addr, false /* createTemp */, NeverPrimaryEndpoint); addressEndpoint != nil {
+		addressEndpoint.DecRef()
+		return true
+	}
+
+	return false
 }
