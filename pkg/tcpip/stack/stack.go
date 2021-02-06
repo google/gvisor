@@ -1319,6 +1319,11 @@ func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, 
 	return nil
 }
 
+// HandleLocal returns true if non-loopback interfaces are allowed to loop packets.
+func (s *Stack) HandleLocal() bool {
+	return s.handleLocal
+}
+
 // FindRoute creates a route to the given destination address, leaving through
 // the given NIC and local address (if provided).
 //
@@ -2063,7 +2068,9 @@ func generateRandInt64() int64 {
 }
 
 // FindNetworkEndpoint returns the network endpoint for the given address.
-func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, address tcpip.Address) (NetworkEndpoint, tcpip.Error) {
+//
+// Returns nil if the address is not associated with any network endpoint.
+func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, address tcpip.Address) NetworkEndpoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -2073,9 +2080,9 @@ func (s *Stack) FindNetworkEndpoint(netProto tcpip.NetworkProtocolNumber, addres
 			continue
 		}
 		addressEndpoint.DecRef()
-		return nic.getNetworkEndpoint(netProto), nil
+		return nic.getNetworkEndpoint(netProto)
 	}
-	return nil, &tcpip.ErrBadAddress{}
+	return nil
 }
 
 // FindNICNameFromID returns the name of the NIC for the given NICID.
@@ -2103,13 +2110,6 @@ const (
 	// ParsedOK indicates that a packet was successfully parsed.
 	ParsedOK ParseResult = iota
 
-	// UnknownNetworkProtocol indicates that the network protocol is unknown.
-	UnknownNetworkProtocol
-
-	// NetworkLayerParseError indicates that the network packet was not
-	// successfully parsed.
-	NetworkLayerParseError
-
 	// UnknownTransportProtocol indicates that the transport protocol is unknown.
 	UnknownTransportProtocol
 
@@ -2118,31 +2118,19 @@ const (
 	TransportLayerParseError
 )
 
-// ParsePacketBuffer parses the provided packet buffer.
-func (s *Stack) ParsePacketBuffer(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) ParseResult {
-	netProto, ok := s.networkProtocols[protocol]
-	if !ok {
-		return UnknownNetworkProtocol
-	}
-
-	transProtoNum, hasTransportHdr, ok := netProto.Parse(pkt)
-	if !ok {
-		return NetworkLayerParseError
-	}
-	if !hasTransportHdr {
-		return ParsedOK
-	}
-
+// ParsePacketBufferTransport parses the provided packet buffer's transport
+// header.
+func (s *Stack) ParsePacketBufferTransport(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) ParseResult {
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
 	// fields set yet, parse it here. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
-	if transProtoNum == header.ICMPv4ProtocolNumber || transProtoNum == header.ICMPv6ProtocolNumber {
+	if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
 		return ParsedOK
 	}
 
-	pkt.TransportProtocolNumber = transProtoNum
+	pkt.TransportProtocolNumber = protocol
 	// Parse the transport header if present.
-	state, ok := s.transportProtocols[transProtoNum]
+	state, ok := s.transportProtocols[protocol]
 	if !ok {
 		return UnknownTransportProtocol
 	}
