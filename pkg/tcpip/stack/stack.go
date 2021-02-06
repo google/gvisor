@@ -395,7 +395,7 @@ type Stack struct {
 	}
 
 	mu   sync.RWMutex
-	nics map[tcpip.NICID]*NIC
+	nics map[tcpip.NICID]*nic
 
 	// cleanupEndpointsMu protects cleanupEndpoints.
 	cleanupEndpointsMu sync.Mutex
@@ -656,7 +656,7 @@ func New(opts Options) *Stack {
 	s := &Stack{
 		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		nics:               make(map[tcpip.NICID]*NIC),
+		nics:               make(map[tcpip.NICID]*nic),
 		cleanupEndpoints:   make(map[TransportEndpoint]struct{}),
 		PortManager:        ports.NewPortManager(),
 		clock:              clock,
@@ -1233,7 +1233,7 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return nic.primaryAddress(protocol), true
 }
 
-func (s *Stack) getAddressEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {
+func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {
 	if len(localAddr) == 0 {
 		return nic.primaryEndpoint(netProto, remoteAddr)
 	}
@@ -1244,13 +1244,13 @@ func (s *Stack) getAddressEP(nic *NIC, localAddr, remoteAddr tcpip.Address, netP
 // from the specified NIC.
 //
 // Precondition: s.mu must be read locked.
-func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *NIC, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, false /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
 		return nil
 	}
 
-	var outgoingNIC *NIC
+	var outgoingNIC *nic
 	// Prefer a local route to the same interface as the local address.
 	if localAddressNIC.hasAddress(netProto, remoteAddr) {
 		outgoingNIC = localAddressNIC
@@ -2148,7 +2148,7 @@ func (s *Stack) networkProtocolNumbers() []tcpip.NetworkProtocolNumber {
 	return protos
 }
 
-func isSubnetBroadcastOnNIC(nic *NIC, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+func isSubnetBroadcastOnNIC(nic *nic, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
 	addressEndpoint := nic.getAddressOrCreateTempInner(protocol, addr, false /* createTemp */, NeverPrimaryEndpoint)
 	if addressEndpoint == nil {
 		return false

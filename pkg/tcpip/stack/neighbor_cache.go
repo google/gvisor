@@ -43,7 +43,7 @@ type NeighborStats struct {
 //     Their state is always Static. The amount of static entries stored in the
 //     cache is unbounded.
 type neighborCache struct {
-	nic     *NIC
+	nic     *nic
 	state   *NUDState
 	linkRes LinkAddressResolver
 

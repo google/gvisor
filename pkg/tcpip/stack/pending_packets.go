@@ -55,7 +55,7 @@ type pendingPacket struct {
 //
 // Once link resolution completes successfully, the packets will be written.
 type packetsPendingLinkResolution struct {
-	nic *NIC
+	nic *nic
 
 	mu struct {
 		sync.Mutex
@@ -82,7 +82,7 @@ func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(proto tcpip
 	}
 }
 
-func (f *packetsPendingLinkResolution) init(nic *NIC) {
+func (f *packetsPendingLinkResolution) init(nic *nic) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nic = nic

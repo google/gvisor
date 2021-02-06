@@ -35,7 +35,7 @@ type Route struct {
 	// localAddressNIC is the interface the address is associated with.
 	// TODO(gvisor.dev/issue/4548): Remove this field once we can query the
 	// address's assigned status without the NIC.
-	localAddressNIC *NIC
+	localAddressNIC *nic
 
 	mu struct {
 		sync.RWMutex
@@ -49,7 +49,7 @@ type Route struct {
 	}
 
 	// outgoingNIC is the interface this route uses to write packets.
-	outgoingNIC *NIC
+	outgoingNIC *nic
 
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
@@ -108,7 +108,7 @@ func (r *Route) fieldsLocked() RouteInfo {
 // ownership of the provided local address.
 //
 // Returns an empty route if validation fails.
-func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *NIC, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) *Route {
+func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool) *Route {
 	if len(localAddr) == 0 {
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 	}
@@ -140,7 +140,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // AssignableAddressEndpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic(fmt.Sprintf("cannot create a route with NICs from different stacks"))
 	}
@@ -206,7 +206,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 	return r
 }
 
-func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
+func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping) *Route {
 	r := &Route{
 		routeInfo: routeInfo{
 			NetProto:         netProto,
@@ -230,7 +230,7 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 // provided AssignableAddressEndpoint.
 //
 // A local route is a route to a destination that is local to the stack.
-func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *NIC, localAddressEndpoint AssignableAddressEndpoint) *Route {
+func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint) *Route {
 	loop := PacketLoop
 	// TODO(gvisor.dev/issue/4689): Loopback interface loops back packets at the
 	// link endpoint level. We can remove this check once loopback interfaces
