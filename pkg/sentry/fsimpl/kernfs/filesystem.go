@@ -668,6 +668,12 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// Can we create the dst dentry?
 	var dst *Dentry
 	pc := rp.Component()
+	if pc == "." || pc == ".." {
+		if noReplace {
+			return syserror.EEXIST
+		}
+		return syserror.EBUSY
+	}
 	switch err := checkCreateLocked(ctx, rp.Credentials(), pc, dstDir); err {
 	case nil:
 		// Ok, continue with rename as replacement.
