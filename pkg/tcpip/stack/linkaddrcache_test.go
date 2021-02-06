@@ -93,8 +93,8 @@ func getBlocking(c *linkAddrCache, addr tcpip.Address) (tcpip.LinkAddress, tcpip
 	}
 }
 
-func newEmptyNIC() *NIC {
-	n := &NIC{}
+func newEmptyNIC() *nic {
+	n := &nic{}
 	n.linkResQueue.init(n)
 	return n
 }

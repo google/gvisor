@@ -30,7 +30,7 @@ const linkAddrCacheSize = 512 // max cache entries
 //
 // This struct is safe for concurrent use.
 type linkAddrCache struct {
-	nic *NIC
+	nic *nic
 
 	linkRes LinkAddressResolver
 
@@ -280,7 +280,7 @@ func (c *linkAddrCache) checkLinkRequest(now time.Time, k tcpip.Address, attempt
 	return true
 }
 
-func (c *linkAddrCache) init(nic *NIC, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int, linkRes LinkAddressResolver) {
+func (c *linkAddrCache) init(nic *nic, ageLimit, resolutionTimeout time.Duration, resolutionAttempts int, linkRes LinkAddressResolver) {
 	*c = linkAddrCache{
 		nic:                nic,
 		linkRes:            linkRes,
