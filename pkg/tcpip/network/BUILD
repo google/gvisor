@@ -16,7 +16,6 @@ go_test(
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
-        "//pkg/tcpip/header/parse",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",

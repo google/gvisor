@@ -777,36 +777,6 @@ func (n *NIC) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		anyEPs.forEach(deliverPacketEPs)
 	}
 
-	// Parse headers.
-	netProto := n.stack.NetworkProtocolInstance(protocol)
-	transProtoNum, hasTransportHdr, ok := netProto.Parse(pkt)
-	if !ok {
-		// The packet is too small to contain a network header.
-		n.stack.stats.MalformedRcvdPackets.Increment()
-		return
-	}
-	if hasTransportHdr {
-		pkt.TransportProtocolNumber = transProtoNum
-		// Parse the transport header if present.
-		if state, ok := n.stack.transportProtocols[transProtoNum]; ok {
-			state.proto.Parse(pkt)
-		}
-	}
-
-	if n.stack.handleLocal && !n.IsLoopback() {
-		src, _ := netProto.ParseAddresses(pkt.NetworkHeader().View())
-		if r := n.getAddress(protocol, src); r != nil {
-			r.DecRef()
-
-			// The source address is one of our own, so we never should have gotten a
-			// packet like this unless handleLocal is false. Loopback also calls this
-			// function even though the packets didn't come from the physical interface
-			// so don't drop those.
-			n.stack.stats.IP.InvalidSourceAddressesReceived.Increment()
-			return
-		}
-	}
-
 	networkEndpoint.HandlePacket(pkt)
 }
 

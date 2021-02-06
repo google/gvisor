@@ -119,6 +119,10 @@ func (*fakeNetworkEndpoint) DefaultTTL() uint8 {
 }
 
 func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
+	if _, _, ok := f.proto.Parse(pkt); !ok {
+		return
+	}
+
 	// Increment the received packet count in the protocol descriptor.
 	netHdr := pkt.NetworkHeader().View()
 

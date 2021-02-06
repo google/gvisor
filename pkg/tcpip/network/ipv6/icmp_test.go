@@ -149,6 +149,23 @@ func (t *testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, 
 	return nil
 }
 
+func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp header.ICMPv6) {
+	ip := buffer.NewView(header.IPv6MinimumSize)
+	header.IPv6(ip).Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(len(icmp)),
+		TransportProtocol: header.ICMPv6ProtocolNumber,
+		HopLimit:          header.NDPHopLimit,
+		SrcAddr:           src,
+		DstAddr:           dst,
+	})
+	vv := ip.ToVectorisedView()
+	vv.AppendView(buffer.View(icmp))
+	ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv6MinimumSize,
+		Data:               vv,
+	}))
+}
+
 func TestICMPCounts(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -282,33 +299,17 @@ func TestICMPCounts(t *testing.T) {
 				},
 			}
 
-			handleIPv6Payload := func(icmp header.ICMPv6) {
-				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					ReserveHeaderBytes: header.IPv6MinimumSize,
-					Data:               buffer.View(icmp).ToVectorisedView(),
-				})
-				ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
-				ip.Encode(&header.IPv6Fields{
-					PayloadLength:     uint16(len(icmp)),
-					TransportProtocol: header.ICMPv6ProtocolNumber,
-					HopLimit:          header.NDPHopLimit,
-					SrcAddr:           lladdr1,
-					DstAddr:           lladdr0,
-				})
-				ep.HandlePacket(pkt)
-			}
-
 			for _, typ := range types {
 				icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
 				copy(icmp[typ.size:], typ.extraData)
 				icmp.SetType(typ.typ)
 				icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
-				handleIPv6Payload(icmp)
+				handleICMPInIPv6(ep, lladdr1, lladdr0, icmp)
 			}
 
 			// Construct an empty ICMP packet so that
 			// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
-			handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
+			handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
 			icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 			visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
@@ -440,33 +441,17 @@ func TestICMPCountsWithNeighborCache(t *testing.T) {
 		},
 	}
 
-	handleIPv6Payload := func(icmp header.ICMPv6) {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: header.IPv6MinimumSize,
-			Data:               buffer.View(icmp).ToVectorisedView(),
-		})
-		ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
-		ip.Encode(&header.IPv6Fields{
-			PayloadLength:     uint16(len(icmp)),
-			TransportProtocol: header.ICMPv6ProtocolNumber,
-			HopLimit:          header.NDPHopLimit,
-			SrcAddr:           lladdr1,
-			DstAddr:           lladdr0,
-		})
-		ep.HandlePacket(pkt)
-	}
-
 	for _, typ := range types {
 		icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
 		copy(icmp[typ.size:], typ.extraData)
 		icmp.SetType(typ.typ)
 		icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
-		handleIPv6Payload(icmp)
+		handleICMPInIPv6(ep, lladdr1, lladdr0, icmp)
 	}
 
 	// Construct an empty ICMP packet so that
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
-	handleIPv6Payload(header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
+	handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
 
 	icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
@@ -1818,19 +1803,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 
 			icmp := test.createPacket()
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, test.source, test.destination, buffer.VectorisedView{}))
-			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				ReserveHeaderBytes: header.IPv6MinimumSize,
-				Data:               buffer.View(icmp).ToVectorisedView(),
-			})
-			ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
-			ip.Encode(&header.IPv6Fields{
-				PayloadLength:     uint16(len(icmp)),
-				TransportProtocol: header.ICMPv6ProtocolNumber,
-				HopLimit:          header.NDPHopLimit,
-				SrcAddr:           test.source,
-				DstAddr:           test.destination,
-			})
-			ep.HandlePacket(pkt)
+			handleICMPInIPv6(ep, test.source, test.destination, icmp)
 
 			// Confirm the endpoint calls the correct NUDHandler method.
 			if testInterface.probeCount != test.wantProbeCount {

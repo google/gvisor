@@ -129,6 +129,11 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
+	if _, _, ok := e.protocol.Parse(pkt); !ok {
+		stats.malformedPacketsReceived.Increment()
+		return
+	}
+
 	h := header.ARP(pkt.NetworkHeader().View())
 	if !h.IsValid() {
 		stats.malformedPacketsReceived.Increment()
