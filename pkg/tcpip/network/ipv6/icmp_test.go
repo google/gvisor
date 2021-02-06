@@ -124,6 +124,10 @@ func (*testInterface) Promiscuous() bool {
 	return false
 }
 
+func (*testInterface) Spoofing() bool {
+	return false
+}
+
 func (t *testInterface) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	return t.LinkEndpoint.WritePacket(r.Fields(), gso, protocol, pkt)
 }
@@ -147,6 +151,10 @@ func (t *testInterface) HandleNeighborProbe(tcpip.NetworkProtocolNumber, tcpip.A
 func (t *testInterface) HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, stack.ReachabilityConfirmationFlags) tcpip.Error {
 	t.confirmationCount++
 	return nil
+}
+
+func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool {
+	return false
 }
 
 func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp header.ICMPv6) {

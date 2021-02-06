@@ -148,6 +148,18 @@ func (*icmpv6PacketTooBigSockError) Kind() stack.TransportErrorKind {
 	return stack.PacketTooBigTransportError
 }
 
+func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
+	if e.nic.Spoofing() {
+		return true
+	}
+
+	if addressEndpoint := e.AcquireAssignedAddress(addr, false, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
+		addressEndpoint.DecRef()
+		return true
+	}
+	return false
+}
+
 // handleControl handles the case when an ICMP packet contains the headers of
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
@@ -165,8 +177,8 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 	//
 	// Drop packet if it doesn't have the basic IPv6 header or if the
 	// original source address doesn't match an address we own.
-	src := hdr.SourceAddress()
-	if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, src) == 0 {
+	srcAddr := hdr.SourceAddress()
+	if !e.checkLocalAddress(srcAddr) {
 		return
 	}
 
@@ -192,7 +204,7 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 		p = fragHdr.TransportProtocol()
 	}
 
-	e.dispatcher.DeliverTransportError(src, hdr.DestinationAddress(), ProtocolNumber, p, transErr, pkt)
+	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, transErr, pkt)
 }
 
 // getLinkAddrOption searches NDP options for a given link address option using
@@ -377,7 +389,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		// section 5.4.3.
 
 		// Is the NS targeting us?
-		if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, targetAddr) == 0 {
+		if !e.checkLocalAddress(targetAddr) {
 			return
 		}
 

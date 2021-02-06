@@ -1498,20 +1498,16 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 			return 0
 		}
 
-		addressEndpoint := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
-		if addressEndpoint == nil {
-			return 0
+		if nic.CheckLocalAddress(protocol, addr) {
+			return nic.id
 		}
 
-		addressEndpoint.DecRef()
-
-		return nic.id
+		return 0
 	}
 
 	// Go through all the NICs.
 	for _, nic := range s.nics {
-		if addressEndpoint := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint); addressEndpoint != nil {
-			addressEndpoint.DecRef()
+		if nic.CheckLocalAddress(protocol, addr) {
 			return nic.id
 		}
 	}

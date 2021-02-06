@@ -145,7 +145,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		stats.requestsReceived.Increment()
 		localAddr := tcpip.Address(h.ProtocolAddressTarget())
 
-		if e.protocol.stack.CheckLocalAddress(e.nic.ID(), header.IPv4ProtocolNumber, localAddr) == 0 {
+		if !e.nic.CheckLocalAddress(header.IPv4ProtocolNumber, localAddr) {
 			stats.requestsReceivedUnknownTargetAddress.Increment()
 			return // we have no useful answer, ignore the request
 		}
@@ -281,7 +281,7 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 		}
 
 		localAddr = addr.Address
-	} else if e.protocol.stack.CheckLocalAddress(nicID, header.IPv4ProtocolNumber, localAddr) == 0 {
+	} else if !e.nic.CheckLocalAddress(header.IPv4ProtocolNumber, localAddr) {
 		stats.outgoingRequestBadLocalAddressErrors.Increment()
 		return &tcpip.ErrBadLocalAddress{}
 	}
