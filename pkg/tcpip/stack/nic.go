@@ -190,13 +190,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 				}
 
 				if stack.useNeighborCache {
-					l.neighborTable = &neighborCache{
-						nic:     nic,
-						state:   NewNUDState(stack.nudConfigs, stack.randomGenerator),
-						linkRes: r,
-
-						cache: make(map[tcpip.Address]*neighborEntry, neighborCacheSize),
-					}
+					l.neighborTable = newNeighborCache(nic, r)
 				} else {
 					cache := new(linkAddrCache)
 					cache.init(nic, ageLimit, resolutionTimeout, resolutionAttempts, r)

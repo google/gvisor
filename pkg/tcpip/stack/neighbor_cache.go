@@ -47,17 +47,18 @@ type neighborCache struct {
 	state   *NUDState
 	linkRes LinkAddressResolver
 
-	// mu protects the fields below.
-	mu sync.RWMutex
+	mu struct {
+		sync.RWMutex
 
-	cache   map[tcpip.Address]*neighborEntry
-	dynamic struct {
-		lru neighborEntryList
+		cache   map[tcpip.Address]*neighborEntry
+		dynamic struct {
+			lru neighborEntryList
 
-		// count tracks the amount of dynamic entries in the cache. This is
-		// needed since static entries do not count towards the LRU cache
-		// eviction strategy.
-		count uint16
+			// count tracks the amount of dynamic entries in the cache. This is
+			// needed since static entries do not count towards the LRU cache
+			// eviction strategy.
+			count uint16
+		}
 	}
 }
 
@@ -74,11 +75,11 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntr
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	if entry, ok := n.cache[remoteAddr]; ok {
+	if entry, ok := n.mu.cache[remoteAddr]; ok {
 		entry.mu.RLock()
-		if entry.neigh.State != Static {
-			n.dynamic.lru.Remove(entry)
-			n.dynamic.lru.PushFront(entry)
+		if entry.mu.neigh.State != Static {
+			n.mu.dynamic.lru.Remove(entry)
+			n.mu.dynamic.lru.PushFront(entry)
 		}
 		entry.mu.RUnlock()
 		return entry
@@ -87,20 +88,20 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntr
 	// The entry that needs to be created must be dynamic since all static
 	// entries are directly added to the cache via addStaticEntry.
 	entry := newNeighborEntry(n, remoteAddr, n.state)
-	if n.dynamic.count == neighborCacheSize {
-		e := n.dynamic.lru.Back()
+	if n.mu.dynamic.count == neighborCacheSize {
+		e := n.mu.dynamic.lru.Back()
 		e.mu.Lock()
 
-		delete(n.cache, e.neigh.Addr)
-		n.dynamic.lru.Remove(e)
-		n.dynamic.count--
+		delete(n.mu.cache, e.mu.neigh.Addr)
+		n.mu.dynamic.lru.Remove(e)
+		n.mu.dynamic.count--
 
 		e.removeLocked()
 		e.mu.Unlock()
 	}
-	n.cache[remoteAddr] = entry
-	n.dynamic.lru.PushFront(entry)
-	n.dynamic.count++
+	n.mu.cache[remoteAddr] = entry
+	n.mu.dynamic.lru.PushFront(entry)
+	n.mu.dynamic.count++
 	return entry
 }
 
@@ -128,7 +129,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	switch s := entry.neigh.State; s {
+	switch s := entry.mu.neigh.State; s {
 	case Stale:
 		entry.handlePacketQueuedLocked(localAddr)
 		fallthrough
@@ -139,19 +140,19 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 		//   a node continues sending packets to that neighbor using the cached
 		//   link-layer address."
 		if onResolve != nil {
-			onResolve(LinkResolutionResult{LinkAddress: entry.neigh.LinkAddr, Success: true})
+			onResolve(LinkResolutionResult{LinkAddress: entry.mu.neigh.LinkAddr, Success: true})
 		}
-		return entry.neigh, nil, nil
+		return entry.mu.neigh, nil, nil
 	case Unknown, Incomplete, Failed:
 		if onResolve != nil {
-			entry.onResolve = append(entry.onResolve, onResolve)
+			entry.mu.onResolve = append(entry.mu.onResolve, onResolve)
 		}
-		if entry.done == nil {
+		if entry.mu.done == nil {
 			// Address resolution needs to be initiated.
-			entry.done = make(chan struct{})
+			entry.mu.done = make(chan struct{})
 		}
 		entry.handlePacketQueuedLocked(localAddr)
-		return entry.neigh, entry.done, &tcpip.ErrWouldBlock{}
+		return entry.mu.neigh, entry.mu.done, &tcpip.ErrWouldBlock{}
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", s))
 	}
@@ -162,10 +163,10 @@ func (n *neighborCache) entries() []NeighborEntry {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	entries := make([]NeighborEntry, 0, len(n.cache))
-	for _, entry := range n.cache {
+	entries := make([]NeighborEntry, 0, len(n.mu.cache))
+	for _, entry := range n.mu.cache {
 		entry.mu.RLock()
-		entries = append(entries, entry.neigh)
+		entries = append(entries, entry.mu.neigh)
 		entry.mu.RUnlock()
 	}
 	return entries
@@ -181,19 +182,19 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	if entry, ok := n.cache[addr]; ok {
+	if entry, ok := n.mu.cache[addr]; ok {
 		entry.mu.Lock()
-		if entry.neigh.State != Static {
+		if entry.mu.neigh.State != Static {
 			// Dynamic entry found with the same address.
-			n.dynamic.lru.Remove(entry)
-			n.dynamic.count--
-		} else if entry.neigh.LinkAddr == linkAddr {
+			n.mu.dynamic.lru.Remove(entry)
+			n.mu.dynamic.count--
+		} else if entry.mu.neigh.LinkAddr == linkAddr {
 			// Static entry found with the same address and link address.
 			entry.mu.Unlock()
 			return
 		} else {
 			// Static entry found with the same address but different link address.
-			entry.neigh.LinkAddr = linkAddr
+			entry.mu.neigh.LinkAddr = linkAddr
 			entry.dispatchChangeEventLocked()
 			entry.mu.Unlock()
 			return
@@ -203,7 +204,12 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 		entry.mu.Unlock()
 	}
 
-	n.cache[addr] = newStaticNeighborEntry(n, addr, linkAddr, n.state)
+	entry := newStaticNeighborEntry(n, addr, linkAddr, n.state)
+	n.mu.cache[addr] = entry
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	entry.dispatchAddEventLocked()
 }
 
 // removeEntry removes a dynamic or static entry by address from the neighbor
@@ -212,7 +218,7 @@ func (n *neighborCache) removeEntry(addr tcpip.Address) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	entry, ok := n.cache[addr]
+	entry, ok := n.mu.cache[addr]
 	if !ok {
 		return false
 	}
@@ -220,13 +226,13 @@ func (n *neighborCache) removeEntry(addr tcpip.Address) bool {
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	if entry.neigh.State != Static {
-		n.dynamic.lru.Remove(entry)
-		n.dynamic.count--
+	if entry.mu.neigh.State != Static {
+		n.mu.dynamic.lru.Remove(entry)
+		n.mu.dynamic.count--
 	}
 
 	entry.removeLocked()
-	delete(n.cache, entry.neigh.Addr)
+	delete(n.mu.cache, entry.mu.neigh.Addr)
 	return true
 }
 
@@ -235,15 +241,15 @@ func (n *neighborCache) clear() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	for _, entry := range n.cache {
+	for _, entry := range n.mu.cache {
 		entry.mu.Lock()
 		entry.removeLocked()
 		entry.mu.Unlock()
 	}
 
-	n.dynamic.lru = neighborEntryList{}
-	n.cache = make(map[tcpip.Address]*neighborEntry)
-	n.dynamic.count = 0
+	n.mu.dynamic.lru = neighborEntryList{}
+	n.mu.cache = make(map[tcpip.Address]*neighborEntry)
+	n.mu.dynamic.count = 0
 }
 
 // config returns the NUD configuration.
@@ -300,7 +306,7 @@ func (n *neighborCache) handleProbe(remoteAddr tcpip.Address, remoteLinkAddr tcp
 // Validation of the confirmation is expected to be handled by the caller.
 func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
 	n.mu.RLock()
-	entry, ok := n.cache[addr]
+	entry, ok := n.mu.cache[addr]
 	n.mu.RUnlock()
 	if ok {
 		entry.mu.Lock()
@@ -316,7 +322,7 @@ func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.Li
 // some protocol that operates at a layer above the IP/link layer.
 func (n *neighborCache) handleUpperLevelConfirmation(addr tcpip.Address) {
 	n.mu.RLock()
-	entry, ok := n.cache[addr]
+	entry, ok := n.mu.cache[addr]
 	n.mu.RUnlock()
 	if ok {
 		entry.mu.Lock()
@@ -332,4 +338,16 @@ func (n *neighborCache) nudConfig() (NUDConfigurations, tcpip.Error) {
 func (n *neighborCache) setNUDConfig(c NUDConfigurations) tcpip.Error {
 	n.setConfig(c)
 	return nil
+}
+
+func newNeighborCache(nic *nic, r LinkAddressResolver) *neighborCache {
+	n := &neighborCache{
+		nic:     nic,
+		state:   NewNUDState(nic.stack.nudConfigs, nic.stack.randomGenerator),
+		linkRes: r,
+	}
+	n.mu.Lock()
+	n.mu.cache = make(map[tcpip.Address]*neighborEntry, neighborCacheSize)
+	n.mu.Unlock()
+	return n
 }

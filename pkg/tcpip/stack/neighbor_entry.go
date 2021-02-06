@@ -82,20 +82,21 @@ type neighborEntry struct {
 	// nudState points to the Neighbor Unreachability Detection configuration.
 	nudState *NUDState
 
-	// mu protects the fields below.
-	mu sync.RWMutex
+	mu struct {
+		sync.RWMutex
 
-	neigh NeighborEntry
+		neigh NeighborEntry
 
-	// done is closed when address resolution is complete. It is nil iff s is
-	// incomplete and resolution is not yet in progress.
-	done chan struct{}
+		// done is closed when address resolution is complete. It is nil iff s is
+		// incomplete and resolution is not yet in progress.
+		done chan struct{}
 
-	// onResolve is called with the result of address resolution.
-	onResolve []func(LinkResolutionResult)
+		// onResolve is called with the result of address resolution.
+		onResolve []func(LinkResolutionResult)
 
-	isRouter bool
-	job      *tcpip.Job
+		isRouter bool
+		job      *tcpip.Job
+	}
 }
 
 // newNeighborEntry creates a neighbor cache entry starting at the default
@@ -103,14 +104,18 @@ type neighborEntry struct {
 // `handlePacketQueuedLocked` or `handleProbeLocked` on the newly created
 // neighborEntry.
 func newNeighborEntry(cache *neighborCache, remoteAddr tcpip.Address, nudState *NUDState) *neighborEntry {
-	return &neighborEntry{
+	n := &neighborEntry{
 		cache:    cache,
 		nudState: nudState,
-		neigh: NeighborEntry{
-			Addr:  remoteAddr,
-			State: Unknown,
-		},
 	}
+	n.mu.Lock()
+	n.mu.neigh = NeighborEntry{
+		Addr:  remoteAddr,
+		State: Unknown,
+	}
+	n.mu.Unlock()
+	return n
+
 }
 
 // newStaticNeighborEntry creates a neighbor cache entry starting at the
@@ -123,14 +128,14 @@ func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr t
 		State:          Static,
 		UpdatedAtNanos: cache.nic.stack.clock.NowNanoseconds(),
 	}
-	if nudDisp := cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborAdded(cache.nic.id, entry)
-	}
-	return &neighborEntry{
+	n := &neighborEntry{
 		cache:    cache,
 		nudState: state,
-		neigh:    entry,
 	}
+	n.mu.Lock()
+	n.mu.neigh = entry
+	n.mu.Unlock()
+	return n
 }
 
 // notifyCompletionLocked notifies those waiting for address resolution, with
@@ -138,14 +143,14 @@ func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr t
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
-	res := LinkResolutionResult{LinkAddress: e.neigh.LinkAddr, Success: succeeded}
-	for _, callback := range e.onResolve {
+	res := LinkResolutionResult{LinkAddress: e.mu.neigh.LinkAddr, Success: succeeded}
+	for _, callback := range e.mu.onResolve {
 		callback(res)
 	}
-	e.onResolve = nil
-	if ch := e.done; ch != nil {
+	e.mu.onResolve = nil
+	if ch := e.mu.done; ch != nil {
 		close(ch)
-		e.done = nil
+		e.mu.done = nil
 		// Dequeue the pending packets in a new goroutine to not hold up the current
 		// goroutine as writing packets may be a costly operation.
 		//
@@ -153,7 +158,7 @@ func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
 		// is resolved (which ends up obtaining the entry's lock) while holding the
 		// link resolution queue's lock. Dequeuing packets in a new goroutine avoids
 		// a lock ordering violation.
-		go e.cache.nic.linkResQueue.dequeue(ch, e.neigh.LinkAddr, succeeded)
+		go e.cache.nic.linkResQueue.dequeue(ch, e.mu.neigh.LinkAddr, succeeded)
 	}
 }
 
@@ -163,7 +168,7 @@ func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchAddEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborAdded(e.cache.nic.id, e.neigh)
+		nudDisp.OnNeighborAdded(e.cache.nic.id, e.mu.neigh)
 	}
 }
 
@@ -173,7 +178,7 @@ func (e *neighborEntry) dispatchAddEventLocked() {
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchChangeEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborChanged(e.cache.nic.id, e.neigh)
+		nudDisp.OnNeighborChanged(e.cache.nic.id, e.mu.neigh)
 	}
 }
 
@@ -183,7 +188,7 @@ func (e *neighborEntry) dispatchChangeEventLocked() {
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) dispatchRemoveEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborRemoved(e.cache.nic.id, e.neigh)
+		nudDisp.OnNeighborRemoved(e.cache.nic.id, e.mu.neigh)
 	}
 }
 
@@ -192,7 +197,7 @@ func (e *neighborEntry) dispatchRemoveEventLocked() {
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) cancelJobLocked() {
-	if job := e.job; job != nil {
+	if job := e.mu.job; job != nil {
 		job.Cancel()
 	}
 }
@@ -201,7 +206,7 @@ func (e *neighborEntry) cancelJobLocked() {
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) removeLocked() {
-	e.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+	e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
 	e.dispatchRemoveEventLocked()
 	e.cancelJobLocked()
 	e.notifyCompletionLocked(false /* succeeded */)
@@ -215,28 +220,28 @@ func (e *neighborEntry) removeLocked() {
 func (e *neighborEntry) setStateLocked(next NeighborState) {
 	e.cancelJobLocked()
 
-	prev := e.neigh.State
-	e.neigh.State = next
-	e.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+	prev := e.mu.neigh.State
+	e.mu.neigh.State = next
+	e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
 	config := e.nudState.Config()
 
 	switch next {
 	case Incomplete:
-		panic(fmt.Sprintf("should never transition to Incomplete with setStateLocked; neigh = %#v, prev state = %s", e.neigh, prev))
+		panic(fmt.Sprintf("should never transition to Incomplete with setStateLocked; neigh = %#v, prev state = %s", e.mu.neigh, prev))
 
 	case Reachable:
-		e.job = e.cache.nic.stack.newJob(&e.mu, func() {
+		e.mu.job = e.cache.nic.stack.newJob(&e.mu, func() {
 			e.setStateLocked(Stale)
 			e.dispatchChangeEventLocked()
 		})
-		e.job.Schedule(e.nudState.ReachableTime())
+		e.mu.job.Schedule(e.nudState.ReachableTime())
 
 	case Delay:
-		e.job = e.cache.nic.stack.newJob(&e.mu, func() {
+		e.mu.job = e.cache.nic.stack.newJob(&e.mu, func() {
 			e.setStateLocked(Probe)
 			e.dispatchChangeEventLocked()
 		})
-		e.job.Schedule(config.DelayFirstProbeTime)
+		e.mu.job.Schedule(config.DelayFirstProbeTime)
 
 	case Probe:
 		var retryCounter uint32
@@ -249,23 +254,23 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				return
 			}
 
-			if err := e.cache.linkRes.LinkAddressRequest(e.neigh.Addr, "" /* localAddr */, e.neigh.LinkAddr); err != nil {
+			if err := e.cache.linkRes.LinkAddressRequest(e.mu.neigh.Addr, "" /* localAddr */, e.mu.neigh.LinkAddr); err != nil {
 				e.dispatchRemoveEventLocked()
 				e.setStateLocked(Failed)
 				return
 			}
 
 			retryCounter++
-			e.job = e.cache.nic.stack.newJob(&e.mu, sendUnicastProbe)
-			e.job.Schedule(config.RetransmitTimer)
+			e.mu.job = e.cache.nic.stack.newJob(&e.mu, sendUnicastProbe)
+			e.mu.job.Schedule(config.RetransmitTimer)
 		}
 
 		// Send a probe in another gorountine to free this thread of execution
 		// for finishing the state transition. This is necessary to avoid
 		// deadlock where sending and processing probes are done synchronously,
 		// such as loopback and integration tests.
-		e.job = e.cache.nic.stack.newJob(&e.mu, sendUnicastProbe)
-		e.job.Schedule(immediateDuration)
+		e.mu.job = e.cache.nic.stack.newJob(&e.mu, sendUnicastProbe)
+		e.mu.job.Schedule(immediateDuration)
 
 	case Failed:
 		e.notifyCompletionLocked(false /* succeeded */)
@@ -285,14 +290,14 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
-	switch e.neigh.State {
+	switch e.mu.neigh.State {
 	case Failed:
 		e.cache.nic.stats.Neighbor.FailedEntryLookups.Increment()
 
 		fallthrough
 	case Unknown:
-		e.neigh.State = Incomplete
-		e.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+		e.mu.neigh.State = Incomplete
+		e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
 
 		e.dispatchAddEventLocked()
 
@@ -335,7 +340,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			//  address SHOULD be placed in the IP Source Address of the outgoing
 			//  solicitation.
 			//
-			if err := e.cache.linkRes.LinkAddressRequest(e.neigh.Addr, localAddr, ""); err != nil {
+			if err := e.cache.linkRes.LinkAddressRequest(e.mu.neigh.Addr, localAddr, ""); err != nil {
 				// There is no need to log the error here; the NUD implementation may
 				// assume a working link. A valid link should be the responsibility of
 				// the NIC/stack.LinkEndpoint.
@@ -345,16 +350,16 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			}
 
 			retryCounter++
-			e.job = e.cache.nic.stack.newJob(&e.mu, sendMulticastProbe)
-			e.job.Schedule(config.RetransmitTimer)
+			e.mu.job = e.cache.nic.stack.newJob(&e.mu, sendMulticastProbe)
+			e.mu.job.Schedule(config.RetransmitTimer)
 		}
 
 		// Send a probe in another gorountine to free this thread of execution
 		// for finishing the state transition. This is necessary to avoid
 		// deadlock where sending and processing probes are done synchronously,
 		// such as loopback and integration tests.
-		e.job = e.cache.nic.stack.newJob(&e.mu, sendMulticastProbe)
-		e.job.Schedule(immediateDuration)
+		e.mu.job = e.cache.nic.stack.newJob(&e.mu, sendMulticastProbe)
+		e.mu.job.Schedule(immediateDuration)
 
 	case Stale:
 		e.setStateLocked(Delay)
@@ -363,7 +368,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	case Incomplete, Reachable, Delay, Probe, Static:
 		// Do nothing
 	default:
-		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
+		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
 	}
 }
 
@@ -378,9 +383,9 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 	// not exist, or not bound to the NIC as per RFC 4861 section 7.2.3. These
 	// checks MUST be done by the NetworkEndpoint.
 
-	switch e.neigh.State {
+	switch e.mu.neigh.State {
 	case Unknown, Failed:
-		e.neigh.LinkAddr = remoteLinkAddr
+		e.mu.neigh.LinkAddr = remoteLinkAddr
 		e.setStateLocked(Stale)
 		e.dispatchAddEventLocked()
 
@@ -390,21 +395,21 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 		// cached address should be replaced by the received address, and the
 		// entry's reachability state MUST be set to STALE."
 		//  - RFC 4861 section 7.2.3
-		e.neigh.LinkAddr = remoteLinkAddr
+		e.mu.neigh.LinkAddr = remoteLinkAddr
 		e.setStateLocked(Stale)
 		e.notifyCompletionLocked(true /* succeeded */)
 		e.dispatchChangeEventLocked()
 
 	case Reachable, Delay, Probe:
-		if e.neigh.LinkAddr != remoteLinkAddr {
-			e.neigh.LinkAddr = remoteLinkAddr
+		if e.mu.neigh.LinkAddr != remoteLinkAddr {
+			e.mu.neigh.LinkAddr = remoteLinkAddr
 			e.setStateLocked(Stale)
 			e.dispatchChangeEventLocked()
 		}
 
 	case Stale:
-		if e.neigh.LinkAddr != remoteLinkAddr {
-			e.neigh.LinkAddr = remoteLinkAddr
+		if e.mu.neigh.LinkAddr != remoteLinkAddr {
+			e.mu.neigh.LinkAddr = remoteLinkAddr
 			e.dispatchChangeEventLocked()
 		}
 
@@ -412,7 +417,7 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 		// Do nothing
 
 	default:
-		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
+		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
 	}
 }
 
@@ -430,7 +435,7 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
-	switch e.neigh.State {
+	switch e.mu.neigh.State {
 	case Incomplete:
 		if len(linkAddr) == 0 {
 			// "If the link layer has addresses and no Target Link-Layer Address
@@ -439,35 +444,35 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			break
 		}
 
-		e.neigh.LinkAddr = linkAddr
+		e.mu.neigh.LinkAddr = linkAddr
 		if flags.Solicited {
 			e.setStateLocked(Reachable)
 		} else {
 			e.setStateLocked(Stale)
 		}
 		e.dispatchChangeEventLocked()
-		e.isRouter = flags.IsRouter
+		e.mu.isRouter = flags.IsRouter
 		e.notifyCompletionLocked(true /* succeeded */)
 
 		// "Note that the Override flag is ignored if the entry is in the
 		// INCOMPLETE state." - RFC 4861 section 7.2.5
 
 	case Reachable, Stale, Delay, Probe:
-		isLinkAddrDifferent := len(linkAddr) != 0 && e.neigh.LinkAddr != linkAddr
+		isLinkAddrDifferent := len(linkAddr) != 0 && e.mu.neigh.LinkAddr != linkAddr
 
 		if isLinkAddrDifferent {
 			if !flags.Override {
-				if e.neigh.State == Reachable {
+				if e.mu.neigh.State == Reachable {
 					e.setStateLocked(Stale)
 					e.dispatchChangeEventLocked()
 				}
 				break
 			}
 
-			e.neigh.LinkAddr = linkAddr
+			e.mu.neigh.LinkAddr = linkAddr
 
 			if !flags.Solicited {
-				if e.neigh.State != Stale {
+				if e.mu.neigh.State != Stale {
 					e.setStateLocked(Stale)
 					e.dispatchChangeEventLocked()
 				} else {
@@ -479,7 +484,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		}
 
 		if flags.Solicited && (flags.Override || !isLinkAddrDifferent) {
-			wasReachable := e.neigh.State == Reachable
+			wasReachable := e.mu.neigh.State == Reachable
 			// Set state to Reachable again to refresh timers.
 			e.setStateLocked(Reachable)
 			e.notifyCompletionLocked(true /* succeeded */)
@@ -488,7 +493,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			}
 		}
 
-		if e.isRouter && !flags.IsRouter && header.IsV6UnicastAddress(e.neigh.Addr) {
+		if e.mu.isRouter && !flags.IsRouter && header.IsV6UnicastAddress(e.mu.neigh.Addr) {
 			// "In those cases where the IsRouter flag changes from TRUE to FALSE as
 			// a result of this update, the node MUST remove that router from the
 			// Default Router List and update the Destination Cache entries for all
@@ -505,16 +510,16 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			}
 
 			if ndpEP, ok := ep.(NDPEndpoint); ok {
-				ndpEP.InvalidateDefaultRouter(e.neigh.Addr)
+				ndpEP.InvalidateDefaultRouter(e.mu.neigh.Addr)
 			}
 		}
-		e.isRouter = flags.IsRouter
+		e.mu.isRouter = flags.IsRouter
 
 	case Unknown, Failed, Static:
 		// Do nothing
 
 	default:
-		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
+		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
 	}
 }
 
@@ -523,9 +528,9 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
-	switch e.neigh.State {
+	switch e.mu.neigh.State {
 	case Reachable, Stale, Delay, Probe:
-		wasReachable := e.neigh.State == Reachable
+		wasReachable := e.mu.neigh.State == Reachable
 		// Set state to Reachable again to refresh timers.
 		e.setStateLocked(Reachable)
 		if !wasReachable {
@@ -536,6 +541,6 @@ func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 		// Do nothing
 
 	default:
-		panic(fmt.Sprintf("Invalid cache entry state: %s", e.neigh.State))
+		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
 	}
 }
