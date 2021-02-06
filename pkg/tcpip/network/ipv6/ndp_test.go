@@ -977,12 +977,8 @@ func TestNDPValidation(t *testing.T) {
 				}
 				extHdrsLen := extHdrs.Length()
 
-				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					ReserveHeaderBytes: header.IPv6MinimumSize + extHdrsLen,
-					Data:               payload.ToVectorisedView(),
-				})
-				ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen))
-				ip.Encode(&header.IPv6Fields{
+				ip := buffer.NewView(header.IPv6MinimumSize + extHdrsLen)
+				header.IPv6(ip).Encode(&header.IPv6Fields{
 					PayloadLength:     uint16(len(payload) + extHdrsLen),
 					TransportProtocol: header.ICMPv6ProtocolNumber,
 					HopLimit:          hopLimit,
@@ -990,7 +986,11 @@ func TestNDPValidation(t *testing.T) {
 					DstAddr:           lladdr0,
 					ExtensionHeaders:  extHdrs,
 				})
-				ep.HandlePacket(pkt)
+				vv := ip.ToVectorisedView()
+				vv.AppendView(payload)
+				ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Data: vv,
+				}))
 			}
 
 			var tllData [header.NDPLinkLayerAddressSize]byte

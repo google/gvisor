@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -626,9 +625,6 @@ func TestReceive(t *testing.T) {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: view.ToVectorisedView(),
 				})
-				if ok := parse.IPv4(pkt); !ok {
-					t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
-				}
 				ep.HandlePacket(pkt)
 			},
 		},
@@ -664,9 +660,6 @@ func TestReceive(t *testing.T) {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Data: view.ToVectorisedView(),
 				})
-				if _, _, _, _, ok := parse.IPv6(pkt); !ok {
-					t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
-				}
 				ep.HandlePacket(pkt)
 			},
 		},
@@ -943,9 +936,6 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: frag1.ToVectorisedView(),
 	})
-	if _, _, ok := proto.Parse(pkt); !ok {
-		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
-	}
 
 	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
 	if !ok {
@@ -967,9 +957,6 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: frag2.ToVectorisedView(),
 	})
-	if _, _, ok := proto.Parse(pkt); !ok {
-		t.Fatalf("failed to parse packet: %x", pkt.Data.ToView())
-	}
 	ep.HandlePacket(pkt)
 	if nic.testObject.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
@@ -1234,7 +1221,6 @@ func truncatedPacket(view buffer.View, trunc, netHdrLen int) *stack.PacketBuffer
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: v.ToVectorisedView(),
 	})
-	_, _ = pkt.NetworkHeader().Consume(netHdrLen)
 	return pkt
 }
 

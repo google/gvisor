@@ -75,6 +75,10 @@ func (*fwdTestNetworkEndpoint) DefaultTTL() uint8 {
 }
 
 func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
+	if _, _, ok := f.proto.Parse(pkt); !ok {
+		return
+	}
+
 	netHdr := pkt.NetworkHeader().View()
 	_, dst := f.proto.ParseAddresses(netHdr)
 
