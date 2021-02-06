@@ -391,6 +391,39 @@ TEST(RenameTest, FileWithOpenFd) {
   EXPECT_EQ(absl::string_view(buf, sizeof(buf) - 1), kContents);
 }
 
+// Tests that calling rename with file path ending with . or .. causes EBUSY.
+TEST(RenameTest, PathEndingWithDots) {
+  TempPath root_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath dir1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root_dir.path()));
+  TempPath dir2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root_dir.path()));
+
+  // Try to move dir1 into dir2 but mess up the paths.
+  auto dir1Dot = JoinPath(dir1.path(), ".");
+  auto dir2Dot = JoinPath(dir2.path(), ".");
+  auto dir1DotDot = JoinPath(dir1.path(), "..");
+  auto dir2DotDot = JoinPath(dir2.path(), "..");
+  ASSERT_THAT(rename(dir1.path().c_str(), dir2Dot.c_str()),
+              SyscallFailsWithErrno(EBUSY));
+  ASSERT_THAT(rename(dir1.path().c_str(), dir2DotDot.c_str()),
+              SyscallFailsWithErrno(EBUSY));
+  ASSERT_THAT(rename(dir1Dot.c_str(), dir2.path().c_str()),
+              SyscallFailsWithErrno(EBUSY));
+  ASSERT_THAT(rename(dir1DotDot.c_str(), dir2.path().c_str()),
+              SyscallFailsWithErrno(EBUSY));
+}
+
+// Calling rename with file path ending with . or .. causes EBUSY in sysfs.
+TEST(RenameTest, SysfsPathEndingWithDots) {
+  // If a non-root user tries to rename inside /sys then we get EPERM.
+  SKIP_IF(geteuid() != 0);
+  ASSERT_THAT(rename("/sys/devices/system/cpu/online", "/sys/."),
+              SyscallFailsWithErrno(EBUSY));
+  ASSERT_THAT(rename("/sys/devices/system/cpu/online", "/sys/.."),
+              SyscallFailsWithErrno(EBUSY));
+}
+
 }  // namespace
 
 }  // namespace testing
