@@ -17,7 +17,6 @@ package arp_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -155,7 +154,7 @@ type testContext struct {
 	nudDisp *arpDispatcher
 }
 
-func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
+func newTestContext(t *testing.T) *testContext {
 	c := stack.DefaultNUDConfigurations()
 	// Transition from Reachable to Stale almost immediately to test if receiving
 	// probes refreshes positive reachability.
@@ -173,7 +172,6 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 		NUDConfigs:         c,
 		NUDDisp:            &d,
-		UseNeighborCache:   useNeighborCache,
 	})
 
 	ep := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
@@ -190,15 +188,6 @@ func newTestContext(t *testing.T, useNeighborCache bool) *testContext {
 
 	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
 		t.Fatalf("AddAddress for ipv4 failed: %v", err)
-	}
-	if !useNeighborCache {
-		// The remote address needs to be assigned to the NIC so we can receive and
-		// verify outgoing ARP packets. The neighbor cache isn't concerned with
-		// this; the tests that use linkAddrCache expect the ARP responses to be
-		// received by the same NIC.
-		if err := s.AddAddress(nicID, ipv4.ProtocolNumber, remoteAddr); err != nil {
-			t.Fatalf("AddAddress for ipv4 failed: %v", err)
-		}
 	}
 
 	s.SetRouteTable([]tcpip.Route{{
@@ -217,86 +206,8 @@ func (c *testContext) cleanup() {
 	c.linkEP.Close()
 }
 
-func TestDirectRequest(t *testing.T) {
-	c := newTestContext(t, false /* useNeighborCache */)
-	defer c.cleanup()
-
-	const senderMAC = "\x01\x02\x03\x04\x05\x06"
-	const senderIPv4 = "\x0a\x00\x00\x02"
-
-	v := make(buffer.View, header.ARPSize)
-	h := header.ARP(v)
-	h.SetIPv4OverEthernet()
-	h.SetOp(header.ARPRequest)
-	copy(h.HardwareAddressSender(), senderMAC)
-	copy(h.ProtocolAddressSender(), senderIPv4)
-
-	inject := func(addr tcpip.Address) {
-		copy(h.ProtocolAddressTarget(), addr)
-		c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: v.ToVectorisedView(),
-		}))
-	}
-
-	for i, address := range []tcpip.Address{stackAddr, remoteAddr} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			expectedPacketsReceived := c.s.Stats().ARP.PacketsReceived.Value() + 1
-			expectedRequestsReceived := c.s.Stats().ARP.RequestsReceived.Value() + 1
-			expectedRepliesSent := c.s.Stats().ARP.OutgoingRepliesSent.Value() + 1
-
-			inject(address)
-			pi, _ := c.linkEP.ReadContext(context.Background())
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
-			}
-			rep := header.ARP(pi.Pkt.NetworkHeader().View())
-			if !rep.IsValid() {
-				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
-			}
-			if got := rep.Op(); got != header.ARPReply {
-				t.Fatalf("got Op = %d, want = %d", got, header.ARPReply)
-			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
-				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.Address(rep.ProtocolAddressSender()), tcpip.Address(h.ProtocolAddressTarget()); got != want {
-				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress(h.HardwareAddressSender()); got != want {
-				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
-			}
-			if got, want := tcpip.Address(rep.ProtocolAddressTarget()), tcpip.Address(h.ProtocolAddressSender()); got != want {
-				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, want)
-			}
-
-			if got := c.s.Stats().ARP.PacketsReceived.Value(); got != expectedPacketsReceived {
-				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, expectedPacketsReceived)
-			}
-			if got := c.s.Stats().ARP.RequestsReceived.Value(); got != expectedRequestsReceived {
-				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, expectedRequestsReceived)
-			}
-			if got := c.s.Stats().ARP.OutgoingRepliesSent.Value(); got != expectedRepliesSent {
-				t.Errorf("got c.s.Stats().ARP.OutgoingRepliesSent.Value() = %d, want = %d", got, expectedRepliesSent)
-			}
-		})
-	}
-
-	inject(unknownAddr)
-	// Sleep tests are gross, but this will only potentially flake
-	// if there's a bug. If there is no bug this will reliably
-	// succeed.
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	if pkt, ok := c.linkEP.ReadContext(ctx); ok {
-		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
-	}
-	if got := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(); got != 1 {
-		t.Errorf("got c.s.Stats().ARP.RequestsReceivedUnKnownTargetAddress.Value() = %d, want = 1", got)
-	}
-}
-
 func TestMalformedPacket(t *testing.T) {
-	c := newTestContext(t, false)
+	c := newTestContext(t)
 	defer c.cleanup()
 
 	v := make(buffer.View, header.ARPSize)
@@ -315,7 +226,7 @@ func TestMalformedPacket(t *testing.T) {
 }
 
 func TestDisabledEndpoint(t *testing.T) {
-	c := newTestContext(t, false)
+	c := newTestContext(t)
 	defer c.cleanup()
 
 	ep, err := c.s.GetNetworkEndpoint(nicID, header.ARPProtocolNumber)
@@ -340,7 +251,7 @@ func TestDisabledEndpoint(t *testing.T) {
 }
 
 func TestDirectReply(t *testing.T) {
-	c := newTestContext(t, false)
+	c := newTestContext(t)
 	defer c.cleanup()
 
 	const senderMAC = "\x01\x02\x03\x04\x05\x06"
@@ -370,8 +281,8 @@ func TestDirectReply(t *testing.T) {
 	}
 }
 
-func TestDirectRequestWithNeighborCache(t *testing.T) {
-	c := newTestContext(t, true /* useNeighborCache */)
+func TestDirectRequest(t *testing.T) {
+	c := newTestContext(t)
 	defer c.cleanup()
 
 	tests := []struct {

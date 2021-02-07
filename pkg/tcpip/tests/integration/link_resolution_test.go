@@ -487,30 +487,25 @@ func TestGetLinkAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for _, useNeighborCache := range []bool{true, false} {
-				t.Run(fmt.Sprintf("UseNeighborCache=%t", useNeighborCache), func(t *testing.T) {
-					stackOpts := stack.Options{
-						NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
-						UseNeighborCache: useNeighborCache,
-					}
+			stackOpts := stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+			}
 
-					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
 
-					ch := make(chan stack.LinkResolutionResult, 1)
-					err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
-						ch <- r
-					})
-					if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-						t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
-					}
-					wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
-					if test.expectedOk {
-						wantRes.LinkAddress = linkAddr2
-					}
-					if diff := cmp.Diff(wantRes, <-ch); diff != "" {
-						t.Fatalf("link resolution result mismatch (-want +got):\n%s", diff)
-					}
-				})
+			ch := make(chan stack.LinkResolutionResult, 1)
+			err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+				ch <- r
+			})
+			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+				t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
+			}
+			wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
+			if test.expectedOk {
+				wantRes.LinkAddress = linkAddr2
+			}
+			if diff := cmp.Diff(wantRes, <-ch); diff != "" {
+				t.Fatalf("link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -587,66 +582,61 @@ func TestRouteResolvedFields(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for _, useNeighborCache := range []bool{true, false} {
-				t.Run(fmt.Sprintf("UseNeighborCache=%t", useNeighborCache), func(t *testing.T) {
-					stackOpts := stack.Options{
-						NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
-						UseNeighborCache: useNeighborCache,
-					}
+			stackOpts := stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+			}
 
-					host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
-					r, err := host1Stack.FindRoute(host1NICID, "", test.remoteAddr, test.netProto, false /* multicastLoop */)
-					if err != nil {
-						t.Fatalf("host1Stack.FindRoute(%d, '', %s, %d, false): %s", host1NICID, test.remoteAddr, test.netProto, err)
-					}
-					defer r.Release()
+			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			r, err := host1Stack.FindRoute(host1NICID, "", test.remoteAddr, test.netProto, false /* multicastLoop */)
+			if err != nil {
+				t.Fatalf("host1Stack.FindRoute(%d, '', %s, %d, false): %s", host1NICID, test.remoteAddr, test.netProto, err)
+			}
+			defer r.Release()
 
-					var wantRouteInfo stack.RouteInfo
-					wantRouteInfo.LocalLinkAddress = linkAddr1
-					wantRouteInfo.LocalAddress = test.localAddr
-					wantRouteInfo.RemoteAddress = test.remoteAddr
-					wantRouteInfo.NetProto = test.netProto
-					wantRouteInfo.Loop = stack.PacketOut
-					wantRouteInfo.RemoteLinkAddress = test.expectedLinkAddr
+			var wantRouteInfo stack.RouteInfo
+			wantRouteInfo.LocalLinkAddress = linkAddr1
+			wantRouteInfo.LocalAddress = test.localAddr
+			wantRouteInfo.RemoteAddress = test.remoteAddr
+			wantRouteInfo.NetProto = test.netProto
+			wantRouteInfo.Loop = stack.PacketOut
+			wantRouteInfo.RemoteLinkAddress = test.expectedLinkAddr
 
-					ch := make(chan stack.ResolvedFieldsResult, 1)
+			ch := make(chan stack.ResolvedFieldsResult, 1)
 
-					if !test.immediatelyResolvable {
-						wantUnresolvedRouteInfo := wantRouteInfo
-						wantUnresolvedRouteInfo.RemoteLinkAddress = ""
+			if !test.immediatelyResolvable {
+				wantUnresolvedRouteInfo := wantRouteInfo
+				wantUnresolvedRouteInfo.RemoteLinkAddress = ""
 
-						err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
-							ch <- r
-						})
-						if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-							t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
-						}
-						if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: test.expectedSuccess}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
-							t.Errorf("route resolve result mismatch (-want +got):\n%s", diff)
-						}
-
-						if !test.expectedSuccess {
-							return
-						}
-
-						// At this point the neighbor table should be populated so the route
-						// should be immediately resolvable.
-					}
-
-					if err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
-						ch <- r
-					}); err != nil {
-						t.Errorf("r.ResolvedFields(_): %s", err)
-					}
-					select {
-					case routeResolveRes := <-ch:
-						if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: true}, routeResolveRes, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
-							t.Errorf("route resolve result from resolved route mismatch (-want +got):\n%s", diff)
-						}
-					default:
-						t.Fatal("expected route to be immediately resolvable")
-					}
+				err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
+					ch <- r
 				})
+				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+					t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
+				}
+				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: test.expectedSuccess}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+					t.Errorf("route resolve result mismatch (-want +got):\n%s", diff)
+				}
+
+				if !test.expectedSuccess {
+					return
+				}
+
+				// At this point the neighbor table should be populated so the route
+				// should be immediately resolvable.
+			}
+
+			if err := r.ResolvedFields(func(r stack.ResolvedFieldsResult) {
+				ch <- r
+			}); err != nil {
+				t.Errorf("r.ResolvedFields(_): %s", err)
+			}
+			select {
+			case routeResolveRes := <-ch:
+				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: true}, routeResolveRes, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+					t.Errorf("route resolve result from resolved route mismatch (-want +got):\n%s", diff)
+				}
+			default:
+				t.Fatal("expected route to be immediately resolvable")
 			}
 		})
 	}
@@ -1065,7 +1055,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 				Clock:              clock,
-				UseNeighborCache:   true,
 			}
 			host1StackOpts := stackOpts
 			host1StackOpts.NUDDisp = &nudDisp

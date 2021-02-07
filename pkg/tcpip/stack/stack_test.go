@@ -4324,7 +4324,6 @@ func TestClearNeighborCacheOnNICDisable(t *testing.T) {
 	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
-		UseNeighborCache: true,
 		Clock:            clock,
 	})
 	e := channel.New(0, 0, "")
