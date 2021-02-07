@@ -53,7 +53,7 @@ type Route struct {
 
 	// linkRes is set if link address resolution is enabled for this protocol on
 	// the route's NIC.
-	linkRes linkResolver
+	linkRes *linkResolver
 }
 
 type routeInfo struct {
@@ -184,7 +184,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		return r
 	}
 
-	if r.linkRes.resolver == nil {
+	if r.linkRes == nil {
 		return r
 	}
 
@@ -400,7 +400,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 func (r *Route) isResolutionRequiredRLocked() bool {
-	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes.resolver != nil && r.isValidForOutgoingRLocked() && !r.local()
+	return len(r.mu.remoteLinkAddress) == 0 && r.linkRes != nil && r.isValidForOutgoingRLocked() && !r.local()
 }
 
 func (r *Route) isValidForOutgoing() bool {
@@ -528,7 +528,7 @@ func (r *Route) IsOutboundBroadcast() bool {
 // "Reachable" is defined as having full-duplex communication between the
 // local and remote ends of the route.
 func (r *Route) ConfirmReachable() {
-	if r.linkRes.resolver != nil {
+	if r.linkRes != nil {
 		r.linkRes.confirmReachable(r.nextHop())
 	}
 }

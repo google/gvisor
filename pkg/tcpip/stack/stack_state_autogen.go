@@ -346,58 +346,6 @@ func (fl *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &fl.OutputInterfaceInvert)
 }
 
-func (l *linkAddrEntryList) StateTypeName() string {
-	return "pkg/tcpip/stack.linkAddrEntryList"
-}
-
-func (l *linkAddrEntryList) StateFields() []string {
-	return []string{
-		"head",
-		"tail",
-	}
-}
-
-func (l *linkAddrEntryList) beforeSave() {}
-
-func (l *linkAddrEntryList) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.head)
-	stateSinkObject.Save(1, &l.tail)
-}
-
-func (l *linkAddrEntryList) afterLoad() {}
-
-func (l *linkAddrEntryList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.head)
-	stateSourceObject.Load(1, &l.tail)
-}
-
-func (e *linkAddrEntryEntry) StateTypeName() string {
-	return "pkg/tcpip/stack.linkAddrEntryEntry"
-}
-
-func (e *linkAddrEntryEntry) StateFields() []string {
-	return []string{
-		"next",
-		"prev",
-	}
-}
-
-func (e *linkAddrEntryEntry) beforeSave() {}
-
-func (e *linkAddrEntryEntry) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.next)
-	stateSinkObject.Save(1, &e.prev)
-}
-
-func (e *linkAddrEntryEntry) afterLoad() {}
-
-func (e *linkAddrEntryEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.next)
-	stateSourceObject.Load(1, &e.prev)
-}
-
 func (l *neighborEntryList) StateTypeName() string {
 	return "pkg/tcpip/stack.neighborEntryList"
 }
@@ -716,8 +664,6 @@ func init() {
 	state.Register((*Table)(nil))
 	state.Register((*Rule)(nil))
 	state.Register((*IPHeaderFilter)(nil))
-	state.Register((*linkAddrEntryList)(nil))
-	state.Register((*linkAddrEntryEntry)(nil))
 	state.Register((*neighborEntryList)(nil))
 	state.Register((*neighborEntryEntry)(nil))
 	state.Register((*PacketBufferList)(nil))
