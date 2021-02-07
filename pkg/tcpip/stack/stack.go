@@ -434,12 +434,6 @@ type Stack struct {
 	// nudConfigs is the default NUD configurations used by interfaces.
 	nudConfigs NUDConfigurations
 
-	// useNeighborCache indicates whether ARP and NDP packets should be handled
-	// by the NIC's neighborCache instead of linkAddrCache.
-	//
-	// TODO(gvisor.dev/issue/4658): Remove this field.
-	useNeighborCache bool
-
 	// nudDisp is the NUD event dispatcher that is used to send the netstack
 	// integrator NUD related events.
 	nudDisp NUDDispatcher
@@ -515,17 +509,6 @@ type Options struct {
 
 	// NUDConfigs is the default NUD configurations used by interfaces.
 	NUDConfigs NUDConfigurations
-
-	// UseNeighborCache is unused.
-	//
-	// TODO(gvisor.dev/issue/4658): Remove this field.
-	UseNeighborCache bool
-
-	// UseLinkAddrCache indicates that the legacy link address cache should be
-	// used for link resolution.
-	//
-	// TODO(gvisor.dev/issue/4658): Remove this field.
-	UseLinkAddrCache bool
 
 	// NUDDisp is the NUD event dispatcher that an integrator can provide to
 	// receive NUD related events.
@@ -666,7 +649,6 @@ func New(opts Options) *Stack {
 		icmpRateLimiter:    NewICMPRateLimiter(),
 		seed:               generateRandUint32(),
 		nudConfigs:         opts.NUDConfigs,
-		useNeighborCache:   !opts.UseLinkAddrCache,
 		uniqueIDGenerator:  opts.UniqueID,
 		nudDisp:            opts.NUDDisp,
 		randomGenerator:    mathrand.New(randSrc),
