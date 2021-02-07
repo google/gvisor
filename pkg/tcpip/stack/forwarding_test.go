@@ -165,9 +165,9 @@ var _ NetworkProtocol = (*fwdTestNetworkProtocol)(nil)
 type fwdTestNetworkProtocol struct {
 	stack *Stack
 
-	neighborTable          neighborTable
+	neigh                  *neighborCache
 	addrResolveDelay       time.Duration
-	onLinkAddressResolved  func(neighborTable, tcpip.Address, tcpip.LinkAddress)
+	onLinkAddressResolved  func(*neighborCache, tcpip.Address, tcpip.LinkAddress)
 	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
 
 	mu struct {
@@ -225,7 +225,7 @@ func (*fwdTestNetworkProtocol) Wait() {}
 func (f *fwdTestNetworkEndpoint) LinkAddressRequest(addr, _ tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
 	if fn := f.proto.onLinkAddressResolved; fn != nil {
 		time.AfterFunc(f.proto.addrResolveDelay, func() {
-			fn(f.proto.neighborTable, addr, remoteLinkAddr)
+			fn(f.proto.neigh, addr, remoteLinkAddr)
 		})
 	}
 	return nil
@@ -361,14 +361,13 @@ func (e *fwdTestLinkEndpoint) AddHeader(local, remote tcpip.LinkAddress, protoco
 	panic("not implemented")
 }
 
-func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborCache bool) (ep1, ep2 *fwdTestLinkEndpoint) {
+func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (ep1, ep2 *fwdTestLinkEndpoint) {
 	// Create a stack with the network protocol and two NICs.
 	s := New(Options{
 		NetworkProtocols: []NetworkProtocolFactory{func(s *Stack) NetworkProtocol {
 			proto.stack = s
 			return proto
 		}},
-		UseNeighborCache: useNeighborCache,
 	})
 
 	// Enable forwarding.
@@ -406,7 +405,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 	}
 
 	if l, ok := nic.linkAddrResolvers[fwdTestNetNumber]; ok {
-		proto.neighborTable = l.neighborTable
+		proto.neigh = &l.neigh
 	}
 
 	// Route all packets to NIC 2.
@@ -422,121 +421,85 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol, useNeighborC
 }
 
 func TestForwardingWithStaticResolver(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	// Create a network protocol with a static resolver.
+	proto := &fwdTestNetworkProtocol{
+		onResolveStaticAddress:
+		// The network address 3 is resolved to the link address "c".
+		func(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+			if addr == "\x03" {
+				return "c", true
+			}
+			return "", false
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			// Create a network protocol with a static resolver.
-			proto := &fwdTestNetworkProtocol{
-				onResolveStaticAddress:
-				// The network address 3 is resolved to the link address "c".
-				func(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-					if addr == "\x03" {
-						return "c", true
-					}
-					return "", false
-				},
-			}
+	ep1, ep2 := fwdTestNetFactory(t, proto)
 
-			ep1, ep2 := fwdTestNetFactory(t, proto, test.useNeighborCache)
+	// Inject an inbound packet to address 3 on NIC 1, and see if it is
+	// forwarded to NIC 2.
+	buf := buffer.NewView(30)
+	buf[dstAddrOffset] = 3
+	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	}))
 
-			// Inject an inbound packet to address 3 on NIC 1, and see if it is
-			// forwarded to NIC 2.
-			buf := buffer.NewView(30)
-			buf[dstAddrOffset] = 3
-			ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
+	var p fwdTestPacketInfo
 
-			var p fwdTestPacketInfo
+	select {
+	case p = <-ep2.C:
+	default:
+		t.Fatal("packet not forwarded")
+	}
 
-			select {
-			case p = <-ep2.C:
-			default:
-				t.Fatal("packet not forwarded")
-			}
-
-			// Test that the static address resolution happened correctly.
-			if p.RemoteLinkAddress != "c" {
-				t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-			}
-			if p.LocalLinkAddress != "b" {
-				t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-			}
-		})
+	// Test that the static address resolution happened correctly.
+	if p.RemoteLinkAddress != "c" {
+		t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+	}
+	if p.LocalLinkAddress != "b" {
+		t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
 	}
 }
 
 func TestForwardingWithFakeResolver(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	proto := fwdTestNetworkProtocol{
+		addrResolveDelay: 500 * time.Millisecond,
+		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+			t.Helper()
+			if len(linkAddr) != 0 {
+				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+			}
+			// Any address will be resolved to the link address "c".
+			neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+				Solicited: true,
+				Override:  false,
+				IsRouter:  false,
+			})
 		},
 	}
+	ep1, ep2 := fwdTestNetFactory(t, &proto)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			proto := fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(linkAddr) != 0 {
-						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
-					}
-					// Any address will be resolved to the link address "c".
-					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			}
-			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
+	// Inject an inbound packet to address 3 on NIC 1, and see if it is
+	// forwarded to NIC 2.
+	buf := buffer.NewView(30)
+	buf[dstAddrOffset] = 3
+	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	}))
 
-			// Inject an inbound packet to address 3 on NIC 1, and see if it is
-			// forwarded to NIC 2.
-			buf := buffer.NewView(30)
-			buf[dstAddrOffset] = 3
-			ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
+	var p fwdTestPacketInfo
 
-			var p fwdTestPacketInfo
+	select {
+	case p = <-ep2.C:
+	case <-time.After(time.Second):
+		t.Fatal("packet not forwarded")
+	}
 
-			select {
-			case p = <-ep2.C:
-			case <-time.After(time.Second):
-				t.Fatal("packet not forwarded")
-			}
-
-			// Test that the address resolution happened correctly.
-			if p.RemoteLinkAddress != "c" {
-				t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-			}
-			if p.LocalLinkAddress != "b" {
-				t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-			}
-		})
+	// Test that the address resolution happened correctly.
+	if p.RemoteLinkAddress != "c" {
+		t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+	}
+	if p.LocalLinkAddress != "b" {
+		t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
 	}
 }
 
@@ -546,7 +509,7 @@ func TestForwardingWithNoResolver(t *testing.T) {
 
 	// Whether or not we use the neighbor cache here does not matter since
 	// neither linkAddrCache nor neighborCache will be used.
-	ep1, ep2 := fwdTestNetFactory(t, proto, false /* useNeighborCache */)
+	ep1, ep2 := fwdTestNetFactory(t, proto)
 
 	// inject an inbound packet to address 3 on NIC 1, and see if it is
 	// forwarded to NIC 2.
@@ -566,12 +529,12 @@ func TestForwardingWithNoResolver(t *testing.T) {
 func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 	proto := &fwdTestNetworkProtocol{
 		addrResolveDelay: 50 * time.Millisecond,
-		onLinkAddressResolved: func(neighborTable, tcpip.Address, tcpip.LinkAddress) {
+		onLinkAddressResolved: func(*neighborCache, tcpip.Address, tcpip.LinkAddress) {
 			// Don't resolve the link address.
 		},
 	}
 
-	ep1, ep2 := fwdTestNetFactory(t, proto, true /* useNeighborCache */)
+	ep1, ep2 := fwdTestNetFactory(t, proto)
 
 	const numPackets int = 5
 	// These packets will all be enqueued in the packet queue to wait for link
@@ -596,300 +559,227 @@ func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 }
 
 func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	proto := fwdTestNetworkProtocol{
+		addrResolveDelay: 500 * time.Millisecond,
+		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+			t.Helper()
+			if len(linkAddr) != 0 {
+				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+			}
+			// Only packets to address 3 will be resolved to the
+			// link address "c".
+			if addr == "\x03" {
+				neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+					Solicited: true,
+					Override:  false,
+					IsRouter:  false,
+				})
+			}
 		},
 	}
+	ep1, ep2 := fwdTestNetFactory(t, &proto)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			proto := fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(linkAddr) != 0 {
-						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
-					}
-					// Only packets to address 3 will be resolved to the
-					// link address "c".
-					if addr == "\x03" {
-						neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-							Solicited: true,
-							Override:  false,
-							IsRouter:  false,
-						})
-					}
-				},
-			}
-			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
+	// Inject an inbound packet to address 4 on NIC 1. This packet should
+	// not be forwarded.
+	buf := buffer.NewView(30)
+	buf[dstAddrOffset] = 4
+	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	}))
 
-			// Inject an inbound packet to address 4 on NIC 1. This packet should
-			// not be forwarded.
-			buf := buffer.NewView(30)
-			buf[dstAddrOffset] = 4
-			ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
+	// Inject an inbound packet to address 3 on NIC 1, and see if it is
+	// forwarded to NIC 2.
+	buf = buffer.NewView(30)
+	buf[dstAddrOffset] = 3
+	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+		Data: buf.ToVectorisedView(),
+	}))
 
-			// Inject an inbound packet to address 3 on NIC 1, and see if it is
-			// forwarded to NIC 2.
-			buf = buffer.NewView(30)
-			buf[dstAddrOffset] = 3
-			ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-				Data: buf.ToVectorisedView(),
-			}))
+	var p fwdTestPacketInfo
 
-			var p fwdTestPacketInfo
+	select {
+	case p = <-ep2.C:
+	case <-time.After(time.Second):
+		t.Fatal("packet not forwarded")
+	}
 
-			select {
-			case p = <-ep2.C:
-			case <-time.After(time.Second):
-				t.Fatal("packet not forwarded")
-			}
+	if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] != 3 {
+		t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want = 3", nh[dstAddrOffset])
+	}
 
-			if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] != 3 {
-				t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want = 3", nh[dstAddrOffset])
-			}
-
-			// Test that the address resolution happened correctly.
-			if p.RemoteLinkAddress != "c" {
-				t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-			}
-			if p.LocalLinkAddress != "b" {
-				t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-			}
-		})
+	// Test that the address resolution happened correctly.
+	if p.RemoteLinkAddress != "c" {
+		t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+	}
+	if p.LocalLinkAddress != "b" {
+		t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
 	}
 }
 
 func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	proto := fwdTestNetworkProtocol{
+		addrResolveDelay: 500 * time.Millisecond,
+		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+			t.Helper()
+			if len(linkAddr) != 0 {
+				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+			}
+			// Any packets will be resolved to the link address "c".
+			neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+				Solicited: true,
+				Override:  false,
+				IsRouter:  false,
+			})
 		},
 	}
+	ep1, ep2 := fwdTestNetFactory(t, &proto)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			proto := fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(linkAddr) != 0 {
-						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			}
-			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
+	// Inject two inbound packets to address 3 on NIC 1.
+	for i := 0; i < 2; i++ {
+		buf := buffer.NewView(30)
+		buf[dstAddrOffset] = 3
+		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+			Data: buf.ToVectorisedView(),
+		}))
+	}
 
-			// Inject two inbound packets to address 3 on NIC 1.
-			for i := 0; i < 2; i++ {
-				buf := buffer.NewView(30)
-				buf[dstAddrOffset] = 3
-				ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-					Data: buf.ToVectorisedView(),
-				}))
-			}
+	for i := 0; i < 2; i++ {
+		var p fwdTestPacketInfo
 
-			for i := 0; i < 2; i++ {
-				var p fwdTestPacketInfo
+		select {
+		case p = <-ep2.C:
+		case <-time.After(time.Second):
+			t.Fatal("packet not forwarded")
+		}
 
-				select {
-				case p = <-ep2.C:
-				case <-time.After(time.Second):
-					t.Fatal("packet not forwarded")
-				}
+		if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] != 3 {
+			t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want = 3", nh[dstAddrOffset])
+		}
 
-				if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] != 3 {
-					t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want = 3", nh[dstAddrOffset])
-				}
-
-				// Test that the address resolution happened correctly.
-				if p.RemoteLinkAddress != "c" {
-					t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-				}
-				if p.LocalLinkAddress != "b" {
-					t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-				}
-			}
-		})
+		// Test that the address resolution happened correctly.
+		if p.RemoteLinkAddress != "c" {
+			t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+		}
+		if p.LocalLinkAddress != "b" {
+			t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
+		}
 	}
 }
 
 func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	proto := fwdTestNetworkProtocol{
+		addrResolveDelay: 500 * time.Millisecond,
+		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+			t.Helper()
+			if len(linkAddr) != 0 {
+				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+			}
+			// Any packets will be resolved to the link address "c".
+			neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+				Solicited: true,
+				Override:  false,
+				IsRouter:  false,
+			})
 		},
 	}
+	ep1, ep2 := fwdTestNetFactory(t, &proto)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			proto := fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(linkAddr) != 0 {
-						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			}
-			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
+	for i := 0; i < maxPendingPacketsPerResolution+5; i++ {
+		// Inject inbound 'maxPendingPacketsPerResolution + 5' packets on NIC 1.
+		buf := buffer.NewView(30)
+		buf[dstAddrOffset] = 3
+		// Set the packet sequence number.
+		binary.BigEndian.PutUint16(buf[fwdTestNetHeaderLen:], uint16(i))
+		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+			Data: buf.ToVectorisedView(),
+		}))
+	}
 
-			for i := 0; i < maxPendingPacketsPerResolution+5; i++ {
-				// Inject inbound 'maxPendingPacketsPerResolution + 5' packets on NIC 1.
-				buf := buffer.NewView(30)
-				buf[dstAddrOffset] = 3
-				// Set the packet sequence number.
-				binary.BigEndian.PutUint16(buf[fwdTestNetHeaderLen:], uint16(i))
-				ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-					Data: buf.ToVectorisedView(),
-				}))
-			}
+	for i := 0; i < maxPendingPacketsPerResolution; i++ {
+		var p fwdTestPacketInfo
 
-			for i := 0; i < maxPendingPacketsPerResolution; i++ {
-				var p fwdTestPacketInfo
+		select {
+		case p = <-ep2.C:
+		case <-time.After(time.Second):
+			t.Fatal("packet not forwarded")
+		}
 
-				select {
-				case p = <-ep2.C:
-				case <-time.After(time.Second):
-					t.Fatal("packet not forwarded")
-				}
+		b := PayloadSince(p.Pkt.NetworkHeader())
+		if b[dstAddrOffset] != 3 {
+			t.Fatalf("got b[dstAddrOffset] = %d, want = 3", b[dstAddrOffset])
+		}
+		if len(b) < fwdTestNetHeaderLen+2 {
+			t.Fatalf("packet is too short to hold a sequence number: len(b) = %d", b)
+		}
+		seqNumBuf := b[fwdTestNetHeaderLen:]
 
-				b := PayloadSince(p.Pkt.NetworkHeader())
-				if b[dstAddrOffset] != 3 {
-					t.Fatalf("got b[dstAddrOffset] = %d, want = 3", b[dstAddrOffset])
-				}
-				if len(b) < fwdTestNetHeaderLen+2 {
-					t.Fatalf("packet is too short to hold a sequence number: len(b) = %d", b)
-				}
-				seqNumBuf := b[fwdTestNetHeaderLen:]
+		// The first 5 packets should not be forwarded so the sequence number should
+		// start with 5.
+		want := uint16(i + 5)
+		if n := binary.BigEndian.Uint16(seqNumBuf); n != want {
+			t.Fatalf("got the packet #%d, want = #%d", n, want)
+		}
 
-				// The first 5 packets should not be forwarded so the sequence number should
-				// start with 5.
-				want := uint16(i + 5)
-				if n := binary.BigEndian.Uint16(seqNumBuf); n != want {
-					t.Fatalf("got the packet #%d, want = #%d", n, want)
-				}
-
-				// Test that the address resolution happened correctly.
-				if p.RemoteLinkAddress != "c" {
-					t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-				}
-				if p.LocalLinkAddress != "b" {
-					t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-				}
-			}
-		})
+		// Test that the address resolution happened correctly.
+		if p.RemoteLinkAddress != "c" {
+			t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+		}
+		if p.LocalLinkAddress != "b" {
+			t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
+		}
 	}
 }
 
 func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
-	tests := []struct {
-		name             string
-		useNeighborCache bool
-		proto            *fwdTestNetworkProtocol
-	}{
-		{
-			name:             "linkAddrCache",
-			useNeighborCache: false,
-		},
-		{
-			name:             "neighborCache",
-			useNeighborCache: true,
+	proto := fwdTestNetworkProtocol{
+		addrResolveDelay: 500 * time.Millisecond,
+		onLinkAddressResolved: func(neigh *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+			t.Helper()
+			if len(linkAddr) != 0 {
+				t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
+			}
+			// Any packets will be resolved to the link address "c".
+			neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
+				Solicited: true,
+				Override:  false,
+				IsRouter:  false,
+			})
 		},
 	}
+	ep1, ep2 := fwdTestNetFactory(t, &proto)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			proto := fwdTestNetworkProtocol{
-				addrResolveDelay: 500 * time.Millisecond,
-				onLinkAddressResolved: func(neigh neighborTable, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
-					t.Helper()
-					if len(linkAddr) != 0 {
-						t.Fatalf("got linkAddr=%q, want unspecified", linkAddr)
-					}
-					// Any packets will be resolved to the link address "c".
-					neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
-						Solicited: true,
-						Override:  false,
-						IsRouter:  false,
-					})
-				},
-			}
-			ep1, ep2 := fwdTestNetFactory(t, &proto, test.useNeighborCache)
+	for i := 0; i < maxPendingResolutions+5; i++ {
+		// Inject inbound 'maxPendingResolutions + 5' packets on NIC 1.
+		// Each packet has a different destination address (3 to
+		// maxPendingResolutions + 7).
+		buf := buffer.NewView(30)
+		buf[dstAddrOffset] = byte(3 + i)
+		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
+			Data: buf.ToVectorisedView(),
+		}))
+	}
 
-			for i := 0; i < maxPendingResolutions+5; i++ {
-				// Inject inbound 'maxPendingResolutions + 5' packets on NIC 1.
-				// Each packet has a different destination address (3 to
-				// maxPendingResolutions + 7).
-				buf := buffer.NewView(30)
-				buf[dstAddrOffset] = byte(3 + i)
-				ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-					Data: buf.ToVectorisedView(),
-				}))
-			}
+	for i := 0; i < maxPendingResolutions; i++ {
+		var p fwdTestPacketInfo
 
-			for i := 0; i < maxPendingResolutions; i++ {
-				var p fwdTestPacketInfo
+		select {
+		case p = <-ep2.C:
+		case <-time.After(time.Second):
+			t.Fatal("packet not forwarded")
+		}
 
-				select {
-				case p = <-ep2.C:
-				case <-time.After(time.Second):
-					t.Fatal("packet not forwarded")
-				}
+		// The first 5 packets (address 3 to 7) should not be forwarded
+		// because their address resolutions are interrupted.
+		if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] < 8 {
+			t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want p.Pkt.NetworkHeader[dstAddrOffset] >= 8", nh[dstAddrOffset])
+		}
 
-				// The first 5 packets (address 3 to 7) should not be forwarded
-				// because their address resolutions are interrupted.
-				if nh := PayloadSince(p.Pkt.NetworkHeader()); nh[dstAddrOffset] < 8 {
-					t.Fatalf("got p.Pkt.NetworkHeader[dstAddrOffset] = %d, want p.Pkt.NetworkHeader[dstAddrOffset] >= 8", nh[dstAddrOffset])
-				}
-
-				// Test that the address resolution happened correctly.
-				if p.RemoteLinkAddress != "c" {
-					t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
-				}
-				if p.LocalLinkAddress != "b" {
-					t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
-				}
-			}
-		})
+		// Test that the address resolution happened correctly.
+		if p.RemoteLinkAddress != "c" {
+			t.Fatalf("got p.RemoteLinkAddress = %s, want = c", p.RemoteLinkAddress)
+		}
+		if p.LocalLinkAddress != "b" {
+			t.Fatalf("got p.LocalLinkAddress = %s, want = b", p.LocalLinkAddress)
+		}
 	}
 }

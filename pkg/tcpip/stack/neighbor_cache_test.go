@@ -84,7 +84,7 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 		entries: newTestEntryStore(),
 		delay:   typicalLatency,
 	}
-	linkRes.neigh = newNeighborCache(&nic{
+	linkRes.neigh.init(&nic{
 		stack: &Stack{
 			clock:           clock,
 			nudDisp:         nudDisp,
@@ -187,7 +187,7 @@ func (s *testEntryStore) set(i int, linkAddr tcpip.LinkAddress) {
 // neighbor probe.
 type testNeighborResolver struct {
 	clock                tcpip.Clock
-	neigh                *neighborCache
+	neigh                neighborCache
 	entries              *testEntryStore
 	delay                time.Duration
 	onLinkAddressRequest func()

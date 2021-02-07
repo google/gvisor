@@ -101,7 +101,6 @@ func TestNUDFunctions(t *testing.T) {
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NUDConfigs:       stack.DefaultNUDConfigurations(),
-				UseNeighborCache: true,
 				NetworkProtocols: test.netProtoFactory,
 				Clock:            clock,
 			})
@@ -206,7 +205,6 @@ func TestDefaultNUDConfigurations(t *testing.T) {
 		// address resolution is specified (e.g. ARP or IPv6).
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 		NUDConfigs:       stack.DefaultNUDConfigurations(),
-		UseNeighborCache: true,
 	})
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -261,7 +259,6 @@ func TestNUDConfigurationsBaseReachableTime(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -318,7 +315,6 @@ func TestNUDConfigurationsMinRandomFactor(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -398,7 +394,6 @@ func TestNUDConfigurationsMaxRandomFactor(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -460,7 +455,6 @@ func TestNUDConfigurationsRetransmitTimer(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -512,7 +506,6 @@ func TestNUDConfigurationsDelayFirstProbeTime(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -564,7 +557,6 @@ func TestNUDConfigurationsMaxMulticastProbes(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -616,7 +608,6 @@ func TestNUDConfigurationsMaxUnicastProbes(t *testing.T) {
 				// providing link address resolution is specified (e.g. ARP or IPv6).
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 				NUDConfigs:       c,
-				UseNeighborCache: true,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
