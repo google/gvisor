@@ -435,6 +435,8 @@ func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &rc.snd)
 }
 
+func (rc *rackControl) afterLoad() {}
+
 func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rc.dsackSeen)
 	stateSourceObject.Load(1, &rc.endSequence)
@@ -451,7 +453,6 @@ func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &rc.tlpHighRxt)
 	stateSourceObject.Load(14, &rc.snd)
 	stateSourceObject.LoadValue(11, new(unixTime), func(y interface{}) { rc.loadXmitTime(y.(unixTime)) })
-	stateSourceObject.AfterLoad(rc.afterLoad)
 }
 
 func (r *receiver) StateTypeName() string {
@@ -633,6 +634,7 @@ func (s *segment) StateFields() []string {
 		"xmitCount",
 		"acked",
 		"dataMemSize",
+		"lost",
 	}
 }
 
@@ -668,6 +670,7 @@ func (s *segment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(21, &s.xmitCount)
 	stateSinkObject.Save(22, &s.acked)
 	stateSinkObject.Save(23, &s.dataMemSize)
+	stateSinkObject.Save(24, &s.lost)
 }
 
 func (s *segment) afterLoad() {}
@@ -693,6 +696,7 @@ func (s *segment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(21, &s.xmitCount)
 	stateSourceObject.Load(22, &s.acked)
 	stateSourceObject.Load(23, &s.dataMemSize)
+	stateSourceObject.Load(24, &s.lost)
 	stateSourceObject.LoadValue(8, new(buffer.VectorisedView), func(y interface{}) { s.loadData(y.(buffer.VectorisedView)) })
 	stateSourceObject.LoadValue(17, new([]byte), func(y interface{}) { s.loadOptions(y.([]byte)) })
 	stateSourceObject.LoadValue(19, new(unixTime), func(y interface{}) { s.loadRcvdTime(y.(unixTime)) })
