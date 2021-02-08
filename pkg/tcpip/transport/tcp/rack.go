@@ -17,7 +17,6 @@ package tcp
 import (
 	"time"
 
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
@@ -50,7 +49,8 @@ type rackControl struct {
 	// dsackSeen indicates if the connection has seen a DSACK.
 	dsackSeen bool
 
-	// endSequence is the ending TCP sequence number of rackControl.seg.
+	// endSequence is the ending TCP sequence number of the most recent
+	// acknowledged segment.
 	endSequence seqnum.Value
 
 	// exitedRecovery indicates if the connection is exiting loss recovery.
@@ -90,12 +90,9 @@ type rackControl struct {
 	// rttSeq is the SND.NXT when rtt is updated.
 	rttSeq seqnum.Value
 
-	// xmitTime is the latest transmission timestamp of rackControl.seg.
+	// xmitTime is the latest transmission timestamp of the most recent
+	// acknowledged segment.
 	xmitTime time.Time `state:".(unixTime)"`
-
-	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
-	probeTimer timer       `state:"nosave"`
-	probeWaker sleep.Waker `state:"nosave"`
 
 	// tlpRxtOut indicates whether there is an unacknowledged
 	// TLP retransmission.
@@ -114,7 +111,6 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 	rc.fack = iss
 	rc.reoWndIncr = 1
 	rc.snd = snd
-	rc.probeTimer.init(&rc.probeWaker)
 }
 
 // update will update the RACK related fields when an ACK has been received.
@@ -223,13 +219,13 @@ func (s *sender) schedulePTO() {
 		s.resendTimer.disable()
 	}
 
-	s.rc.probeTimer.enable(pto)
+	s.probeTimer.enable(pto)
 }
 
 // probeTimerExpired is the same as TLP_send_probe() as defined in
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.2.
 func (s *sender) probeTimerExpired() tcpip.Error {
-	if !s.rc.probeTimer.checkExpiration() {
+	if !s.probeTimer.checkExpiration() {
 		return nil
 	}
 
@@ -385,4 +381,103 @@ func (rc *rackControl) updateRACKReorderWindow(ackSeg *segment) {
 
 func (rc *rackControl) exitRecovery() {
 	rc.exitedRecovery = true
+}
+
+// detectLoss marks the segment as lost if the reordering window has elapsed
+// and the ACK is not received. It will also arm the reorder timer.
+// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2 Step 5.
+func (rc *rackControl) detectLoss(rcvTime time.Time) int {
+	var timeout time.Duration
+	numLost := 0
+	for seg := rc.snd.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
+		if rc.snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+			continue
+		}
+
+		if seg.lost && seg.xmitCount == 1 {
+			numLost++
+			continue
+		}
+
+		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+		if seg.xmitTime.Before(rc.xmitTime) || (seg.xmitTime.Equal(rc.xmitTime) && rc.endSequence.LessThan(endSeq)) {
+			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.rtt + rc.reoWnd
+			if timeRemaining <= 0 {
+				seg.lost = true
+				numLost++
+			} else if timeRemaining > timeout {
+				timeout = timeRemaining
+			}
+		}
+	}
+
+	if timeout != 0 && !rc.snd.reorderTimer.enabled() {
+		rc.snd.reorderTimer.enable(timeout)
+	}
+	return numLost
+}
+
+// reorderTimerExpired will retransmit the segments which have not been acked
+// before the reorder timer expired.
+func (rc *rackControl) reorderTimerExpired() tcpip.Error {
+	// Check if the timer actually expired or if it's a spurious wake due
+	// to a previously orphaned runtime timer.
+	if !rc.snd.reorderTimer.checkExpiration() {
+		return nil
+	}
+
+	numLost := rc.detectLoss(time.Now())
+	if numLost == 0 {
+		return nil
+	}
+
+	fastRetransmit := false
+	if !rc.snd.fr.active {
+		rc.snd.cc.HandleLossDetected()
+		rc.snd.enterRecovery()
+		fastRetransmit = true
+	}
+
+	rc.DoRecovery(nil, fastRetransmit)
+	return nil
+}
+
+// DoRecovery implements lossRecovery.DoRecovery.
+func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
+	snd := rc.snd
+	if fastRetransmit {
+		snd.resendSegment()
+	}
+
+	var dataSent bool
+	// Iterate the writeList and retransmit the segments which are marked
+	// as lost by RACK.
+	for seg := snd.writeList.Front(); seg != nil && seg.xmitCount > 0; seg = seg.Next() {
+		if seg == snd.writeNext {
+			break
+		}
+
+		if !seg.lost {
+			continue
+		}
+
+		// Reset seg.lost as it is already SACKed.
+		if snd.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+			seg.lost = false
+			continue
+		}
+
+		// Check the congestion window after entering recovery.
+		if snd.outstanding >= snd.sndCwnd {
+			break
+		}
+
+		snd.outstanding++
+		dataSent = true
+		snd.sendSegment(seg)
+	}
+
+	// Rearm the RTO.
+	snd.resendTimer.enable(snd.rto)
+	snd.postXmit(dataSent)
 }

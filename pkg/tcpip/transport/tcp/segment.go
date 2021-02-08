@@ -83,6 +83,9 @@ type segment struct {
 
 	// dataMemSize is the memory used by data initially.
 	dataMemSize int
+
+	// lost indicates if the segment is marked as lost by RACK.
+	lost bool
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {

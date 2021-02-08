@@ -1301,7 +1301,8 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		// e.mu is expected to be hold upon entering this section.
 		if e.snd != nil {
 			e.snd.resendTimer.cleanup()
-			e.snd.rc.probeTimer.cleanup()
+			e.snd.probeTimer.cleanup()
+			e.snd.reorderTimer.cleanup()
 		}
 
 		if closeTimer != nil {
@@ -1396,7 +1397,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 			},
 		},
 		{
-			w: &e.snd.rc.probeWaker,
+			w: &e.snd.probeWaker,
 			f: e.snd.probeTimerExpired,
 		},
 		{
@@ -1474,6 +1475,10 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 
 				return nil
 			},
+		},
+		{
+			w: &e.snd.reorderWaker,
+			f: e.snd.rc.reorderTimerExpired,
 		},
 	}
 
