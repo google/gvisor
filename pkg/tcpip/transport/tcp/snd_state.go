@@ -47,6 +47,8 @@ func (s *sender) loadRttMeasureTime(unix unixTime) {
 // afterLoad is invoked by stateify.
 func (s *sender) afterLoad() {
 	s.resendTimer.init(&s.resendWaker)
+	s.reorderTimer.init(&s.reorderWaker)
+	s.probeTimer.init(&s.probeWaker)
 }
 
 // saveFirstRetransmittedSegXmitTime is invoked by stateify.

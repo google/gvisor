@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
 const (
@@ -98,6 +99,8 @@ func TestRACKUpdate(t *testing.T) {
 func TestRACKDetectReorder(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
+
+	t.Skipf("Skipping this test as reorder detection does not consider DSACK.")
 
 	var n int
 	const ackNumToVerify = 2
@@ -591,7 +594,6 @@ func TestRACKCheckReorderWindow(t *testing.T) {
 	c.SendAck(seq, bytesRead)
 
 	// Missing [2-6] packets and SACK #7 packet.
-	seq = seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	start := c.IRS.Add(1 + seqnum.Size(6*maxPayload))
 	end := start.Add(seqnum.Size(maxPayload))
 	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
@@ -605,5 +607,48 @@ func TestRACKCheckReorderWindow(t *testing.T) {
 	// test completes.
 	if err := <-probeDone; err != nil {
 		t.Fatalf("unexpected values for RACK variables: %v", err)
+	}
+}
+
+func TestRACKWithDuplicateACK(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	const numPackets = 4
+	data := sendAndReceive(t, c, numPackets)
+
+	// Send three duplicate ACKs to trigger fast recovery.
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	start := c.IRS.Add(1 + seqnum.Size(maxPayload))
+	end := start.Add(seqnum.Size(maxPayload))
+	for i := 0; i < 3; i++ {
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{start, end}})
+		end = end.Add(seqnum.Size(maxPayload))
+	}
+
+	// Receive the retransmitted packet.
+	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, tsOptionSize)
+
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+			{tcpStats.FastRecovery, "stats.TCP.FastRecovery", 0},
+		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 }
