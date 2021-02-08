@@ -191,6 +191,15 @@ type sender struct {
 	// rc has the fields needed for implementing RACK loss detection
 	// algorithm.
 	rc rackControl
+
+	// reorderTimer is the timer used to retransmit the segments after RACK
+	// detects them as lost.
+	reorderTimer timer       `state:"nosave"`
+	reorderWaker sleep.Waker `state:"nosave"`
+
+	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
+	probeTimer timer       `state:"nosave"`
+	probeWaker sleep.Waker `state:"nosave"`
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -267,7 +276,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	}
 
 	s.cc = s.initCongestionControl(ep.cc)
-
 	s.lr = s.initLossRecovery()
 	s.rc.init(s, iss)
 
@@ -278,6 +286,8 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	}
 
 	s.resendTimer.init(&s.resendWaker)
+	s.reorderTimer.init(&s.reorderWaker)
+	s.probeTimer.init(&s.probeWaker)
 
 	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
 
@@ -1126,6 +1136,15 @@ func (s *sender) SetPipe() {
 func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	// We're not in fast recovery yet.
 
+	// If RACK is enabled and there is no reordering we should honor the
+	// three duplicate ACK rule to enter recovery.
+	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-4
+	if s.ep.sackPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+		if s.rc.reorderSeen {
+			return false
+		}
+	}
+
 	if !s.isDupAck(seg) {
 		s.dupAckCount = 0
 		return false
@@ -1462,6 +1481,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 					s.rc.exitRecovery()
 				}
+				s.reorderTimer.disable()
 			}
 		}
 
@@ -1481,21 +1501,36 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// Reset firstRetransmittedSegXmitTime to the zero value.
 			s.firstRetransmittedSegXmitTime = time.Time{}
 			s.resendTimer.disable()
-			s.rc.probeTimer.disable()
+			s.probeTimer.disable()
 		}
 	}
 
-	// Update RACK reorder window.
-	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-	// * Upon receiving an ACK:
-	// * Step 4: Update RACK reordering window
-	if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+	if s.ep.sackPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+		// Update RACK reorder window.
+		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
+		// * Upon receiving an ACK:
+		// * Step 4: Update RACK reordering window
 		s.rc.updateRACKReorderWindow(rcvdSeg)
+
+		// After the reorder window is calculated, detect any loss by checking
+		// if the time elapsed after the segments are sent is greater than the
+		// reorder window.
+		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.fr.active {
+			// If any segment is marked as lost by
+			// RACK, enter recovery and retransmit
+			// the lost segments.
+			s.cc.HandleLossDetected()
+			s.enterRecovery()
+		}
+
+		if s.fr.active {
+			s.rc.DoRecovery(nil, true)
+		}
 	}
 
 	// Now that we've popped all acknowledged data from the retransmit
 	// queue, retransmit if needed.
-	if s.fr.active {
+	if s.fr.active && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection == 0 {
 		s.lr.DoRecovery(rcvdSeg, fastRetransmit)
 		// When SACK is enabled data sending is governed by steps in
 		// RFC 6675 Section 5 recovery steps  A-C.
@@ -1523,6 +1558,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	}
 	seg.xmitTime = time.Now()
 	seg.xmitCount++
+	seg.lost = false
 	err := s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 
 	// Every time a packet containing data is sent (including a
