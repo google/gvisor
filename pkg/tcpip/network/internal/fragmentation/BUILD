@@ -22,7 +22,10 @@ go_library(
         "reassembler.go",
         "reassembler_list.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//pkg/tcpip/network/ipv4:__pkg__",
+        "//pkg/tcpip/network/ipv6:__pkg__",
+    ],
     deps = [
         "//pkg/log",
         "//pkg/sync",
@@ -44,7 +47,7 @@ go_test(
     deps = [
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/faketime",
-        "//pkg/tcpip/network/testutil",
+        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

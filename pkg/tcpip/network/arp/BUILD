@@ -46,7 +46,7 @@ go_test(
     library = ":arp",
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/network/testutil",
+        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
     ],
 )

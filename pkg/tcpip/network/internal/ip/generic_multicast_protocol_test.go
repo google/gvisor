@@ -23,17 +23,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ip"
+	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
 )
 
-const (
-	addr1 = tcpip.Address("\x01")
-	addr2 = tcpip.Address("\x02")
-	addr3 = tcpip.Address("\x03")
-	addr4 = tcpip.Address("\x04")
-
-	maxUnsolicitedReportDelay = time.Second
-)
+const maxUnsolicitedReportDelay = time.Second
 
 var _ ip.MulticastGroupProtocol = (*mockMulticastGroupProtocol)(nil)
 
