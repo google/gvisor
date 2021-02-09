@@ -466,17 +466,25 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
   // session leader. Either way, this ensures we're the session leader.
   setsid();
 
+  // Print the controlling terminal.
+  char termname[L_ctermid] = {};
+  ctermid(termname);
+  printf("controlling terminal: %s\n", termname);
+  fprintf(stderr, "controlling terminal: %s\n", termname);
+  fflush(stdout);
+  fflush(stderr);
+
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
-  struct sigaction sa = {};
-  sa.sa_handler = SIG_IGN;
-  sa.sa_flags = 0;
-  sigemptyset(&sa.sa_mask);
-  struct sigaction old_sa;
-  ASSERT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
-  auto cleanup = Cleanup([old_sa] {
-    EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
-  });
+  /* struct sigaction sa = {}; */
+  /* sa.sa_handler = SIG_IGN; */
+  /* sa.sa_flags = 0; */
+  /* sigemptyset(&sa.sa_mask); */
+  /* struct sigaction old_sa; */
+  /* ASSERT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds()); */
+  /* auto cleanup = Cleanup([old_sa] { */
+  /*   EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds()); */
+  /* }); */
 
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica =
