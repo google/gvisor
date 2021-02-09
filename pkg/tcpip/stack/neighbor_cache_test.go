@@ -1610,12 +1610,11 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 		}
 	}
 
-	// Verify the entry is in Failed state.
 	wantEntries := []NeighborEntry{
 		{
 			Addr:     entry.Addr,
 			LinkAddr: "",
-			State:    Failed,
+			State:    Unreachable,
 		},
 	}
 	if diff := cmp.Diff(linkRes.neigh.entries(), wantEntries, entryDiffOptsWithSort()...); diff != "" {
