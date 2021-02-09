@@ -466,20 +466,6 @@ type ndpState struct {
 	temporaryAddressDesyncFactor time.Duration
 }
 
-type remainingCounter struct {
-	mu struct {
-		sync.Mutex
-
-		remaining uint8
-	}
-}
-
-func (r *remainingCounter) init(max uint8) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.mu.remaining = max
-}
-
 // defaultRouterState holds data associated with a default router discovered by
 // a Router Advertisement (RA).
 type defaultRouterState struct {
@@ -1687,7 +1673,8 @@ func (ndp *ndpState) startSolicitingRouters() {
 		return
 	}
 
-	if ndp.configs.MaxRtrSolicitations == 0 {
+	remaining := ndp.configs.MaxRtrSolicitations
+	if remaining == 0 {
 		return
 	}
 
@@ -1697,9 +1684,6 @@ func (ndp *ndpState) startSolicitingRouters() {
 	if ndp.configs.MaxRtrSolicitationDelay > 0 {
 		delay = time.Duration(rand.Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
 	}
-
-	var remaining remainingCounter
-	remaining.init(ndp.configs.MaxRtrSolicitations)
 
 	// Protected by ndp.ep.mu.
 	done := false
@@ -1754,19 +1738,13 @@ func (ndp *ndpState) startSolicitingRouters() {
 				panic(fmt.Sprintf("failed to add IP header: %s", err))
 			}
 
-			// Okay to hold this lock while writing packets since we use a different
-			// lock per router solicitaiton timer so there will not be any lock
-			// contention.
-			remaining.mu.Lock()
-			defer remaining.mu.Unlock()
-
 			if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
 				sent.dropped.Increment()
 				// Don't send any more messages if we had an error.
-				remaining.mu.remaining = 0
+				remaining = 0
 			} else {
 				sent.routerSolicit.Increment()
-				remaining.mu.remaining--
+				remaining--
 			}
 
 			ndp.ep.mu.Lock()
@@ -1777,7 +1755,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 				return
 			}
 
-			if remaining.mu.remaining == 0 {
+			if remaining == 0 {
 				// We are done soliciting routers.
 				ndp.stopSolicitingRouters()
 				return
