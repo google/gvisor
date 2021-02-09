@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -460,7 +459,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, e.ToError()
 	}
 
-	vLen := int32(binary.Size(v))
+	vLen := int32(v.SizeBytes())
 	if _, err := primitive.CopyInt32Out(t, optLenAddr, vLen); err != nil {
 		return 0, nil, err
 	}
