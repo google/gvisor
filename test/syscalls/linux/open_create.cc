@@ -46,8 +46,10 @@ TEST(CreateTest, ExistingFile) {
 TEST(CreateTest, CreateAtFile) {
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto dirfd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY, 0666));
-  EXPECT_THAT(openat(dirfd.get(), "CreateAtFile", O_RDWR | O_CREAT, 0666),
+  int fd;
+  EXPECT_THAT(fd = openat(dirfd.get(), "CreateAtFile", O_RDWR | O_CREAT, 0666),
               SyscallSucceeds());
+  EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
 TEST(CreateTest, HonorsUmask_NoRandomSave) {
