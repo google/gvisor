@@ -38,7 +38,8 @@ type NeighborEntry struct {
 }
 
 // NeighborState defines the state of a NeighborEntry within the Neighbor
-// Unreachability Detection state machine, as per RFC 4861 section 7.3.2.
+// Unreachability Detection state machine, as per RFC 4861 section 7.3.2 and
+// RFC 7048.
 type NeighborState uint8
 
 const (
@@ -61,13 +62,24 @@ const (
 	Delay
 	// Probe means a reachability confirmation is actively being sought by
 	// periodically retransmitting reachability probes until a reachability
-	// confirmation is received, or until the max amount of probes has been sent.
+	// confirmation is received, or until the maximum number of probes has been
+	// sent.
 	Probe
 	// Static describes entries that have been explicitly added by the user. They
 	// do not expire and are not deleted until explicitly removed.
 	Static
-	// Failed means recent attempts of reachability have returned inconclusive.
+	// Failed is deprecated and should no longer be used.
+	//
+	// TODO(gvisor.dev/issue/4667): Remove this once all references to Failed
+	// are removed from Fuchsia.
 	Failed
+	// Unreachable means reachability confirmation failed; the maximum number of
+	// reachability probes has been sent and no replies have been received.
+	//
+	// TODO(gvisor.dev/issue/5472): Add the following sentence when we implement
+	// RFC 7048: "Packets continue to be sent to the neighbor while
+	// re-attempting to resolve the address."
+	Unreachable
 )
 
 type timer struct {
@@ -310,8 +322,8 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 				}
 
 				if timedoutResolution || err != nil {
-					e.dispatchRemoveEventLocked()
-					e.setStateLocked(Failed)
+					e.setStateLocked(Unreachable)
+					e.dispatchChangeEventLocked()
 					return
 				}
 
@@ -320,7 +332,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 			}),
 		}
 
-	case Failed:
+	case Unreachable:
 		e.notifyCompletionLocked(false /* succeeded */)
 
 	case Unknown, Stale, Static:
@@ -339,15 +351,19 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	switch e.mu.neigh.State {
-	case Failed:
-		e.cache.nic.stats.Neighbor.FailedEntryLookups.Increment()
-
-		fallthrough
-	case Unknown:
+	case Unknown, Unreachable:
+		prev := e.mu.neigh.State
 		e.mu.neigh.State = Incomplete
 		e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
 
-		e.dispatchAddEventLocked()
+		switch prev {
+		case Unknown:
+			e.dispatchAddEventLocked()
+		case Unreachable:
+			e.dispatchChangeEventLocked()
+			e.cache.nic.stats.Neighbor.UnreachableEntryLookups.Increment()
+		}
+
 		config := e.nudState.Config()
 
 		// Protected by e.mu.
@@ -385,8 +401,8 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 				}
 
 				if timedoutResolution || err != nil {
-					e.dispatchRemoveEventLocked()
-					e.setStateLocked(Failed)
+					e.setStateLocked(Unreachable)
+					e.dispatchChangeEventLocked()
 					return
 				}
 
@@ -418,7 +434,7 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 	// checks MUST be done by the NetworkEndpoint.
 
 	switch e.mu.neigh.State {
-	case Unknown, Failed:
+	case Unknown:
 		e.mu.neigh.LinkAddr = remoteLinkAddr
 		e.setStateLocked(Stale)
 		e.dispatchAddEventLocked()
@@ -446,6 +462,13 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 			e.mu.neigh.LinkAddr = remoteLinkAddr
 			e.dispatchChangeEventLocked()
 		}
+
+	case Unreachable:
+		// TODO(gvisor.dev/issue/5472): Do not change the entry if the link
+		// address is the same, as per RFC 7048.
+		e.mu.neigh.LinkAddr = remoteLinkAddr
+		e.setStateLocked(Stale)
+		e.dispatchChangeEventLocked()
 
 	case Static:
 		// Do nothing
@@ -549,7 +572,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		}
 		e.mu.isRouter = flags.IsRouter
 
-	case Unknown, Failed, Static:
+	case Unknown, Unreachable, Static:
 		// Do nothing
 
 	default:
@@ -571,7 +594,7 @@ func (e *neighborEntry) handleUpperLevelConfirmationLocked() {
 			e.dispatchChangeEventLocked()
 		}
 
-	case Unknown, Incomplete, Failed, Static:
+	case Unknown, Incomplete, Unreachable, Static:
 		// Do nothing
 
 	default:

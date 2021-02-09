@@ -25,9 +25,13 @@ const neighborCacheSize = 512 // max entries per interface
 
 // NeighborStats holds metrics for the neighbor table.
 type NeighborStats struct {
-	// FailedEntryLookups counts the number of lookups performed on an entry in
-	// Failed state.
+	// FailedEntryLookups is deprecated; UnreachableEntryLookups should be used
+	// instead.
 	FailedEntryLookups *tcpip.StatCounter
+
+	// UnreachableEntryLookups counts the number of lookups performed on an
+	// entry in Unreachable state.
+	UnreachableEntryLookups *tcpip.StatCounter
 }
 
 // neighborCache maps IP addresses to link addresses. It uses the Least
@@ -143,7 +147,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 			onResolve(LinkResolutionResult{LinkAddress: entry.mu.neigh.LinkAddr, Success: true})
 		}
 		return entry.mu.neigh, nil, nil
-	case Unknown, Incomplete, Failed:
+	case Unknown, Incomplete, Unreachable:
 		if onResolve != nil {
 			entry.mu.onResolve = append(entry.mu.onResolve, onResolve)
 		}
