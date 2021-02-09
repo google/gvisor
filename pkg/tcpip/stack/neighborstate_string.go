@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,11 +30,12 @@ func _() {
 	_ = x[Probe-5]
 	_ = x[Static-6]
 	_ = x[Failed-7]
+	_ = x[Unreachable-8]
 }
 
-const _NeighborState_name = "UnknownIncompleteReachableStaleDelayProbeStaticFailed"
+const _NeighborState_name = "UnknownIncompleteReachableStaleDelayProbeStaticFailedUnreachable"
 
-var _NeighborState_index = [...]uint8{0, 7, 17, 26, 31, 36, 41, 47, 53}
+var _NeighborState_index = [...]uint8{0, 7, 17, 26, 31, 36, 41, 47, 53, 64}
 
 func (i NeighborState) String() string {
 	if i >= NeighborState(len(_NeighborState_index)-1) {
