@@ -659,3 +659,53 @@ func TestLinkAddressRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestDADARPRequestPacket(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocolWithOptions(arp.Options{
+			DADConfigs: stack.DADConfigurations{
+				DupAddrDetectTransmits: 1,
+				RetransmitTimer:        time.Second,
+			},
+		}), ipv4.NewProtocol},
+	})
+	e := channel.New(1, defaultMTU, stackLinkAddr)
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	if res, err := s.CheckDuplicateAddress(nicID, header.IPv4ProtocolNumber, remoteAddr, func(stack.DADResult) {}); err != nil {
+		t.Fatalf("s.CheckDuplicateAddress(%d, %d, %s, _): %s", nicID, header.IPv4ProtocolNumber, remoteAddr, err)
+	} else if res != stack.DADStarting {
+		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, header.IPv4ProtocolNumber, remoteAddr, res, stack.DADStarting)
+	}
+
+	pkt, ok := e.ReadContext(context.Background())
+	if !ok {
+		t.Fatal("expected to send an ARP request")
+	}
+
+	if pkt.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
+		t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
+	}
+
+	req := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+	if !req.IsValid() {
+		t.Errorf("got req.IsValid() = false, want = true")
+	}
+	if got := req.Op(); got != header.ARPRequest {
+		t.Errorf("got req.Op() = %d, want = %d", got, header.ARPRequest)
+	}
+	if got := tcpip.LinkAddress(req.HardwareAddressSender()); got != stackLinkAddr {
+		t.Errorf("got req.HardwareAddressSender() = %s, want = %s", got, stackLinkAddr)
+	}
+	if got := tcpip.Address(req.ProtocolAddressSender()); got != header.IPv4Any {
+		t.Errorf("got req.ProtocolAddressSender() = %s, want = %s", got, header.IPv4Any)
+	}
+	if got, want := tcpip.LinkAddress(req.HardwareAddressTarget()), tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"); got != want {
+		t.Errorf("got req.HardwareAddressTarget() = %s, want = %s", got, want)
+	}
+	if got := tcpip.Address(req.ProtocolAddressTarget()); got != remoteAddr {
+		t.Errorf("got req.ProtocolAddressTarget() = %s, want = %s", got, remoteAddr)
+	}
+}

@@ -424,7 +424,7 @@ func TestDADResolve(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp: &ndpDisp,
-					NDPConfigs: ipv6.NDPConfigurations{
+					DADConfigs: stack.DADConfigurations{
 						RetransmitTimer:        test.retransTimer,
 						DupAddrDetectTransmits: test.dupAddrDetectTransmits,
 					},
@@ -642,14 +642,14 @@ func TestDADFail(t *testing.T) {
 			ndpDisp := ndpDispatcher{
 				dadC: make(chan ndpDADEvent, 1),
 			}
-			ndpConfigs := ipv6.DefaultNDPConfigurations()
-			ndpConfigs.RetransmitTimer = time.Second * 2
+			dadConfigs := stack.DefaultDADConfigurations()
+			dadConfigs.RetransmitTimer = time.Second * 2
 
 			e := channel.New(0, 1280, linkAddr1)
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp:    &ndpDisp,
-					NDPConfigs: ndpConfigs,
+					DADConfigs: dadConfigs,
 				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -677,7 +677,7 @@ func TestDADFail(t *testing.T) {
 			// Wait for DAD to fail and make sure the address did
 			// not get resolved.
 			select {
-			case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+			case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
 				// If we don't get a failure event after the
 				// expected resolution time + extra 1s buffer,
 				// something is wrong.
@@ -748,7 +748,7 @@ func TestDADStop(t *testing.T) {
 				dadC: make(chan ndpDADEvent, 1),
 			}
 
-			ndpConfigs := ipv6.NDPConfigurations{
+			dadConfigs := stack.DADConfigurations{
 				RetransmitTimer:        time.Second,
 				DupAddrDetectTransmits: 2,
 			}
@@ -757,7 +757,7 @@ func TestDADStop(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp:    &ndpDisp,
-					NDPConfigs: ndpConfigs,
+					DADConfigs: dadConfigs,
 				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -777,12 +777,12 @@ func TestDADStop(t *testing.T) {
 
 			// Wait for DAD to fail (since the address was removed during DAD).
 			select {
-			case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+			case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
 				// If we don't get a failure event after the expected resolution
 				// time + extra 1s buffer, something is wrong.
 				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr1, false, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr1, false, &tcpip.ErrAborted{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -865,16 +865,15 @@ func TestSetNDPConfigurations(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID2, err)
 			}
 
-			// Update the NDP configurations on NIC(1) to use DAD.
-			configs := ipv6.NDPConfigurations{
-				DupAddrDetectTransmits: test.dupAddrDetectTransmits,
-				RetransmitTimer:        test.retransmitTimer,
-			}
+			// Update the configurations on NIC(1) to use DAD.
 			if ipv6Ep, err := s.GetNetworkEndpoint(nicID1, header.IPv6ProtocolNumber); err != nil {
 				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID1, header.IPv6ProtocolNumber, err)
 			} else {
-				ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
-				ndpEP.SetNDPConfigurations(configs)
+				dad := ipv6Ep.(stack.DuplicateAddressDetector)
+				dad.SetDADConfigurations(stack.DADConfigurations{
+					DupAddrDetectTransmits: test.dupAddrDetectTransmits,
+					RetransmitTimer:        test.retransmitTimer,
+				})
 			}
 
 			// Created after updating NIC(1)'s NDP configurations
@@ -1903,9 +1902,11 @@ func TestAutoGenTempAddr(t *testing.T) {
 				e := channel.New(0, 1280, linkAddr1)
 				s := stack.New(stack.Options{
 					NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+						DADConfigs: stack.DADConfigurations{
+							DupAddrDetectTransmits: test.dupAddrTransmits,
+							RetransmitTimer:        test.retransmitTimer,
+						},
 						NDPConfigs: ipv6.NDPConfigurations{
-							DupAddrDetectTransmits:     test.dupAddrTransmits,
-							RetransmitTimer:            test.retransmitTimer,
 							HandleRAs:                  true,
 							AutoGenGlobalAddresses:     true,
 							AutoGenTempGlobalAddresses: true,
@@ -2202,9 +2203,11 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			DADConfigs: stack.DADConfigurations{
+				DupAddrDetectTransmits: dadTransmits,
+				RetransmitTimer:        retransmitTimer,
+			},
 			NDPConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits:     dadTransmits,
-				RetransmitTimer:            retransmitTimer,
 				HandleRAs:                  true,
 				AutoGenGlobalAddresses:     true,
 				AutoGenTempGlobalAddresses: true,
@@ -2635,16 +2638,15 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 			}
 			e := channel.New(0, 1280, linkAddr1)
-			ndpConfigs := ipv6.NDPConfigurations{
-				HandleRAs:                     true,
-				AutoGenGlobalAddresses:        true,
-				AutoGenTempGlobalAddresses:    test.tempAddrs,
-				AutoGenAddressConflictRetries: 1,
-			}
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					NDPConfigs: ndpConfigs,
-					NDPDisp:    &ndpDisp,
+					NDPConfigs: ipv6.NDPConfigurations{
+						HandleRAs:                     true,
+						AutoGenGlobalAddresses:        true,
+						AutoGenTempGlobalAddresses:    test.tempAddrs,
+						AutoGenAddressConflictRetries: 1,
+					},
+					NDPDisp: &ndpDisp,
 					OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 						NICNameFromID: test.nicNameFromID,
 					},
@@ -2718,13 +2720,14 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 
 			// Enable DAD.
 			ndpDisp.dadC = make(chan ndpDADEvent, 2)
-			ndpConfigs.DupAddrDetectTransmits = dupAddrTransmits
-			ndpConfigs.RetransmitTimer = retransmitTimer
 			if ipv6Ep, err := s.GetNetworkEndpoint(nicID, header.IPv6ProtocolNumber); err != nil {
 				t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv6ProtocolNumber, err)
 			} else {
-				ndpEP := ipv6Ep.(ipv6.NDPEndpoint)
-				ndpEP.SetNDPConfigurations(ndpConfigs)
+				ndpEP := ipv6Ep.(stack.DuplicateAddressDetector)
+				ndpEP.SetDADConfigurations(stack.DADConfigurations{
+					DupAddrDetectTransmits: dupAddrTransmits,
+					RetransmitTimer:        retransmitTimer,
+				})
 			}
 
 			// Do SLAAC for prefix.
@@ -3830,12 +3833,12 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		}
 	}
 
-	expectDADEvent := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, resolved bool) {
+	expectDADEvent := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, resolved bool, err tcpip.Error) {
 		t.Helper()
 
 		select {
 		case e := <-ndpDisp.dadC:
-			if diff := checkDADEvent(e, nicID, addr, resolved, nil); diff != "" {
+			if diff := checkDADEvent(e, nicID, addr, resolved, err); diff != "" {
 				t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 			}
 		default:
@@ -3868,8 +3871,6 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		{
 			name: "Global address",
 			ndpConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits: dadTransmits,
-				RetransmitTimer:        retransmitTimer,
 				HandleRAs:              true,
 				AutoGenGlobalAddresses: true,
 			},
@@ -3884,11 +3885,8 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 			},
 		},
 		{
-			name: "LinkLocal address",
-			ndpConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits: dadTransmits,
-				RetransmitTimer:        retransmitTimer,
-			},
+			name:             "LinkLocal address",
+			ndpConfigs:       ipv6.NDPConfigurations{},
 			autoGenLinkLocal: true,
 			prepareFn: func(*testing.T, *ndpDispatcher, *channel.Endpoint, []byte) []tcpip.AddressWithPrefix {
 				return nil
@@ -3900,8 +3898,6 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		{
 			name: "Temporary address",
 			ndpConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits:     dadTransmits,
-				RetransmitTimer:            retransmitTimer,
 				HandleRAs:                  true,
 				AutoGenGlobalAddresses:     true,
 				AutoGenTempGlobalAddresses: true,
@@ -3953,8 +3949,12 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 						s := stack.New(stack.Options{
 							NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 								AutoGenLinkLocal: addrType.autoGenLinkLocal,
-								NDPConfigs:       ndpConfigs,
-								NDPDisp:          &ndpDisp,
+								DADConfigs: stack.DADConfigurations{
+									DupAddrDetectTransmits: dadTransmits,
+									RetransmitTimer:        retransmitTimer,
+								},
+								NDPConfigs: ndpConfigs,
+								NDPDisp:    &ndpDisp,
 								OpaqueIIDOpts: ipv6.OpaqueInterfaceIdentifierOptions{
 									NICNameFromID: func(_ tcpip.NICID, nicName string) string {
 										return nicName
@@ -3984,7 +3984,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 							// Simulate a DAD conflict.
 							rxNDPSolicit(e, addr.Address)
 							expectAutoGenAddrEvent(t, &ndpDisp, addr, invalidatedAddr)
-							expectDADEvent(t, &ndpDisp, addr.Address, false)
+							expectDADEvent(t, &ndpDisp, addr.Address, false, nil)
 
 							// Attempting to add the address manually should not fail if the
 							// address's state was cleaned up when DAD failed.
@@ -3994,7 +3994,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 							if err := s.RemoveAddress(nicID, addr.Address); err != nil {
 								t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr.Address, err)
 							}
-							expectDADEvent(t, &ndpDisp, addr.Address, false)
+							expectDADEvent(t, &ndpDisp, addr.Address, false, &tcpip.ErrAborted{})
 						}
 
 						// Should not have any new addresses assigned to the NIC.
@@ -4048,8 +4048,6 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 		{
 			name: "Global address",
 			ndpConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits:        dadTransmits,
-				RetransmitTimer:               retransmitTimer,
 				HandleRAs:                     true,
 				AutoGenGlobalAddresses:        true,
 				AutoGenAddressConflictRetries: maxRetries,
@@ -4064,8 +4062,6 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 		{
 			name: "LinkLocal address",
 			ndpConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits:        dadTransmits,
-				RetransmitTimer:               retransmitTimer,
 				AutoGenAddressConflictRetries: maxRetries,
 			},
 			autoGenLinkLocal: true,
@@ -4090,6 +4086,10 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 					AutoGenLinkLocal: addrType.autoGenLinkLocal,
 					NDPConfigs:       addrType.ndpConfigs,
 					NDPDisp:          &ndpDisp,
+					DADConfigs: stack.DADConfigurations{
+						DupAddrDetectTransmits: dadTransmits,
+						RetransmitTimer:        retransmitTimer,
+					},
 				})},
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -4171,9 +4171,11 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	e := channel.New(0, 1280, linkAddr1)
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			DADConfigs: stack.DADConfigurations{
+				DupAddrDetectTransmits: dadTransmits,
+				RetransmitTimer:        retransmitTimer,
+			},
 			NDPConfigs: ipv6.NDPConfigurations{
-				DupAddrDetectTransmits:        dadTransmits,
-				RetransmitTimer:               retransmitTimer,
 				HandleRAs:                     true,
 				AutoGenGlobalAddresses:        true,
 				AutoGenAddressConflictRetries: maxRetries,

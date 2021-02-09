@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/fragmentation"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
+	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -164,6 +165,7 @@ func getLabel(addr tcpip.Address) uint8 {
 	panic(fmt.Sprintf("should have a label for address = %s", addr))
 }
 
+var _ stack.DuplicateAddressDetector = (*endpoint)(nil)
 var _ stack.LinkAddressResolver = (*endpoint)(nil)
 var _ stack.LinkResolvableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
@@ -191,6 +193,23 @@ type endpoint struct {
 		addressableEndpointState stack.AddressableEndpointState
 		ndp                      ndpState
 		mld                      mldState
+	}
+
+	// dad is used to check if an arbitrary address is already assigned to some
+	// neighbor.
+	//
+	// Note: this is different from mu.ndp.dad which is used to perform DAD for
+	// addresses that are assigned to the interface. Removing an address aborts
+	// DAD; if we had used the same state, handlers for a removed address would
+	// not be called with the actual DAD result.
+	//
+	// LOCK ORDERING: mu > dad.mu.
+	dad struct {
+		mu struct {
+			sync.Mutex
+
+			dad ip.DAD
+		}
 	}
 }
 
@@ -224,6 +243,29 @@ type OpaqueInterfaceIdentifierOptions struct {
 	// May be nil, but a nil value is highly discouraged to maintain
 	// some level of randomness between nodes.
 	SecretKey []byte
+}
+
+// CheckDuplicateAddress implements stack.DuplicateAddressDetector.
+func (e *endpoint) CheckDuplicateAddress(addr tcpip.Address, h stack.DADCompletionHandler) stack.DADCheckAddressDisposition {
+	e.dad.mu.Lock()
+	defer e.dad.mu.Unlock()
+	return e.dad.mu.dad.CheckDuplicateAddressLocked(addr, h)
+}
+
+// SetDADConfigurations implements stack.DuplicateAddressDetector.
+func (e *endpoint) SetDADConfigurations(c stack.DADConfigurations) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.dad.mu.Lock()
+	defer e.dad.mu.Unlock()
+
+	e.mu.ndp.dad.SetConfigsLocked(c)
+	e.dad.mu.dad.SetConfigsLocked(c)
+}
+
+// DuplicateAddressProtocol implements stack.DuplicateAddressDetector.
+func (*endpoint) DuplicateAddressProtocol() tcpip.NetworkProtocolNumber {
+	return ProtocolNumber
 }
 
 // HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
@@ -321,7 +363,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) tcpip.Error {
 
 	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as an
 	// attempt will be made to generate a new address for it.
-	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */); err != nil {
+	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, true /* dadFailure */); err != nil {
 		return err
 	}
 
@@ -525,7 +567,7 @@ func (e *endpoint) stopDADForPermanentAddressesLocked() {
 
 		addr := addressEndpoint.AddressWithPrefix().Address
 		if header.IsV6UnicastAddress(addr) {
-			e.mu.ndp.stopDuplicateAddressDetection(addr)
+			e.mu.ndp.stopDuplicateAddressDetection(addr, false /* failed */)
 		}
 
 		return true
@@ -1390,18 +1432,18 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
-	return e.removePermanentEndpointLocked(addressEndpoint, true)
+	return e.removePermanentEndpointLocked(addressEndpoint, true /* allowSLAACInvalidation */, false /* dadFailure */)
 }
 
 // removePermanentEndpointLocked is like removePermanentAddressLocked except
 // it works with a stack.AddressEndpoint.
 //
 // Precondition: e.mu must be write locked.
-func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation bool) tcpip.Error {
+func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation, dadFailure bool) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
 	unicast := header.IsV6UnicastAddress(addr.Address)
 	if unicast {
-		e.mu.ndp.stopDuplicateAddressDetection(addr.Address)
+		e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadFailure)
 
 		// If we are removing an address generated via SLAAC, cleanup
 		// its SLAAC resources and notify the integrator.
@@ -1747,6 +1789,13 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 	e.mu.addressableEndpointState.Init(e)
 	e.mu.ndp.init(e)
 	e.mu.mld.init(e)
+	e.dad.mu.Lock()
+	e.dad.mu.dad.Init(&e.dad.mu, p.options.DADConfigs, ip.DADOptions{
+		Clock:    p.stack.Clock(),
+		Protocol: &e.mu.ndp,
+		NICID:    nic.ID(),
+	})
+	e.dad.mu.Unlock()
 	e.mu.Unlock()
 
 	stackStats := p.stack.Stats()
@@ -1949,6 +1998,9 @@ type Options struct {
 
 	// MLD holds options for MLD.
 	MLD MLDOptions
+
+	// DADConfigs holds the default DAD configurations used by IPv6 endpoints.
+	DADConfigs stack.DADConfigurations
 }
 
 // NewProtocolWithOptions returns an IPv6 network protocol.

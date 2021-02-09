@@ -537,6 +537,11 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 		// NDP datagrams are very small and ToView() will not incur allocations.
 		na := header.NDPNeighborAdvert(payload.ToView())
 		targetAddr := na.TargetAddress()
+
+		e.dad.mu.Lock()
+		e.dad.mu.dad.StopLocked(targetAddr, false /* aborted */)
+		e.dad.mu.Unlock()
+
 		if e.hasTentativeAddr(targetAddr) {
 			// We just got an NA from a node that owns an address we are performing
 			// DAD on, implying the address is not unique. In this case we let the
@@ -866,37 +871,9 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
-	optsSerializer := header.NDPOptionsSerializer{
+	return e.sendNDPNS(localAddr, remoteAddr, targetAddr, remoteLinkAddr, header.NDPOptionsSerializer{
 		header.NDPSourceLinkLayerAddressOption(e.nic.LinkAddress()),
-	}
-	neighborSolicitSize := header.ICMPv6NeighborSolicitMinimumSize + optsSerializer.Length()
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: int(e.nic.MaxHeaderLength()) + header.IPv6FixedHeaderSize + neighborSolicitSize,
 	})
-	pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
-	packet := header.ICMPv6(pkt.TransportHeader().Push(neighborSolicitSize))
-	packet.SetType(header.ICMPv6NeighborSolicit)
-	ns := header.NDPNeighborSolicit(packet.MessageBody())
-	ns.SetTargetAddress(targetAddr)
-	ns.Options().Serialize(optsSerializer)
-	packet.SetChecksum(header.ICMPv6Checksum(packet, localAddr, remoteAddr, buffer.VectorisedView{}))
-
-	if err := addIPHeader(localAddr, remoteAddr, pkt, stack.NetworkHeaderParams{
-		Protocol: header.ICMPv6ProtocolNumber,
-		TTL:      header.NDPHopLimit,
-	}, header.IPv6ExtHdrSerializer{}); err != nil {
-		panic(fmt.Sprintf("failed to add IP header: %s", err))
-	}
-
-	stat := e.stats.icmp.packetsSent
-
-	if err := e.nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
-		stat.dropped.Increment()
-		return err
-	}
-
-	stat.neighborSolicit.Increment()
-	return nil
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.

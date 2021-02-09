@@ -1199,3 +1199,148 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		})
 	}
 }
+
+func TestDAD(t *testing.T) {
+	const (
+		host1NICID = 1
+		host2NICID = 4
+	)
+
+	dadConfigs := stack.DADConfigurations{
+		DupAddrDetectTransmits: 1,
+		RetransmitTimer:        time.Second,
+	}
+
+	tests := []struct {
+		name             string
+		netProto         tcpip.NetworkProtocolNumber
+		dadNetProto      tcpip.NetworkProtocolNumber
+		remoteAddr       tcpip.Address
+		expectedResolved bool
+	}{
+		{
+			name:             "IPv4 own address",
+			netProto:         ipv4.ProtocolNumber,
+			dadNetProto:      arp.ProtocolNumber,
+			remoteAddr:       ipv4Addr1.AddressWithPrefix.Address,
+			expectedResolved: true,
+		},
+		{
+			name:             "IPv6 own address",
+			netProto:         ipv6.ProtocolNumber,
+			dadNetProto:      ipv6.ProtocolNumber,
+			remoteAddr:       ipv6Addr1.AddressWithPrefix.Address,
+			expectedResolved: true,
+		},
+		{
+			name:             "IPv4 duplicate address",
+			netProto:         ipv4.ProtocolNumber,
+			dadNetProto:      arp.ProtocolNumber,
+			remoteAddr:       ipv4Addr2.AddressWithPrefix.Address,
+			expectedResolved: false,
+		},
+		{
+			name:             "IPv6 duplicate address",
+			netProto:         ipv6.ProtocolNumber,
+			dadNetProto:      ipv6.ProtocolNumber,
+			remoteAddr:       ipv6Addr2.AddressWithPrefix.Address,
+			expectedResolved: false,
+		},
+		{
+			name:             "IPv4 no duplicate address",
+			netProto:         ipv4.ProtocolNumber,
+			dadNetProto:      arp.ProtocolNumber,
+			remoteAddr:       ipv4Addr3.AddressWithPrefix.Address,
+			expectedResolved: true,
+		},
+		{
+			name:             "IPv6 no duplicate address",
+			netProto:         ipv6.ProtocolNumber,
+			dadNetProto:      ipv6.ProtocolNumber,
+			remoteAddr:       ipv6Addr3.AddressWithPrefix.Address,
+			expectedResolved: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			stackOpts := stack.Options{
+				Clock: clock,
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					arp.NewProtocol,
+					ipv4.NewProtocol,
+					ipv6.NewProtocol,
+				},
+			}
+
+			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+
+			// DAD should be disabled by default.
+			if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+				t.Errorf("unexpectedly called DAD completion handler when DAD was supposed to be disabled")
+			}); err != nil {
+				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+			} else if res != stack.DADDisabled {
+				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADDisabled)
+			}
+
+			// Enable DAD then attempt to check if an address is duplicated.
+			netEP, err := host1Stack.GetNetworkEndpoint(host1NICID, test.dadNetProto)
+			if err != nil {
+				t.Fatalf("host1Stack.GetNetworkEndpoint(%d, %d): %s", host1NICID, test.dadNetProto, err)
+			}
+			dad, ok := netEP.(stack.DuplicateAddressDetector)
+			if !ok {
+				t.Fatalf("expected %T to implement stack.DuplicateAddressDetector", netEP)
+			}
+			dad.SetDADConfigurations(dadConfigs)
+			ch := make(chan stack.DADResult, 3)
+			if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+				ch <- r
+			}); err != nil {
+				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+			} else if res != stack.DADStarting {
+				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADStarting)
+			}
+
+			expectResults := 1
+			if test.expectedResolved {
+				const delta = time.Nanosecond
+				clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer - delta)
+				select {
+				case r := <-ch:
+					t.Fatalf("unexpectedly got DAD result before the DAD timeout; r = %#v", r)
+				default:
+				}
+
+				// If we expect the resolve to succeed try requesting DAD again on the
+				// same address. The handler for the new request should be called once
+				// the original DAD request completes.
+				expectResults = 2
+				if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+					ch <- r
+				}); err != nil {
+					t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+				} else if res != stack.DADAlreadyRunning {
+					t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADAlreadyRunning)
+				}
+
+				clock.Advance(delta)
+			}
+
+			for i := 0; i < expectResults; i++ {
+				if diff := cmp.Diff(stack.DADResult{Resolved: test.expectedResolved}, <-ch); diff != "" {
+					t.Errorf("(i=%d) DAD result mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+
+			// Should have no more results.
+			select {
+			case r := <-ch:
+				t.Errorf("unexpectedly got an extra DAD result; r = %#v", r)
+			default:
+			}
+		})
+	}
+}

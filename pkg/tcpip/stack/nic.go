@@ -55,8 +55,9 @@ type nic struct {
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
-	networkEndpoints  map[tcpip.NetworkProtocolNumber]NetworkEndpoint
-	linkAddrResolvers map[tcpip.NetworkProtocolNumber]*linkResolver
+	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint
+	linkAddrResolvers         map[tcpip.NetworkProtocolNumber]*linkResolver
+	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
 	//
@@ -145,13 +146,14 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 	nic := &nic{
 		LinkEndpoint: ep,
 
-		stack:             stack,
-		id:                id,
-		name:              name,
-		context:           ctx,
-		stats:             makeNICStats(),
-		networkEndpoints:  make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
-		linkAddrResolvers: make(map[tcpip.NetworkProtocolNumber]*linkResolver),
+		stack:                     stack,
+		id:                        id,
+		name:                      name,
+		context:                   ctx,
+		stats:                     makeNICStats(),
+		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
+		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
+		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 	}
 	nic.linkResQueue.init(nic)
 	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
@@ -175,6 +177,10 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 				l.neigh.init(nic, r)
 				nic.linkAddrResolvers[r.LinkAddressProtocol()] = l
 			}
+		}
+
+		if d, ok := netEP.(DuplicateAddressDetector); ok {
+			nic.duplicateAddressDetectors[d.DuplicateAddressProtocol()] = d
 		}
 	}
 
@@ -990,4 +996,13 @@ func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip
 	}
 
 	return false
+}
+
+func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
+	d, ok := n.duplicateAddressDetectors[protocol]
+	if !ok {
+		return 0, &tcpip.ErrNotSupported{}
+	}
+
+	return d.CheckDuplicateAddress(addr, h), nil
 }
