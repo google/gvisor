@@ -656,6 +656,9 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 
 			// Write to that memory as usual.
 			seg, gap = rw.file.data.Insert(gap, gapMR, fr.Start), fsutil.FileRangeGapIterator{}
+
+		default:
+			panic("unreachable")
 		}
 	}
 exitLoop:

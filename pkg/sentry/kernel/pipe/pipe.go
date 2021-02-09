@@ -247,11 +247,15 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 		return 0, syscall.EPIPE
 	}
 
-	// POSIX requires that a write smaller than atomicIOBytes (PIPE_BUF) be
-	// atomic, but requires no atomicity for writes larger than this.
 	avail := p.max - p.size
+	if avail == 0 {
+		return 0, syserror.ErrWouldBlock
+	}
 	short := false
 	if count > avail {
+		// POSIX requires that a write smaller than atomicIOBytes
+		// (PIPE_BUF) be atomic, but requires no atomicity for writes
+		// larger than this.
 		if count <= atomicIOBytes {
 			return 0, syserror.ErrWouldBlock
 		}
