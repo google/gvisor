@@ -7,7 +7,7 @@ import (
 )
 
 func (l *reassemblerList) StateTypeName() string {
-	return "pkg/tcpip/network/fragmentation.reassemblerList"
+	return "pkg/tcpip/network/internal/fragmentation.reassemblerList"
 }
 
 func (l *reassemblerList) StateFields() []string {
@@ -33,7 +33,7 @@ func (l *reassemblerList) StateLoad(stateSourceObject state.Source) {
 }
 
 func (e *reassemblerEntry) StateTypeName() string {
-	return "pkg/tcpip/network/fragmentation.reassemblerEntry"
+	return "pkg/tcpip/network/internal/fragmentation.reassemblerEntry"
 }
 
 func (e *reassemblerEntry) StateFields() []string {
