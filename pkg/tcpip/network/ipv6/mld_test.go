@@ -126,7 +126,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-					NDPConfigs: ipv6.NDPConfigurations{
+					DADConfigs: stack.DADConfigurations{
 						DupAddrDetectTransmits: test.dadTransmits,
 						RetransmitTimer:        test.retransmitTimer,
 					},

@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -1220,5 +1221,112 @@ func TestRouterAdvertValidation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCheckDuplicateAddress checks that calls to CheckDuplicateAddress and DAD
+// performed when adding new addresses do not interfere with each other.
+func TestCheckDuplicateAddress(t *testing.T) {
+	const nicID = 1
+
+	clock := faketime.NewManualClock()
+	dadConfigs := stack.DADConfigurations{
+		DupAddrDetectTransmits: 1,
+		RetransmitTimer:        time.Second,
+	}
+	s := stack.New(stack.Options{
+		Clock: clock,
+		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
+			DADConfigs: dadConfigs,
+		})},
+	})
+	// This test is expected to send at max 2 DAD messages. We allow an extra
+	// packet to be stored to catch unexpected packets.
+	e := channel.New(3, header.IPv6MinimumMTU, linkAddr0)
+	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+
+	dadPacketsSent := 1
+	if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+	}
+
+	// Start DAD for the address we just added.
+	//
+	// Even though the stack will perform DAD before the added address transitions
+	// from tentative to assigned, this DAD request should be independent of that.
+	ch := make(chan stack.DADResult, 3)
+	dadRequestsMade := 1
+	dadPacketsSent++
+	if res, err := s.CheckDuplicateAddress(nicID, ProtocolNumber, lladdr0, func(r stack.DADResult) {
+		ch <- r
+	}); err != nil {
+		t.Fatalf("s.CheckDuplicateAddress(%d, %d, %s, _): %s", nicID, ProtocolNumber, lladdr0, err)
+	} else if res != stack.DADStarting {
+		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, ProtocolNumber, lladdr0, res, stack.DADStarting)
+	}
+
+	// Remove the address and make sure our DAD request was not stopped.
+	if err := s.RemoveAddress(nicID, lladdr0); err != nil {
+		t.Fatalf("RemoveAddress(%d, %s): %s", nicID, lladdr0, err)
+	}
+	// Should not restart DAD since we already requested DAD above - the handler
+	// should be called when the original request compeletes so we should not send
+	// an extra DAD message here.
+	dadRequestsMade++
+	if res, err := s.CheckDuplicateAddress(nicID, ProtocolNumber, lladdr0, func(r stack.DADResult) {
+		ch <- r
+	}); err != nil {
+		t.Fatalf("s.CheckDuplicateAddress(%d, %d, %s, _): %s", nicID, ProtocolNumber, lladdr0, err)
+	} else if res != stack.DADAlreadyRunning {
+		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, ProtocolNumber, lladdr0, res, stack.DADAlreadyRunning)
+	}
+
+	// Wait for DAD to resolve.
+	clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer)
+	for i := 0; i < dadRequestsMade; i++ {
+		if diff := cmp.Diff(stack.DADResult{Resolved: true}, <-ch); diff != "" {
+			t.Errorf("(i=%d) DAD result mismatch (-want +got):\n%s", i, diff)
+		}
+	}
+	// Should have no more results.
+	select {
+	case r := <-ch:
+		t.Errorf("unexpectedly got an extra DAD result; r = %#v", r)
+	default:
+	}
+
+	snmc := header.SolicitedNodeAddr(lladdr0)
+	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
+
+	for i := 0; i < dadPacketsSent; i++ {
+		p, ok := e.Read()
+		if !ok {
+			t.Fatalf("expected %d-th DAD message", i)
+		}
+
+		if p.Proto != header.IPv6ProtocolNumber {
+			t.Errorf("(i=%d) got p.Proto = %d, want = %d", i, p.Proto, header.IPv6ProtocolNumber)
+		}
+
+		if p.Route.RemoteLinkAddress != remoteLinkAddr {
+			t.Errorf("(i=%d) got p.Route.RemoteLinkAddress = %s, want = %s", i, p.Route.RemoteLinkAddress, remoteLinkAddr)
+		}
+
+		checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+			checker.SrcAddr(header.IPv6Any),
+			checker.DstAddr(snmc),
+			checker.TTL(header.NDPHopLimit),
+			checker.NDPNS(
+				checker.NDPNSTargetAddress(lladdr0),
+				checker.NDPNSOptions(nil),
+			))
+	}
+
+	// Should have no more packets.
+	if p, ok := e.Read(); ok {
+		t.Errorf("got unexpected packet = %#v", p)
 	}
 }

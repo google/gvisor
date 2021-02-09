@@ -2573,16 +2573,16 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	ndpDisp := ndpDispatcher{
 		dadC: make(chan ndpDADEvent),
 	}
-	ndpConfigs := ipv6.DefaultNDPConfigurations()
+	dadConfigs := stack.DefaultDADConfigurations()
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-			NDPConfigs:       ndpConfigs,
 			AutoGenLinkLocal: true,
 			NDPDisp:          &ndpDisp,
+			DADConfigs:       dadConfigs,
 		})},
 	}
 
-	e := channel.New(int(ndpConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
+	e := channel.New(int(dadConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
 	s := stack.New(opts)
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -2598,7 +2598,7 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 
 	// Wait for DAD to resolve.
 	select {
-	case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+	case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
 		// We should get a resolution event after 1s (default time to
 		// resolve as per default NDP configurations). Waiting for that
 		// resolution time + an extra 1s without a resolution event
@@ -3235,7 +3235,7 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	}
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-			NDPConfigs: ipv6.NDPConfigurations{
+			DADConfigs: stack.DADConfigurations{
 				DupAddrDetectTransmits: dadTransmits,
 				RetransmitTimer:        retransmitTimer,
 			},
