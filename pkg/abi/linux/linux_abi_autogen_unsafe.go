@@ -60,6 +60,9 @@ var _ marshal.Marshallable = (*Inet6Addr)(nil)
 var _ marshal.Marshallable = (*InetAddr)(nil)
 var _ marshal.Marshallable = (*ItimerVal)(nil)
 var _ marshal.Marshallable = (*Itimerspec)(nil)
+var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
+var _ marshal.Marshallable = (*KernelIPTEntry)(nil)
+var _ marshal.Marshallable = (*KernelIPTGetEntries)(nil)
 var _ marshal.Marshallable = (*Linger)(nil)
 var _ marshal.Marshallable = (*NumaPolicy)(nil)
 var _ marshal.Marshallable = (*PollFD)(nil)
@@ -5566,6 +5569,114 @@ func (i *IPTIP) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (ke *KernelIPTEntry) Packed() bool {
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (ke *KernelIPTEntry) MarshalUnsafe(dst []byte) {
+    // Type KernelIPTEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
+    ke.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (ke *KernelIPTEntry) UnmarshalUnsafe(src []byte) {
+    // Type KernelIPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    ke.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (ke *KernelIPTEntry) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Type KernelIPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    ke.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (ke *KernelIPTEntry) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return ke.CopyOutN(cc, addr, ke.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (ke *KernelIPTEntry) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Type KernelIPTEntry doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    ke.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (ke *KernelIPTEntry) WriteTo(writer io.Writer) (int64, error) {
+    // Type KernelIPTEntry doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, ke.SizeBytes())
+    ke.MarshalBytes(buf)
+    length, err := writer.Write(buf)
+    return int64(length), err
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (ke *KernelIPTGetEntries) Packed() bool {
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (ke *KernelIPTGetEntries) MarshalUnsafe(dst []byte) {
+    // Type KernelIPTGetEntries doesn't have a packed layout in memory, fallback to MarshalBytes.
+    ke.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (ke *KernelIPTGetEntries) UnmarshalUnsafe(src []byte) {
+    // Type KernelIPTGetEntries doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    ke.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (ke *KernelIPTGetEntries) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Type KernelIPTGetEntries doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    ke.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (ke *KernelIPTGetEntries) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return ke.CopyOutN(cc, addr, ke.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (ke *KernelIPTGetEntries) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Type KernelIPTGetEntries doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    ke.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (ke *KernelIPTGetEntries) WriteTo(writer io.Writer) (int64, error) {
+    // Type KernelIPTGetEntries doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, ke.SizeBytes())
+    ke.MarshalBytes(buf)
+    length, err := writer.Write(buf)
+    return int64(length), err
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 //go:nosplit
 func (tn *TableName) SizeBytes() int {
@@ -6391,6 +6502,60 @@ func (i *IP6TReplace) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (ke *KernelIP6TGetEntries) Packed() bool {
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (ke *KernelIP6TGetEntries) MarshalUnsafe(dst []byte) {
+    // Type KernelIP6TGetEntries doesn't have a packed layout in memory, fallback to MarshalBytes.
+    ke.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (ke *KernelIP6TGetEntries) UnmarshalUnsafe(src []byte) {
+    // Type KernelIP6TGetEntries doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    ke.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (ke *KernelIP6TGetEntries) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+    // Type KernelIP6TGetEntries doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    ke.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (ke *KernelIP6TGetEntries) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    return ke.CopyOutN(cc, addr, ke.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (ke *KernelIP6TGetEntries) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+    // Type KernelIP6TGetEntries doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    ke.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (ke *KernelIP6TGetEntries) WriteTo(writer io.Writer) (int64, error) {
+    // Type KernelIP6TGetEntries doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, ke.SizeBytes())
+    ke.MarshalBytes(buf)
+    length, err := writer.Write(buf)
     return int64(length), err
 }
 
