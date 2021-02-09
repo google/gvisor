@@ -930,6 +930,55 @@ TEST(SemaphoreTest, SemInfo) {
   EXPECT_EQ(info.semvmx, kSemVmx);
 }
 
+TEST(SemaphoreTest, SemopSemUndo) {
+  // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
+  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+  uint16_t vals[2] = {10, 10};
+  ASSERT_THAT(semctl(sem.get(), 0, SETALL, vals), SyscallSucceedsWithValue(0));
+
+  int status;
+  pid_t child_pid;
+  struct sembuf buf = {};
+  buf.sem_op = 5;
+
+  // When sem_op is positive.
+  child_pid = fork();
+  if (child_pid == 0) {
+    buf.sem_num = 0;
+    buf.sem_flg = IPC_NOWAIT;
+    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
+    buf.sem_num = 1;
+    buf.sem_flg = SEM_UNDO;
+    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
+    _exit(0);
+  }
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  EXPECT_THAT(semctl(sem.get(), 0, GETVAL), SyscallSucceedsWithValue(15));
+  EXPECT_THAT(semctl(sem.get(), 1, GETVAL), SyscallSucceedsWithValue(10));
+
+  // When sem_op is negative.
+  buf.sem_op = -5;
+  child_pid = fork();
+  if (child_pid == 0) {
+    buf.sem_num = 0;
+    buf.sem_flg = IPC_NOWAIT;
+    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
+    buf.sem_num = 1;
+    buf.sem_flg = SEM_UNDO;
+    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
+    _exit(0);
+  }
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  EXPECT_THAT(semctl(sem.get(), 0, GETVAL), SyscallSucceedsWithValue(10));
+  EXPECT_THAT(semctl(sem.get(), 1, GETVAL), SyscallSucceedsWithValue(10));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

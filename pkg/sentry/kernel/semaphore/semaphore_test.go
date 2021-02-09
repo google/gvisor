@@ -55,7 +55,7 @@ func signalled(ch chan struct{}) bool {
 
 func TestBasic(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{ID: 123, sems: make([]sem, 1), semAdjs: make(map[int32][]int16)}
 	ops := []linux.Sembuf{
 		{SemOp: 1},
 	}
@@ -76,7 +76,7 @@ func TestBasic(t *testing.T) {
 
 func TestWaitForZero(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{ID: 123, sems: make([]sem, 1), semAdjs: make(map[int32][]int16)}
 	ops := []linux.Sembuf{
 		{SemOp: 0},
 	}
@@ -115,7 +115,7 @@ func TestWaitForZero(t *testing.T) {
 
 func TestNoWait(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{ID: 123, sems: make([]sem, 1), semAdjs: make(map[int32][]int16)}
 	ops := []linux.Sembuf{
 		{SemOp: 1},
 	}
