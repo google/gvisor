@@ -2061,10 +2061,91 @@ TEST_P(UdpSocketTest, SendToZeroPort) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
+TEST_P(UdpSocketTest, ConnectToZeroPortUnbound) {
+  struct sockaddr_storage addr = InetLoopbackAddr();
+  SetPort(&addr, 0);
+  ASSERT_THAT(
+      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
+      SyscallSucceeds());
+}
+
+TEST_P(UdpSocketTest, ConnectToZeroPortBound) {
+  struct sockaddr_storage addr = InetLoopbackAddr();
+  ASSERT_NO_ERRNO(
+      BindSocket(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr)));
+
+  SetPort(&addr, 0);
+  ASSERT_THAT(
+      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
+      SyscallSucceeds());
+  socklen_t len = sizeof(sockaddr_storage);
+  ASSERT_THAT(
+      getsockname(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), &len),
+      SyscallSucceeds());
+  ASSERT_EQ(len, addrlen_);
+}
+
+TEST_P(UdpSocketTest, ConnectToZeroPortConnected) {
+  struct sockaddr_storage addr = InetLoopbackAddr();
+  ASSERT_NO_ERRNO(
+      BindSocket(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr)));
+
+  // Connect to an address with non-zero port should succeed.
+  ASSERT_THAT(
+      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
+      SyscallSucceeds());
+  sockaddr_storage peername;
+  socklen_t peerlen = sizeof(peername);
+  ASSERT_THAT(
+      getpeername(sock_.get(), reinterpret_cast<struct sockaddr*>(&peername),
+                  &peerlen),
+      SyscallSucceeds());
+  ASSERT_EQ(peerlen, addrlen_);
+  ASSERT_EQ(memcmp(&peername, &addr, addrlen_), 0);
+
+  // However connect() to an address with port 0 will make the following
+  // getpeername() fail.
+  SetPort(&addr, 0);
+  ASSERT_THAT(
+      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      getpeername(sock_.get(), reinterpret_cast<struct sockaddr*>(&peername),
+                  &peerlen),
+      SyscallFailsWithErrno(ENOTCONN));
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
                          ::testing::Values(AddressFamily::kIpv4,
                                            AddressFamily::kIpv6,
                                            AddressFamily::kDualStack));
+
+TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
+  // glibc getaddrinfo expects the invariant expressed by this test to be held.
+  const sockaddr_in connect_sockaddr = {
+      .sin_family = AF_INET, .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)}};
+  auto sock_ =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+  ASSERT_THAT(
+      connect(sock_.get(),
+              reinterpret_cast<const struct sockaddr*>(&connect_sockaddr),
+              sizeof(sockaddr_in)),
+      SyscallSucceeds());
+  socklen_t len;
+  sockaddr_storage sockname;
+  ASSERT_THAT(getsockname(sock_.get(),
+                          reinterpret_cast<struct sockaddr*>(&sockname), &len),
+              SyscallSucceeds());
+  ASSERT_EQ(sockname.ss_family, AF_INET6);
+  ASSERT_EQ(len, sizeof(sockaddr_in6));
+  auto sin6 = reinterpret_cast<struct sockaddr_in6*>(&sockname);
+  char addr_buf[INET6_ADDRSTRLEN];
+  const char* addr;
+  ASSERT_NE(addr = inet_ntop(sockname.ss_family, &sockname, addr_buf,
+                             sizeof(addr_buf)),
+            nullptr);
+  ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(sin6->sin6_addr.s6_addr)) << addr;
+}
 
 }  // namespace
 
