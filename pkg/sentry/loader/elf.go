@@ -517,12 +517,14 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 
 		start, ok = start.AddLength(uint64(offset))
 		if !ok {
-			panic(fmt.Sprintf("Start %#x + offset %#x overflows?", start, offset))
+			ctx.Infof(fmt.Sprintf("Start %#x + offset %#x overflows?", start, offset))
+			return loadedELF{}, syserror.EINVAL
 		}
 
 		end, ok = end.AddLength(uint64(offset))
 		if !ok {
-			panic(fmt.Sprintf("End %#x + offset %#x overflows?", end, offset))
+			ctx.Infof(fmt.Sprintf("End %#x + offset %#x overflows?", end, offset))
+			return loadedELF{}, syserror.EINVAL
 		}
 
 		info.entry, ok = info.entry.AddLength(uint64(offset))
