@@ -111,10 +111,11 @@ func TestExcludeBroadcast(t *testing.T) {
 
 func TestForwarding(t *testing.T) {
 	const (
-		nicID1         = 1
-		nicID2         = 2
-		randomSequence = 123
-		randomIdent    = 42
+		nicID1           = 1
+		nicID2           = 2
+		randomSequence   = 123
+		randomIdent      = 42
+		randomTimeOffset = 0x10203040
 	)
 
 	ipv4Addr1 := tcpip.AddressWithPrefix{
@@ -129,14 +130,20 @@ func TestForwarding(t *testing.T) {
 	remoteIPv4Addr2 := tcpip.Address(net.ParseIP("11.0.0.2").To4())
 
 	tests := []struct {
-		name            string
-		TTL             uint8
-		expectErrorICMP bool
+		name             string
+		TTL              uint8
+		expectErrorICMP  bool
+		options          header.IPv4Options
+		forwardedOptions header.IPv4Options
+		icmpType         header.ICMPv4Type
+		icmpCode         header.ICMPv4Code
 	}{
 		{
 			name:            "TTL of zero",
 			TTL:             0,
 			expectErrorICMP: true,
+			icmpType:        header.ICMPv4TimeExceeded,
+			icmpCode:        header.ICMPv4TTLExceeded,
 		},
 		{
 			name:            "TTL of one",
@@ -153,14 +160,78 @@ func TestForwarding(t *testing.T) {
 			TTL:             math.MaxUint8,
 			expectErrorICMP: false,
 		},
+		{
+			name:             "four EOL options",
+			TTL:              2,
+			expectErrorICMP:  false,
+			options:          header.IPv4Options{0, 0, 0, 0},
+			forwardedOptions: header.IPv4Options{0, 0, 0, 0},
+		},
+		{
+			name: "TS type 1 full",
+			TTL:  2,
+			options: header.IPv4Options{
+				68, 12, 13, 0xF1,
+				192, 168, 1, 12,
+				1, 2, 3, 4,
+			},
+			expectErrorICMP: true,
+			icmpType:        header.ICMPv4ParamProblem,
+			icmpCode:        header.ICMPv4UnusedCode,
+		},
+		{
+			name: "TS type 0",
+			TTL:  2,
+			options: header.IPv4Options{
+				68, 24, 21, 0x00,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				0, 0, 0, 0,
+			},
+			forwardedOptions: header.IPv4Options{
+				68, 24, 25, 0x00,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				0x00, 0xad, 0x1c, 0x40, // time we expect from fakeclock
+			},
+		},
+		{
+			name: "end of options list",
+			TTL:  2,
+			options: header.IPv4Options{
+				68, 12, 13, 0x11,
+				192, 168, 1, 12,
+				1, 2, 3, 4,
+				0, 10, 3, 99, // EOL followed by junk
+				1, 2, 3, 4,
+			},
+			forwardedOptions: header.IPv4Options{
+				68, 12, 13, 0x21,
+				192, 168, 1, 12,
+				1, 2, 3, 4,
+				0,       // End of Options hides following bytes.
+				0, 0, 0, // 7 bytes unknown option removed.
+				0, 0, 0, 0,
+			},
+		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+				Clock:              clock,
 			})
+
+			// Advance the clock by some unimportant amount to make
+			// it give a more recognisable signature than 00,00,00,00.
+			clock.Advance(time.Millisecond * randomTimeOffset)
+
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			e1 := channel.New(1, ipv4.MaxTotalSize, "")
 			if err := s.CreateNIC(nicID1, e1); err != nil {
@@ -195,7 +266,11 @@ func TestForwarding(t *testing.T) {
 				t.Fatalf("SetForwarding(%d, true): %s", header.IPv4ProtocolNumber, err)
 			}
 
-			totalLen := uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize)
+			ipHeaderLength := header.IPv4MinimumSize + len(test.options)
+			if ipHeaderLength > header.IPv4MaximumHeaderSize {
+				t.Fatalf("got ipHeaderLength = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
+			}
+			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
 			hdr := buffer.NewPrependable(int(totalLen))
 			icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 			icmp.SetIdent(randomIdent)
@@ -204,7 +279,7 @@ func TestForwarding(t *testing.T) {
 			icmp.SetCode(header.ICMPv4UnusedCode)
 			icmp.SetChecksum(0)
 			icmp.SetChecksum(^header.Checksum(icmp, 0))
-			ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 			ip.Encode(&header.IPv4Fields{
 				TotalLength: totalLen,
 				Protocol:    uint8(header.ICMPv4ProtocolNumber),
@@ -212,6 +287,14 @@ func TestForwarding(t *testing.T) {
 				SrcAddr:     remoteIPv4Addr1,
 				DstAddr:     remoteIPv4Addr2,
 			})
+			if len(test.options) != 0 {
+				ip.SetHeaderLength(uint8(ipHeaderLength))
+				// Copy options manually. We do not use Encode for options so we can
+				// verify malformed options with handcrafted payloads.
+				if want, got := copy(ip.Options(), test.options), len(test.options); want != got {
+					t.Fatalf("got copy(ip.Options(), test.options) = %d, want = %d", got, want)
+				}
+			}
 			ip.SetChecksum(0)
 			ip.SetChecksum(^ip.CalculateChecksum())
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -222,7 +305,7 @@ func TestForwarding(t *testing.T) {
 			if test.expectErrorICMP {
 				reply, ok := e1.Read()
 				if !ok {
-					t.Fatal("expected ICMP TTL Exceeded packet through incoming NIC")
+					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
 				}
 
 				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
@@ -231,8 +314,8 @@ func TestForwarding(t *testing.T) {
 					checker.TTL(ipv4.DefaultTTL),
 					checker.ICMPv4(
 						checker.ICMPv4Checksum(),
-						checker.ICMPv4Type(header.ICMPv4TimeExceeded),
-						checker.ICMPv4Code(header.ICMPv4TTLExceeded),
+						checker.ICMPv4Type(test.icmpType),
+						checker.ICMPv4Code(test.icmpCode),
 						checker.ICMPv4Payload([]byte(hdr.View())),
 					),
 				)
@@ -250,6 +333,7 @@ func TestForwarding(t *testing.T) {
 					checker.SrcAddr(remoteIPv4Addr1),
 					checker.DstAddr(remoteIPv4Addr2),
 					checker.TTL(test.TTL-1),
+					checker.IPv4Options(test.forwardedOptions),
 					checker.ICMPv4(
 						checker.ICMPv4Checksum(),
 						checker.ICMPv4Type(header.ICMPv4Echo),
@@ -279,6 +363,7 @@ func TestIPv4Sanity(t *testing.T) {
 		// (offset 1). For compatibility we must do the same. Use this constant
 		// to indicate where this happens.
 		pointerOffsetForInvalidLength = 0
+		randomTimeOffset              = 0x10203040
 	)
 	var (
 		ipv4Addr = tcpip.AddressWithPrefix{
@@ -893,6 +978,10 @@ func TestIPv4Sanity(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
 				Clock:              clock,
 			})
+			// Advance the clock by some unimportant amount to make
+			// it give a more recognisable signature than 00,00,00,00.
+			clock.Advance(time.Millisecond * randomTimeOffset)
+
 			// We expect at most a single packet in response to our ICMP Echo Request.
 			e := channel.New(1, ipv4.MaxTotalSize, "")
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -902,9 +991,6 @@ func TestIPv4Sanity(t *testing.T) {
 			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv4ProtoAddr, err)
 			}
-			// Advance the clock by some unimportant amount to make
-			// sure it's all set up.
-			clock.Advance(time.Millisecond * 0x10203040)
 
 			// Default routes for IPv4 so ICMP can find a route to the remote
 			// node when attempting to send the ICMP Echo Reply.
@@ -1739,12 +1825,19 @@ func TestInvalidFragments(t *testing.T) {
 
 				ip := header.IPv4(hdr.Prepend(pktSize))
 				ip.Encode(&f.ipv4fields)
+				if want, got := len(f.payload), copy(ip[header.IPv4MinimumSize:], f.payload); want != got {
+					t.Fatalf("copied %d bytes, expected %d bytes.", got, want)
+				}
 				// Encode sets this up correctly. If we want a different value for
 				// testing then we need to overwrite the good value.
 				if f.overrideIHL != 0 {
 					ip.SetHeaderLength(uint8(f.overrideIHL))
+					// If we are asked to add options (type not specified) then pad
+					// with 0 (EOL). RFC 791 page 23 says "The padding is zero".
+					for i := header.IPv4MinimumSize; i < f.overrideIHL; i++ {
+						ip[i] = byte(header.IPv4OptionListEndType)
+					}
 				}
-				copy(ip[header.IPv4MinimumSize:], f.payload)
 
 				if f.autoChecksum {
 					ip.SetChecksum(0)
