@@ -993,3 +993,7 @@ syscall_test(
 syscall_test(
     test = "//test/syscalls/linux:proc_net_udp_test",
 )
+
+syscall_test(
+    test = "//test/syscalls/linux:processes_test",
+)
