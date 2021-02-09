@@ -938,11 +938,6 @@ func (e *endpoint) Disconnect() tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
-	if addr.Port == 0 {
-		// We don't support connecting to port zero.
-		return &tcpip.ErrInvalidEndpointState{}
-	}
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1188,7 +1183,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	if e.EndpointState() != StateConnected {
+	if e.EndpointState() != StateConnected || e.dstPort == 0 {
 		return tcpip.FullAddress{}, &tcpip.ErrNotConnected{}
 	}
 
