@@ -98,6 +98,18 @@ for embedded structs that are not aligned.
 Because of this, it's generally best to avoid using `marshal:"unaligned"` and
 insert explicit padding fields instead.
 
+## Working with dynamically sized structs
+
+While `go_marshal` seamlessly supports statically sized structs (which most ABI
+structs are), it can also used for other uses cases where marshalling is
+required. There is some provision to partially support dynamically sized structs
+that may not be ABI structs. A user can define a dynamic struct and define
+`SizeBytes()`, `MarshalBytes(dst)` and `UnmarshalBytes(src)` for it. Then user
+can then add a comment above the struct like `// +marshal dynamic` while will
+make `go_marshal` autogenerate the remaining methods required to complete the
+`Marshallable` interface. This feature is currently only available for structs
+and can not be used alongside the Slice API.
+
 ## Modifying the `go_marshal` Tool
 
 The following are some guidelines for modifying the `go_marshal` tool:

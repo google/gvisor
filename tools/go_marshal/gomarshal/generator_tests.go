@@ -216,12 +216,16 @@ func (g *testGenerator) emitTestSizeBytesOnTypedNilPtr() {
 	})
 }
 
-func (g *testGenerator) emitTests(slice *sliceAPI) {
+func (g *testGenerator) emitTests(slice *sliceAPI, isDynamic bool) {
 	g.emitTestNonZeroSize()
 	g.emitTestSuspectAlignment()
-	g.emitTestMarshalUnmarshalPreservesData()
-	g.emitTestWriteToUnmarshalPreservesData()
-	g.emitTestSizeBytesOnTypedNilPtr()
+	if !isDynamic {
+		// Do not test these for dynamic structs because they violate some
+		// assumptions that these tests make.
+		g.emitTestMarshalUnmarshalPreservesData()
+		g.emitTestWriteToUnmarshalPreservesData()
+		g.emitTestSizeBytesOnTypedNilPtr()
+	}
 
 	if slice != nil {
 		g.emitTestMarshalUnmarshalSlicePreservesData(slice)

@@ -15,11 +15,8 @@
 package linux
 
 import (
-	"io"
-
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // This file contains structures required to support IPv6 netfilter and
@@ -70,8 +67,9 @@ type IP6TReplace struct {
 const SizeOfIP6TReplace = 96
 
 // KernelIP6TGetEntries is identical to IP6TGetEntries, but includes the
-// Entrytable field. This has been manually made marshal.Marshallable since it
-// is dynamically sized.
+// Entrytable field.
+//
+// +marshal dynamic
 type KernelIP6TGetEntries struct {
 	IPTGetEntries
 	Entrytable []KernelIP6TEntry
@@ -104,65 +102,6 @@ func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) {
 		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
 		unmarshalledUntil += ke.Entrytable[i].SizeBytes()
 	}
-}
-
-// Packed implements marshal.Marshallable.Packed.
-func (ke *KernelIP6TGetEntries) Packed() bool {
-	// KernelIP6TGetEntries isn't packed because the ke.Entrytable contains
-	// an indirection to the actual data we want to marshal (the slice data
-	// pointer), and the memory for KernelIP6TGetEntries contains the slice
-	// header which we don't want to marshal.
-	return false
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (ke *KernelIP6TGetEntries) MarshalUnsafe(dst []byte) {
-	// Fall back to safe Marshal because the type in not packed.
-	ke.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (ke *KernelIP6TGetEntries) UnmarshalUnsafe(src []byte) {
-	// Fall back to safe Unmarshal because the type in not packed.
-	ke.UnmarshalBytes(src)
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (ke *KernelIP6TGetEntries) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-	buf := cc.CopyScratchBuffer(ke.SizeBytes()) // escapes: okay.
-	length, err := cc.CopyInBytes(addr, buf)    // escapes: okay.
-	// Unmarshal unconditionally. If we had a short copy-in, this results
-	// in a partially unmarshalled struct.
-	ke.UnmarshalBytes(buf) // escapes: fallback.
-	return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-func (ke *KernelIP6TGetEntries) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
-	// Type KernelIP6TGetEntries doesn't have a packed layout in memory,
-	// fall back to MarshalBytes.
-	return cc.CopyOutBytes(addr, ke.marshalAll(cc))
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-func (ke *KernelIP6TGetEntries) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
-	// Type KernelIP6TGetEntries doesn't have a packed layout in memory, fall
-	// back to MarshalBytes.
-	return cc.CopyOutBytes(addr, ke.marshalAll(cc)[:limit])
-}
-
-func (ke *KernelIP6TGetEntries) marshalAll(cc marshal.CopyContext) []byte {
-	buf := cc.CopyScratchBuffer(ke.SizeBytes())
-	ke.MarshalBytes(buf)
-	return buf
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (ke *KernelIP6TGetEntries) WriteTo(w io.Writer) (int64, error) {
-	buf := make([]byte, ke.SizeBytes())
-	ke.MarshalBytes(buf)
-	length, err := w.Write(buf)
-	return int64(length), err
 }
 
 var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
