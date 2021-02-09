@@ -4160,6 +4160,18 @@ cc_binary(
 )
 
 cc_binary(
+    name = "processes_test",
+    testonly = 1,
+    srcs = ["processes.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "xattr_test",
     testonly = 1,
     srcs = [
