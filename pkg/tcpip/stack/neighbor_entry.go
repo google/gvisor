@@ -146,20 +146,6 @@ func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr t
 	return n
 }
 
-type remainingCounter struct {
-	mu struct {
-		sync.Mutex
-
-		remaining uint32
-	}
-}
-
-func (r *remainingCounter) init(max uint32) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.mu.remaining = max
-}
-
 // notifyCompletionLocked notifies those waiting for address resolution, with
 // the link address if resolution completed successfully.
 //
@@ -298,8 +284,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		// Protected by e.mu.
 		done := false
 
-		var remaining remainingCounter
-		remaining.init(config.MaxUnicastProbes)
+		remaining := config.MaxUnicastProbes
 		addr := e.mu.neigh.Addr
 		linkAddr := e.mu.neigh.LinkAddr
 
@@ -310,13 +295,8 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
-				// Okay to hold this lock while writing packets since we use a different
-				// lock per probe timer so there will not be any lock contention.
-				remaining.mu.Lock()
-				defer remaining.mu.Unlock()
-
 				var err tcpip.Error
-				timedoutResolution := remaining.mu.remaining == 0
+				timedoutResolution := remaining == 0
 				if !timedoutResolution {
 					err = e.cache.linkRes.LinkAddressRequest(addr, "" /* localAddr */, linkAddr)
 				}
@@ -335,7 +315,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 					return
 				}
 
-				remaining.mu.remaining--
+				remaining--
 				e.mu.timer.timer.Reset(config.RetransmitTimer)
 			}),
 		}
@@ -373,8 +353,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		// Protected by e.mu.
 		done := false
 
-		var remaining remainingCounter
-		remaining.init(config.MaxMulticastProbes)
+		remaining := config.MaxMulticastProbes
 		addr := e.mu.neigh.Addr
 
 		// Send a probe in another gorountine to free this thread of execution
@@ -384,13 +363,8 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
-				// Okay to hold this lock while writing packets since we use a different
-				// lock per probe timer so there will not be any lock contention.
-				remaining.mu.Lock()
-				defer remaining.mu.Unlock()
-
 				var err tcpip.Error
-				timedoutResolution := remaining.mu.remaining == 0
+				timedoutResolution := remaining == 0
 				if !timedoutResolution {
 					// As per RFC 4861 section 7.2.2:
 					//
@@ -416,7 +390,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 					return
 				}
 
-				remaining.mu.remaining--
+				remaining--
 				e.mu.timer.timer.Reset(config.RetransmitTimer)
 			}),
 		}
