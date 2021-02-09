@@ -17,9 +17,9 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",
-        "//pkg/tcpip/network/fragmentation",
         "//pkg/tcpip/network/hash",
-        "//pkg/tcpip/network/ip",
+        "//pkg/tcpip/network/internal/fragmentation",
+        "//pkg/tcpip/network/internal/ip",
         "//pkg/tcpip/stack",
     ],
 )
@@ -40,8 +40,8 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/arp",
+        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/network/ipv4",
-        "//pkg/tcpip/network/testutil",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/raw",
@@ -59,7 +59,7 @@ go_test(
     library = ":ipv4",
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/network/testutil",
+        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
     ],
 )
