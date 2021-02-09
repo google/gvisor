@@ -951,6 +951,34 @@ TEST(ElfTest, PIEOutOfOrderSegments) {
   EXPECT_EQ(execve_errno, ENOEXEC);
 }
 
+TEST(ElfTest, PIEOverflow) {
+  ElfBinary<64> elf = StandardElf();
+
+  elf.header.e_type = ET_DYN;
+
+  // Choose vaddr of the first segment so that the end address overflows if the
+  // segment is mapped with a non-zero offset.
+  elf.phdrs[1].p_vaddr = 0xfffffffffffff000UL - elf.phdrs[1].p_memsz;
+
+  elf.UpdateOffsets();
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  if (IsRunningOnGvisor()) {
+    ASSERT_EQ(execve_errno, EINVAL);
+  } else {
+    ASSERT_EQ(execve_errno, 0);
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) << status;
+  }
+}
+
 // Standard dynamically linked binary with an ELF interpreter.
 TEST(ElfTest, ELFInterpreter) {
   ElfBinary<64> interpreter = StandardElf();
