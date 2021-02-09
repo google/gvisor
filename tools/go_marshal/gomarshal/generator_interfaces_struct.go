@@ -69,7 +69,11 @@ func (g *interfaceGenerator) validateStruct(ts *ast.TypeSpec, st *ast.StructType
 	})
 }
 
-func (g *interfaceGenerator) isStructPacked(st *ast.StructType) bool {
+func (g *interfaceGenerator) isStructPacked(st *ast.StructType, isDynamic bool) bool {
+	if isDynamic {
+		// Dynamic types are not packed because a slice header might be present.
+		return false
+	}
 	packed := true
 	forEachStructField(st, func(f *ast.Field) {
 		if f.Tag != nil {
@@ -85,165 +89,17 @@ func (g *interfaceGenerator) isStructPacked(st *ast.StructType) bool {
 	return packed
 }
 
-func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
-	thisPacked := g.isStructPacked(st)
+func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType, isDynamic bool) {
+	thisPacked := g.isStructPacked(st, isDynamic)
 
-	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
-	g.emit("func (%s *%s) SizeBytes() int {\n", g.r, g.typeName())
-	g.inIndent(func() {
-		primitiveSize := 0
-		var dynamicSizeTerms []string
-
-		forEachStructField(st, fieldDispatcher{
-			primitive: func(_, t *ast.Ident) {
-				if size, dynamic := g.scalarSize(t); !dynamic {
-					primitiveSize += size
-				} else {
-					g.recordUsedMarshallable(t.Name)
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
-				}
-			},
-			selector: func(_, tX, tSel *ast.Ident) {
-				tName := fmt.Sprintf("%s.%s", tX.Name, tSel.Name)
-				g.recordUsedImport(tX.Name)
-				g.recordUsedMarshallable(tName)
-				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
-			},
-			array: func(_ *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
-				lenExpr := g.arrayLenExpr(a)
-				if size, dynamic := g.scalarSize(t); !dynamic {
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%d*%s", size, lenExpr))
-				} else {
-					g.recordUsedMarshallable(t.Name)
-					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()*%s", t.Name, lenExpr))
-				}
-			},
-		}.dispatch)
-		g.emit("return %d", primitiveSize)
-		if len(dynamicSizeTerms) > 0 {
-			g.incIndent()
-		}
-		{
-			for _, d := range dynamicSizeTerms {
-				g.emitNoIndent(" +\n")
-				g.emit(d)
-			}
-		}
-		if len(dynamicSizeTerms) > 0 {
-			g.decIndent()
-		}
-	})
-	g.emit("\n}\n\n")
-
-	g.emit("// MarshalBytes implements marshal.Marshallable.MarshalBytes.\n")
-	g.emit("func (%s *%s) MarshalBytes(dst []byte) {\n", g.r, g.typeName())
-	g.inIndent(func() {
-		forEachStructField(st, fieldDispatcher{
-			primitive: func(n, t *ast.Ident) {
-				if n.Name == "_" {
-					g.emit("// Padding: dst[:sizeof(%s)] ~= %s(0)\n", t.Name, t.Name)
-					if len, dynamic := g.scalarSize(t); !dynamic {
-						g.shift("dst", len)
-					} else {
-						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can reference here
-						// (since the version in this struct is anonymous). Use
-						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("dst = dst[(*%s)(nil).SizeBytes():]\n", t.Name)
-					}
-					return
-				}
-				g.marshalScalar(g.fieldAccessor(n), t.Name, "dst")
-			},
-			selector: func(n, tX, tSel *ast.Ident) {
-				if n.Name == "_" {
-					g.emit("// Padding: dst[:sizeof(%s)] ~= %s(0)\n", tX.Name, tSel.Name)
-					g.emit("dst = dst[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
-					return
-				}
-				g.marshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "dst")
-			},
-			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
-				lenExpr := g.arrayLenExpr(a)
-				if n.Name == "_" {
-					g.emit("// Padding: dst[:sizeof(%s)*%s] ~= [%s]%s{0}\n", t.Name, lenExpr, lenExpr, t.Name)
-					if size, dynamic := g.scalarSize(t); !dynamic {
-						g.emit("dst = dst[%d*(%s):]\n", size, lenExpr)
-					} else {
-						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can reference here
-						// (since the version in this struct is anonymous). Use
-						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("dst = dst[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
-					}
-					return
-				}
-
-				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
-				g.inIndent(func() {
-					g.marshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "dst")
-				})
-				g.emit("}\n")
-			},
-		}.dispatch)
-	})
-	g.emit("}\n\n")
-
-	g.emit("// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.\n")
-	g.emit("func (%s *%s) UnmarshalBytes(src []byte) {\n", g.r, g.typeName())
-	g.inIndent(func() {
-		forEachStructField(st, fieldDispatcher{
-			primitive: func(n, t *ast.Ident) {
-				if n.Name == "_" {
-					g.emit("// Padding: var _ %s ~= src[:sizeof(%s)]\n", t.Name, t.Name)
-					if len, dynamic := g.scalarSize(t); !dynamic {
-						g.shift("src", len)
-					} else {
-						// We don't have an instance of the dynamic type we can
-						// reference here (since the version in this struct is
-						// anonymous). Use a typed nil pointer to call
-						// SizeBytes() instead.
-						g.shiftDynamic("src", fmt.Sprintf("(*%s)(nil)", t.Name))
-						g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s)(nil)", t.Name))
-					}
-					return
-				}
-				g.unmarshalScalar(g.fieldAccessor(n), t.Name, "src")
-			},
-			selector: func(n, tX, tSel *ast.Ident) {
-				if n.Name == "_" {
-					g.emit("// Padding: %s ~= src[:sizeof(%s.%s)]\n", g.fieldAccessor(n), tX.Name, tSel.Name)
-					g.emit("src = src[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
-					g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s.%s)(nil)", tX.Name, tSel.Name))
-					return
-				}
-				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src")
-			},
-			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
-				lenExpr := g.arrayLenExpr(a)
-				if n.Name == "_" {
-					g.emit("// Padding: ~ copy([%s]%s(%s), src[:sizeof(%s)*%s])\n", lenExpr, t.Name, g.fieldAccessor(n), t.Name, lenExpr)
-					if size, dynamic := g.scalarSize(t); !dynamic {
-						g.emit("src = src[%d*(%s):]\n", size, lenExpr)
-					} else {
-						// We can't use shiftDynamic here because we don't have
-						// an instance of the dynamic type we can referece here
-						// (since the version in this struct is anonymous). Use
-						// a typed nil pointer to call SizeBytes() instead.
-						g.emit("src = src[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
-					}
-					return
-				}
-
-				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
-				g.inIndent(func() {
-					g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "src")
-				})
-				g.emit("}\n")
-			},
-		}.dispatch)
-	})
-	g.emit("}\n\n")
+	// Dynamic types are supposed to manually implement SizeBytes, MarshalBytes
+	// and UnmarshalBytes. The rest of the methos are autogenerated and depend on
+	// the implementation of these three.
+	if !isDynamic {
+		g.emitSizeBytesForStruct(st)
+		g.emitMarshalBytesForStruct(st)
+		g.emitUnmarshalBytesForStruct(st)
+	}
 
 	g.emit("// Packed implements marshal.Marshallable.Packed.\n")
 	g.emit("//go:nosplit\n")
@@ -428,8 +284,171 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("}\n\n")
 }
 
+func (g *interfaceGenerator) emitSizeBytesForStruct(st *ast.StructType) {
+	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
+	g.emit("func (%s *%s) SizeBytes() int {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		primitiveSize := 0
+		var dynamicSizeTerms []string
+
+		forEachStructField(st, fieldDispatcher{
+			primitive: func(_, t *ast.Ident) {
+				if size, dynamic := g.scalarSize(t); !dynamic {
+					primitiveSize += size
+				} else {
+					g.recordUsedMarshallable(t.Name)
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", t.Name))
+				}
+			},
+			selector: func(_, tX, tSel *ast.Ident) {
+				tName := fmt.Sprintf("%s.%s", tX.Name, tSel.Name)
+				g.recordUsedImport(tX.Name)
+				g.recordUsedMarshallable(tName)
+				dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()", tName))
+			},
+			array: func(_ *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
+				if size, dynamic := g.scalarSize(t); !dynamic {
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("%d*%s", size, lenExpr))
+				} else {
+					g.recordUsedMarshallable(t.Name)
+					dynamicSizeTerms = append(dynamicSizeTerms, fmt.Sprintf("(*%s)(nil).SizeBytes()*%s", t.Name, lenExpr))
+				}
+			},
+		}.dispatch)
+		g.emit("return %d", primitiveSize)
+		if len(dynamicSizeTerms) > 0 {
+			g.incIndent()
+		}
+		{
+			for _, d := range dynamicSizeTerms {
+				g.emitNoIndent(" +\n")
+				g.emit(d)
+			}
+		}
+		if len(dynamicSizeTerms) > 0 {
+			g.decIndent()
+		}
+	})
+	g.emit("\n}\n\n")
+}
+
+func (g *interfaceGenerator) emitMarshalBytesForStruct(st *ast.StructType) {
+	g.emit("// MarshalBytes implements marshal.Marshallable.MarshalBytes.\n")
+	g.emit("func (%s *%s) MarshalBytes(dst []byte) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		forEachStructField(st, fieldDispatcher{
+			primitive: func(n, t *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: dst[:sizeof(%s)] ~= %s(0)\n", t.Name, t.Name)
+					if len, dynamic := g.scalarSize(t); !dynamic {
+						g.shift("dst", len)
+					} else {
+						// We can't use shiftDynamic here because we don't have
+						// an instance of the dynamic type we can reference here
+						// (since the version in this struct is anonymous). Use
+						// a typed nil pointer to call SizeBytes() instead.
+						g.emit("dst = dst[(*%s)(nil).SizeBytes():]\n", t.Name)
+					}
+					return
+				}
+				g.marshalScalar(g.fieldAccessor(n), t.Name, "dst")
+			},
+			selector: func(n, tX, tSel *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: dst[:sizeof(%s)] ~= %s(0)\n", tX.Name, tSel.Name)
+					g.emit("dst = dst[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
+					return
+				}
+				g.marshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "dst")
+			},
+			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
+				if n.Name == "_" {
+					g.emit("// Padding: dst[:sizeof(%s)*%s] ~= [%s]%s{0}\n", t.Name, lenExpr, lenExpr, t.Name)
+					if size, dynamic := g.scalarSize(t); !dynamic {
+						g.emit("dst = dst[%d*(%s):]\n", size, lenExpr)
+					} else {
+						// We can't use shiftDynamic here because we don't have
+						// an instance of the dynamic type we can reference here
+						// (since the version in this struct is anonymous). Use
+						// a typed nil pointer to call SizeBytes() instead.
+						g.emit("dst = dst[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
+					}
+					return
+				}
+
+				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
+				g.inIndent(func() {
+					g.marshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "dst")
+				})
+				g.emit("}\n")
+			},
+		}.dispatch)
+	})
+	g.emit("}\n\n")
+}
+
+func (g *interfaceGenerator) emitUnmarshalBytesForStruct(st *ast.StructType) {
+	g.emit("// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.\n")
+	g.emit("func (%s *%s) UnmarshalBytes(src []byte) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		forEachStructField(st, fieldDispatcher{
+			primitive: func(n, t *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: var _ %s ~= src[:sizeof(%s)]\n", t.Name, t.Name)
+					if len, dynamic := g.scalarSize(t); !dynamic {
+						g.shift("src", len)
+					} else {
+						// We don't have an instance of the dynamic type we can
+						// reference here (since the version in this struct is
+						// anonymous). Use a typed nil pointer to call
+						// SizeBytes() instead.
+						g.shiftDynamic("src", fmt.Sprintf("(*%s)(nil)", t.Name))
+						g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s)(nil)", t.Name))
+					}
+					return
+				}
+				g.unmarshalScalar(g.fieldAccessor(n), t.Name, "src")
+			},
+			selector: func(n, tX, tSel *ast.Ident) {
+				if n.Name == "_" {
+					g.emit("// Padding: %s ~= src[:sizeof(%s.%s)]\n", g.fieldAccessor(n), tX.Name, tSel.Name)
+					g.emit("src = src[(*%s.%s)(nil).SizeBytes():]\n", tX.Name, tSel.Name)
+					g.recordPotentiallyNonPackedField(fmt.Sprintf("(*%s.%s)(nil)", tX.Name, tSel.Name))
+					return
+				}
+				g.unmarshalScalar(g.fieldAccessor(n), fmt.Sprintf("%s.%s", tX.Name, tSel.Name), "src")
+			},
+			array: func(n *ast.Ident, a *ast.ArrayType, t *ast.Ident) {
+				lenExpr := g.arrayLenExpr(a)
+				if n.Name == "_" {
+					g.emit("// Padding: ~ copy([%s]%s(%s), src[:sizeof(%s)*%s])\n", lenExpr, t.Name, g.fieldAccessor(n), t.Name, lenExpr)
+					if size, dynamic := g.scalarSize(t); !dynamic {
+						g.emit("src = src[%d*(%s):]\n", size, lenExpr)
+					} else {
+						// We can't use shiftDynamic here because we don't have
+						// an instance of the dynamic type we can referece here
+						// (since the version in this struct is anonymous). Use
+						// a typed nil pointer to call SizeBytes() instead.
+						g.emit("src = src[(*%s)(nil).SizeBytes()*(%s):]\n", t.Name, lenExpr)
+					}
+					return
+				}
+
+				g.emit("for idx := 0; idx < %s; idx++ {\n", lenExpr)
+				g.inIndent(func() {
+					g.unmarshalScalar(fmt.Sprintf("%s[idx]", g.fieldAccessor(n)), t.Name, "src")
+				})
+				g.emit("}\n")
+			},
+		}.dispatch)
+	})
+	g.emit("}\n\n")
+}
+
 func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, slice *sliceAPI) {
-	thisPacked := g.isStructPacked(st)
+	thisPacked := g.isStructPacked(st, false /* isDynamic */)
 
 	if slice.inner {
 		abortAt(g.f.Position(slice.comment.Slash), fmt.Sprintf("The ':inner' argument to '+marshal slice:%s:inner' is only applicable to newtypes on primitives. Remove it from this struct declaration.", slice.ident))

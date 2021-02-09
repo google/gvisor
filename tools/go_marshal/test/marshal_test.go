@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
@@ -511,5 +512,23 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 
 			compareMemory(t, expectedMem, actualMem, n)
 		})
+	}
+}
+
+func TestDynamicType(t *testing.T) {
+	t12 := test.Type12Dynamic{
+		X: 32,
+		Y: []primitive.Int64{5, 6, 7},
+	}
+
+	var m marshal.Marshallable
+	m = &t12 // Ensure that all methods were generated.
+	b := make([]byte, m.SizeBytes())
+	m.MarshalBytes(b)
+
+	var res test.Type12Dynamic
+	res.UnmarshalBytes(b)
+	if !reflect.DeepEqual(t12, res) {
+		t.Errorf("dynamic type is not same after marshalling and unmarshalling: before = %+v, after = %+v", t12, res)
 	}
 }

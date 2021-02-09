@@ -80,7 +80,6 @@ go_library(
         "//pkg/bits",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
-        "//pkg/usermem",
     ],
 )
 

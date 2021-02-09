@@ -26,7 +26,10 @@ go_library(
     srcs = ["test.go"],
     marshal = True,
     visibility = ["//tools/go_marshal/test:__subpackages__"],
-    deps = ["//tools/go_marshal/test/external"],
+    deps = [
+        "//pkg/marshal/primitive",
+        "//tools/go_marshal/test/external",
+    ],
 )
 
 go_test(
@@ -36,6 +39,7 @@ go_test(
     deps = [
         ":test",
         "//pkg/marshal",
+        "//pkg/marshal/primitive",
         "//pkg/syserror",
         "//pkg/usermem",
         "//tools/go_marshal/analysis",
