@@ -237,7 +237,16 @@ func (q *queue) QueuedSize() int64 {
 
 // MaxQueueSize returns the maximum number of bytes storable in the queue.
 func (q *queue) MaxQueueSize() int64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.limit
+}
+
+// SetMaxQueueSize sets the maximum number of bytes storable in the queue.
+func (q *queue) SetMaxQueueSize(v int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.limit = v
 }
 
 // CloseUnread sets flag to indicate that the peer is closed (not shutdown)
