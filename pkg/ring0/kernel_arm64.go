@@ -62,6 +62,8 @@ func IsCanonical(addr uint64) bool {
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	storeAppASID(uintptr(switchOpts.UserASID))
+	storeEl0Fpstate(switchOpts.FloatingPointState)
+
 	if switchOpts.Flush {
 		FlushTlbByASID(uintptr(switchOpts.UserASID))
 	}
@@ -71,13 +73,17 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	regs.Pstate &= ^uint64(PsrFlagsClear)
 	regs.Pstate |= UserFlagsSet
 
-	EnableVFP()
-	LoadFloatingPoint(switchOpts.FloatingPointState)
+	fpDisableTrap := CPACREL1()
+	if fpDisableTrap != 0 {
+		FPSIMDEnableTrap()
+	}
 
 	kernelExitToEl0()
 
-	SaveFloatingPoint(switchOpts.FloatingPointState)
-	DisableVFP()
+	fpDisableTrap = CPACREL1()
+	if fpDisableTrap != 0 {
+		SaveFloatingPoint(switchOpts.FloatingPointState)
+	}
 
 	vector = c.vecCode
 

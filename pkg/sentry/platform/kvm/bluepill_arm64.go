@@ -111,8 +111,8 @@ func (c *vCPU) KernelSyscall() {
 		regs.Pc -= 4 // Rewind.
 	}
 
-	vfpEnable := ring0.CPACREL1()
-	if vfpEnable != 0 {
+	fpDisableTrap := ring0.CPACREL1()
+	if fpDisableTrap != 0 {
 		fpsimd := fpsimdPtr((*byte)(c.floatingPointState))
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()
@@ -135,8 +135,8 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 		regs.Pc = 0
 	}
 
-	vfpEnable := ring0.CPACREL1()
-	if vfpEnable != 0 {
+	fpDisableTrap := ring0.CPACREL1()
+	if fpDisableTrap != 0 {
 		fpsimd := fpsimdPtr((*byte)(c.floatingPointState))
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()

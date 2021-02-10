@@ -38,7 +38,7 @@ type KernelArchState struct {
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
 	// stack is the stack used for interrupts on this CPU.
-	stack [512]byte
+	stack [128]byte
 
 	// errorCode is the error code from the last exception.
 	errorCode uintptr
@@ -54,6 +54,9 @@ type CPUArchState struct {
 
 	// faultAddr is the value of far_el1.
 	faultAddr uintptr
+
+	// el0Fp is the address of application's fpstate.
+	el0Fp uintptr
 
 	// ttbr0Kvm is the value of ttbr0_el1 for sentry.
 	ttbr0Kvm uintptr
