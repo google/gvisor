@@ -13,48 +13,25 @@ To run benchmarks you will need:
 
 *   Docker installed (17.09.0 or greater).
 
-The easiest way to setup runsc for running benchmarks is to use the make file.
-From the root directory:
-
-*   Download images: `make load-all-images`
-*   Install runsc suitable for benchmarking, which should probably not have
-    strace or debug logs enabled. For example: `make configure RUNTIME=myrunsc
-    ARGS=--platform=kvm`.
-*   Restart docker: `sudo service docker restart`
-
-You should now have a runtime with the following options configured in
-`/etc/docker/daemon.json`
-
-```
-"myrunsc": {
-            "path": "/tmp/myrunsc/runsc",
-            "runtimeArgs": [
-                "--debug-log",
-                "/tmp/bench/logs/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%",
-                "--platform=kvm"
-            ]
-        },
-
-```
-
-This runtime has been configured with a debugging off and strace logs off and is
-using kvm for demonstration.
-
 ## Running benchmarks
 
-Given the runtime above runtime `myrunsc`, run benchmarks with the following:
+To run, use the Makefile:
+
+-   Install runsc as a runtime: `make dev`
+    -   The above command will place several configurations of runsc in your
+        /etc/docker/daemon.json file. Choose one without the debug option set.
+-   Run your benchmark: `make run-benchmark
+    RUNTIME=[RUNTIME_FROM_DAEMON.JSON/runc]
+    BENCHMARKS_TARGETS=//path/to/target"`
+-   Additionally, you can benchmark several platforms in one command:
 
 ```
-make sudo TARGETS=//path/to:target ARGS="--runtime=myrunsc -test.v \
-  -test.bench=." OPTIONS="-c opt"
+make benchmark-platforms BENCHMARKS_PLATFORMS=ptrace,kvm \
+BENCHMARKS_TARGET=//path/to/target"
 ```
 
-For example, to run only the Iperf tests:
-
-```
-make sudo TARGETS=//test/benchmarks/network:network_test \
-  ARGS="--runtime=myrunsc -test.v -test.bench=Iperf" OPTIONS="-c opt"
-```
+The above command will install runtimes/run benchmarks on ptrace and kvm as well
+as run the benchmark on native runc.
 
 Benchmarks are run with root as some benchmarks require root privileges to do
 things like drop caches.
@@ -71,7 +48,8 @@ benchmarks.
     `//images/benchmarks/my-cool-dockerfile`.
 *   Dockerfiles for benchmarks should:
     *   Use explicitly versioned packages.
-    *   Not use ENV and CMD statements...it is easy to add these in the API.
+    *   Don't use ENV and CMD statements. It is easy to add these in the API via
+        `dockerutil.RunOpts`.
 *   Note: A common pattern for getting access to a tmpfs mount is to copy files
     there after container start. See: //test/benchmarks/build/bazel_test.go. You
     can also make your own with `RunOpts.Mounts`.
@@ -97,7 +75,7 @@ func BenchmarkMyCoolOne(b *testing.B) {
     out, err := container.Run(ctx, dockerutil.RunOpts{
       Image: "benchmarks/my-cool-image",
       Env: []string{"MY_VAR=awesome"},
-      other options...see dockerutil
+      // other options...see dockerutil
     }, "sh", "-c", "echo MY_VAR")
     // check err...
     b.StopTimer()
@@ -118,11 +96,16 @@ func TestMain(m *testing.M) {
 
 Some notes on the above:
 
-*   Respect `b.N` in that users of the benchmark may want to "run for an hour"
-    or something of the sort.
+*   Respect and linearly scale by `b.N` so that users can run a number of times
+    (--benchtime=10x) or for a time duration (--benchtime=1m). For many
+    benchmarks, this is just the runtime of the container under test. Sometimes
+    this is a parameter to the container itself. For Example, the httpd
+    benchmark (and most client server benchmarks) uses b.N as a parameter to the
+    Client container that specifies how many requests to make to the server.
 *   Use the `b.ReportMetric()` method to report custom metrics.
-*   Set the timer if time is useful for reporting. There isn't a way to turn off
-    default metrics in testing.B (B/op, allocs/op, ns/op).
+*   Never turn off the timer (b.N), but set and reset it if useful for the
+    benchmark. There isn't a way to turn off default metrics in testing.B (B/op,
+    allocs/op, ns/op).
 *   Take a look at dockerutil at //pkg/test/dockerutil to see all methods
     available from containers. The API is based on the "official"
     [docker API for golang](https://pkg.go.dev/mod/github.com/docker/docker).
@@ -136,16 +119,11 @@ For profiling, the runtime is required to have the `--profile` flag enabled.
 This flag loosens seccomp filters so that the runtime can write profile data to
 disk. This configuration is not recommended for production.
 
-*   Install runsc with the `--profile` flag: `make configure RUNTIME=myrunsc
-    ARGS="--profile --platform=kvm --vfs2"`. The kvm and vfs2 flags are not
-    required, but are included for demonstration.
-*   Restart docker: `sudo service docker restart`
+To profile, simply run the `benchmark-platforms` command from above and profiles
+will be in /tmp/profile.
 
-To run and generate CPU profiles fs_test test run:
+Or run with: `make run-benchmark RUNTIME=[RUNTIME_UNDER_TEST]
+BENCHMARKS_TARGETS=//path/to/target`
 
-```
-make sudo TARGETS=//test/benchmarks/fs:fs_test \
-  ARGS="--runtime=myrunsc -test.v -test.bench=. --pprof-cpu" OPTIONS="-c opt"
-```
-
-Profiles would be at: `/tmp/profile/myrunsc/CONTAINERNAME/cpu.pprof`
+Profiles will be in /tmp/profile. Note: runtimes must have the `--profile` flag
+set in /etc/docker/daemon.conf and profiling will not work on runc.
