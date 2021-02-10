@@ -4,17 +4,18 @@
 
 // CPU offsets.
 #define CPU_SELF             0x00
-#define CPU_REGISTERS        0x258
-#define CPU_STACK_TOP        0x210
-#define CPU_ERROR_CODE       0x210
-#define CPU_ERROR_TYPE       0x218
-#define CPU_FAULT_ADDR       0x220
-#define CPU_TTBR0_KVM	     0x228
-#define CPU_TTBR0_APP        0x230
-#define CPU_VECTOR_CODE      0x238
-#define CPU_APP_ADDR         0x240
-#define CPU_LAZY_VFP         0x248
-#define CPU_APP_ASID         0x250
+#define CPU_REGISTERS        0xe0
+#define CPU_STACK_TOP        0x90
+#define CPU_ERROR_CODE       0x90
+#define CPU_ERROR_TYPE       0x98
+#define CPU_FAULT_ADDR       0xa0
+#define CPU_FPSTATE_EL0      0xa8
+#define CPU_TTBR0_KVM	     0xb0
+#define CPU_TTBR0_APP        0xb8
+#define CPU_VECTOR_CODE      0xc0
+#define CPU_APP_ADDR         0xc8
+#define CPU_LAZY_VFP         0xd0
+#define CPU_APP_ASID         0xd8
 
 // Bits.
 #define _KERNEL_FLAGS        0x3c5
@@ -124,7 +125,7 @@
 #define RSV_REG 	R18_PLATFORM
 
 // RSV_REG_APP is a register that holds el0 information temporarily.
-#define RSV_REG_APP 	R9
+#define RSV_REG_APP 	R19
 
 #define FPEN_NOTRAP 	0x3
 #define FPEN_SHIFT 	20
@@ -152,36 +153,22 @@
 // This is a macro because it may need to executed in contents where a stack is
 // not available for calls.
 //
-// The following registers are not saved: R9, R18.
+// The following registers are not saved: R18, R19.
 #define REGISTERS_SAVE(reg, offset) \
-  MOVD R0, offset+PTRACE_R0(reg); \
-  MOVD R1, offset+PTRACE_R1(reg); \
-  MOVD R2, offset+PTRACE_R2(reg); \
-  MOVD R3, offset+PTRACE_R3(reg); \
-  MOVD R4, offset+PTRACE_R4(reg); \
-  MOVD R5, offset+PTRACE_R5(reg); \
-  MOVD R6, offset+PTRACE_R6(reg); \
-  MOVD R7, offset+PTRACE_R7(reg); \
-  MOVD R8, offset+PTRACE_R8(reg); \
-  MOVD R10, offset+PTRACE_R10(reg); \
-  MOVD R11, offset+PTRACE_R11(reg); \
-  MOVD R12, offset+PTRACE_R12(reg); \
-  MOVD R13, offset+PTRACE_R13(reg); \
-  MOVD R14, offset+PTRACE_R14(reg); \
-  MOVD R15, offset+PTRACE_R15(reg); \
-  MOVD R16, offset+PTRACE_R16(reg); \
-  MOVD R17, offset+PTRACE_R17(reg); \
-  MOVD R19, offset+PTRACE_R19(reg); \
-  MOVD R20, offset+PTRACE_R20(reg); \
-  MOVD R21, offset+PTRACE_R21(reg); \
-  MOVD R22, offset+PTRACE_R22(reg); \
-  MOVD R23, offset+PTRACE_R23(reg); \
-  MOVD R24, offset+PTRACE_R24(reg); \
-  MOVD R25, offset+PTRACE_R25(reg); \
-  MOVD R26, offset+PTRACE_R26(reg); \
-  MOVD R27, offset+PTRACE_R27(reg); \
-  MOVD g,   offset+PTRACE_R28(reg); \
-  MOVD R29, offset+PTRACE_R29(reg); \
+  STP (R0, R1), offset+PTRACE_R0(reg); \
+  STP (R2, R3), offset+PTRACE_R2(reg); \
+  STP (R4, R5), offset+PTRACE_R4(reg); \
+  STP (R6, R7), offset+PTRACE_R6(reg); \
+  STP (R8, R9), offset+PTRACE_R8(reg); \
+  STP (R10, R11), offset+PTRACE_R10(reg); \
+  STP (R12, R13), offset+PTRACE_R12(reg); \
+  STP (R14, R15), offset+PTRACE_R14(reg); \
+  STP (R16, R17), offset+PTRACE_R16(reg); \
+  STP (R20, R21), offset+PTRACE_R20(reg); \
+  STP (R22, R23), offset+PTRACE_R22(reg); \
+  STP (R24, R25), offset+PTRACE_R24(reg); \
+  STP (R26, R27), offset+PTRACE_R26(reg); \
+  STP (g, R29), offset+PTRACE_R28(reg); \
   MOVD R30, offset+PTRACE_R30(reg);
 
 // Loads a register set.
@@ -189,37 +176,49 @@
 // This is a macro because it may need to executed in contents where a stack is
 // not available for calls.
 //
-// The following registers are not loaded: R9, R18.
+// The following registers are not loaded: R18, R19.
 #define REGISTERS_LOAD(reg, offset) \
-  MOVD offset+PTRACE_R0(reg), R0; \
-  MOVD offset+PTRACE_R1(reg), R1; \
-  MOVD offset+PTRACE_R2(reg), R2; \
-  MOVD offset+PTRACE_R3(reg), R3; \
-  MOVD offset+PTRACE_R4(reg), R4; \
-  MOVD offset+PTRACE_R5(reg), R5; \
-  MOVD offset+PTRACE_R6(reg), R6; \
-  MOVD offset+PTRACE_R7(reg), R7; \
-  MOVD offset+PTRACE_R8(reg), R8; \
-  MOVD offset+PTRACE_R10(reg), R10; \
-  MOVD offset+PTRACE_R11(reg), R11; \
-  MOVD offset+PTRACE_R12(reg), R12; \
-  MOVD offset+PTRACE_R13(reg), R13; \
-  MOVD offset+PTRACE_R14(reg), R14; \
-  MOVD offset+PTRACE_R15(reg), R15; \
-  MOVD offset+PTRACE_R16(reg), R16; \
-  MOVD offset+PTRACE_R17(reg), R17; \
-  MOVD offset+PTRACE_R19(reg), R19; \
-  MOVD offset+PTRACE_R20(reg), R20; \
-  MOVD offset+PTRACE_R21(reg), R21; \
-  MOVD offset+PTRACE_R22(reg), R22; \
-  MOVD offset+PTRACE_R23(reg), R23; \
-  MOVD offset+PTRACE_R24(reg), R24; \
-  MOVD offset+PTRACE_R25(reg), R25; \
-  MOVD offset+PTRACE_R26(reg), R26; \
-  MOVD offset+PTRACE_R27(reg), R27; \
-  MOVD offset+PTRACE_R28(reg), g; \
-  MOVD offset+PTRACE_R29(reg), R29; \
+  LDP offset+PTRACE_R0(reg), (R0, R1); \
+  LDP offset+PTRACE_R2(reg), (R2, R3); \
+  LDP offset+PTRACE_R4(reg), (R4, R5); \
+  LDP offset+PTRACE_R6(reg), (R6, R7); \
+  LDP offset+PTRACE_R8(reg), (R8, R9); \
+  LDP offset+PTRACE_R10(reg), (R10, R11); \
+  LDP offset+PTRACE_R12(reg), (R12, R13); \
+  LDP offset+PTRACE_R14(reg), (R14, R15); \
+  LDP offset+PTRACE_R16(reg), (R16, R17); \
+  LDP offset+PTRACE_R20(reg), (R20, R21); \
+  LDP offset+PTRACE_R22(reg), (R22, R23); \
+  LDP offset+PTRACE_R24(reg), (R24, R25); \
+  LDP offset+PTRACE_R26(reg), (R26, R27); \
+  LDP offset+PTRACE_R28(reg), (g, R29); \
   MOVD offset+PTRACE_R30(reg), R30;
+
+// Loads the application's fpstate.
+#define FPSTATE_EL0_LOAD() \
+  MRS TPIDR_EL1, RSV_REG; \
+  MOVD CPU_FPSTATE_EL0(RSV_REG), RSV_REG; \
+  MOVD 0(RSV_REG), RSV_REG_APP; \
+  MOVD RSV_REG_APP, FPSR; \
+  MOVD 8(RSV_REG), RSV_REG_APP; \
+  MOVD RSV_REG_APP, FPCR; \
+  ADD $16, RSV_REG, RSV_REG; \
+  WORD $0xad400640; \ // ldp q0, q1, [x18]
+  WORD $0xad410e42; \
+  WORD $0xad421644; \
+  WORD $0xad431e46; \
+  WORD $0xad442648; \
+  WORD $0xad452e4a; \
+  WORD $0xad46364c; \
+  WORD $0xad473e4e; \
+  WORD $0xad484650; \
+  WORD $0xad494e52; \
+  WORD $0xad4a5654; \
+  WORD $0xad4b5e56; \
+  WORD $0xad4c6658; \
+  WORD $0xad4d6e5a; \
+  WORD $0xad4e765c; \
+  WORD $0xad4f7e5e;
 
 #define ESR_ELx_EC_UNKNOWN	(0x00)
 #define ESR_ELx_EC_WFx		(0x01)
@@ -375,31 +374,33 @@
 	MSR RSV_REG, TTBR0_EL1; \
 	ISB $15;
 
-TEXT ·EnableVFP(SB),NOSPLIT,$0
+// FPSIMDDisableTrap disables the trap for accessing fpsimd.
+TEXT ·FPSIMDDisableTrap(SB),NOSPLIT,$0
 	MOVD $FPEN_ENABLE, R0
-	WORD $0xd5181040 //MSR R0, CPACR_EL1
+	MSR R0, CPACR_EL1
 	ISB $15
 	RET
 
-TEXT ·DisableVFP(SB),NOSPLIT,$0
-	MOVD $0, R0
-	WORD $0xd5181040 //MSR R0, CPACR_EL1
+// FPSIMDEnableTrap enables the trap for accessing fpsimd.
+TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
+	MSR $0, CPACR_EL1
 	ISB $15
 	RET
 
-#define VFP_ENABLE \
-	MOVD $FPEN_ENABLE, R0; \
-	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+// FPSIMD_DISABLE_TRAP disables the trap for accessing fpsimd.
+#define FPSIMD_DISABLE_TRAP(reg) \
+	MOVD $FPEN_ENABLE, reg; \
+	MSR reg, CPACR_EL1; \
 	ISB $15;
 
-#define VFP_DISABLE \
-	MOVD $0x0, R0; \
-	WORD $0xd5181040; \ //MSR R0, CPACR_EL1
+// FPSIMD_ENABLE_TRAP enables the trap for accessing fpsimd.
+#define FPSIMD_ENABLE_TRAP(reg) \
+	MSR $0, CPACR_EL1; \
 	ISB $15;
 
 // KERNEL_ENTRY_FROM_EL0 is the entry code of the vcpu from el0 to el1.
 #define KERNEL_ENTRY_FROM_EL0 \
-	SUB $16, RSP, RSP; \		// step1, save r18, r9 into kernel temporary stack.
+	SUB $16, RSP, RSP; \		// step1, save r18, r19 into kernel temporary stack.
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
 	WORD $0xd538d092; \    // MRS   TPIDR_EL1, R18
 	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP; \ // step2, load app context pointer.
@@ -407,8 +408,7 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 	MOVD RSV_REG_APP, R20; \
 	LDP 16*0(RSP), (RSV_REG, RSV_REG_APP); \
 	ADD $16, RSP, RSP; \
-	MOVD RSV_REG, PTRACE_R18(R20); \
-	MOVD RSV_REG_APP, PTRACE_R9(R20); \
+	STP (RSV_REG, RSV_REG_APP), PTRACE_R18(R20); \
 	MRS TPIDR_EL0, R3; \
 	MOVD R3, PTRACE_TLS(R20); \
 	WORD $0xd5384003; \      //  MRS SPSR_EL1, R3
@@ -422,7 +422,7 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 #define KERNEL_ENTRY_FROM_EL1 \
 	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// Save sentry context.
-	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R9(RSV_REG); \
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG); \
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
@@ -452,6 +452,14 @@ TEXT ·DisableVFP(SB),NOSPLIT,$0
 	MOVD R3, 8(RSP); \
 	B ·HaltEl1ExceptionAndResume(SB);
 
+// storeEl0Fpstate writes the address of application's fpstate.
+TEXT ·storeEl0Fpstate(SB),NOSPLIT,$0-8
+	MOVD value+0(FP), R1
+	ORR $0xffff000000000000, R1, R1
+	MRS  TPIDR_EL1, RSV_REG
+	MOVD R1, CPU_FPSTATE_EL0(RSV_REG)
+	RET
+
 // storeAppASID writes the application's asid value.
 TEXT ·storeAppASID(SB),NOSPLIT,$0-8
 	MOVD asid+0(FP), R1
@@ -461,17 +469,12 @@ TEXT ·storeAppASID(SB),NOSPLIT,$0-8
 
 // Halt halts execution.
 TEXT ·Halt(SB),NOSPLIT,$0
-	// Clear bluepill.
-	WORD $0xd538d092   //MRS   TPIDR_EL1, R18
-	CMP RSV_REG, R9
-	BNE mmio_exit
-	MOVD $0, CPU_REGISTERS+PTRACE_R9(RSV_REG)
-
-mmio_exit:
 	// Disable fpsimd.
 	WORD $0xd5381041 // MRS CPACR_EL1, R1
 	MOVD R1, CPU_LAZY_VFP(RSV_REG)
-	VFP_DISABLE
+	DSB $15
+
+	FPSIMD_ENABLE_TRAP(RSV_REG)
 
 	// Trigger MMIO_EXIT/_KVM_HYPERCALL_VMEXIT.
 	//
@@ -529,7 +532,7 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	// Step1, save sentry context into memory.
 	MRS TPIDR_EL1, RSV_REG
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS)
-	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R9(RSV_REG)
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG)
 	MRS TPIDR_EL0, R3
 	MOVD R3, CPU_REGISTERS+PTRACE_TLS(RSV_REG)
 
@@ -572,8 +575,7 @@ do_exit_to_el0:
 	MSR RSV_REG, TPIDR_EL0
 
 	// switch to user pagetable.
-	MOVD PTRACE_R18(RSV_REG_APP), RSV_REG
-	MOVD PTRACE_R9(RSV_REG_APP), RSV_REG_APP
+	LDP PTRACE_R18(RSV_REG_APP), (RSV_REG, RSV_REG_APP)
 
 	SUB $STACK_FRAME_SIZE, RSP, RSP
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP)
@@ -610,7 +612,7 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 	SWITCH_TO_KVM_PAGETABLE()
 	MRS TPIDR_EL1, RSV_REG
 
-	MOVD CPU_REGISTERS+PTRACE_R9(RSV_REG), RSV_REG_APP
+	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
 
 	ERET()
 
@@ -634,6 +636,9 @@ TEXT ·Start(SB),NOSPLIT,$0
 	MOVD R8, RSV_REG
 	ORR $0xffff000000000000, RSV_REG, RSV_REG
 	WORD $0xd518d092        //MSR R18, TPIDR_EL1
+
+	// Enable trap for accessing fpsimd.
+	MSR $0, CPACR_EL1
 
 	// Init.
 	MOVD $SCTLR_EL1_DEFAULT, R1 // re-enable the mmu.
@@ -671,6 +676,10 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	BEQ el1_da                        // data abort in EL1
 	CMP $ESR_ELx_EC_IABT_CUR, R24
 	BEQ el1_ia                        // instruction abort in EL1
+	CMP $ESR_ELx_EC_FP_ASIMD, R24
+	BEQ el1_fpsimd_acc                // FP/ASIMD access
+	CMP $ESR_ELx_EC_SVE, R24
+	BEQ el1_sve_acc                   // SVE access
 	CMP $ESR_ELx_EC_SP_ALIGN, R24
 	BEQ el1_sp_pc                     // stack alignment exception
 	CMP $ESR_ELx_EC_PC_ALIGN, R24
@@ -681,10 +690,6 @@ TEXT ·El1_sync(SB),NOSPLIT,$0
 	BEQ el1_svc                       // SVC in 64-bit state
 	CMP $ESR_ELx_EC_BREAKPT_CUR, R24
 	BEQ el1_dbg                       // debug exception in EL1
-	CMP $ESR_ELx_EC_FP_ASIMD, R24
-	BEQ el1_fpsimd_acc                // FP/ASIMD access
-	CMP $ESR_ELx_EC_SVE, R24
-	BEQ el1_sve_acc                   // SVE access
 	B el1_invalid
 
 el1_da:
@@ -701,8 +706,21 @@ el1_dbg:
 	EXCEPTION_EL1(El1SyncDbg)
 el1_fpsimd_acc:
 el1_sve_acc:
-	VFP_ENABLE
-	B ·kernelExitToEl1(SB)  // Resume.
+	FPSIMD_DISABLE_TRAP(RSV_REG)
+
+	// Restore context.
+	MRS TPIDR_EL1, RSV_REG
+
+	// Restore sp.
+	MOVD CPU_REGISTERS+PTRACE_SP(RSV_REG), R1
+	MOVD R1, RSP
+
+	// Restore common registers.
+	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
+	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
+
+	ERET()	// return to el1.
+
 el1_invalid:
 	EXCEPTION_EL1(El1SyncInv)
 
@@ -766,9 +784,20 @@ el0_da:
 el0_ia:
 	EXCEPTION_EL0(PageFault)
 el0_fpsimd_acc:
-	EXCEPTION_EL0(El0SyncFpsimdAcc)
 el0_sve_acc:
-	EXCEPTION_EL0(El0SyncSveAcc)
+	FPSIMD_DISABLE_TRAP(RSV_REG)
+	FPSTATE_EL0_LOAD()
+
+	// Restore context.
+	MRS TPIDR_EL1, RSV_REG
+	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP
+
+	// Restore R0-R30
+	REGISTERS_LOAD(RSV_REG_APP, 0)
+	MOVD PTRACE_R18(RSV_REG_APP), RSV_REG
+	MOVD PTRACE_R19(RSV_REG_APP), RSV_REG_APP
+
+	ERET()  // return to el0.
 el0_fpsimd_exc:
 	EXCEPTION_EL0(El0SyncFpsimdExc)
 el0_sp_pc:
