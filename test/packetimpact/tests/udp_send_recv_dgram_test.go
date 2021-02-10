@@ -32,6 +32,7 @@ import (
 
 func init() {
 	testbench.Initialize(flag.CommandLine)
+	testbench.RPCTimeout = 500 * time.Millisecond
 }
 
 type udpConn interface {
