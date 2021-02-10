@@ -32,14 +32,13 @@ func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &e.stype)
 }
 
-func (e *connectionedEndpoint) afterLoad() {}
-
 func (e *connectionedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.baseEndpoint)
 	stateSourceObject.Load(1, &e.id)
 	stateSourceObject.Load(2, &e.idGenerator)
 	stateSourceObject.Load(3, &e.stype)
 	stateSourceObject.LoadValue(4, new([]*connectionedEndpoint), func(y interface{}) { e.loadAcceptedChan(y.([]*connectionedEndpoint)) })
+	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
 func (e *connectionlessEndpoint) StateTypeName() string {
@@ -59,10 +58,9 @@ func (e *connectionlessEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &e.baseEndpoint)
 }
 
-func (e *connectionlessEndpoint) afterLoad() {}
-
 func (e *connectionlessEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.baseEndpoint)
+	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
 func (q *queue) StateTypeName() string {

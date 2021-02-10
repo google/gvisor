@@ -16,6 +16,7 @@ package host
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -206,7 +207,7 @@ func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMess
 	// only as much of the message as fits in the send buffer.
 	truncate := c.stype == linux.SOCK_STREAM
 
-	n, totalLen, err := fdWriteVec(c.file.FD(), data, c.sndbuf, truncate)
+	n, totalLen, err := fdWriteVec(c.file.FD(), data, c.SendMaxQueueSize(), truncate)
 	if n < totalLen && err == nil {
 		// The host only returns a short write if it would otherwise
 		// block (and only for stream sockets).
@@ -282,7 +283,7 @@ func (c *ConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool,
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
-	rl, ml, cl, cTrunc, err := fdReadVec(c.file.FD(), data, []byte(cm), peek, c.sndbuf)
+	rl, ml, cl, cTrunc, err := fdReadVec(c.file.FD(), data, []byte(cm), peek, c.RecvMaxQueueSize())
 	if rl > 0 && err != nil {
 		// We got some data, so all we need to do on error is return
 		// the data that we got. Short reads are fine, no need to
@@ -363,14 +364,14 @@ func (c *ConnectedEndpoint) RecvQueuedSize() int64 {
 
 // SendMaxQueueSize implements transport.Receiver.SendMaxQueueSize.
 func (c *ConnectedEndpoint) SendMaxQueueSize() int64 {
-	return int64(c.sndbuf)
+	return atomic.LoadInt64(&c.sndbuf)
 }
 
 // RecvMaxQueueSize implements transport.Receiver.RecvMaxQueueSize.
 func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
 	// the same size as the send buffer.
-	return int64(c.sndbuf)
+	return atomic.LoadInt64(&c.sndbuf)
 }
 
 // Release implements transport.ConnectedEndpoint.Release and transport.Receiver.Release.
@@ -380,5 +381,12 @@ func (c *ConnectedEndpoint) Release(ctx context.Context) {
 
 // CloseUnread implements transport.ConnectedEndpoint.CloseUnread.
 func (c *ConnectedEndpoint) CloseUnread() {}
+
+// SetSendBufferSize implements transport.ConnectedEndpoint.SetSendBufferSize.
+func (c *ConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
+	// gVisor does not permit setting of SO_SNDBUF for host backed unix domain
+	// sockets.
+	return atomic.LoadInt64(&c.sndbuf)
+}
 
 // LINT.ThenChange(../../fsimpl/host/socket.go)
