@@ -18,3 +18,61 @@
 // the mitigate also handles computing available CPU in kubernetes kube_config
 // files.
 package mitigate
+
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/flag"
+)
+
+// Mitigate handles high level mitigate operations provided to runsc.
+type Mitigate struct {
+	dryRun bool     // Run the command without changing the underlying system.
+	other  mitigate // Struct holds extra mitigate logic.
+}
+
+// Usage implments Usage for cmd.Mitigate.
+func (m Mitigate) Usage() string {
+	usageString := `mitigate [flags]
+
+This command mitigates an underlying system against side channel attacks.
+The command checks /proc/cpuinfo for cpus having key vulnerablilities (meltdown,
+l1tf, mds, swapgs, taa). If cpus are found to have one of the vulnerabilities,
+all but one cpu is shutdown on each core via
+/sys/devices/system/cpu/cpu{N}/online.
+`
+	return usageString + m.other.usage()
+}
+
+// SetFlags sets flags for the command Mitigate.
+func (m Mitigate) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&m.dryRun, "dryrun", false, "run the command without changing system")
+	m.other.setFlags(f)
+}
+
+// Execute executes the Mitigate command.
+func (m Mitigate) Execute(data []byte) error {
+	set, err := newCPUSet(data, m.other.vulnerable)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Mitigate found the following CPUs...")
+	log.Infof("%s", set)
+
+	shutdownList := set.getShutdownList()
+	log.Infof("Shutting down threads on thread pairs.")
+	for _, t := range shutdownList {
+		log.Infof("Shutting down thread: %s", t)
+		if m.dryRun {
+			continue
+		}
+		if err := t.shutdown(); err != nil {
+			return fmt.Errorf("error shutting down thread: %s err: %v", t, err)
+		}
+	}
+	log.Infof("Shutdown successful.")
+	m.other.execute(set, m.dryRun)
+	return nil
+}
