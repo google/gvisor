@@ -4,7 +4,7 @@ package(licenses = ["notice"])
 
 go_test(
     name = "integration_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "forward_test.go",
         "iptables_test.go",
