@@ -228,7 +228,7 @@ type KernelArchState struct {
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
 	// stack is the stack used for interrupts on this CPU.
-	stack [512]byte
+	stack [128]byte
 
 	// errorCode is the error code from the last exception.
 	errorCode uintptr
@@ -244,6 +244,9 @@ type CPUArchState struct {
 
 	// faultAddr is the value of far_el1.
 	faultAddr uintptr
+
+	// el0Fp is the address of application's fpstate.
+	el0Fp uintptr
 
 	// ttbr0Kvm is the value of ttbr0_el1 for sentry.
 	ttbr0Kvm uintptr
@@ -339,6 +342,7 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_ERROR_CODE       0x%02x\n", reflect.ValueOf(&c.errorCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_ERROR_TYPE       0x%02x\n", reflect.ValueOf(&c.errorType).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_FAULT_ADDR       0x%02x\n", reflect.ValueOf(&c.faultAddr).Pointer()-reflect.ValueOf(c).Pointer())
+	fmt.Fprintf(w, "#define CPU_FPSTATE_EL0      0x%02x\n", reflect.ValueOf(&c.el0Fp).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_TTBR0_KVM	     0x%02x\n", reflect.ValueOf(&c.ttbr0Kvm).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_TTBR0_APP        0x%02x\n", reflect.ValueOf(&c.ttbr0App).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_VECTOR_CODE      0x%02x\n", reflect.ValueOf(&c.vecCode).Pointer()-reflect.ValueOf(c).Pointer())

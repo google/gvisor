@@ -173,8 +173,7 @@ func (s *SignalContext64) SizeBytes() int {
     return 32 +
         8*31 +
         1*8 +
-        (*FpsimdContext)(nil).SizeBytes() +
-        1*3568
+        (*FpsimdContext)(nil).SizeBytes()
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
@@ -197,10 +196,6 @@ func (s *SignalContext64) MarshalBytes(dst []byte) {
     }
     s.Fpsimd64.MarshalBytes(dst[:s.Fpsimd64.SizeBytes()])
     dst = dst[s.Fpsimd64.SizeBytes():]
-    for idx := 0; idx < 3568; idx++ {
-        dst[0] = byte(s.Reserved[idx])
-        dst = dst[1:]
-    }
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
@@ -223,10 +218,6 @@ func (s *SignalContext64) UnmarshalBytes(src []byte) {
     }
     s.Fpsimd64.UnmarshalBytes(src[:s.Fpsimd64.SizeBytes()])
     src = src[s.Fpsimd64.SizeBytes():]
-    for idx := 0; idx < 3568; idx++ {
-        s.Reserved[idx] = uint8(src[0])
-        src = src[1:]
-    }
 }
 
 // Packed implements marshal.Marshallable.Packed.
