@@ -374,8 +374,8 @@ go_repository(
     name = "org_golang_google_grpc",
     build_file_proto_mode = "disable",
     importpath = "google.golang.org/grpc",
-    sum = "h1:cb+I9RwgcErlwAuOVnGhJ2d3YrcdwGXw+RPArsTWot4=",
-    version = "v1.36.0-dev.0.20210122012134-2c42474aca0c",
+    sum = "h1:iGG0ZwQMaxJT/qsL0nnzZCg+4aiWHuQy3MytzLieAjo=",
+    version = "v1.36.0-dev.0.20210208035533-9280052d3665",
 )
 
 go_repository(
@@ -514,8 +514,8 @@ go_repository(
 go_repository(
     name = "com_github_konsorten_go_windows_terminal_sequences",
     importpath = "github.com/konsorten/go-windows-terminal-sequences",
-    sum = "h1:CE8S1cTafDpPvMhIxNJKvHsGVBgn1xWYf1NbHQhywc8=",
-    version = "v1.0.3",
+    sum = "h1:DB17ag19krx9CFsz4o3enTrPXyIXCl+2iCXH/aMAp9s=",
+    version = "v1.0.2",
 )
 
 go_repository(
@@ -634,8 +634,8 @@ go_repository(
 go_repository(
     name = "com_github_containerd_continuity",
     importpath = "github.com/containerd/continuity",
-    sum = "h1:6ejg6Lkk8dskcM7wQ28gONkukbQkM4qpj4RnYbpFzrI=",
-    version = "v0.0.0-20201208142359-180525291bb7",
+    sum = "h1:6JKvHHt396/qabvMhnhUZvWaHZzfVfldxE60TK8YLhg=",
+    version = "v0.0.0-20210208174643-50096c924a4e",
 )
 
 go_repository(
