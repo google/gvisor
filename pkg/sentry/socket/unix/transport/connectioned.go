@@ -128,7 +128,9 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProv
 		idGenerator:  uid,
 		stype:        stype,
 	}
-	ep.ops.InitHandler(ep, nil, nil)
+
+	ep.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
+	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits)
 	return ep
 }
 
@@ -137,9 +139,9 @@ func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (E
 	a := newConnectioned(ctx, stype, uid)
 	b := newConnectioned(ctx, stype, uid)
 
-	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
+	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: defaultBufferSize}
 	q1.InitRefs()
-	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: initialLimit}
+	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: defaultBufferSize}
 	q2.InitRefs()
 
 	if stype == linux.SOCK_STREAM {
@@ -173,7 +175,8 @@ func NewExternal(ctx context.Context, stype linux.SockType, uid UniqueIDProvider
 		idGenerator:  uid,
 		stype:        stype,
 	}
-	ep.ops.InitHandler(ep, nil, nil)
+	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits)
+	ep.ops.SetSendBufferSize(connected.SendMaxQueueSize(), false /* notify */)
 	return ep
 }
 
@@ -296,16 +299,18 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		idGenerator: e.idGenerator,
 		stype:       e.stype,
 	}
-	ne.ops.InitHandler(ne, nil, nil)
+	ne.ops.InitHandler(ne, &stackHandler{}, getSendBufferLimits)
+	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 
-	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
+	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: defaultBufferSize}
 	readQueue.InitRefs()
 	ne.connected = &connectedEndpoint{
 		endpoint:   ce,
 		writeQueue: readQueue,
 	}
 
-	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: initialLimit}
+	// Make sure the accepted endpoint inherits this listening socket's SO_SNDBUF.
+	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: e.ops.GetSendBufferSize()}
 	writeQueue.InitRefs()
 	if e.stype == linux.SOCK_STREAM {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
@@ -357,6 +362,9 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
 		e.receiver = r
 		e.connected = ce
+		// Make sure the newly created connected endpoint's write queue is updated
+		// to reflect this endpoint's send buffer size.
+		e.connected.SetSendBufferSize(e.ops.GetSendBufferSize())
 	}
 
 	return server.BidirectionalConnect(ctx, e, returnConnect)
@@ -494,4 +502,12 @@ func (e *connectionedEndpoint) State() uint32 {
 		return linux.SS_CONNECTED
 	}
 	return linux.SS_UNCONNECTED
+}
+
+// OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
+func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
+	if e.Connected() {
+		return e.baseEndpoint.connected.SetSendBufferSize(v)
+	}
+	return v
 }

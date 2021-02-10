@@ -379,7 +379,7 @@ TEST_P(AllSocketPairTest, RcvBufSucceeds) {
   EXPECT_GT(size, 0);
 }
 
-TEST_P(AllSocketPairTest, SndBufSucceeds) {
+TEST_P(AllSocketPairTest, GetSndBufSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int size = 0;
   socklen_t size_size = sizeof(size);

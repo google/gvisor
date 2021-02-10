@@ -4393,12 +4393,7 @@ func checkRecvBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 	t.Helper()
 
-	s, err := ep.SocketOptions().GetSendBufferSize()
-	if err != nil {
-		t.Fatalf("GetSendBufferSize failed: %s", err)
-	}
-
-	if int(s) != v {
+	if s := ep.SocketOptions().GetSendBufferSize(); int(s) != v {
 		t.Fatalf("got send buffer size = %d, want = %d", s, v)
 	}
 }

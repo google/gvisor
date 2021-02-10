@@ -26,8 +26,16 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// initialLimit is the starting limit for the socket buffers.
-const initialLimit = 16 * 1024
+const (
+	// The minimum size of the send/receive buffers.
+	minimumBufferSize = 4 << 10 // 4 KiB (match default in linux)
+
+	// The default size of the send/receive buffers.
+	defaultBufferSize = 208 << 10 // 208 KiB  (default in linux for net.core.wmem_default)
+
+	// The maximum permitted size for the send/receive buffers.
+	maxBufferSize = 4 << 20 // 4 MiB 4 MiB (default in linux for net.core.wmem_max)
+)
 
 // A RightsControlMessage is a control message containing FDs.
 //
@@ -627,6 +635,10 @@ type ConnectedEndpoint interface {
 	// CloseUnread sets the fact that this end is closed with unread data to
 	// the peer socket.
 	CloseUnread()
+
+	// SetSendBufferSize is called when the endpoint's send buffer size is
+	// changed.
+	SetSendBufferSize(v int64) (newSz int64)
 }
 
 // +stateify savable
@@ -720,6 +732,14 @@ func (e *connectedEndpoint) Release(ctx context.Context) {
 // CloseUnread implements ConnectedEndpoint.CloseUnread.
 func (e *connectedEndpoint) CloseUnread() {
 	e.writeQueue.CloseUnread()
+}
+
+// SetSendBufferSize implements ConnectedEndpoint.SetSendBufferSize.
+// SetSendBufferSize sets the send buffer size for the write queue to the
+// specified value.
+func (e *connectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
+	e.writeQueue.SetMaxQueueSize(v)
+	return v
 }
 
 // baseEndpoint is an embeddable unix endpoint base used in both the connected and connectionless
@@ -849,27 +869,6 @@ func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	return nil
 }
 
-// IsUnixSocket implements tcpip.SocketOptionsHandler.IsUnixSocket.
-func (e *baseEndpoint) IsUnixSocket() bool {
-	return true
-}
-
-// GetSendBufferSize implements tcpip.SocketOptionsHandler.GetSendBufferSize.
-func (e *baseEndpoint) GetSendBufferSize() (int64, tcpip.Error) {
-	e.Lock()
-	defer e.Unlock()
-
-	if !e.Connected() {
-		return -1, &tcpip.ErrNotConnected{}
-	}
-
-	v := e.connected.SendMaxQueueSize()
-	if v < 0 {
-		return -1, &tcpip.ErrQueueSizeNotSupported{}
-	}
-	return v, nil
-}
-
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
@@ -986,4 +985,36 @@ func (e *baseEndpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 // Release implements BoundEndpoint.Release.
 func (*baseEndpoint) Release(context.Context) {
 	// Binding a baseEndpoint doesn't take a reference.
+}
+
+// stackHandler is just a stub implementation of tcpip.StackHandler to provide
+// when initializing socketoptions.
+type stackHandler struct {
+}
+
+// Option implements tcpip.StackHandler.
+func (h *stackHandler) Option(option interface{}) tcpip.Error {
+	panic("unimplemented")
+}
+
+// TransportProtocolOption implements tcpip.StackHandler.
+func (h *stackHandler) TransportProtocolOption(proto tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) tcpip.Error {
+	panic("unimplemented")
+}
+
+// getSendBufferLimits implements tcpip.GetSendBufferLimits.
+//
+// AF_UNIX sockets buffer sizes are not tied to the networking stack/namespace
+// in linux but are bound by net.core.(wmem|rmem)_(max|default).
+//
+// In gVisor net.core sysctls today are not exposed or if exposed are currently
+// tied to the networking stack in use. This makes it complicated for AF_UNIX
+// when we are in a new namespace w/ no networking stack. As a result for now we
+// define default/max values here in the unix socket implementation itself.
+func getSendBufferLimits(tcpip.StackHandler) tcpip.SendBufferSizeOption {
+	return tcpip.SendBufferSizeOption{
+		Min:     minimumBufferSize,
+		Default: defaultBufferSize,
+		Max:     maxBufferSize,
+	}
 }

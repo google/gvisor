@@ -855,10 +855,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		size, err := ep.SocketOptions().GetSendBufferSize()
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
+		size := ep.SocketOptions().GetSendBufferSize()
 
 		if size > math.MaxInt32 {
 			size = math.MaxInt32
@@ -1645,13 +1642,6 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 	case linux.SO_SNDBUF:
 		if len(optVal) < sizeOfInt32 {
 			return syserr.ErrInvalidArgument
-		}
-
-		family, _, _ := s.Type()
-		// TODO(gvisor.dev/issue/5132): We currently do not support
-		// setting this option for unix sockets.
-		if family == linux.AF_UNIX {
-			return nil
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)

@@ -18,6 +18,8 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
@@ -59,6 +61,39 @@ TEST_P(SeqpacketUnixSocketPairTest, Sendto) {
   char data[10] = {};
   ASSERT_THAT(read(sockets->first_fd(), data, sizeof(data)),
               SyscallSucceedsWithValue(3));
+}
+
+TEST_P(SeqpacketUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int sock = sockets->first_fd();
+  int buf_size = 0;
+  socklen_t buf_size_len = sizeof(buf_size);
+  ASSERT_THAT(getsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buf_size, &buf_size_len),
+              SyscallSucceeds());
+  int opts;
+  ASSERT_THAT(opts = fcntl(sock, F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(sock, F_SETFL, opts), SyscallSucceeds());
+
+  std::vector<char> buf(buf_size / 4);
+  // Write till the socket buffer is full.
+  while (RetryEINTR(send)(sock, buf.data(), buf.size(), 0) != -1) {
+    // Sleep to give linux a chance to move data from the send buffer to the
+    // receive buffer.
+    absl::SleepFor(absl::Milliseconds(10));  // 10ms.
+  }
+  // The last error should have been EWOULDBLOCK.
+  ASSERT_EQ(errno, EWOULDBLOCK);
+
+  // Now increase the socket send buffer.
+  buf_size = buf_size * 2;
+  ASSERT_THAT(
+      setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size)),
+      SyscallSucceeds());
+
+  // The send should succeed again.
+  ASSERT_THAT(RetryEINTR(send)(sock, buf.data(), buf.size(), 0),
+              SyscallSucceeds());
 }
 
 }  // namespace

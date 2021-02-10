@@ -1698,11 +1698,7 @@ func (e *endpoint) OnCorkOptionSet(v bool) {
 }
 
 func (e *endpoint) getSendBufferSize() int {
-	sndBufSize, err := e.ops.GetSendBufferSize()
-	if err != nil {
-		panic(fmt.Sprintf("e.ops.GetSendBufferSize() = %s", err))
-	}
-	return int(sndBufSize)
+	return int(e.ops.GetSendBufferSize())
 }
 
 // SetSockOptInt sets a socket option.

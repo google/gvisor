@@ -17,6 +17,8 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
@@ -132,6 +134,84 @@ TEST_P(StreamUnixSocketPairTest, GetSocketAcceptConn) {
 
   ASSERT_EQ(length, sizeof(got));
   EXPECT_EQ(got, 0);
+}
+
+TEST_P(StreamUnixSocketPairTest, SetSocketSendBuf) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  auto s = sockets->first_fd();
+  int max = 0;
+  int min = 0;
+  {
+    // Discover maxmimum buffer size by setting to a really large value.
+    constexpr int kRcvBufSz = INT_MAX;
+    ASSERT_THAT(
+        setsockopt(s, SOL_SOCKET, SO_SNDBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+        SyscallSucceeds());
+
+    max = 0;
+    socklen_t max_len = sizeof(max);
+    ASSERT_THAT(getsockopt(s, SOL_SOCKET, SO_SNDBUF, &max, &max_len),
+                SyscallSucceeds());
+  }
+
+  {
+    // Discover minimum buffer size by setting it to zero.
+    constexpr int kRcvBufSz = 0;
+    ASSERT_THAT(
+        setsockopt(s, SOL_SOCKET, SO_SNDBUF, &kRcvBufSz, sizeof(kRcvBufSz)),
+        SyscallSucceeds());
+
+    socklen_t min_len = sizeof(min);
+    ASSERT_THAT(getsockopt(s, SOL_SOCKET, SO_SNDBUF, &min, &min_len),
+                SyscallSucceeds());
+  }
+
+  int quarter_sz = min + (max - min) / 4;
+  ASSERT_THAT(
+      setsockopt(s, SOL_SOCKET, SO_SNDBUF, &quarter_sz, sizeof(quarter_sz)),
+      SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(s, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
+              SyscallSucceeds());
+
+  // Linux doubles the value set by SO_SNDBUF/SO_SNDBUF.
+  quarter_sz *= 2;
+  ASSERT_EQ(quarter_sz, val);
+}
+
+TEST_P(StreamUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int sock = sockets->first_fd();
+  int buf_size = 0;
+  socklen_t buf_size_len = sizeof(buf_size);
+  ASSERT_THAT(getsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buf_size, &buf_size_len),
+              SyscallSucceeds());
+  int opts;
+  ASSERT_THAT(opts = fcntl(sock, F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(sock, F_SETFL, opts), SyscallSucceeds());
+
+  std::vector<char> buf(buf_size / 4);
+  // Write till the socket buffer is full.
+  while (RetryEINTR(send)(sock, buf.data(), buf.size(), 0) != -1) {
+    // Sleep to give linux a chance to move data from the send buffer to the
+    // receive buffer.
+    absl::SleepFor(absl::Milliseconds(10));  // 10ms.
+  }
+  // The last error should have been EWOULDBLOCK.
+  ASSERT_EQ(errno, EWOULDBLOCK);
+
+  // Now increase the socket send buffer.
+  buf_size = buf_size * 2;
+  ASSERT_THAT(
+      setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size)),
+      SyscallSucceeds());
+
+  // The send should succeed again.
+  ASSERT_THAT(RetryEINTR(send)(sock, buf.data(), buf.size(), 0),
+              SyscallSucceeds());
 }
 
 INSTANTIATE_TEST_SUITE_P(
