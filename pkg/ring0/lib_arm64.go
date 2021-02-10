@@ -16,6 +16,9 @@
 
 package ring0
 
+// storeEl0Fpstate writes the address of application's fpstate.
+func storeEl0Fpstate(value *byte)
+
 // storeAppASID writes the application's asid value.
 func storeAppASID(asid uintptr)
 
@@ -59,11 +62,10 @@ func LoadFloatingPoint(*byte)
 // SaveFloatingPoint saves floating point state.
 func SaveFloatingPoint(*byte)
 
-// EnableVFP enables fpsimd.
-func EnableVFP()
+func FPSIMDDisableTrap()
 
 // DisableVFP disables fpsimd.
-func DisableVFP()
+func FPSIMDEnableTrap()
 
 // Init sets function pointers based on architectural features.
 //
