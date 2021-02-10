@@ -238,6 +238,8 @@ func (s *StaticData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // WritableDynamicBytesSource extends DynamicBytesSource to allow writes to the
 // underlying source.
+//
+// TODO(b/179825241): Make utility for integer-based writable files.
 type WritableDynamicBytesSource interface {
 	DynamicBytesSource
 
