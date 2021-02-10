@@ -51,6 +51,7 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",

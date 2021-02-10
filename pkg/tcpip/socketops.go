@@ -54,11 +54,10 @@ type SocketOptionsHandler interface {
 	// HasNIC is invoked to check if the NIC is valid for SO_BINDTODEVICE.
 	HasNIC(v int32) bool
 
-	// GetSendBufferSize is invoked to get the SO_SNDBUFSIZE.
-	GetSendBufferSize() (int64, Error)
-
-	// IsUnixSocket is invoked to check if the socket is of unix domain.
-	IsUnixSocket() bool
+	// OnSetSendBufferSize is invoked when the send buffer size for an endpoint is
+	// changed. The handler is invoked with the new value for the socket send
+	// buffer size. It also returns the newly set value.
+	OnSetSendBufferSize(v int64) (newSz int64)
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -95,14 +94,9 @@ func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
 	return false
 }
 
-// GetSendBufferSize implements SocketOptionsHandler.GetSendBufferSize.
-func (*DefaultSocketOptionsHandler) GetSendBufferSize() (int64, Error) {
-	return 0, nil
-}
-
-// IsUnixSocket implements SocketOptionsHandler.IsUnixSocket.
-func (*DefaultSocketOptionsHandler) IsUnixSocket() bool {
-	return false
+// OnSetSendBufferSize implements SocketOptionsHandler.OnSetSendBufferSize.
+func (*DefaultSocketOptionsHandler) OnSetSendBufferSize(v int64) (newSz int64) {
+	return v
 }
 
 // StackHandler holds methods to access the stack options. These must be
@@ -600,42 +594,41 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 }
 
 // GetSendBufferSize gets value for SO_SNDBUF option.
-func (so *SocketOptions) GetSendBufferSize() (int64, Error) {
-	if so.handler.IsUnixSocket() {
-		return so.handler.GetSendBufferSize()
-	}
-	return atomic.LoadInt64(&so.sendBufferSize), nil
+func (so *SocketOptions) GetSendBufferSize() int64 {
+	return atomic.LoadInt64(&so.sendBufferSize)
 }
 
 // SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
 // stack handler should be invoked to set the send buffer size.
 func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
-	if so.handler.IsUnixSocket() {
+	v := sendBufferSize
+
+	if !notify {
+		atomic.StoreInt64(&so.sendBufferSize, v)
 		return
 	}
 
-	v := sendBufferSize
-	if notify {
-		// TODO(b/176170271): Notify waiters after size has grown.
-		// Make sure the send buffer size is within the min and max
-		// allowed.
-		ss := so.getSendBufferLimits(so.stackHandler)
-		min := int64(ss.Min)
-		max := int64(ss.Max)
-		// Validate the send buffer size with min and max values.
-		// Multiply it by factor of 2.
-		if v > max {
-			v = max
-		}
-
-		if v < math.MaxInt32/PacketOverheadFactor {
-			v *= PacketOverheadFactor
-			if v < min {
-				v = min
-			}
-		} else {
-			v = math.MaxInt32
-		}
+	// Make sure the send buffer size is within the min and max
+	// allowed.
+	ss := so.getSendBufferLimits(so.stackHandler)
+	min := int64(ss.Min)
+	max := int64(ss.Max)
+	// Validate the send buffer size with min and max values.
+	// Multiply it by factor of 2.
+	if v > max {
+		v = max
 	}
-	atomic.StoreInt64(&so.sendBufferSize, v)
+
+	if v < math.MaxInt32/PacketOverheadFactor {
+		v *= PacketOverheadFactor
+		if v < min {
+			v = min
+		}
+	} else {
+		v = math.MaxInt32
+	}
+
+	// Notify endpoint about change in buffer size.
+	newSz := so.handler.OnSetSendBufferSize(v)
+	atomic.StoreInt64(&so.sendBufferSize, newSz)
 }

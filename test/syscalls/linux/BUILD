@@ -2346,6 +2346,7 @@ cc_library(
     deps = [
         ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
     ],
@@ -2360,6 +2361,7 @@ cc_library(
     deps = [
         ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
     ],
@@ -2678,6 +2680,7 @@ cc_binary(
     deps = [
         ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
