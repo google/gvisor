@@ -21,8 +21,14 @@
 namespace gvisor {
 namespace testing {
 
-// Opens the replica end of the passed master as R/W and nonblocking.
+// Opens the replica end of the passed master as R/W and nonblocking. It does
+// not set the replica as the controlling TTY.
 PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master);
+
+// Identical to the above OpenReplica, but flags are all specified by the
+// caller.
+PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master,
+                                         int flags);
 
 // Get the number of the replica end of the master.
 PosixErrorOr<int> ReplicaID(const FileDescriptor& master);

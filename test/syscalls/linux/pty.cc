@@ -36,6 +36,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
@@ -457,6 +458,59 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
 TEST(BasicPtyTest, OpenMasterReplica) {
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+}
+
+TEST(BasicPtyTest, OpenSetsControllingTTY) {
+  SKIP_IF(IsRunningWithVFS1());
+  // setsid either puts us in a new session or fails because we're already the
+  // session leader. Either way, this ensures we're the session leader.
+  setsid();
+
+  // Make sure we're ignoring SIGHUP, which will be sent to this process once we
+  // disconnect they TTY.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  struct sigaction old_sa;
+  ASSERT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
+  auto cleanup = Cleanup([old_sa] {
+    EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+  });
+
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor replica =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master, O_NONBLOCK | O_RDWR));
+
+  // Opening replica should make it our controlling TTY, and therefore we are
+  // able to give it up.
+  ASSERT_THAT(ioctl(replica.get(), TIOCNOTTY), SyscallSucceeds());
+}
+
+TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
+  SKIP_IF(IsRunningWithVFS1());
+  // setsid either puts us in a new session or fails because we're already the
+  // session leader. Either way, this ensures we're the session leader.
+  setsid();
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+
+  // Opening master does not set the controlling TTY, and therefore we are
+  // unable to give it up.
+  ASSERT_THAT(ioctl(master.get(), TIOCNOTTY), SyscallFailsWithErrno(ENOTTY));
+}
+
+TEST(BasicPtyTest, OpenNOCTTY) {
+  SKIP_IF(IsRunningWithVFS1());
+  // setsid either puts us in a new session or fails because we're already the
+  // session leader. Either way, this ensures we're the session leader.
+  setsid();
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(
+      OpenReplica(master, O_NOCTTY | O_NONBLOCK | O_RDWR));
+
+  // Opening replica with O_NOCTTY won't make it our controlling TTY, and
+  // therefore we are unable to give it up.
+  ASSERT_THAT(ioctl(replica.get(), TIOCNOTTY), SyscallFailsWithErrno(ENOTTY));
 }
 
 // The replica entry in /dev/pts/ disappears when the master is closed, even if
