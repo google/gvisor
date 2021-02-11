@@ -30,9 +30,9 @@ type namedPipe struct {
 // Preconditions:
 // * fs.mu must be locked.
 // * rp.Mount().CheckBeginWrite() has been called successfully.
-func (fs *filesystem) newNamedPipe(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *inode {
+func (fs *filesystem) newNamedPipe(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &namedPipe{pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize)}
-	file.inode.init(file, fs, kuid, kgid, linux.S_IFIFO|mode)
+	file.inode.init(file, fs, kuid, kgid, linux.S_IFIFO|mode, parentDir)
 	file.inode.nlink = 1 // Only the parent has a link.
 	return &file.inode
 }

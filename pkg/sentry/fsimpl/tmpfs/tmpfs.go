@@ -190,11 +190,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var root *dentry
 	switch rootFileType {
 	case linux.S_IFREG:
-		root = fs.newDentry(fs.newRegularFile(rootKUID, rootKGID, rootMode))
+		root = fs.newDentry(fs.newRegularFile(rootKUID, rootKGID, rootMode, nil /* parentDir */))
 	case linux.S_IFLNK:
-		root = fs.newDentry(fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget))
+		root = fs.newDentry(fs.newSymlink(rootKUID, rootKGID, rootMode, tmpfsOpts.RootSymlinkTarget, nil /* parentDir */))
 	case linux.S_IFDIR:
-		root = &fs.newDirectory(rootKUID, rootKGID, rootMode).dentry
+		root = &fs.newDirectory(rootKUID, rootKGID, rootMode, nil /* parentDir */).dentry
 	default:
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, fmt.Errorf("invalid tmpfs root file type: %#o", rootFileType)
@@ -385,10 +385,19 @@ type inode struct {
 
 const maxLinks = math.MaxUint32
 
-func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) {
+func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) {
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
 	}
+
+	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
+	if parentDir != nil && parentDir.inode.mode&linux.S_ISGID == linux.S_ISGID {
+		kgid = auth.KGID(parentDir.inode.gid)
+		if mode&linux.S_IFDIR == linux.S_IFDIR {
+			mode |= linux.S_ISGID
+		}
+	}
+
 	i.fs = fs
 	i.mode = uint32(mode)
 	i.uid = uint32(kuid)
@@ -519,26 +528,15 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
 		return err
 	}
+
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	var (
 		needsMtimeBump bool
 		needsCtimeBump bool
 	)
+	clearSID := false
 	mask := stat.Mask
-	if mask&linux.STATX_MODE != 0 {
-		ft := atomic.LoadUint32(&i.mode) & linux.S_IFMT
-		atomic.StoreUint32(&i.mode, ft|uint32(stat.Mode&^linux.S_IFMT))
-		needsCtimeBump = true
-	}
-	if mask&linux.STATX_UID != 0 {
-		atomic.StoreUint32(&i.uid, stat.UID)
-		needsCtimeBump = true
-	}
-	if mask&linux.STATX_GID != 0 {
-		atomic.StoreUint32(&i.gid, stat.GID)
-		needsCtimeBump = true
-	}
 	if mask&linux.STATX_SIZE != 0 {
 		switch impl := i.impl.(type) {
 		case *regularFile:
@@ -547,6 +545,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 				return err
 			}
 			if updated {
+				clearSID = true
 				needsMtimeBump = true
 				needsCtimeBump = true
 			}
@@ -555,6 +554,31 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		default:
 			return syserror.EINVAL
 		}
+	}
+	if mask&linux.STATX_UID != 0 {
+		atomic.StoreUint32(&i.uid, stat.UID)
+		needsCtimeBump = true
+		clearSID = true
+	}
+	if mask&linux.STATX_GID != 0 {
+		atomic.StoreUint32(&i.gid, stat.GID)
+		needsCtimeBump = true
+		clearSID = true
+	}
+	if mask&linux.STATX_MODE != 0 {
+		for {
+			old := atomic.LoadUint32(&i.mode)
+			ft := old & linux.S_IFMT
+			newMode := ft | uint32(stat.Mode & ^uint16(linux.S_IFMT))
+			if clearSID {
+				newMode = vfs.ClearSUIDAndSGID(newMode)
+			}
+			if swapped := atomic.CompareAndSwapUint32(&i.mode, old, newMode); swapped {
+				clearSID = false
+				break
+			}
+		}
+		needsCtimeBump = true
 	}
 	now := i.fs.clock.Now().Nanoseconds()
 	if mask&linux.STATX_ATIME != 0 {
@@ -584,6 +608,20 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		// Ignore the ctime bump, since we just set it ourselves.
 		needsCtimeBump = false
 	}
+
+	// We may have to clear the SUID/SGID bits, but didn't do so as part of
+	// STATX_MODE.
+	if clearSID {
+		for {
+			old := atomic.LoadUint32(&i.mode)
+			newMode := vfs.ClearSUIDAndSGID(old)
+			if swapped := atomic.CompareAndSwapUint32(&i.mode, old, newMode); swapped {
+				break
+			}
+		}
+		needsCtimeBump = true
+	}
+
 	if needsMtimeBump {
 		atomic.StoreInt64(&i.mtime, now)
 	}

@@ -91,13 +91,13 @@ type regularFile struct {
 	size uint64
 }
 
-func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *inode {
+func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &regularFile{
 		memFile:         fs.mfp.MemoryFile(),
 		memoryUsageKind: usage.Tmpfs,
 		seals:           linux.F_SEAL_SEAL,
 	}
-	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode)
+	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }
@@ -116,7 +116,7 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 		panic("tmpfs.newUnlinkedRegularFileDescription() called with non-tmpfs mount")
 	}
 
-	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777)
+	inode := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777, nil /* parentDir */)
 	d := fs.newDentry(inode)
 	defer d.DecRef(ctx)
 	d.name = name
@@ -443,6 +443,13 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	rw := getRegularFileReadWriter(f, offset)
 	n, err := src.CopyInTo(ctx, rw)
 	f.inode.touchCMtimeLocked()
+	for {
+		old := atomic.LoadUint32(&f.inode.mode)
+		new := vfs.ClearSUIDAndSGID(old)
+		if swapped := atomic.CompareAndSwapUint32(&f.inode.mode, old, new); swapped {
+			break
+		}
+	}
 	putRegularFileReadWriter(rw)
 	return n, n + offset, err
 }
