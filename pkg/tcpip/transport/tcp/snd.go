@@ -1041,6 +1041,7 @@ func (s *sender) enterRecovery() {
 	// the 3 duplicate ACKs and are now not in flight.
 	s.sndCwnd = s.sndSsthresh + 3
 	s.sackedOut = 0
+	s.dupAckCount = 0
 	s.fr.first = s.sndUna
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
@@ -1174,7 +1175,6 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	}
 	s.cc.HandleLossDetected()
 	s.enterRecovery()
-	s.dupAckCount = 0
 	return true
 }
 
@@ -1521,10 +1521,11 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// the lost segments.
 			s.cc.HandleLossDetected()
 			s.enterRecovery()
+			fastRetransmit = true
 		}
 
 		if s.fr.active {
-			s.rc.DoRecovery(nil, true)
+			s.rc.DoRecovery(nil, fastRetransmit)
 		}
 	}
 
