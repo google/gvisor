@@ -617,17 +617,19 @@ func TestRACKWithDuplicateACK(t *testing.T) {
 	const numPackets = 4
 	data := sendAndReceive(t, c, numPackets)
 
-	// Send three duplicate ACKs to trigger fast recovery.
+	// Send three duplicate ACKs to trigger fast recovery. The first
+	// segment is considered as lost and will be retransmitted after
+	// receiving the duplicate ACKs.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	start := c.IRS.Add(1 + seqnum.Size(maxPayload))
 	end := start.Add(seqnum.Size(maxPayload))
 	for i := 0; i < 3; i++ {
-		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{start, end}})
+		c.SendAckWithSACK(seq, 0, []header.SACKBlock{{start, end}})
 		end = end.Add(seqnum.Size(maxPayload))
 	}
 
 	// Receive the retransmitted packet.
-	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, tsOptionSize)
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
 
 	metricPollFn := func() error {
 		tcpStats := c.Stack().Stats().TCP
