@@ -116,6 +116,41 @@ TEST(SemaphoreTest, SemOpSingleNoBlock) {
   ASSERT_THAT(semop(sem.get(), nullptr, 0), SyscallFailsWithErrno(EINVAL));
 }
 
+// Tests simple timed operations that shouldn't block in a single-thread.
+TEST(SemaphoreTest, SemTimedOpSingleNoBlock) {
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  struct sembuf buf = {};
+  buf.sem_op = 1;
+  struct timespec timeout = {};
+  // 50 milliseconds.
+  timeout.tv_nsec = 5e7;
+  ASSERT_THAT(semtimedop(sem.get(), &buf, 1, &timeout), SyscallSucceeds());
+
+  buf.sem_op = -1;
+  EXPECT_THAT(semtimedop(sem.get(), &buf, 1, &timeout), SyscallSucceeds());
+
+  buf.sem_op = 0;
+  EXPECT_THAT(semtimedop(sem.get(), &buf, 1, &timeout), SyscallSucceeds());
+
+  // Error cases with invalid values.
+  EXPECT_THAT(semtimedop(sem.get() + 1, &buf, 1, &timeout),
+              SyscallFailsWithErrno(EINVAL));
+
+  buf.sem_num = 1;
+  EXPECT_THAT(semtimedop(sem.get(), &buf, 1, &timeout),
+              SyscallFailsWithErrno(EFBIG));
+  buf.sem_num = 0;
+
+  EXPECT_THAT(semtimedop(sem.get(), nullptr, 0, &timeout),
+              SyscallFailsWithErrno(EINVAL));
+
+  timeout.tv_nsec = 1e9;
+  EXPECT_THAT(semtimedop(sem.get(), &buf, 0, &timeout),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 // Tests multiple operations that shouldn't block in a single-thread.
 TEST(SemaphoreTest, SemOpMultiNoBlock) {
   AutoSem sem(semget(IPC_PRIVATE, 4, 0600 | IPC_CREAT));
@@ -182,6 +217,29 @@ TEST(SemaphoreTest, SemOpBlock) {
   buf.sem_op = -1;
   ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
   blocked.store(0);
+}
+
+// Makes a best effort attempt to ensure that operation would be timeout when
+// being blocked.
+TEST(SemaphoreTest, SemTimedOpBlock) {
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  ScopedThread th([&sem] {
+    absl::SleepFor(absl::Milliseconds(100));
+
+    struct sembuf buf = {};
+    buf.sem_op = 1;
+    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
+  });
+
+  struct sembuf buf = {};
+  buf.sem_op = -1;
+  struct timespec timeout = {};
+  timeout.tv_nsec = 5e7;
+  // semtimedop reaches the time limit, it fails with errno EAGAIN.
+  ASSERT_THAT(RetryEINTR(semtimedop)(sem.get(), &buf, 1, &timeout),
+              SyscallFailsWithErrno(EAGAIN));
 }
 
 // Tests that IPC_NOWAIT returns with no wait.

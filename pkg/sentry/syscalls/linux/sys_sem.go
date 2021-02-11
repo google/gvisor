@@ -16,6 +16,7 @@ package linux
 
 import (
 	"math"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -50,24 +51,15 @@ func Semget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Semtimedop handles: semop(int semid, struct sembuf *sops, size_t nsops, const struct timespec *timeout)
 func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	// TODO(gvisor.dev/issue/137): A non-zero timeout isn't supported.
-	if args[3].Pointer() != 0 {
-		return 0, nil, syserror.ENOSYS
+	// If the timeout argument is NULL, then semtimedop() behaves exactly like semop().
+	if args[3].Pointer() == 0 {
+		return Semop(t, args)
 	}
-	return Semop(t, args)
-}
 
-// Semop handles: semop(int semid, struct sembuf *sops, size_t nsops)
-func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := args[0].Int()
 	sembufAddr := args[1].Pointer()
 	nsops := args[2].SizeT()
-
-	r := t.IPCNamespace().SemaphoreRegistry()
-	set := r.FindByID(id)
-	if set == nil {
-		return 0, nil, syserror.EINVAL
-	}
+	timespecAddr := args[3].Pointer()
 	if nsops <= 0 {
 		return 0, nil, syserror.EINVAL
 	}
@@ -80,17 +72,59 @@ func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 
+	var timeout linux.Timespec
+	if _, err := timeout.CopyIn(t, timespecAddr); err != nil {
+		return 0, nil, err
+	}
+	if timeout.Sec < 0 || timeout.Nsec < 0 || timeout.Nsec >= 1e9 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	if err := semTimedOp(t, id, ops, true, timeout.ToDuration()); err != nil {
+		if err == syserror.ETIMEDOUT {
+			return 0, nil, syserror.EAGAIN
+		}
+		return 0, nil, err
+	}
+	return 0, nil, nil
+}
+
+// Semop handles: semop(int semid, struct sembuf *sops, size_t nsops)
+func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	id := args[0].Int()
+	sembufAddr := args[1].Pointer()
+	nsops := args[2].SizeT()
+
+	if nsops <= 0 {
+		return 0, nil, syserror.EINVAL
+	}
+	if nsops > opsMax {
+		return 0, nil, syserror.E2BIG
+	}
+
+	ops := make([]linux.Sembuf, nsops)
+	if _, err := linux.CopySembufSliceIn(t, sembufAddr, ops); err != nil {
+		return 0, nil, err
+	}
+	return 0, nil, semTimedOp(t, id, ops, false, time.Second)
+}
+
+func semTimedOp(t *kernel.Task, id int32, ops []linux.Sembuf, haveTimeout bool, timeout time.Duration) error {
+	set := t.IPCNamespace().SemaphoreRegistry().FindByID(id)
+
+	if set == nil {
+		return syserror.EINVAL
+	}
 	creds := auth.CredentialsFromContext(t)
 	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
 	for {
 		ch, num, err := set.ExecuteOps(t, ops, creds, int32(pid))
 		if ch == nil || err != nil {
-			// We're done (either on success or a failure).
-			return 0, nil, err
+			return err
 		}
-		if err = t.Block(ch); err != nil {
+		if _, err = t.BlockWithTimeout(ch, haveTimeout, timeout); err != nil {
 			set.AbortWait(num, ch)
-			return 0, nil, err
+			return err
 		}
 	}
 }
