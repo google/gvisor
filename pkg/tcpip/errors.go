@@ -32,6 +32,8 @@ type Error interface {
 	fmt.Stringer
 }
 
+// LINT.IfChange
+
 // ErrAborted indicates the operation was aborted.
 //
 // +stateify savable
@@ -536,3 +538,5 @@ func (*ErrWouldBlock) IgnoreStats() bool {
 	return true
 }
 func (*ErrWouldBlock) String() string { return "operation would block" }
+
+// LINT.ThenChange(../syserr/netstack.go)
