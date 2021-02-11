@@ -64,12 +64,12 @@ type TestCase interface {
 type baseCase struct{}
 
 // ContainerSufficient implements TestCase.ContainerSufficient.
-func (baseCase) ContainerSufficient() bool {
+func (*baseCase) ContainerSufficient() bool {
 	return false
 }
 
 // LocalSufficient implements TestCase.LocalSufficient.
-func (baseCase) LocalSufficient() bool {
+func (*baseCase) LocalSufficient() bool {
 	return false
 }
 
@@ -78,12 +78,12 @@ func (baseCase) LocalSufficient() bool {
 type localCase struct{}
 
 // ContainerSufficient implements TestCase.ContainerSufficient.
-func (localCase) ContainerSufficient() bool {
+func (*localCase) ContainerSufficient() bool {
 	return false
 }
 
 // LocalSufficient implements TestCase.LocalSufficient.
-func (localCase) LocalSufficient() bool {
+func (*localCase) LocalSufficient() bool {
 	return true
 }
 
@@ -92,12 +92,12 @@ func (localCase) LocalSufficient() bool {
 type containerCase struct{}
 
 // ContainerSufficient implements TestCase.ContainerSufficient.
-func (containerCase) ContainerSufficient() bool {
+func (*containerCase) ContainerSufficient() bool {
 	return true
 }
 
 // LocalSufficient implements TestCase.LocalSufficient.
-func (containerCase) LocalSufficient() bool {
+func (*containerCase) LocalSufficient() bool {
 	return false
 }
 
