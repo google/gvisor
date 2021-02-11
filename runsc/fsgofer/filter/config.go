@@ -182,9 +182,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	syscall.SYS_RENAMEAT:        {},
 	syscall.SYS_RESTART_SYSCALL: {},
-	syscall.SYS_RT_SIGPROCMASK:  {},
-	syscall.SYS_RT_SIGRETURN:    {},
-	syscall.SYS_SCHED_YIELD:     {},
+	// May be used by the runtime during panic().
+	syscall.SYS_RT_SIGACTION:   {},
+	syscall.SYS_RT_SIGPROCMASK: {},
+	syscall.SYS_RT_SIGRETURN:   {},
+	syscall.SYS_SCHED_YIELD:    {},
 	syscall.SYS_SENDMSG: []seccomp.Rule{
 		// Used by fdchannel.Endpoint.SendFD().
 		{
