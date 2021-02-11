@@ -277,7 +277,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return syserror.EMLINK
 		}
 		parentDir.inode.incLinksLocked() // from child's ".."
-		childDir := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode)
+		childDir := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		parentDir.insertChildLocked(&childDir.dentry, name)
 		return nil
 	})
@@ -290,15 +290,15 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		var childInode *inode
 		switch opts.Mode.FileType() {
 		case linux.S_IFREG:
-			childInode = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode)
+			childInode = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		case linux.S_IFIFO:
-			childInode = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode)
+			childInode = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 		case linux.S_IFBLK:
-			childInode = fs.newDeviceFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, vfs.BlockDevice, opts.DevMajor, opts.DevMinor)
+			childInode = fs.newDeviceFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, vfs.BlockDevice, opts.DevMajor, opts.DevMinor, parentDir)
 		case linux.S_IFCHR:
-			childInode = fs.newDeviceFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, vfs.CharDevice, opts.DevMajor, opts.DevMinor)
+			childInode = fs.newDeviceFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, vfs.CharDevice, opts.DevMajor, opts.DevMinor, parentDir)
 		case linux.S_IFSOCK:
-			childInode = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint)
+			childInode = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
 			return syserror.EINVAL
 		}
@@ -387,7 +387,7 @@ afterTrailingSymlink:
 		defer rp.Mount().EndWrite()
 		// Create and open the child.
 		creds := rp.Credentials()
-		child := fs.newDentry(fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode))
+		child := fs.newDentry(fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir))
 		parentDir.insertChildLocked(child, name)
 		child.IncRef()
 		defer child.DecRef(ctx)
@@ -727,7 +727,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parentDir *directory, name string) error {
 		creds := rp.Credentials()
-		child := fs.newDentry(fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target))
+		child := fs.newDentry(fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir))
 		parentDir.insertChildLocked(child, name)
 		return nil
 	})
