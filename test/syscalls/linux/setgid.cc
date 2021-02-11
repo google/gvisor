@@ -86,7 +86,7 @@ class SetgidDirTest : public ::testing::Test {
     original_gid_ = getegid();
 
     // TODO(b/175325250): Enable when setgid directories are supported.
-    SKIP_IF(IsRunningOnGvisor());
+    SKIP_IF(IsRunningWithVFS1());
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
     temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
@@ -305,9 +305,7 @@ struct FileModeTestcase {
 class FileModeTest : public ::testing::TestWithParam<FileModeTestcase> {};
 
 TEST_P(FileModeTest, WriteToFile) {
-  // TODO(b/175325250): Enable when setgid directories are supported.
-  SKIP_IF(IsRunningOnGvisor());
-
+  SKIP_IF(IsRunningWithVFS1());
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
@@ -330,9 +328,7 @@ TEST_P(FileModeTest, WriteToFile) {
 }
 
 TEST_P(FileModeTest, TruncateFile) {
-  // TODO(b/175325250): Enable when setgid directories are supported.
-  SKIP_IF(IsRunningOnGvisor());
-
+  SKIP_IF(IsRunningWithVFS1());
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
@@ -342,6 +338,11 @@ TEST_P(FileModeTest, TruncateFile) {
   struct stat stats;
   ASSERT_THAT(fstat(fd.get(), &stats), SyscallSucceeds());
   EXPECT_EQ(stats.st_mode & kDirmodeMask, GetParam().mode);
+
+  // Write something to the file, as truncating an empty file is a no-op.
+  constexpr char c = 'M';
+  ASSERT_THAT(write(fd.get(), &c, sizeof(c)),
+              SyscallSucceedsWithValue(sizeof(c)));
 
   // For security reasons, truncating the file clears the SUID bit, and clears
   // the SGID bit when the group executable bit is unset (which is not a true

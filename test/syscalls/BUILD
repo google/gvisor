@@ -89,7 +89,7 @@ syscall_test(
     size = "medium",
     add_overlay = True,
     test = "//test/syscalls/linux:chown_test",
-    use_tmpfs = True,  # chwon tests require gofer to be running as root.
+    use_tmpfs = True,  # chown tests require gofer to be running as root.
 )
 
 syscall_test(
@@ -557,7 +557,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
     test = "//test/syscalls/linux:setgid_test",
+    # setgid tests require the gofer's user namespace to have multiple groups,
+    # but bazel only provides one.
+    use_tmpfs = True,
 )
 
 syscall_test(

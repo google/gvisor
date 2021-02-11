@@ -49,9 +49,9 @@ type directory struct {
 	childList dentryList
 }
 
-func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode) *directory {
+func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *directory {
 	dir := &directory{}
-	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode)
+	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
 	dir.inode.nlink = 2 // from "." and parent directory or ".." for root
 	dir.dentry.inode = &dir.inode
 	dir.dentry.vfsd.Init(&dir.dentry)
