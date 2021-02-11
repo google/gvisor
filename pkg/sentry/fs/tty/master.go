@@ -153,7 +153,7 @@ func (mf *masterFileOperations) Write(ctx context.Context, _ *fs.File, src userm
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (mf *masterFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (mf *masterFileOperations) Ioctl(ctx context.Context, file *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
@@ -189,7 +189,7 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, _ *fs.File, io userme
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
-		return 0, mf.t.setControllingTTY(ctx, args, true /* isMaster */)
+		return 0, mf.t.setControllingTTY(ctx, args, true /* isMaster */, file.Flags().Read)
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
 		return 0, mf.t.releaseControllingTTY(ctx, args, true /* isMaster */)

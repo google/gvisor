@@ -24,11 +24,16 @@ namespace gvisor {
 namespace testing {
 
 PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master) {
+  return OpenReplica(master, O_NONBLOCK | O_RDWR | O_NOCTTY);
+}
+
+PosixErrorOr<FileDescriptor> OpenReplica(const FileDescriptor& master,
+                                         int flags) {
   PosixErrorOr<int> n = ReplicaID(master);
   if (!n.ok()) {
     return PosixErrorOr<FileDescriptor>(n.error());
   }
-  return Open(absl::StrCat("/dev/pts/", n.ValueOrDie()), O_RDWR | O_NONBLOCK);
+  return Open(absl::StrCat("/dev/pts/", n.ValueOrDie()), flags);
 }
 
 PosixErrorOr<int> ReplicaID(const FileDescriptor& master) {

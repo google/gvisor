@@ -138,7 +138,7 @@ func (sf *replicaFileOperations) Write(ctx context.Context, _ *fs.File, src user
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (sf *replicaFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (sf *replicaFileOperations) Ioctl(ctx context.Context, file *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
@@ -167,7 +167,7 @@ func (sf *replicaFileOperations) Ioctl(ctx context.Context, _ *fs.File, io userm
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
-		return 0, sf.si.t.setControllingTTY(ctx, args, false /* isMaster */)
+		return 0, sf.si.t.setControllingTTY(ctx, args, false /* isMaster */, file.Flags().Read)
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
 		return 0, sf.si.t.releaseControllingTTY(ctx, args, false /* isMaster */)

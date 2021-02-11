@@ -1441,6 +1441,7 @@ cc_binary(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:cleanup",
         "//test/util:posix_error",
         "//test/util:pty_util",
         "//test/util:test_main",
