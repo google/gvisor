@@ -1590,7 +1590,7 @@ type IPStats struct {
 	// OptionUnknownReceived is the number of unknown IP options seen.
 	OptionUnknownReceived *StatCounter
 
-	// LINT.ThenChange(network/ip/stats.go:MultiCounterIPStats)
+	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPStats)
 }
 
 // ARPStats collects ARP-specific stats.
