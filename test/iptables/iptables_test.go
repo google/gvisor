@@ -166,254 +166,254 @@ func sendIP(ip net.IP) error {
 }
 
 func TestFilterInputDropUDP(t *testing.T) {
-	singleTest(t, FilterInputDropUDP{})
+	singleTest(t, &FilterInputDropUDP{})
 }
 
 func TestFilterInputDropUDPPort(t *testing.T) {
-	singleTest(t, FilterInputDropUDPPort{})
+	singleTest(t, &FilterInputDropUDPPort{})
 }
 
 func TestFilterInputDropDifferentUDPPort(t *testing.T) {
-	singleTest(t, FilterInputDropDifferentUDPPort{})
+	singleTest(t, &FilterInputDropDifferentUDPPort{})
 }
 
 func TestFilterInputDropAll(t *testing.T) {
-	singleTest(t, FilterInputDropAll{})
+	singleTest(t, &FilterInputDropAll{})
 }
 
 func TestFilterInputDropOnlyUDP(t *testing.T) {
-	singleTest(t, FilterInputDropOnlyUDP{})
+	singleTest(t, &FilterInputDropOnlyUDP{})
 }
 
 func TestFilterInputDropTCPDestPort(t *testing.T) {
-	singleTest(t, FilterInputDropTCPDestPort{})
+	singleTest(t, &FilterInputDropTCPDestPort{})
 }
 
 func TestFilterInputDropTCPSrcPort(t *testing.T) {
-	singleTest(t, FilterInputDropTCPSrcPort{})
+	singleTest(t, &FilterInputDropTCPSrcPort{})
 }
 
 func TestFilterInputCreateUserChain(t *testing.T) {
-	singleTest(t, FilterInputCreateUserChain{})
+	singleTest(t, &FilterInputCreateUserChain{})
 }
 
 func TestFilterInputDefaultPolicyAccept(t *testing.T) {
-	singleTest(t, FilterInputDefaultPolicyAccept{})
+	singleTest(t, &FilterInputDefaultPolicyAccept{})
 }
 
 func TestFilterInputDefaultPolicyDrop(t *testing.T) {
-	singleTest(t, FilterInputDefaultPolicyDrop{})
+	singleTest(t, &FilterInputDefaultPolicyDrop{})
 }
 
 func TestFilterInputReturnUnderflow(t *testing.T) {
-	singleTest(t, FilterInputReturnUnderflow{})
+	singleTest(t, &FilterInputReturnUnderflow{})
 }
 
 func TestFilterOutputDropTCPDestPort(t *testing.T) {
-	singleTest(t, FilterOutputDropTCPDestPort{})
+	singleTest(t, &FilterOutputDropTCPDestPort{})
 }
 
 func TestFilterOutputDropTCPSrcPort(t *testing.T) {
-	singleTest(t, FilterOutputDropTCPSrcPort{})
+	singleTest(t, &FilterOutputDropTCPSrcPort{})
 }
 
 func TestFilterOutputAcceptTCPOwner(t *testing.T) {
-	singleTest(t, FilterOutputAcceptTCPOwner{})
+	singleTest(t, &FilterOutputAcceptTCPOwner{})
 }
 
 func TestFilterOutputDropTCPOwner(t *testing.T) {
-	singleTest(t, FilterOutputDropTCPOwner{})
+	singleTest(t, &FilterOutputDropTCPOwner{})
 }
 
 func TestFilterOutputAcceptUDPOwner(t *testing.T) {
-	singleTest(t, FilterOutputAcceptUDPOwner{})
+	singleTest(t, &FilterOutputAcceptUDPOwner{})
 }
 
 func TestFilterOutputDropUDPOwner(t *testing.T) {
-	singleTest(t, FilterOutputDropUDPOwner{})
+	singleTest(t, &FilterOutputDropUDPOwner{})
 }
 
 func TestFilterOutputOwnerFail(t *testing.T) {
-	singleTest(t, FilterOutputOwnerFail{})
+	singleTest(t, &FilterOutputOwnerFail{})
 }
 
 func TestFilterOutputAcceptGIDOwner(t *testing.T) {
-	singleTest(t, FilterOutputAcceptGIDOwner{})
+	singleTest(t, &FilterOutputAcceptGIDOwner{})
 }
 
 func TestFilterOutputDropGIDOwner(t *testing.T) {
-	singleTest(t, FilterOutputDropGIDOwner{})
+	singleTest(t, &FilterOutputDropGIDOwner{})
 }
 
 func TestFilterOutputInvertGIDOwner(t *testing.T) {
-	singleTest(t, FilterOutputInvertGIDOwner{})
+	singleTest(t, &FilterOutputInvertGIDOwner{})
 }
 
 func TestFilterOutputInvertUIDOwner(t *testing.T) {
-	singleTest(t, FilterOutputInvertUIDOwner{})
+	singleTest(t, &FilterOutputInvertUIDOwner{})
 }
 
 func TestFilterOutputInvertUIDAndGIDOwner(t *testing.T) {
-	singleTest(t, FilterOutputInvertUIDAndGIDOwner{})
+	singleTest(t, &FilterOutputInvertUIDAndGIDOwner{})
 }
 
 func TestFilterOutputInterfaceAccept(t *testing.T) {
-	singleTest(t, FilterOutputInterfaceAccept{})
+	singleTest(t, &FilterOutputInterfaceAccept{})
 }
 
 func TestFilterOutputInterfaceDrop(t *testing.T) {
-	singleTest(t, FilterOutputInterfaceDrop{})
+	singleTest(t, &FilterOutputInterfaceDrop{})
 }
 
 func TestFilterOutputInterface(t *testing.T) {
-	singleTest(t, FilterOutputInterface{})
+	singleTest(t, &FilterOutputInterface{})
 }
 
 func TestFilterOutputInterfaceBeginsWith(t *testing.T) {
-	singleTest(t, FilterOutputInterfaceBeginsWith{})
+	singleTest(t, &FilterOutputInterfaceBeginsWith{})
 }
 
 func TestFilterOutputInterfaceInvertDrop(t *testing.T) {
-	singleTest(t, FilterOutputInterfaceInvertDrop{})
+	singleTest(t, &FilterOutputInterfaceInvertDrop{})
 }
 
 func TestFilterOutputInterfaceInvertAccept(t *testing.T) {
-	singleTest(t, FilterOutputInterfaceInvertAccept{})
+	singleTest(t, &FilterOutputInterfaceInvertAccept{})
 }
 
 func TestJumpSerialize(t *testing.T) {
-	singleTest(t, FilterInputSerializeJump{})
+	singleTest(t, &FilterInputSerializeJump{})
 }
 
 func TestJumpBasic(t *testing.T) {
-	singleTest(t, FilterInputJumpBasic{})
+	singleTest(t, &FilterInputJumpBasic{})
 }
 
 func TestJumpReturn(t *testing.T) {
-	singleTest(t, FilterInputJumpReturn{})
+	singleTest(t, &FilterInputJumpReturn{})
 }
 
 func TestJumpReturnDrop(t *testing.T) {
-	singleTest(t, FilterInputJumpReturnDrop{})
+	singleTest(t, &FilterInputJumpReturnDrop{})
 }
 
 func TestJumpBuiltin(t *testing.T) {
-	singleTest(t, FilterInputJumpBuiltin{})
+	singleTest(t, &FilterInputJumpBuiltin{})
 }
 
 func TestJumpTwice(t *testing.T) {
-	singleTest(t, FilterInputJumpTwice{})
+	singleTest(t, &FilterInputJumpTwice{})
 }
 
 func TestInputDestination(t *testing.T) {
-	singleTest(t, FilterInputDestination{})
+	singleTest(t, &FilterInputDestination{})
 }
 
 func TestInputInvertDestination(t *testing.T) {
-	singleTest(t, FilterInputInvertDestination{})
+	singleTest(t, &FilterInputInvertDestination{})
 }
 
 func TestFilterOutputDestination(t *testing.T) {
-	singleTest(t, FilterOutputDestination{})
+	singleTest(t, &FilterOutputDestination{})
 }
 
 func TestFilterOutputInvertDestination(t *testing.T) {
-	singleTest(t, FilterOutputInvertDestination{})
+	singleTest(t, &FilterOutputInvertDestination{})
 }
 
 func TestNATPreRedirectUDPPort(t *testing.T) {
-	singleTest(t, NATPreRedirectUDPPort{})
+	singleTest(t, &NATPreRedirectUDPPort{})
 }
 
 func TestNATPreRedirectTCPPort(t *testing.T) {
-	singleTest(t, NATPreRedirectTCPPort{})
+	singleTest(t, &NATPreRedirectTCPPort{})
 }
 
 func TestNATPreRedirectTCPOutgoing(t *testing.T) {
-	singleTest(t, NATPreRedirectTCPOutgoing{})
+	singleTest(t, &NATPreRedirectTCPOutgoing{})
 }
 
 func TestNATOutRedirectTCPIncoming(t *testing.T) {
-	singleTest(t, NATOutRedirectTCPIncoming{})
+	singleTest(t, &NATOutRedirectTCPIncoming{})
 }
 func TestNATOutRedirectUDPPort(t *testing.T) {
-	singleTest(t, NATOutRedirectUDPPort{})
+	singleTest(t, &NATOutRedirectUDPPort{})
 }
 
 func TestNATOutRedirectTCPPort(t *testing.T) {
-	singleTest(t, NATOutRedirectTCPPort{})
+	singleTest(t, &NATOutRedirectTCPPort{})
 }
 
 func TestNATDropUDP(t *testing.T) {
-	singleTest(t, NATDropUDP{})
+	singleTest(t, &NATDropUDP{})
 }
 
 func TestNATAcceptAll(t *testing.T) {
-	singleTest(t, NATAcceptAll{})
+	singleTest(t, &NATAcceptAll{})
 }
 
 func TestNATOutRedirectIP(t *testing.T) {
-	singleTest(t, NATOutRedirectIP{})
+	singleTest(t, &NATOutRedirectIP{})
 }
 
 func TestNATOutDontRedirectIP(t *testing.T) {
-	singleTest(t, NATOutDontRedirectIP{})
+	singleTest(t, &NATOutDontRedirectIP{})
 }
 
 func TestNATOutRedirectInvert(t *testing.T) {
-	singleTest(t, NATOutRedirectInvert{})
+	singleTest(t, &NATOutRedirectInvert{})
 }
 
 func TestNATPreRedirectIP(t *testing.T) {
-	singleTest(t, NATPreRedirectIP{})
+	singleTest(t, &NATPreRedirectIP{})
 }
 
 func TestNATPreDontRedirectIP(t *testing.T) {
-	singleTest(t, NATPreDontRedirectIP{})
+	singleTest(t, &NATPreDontRedirectIP{})
 }
 
 func TestNATPreRedirectInvert(t *testing.T) {
-	singleTest(t, NATPreRedirectInvert{})
+	singleTest(t, &NATPreRedirectInvert{})
 }
 
 func TestNATRedirectRequiresProtocol(t *testing.T) {
-	singleTest(t, NATRedirectRequiresProtocol{})
+	singleTest(t, &NATRedirectRequiresProtocol{})
 }
 
 func TestNATLoopbackSkipsPrerouting(t *testing.T) {
-	singleTest(t, NATLoopbackSkipsPrerouting{})
+	singleTest(t, &NATLoopbackSkipsPrerouting{})
 }
 
 func TestInputSource(t *testing.T) {
-	singleTest(t, FilterInputSource{})
+	singleTest(t, &FilterInputSource{})
 }
 
 func TestInputInvertSource(t *testing.T) {
-	singleTest(t, FilterInputInvertSource{})
+	singleTest(t, &FilterInputInvertSource{})
 }
 
 func TestInputInterfaceAccept(t *testing.T) {
-	singleTest(t, FilterInputInterfaceAccept{})
+	singleTest(t, &FilterInputInterfaceAccept{})
 }
 
 func TestInputInterfaceDrop(t *testing.T) {
-	singleTest(t, FilterInputInterfaceDrop{})
+	singleTest(t, &FilterInputInterfaceDrop{})
 }
 
 func TestInputInterface(t *testing.T) {
-	singleTest(t, FilterInputInterface{})
+	singleTest(t, &FilterInputInterface{})
 }
 
 func TestInputInterfaceBeginsWith(t *testing.T) {
-	singleTest(t, FilterInputInterfaceBeginsWith{})
+	singleTest(t, &FilterInputInterfaceBeginsWith{})
 }
 
 func TestInputInterfaceInvertDrop(t *testing.T) {
-	singleTest(t, FilterInputInterfaceInvertDrop{})
+	singleTest(t, &FilterInputInterfaceInvertDrop{})
 }
 
 func TestInputInterfaceInvertAccept(t *testing.T) {
-	singleTest(t, FilterInputInterfaceInvertAccept{})
+	singleTest(t, &FilterInputInterfaceInvertAccept{})
 }
 
 func TestFilterAddrs(t *testing.T) {
@@ -442,17 +442,17 @@ func TestFilterAddrs(t *testing.T) {
 }
 
 func TestNATPreOriginalDst(t *testing.T) {
-	singleTest(t, NATPreOriginalDst{})
+	singleTest(t, &NATPreOriginalDst{})
 }
 
 func TestNATOutOriginalDst(t *testing.T) {
-	singleTest(t, NATOutOriginalDst{})
+	singleTest(t, &NATOutOriginalDst{})
 }
 
 func TestNATPreRECVORIGDSTADDR(t *testing.T) {
-	singleTest(t, NATPreRECVORIGDSTADDR{})
+	singleTest(t, &NATPreRECVORIGDSTADDR{})
 }
 
 func TestNATOutRECVORIGDSTADDR(t *testing.T) {
-	singleTest(t, NATOutRECVORIGDSTADDR{})
+	singleTest(t, &NATOutRECVORIGDSTADDR{})
 }
