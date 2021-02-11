@@ -344,7 +344,7 @@ func (tg *ThreadGroup) forEachChildThreadGroupLocked(fn func(*ThreadGroup)) {
 }
 
 // SetControllingTTY sets tty as the controlling terminal of tg.
-func (tg *ThreadGroup) SetControllingTTY(tty *TTY, arg int32) error {
+func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -361,6 +361,9 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, arg int32) error {
 		return syserror.EINVAL
 	}
 
+	creds := auth.CredentialsFromContext(tg.leader)
+	hasAdmin := creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root())
+
 	// "If this terminal is already the controlling terminal of a different
 	// session group, then the ioctl fails with EPERM, unless the caller
 	// has the CAP_SYS_ADMIN capability and arg equals 1, in which case the
@@ -368,7 +371,7 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, arg int32) error {
 	// terminal lose it." - tty_ioctl(4)
 	if tty.tg != nil && tg.processGroup.session != tty.tg.processGroup.session {
 		// Stealing requires CAP_SYS_ADMIN in the root user namespace.
-		if creds := auth.CredentialsFromContext(tg.leader); !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) || arg != 1 {
+		if !hasAdmin || !steal {
 			return syserror.EPERM
 		}
 		// Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
@@ -386,6 +389,10 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, arg int32) error {
 				othertg.signalHandlers.mu.Unlock()
 			}
 		}
+	}
+
+	if !isReadable && !hasAdmin {
+		return syserror.EPERM
 	}
 
 	// Set the controlling terminal and foreground process group.

@@ -58,6 +58,12 @@ func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kern
 	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return nil, err
 	}
+	if opts.Flags&linux.O_NOCTTY == 0 {
+		// Opening a replica sets the process' controlling TTY when
+		// possible. An error indicates it cannot be set, and is
+		// ignored silently.
+		_ = fd.inode.t.setControllingTTY(ctx, false /* steal */, false /* isMaster */, fd.vfsfd.IsReadable())
+	}
 	return &fd.vfsfd, nil
 
 }
@@ -160,10 +166,11 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, arg
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
-		return 0, rfd.inode.t.setControllingTTY(ctx, args, false /* isMaster */)
+		steal := args[2].Int() == 1
+		return 0, rfd.inode.t.setControllingTTY(ctx, steal, false /* isMaster */, rfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, rfd.inode.t.releaseControllingTTY(ctx, args, false /* isMaster */)
+		return 0, rfd.inode.t.releaseControllingTTY(ctx, false /* isMaster */)
 	case linux.TIOCGPGRP:
 		// Get the foreground process group.
 		return rfd.inode.t.foregroundProcessGroup(ctx, args, false /* isMaster */)
