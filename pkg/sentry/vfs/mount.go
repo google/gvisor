@@ -309,6 +309,11 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 			vfs.mountMu.Unlock()
 			return syserror.EINVAL
 		}
+
+		if vd.mount == vd.mount.ns.root {
+			vfs.mountMu.Unlock()
+			return syserror.EINVAL
+		}
 	}
 
 	// TODO(gvisor.dev/issue/1035): Linux special-cases umount of the caller's
