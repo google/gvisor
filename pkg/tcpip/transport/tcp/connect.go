@@ -757,62 +757,12 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 	}
 }
 
-func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
-	// We need to shallow clone the VectorisedView here as ReadToView will
-	// split the VectorisedView and Trim underlying views as it splits. Not
-	// doing the clone here will cause the underlying views of data itself
-	// to be altered.
-	data = data.Clone(nil)
-
-	optLen := len(tf.opts)
-	if tf.rcvWnd > math.MaxUint16 {
-		tf.rcvWnd = math.MaxUint16
-	}
-
-	mss := int(gso.MSS)
-	n := (data.Size() + mss - 1) / mss
-
-	size := data.Size()
-	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
-	var pkts stack.PacketBufferList
-	for i := 0; i < n; i++ {
-		packetSize := mss
-		if packetSize > size {
-			packetSize = size
-		}
-		size -= packetSize
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: hdrSize,
-		})
-		pkt.Hash = tf.txHash
-		pkt.Owner = owner
-		pkt.Data().ReadFromVV(&data, packetSize)
-		buildTCPHdr(r, tf, pkt, gso)
-		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
-		pkts.PushBack(pkt)
-	}
-
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
-	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos})
-	if err != nil {
-		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
-	}
-	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
-	return err
-}
-
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
 func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
-	}
-
-	if r.Loop()&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
-		return sendTCPBatch(r, tf, data, gso, owner)
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{

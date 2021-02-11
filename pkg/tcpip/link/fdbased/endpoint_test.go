@@ -214,7 +214,6 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
-			MaxSize:    gsoMaxSize,
 			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}

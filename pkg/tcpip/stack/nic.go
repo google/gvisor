@@ -317,7 +317,54 @@ func (n *nic) IsLoopback() bool {
 
 // WritePacket implements NetworkLinkEndpoint.
 func (n *nic) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
+	mtu := n.LinkEndpoint.MTU()
+
+	{
+		mtu := mtu
+		if gso != nil {
+			if n.LinkEndpoint.Capabilities()&CapabilityHardwareGSO != 0 {
+				if m := r.GSOMaxSize(); m > mtu {
+					mtu = m
+					gso.NeedsCsum = true
+				}
+			} else if gso.MSS > 0 {
+				if mss := uint32(gso.MSS + uint16(pkt.NetworkHeader().View().Size()+pkt.TransportHeader().View().Size())); mss < mtu {
+					mtu = mss
+				}
+			}
+		}
+
+		if uint32(pkt.Size()) <= mtu {
+			_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
+			return err
+		}
+
+		if t, ok := n.stack.transportProtocols[pkt.TransportProtocolNumber]; ok {
+			s, ok := t.proto.(Segmentable)
+			if ok {
+				pkts, err := s.Segment(pkt.Clone(), SegmentOptions{MTU: mtu, TransportChecksumOffloaded: !r.RequiresTXTransportChecksum()})
+				if err != nil {
+					return err
+				}
+
+				_, err = n.enqueuePacketBuffer(r, gso, protocol, &pkts)
+				return err
+			}
+		}
+	}
+	p := n.stack.networkProtocols[protocol]
+
+	s, ok := p.(Segmentable)
+	if !ok {
+		return &tcpip.ErrMessageTooLong{}
+	}
+
+	pkts, err := s.Segment(pkt, SegmentOptions{MTU: mtu})
+	if err != nil {
+		return err
+	}
+
+	_, err = n.enqueuePacketBuffer(r, gso, protocol, &pkts)
 	return err
 }
 
@@ -386,11 +433,6 @@ func (n *nic) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 	n.stats.Tx.Packets.Increment()
 	n.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
 	return nil
-}
-
-// WritePackets implements NetworkLinkEndpoint.
-func (n *nic) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return n.enqueuePacketBuffer(r, gso, protocol, &pkts)
 }
 
 func (n *nic) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {

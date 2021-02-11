@@ -226,6 +226,18 @@ type TransportProtocol interface {
 	Parse(pkt *PacketBuffer) (ok bool)
 }
 
+type SegmentOptions struct {
+	MTU                        uint32
+	TransportChecksumOffloaded bool
+}
+
+type Segmentable interface {
+	// Segment attempts to segment a packet.
+	//
+	// Returns false if the protocol has no way to segment the packet.
+	Segment(*PacketBuffer, SegmentOptions) (PacketBufferList, tcpip.Error)
+}
+
 // TransportPacketDisposition is the result from attempting to deliver a packet
 // to the transport layer.
 type TransportPacketDisposition int
@@ -546,16 +558,6 @@ type NetworkInterface interface {
 	// network and transport header must be set.
 	WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
-	// WritePackets writes packets with the given protocol through the given
-	// route. Must not be called with an empty list of packet buffers.
-	//
-	// WritePackets takes ownership of the packet buffers.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
-	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
-
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
 	//
@@ -611,11 +613,6 @@ type NetworkEndpoint interface {
 	// protocol. It takes ownership of pkt. pkt.TransportHeader must have
 	// already been set.
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
-
-	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length. It takes ownership of pkts and
-	// underlying packets.
-	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It takes ownership of pkt.
@@ -1021,10 +1018,6 @@ const (
 	// Hardware GSO types:
 	GSOTCPv4
 	GSOTCPv6
-
-	// GSOSW is used for software GSO segments which have to be sent by
-	// endpoint.WritePackets.
-	GSOSW
 )
 
 // GSO contains generic segmentation offload properties.
@@ -1042,9 +1035,6 @@ type GSO struct {
 	MSS uint16
 	// L3Len is L3 (IP) header length.
 	L3HdrLen uint16
-
-	// MaxSize is maximum GSO packet size.
-	MaxSize uint32
 }
 
 // GSOEndpoint provides access to GSO properties.
