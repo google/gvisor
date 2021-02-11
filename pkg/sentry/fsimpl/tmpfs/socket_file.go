@@ -28,9 +28,9 @@ type socketFile struct {
 	ep    transport.BoundEndpoint
 }
 
-func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint) *inode {
+func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint, parentDir *directory) *inode {
 	file := &socketFile{ep: ep}
-	file.inode.init(file, fs, kuid, kgid, mode)
+	file.inode.init(file, fs, kuid, kgid, mode, parentDir)
 	file.inode.nlink = 1 // from parent directory
 	return &file.inode
 }
