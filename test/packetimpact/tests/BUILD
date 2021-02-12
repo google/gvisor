@@ -60,17 +60,6 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "tcp_reordering",
-    srcs = ["tcp_reordering_test.go"],
-    deps = [
-        "//pkg/tcpip/header",
-        "//pkg/tcpip/seqnum",
-        "//test/packetimpact/testbench",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-packetimpact_testbench(
     name = "tcp_window_shrink",
     srcs = ["tcp_window_shrink_test.go"],
     deps = [
