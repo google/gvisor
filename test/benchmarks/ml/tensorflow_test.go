@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
 // BenchmarkTensorflow runs workloads from a TensorFlow tutorial.
@@ -43,7 +44,15 @@ func BenchmarkTensorflow(b *testing.B) {
 	defer machine.CleanUp()
 
 	for name, workload := range workloads {
-		b.Run(name, func(b *testing.B) {
+		runName, err := tools.ParametersToName(tools.Parameter{
+			Name:  "operation",
+			Value: name,
+		})
+		if err != nil {
+			b.Fatalf("Faile to parse param: %v", err)
+		}
+
+		b.Run(runName, func(b *testing.B) {
 			ctx := context.Background()
 
 			b.ResetTimer()

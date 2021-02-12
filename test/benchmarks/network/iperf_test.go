@@ -56,7 +56,14 @@ func BenchmarkIperf(b *testing.B) {
 			serverFunc: serverMachine.GetContainer,
 		},
 	} {
-		b.Run(bm.name, func(b *testing.B) {
+		name, err := tools.ParametersToName(tools.Parameter{
+			Name:  "operation",
+			Value: bm.name,
+		})
+		if err != nil {
+			b.Fatalf("Failed to parse parameters: %v", err)
+		}
+		b.Run(name, func(b *testing.B) {
 			// Set up the containers.
 			server := bm.serverFunc(ctx, b)
 			defer server.CleanUp(ctx)
