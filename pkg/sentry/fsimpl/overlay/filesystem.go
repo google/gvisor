@@ -1308,8 +1308,8 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 
-	// Unlike UnlinkAt, we need a dentry representing the child directory being
-	// removed in order to verify that it's empty.
+	// We need a dentry representing the child directory being removed in order
+	// to verify that it's empty.
 	child, _, err := fs.getChildLocked(ctx, parent, name, &ds)
 	if err != nil {
 		return err
@@ -1555,50 +1555,24 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 
-	parentMode := atomic.LoadUint32(&parent.mode)
-	child := parent.children[name]
-	var childLayer lookupLayer
-	if child == nil {
-		if parentMode&linux.S_ISVTX != 0 {
-			// If the parent's sticky bit is set, we need a child dentry to get
-			// its owner.
-			child, _, err = fs.getChildLocked(ctx, parent, name, &ds)
-			if err != nil {
-				return err
-			}
-		} else {
-			// Determine if the file being unlinked actually exists. Holding
-			// parent.dirMu prevents a dentry from being instantiated for the file,
-			// which in turn prevents it from being copied-up, so this result is
-			// stable.
-			childLayer, err = fs.lookupLayerLocked(ctx, parent, name)
-			if err != nil {
-				return err
-			}
-			if !childLayer.existsInOverlay() {
-				return syserror.ENOENT
-			}
-		}
+	// We need a dentry representing the child being removed in order to verify
+	// that it's not a directory.
+	child, childLayer, err := fs.getChildLocked(ctx, parent, name, &ds)
+	if err != nil {
+		return err
 	}
-	if child != nil {
-		if child.isDir() {
-			return syserror.EISDIR
-		}
-		if err := parent.mayDelete(rp.Credentials(), child); err != nil {
-			return err
-		}
-		if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
-			return err
-		}
-		// Hold child.copyMu to prevent it from being copied-up during
-		// deletion.
-		child.copyMu.RLock()
-		defer child.copyMu.RUnlock()
-		if child.upperVD.Ok() {
-			childLayer = lookupLayerUpper
-		} else {
-			childLayer = lookupLayerLower
-		}
+	if child.isDir() {
+		return syserror.EISDIR
+	}
+	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
+		return err
+	}
+	// Hold child.copyMu to prevent it from being copied-up during
+	// deletion.
+	child.copyMu.RLock()
+	defer child.copyMu.RUnlock()
+	if err := vfsObj.PrepareDeleteDentry(mntns, &child.vfsd); err != nil {
+		return err
 	}
 
 	pop := vfs.PathOperation{
