@@ -216,7 +216,7 @@ func (c *Container) Create(ctx context.Context, r RunOpts, args ...string) error
 }
 
 func (c *Container) create(ctx context.Context, profileImage string, conf *container.Config, hostconf *container.HostConfig, netconf *network.NetworkingConfig) error {
-	if c.runtime != "" {
+	if c.runtime != "" && c.runtime != "runc" {
 		// Use the image name as provided here; which normally represents the
 		// unmodified "basic/alpine" image name. This should be easy to grok.
 		c.profileInit(profileImage)
