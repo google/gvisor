@@ -147,6 +147,7 @@ docs(
         "//g3doc/architecture_guide:platforms",
         "//g3doc/architecture_guide:resources",
         "//g3doc/architecture_guide:security",
+        "//g3doc/proposals:gsoc_2021",
         "//g3doc/user_guide:FAQ",
         "//g3doc/user_guide:checkpoint_restore",
         "//g3doc/user_guide:compatibility",
