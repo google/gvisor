@@ -147,20 +147,21 @@ func (layout Layout) blockOffset(level int, index int64) int64 {
 // root hash, which contains the root hash of the raw content and the file's
 // meatadata.
 type VerityDescriptor struct {
-	Name     string
-	FileSize int64
-	Mode     uint32
-	UID      uint32
-	GID      uint32
-	Children map[string]struct{}
-	RootHash []byte
+	Name          string
+	FileSize      int64
+	Mode          uint32
+	UID           uint32
+	GID           uint32
+	Children      map[string]struct{}
+	SymlinkTarget string
+	RootHash      []byte
 }
 
 func (d *VerityDescriptor) String() string {
 	b := new(bytes.Buffer)
 	e := gob.NewEncoder(b)
 	e.Encode(d.Children)
-	return fmt.Sprintf("Name: %s, Size: %d, Mode: %d, UID: %d, GID: %d, Children: %v, RootHash: %v", d.Name, d.FileSize, d.Mode, d.UID, d.GID, b.Bytes(), d.RootHash)
+	return fmt.Sprintf("Name: %s, Size: %d, Mode: %d, UID: %d, GID: %d, Children: %v, Symlink: %s, RootHash: %v", d.Name, d.FileSize, d.Mode, d.UID, d.GID, b.Bytes(), d.SymlinkTarget, d.RootHash)
 }
 
 // verify generates a hash from d, and compares it with expected.
@@ -193,7 +194,8 @@ func hashData(data []byte, hashAlgorithms int) ([]byte, error) {
 	return digest, nil
 }
 
-// GenerateParams contains the parameters used to generate a Merkle tree.
+// GenerateParams contains the parameters used to generate a Merkle tree for a
+// given file.
 type GenerateParams struct {
 	// File is a reader of the file to be hashed.
 	File io.ReaderAt
@@ -210,6 +212,8 @@ type GenerateParams struct {
 	// Children is a map of children names for a directory. It should be
 	// empty for a regular file.
 	Children map[string]struct{}
+	// SymlinkTarget is the target path of a symlink file, or "" if the file is not a symlink.
+	SymlinkTarget string
 	// HashAlgorithms is the algorithms used to hash data.
 	HashAlgorithms int
 	// TreeReader is a reader for the Merkle tree.
@@ -227,6 +231,20 @@ type GenerateParams struct {
 // Generate returns a hash of a VerityDescriptor, which contains the file
 // metadata and the hash from file content.
 func Generate(params *GenerateParams) ([]byte, error) {
+	descriptor := VerityDescriptor{
+		FileSize:      params.Size,
+		Name:          params.Name,
+		Mode:          params.Mode,
+		UID:           params.UID,
+		GID:           params.GID,
+		SymlinkTarget: params.SymlinkTarget,
+	}
+
+	// If file is a symlink do not generate root hash for file content.
+	if params.SymlinkTarget != "" {
+		return hashData([]byte(descriptor.String()), params.HashAlgorithms)
+	}
+
 	layout, err := InitLayout(params.Size, params.HashAlgorithms, params.DataAndTreeInSameFile)
 	if err != nil {
 		return nil, err
@@ -296,15 +314,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 		}
 		numBlocks = (numBlocks + layout.hashesPerBlock() - 1) / layout.hashesPerBlock()
 	}
-	descriptor := VerityDescriptor{
-		Name:     params.Name,
-		FileSize: params.Size,
-		Mode:     params.Mode,
-		UID:      params.UID,
-		GID:      params.GID,
-		Children: params.Children,
-		RootHash: root,
-	}
+	descriptor.RootHash = root
 	return hashData([]byte(descriptor.String()), params.HashAlgorithms)
 }
 
@@ -330,6 +340,8 @@ type VerifyParams struct {
 	// Children is a map of children names for a directory. It should be
 	// empty for a regular file.
 	Children map[string]struct{}
+	// SymlinkTarget is the target path of a symlink file, or "" if the file is not a symlink.
+	SymlinkTarget string
 	// HashAlgorithms is the algorithms used to hash data.
 	HashAlgorithms int
 	// ReadOffset is the offset of the data range to be verified.
@@ -351,21 +363,23 @@ type VerifyParams struct {
 // for the raw root hash.
 func verifyMetadata(params *VerifyParams, layout *Layout) error {
 	var root []byte
-	// Only read the root hash if we expect that the Merkle tree file is non-empty.
-	if params.Size != 0 {
+	// Only read the root hash if we expect that the file is not a symlink and its
+	// Merkle tree file is non-empty.
+	if params.Size != 0 && params.SymlinkTarget == "" {
 		root = make([]byte, layout.digestSize)
 		if _, err := params.Tree.ReadAt(root, layout.blockOffset(layout.rootLevel(), 0 /* index */)); err != nil {
 			return fmt.Errorf("failed to read root hash: %w", err)
 		}
 	}
 	descriptor := VerityDescriptor{
-		Name:     params.Name,
-		FileSize: params.Size,
-		Mode:     params.Mode,
-		UID:      params.UID,
-		GID:      params.GID,
-		Children: params.Children,
-		RootHash: root,
+		Name:          params.Name,
+		FileSize:      params.Size,
+		Mode:          params.Mode,
+		UID:           params.UID,
+		GID:           params.GID,
+		Children:      params.Children,
+		SymlinkTarget: params.SymlinkTarget,
+		RootHash:      root,
 	}
 	return descriptor.verify(params.Expected, params.HashAlgorithms)
 }
@@ -421,12 +435,13 @@ func Verify(params *VerifyParams) (int64, error) {
 			}
 		}
 		descriptor := VerityDescriptor{
-			Name:     params.Name,
-			FileSize: params.Size,
-			Mode:     params.Mode,
-			UID:      params.UID,
-			GID:      params.GID,
-			Children: params.Children,
+			Name:          params.Name,
+			FileSize:      params.Size,
+			Mode:          params.Mode,
+			UID:           params.UID,
+			GID:           params.GID,
+			SymlinkTarget: params.SymlinkTarget,
+			Children:      params.Children,
 		}
 		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected); err != nil {
 			return 0, err
