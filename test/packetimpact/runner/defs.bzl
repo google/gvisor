@@ -181,11 +181,6 @@ ALL_TESTS = [
         name = "udp_icmp_error_propagation",
     ),
     PacketimpactTestInfo(
-        name = "tcp_reordering",
-        # TODO(b/139368047): Fix netstack then remove the line below.
-        expect_netstack_failure = True,
-    ),
-    PacketimpactTestInfo(
         name = "tcp_window_shrink",
     ),
     PacketimpactTestInfo(
