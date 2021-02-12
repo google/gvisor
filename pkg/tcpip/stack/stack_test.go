@@ -532,8 +532,8 @@ func TestNetworkSend(t *testing.T) {
 
 func TestNetworkSendMultiRoute(t *testing.T) {
 	// Create a stack with the fake network protocol, two nics, and two
-	// addresses per nic, the first nic has odd address, the second one has
-	// even addresses.
+	// addresses per nic, the first nic has 0x10/4 address, the second one has
+	// 0x00/4 addresses.
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 	})
@@ -543,11 +543,11 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
+	if err := s.AddAddress(1, fakeNetNumber, "\x10"); err != nil {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x03"); err != nil {
+	if err := s.AddAddress(1, fakeNetNumber, "\x12"); err != nil {
 		t.Fatal("AddAddress failed:", err)
 	}
 
@@ -564,15 +564,15 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	// Set a route table that sends all packets with odd destination
-	// addresses through the first NIC, and all even destination address
+	// Set a route table that sends all packets with 0x10/4 destination
+	// addresses through the first NIC, and all 0x00/4 destination address
 	// through the second one.
 	{
-		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		subnet0, err := tcpip.NewSubnet("\x00", "\xf0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		subnet1, err := tcpip.NewSubnet("\x10", "\xf0")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -582,10 +582,10 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 		})
 	}
 
-	// Send a packet to an odd destination.
-	testSendTo(t, s, "\x05", ep1, nil)
+	// Send a packet to an 0x10/4 destination.
+	testSendTo(t, s, "\x14", ep1, nil)
 
-	// Send a packet to an even destination.
+	// Send a packet to an 0x00/4 destination.
 	testSendTo(t, s, "\x06", ep2, nil)
 }
 
@@ -781,9 +781,9 @@ func TestRouteWithDownNIC(t *testing.T) {
 	const unspecifiedNIC = 0
 	const nicID1 = 1
 	const nicID2 = 2
-	const addr1 = tcpip.Address("\x01")
+	const addr1 = tcpip.Address("\x10")
 	const addr2 = tcpip.Address("\x02")
-	const nic1Dst = tcpip.Address("\x05")
+	const nic1Dst = tcpip.Address("\x14")
 	const nic2Dst = tcpip.Address("\x06")
 
 	setup := func(t *testing.T) (*stack.Stack, *channel.Endpoint, *channel.Endpoint) {
@@ -809,15 +809,15 @@ func TestRouteWithDownNIC(t *testing.T) {
 			t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, fakeNetNumber, addr2, err)
 		}
 
-		// Set a route table that sends all packets with odd destination
-		// addresses through the first NIC, and all even destination address
+		// Set a route table that sends all packets with 0x10/4
+		// addresses through the first NIC, and all 0x00/4 address
 		// through the second one.
 		{
-			subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+			subnet0, err := tcpip.NewSubnet("\x00", "\xf0")
 			if err != nil {
 				t.Fatal(err)
 			}
-			subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+			subnet1, err := tcpip.NewSubnet("\x10", "\xf0")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -837,18 +837,18 @@ func TestRouteWithDownNIC(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				s, _, _ := setup(t)
 
-				// Test routes to odd address.
-				testRoute(t, s, unspecifiedNIC, "", "\x05", addr1)
-				testRoute(t, s, unspecifiedNIC, addr1, "\x05", addr1)
-				testRoute(t, s, nicID1, addr1, "\x05", addr1)
+				// Test routes to 0x10/4 address.
+				testRoute(t, s, unspecifiedNIC, "", "\x14", addr1)
+				testRoute(t, s, unspecifiedNIC, addr1, "\x14", addr1)
+				testRoute(t, s, nicID1, addr1, "\x14", addr1)
 
-				// Test routes to even address.
+				// Test routes to 0x00/4 address.
 				testRoute(t, s, unspecifiedNIC, "", "\x06", addr2)
 				testRoute(t, s, unspecifiedNIC, addr2, "\x06", addr2)
 				testRoute(t, s, nicID2, addr2, "\x06", addr2)
 
-				// Bringing NIC1 down should result in no routes to odd addresses. Routes to
-				// even addresses should continue to be available as NIC2 is still up.
+				// Bringing NIC1 down should result in no routes to 0x10/4 addresses. Routes to
+				// 0x00/4 addresses should continue to be available as NIC2 is still up.
 				if err := test.downFn(s, nicID1); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID1, err)
 				}
@@ -859,8 +859,8 @@ func TestRouteWithDownNIC(t *testing.T) {
 				testRoute(t, s, unspecifiedNIC, addr2, nic2Dst, addr2)
 				testRoute(t, s, nicID2, addr2, nic2Dst, addr2)
 
-				// Bringing NIC2 down should result in no routes to even addresses. No
-				// route should be available to any address as routes to odd addresses
+				// Bringing NIC2 down should result in no routes to 0x00/4 addresses. No
+				// route should be available to any address as routes to 0x10/4 addresses
 				// were made unavailable by bringing NIC1 down above.
 				if err := test.downFn(s, nicID2); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID2, err)
@@ -873,8 +873,8 @@ func TestRouteWithDownNIC(t *testing.T) {
 				testNoRoute(t, s, nicID2, addr2, nic2Dst)
 
 				if upFn := test.upFn; upFn != nil {
-					// Bringing NIC1 up should make routes to odd addresses available
-					// again. Routes to even addresses should continue to be unavailable
+					// Bringing NIC1 up should make routes to 0x10/4 addresses available
+					// again. Routes to 0x00/4 addresses should continue to be unavailable
 					// as NIC2 is still down.
 					if err := upFn(s, nicID1); err != nil {
 						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
@@ -950,9 +950,9 @@ func TestRouteWithDownNIC(t *testing.T) {
 }
 
 func TestRoutes(t *testing.T) {
-	// Create a stack with the fake network protocol, two nics, and two
-	// addresses per nic, the first nic has odd address, the second one has
-	// even addresses.
+	// Create a stack with the fake network protocol, three nics, and two
+	// addresses per nic, the first nic has 0x10/4 address, the second one has
+	// 0x00/4 addresses, and the third has 0x00/0, default route.
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 	})
@@ -962,11 +962,11 @@ func TestRoutes(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
+	if err := s.AddAddress(1, fakeNetNumber, "\x10"); err != nil {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x03"); err != nil {
+	if err := s.AddAddress(1, fakeNetNumber, "\x12"); err != nil {
 		t.Fatal("AddAddress failed:", err)
 	}
 
@@ -983,49 +983,102 @@ func TestRoutes(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	// Set a route table that sends all packets with odd destination
-	// addresses through the first NIC, and all even destination address
+	ep3 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(3, ep3); err != nil {
+		t.Fatal("CreateNIC failed:", err)
+	}
+
+	if err := s.AddAddress(3, fakeNetNumber, "\xf4"); err != nil {
+		t.Fatal("AddAddress failed:", err)
+	}
+
+	if err := s.AddAddress(3, fakeNetNumber, "\xf6"); err != nil {
+		t.Fatal("AddAddress failed:", err)
+	}
+
+	// Set a route table that sends all packets with 0x10/4 destination
+	// addresses through the first NIC, and all 0x00/4 destination address
 	// through the second one.
 	{
-		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		subnet0, err := tcpip.NewSubnet("\x00", "\xf0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		subnet1, err := tcpip.NewSubnet("\x10", "\xf0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet2, err := tcpip.NewSubnet("\x00", "\x00")
 		if err != nil {
 			t.Fatal(err)
 		}
 		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet2, Gateway: "\x00", NIC: 3},
 			{Destination: subnet1, Gateway: "\x00", NIC: 1},
 			{Destination: subnet0, Gateway: "\x00", NIC: 2},
 		})
 	}
 
-	// Test routes to odd address.
-	testRoute(t, s, 0, "", "\x05", "\x01")
-	testRoute(t, s, 0, "\x01", "\x05", "\x01")
-	testRoute(t, s, 1, "\x01", "\x05", "\x01")
-	testRoute(t, s, 0, "\x03", "\x05", "\x03")
-	testRoute(t, s, 1, "\x03", "\x05", "\x03")
+	// Test routes to 0x10/4 address.
+	testRoute(t, s, 0, "", "\x14", "\x10")
+	testRoute(t, s, 0, "\x10", "\x14", "\x10")
+	testRoute(t, s, 1, "\x10", "\x14", "\x10")
+	testRoute(t, s, 0, "\x12", "\x14", "\x12")
+	testRoute(t, s, 1, "\x12", "\x14", "\x12")
 
-	// Test routes to even address.
+	// Test routes to 0x00/4 address.
 	testRoute(t, s, 0, "", "\x06", "\x02")
 	testRoute(t, s, 0, "\x02", "\x06", "\x02")
 	testRoute(t, s, 2, "\x02", "\x06", "\x02")
 	testRoute(t, s, 0, "\x04", "\x06", "\x04")
 	testRoute(t, s, 2, "\x04", "\x06", "\x04")
 
-	// Try to send to odd numbered address from even numbered ones, then
-	// vice-versa.
-	testNoRoute(t, s, 0, "\x02", "\x05")
-	testNoRoute(t, s, 2, "\x02", "\x05")
-	testNoRoute(t, s, 0, "\x04", "\x05")
-	testNoRoute(t, s, 2, "\x04", "\x05")
+	// Test routes to 0x00/0 address.
+	testRoute(t, s, 0, "", "\x48", "\xf4")
+	testRoute(t, s, 0, "\xf4", "\x48", "\xf4")
+	testRoute(t, s, 3, "\xf4", "\x48", "\xf4")
+	testRoute(t, s, 0, "\xf6", "\x48", "\xf6")
+	testRoute(t, s, 3, "\xf6", "\x48", "\xf6")
 
-	testNoRoute(t, s, 0, "\x01", "\x06")
-	testNoRoute(t, s, 1, "\x01", "\x06")
-	testNoRoute(t, s, 0, "\x03", "\x06")
-	testNoRoute(t, s, 1, "\x03", "\x06")
+	// Try to send to 0x10/4 numbered address from 0x00/4 numbered ones, then
+	// vice-versa.
+
+	// 0x00/4 -> 0x10/4
+	testNoRoute(t, s, 0, "\x02", "\x14")
+	testNoRoute(t, s, 2, "\x02", "\x14")
+	testNoRoute(t, s, 0, "\x04", "\x14")
+	testNoRoute(t, s, 2, "\x04", "\x14")
+
+	// 0x10/4 -> 0x00/4
+	testNoRoute(t, s, 0, "\x10", "\x06")
+	testNoRoute(t, s, 1, "\x10", "\x06")
+	testNoRoute(t, s, 0, "\x12", "\x06")
+	testNoRoute(t, s, 1, "\x12", "\x06")
+
+	// 0x00/4 -> 0x00/0
+	testNoRoute(t, s, 0, "\x02", "\x48")
+	testNoRoute(t, s, 3, "\x02", "\x48")
+	testNoRoute(t, s, 0, "\x04", "\x48")
+	testNoRoute(t, s, 3, "\x04", "\x48")
+
+	// 0x10/4 -> 0x00/0
+	testNoRoute(t, s, 0, "\x10", "\x48")
+	testNoRoute(t, s, 3, "\x10", "\x48")
+	testNoRoute(t, s, 0, "\x12", "\x48")
+	testNoRoute(t, s, 3, "\x12", "\x48")
+
+	// Try sending from addresses on the NIC with default route.
+	// 0x00/0 -> 0x10/4
+	testRoute(t, s, 0, "\xf4", "\x14", "\xf4")
+	testNoRoute(t, s, 2, "\xf4", "\x14")
+	testRoute(t, s, 0, "\xf6", "\x14", "\xf6")
+	testNoRoute(t, s, 2, "\xf6", "\x14")
+
+	// 0x00/0 -> 0x00/4
+	testRoute(t, s, 0, "\xf4", "\x06", "\xf4")
+	testNoRoute(t, s, 1, "\xf4", "\x06")
+	testRoute(t, s, 0, "\xf6", "\x06", "\xf6")
+	testNoRoute(t, s, 1, "\xf6", "\x06")
 }
 
 func TestAddressRemoval(t *testing.T) {
@@ -3802,12 +3855,17 @@ func TestAddRoute(t *testing.T) {
 
 	s := stack.New(stack.Options{})
 
-	subnet1, err := tcpip.NewSubnet("\x00", "\x00")
+	subnet1, err := tcpip.NewSubnet("\x01", "\xff")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	subnet2, err := tcpip.NewSubnet("\x01", "\x01")
+	subnet2, err := tcpip.NewSubnet("\x70", "\xf0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subnet3, err := tcpip.NewSubnet("\x00", "\x00")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3815,10 +3873,11 @@ func TestAddRoute(t *testing.T) {
 	expected := []tcpip.Route{
 		{Destination: subnet1, Gateway: "\x00", NIC: 1},
 		{Destination: subnet2, Gateway: "\x00", NIC: 1},
+		{Destination: subnet3, Gateway: "\x00", NIC: 1},
 	}
 
 	// Initialize the route table with one route.
-	s.SetRouteTable([]tcpip.Route{expected[0]})
+	s.SetRouteTable([]tcpip.Route{expected[2], expected[0]})
 
 	// Add another route.
 	s.AddRoute(expected[1])
@@ -3841,17 +3900,17 @@ func TestRemoveRoutes(t *testing.T) {
 	s := stack.New(stack.Options{})
 
 	addressToRemove := tcpip.Address("\x01")
-	subnet1, err := tcpip.NewSubnet(addressToRemove, "\x01")
+	subnet1, err := tcpip.NewSubnet(addressToRemove, "\xff")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	subnet2, err := tcpip.NewSubnet(addressToRemove, "\x01")
+	subnet2, err := tcpip.NewSubnet(addressToRemove, "\xff")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	subnet3, err := tcpip.NewSubnet("\x02", "\x02")
+	subnet3, err := tcpip.NewSubnet("\x02", "\xfe")
 	if err != nil {
 		t.Fatal(err)
 	}

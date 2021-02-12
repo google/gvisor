@@ -179,6 +179,36 @@ func (m AddressMask) Prefix() int {
 	return p
 }
 
+// Size returns the number of leading ones and total bits in the mask. If
+// the mask is not in the canonical form--ones followed by zeros--then Size
+// returns 0, 0.
+func (m AddressMask) Size() (ones, size int) {
+	// A subnet mask in canonical form consists of zero or more 1's followed by
+	// 0's up to a total length of 8 * len(m) bits. Refer to golang's net.IPMask.
+	var i int
+	for i = 0; i < len(m); i++ {
+		if m[i] != 0xff {
+			break
+		}
+	}
+	ones = i * 8
+	if i < len(m) {
+		leading1s := bits.LeadingZeros8(^m[i])
+		if leading1s != bits.OnesCount8(m[i]) {
+			return 0, 0
+		}
+		ones += leading1s
+		i++
+	}
+	for ; i < len(m); i++ {
+		if m[i] != 0x00 {
+			return 0, 0
+		}
+	}
+
+	return ones, len(m) * 8
+}
+
 // Subnet is a subnet defined by its address and mask.
 type Subnet struct {
 	address Address
@@ -232,6 +262,13 @@ func (s *Subnet) Bits() (ones int, zeros int) {
 // Prefix returns the number of bits before the first host bit.
 func (s *Subnet) Prefix() int {
 	return s.mask.Prefix()
+}
+
+// Size returns the number of leading ones and total bits in the mask. If
+// the mask is not in the canonical form--ones followed by zeros--then Size
+// returns 0, 0.
+func (s *Subnet) Size() (ones, size int) {
+	return s.mask.Size()
 }
 
 // Mask returns the subnet mask.
@@ -1191,6 +1228,27 @@ func (r Route) String() string {
 func (r Route) Equal(to Route) bool {
 	// NOTE: This relies on the fact that r.Destination == to.Destination
 	return r == to
+}
+
+// IsValid returns true if the given Route contains a subnet mask in canonical
+// form.
+func (r Route) IsValid() bool {
+	_, size := r.Destination.Size()
+	return size > 0
+}
+
+// Compare returns an integer comparing two routes lexicographically. returns 0
+// if r==to, -1 if r < to, and +1 if r > to.
+func (r Route) Compare(to Route) int {
+	prefix := r.Destination.Prefix()
+	toPrefix := to.Destination.Prefix()
+	if prefix > toPrefix {
+		return -1
+	}
+	if prefix < toPrefix {
+		return 1
+	}
+	return bytes.Compare([]byte(r.Destination.address), []byte(to.Destination.address))
 }
 
 // TransportProtocolNumber is the number of a transport protocol.
