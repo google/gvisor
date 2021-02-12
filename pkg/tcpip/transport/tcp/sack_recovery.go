@@ -116,5 +116,5 @@ func (sr *sackRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	// RFC 6675 recovery algorithm step C 1-5.
 	end := snd.sndUna.Add(snd.sndWnd)
 	dataSent := sr.handleSACKRecovery(snd.maxPayloadSize, end)
-	snd.postXmit(dataSent)
+	snd.postXmit(dataSent, true /* shouldScheduleProbe */)
 }

@@ -263,7 +263,10 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 		}
 	}
 
-	s.postXmit(dataSent)
+	// Whether or not the probe was sent, the sender must arm the resend timer,
+	// not the probe timer. This ensures that the sender does not send repeated,
+	// back-to-back tail loss probes.
+	s.postXmit(dataSent, false /* shouldScheduleProbe */)
 	return nil
 }
 
@@ -477,7 +480,5 @@ func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 		snd.sendSegment(seg)
 	}
 
-	// Rearm the RTO.
-	snd.resendTimer.enable(snd.rto)
-	snd.postXmit(dataSent)
+	snd.postXmit(dataSent, true /* shouldScheduleProbe */)
 }
