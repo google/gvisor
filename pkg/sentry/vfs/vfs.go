@@ -425,7 +425,9 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 		rp.mustBeDir = true
 		rp.mustBeDirOrig = true
 	}
-	if opts.Flags&linux.O_PATH != 0 {
+	// Ignore O_PATH for verity, as verity performs extra operations on the fd for verification.
+	// The underlying filesystem that verity wraps opens the fd with O_PATH.
+	if opts.Flags&linux.O_PATH != 0 && rp.mount.fs.FilesystemType().Name() != "verity" {
 		vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
 		if err != nil {
 			return nil, err
