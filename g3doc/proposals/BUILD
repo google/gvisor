@@ -10,7 +10,7 @@ doc(
     src = "gsoc-2021-ideas.md",
     category = "Project",
     include_in_menu = False,
-    permalink = "/community/gsoc_2021",
+    permalink = "/community/gsoc_2021/",
     subcategory = "Community",
     weight = "99",
 )
