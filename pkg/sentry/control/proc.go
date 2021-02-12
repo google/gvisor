@@ -334,8 +334,8 @@ func PrintPIDsJSON(pl []*Process) (string, error) {
 func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 	ts := k.TaskSet()
 	now := k.RealtimeClock().Now()
-	for _, tg := range ts.Root.ThreadGroups() {
-		pidns := tg.PIDNamespace()
+	pidns := ts.Root
+	for _, tg := range pidns.ThreadGroups() {
 		pid := pidns.IDOfThreadGroup(tg)
 
 		// If tg has already been reaped ignore it.
