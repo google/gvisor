@@ -1731,6 +1731,10 @@ type TCPStats struct {
 	// recover from packet loss.
 	SACKRecovery *StatCounter
 
+	// TLPRecovery is the number of times recovery was accomplished by the tail
+	// loss probe.
+	TLPRecovery *StatCounter
+
 	// SlowStartRetransmits is the number of segments retransmitted in slow
 	// start.
 	SlowStartRetransmits *StatCounter
