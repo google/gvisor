@@ -1131,6 +1131,14 @@ func (s *sender) SetPipe() {
 	s.outstanding = pipe
 }
 
+// shouldEnterRecovery returns true if the sender should enter fast recovery
+// based on dupAck count and sack scoreboard.
+// See RFC 6675 section 5.
+func (s *sender) shouldEnterRecovery() bool {
+	return s.dupAckCount >= nDupAckThreshold ||
+		(s.ep.sackPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection == 0 && s.ep.scoreboard.IsLost(s.sndUna))
+}
+
 // detectLoss is called when an ack is received and returns whether a loss is
 // detected. It manages the state related to duplicate acks and determines if
 // a retransmit is needed according to the rules in RFC 6582 (NewReno).
@@ -1155,7 +1163,7 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 
 	// Do not enter fast recovery until we reach nDupAckThreshold or the
 	// first unacknowledged byte is considered lost as per SACK scoreboard.
-	if s.dupAckCount < nDupAckThreshold || (s.ep.sackPermitted && !s.ep.scoreboard.IsLost(s.sndUna)) {
+	if !s.shouldEnterRecovery() {
 		// RFC 6675 Step 3.
 		s.fr.highRxt = s.sndUna - 1
 		// Do run SetPipe() to calculate the outstanding segments.
@@ -1169,7 +1177,11 @@ func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	// We only do the check here, the incrementing of last to the highest
 	// sequence number transmitted till now is done when enterRecovery
 	// is invoked.
-	if !s.fr.last.LessThan(seg.ackNumber) {
+	//
+	// Note that we only enter recovery when at least one more byte of data
+	// beyond s.fr.last (the highest byte that was outstanding when fast
+	// retransmit was last entered) is acked.
+	if !s.fr.last.LessThan(seg.ackNumber - 1) {
 		s.dupAckCount = 0
 		return false
 	}
@@ -1351,7 +1363,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	if s.fr.active {
 		// Leave fast recovery if it acknowledges all the data covered by
 		// this fast recovery session.
-		if ack.InRange(s.sndUna, s.sndNxt+1) && s.fr.last.LessThan(ack) {
+		if (ack-1).InRange(s.sndUna, s.sndNxt) && s.fr.last.LessThan(ack) {
 			s.leaveRecovery()
 		}
 	} else {

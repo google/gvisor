@@ -159,9 +159,11 @@ func TestRACKDetectReorder(t *testing.T) {
 	<-probeDone
 }
 
-func sendAndReceive(t *testing.T, c *context.Context, numPackets int) []byte {
+func sendAndReceive(t *testing.T, c *context.Context, numPackets int, enableRACK bool) []byte {
 	setStackSACKPermitted(t, c, true)
-	setStackRACKPermitted(t, c)
+	if enableRACK {
+		setStackRACKPermitted(t, c)
+	}
 	createConnectedWithSACKAndTS(c)
 
 	data := make([]byte, numPackets*maxPayload)
@@ -222,7 +224,7 @@ func TestRACKDetectDSACK(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 8
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Cumulative ACK for [1-5] packets.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -263,7 +265,7 @@ func TestRACKDetectDSACKWithOutOfOrder(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 10
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Cumulative ACK for [1-5] packets.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -308,7 +310,7 @@ func TestRACKDetectDSACKWithOutOfOrderDup(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 10
-	sendAndReceive(t, c, numPackets)
+	sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// ACK [1-5] packets.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -352,7 +354,7 @@ func TestRACKDetectDSACKSingleDup(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 4
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Send ACK for #1 packet.
 	bytesRead := maxPayload
@@ -401,7 +403,7 @@ func TestRACKDetectDSACKDupWithCumulativeACK(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 6
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Send ACK for #1 packet.
 	bytesRead := maxPayload
@@ -455,7 +457,7 @@ func TestRACKDetectDSACKDup(t *testing.T) {
 	addDSACKSeenCheckerProbe(t, c, ackNumToVerify, probeDone)
 
 	numPackets := 7
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Send ACK for #1 packet.
 	bytesRead := maxPayload
@@ -523,7 +525,7 @@ func TestRACKWithInvalidDSACKBlock(t *testing.T) {
 	})
 
 	numPackets := 10
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Cumulative ACK for [1-5] packets.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
@@ -586,7 +588,7 @@ func TestRACKCheckReorderWindow(t *testing.T) {
 	addReorderWindowCheckerProbe(c, ackNumToVerify, probeDone)
 
 	const numPackets = 7
-	sendAndReceive(t, c, numPackets)
+	sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Send ACK for #1 packet.
 	bytesRead := maxPayload
@@ -615,7 +617,7 @@ func TestRACKWithDuplicateACK(t *testing.T) {
 	defer c.Cleanup()
 
 	const numPackets = 4
-	data := sendAndReceive(t, c, numPackets)
+	data := sendAndReceive(t, c, numPackets, true /* enableRACK */)
 
 	// Send three duplicate ACKs to trigger fast recovery. The first
 	// segment is considered as lost and will be retransmitted after
@@ -653,4 +655,44 @@ func TestRACKWithDuplicateACK(t *testing.T) {
 	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
 		t.Error(err)
 	}
+}
+
+// TestRACKUpdateSackedOut tests the sacked out field is updated when a SACK
+// is received.
+func TestRACKUpdateSackedOut(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	probeDone := make(chan struct{})
+	ackNum := 0
+	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
+		// Validate that the endpoint Sender.SackedOut is what we expect.
+		if state.Sender.SackedOut != 2 && ackNum == 0 {
+			t.Fatalf("SackedOut got updated to wrong value got: %v want: 2", state.Sender.SackedOut)
+		}
+
+		if state.Sender.SackedOut != 0 && ackNum == 1 {
+			t.Fatalf("SackedOut got updated to wrong value got: %v want: 0", state.Sender.SackedOut)
+		}
+		if ackNum > 0 {
+			close(probeDone)
+		}
+		ackNum++
+	})
+
+	sendAndReceive(t, c, 8, true /* enableRACK */)
+
+	// ACK for [3-5] packets.
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	start := c.IRS.Add(seqnum.Size(1 + 3*maxPayload))
+	bytesRead := 2 * maxPayload
+	end := start.Add(seqnum.Size(bytesRead))
+	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
+
+	bytesRead += 3 * maxPayload
+	c.SendAck(seq, bytesRead)
+
+	// Wait for the probe function to finish processing the ACK before the
+	// test completes.
+	<-probeDone
 }
