@@ -163,6 +163,17 @@ func (d *dentry) openLowerMerkleAt(ctx context.Context, vfsObj *vfs.VirtualFiles
 	})
 }
 
+// mkdirLowerAt creates a directory in the underlying file system.
+func (d *dentry) mkdirLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, path string, mode linux.FileMode) error {
+	return vfsObj.MkdirAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  d.lowerVD,
+		Start: d.lowerVD,
+		Path:  fspath.Parse(path),
+	}, &vfs.MkdirOptions{
+		Mode: mode,
+	})
+}
+
 // unlinkLowerAt deletes the file in the underlying file system.
 func (d *dentry) unlinkLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, path string) error {
 	return vfsObj.UnlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
@@ -208,6 +219,16 @@ func (d *dentry) renameLowerMerkleAt(ctx context.Context, vfsObj *vfs.VirtualFil
 	}, &vfs.RenameOptions{})
 }
 
+// symlinkLowerAt creates a symbolic link at symlink referring to the given target
+// in the underlying filesystem.
+func (d *dentry) symlinkLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, target, symlink string) error {
+	return vfsObj.SymlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  d.lowerVD,
+		Start: d.lowerVD,
+		Path:  fspath.Parse(symlink),
+	}, target)
+}
+
 // newFileFD creates a new file in the verity mount, and returns the FD. The FD
 // points to a file that has random data generated.
 func newFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, filePath string, mode linux.FileMode) (*vfs.FileDescription, int, error) {
@@ -237,6 +258,18 @@ func newFileFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem,
 	// Now open the verity file descriptor.
 	fd, err := openVerityAt(ctx, vfsObj, root, filePath, linux.O_RDONLY, mode)
 	return fd, dataSize, err
+}
+
+// newDirFD creates a new directory in the verity mount, and returns the FD.
+func newDirFD(ctx context.Context, t *testing.T, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, dirPath string, mode linux.FileMode) (*vfs.FileDescription, error) {
+	// Create the directory in the underlying file system.
+	if err := dentryFromVD(t, root).mkdirLowerAt(ctx, vfsObj, dirPath, linux.ModeRegular|mode); err != nil {
+		return nil, err
+	}
+	if _, err := dentryFromVD(t, root).openLowerAt(ctx, vfsObj, dirPath, linux.O_RDONLY|linux.O_DIRECTORY, linux.ModeRegular|mode); err != nil {
+		return nil, err
+	}
+	return openVerityAt(ctx, vfsObj, root, dirPath, linux.O_RDONLY|linux.O_DIRECTORY, mode)
 }
 
 // newEmptyFileFD creates a new empty file in the verity mount, and returns the FD.
@@ -797,6 +830,380 @@ func TestOpenRenamedFileFails(t *testing.T) {
 			// Ensure reopening the verity enabled file fails.
 			if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
 				t.Errorf("got OpenAt error: %v, expected EIO", err)
+			}
+		})
+	}
+}
+
+// TestUnmodifiedSymlinkFileReadSucceeds ensures that readlink() for an
+// unmodified verity enabled symlink succeeds.
+func TestUnmodifiedSymlinkFileReadSucceeds(t *testing.T) {
+	testCases := []struct {
+		name string
+		// The symlink target is a directory.
+		hasDirectoryTarget bool
+		// The symlink target is a directory and contains a regular file which will be
+		// used to test walking a symlink.
+		testWalk bool
+	}{
+		{
+			name:               "RegularFileTarget",
+			hasDirectoryTarget: false,
+			testWalk:           false,
+		},
+		{
+			name:               "DirectoryTarget",
+			hasDirectoryTarget: true,
+			testWalk:           false,
+		},
+		{
+			name:               "RegularFileInSymlinkDirectory",
+			hasDirectoryTarget: true,
+			testWalk:           true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.testWalk && !tc.hasDirectoryTarget {
+				t.Fatalf("Invalid test case: hasDirectoryTarget can't be false when testing symlink walk")
+			}
+
+			vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
+
+			var target string
+			if tc.hasDirectoryTarget {
+				target = "verity-test-dir"
+				if _, err := newDirFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newDirFD: %v", err)
+				}
+			} else {
+				target = "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			if tc.testWalk {
+				fileInTargetDirectory := target + "/" + "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, fileInTargetDirectory, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			symlink := "verity-test-symlink"
+			if err := dentryFromVD(t, root).symlinkLowerAt(ctx, vfsObj, target, symlink); err != nil {
+				t.Fatalf("SymlinkAt: %v", err)
+			}
+
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+
+			if err != nil {
+				t.Fatalf("openVerityAt symlink: %v", err)
+			}
+
+			enableVerity(ctx, t, fd)
+
+			if _, err := vfsObj.ReadlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(symlink),
+			}); err != nil {
+				t.Fatalf("ReadlinkAt: %v", err)
+			}
+
+			if tc.testWalk {
+				fileInSymlinkDirectory := symlink + "/verity-test-file"
+				// Ensure opening the verity enabled file in the symlink directory succeeds.
+				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); err != nil {
+					t.Errorf("open enabled file failed: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestDeletedSymlinkFileReadFails ensures that reading value of a deleted verity enabled
+// symlink fails.
+func TestDeletedSymlinkFileReadFails(t *testing.T) {
+	testCases := []struct {
+		name string
+		// The original symlink is unlinked if deleteLink is true.
+		deleteLink bool
+		// The Merkle tree file is renamed if deleteMerkleFile is true.
+		deleteMerkleFile bool
+		// The symlink target is a directory.
+		hasDirectoryTarget bool
+		// The symlink target is a directory and contains a regular file which will be
+		// used to test walking a symlink.
+		testWalk bool
+	}{
+		{
+			name:               "DeleteLinkRegularFile",
+			deleteLink:         true,
+			deleteMerkleFile:   false,
+			hasDirectoryTarget: false,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteMerkleRegFile",
+			deleteLink:         false,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: false,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteLinkAndMerkleRegFile",
+			deleteLink:         true,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: false,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteLinkDirectory",
+			deleteLink:         true,
+			deleteMerkleFile:   false,
+			hasDirectoryTarget: true,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteMerkleDirectory",
+			deleteLink:         false,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: true,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteLinkAndMerkleDirectory",
+			deleteLink:         true,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: true,
+			testWalk:           false,
+		},
+		{
+			name:               "DeleteLinkDirectoryWalk",
+			deleteLink:         true,
+			deleteMerkleFile:   false,
+			hasDirectoryTarget: true,
+			testWalk:           true,
+		},
+		{
+			name:               "DeleteMerkleDirectoryWalk",
+			deleteLink:         false,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: true,
+			testWalk:           true,
+		},
+		{
+			name:               "DeleteLinkAndMerkleDirectoryWalk",
+			deleteLink:         true,
+			deleteMerkleFile:   true,
+			hasDirectoryTarget: true,
+			testWalk:           true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.testWalk && !tc.hasDirectoryTarget {
+				t.Fatalf("Invalid test case: hasDirectoryTarget can't be false when testing symlink walk")
+			}
+
+			vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
+
+			var target string
+			if tc.hasDirectoryTarget {
+				target = "verity-test-dir"
+				if _, err := newDirFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newDirFD: %v", err)
+				}
+			} else {
+				target = "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			symlink := "verity-test-symlink"
+			if err := dentryFromVD(t, root).symlinkLowerAt(ctx, vfsObj, target, symlink); err != nil {
+				t.Fatalf("SymlinkAt: %v", err)
+			}
+
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+
+			if err != nil {
+				t.Fatalf("openVerityAt symlink: %v", err)
+			}
+
+			if tc.testWalk {
+				fileInTargetDirectory := target + "/" + "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, fileInTargetDirectory, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			enableVerity(ctx, t, fd)
+
+			if tc.deleteLink {
+				if err := dentryFromVD(t, root).unlinkLowerAt(ctx, vfsObj, symlink); err != nil {
+					t.Fatalf("UnlinkAt: %v", err)
+				}
+			}
+			if tc.deleteMerkleFile {
+				if err := dentryFromVD(t, root).unlinkLowerMerkleAt(ctx, vfsObj, symlink); err != nil {
+					t.Fatalf("UnlinkAt: %v", err)
+				}
+			}
+			if _, err := vfsObj.ReadlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(symlink),
+			}); err != syserror.EIO {
+				t.Fatalf("ReadlinkAt succeeded with modified symlink: %v", err)
+			}
+
+			if tc.testWalk {
+				fileInSymlinkDirectory := symlink + "/verity-test-file"
+				// Ensure opening the verity enabled file in the symlink directory fails.
+				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+					t.Errorf("Open succeeded with modified symlink: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestModifiedSymlinkFileReadFails ensures that reading value of a modified verity enabled
+// symlink fails.
+func TestModifiedSymlinkFileReadFails(t *testing.T) {
+	testCases := []struct {
+		name string
+		// The symlink target is a directory.
+		hasDirectoryTarget bool
+		// The symlink target is a directory and contains a regular file which will be
+		// used to test walking a symlink.
+		testWalk bool
+	}{
+		{
+			name:               "RegularFileTarget",
+			hasDirectoryTarget: false,
+			testWalk:           false,
+		},
+		{
+			name:               "DirectoryTarget",
+			hasDirectoryTarget: true,
+			testWalk:           false,
+		},
+		{
+			name:               "RegularFileInSymlinkDirectory",
+			hasDirectoryTarget: true,
+			testWalk:           true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.testWalk && !tc.hasDirectoryTarget {
+				t.Fatalf("Invalid test case: hasDirectoryTarget can't be false when testing symlink walk")
+			}
+
+			vfsObj, root, ctx, err := newVerityRoot(t, SHA256)
+			if err != nil {
+				t.Fatalf("newVerityRoot: %v", err)
+			}
+
+			var target string
+			if tc.hasDirectoryTarget {
+				target = "verity-test-dir"
+				if _, err := newDirFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newDirFD: %v", err)
+				}
+			} else {
+				target = "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, target, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			// Create symlink which points to target file.
+			symlink := "verity-test-symlink"
+			if err := dentryFromVD(t, root).symlinkLowerAt(ctx, vfsObj, target, symlink); err != nil {
+				t.Fatalf("SymlinkAt: %v", err)
+			}
+
+			// Open symlink file to get the fd for ioctl in new step.
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+			if err != nil {
+				t.Fatalf("OpenAt symlink: %v", err)
+			}
+
+			if tc.testWalk {
+				fileInTargetDirectory := target + "/" + "verity-test-file"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, fileInTargetDirectory, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			enableVerity(ctx, t, fd)
+
+			var newTarget string
+			if tc.hasDirectoryTarget {
+				newTarget = "verity-test-dir-new"
+				if _, err := newDirFD(ctx, t, vfsObj, root, newTarget, 0644); err != nil {
+					t.Fatalf("newDirFD: %v", err)
+				}
+			} else {
+				newTarget = "verity-test-file-new"
+				if _, _, err := newFileFD(ctx, t, vfsObj, root, newTarget, 0644); err != nil {
+					t.Fatalf("newFileFD: %v", err)
+				}
+			}
+
+			// Unlink symlink->target.
+			if err := dentryFromVD(t, root).unlinkLowerAt(ctx, vfsObj, symlink); err != nil {
+				t.Fatalf("UnlinkAt: %v", err)
+			}
+
+			// Link symlink->newTarget.
+			if err := dentryFromVD(t, root).symlinkLowerAt(ctx, vfsObj, newTarget, symlink); err != nil {
+				t.Fatalf("SymlinkAt: %v", err)
+			}
+
+			// Freshen lower dentry for symlink.
+			symlinkVD, err := vfsObj.GetDentryAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(symlink),
+			}, &vfs.GetDentryOptions{})
+			if err != nil {
+				t.Fatalf("Failed to get symlink dentry: %v", err)
+			}
+			symlinkDentry := dentryFromVD(t, symlinkVD)
+
+			symlinkLowerVD, err := dentryFromVD(t, root).getLowerAt(ctx, vfsObj, symlink)
+			if err != nil {
+				t.Fatalf("Failed to get symlink lower dentry: %v", err)
+			}
+			symlinkDentry.lowerVD = symlinkLowerVD
+
+			// Verify ReadlinkAt() fails.
+			if _, err := vfsObj.ReadlinkAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse(symlink),
+			}); err != syserror.EIO {
+				t.Fatalf("ReadlinkAt succeeded with modified symlink: %v", err)
+			}
+
+			if tc.testWalk {
+				fileInSymlinkDirectory := symlink + "/verity-test-file"
+				// Ensure opening the verity enabled file in the symlink directory fails.
+				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+					t.Errorf("Open succeeded with modified symlink: %v", err)
+				}
 			}
 		})
 	}

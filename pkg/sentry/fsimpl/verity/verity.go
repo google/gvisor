@@ -332,6 +332,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.hash = make([]byte, len(iopts.RootHash))
 	d.childrenNames = make(map[string]struct{})
 
+	if !d.isDir() {
+		ctx.Warningf("verity root must be a directory")
+		return nil, nil, syserror.EINVAL
+	}
+
 	if !fs.allowRuntimeEnable {
 		// Get children names from the underlying file system.
 		offString, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
@@ -460,6 +465,9 @@ type dentry struct {
 	// in the underlying file system. It is never modified after
 	// initialized.
 	lowerMerkleVD vfs.VirtualDentry
+
+	// symlinkTarget is the target path of a symlink file in the underlying filesystem.
+	symlinkTarget string
 
 	// hash is the calculated hash for the current file or directory. hash
 	// is protected by hashMu.
@@ -645,6 +653,23 @@ func (d *dentry) getLowerAt(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 }
 
 func (d *dentry) readlink(ctx context.Context) (string, error) {
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	if d.verityEnabled() {
+		stat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
+			Root:  d.lowerVD,
+			Start: d.lowerVD,
+		}, &vfs.StatOptions{})
+		if err != nil {
+			return "", err
+		}
+		d.dirMu.Lock()
+		defer d.dirMu.Unlock()
+		if err := d.fs.verifyStatAndChildrenLocked(ctx, d, stat); err != nil {
+			return "", err
+		}
+		return d.symlinkTarget, nil
+	}
+
 	return d.fs.vfsfs.VirtualFilesystem().ReadlinkAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  d.lowerVD,
 		Start: d.lowerVD,
@@ -756,7 +781,8 @@ func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32)
 // hash of the generated Merkle tree and the data size is returned.  If fd
 // points to a regular file, the data is the content of the file. If fd points
 // to a directory, the data is all hashes of its children, written to the Merkle
-// tree file.
+// tree file. If fd represents a symlink, the data is empty and nothing is written
+// to the Merkle tree file.
 //
 // Preconditions: fd.d.fs.verityMu must be locked.
 func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, uint64, error) {
@@ -772,30 +798,30 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 		FD:  fd.merkleWriter,
 		Ctx: ctx,
 	}
+
+	stat, err := fd.lowerFD.Stat(ctx, vfs.StatOptions{})
+	if err != nil {
+		return nil, 0, err
+	}
+
 	params := &merkletree.GenerateParams{
 		TreeReader: &merkleReader,
 		TreeWriter: &merkleWriter,
 		Children:   fd.d.childrenNames,
 		//TODO(b/156980949): Support passing other hash algorithms.
 		HashAlgorithms: fd.d.fs.alg.toLinuxHashAlg(),
+		Name:           fd.d.name,
+		Mode:           uint32(stat.Mode),
+		UID:            stat.UID,
+		GID:            stat.GID,
 	}
 
 	switch atomic.LoadUint32(&fd.d.mode) & linux.S_IFMT {
 	case linux.S_IFREG:
 		// For a regular file, generate a Merkle tree based on its
 		// content.
-		var err error
-		stat, err := fd.lowerFD.Stat(ctx, vfs.StatOptions{})
-		if err != nil {
-			return nil, 0, err
-		}
-
 		params.File = &fdReader
 		params.Size = int64(stat.Size)
-		params.Name = fd.d.name
-		params.Mode = uint32(stat.Mode)
-		params.UID = stat.UID
-		params.GID = stat.GID
 		params.DataAndTreeInSameFile = false
 	case linux.S_IFDIR:
 		// For a directory, generate a Merkle tree based on the hashes
@@ -807,18 +833,20 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 		}
 
 		params.Size = int64(merkleStat.Size)
-
-		stat, err := fd.lowerFD.Stat(ctx, vfs.StatOptions{})
+		params.File = &merkleReader
+		params.DataAndTreeInSameFile = true
+	case linux.S_IFLNK:
+		// For a symlink, generate a Merkle tree file but do not write the root hash
+		// of the target file content to it. Return a hash of a VerityDescriptor object
+		// which includes the symlink target name.
+		target, err := fd.d.readlink(ctx)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		params.File = &merkleReader
-		params.Name = fd.d.name
-		params.Mode = uint32(stat.Mode)
-		params.UID = stat.UID
-		params.GID = stat.GID
-		params.DataAndTreeInSameFile = true
+		params.Size = int64(stat.Size)
+		params.DataAndTreeInSameFile = false
+		params.SymlinkTarget = target
 	default:
 		// TODO(b/167728857): Investigate whether and how we should
 		// enable other types of file.
