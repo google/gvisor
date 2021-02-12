@@ -409,6 +409,7 @@ func TestSACKRecovery(t *testing.T) {
 	}
 
 	// Do slow start for a few iterations.
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	expected := tcp.InitialCwnd
 	bytesRead := 0
 	for i := 0; i < iterations; i++ {
@@ -416,7 +417,7 @@ func TestSACKRecovery(t *testing.T) {
 		if i > 0 {
 			// Acknowledge all the data received so far if not on
 			// first iteration.
-			c.SendAck(790, bytesRead)
+			c.SendAck(seq, bytesRead)
 		}
 
 		// Read all packets expected on this iteration. Don't
@@ -438,7 +439,7 @@ func TestSACKRecovery(t *testing.T) {
 	start := c.IRS.Add(seqnum.Size(rtxOffset) + 30 + 1)
 	end := start.Add(10)
 	for i := 0; i < 3; i++ {
-		c.SendAckWithSACK(790, rtxOffset, []header.SACKBlock{{start, end}})
+		c.SendAckWithSACK(seq, rtxOffset, []header.SACKBlock{{start, end}})
 		end = end.Add(10)
 	}
 
@@ -475,7 +476,7 @@ func TestSACKRecovery(t *testing.T) {
 	// the cwnd at this point after entering recovery should be half of the
 	// outstanding number of packets in flight.
 	for i := 0; i < 7; i++ {
-		c.SendAckWithSACK(790, rtxOffset, []header.SACKBlock{{start, end}})
+		c.SendAckWithSACK(seq, rtxOffset, []header.SACKBlock{{start, end}})
 		end = end.Add(10)
 	}
 
@@ -497,7 +498,7 @@ func TestSACKRecovery(t *testing.T) {
 	// segment is retransmitted per ACK.
 	start = c.IRS.Add(seqnum.Size(rtxOffset) + 30 + 1)
 	end = start.Add(60)
-	c.SendAckWithSACK(790, rtxOffset, []header.SACKBlock{{start, end}})
+	c.SendAckWithSACK(seq, rtxOffset, []header.SACKBlock{{start, end}})
 
 	// At this point, we acked expected/2 packets and we SACKED 6 packets and
 	// 3 segments were considered lost due to the SACK block we sent.
@@ -557,7 +558,7 @@ func TestSACKRecovery(t *testing.T) {
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after partial ack for this cwnd.", 50*time.Millisecond)
 
 	// Acknowledge all pending data to recover point.
-	c.SendAck(790, recover)
+	c.SendAck(seq, recover)
 
 	// At this point, the cwnd should reset to expected/2 and there are 9
 	// packets outstanding.
@@ -579,7 +580,7 @@ func TestSACKRecovery(t *testing.T) {
 		c.CheckNoPacketTimeout(fmt.Sprintf("More packets received(after deflation) than expected %d for this cwnd and iteration: %d.", expected, i), 50*time.Millisecond)
 
 		// Acknowledge all the data received so far.
-		c.SendAck(790, bytesRead)
+		c.SendAck(seq, bytesRead)
 
 		// In cogestion avoidance, the packets trains increase by 1 in
 		// each iteration.
@@ -603,7 +604,7 @@ func TestRecoveryEntry(t *testing.T) {
 	defer c.Cleanup()
 
 	numPackets := 5
-	data := sendAndReceive(t, c, numPackets, false /* enableRACK */)
+	data := sendAndReceiveWithSACK(t, c, numPackets, false /* enableRACK */)
 
 	// Ack #1 packet.
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
