@@ -25,10 +25,6 @@ import (
 )
 
 func BenchmarkIperf(b *testing.B) {
-	iperf := tools.Iperf{
-		Num: b.N,
-	}
-
 	clientMachine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
@@ -93,6 +89,10 @@ func BenchmarkIperf(b *testing.B) {
 				b.Fatalf("failed to wait for server: %v", err)
 			}
 
+			iperf := tools.Iperf{
+				Num: b.N,
+			}
+
 			// Run the client.
 			b.ResetTimer()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
@@ -103,6 +103,7 @@ func BenchmarkIperf(b *testing.B) {
 			}
 			b.StopTimer()
 			iperf.Report(b, out)
+			b.StartTimer()
 		})
 	}
 }
