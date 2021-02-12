@@ -2131,8 +2131,8 @@ TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
               reinterpret_cast<const struct sockaddr*>(&connect_sockaddr),
               sizeof(sockaddr_in)),
       SyscallSucceeds());
-  socklen_t len;
   sockaddr_storage sockname;
+  socklen_t len = sizeof(sockaddr_storage);
   ASSERT_THAT(getsockname(sock_.get(),
                           reinterpret_cast<struct sockaddr*>(&sockname), &len),
               SyscallSucceeds());
