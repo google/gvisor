@@ -477,13 +477,15 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 // been closed. For that reason, this should NOT be called in a defer, because
 // a panic in a control server rpc would then hang forever.
 func (l *Loader) Destroy() {
-	if l.ctrl != nil {
-		l.ctrl.srv.Stop()
-	}
 	if l.stopSignalForwarding != nil {
 		l.stopSignalForwarding()
 	}
 	l.watchdog.Stop()
+
+	// Stop the control server. This will indirectly stop any
+	// long-running control operations that are in flight, e.g.
+	// profiling operations.
+	l.ctrl.stop()
 
 	// Release all kernel resources. This is only safe after we can no longer
 	// save/restore.
@@ -1054,9 +1056,6 @@ func (l *Loader) WaitForStartSignal() {
 func (l *Loader) WaitExit() kernel.ExitStatus {
 	// Wait for container.
 	l.k.WaitExited()
-
-	// Stop the control server.
-	l.ctrl.stop()
 
 	// Check all references.
 	refs.OnExit()
