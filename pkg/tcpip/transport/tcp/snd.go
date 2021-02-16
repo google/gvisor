@@ -1237,23 +1237,24 @@ func (s *sender) isDupAck(seg *segment) bool {
 func (s *sender) walkSACK(rcvdSeg *segment) {
 	s.rc.setDSACKSeen(false)
 
-	// Look for DSACK block.
-	idx := 0
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
-	if checkDSACK(rcvdSeg) {
-		s.rc.setDSACKSeen(true)
-		idx = 1
-		n--
-	}
-
 	if n == 0 {
 		return
+	}
+
+	// Look for DSACK block.
+	var dsackStart seqnum.Value
+	var dsackEnd seqnum.Value
+	if checkDSACK(rcvdSeg) {
+		s.rc.setDSACKSeen(true)
+		dsackStart = rcvdSeg.parsedOptions.SACKBlocks[0].Start
+		dsackEnd = rcvdSeg.parsedOptions.SACKBlocks[0].End
 	}
 
 	// Sort the SACK blocks. The first block is the most recent unacked
 	// block. The following blocks can be in arbitrary order.
 	sackBlocks := make([]header.SACKBlock, n)
-	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks[idx:])
+	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks)
 	sort.Slice(sackBlocks, func(i, j int) bool {
 		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
 	})
@@ -1261,6 +1262,11 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 	seg := s.writeList.Front()
 	for _, sb := range sackBlocks {
 		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
+			if dsackStart.LessThanEq(seg.sequenceNumber) && seg.sequenceNumber.LessThan(dsackEnd) {
+				seg.dsackCovered = true
+				s.rc.detectReorder(seg)
+			}
+
 			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
 				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
