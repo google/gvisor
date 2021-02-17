@@ -177,10 +177,16 @@ func (f *overlayFileOperations) Readdir(ctx context.Context, file *File, seriali
 // IterateDir implements DirIterator.IterateDir.
 func (f *overlayFileOperations) IterateDir(ctx context.Context, d *Dirent, dirCtx *DirCtx, offset int) (int, error) {
 	o := d.Inode.overlay
+	o.copyMu.RLock()
+	defer o.copyMu.RUnlock()
+	return overlayIterateDirLocked(ctx, o, d, dirCtx, offset)
+}
 
+// Preconditions: o.copyMu must be locked.
+func overlayIterateDirLocked(ctx context.Context, o *overlayEntry, d *Dirent, dirCtx *DirCtx, offset int) (int, error) {
 	if !d.Inode.MountSource.CacheReaddir() {
 		// Can't use the dirCache. Simply read the entries.
-		entries, err := readdirEntries(ctx, o)
+		entries, err := readdirEntriesLocked(ctx, o)
 		if err != nil {
 			return offset, err
 		}
@@ -198,15 +204,6 @@ func (f *overlayFileOperations) IterateDir(ctx context.Context, d *Dirent, dirCt
 	}
 	o.dirCacheMu.RUnlock()
 
-	// readdirEntries holds o.copyUpMu to ensure that copy-up does not
-	// occur while calculating the readdir results.
-	//
-	// However, it is possible for a copy-up to occur after the call to
-	// readdirEntries, but before setting o.dirCache. This is OK, since
-	// copy-up does not change the children in a way that would affect the
-	// children returned in dirCache. Copy-up only moves files/directories
-	// between layers in the overlay.
-	//
 	// We must hold dirCacheMu around both readdirEntries and setting
 	// o.dirCache to synchronize with dirCache invalidations done by
 	// Create, Remove, Rename.
@@ -216,7 +213,7 @@ func (f *overlayFileOperations) IterateDir(ctx context.Context, d *Dirent, dirCt
 	// chance that a racing call managed to just set it, in which case we
 	// can use that new value.
 	if o.dirCache == nil {
-		dirCache, err := readdirEntries(ctx, o)
+		dirCache, err := readdirEntriesLocked(ctx, o)
 		if err != nil {
 			o.dirCacheMu.Unlock()
 			return offset, err
@@ -444,12 +441,11 @@ func (f *overlayFileOperations) SetFifoSize(size int64) (rv int64, err error) {
 	return sz.SetFifoSize(size)
 }
 
-// readdirEntries returns a sorted map of directory entries from the
+// readdirEntriesLocked returns a sorted map of directory entries from the
 // upper and/or lower filesystem.
-func readdirEntries(ctx context.Context, o *overlayEntry) (*SortedDentryMap, error) {
-	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
-
+//
+// Preconditions: o.copyMu must be locked.
+func readdirEntriesLocked(ctx context.Context, o *overlayEntry) (*SortedDentryMap, error) {
 	// Assert that there is at least one upper or lower entry.
 	if o.upper == nil && o.lower == nil {
 		panic("invalid overlayEntry, needs at least one Inode")

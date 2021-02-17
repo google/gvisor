@@ -333,6 +333,19 @@ func overlayRemove(ctx context.Context, o *overlayEntry, parent *Dirent, child *
 	}
 	child.Inode.overlay.copyMu.RLock()
 	defer child.Inode.overlay.copyMu.RUnlock()
+	if child.Inode.StableAttr.Type == Directory {
+		// RemoveDirectory requires that the directory is empty.
+		ser := &CollectEntriesSerializer{}
+		dirCtx := &DirCtx{
+			Serializer: ser,
+		}
+		if _, err := overlayIterateDirLocked(ctx, child.Inode.overlay, child, dirCtx, 0); err != nil {
+			return err
+		}
+		if ser.Written() != 0 {
+			return syserror.ENOTEMPTY
+		}
+	}
 	if child.Inode.overlay.upper != nil {
 		if child.Inode.StableAttr.Type == Directory {
 			if err := o.upper.InodeOperations.RemoveDirectory(ctx, o.upper, child.name); err != nil {
