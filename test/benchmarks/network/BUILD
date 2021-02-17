@@ -29,6 +29,7 @@ benchmark_test(
         "//pkg/test/testutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "@com_github_docker_docker//go-units:go_default_library",
     ],
 )
 

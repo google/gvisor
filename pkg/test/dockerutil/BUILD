@@ -20,6 +20,7 @@ go_library(
         "@com_github_docker_docker//api/types/mount:go_default_library",
         "@com_github_docker_docker//api/types/network:go_default_library",
         "@com_github_docker_docker//client:go_default_library",
+        "@com_github_docker_docker//go-units:go_default_library",
         "@com_github_docker_docker//pkg/stdcopy:go_default_library",
         "@com_github_docker_go_connections//nat:go_default_library",
     ],

@@ -18,6 +18,7 @@ import (
 	"os"
 	"testing"
 
+	units "github.com/docker/go-units"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
@@ -70,13 +71,22 @@ func BenchmarkIperf(b *testing.B) {
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
 
+			ulimit := []*units.Ulimit{
+				{
+					Name: "nofile",
+					Hard: 90000,
+					Soft: 90000,
+				},
+			}
+
 			// iperf serves on port 5001 by default.
 			port := 5001
 
 			// Start the server.
 			if err := server.Spawn(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
-				Ports: []int{port},
+				Image:   "benchmarks/iperf",
+				Ports:   []int{port},
+				Ulimits: ulimit,
 			}, "iperf", "-s"); err != nil {
 				b.Fatalf("failed to start server with: %v", err)
 			}
@@ -103,7 +113,8 @@ func BenchmarkIperf(b *testing.B) {
 			// Run the client.
 			b.ResetTimer()
 			out, err := client.Run(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/iperf",
+				Image:   "benchmarks/iperf",
+				Ulimits: ulimit,
 			}, iperf.MakeCmd(ip, servingPort)...)
 			if err != nil {
 				b.Fatalf("failed to run client: %v", err)

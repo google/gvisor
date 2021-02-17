@@ -36,6 +36,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
+	units "github.com/docker/go-units"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -100,6 +101,9 @@ type RunOpts struct {
 
 	// Links is the list of containers to be connected to the container.
 	Links []string
+
+	// Ulimits to pass to the contianer.
+	Ulimits []*units.Ulimit
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -262,6 +266,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		Resources: container.Resources{
 			Memory:     int64(r.Memory), // In bytes.
 			CpusetCpus: r.CpusetCpus,
+			Ulimits:    r.Ulimits,
 		},
 	}
 }
