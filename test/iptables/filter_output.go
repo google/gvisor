@@ -64,7 +64,7 @@ func (*FilterOutputDropTCPDestPort) ContainerAction(ctx context.Context, ip net.
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -77,7 +77,7 @@ func (*FilterOutputDropTCPDestPort) ContainerAction(ctx context.Context, ip net.
 func (*FilterOutputDropTCPDestPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
 	}
 
@@ -104,7 +104,7 @@ func (*FilterOutputDropTCPSrcPort) ContainerAction(ctx context.Context, ip net.I
 	// Listen for TCP packets on drop port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, dropPort); err == nil {
+	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", dropPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -117,7 +117,7 @@ func (*FilterOutputDropTCPSrcPort) ContainerAction(ctx context.Context, ip net.I
 func (*FilterOutputDropTCPSrcPort) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, dropPort); err == nil {
+	if err := connectTCP(timedCtx, ip, dropPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", dropPort)
 	}
 
@@ -141,12 +141,12 @@ func (*FilterOutputAcceptTCPOwner) ContainerAction(ctx context.Context, ip net.I
 	}
 
 	// Listen for TCP packets on accept port.
-	return listenTCP(ctx, acceptPort)
+	return listenTCP(ctx, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputAcceptTCPOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return connectTCP(ctx, ip, acceptPort)
+	return connectTCP(ctx, ip, acceptPort, ipv6)
 }
 
 // FilterOutputDropTCPOwner tests that TCP connections from uid owner are dropped.
@@ -168,7 +168,7 @@ func (*FilterOutputDropTCPOwner) ContainerAction(ctx context.Context, ip net.IP,
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should be dropped, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -181,7 +181,7 @@ func (*FilterOutputDropTCPOwner) ContainerAction(ctx context.Context, ip net.IP,
 func (*FilterOutputDropTCPOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should be dropped, but got accepted", acceptPort)
 	}
 
@@ -205,13 +205,13 @@ func (*FilterOutputAcceptUDPOwner) ContainerAction(ctx context.Context, ip net.I
 	}
 
 	// Send UDP packets on acceptPort.
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputAcceptUDPOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Listen for UDP packets on acceptPort.
-	return listenUDP(ctx, acceptPort)
+	return listenUDP(ctx, acceptPort, ipv6)
 }
 
 // FilterOutputDropUDPOwner tests that UDP packets from uid owner are dropped.
@@ -231,7 +231,7 @@ func (*FilterOutputDropUDPOwner) ContainerAction(ctx context.Context, ip net.IP,
 	}
 
 	// Send UDP packets on dropPort.
-	return sendUDPLoop(ctx, ip, dropPort)
+	return sendUDPLoop(ctx, ip, dropPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
@@ -239,7 +239,7 @@ func (*FilterOutputDropUDPOwner) LocalAction(ctx context.Context, ip net.IP, ipv
 	// Listen for UDP packets on dropPort.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenUDP(timedCtx, dropPort); err == nil {
+	if err := listenUDP(timedCtx, dropPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received")
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -291,12 +291,12 @@ func (*FilterOutputAcceptGIDOwner) ContainerAction(ctx context.Context, ip net.I
 	}
 
 	// Listen for TCP packets on accept port.
-	return listenTCP(ctx, acceptPort)
+	return listenTCP(ctx, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputAcceptGIDOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return connectTCP(ctx, ip, acceptPort)
+	return connectTCP(ctx, ip, acceptPort, ipv6)
 }
 
 // FilterOutputDropGIDOwner tests that TCP connections from gid owner are dropped.
@@ -318,7 +318,7 @@ func (*FilterOutputDropGIDOwner) ContainerAction(ctx context.Context, ip net.IP,
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -331,7 +331,7 @@ func (*FilterOutputDropGIDOwner) ContainerAction(ctx context.Context, ip net.IP,
 func (*FilterOutputDropGIDOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
 	}
 
@@ -361,7 +361,7 @@ func (*FilterOutputInvertGIDOwner) ContainerAction(ctx context.Context, ip net.I
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -374,7 +374,7 @@ func (*FilterOutputInvertGIDOwner) ContainerAction(ctx context.Context, ip net.I
 func (*FilterOutputInvertGIDOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
 	}
 
@@ -402,12 +402,12 @@ func (*FilterOutputInvertUIDOwner) ContainerAction(ctx context.Context, ip net.I
 	}
 
 	// Listen for TCP packets on accept port.
-	return listenTCP(ctx, acceptPort)
+	return listenTCP(ctx, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInvertUIDOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return connectTCP(ctx, ip, acceptPort)
+	return connectTCP(ctx, ip, acceptPort, ipv6)
 }
 
 // FilterOutputInvertUIDAndGIDOwner tests that TCP connections from uid and gid
@@ -434,7 +434,7 @@ func (*FilterOutputInvertUIDAndGIDOwner) ContainerAction(ctx context.Context, ip
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -447,7 +447,7 @@ func (*FilterOutputInvertUIDAndGIDOwner) ContainerAction(ctx context.Context, ip
 func (*FilterOutputInvertUIDAndGIDOwner) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
 	}
 
@@ -486,12 +486,12 @@ func (*FilterOutputDestination) ContainerAction(ctx context.Context, ip net.IP, 
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputDestination) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return listenUDP(ctx, acceptPort)
+	return listenUDP(ctx, acceptPort, ipv6)
 }
 
 // FilterOutputInvertDestination tests that we can selectively allow packets
@@ -515,12 +515,12 @@ func (*FilterOutputInvertDestination) ContainerAction(ctx context.Context, ip ne
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInvertDestination) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return listenUDP(ctx, acceptPort)
+	return listenUDP(ctx, acceptPort, ipv6)
 }
 
 // FilterOutputInterfaceAccept tests that packets are sent via interface
@@ -544,12 +544,12 @@ func (*FilterOutputInterfaceAccept) ContainerAction(ctx context.Context, ip net.
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterfaceAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return listenUDP(ctx, acceptPort)
+	return listenUDP(ctx, acceptPort, ipv6)
 }
 
 // FilterOutputInterfaceDrop tests that packets are not sent via interface
@@ -573,14 +573,14 @@ func (*FilterOutputInterfaceDrop) ContainerAction(ctx context.Context, ip net.IP
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterfaceDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenUDP(timedCtx, acceptPort); err == nil {
+	if err := listenUDP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -606,12 +606,12 @@ func (*FilterOutputInterface) ContainerAction(ctx context.Context, ip net.IP, ip
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterface) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return listenUDP(ctx, acceptPort)
+	return listenUDP(ctx, acceptPort, ipv6)
 }
 
 // FilterOutputInterfaceBeginsWith tests that packets are not sent via an
@@ -631,14 +631,14 @@ func (*FilterOutputInterfaceBeginsWith) ContainerAction(ctx context.Context, ip 
 		return err
 	}
 
-	return sendUDPLoop(ctx, ip, acceptPort)
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterfaceBeginsWith) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenUDP(timedCtx, acceptPort); err == nil {
+	if err := listenUDP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("packets should not be received on port %v, but are received", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -667,7 +667,7 @@ func (*FilterOutputInterfaceInvertDrop) ContainerAction(ctx context.Context, ip 
 	// Listen for TCP packets on accept port.
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := listenTCP(timedCtx, acceptPort); err == nil {
+	if err := listenTCP(timedCtx, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection on port %d should not be accepted, but got accepted", acceptPort)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("error reading: %v", err)
@@ -680,7 +680,7 @@ func (*FilterOutputInterfaceInvertDrop) ContainerAction(ctx context.Context, ip 
 func (*FilterOutputInterfaceInvertDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
 	defer cancel()
-	if err := connectTCP(timedCtx, ip, acceptPort); err == nil {
+	if err := connectTCP(timedCtx, ip, acceptPort, ipv6); err == nil {
 		return fmt.Errorf("connection destined to port %d should not be accepted, but got accepted", acceptPort)
 	}
 
@@ -705,10 +705,10 @@ func (*FilterOutputInterfaceInvertAccept) ContainerAction(ctx context.Context, i
 	}
 
 	// Listen for TCP packets on accept port.
-	return listenTCP(ctx, acceptPort)
+	return listenTCP(ctx, acceptPort, ipv6)
 }
 
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterfaceInvertAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
-	return connectTCP(ctx, ip, acceptPort)
+	return connectTCP(ctx, ip, acceptPort, ipv6)
 }

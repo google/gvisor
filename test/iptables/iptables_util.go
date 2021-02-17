@@ -71,11 +71,11 @@ func tableRules(ipv6 bool, table string, argsList [][]string) error {
 
 // listenUDP listens on a UDP port and returns the value of net.Conn.Read() for
 // the first read on that port.
-func listenUDP(ctx context.Context, port int) error {
+func listenUDP(ctx context.Context, port int, ipv6 bool) error {
 	localAddr := net.UDPAddr{
 		Port: port,
 	}
-	conn, err := net.ListenUDP("udp", &localAddr)
+	conn, err := net.ListenUDP(udpNetwork(ipv6), &localAddr)
 	if err != nil {
 		return err
 	}
@@ -97,12 +97,12 @@ func listenUDP(ctx context.Context, port int) error {
 
 // sendUDPLoop sends 1 byte UDP packets repeatedly to the IP and port specified
 // over a duration.
-func sendUDPLoop(ctx context.Context, ip net.IP, port int) error {
+func sendUDPLoop(ctx context.Context, ip net.IP, port int, ipv6 bool) error {
 	remote := net.UDPAddr{
 		IP:   ip,
 		Port: port,
 	}
-	conn, err := net.DialUDP("udp", nil, &remote)
+	conn, err := net.DialUDP(udpNetwork(ipv6), nil, &remote)
 	if err != nil {
 		return err
 	}
@@ -126,13 +126,13 @@ func sendUDPLoop(ctx context.Context, ip net.IP, port int) error {
 }
 
 // listenTCP listens for connections on a TCP port.
-func listenTCP(ctx context.Context, port int) error {
+func listenTCP(ctx context.Context, port int, ipv6 bool) error {
 	localAddr := net.TCPAddr{
 		Port: port,
 	}
 
 	// Starts listening on port.
-	lConn, err := net.ListenTCP("tcp", &localAddr)
+	lConn, err := net.ListenTCP(tcpNetwork(ipv6), &localAddr)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func listenTCP(ctx context.Context, port int) error {
 }
 
 // connectTCP connects to the given IP and port from an ephemeral local address.
-func connectTCP(ctx context.Context, ip net.IP, port int) error {
+func connectTCP(ctx context.Context, ip net.IP, port int, ipv6 bool) error {
 	contAddr := net.TCPAddr{
 		IP:   ip,
 		Port: port,
@@ -164,7 +164,7 @@ func connectTCP(ctx context.Context, ip net.IP, port int) error {
 	// upon error.
 	callback := func() error {
 		var d net.Dialer
-		conn, err := d.DialContext(ctx, "tcp", contAddr.String())
+		conn, err := d.DialContext(ctx, tcpNetwork(ipv6), contAddr.String())
 		if conn != nil {
 			conn.Close()
 		}
@@ -279,4 +279,20 @@ func nowhereIP(ipv6 bool) string {
 		return "2001:db8::1"
 	}
 	return "192.0.2.1"
+}
+
+// udpNetwork returns an IPv6 or IPv6 UDP network argument to net.Dial.
+func udpNetwork(ipv6 bool) string {
+	if ipv6 {
+		return "udp6"
+	}
+	return "udp4"
+}
+
+// tcpNetwork returns an IPv6 or IPv6 TCP network argument to net.Dial.
+func tcpNetwork(ipv6 bool) string {
+	if ipv6 {
+		return "tcp6"
+	}
+	return "tcp4"
 }
