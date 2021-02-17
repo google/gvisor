@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package multicast_broadcast_test
 
 import (
 	"bytes"
-	"net"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -29,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -37,29 +37,6 @@ import (
 const (
 	defaultMTU = 1280
 	ttl        = 255
-
-	remotePort = 5555
-	localPort  = 80
-)
-
-var (
-	ipv4Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
-		PrefixLen: 24,
-	}
-	ipv4Subnet      = ipv4Addr.Subnet()
-	ipv4SubnetBcast = ipv4Subnet.Broadcast()
-
-	ipv6Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("200a::1").To16()),
-		PrefixLen: 64,
-	}
-	ipv6Subnet      = ipv6Addr.Subnet()
-	ipv6SubnetBcast = ipv6Subnet.Broadcast()
-
-	// Remote addrs.
-	remoteIPv4Addr = tcpip.Address(net.ParseIP("10.0.0.1").To4())
-	remoteIPv6Addr = tcpip.Address(net.ParseIP("200b::1").To16())
 )
 
 // TestPingMulticastBroadcast tests that responding to an Echo Request destined
@@ -81,7 +58,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			TotalLength: uint16(totalLen),
 			Protocol:    uint8(icmp.ProtocolNumber4),
 			TTL:         ttl,
-			SrcAddr:     remoteIPv4Addr,
+			SrcAddr:     utils.RemoteIPv4Addr,
 			DstAddr:     dst,
 		})
 		ip.SetChecksum(^ip.CalculateChecksum())
@@ -98,13 +75,13 @@ func TestPingMulticastBroadcast(t *testing.T) {
 		pkt.SetType(header.ICMPv6EchoRequest)
 		pkt.SetCode(0)
 		pkt.SetChecksum(0)
-		pkt.SetChecksum(header.ICMPv6Checksum(pkt, remoteIPv6Addr, dst, buffer.VectorisedView{}))
+		pkt.SetChecksum(header.ICMPv6Checksum(pkt, utils.RemoteIPv6Addr, dst, buffer.VectorisedView{}))
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     header.ICMPv6MinimumSize,
 			TransportProtocol: icmp.ProtocolNumber6,
 			HopLimit:          ttl,
-			SrcAddr:           remoteIPv6Addr,
+			SrcAddr:           utils.RemoteIPv6Addr,
 			DstAddr:           dst,
 		})
 
@@ -119,11 +96,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 	}{
 		{
 			name:    "IPv4 unicast",
-			dstAddr: ipv4Addr.Address,
+			dstAddr: utils.Ipv4Addr.Address,
 		},
 		{
 			name:    "IPv4 directed broadcast",
-			dstAddr: ipv4SubnetBcast,
+			dstAddr: utils.Ipv4SubnetBcast,
 		},
 		{
 			name:    "IPv4 broadcast",
@@ -135,7 +112,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 		},
 		{
 			name:    "IPv6 unicast",
-			dstAddr: ipv6Addr.Address,
+			dstAddr: utils.Ipv6Addr.Address,
 		},
 		{
 			name:    "IPv6 all-nodes multicast",
@@ -154,11 +131,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
-			ipv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr}
+			ipv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
 			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv4ProtoAddr, err)
 			}
-			ipv6ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: ipv6Addr}
+			ipv6ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: utils.Ipv6Addr}
 			if err := s.AddProtocolAddress(nicID, ipv6ProtoAddr); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv6ProtoAddr, err)
 			}
@@ -183,13 +160,13 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			switch l := len(test.dstAddr); l {
 			case header.IPv4AddressSize:
 				rxICMP = rxIPv4ICMP
-				expectedSrc = ipv4Addr.Address
-				expectedDst = remoteIPv4Addr
+				expectedSrc = utils.Ipv4Addr.Address
+				expectedDst = utils.RemoteIPv4Addr
 				protoNum = header.IPv4ProtocolNumber
 			case header.IPv6AddressSize:
 				rxICMP = rxIPv6ICMP
-				expectedSrc = ipv6Addr.Address
-				expectedDst = remoteIPv6Addr
+				expectedSrc = utils.Ipv6Addr.Address
+				expectedDst = utils.RemoteIPv6Addr
 				protoNum = header.IPv6ProtocolNumber
 			default:
 				t.Fatalf("got unexpected address length = %d bytes", l)
@@ -226,8 +203,8 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	hdr := buffer.NewPrependable(totalLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
-		SrcPort: remotePort,
-		DstPort: localPort,
+		SrcPort: utils.RemotePort,
+		DstPort: utils.LocalPort,
 		Length:  uint16(payloadLen),
 	})
 	copy(u.Payload(), data)
@@ -255,8 +232,8 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
-		SrcPort: remotePort,
-		DstPort: localPort,
+		SrcPort: utils.RemotePort,
+		DstPort: utils.LocalPort,
 		Length:  uint16(payloadLen),
 	})
 	copy(u.Payload(), data)
@@ -298,68 +275,68 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 		{
 			name:       "IPv4 unicast binding to unicast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			bindAddr:   ipv4Addr.Address,
-			dstAddr:    ipv4Addr.Address,
+			bindAddr:   utils.Ipv4Addr.Address,
+			dstAddr:    utils.Ipv4Addr.Address,
 			expectRx:   true,
 		},
 		{
 			name:       "IPv4 unicast binding to broadcast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
 			bindAddr:   header.IPv4Broadcast,
-			dstAddr:    ipv4Addr.Address,
+			dstAddr:    utils.Ipv4Addr.Address,
 			expectRx:   false,
 		},
 		{
 			name:       "IPv4 unicast binding to wildcard",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			dstAddr:    ipv4Addr.Address,
+			dstAddr:    utils.Ipv4Addr.Address,
 			expectRx:   true,
 		},
 
 		{
 			name:       "IPv4 directed broadcast binding to subnet broadcast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			bindAddr:   ipv4SubnetBcast,
-			dstAddr:    ipv4SubnetBcast,
+			bindAddr:   utils.Ipv4SubnetBcast,
+			dstAddr:    utils.Ipv4SubnetBcast,
 			expectRx:   true,
 		},
 		{
 			name:       "IPv4 directed broadcast binding to broadcast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
 			bindAddr:   header.IPv4Broadcast,
-			dstAddr:    ipv4SubnetBcast,
+			dstAddr:    utils.Ipv4SubnetBcast,
 			expectRx:   false,
 		},
 		{
 			name:       "IPv4 directed broadcast binding to wildcard",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			dstAddr:    ipv4SubnetBcast,
+			dstAddr:    utils.Ipv4SubnetBcast,
 			expectRx:   true,
 		},
 
 		{
 			name:       "IPv4 broadcast binding to broadcast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
 			bindAddr:   header.IPv4Broadcast,
 			dstAddr:    header.IPv4Broadcast,
@@ -368,28 +345,28 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 		{
 			name:       "IPv4 broadcast binding to subnet broadcast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			bindAddr:   ipv4SubnetBcast,
+			bindAddr:   utils.Ipv4SubnetBcast,
 			dstAddr:    header.IPv4Broadcast,
 			expectRx:   false,
 		},
 		{
 			name:       "IPv4 broadcast binding to wildcard",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			dstAddr:    ipv4SubnetBcast,
+			dstAddr:    utils.Ipv4SubnetBcast,
 			expectRx:   true,
 		},
 
 		{
 			name:       "IPv4 all-systems multicast binding to all-systems multicast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
 			bindAddr:   header.IPv4AllSystems,
 			dstAddr:    header.IPv4AllSystems,
@@ -398,8 +375,8 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 		{
 			name:       "IPv4 all-systems multicast binding to wildcard",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
 			dstAddr:    header.IPv4AllSystems,
 			expectRx:   true,
@@ -407,10 +384,10 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 		{
 			name:       "IPv4 all-systems multicast binding to unicast",
 			proto:      header.IPv4ProtocolNumber,
-			remoteAddr: remoteIPv4Addr,
-			localAddr:  ipv4Addr,
+			remoteAddr: utils.RemoteIPv4Addr,
+			localAddr:  utils.Ipv4Addr,
 			rxUDP:      rxIPv4UDP,
-			bindAddr:   ipv4Addr.Address,
+			bindAddr:   utils.Ipv4Addr.Address,
 			dstAddr:    header.IPv4AllSystems,
 			expectRx:   false,
 		},
@@ -418,19 +395,19 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 		// IPv6 has no notion of a broadcast.
 		{
 			name:       "IPv6 unicast binding to wildcard",
-			dstAddr:    ipv6Addr.Address,
+			dstAddr:    utils.Ipv6Addr.Address,
 			proto:      header.IPv6ProtocolNumber,
-			remoteAddr: remoteIPv6Addr,
-			localAddr:  ipv6Addr,
+			remoteAddr: utils.RemoteIPv6Addr,
+			localAddr:  utils.Ipv6Addr,
 			rxUDP:      rxIPv6UDP,
 			expectRx:   true,
 		},
 		{
 			name:       "IPv6 broadcast-like address binding to wildcard",
-			dstAddr:    ipv6SubnetBcast,
+			dstAddr:    utils.Ipv6SubnetBcast,
 			proto:      header.IPv6ProtocolNumber,
-			remoteAddr: remoteIPv6Addr,
-			localAddr:  ipv6Addr,
+			remoteAddr: utils.RemoteIPv6Addr,
+			localAddr:  utils.Ipv6Addr,
 			rxUDP:      rxIPv6UDP,
 			expectRx:   false,
 		},
@@ -458,7 +435,7 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 			}
 			defer ep.Close()
 
-			bindAddr := tcpip.FullAddress{Addr: test.bindAddr, Port: localPort}
+			bindAddr := tcpip.FullAddress{Addr: test.bindAddr, Port: utils.LocalPort}
 			if err := ep.Bind(bindAddr); err != nil {
 				t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
 			}
@@ -639,16 +616,16 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 			name:          "IPv4 unicast binding to unicast",
 			multicastAddr: "\xe0\x01\x02\x03",
 			proto:         header.IPv4ProtocolNumber,
-			remoteAddr:    remoteIPv4Addr,
-			localAddr:     ipv4Addr,
+			remoteAddr:    utils.RemoteIPv4Addr,
+			localAddr:     utils.Ipv4Addr,
 			rxUDP:         rxIPv4UDP,
 		},
 		{
 			name:          "IPv6 broadcast-like address binding to wildcard",
 			multicastAddr: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04",
 			proto:         header.IPv6ProtocolNumber,
-			remoteAddr:    remoteIPv6Addr,
-			localAddr:     ipv6Addr,
+			remoteAddr:    utils.RemoteIPv6Addr,
+			localAddr:     utils.Ipv6Addr,
 			rxUDP:         rxIPv6UDP,
 		},
 	}
@@ -719,7 +696,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 					}
 					defer ep.Close()
 
-					bindAddr := tcpip.FullAddress{Port: localPort}
+					bindAddr := tcpip.FullAddress{Port: utils.LocalPort}
 					if err := ep.Bind(bindAddr); err != nil {
 						t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
 					}

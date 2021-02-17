@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package route_test
 
 import (
 	"bytes"
@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -107,7 +108,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber4,
 			netProto:          ipv4.ProtocolNumber,
 			linkEndpoint:      channelEP,
-			localAddr:         ipv4Addr.Address,
+			localAddr:         utils.Ipv4Addr.Address,
 			icmpBuf:           ipv4ICMPBuf,
 			checkLinkEndpoint: channelEPCheck,
 		},
@@ -116,7 +117,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber6,
 			netProto:          ipv6.ProtocolNumber,
 			linkEndpoint:      channelEP,
-			localAddr:         ipv6Addr.Address,
+			localAddr:         utils.Ipv6Addr.Address,
 			icmpBuf:           ipv6ICMPBuf,
 			checkLinkEndpoint: channelEPCheck,
 		},
@@ -253,13 +254,13 @@ func TestLocalUDP(t *testing.T) {
 	}{
 		{
 			name:             "IPv4",
-			canBePrimaryAddr: ipv4Addr1,
-			firstPrimaryAddr: ipv4Addr2,
+			canBePrimaryAddr: utils.Ipv4Addr1,
+			firstPrimaryAddr: utils.Ipv4Addr2,
 		},
 		{
 			name:             "IPv6",
-			canBePrimaryAddr: ipv6Addr1,
-			firstPrimaryAddr: ipv6Addr2,
+			canBePrimaryAddr: utils.Ipv6Addr1,
+			firstPrimaryAddr: utils.Ipv6Addr2,
 		},
 	}
 

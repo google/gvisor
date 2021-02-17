@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package link_resolution_test
 
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
@@ -33,107 +32,56 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const (
-	linkAddr1 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
-	linkAddr2 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x07")
-	linkAddr3 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x08")
-	linkAddr4 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
-)
-
-var (
-	ipv4Addr1 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
-			PrefixLen: 24,
-		},
-	}
-	ipv4Addr2 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
-			PrefixLen: 8,
-		},
-	}
-	ipv4Addr3 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.0.3").To4()),
-			PrefixLen: 8,
-		},
-	}
-	ipv6Addr1 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::1").To16()),
-			PrefixLen: 64,
-		},
-	}
-	ipv6Addr2 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::2").To16()),
-			PrefixLen: 64,
-		},
-	}
-	ipv6Addr3 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("a::3").To16()),
-			PrefixLen: 64,
-		},
-	}
-)
-
 func setupStack(t *testing.T, stackOpts stack.Options, host1NICID, host2NICID tcpip.NICID) (*stack.Stack, *stack.Stack) {
 	host1Stack := stack.New(stackOpts)
 	host2Stack := stack.New(stackOpts)
 
-	host1NIC, host2NIC := pipe.New(linkAddr1, linkAddr2)
+	host1NIC, host2NIC := pipe.New(utils.LinkAddr1, utils.LinkAddr2)
 
-	if err := host1Stack.CreateNIC(host1NICID, newEthernetEndpoint(host1NIC)); err != nil {
+	if err := host1Stack.CreateNIC(host1NICID, utils.NewEthernetEndpoint(host1NIC)); err != nil {
 		t.Fatalf("host1Stack.CreateNIC(%d, _): %s", host1NICID, err)
 	}
-	if err := host2Stack.CreateNIC(host2NICID, newEthernetEndpoint(host2NIC)); err != nil {
+	if err := host2Stack.CreateNIC(host2NICID, utils.NewEthernetEndpoint(host2NIC)); err != nil {
 		t.Fatalf("host2Stack.CreateNIC(%d, _): %s", host2NICID, err)
 	}
 
-	if err := host1Stack.AddProtocolAddress(host1NICID, ipv4Addr1); err != nil {
-		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, ipv4Addr1, err)
+	if err := host1Stack.AddProtocolAddress(host1NICID, utils.Ipv4Addr1); err != nil {
+		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, utils.Ipv4Addr1, err)
 	}
-	if err := host2Stack.AddProtocolAddress(host2NICID, ipv4Addr2); err != nil {
-		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, ipv4Addr2, err)
+	if err := host2Stack.AddProtocolAddress(host2NICID, utils.Ipv4Addr2); err != nil {
+		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, utils.Ipv4Addr2, err)
 	}
-	if err := host1Stack.AddProtocolAddress(host1NICID, ipv6Addr1); err != nil {
-		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, ipv6Addr1, err)
+	if err := host1Stack.AddProtocolAddress(host1NICID, utils.Ipv6Addr1); err != nil {
+		t.Fatalf("host1Stack.AddProtocolAddress(%d, %#v): %s", host1NICID, utils.Ipv6Addr1, err)
 	}
-	if err := host2Stack.AddProtocolAddress(host2NICID, ipv6Addr2); err != nil {
-		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, ipv6Addr2, err)
+	if err := host2Stack.AddProtocolAddress(host2NICID, utils.Ipv6Addr2); err != nil {
+		t.Fatalf("host2Stack.AddProtocolAddress(%d, %#v): %s", host2NICID, utils.Ipv6Addr2, err)
 	}
 
 	host1Stack.SetRouteTable([]tcpip.Route{
 		{
-			Destination: ipv4Addr1.AddressWithPrefix.Subnet(),
+			Destination: utils.Ipv4Addr1.AddressWithPrefix.Subnet(),
 			NIC:         host1NICID,
 		},
 		{
-			Destination: ipv6Addr1.AddressWithPrefix.Subnet(),
+			Destination: utils.Ipv6Addr1.AddressWithPrefix.Subnet(),
 			NIC:         host1NICID,
 		},
 	})
 	host2Stack.SetRouteTable([]tcpip.Route{
 		{
-			Destination: ipv4Addr2.AddressWithPrefix.Subnet(),
+			Destination: utils.Ipv4Addr2.AddressWithPrefix.Subnet(),
 			NIC:         host2NICID,
 		},
 		{
-			Destination: ipv6Addr2.AddressWithPrefix.Subnet(),
+			Destination: utils.Ipv6Addr2.AddressWithPrefix.Subnet(),
 			NIC:         host2NICID,
 		},
 	})
@@ -164,7 +112,7 @@ func TestPing(t *testing.T) {
 			name:       "IPv4 Ping",
 			transProto: icmp.ProtocolNumber4,
 			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv4Addr2.AddressWithPrefix.Address,
 			icmpBuf: func(t *testing.T) []byte {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv4(make([]byte, header.ICMPv4MinimumSize+len(data)))
@@ -179,7 +127,7 @@ func TestPing(t *testing.T) {
 			name:       "IPv6 Ping",
 			transProto: icmp.ProtocolNumber6,
 			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
 			icmpBuf: func(t *testing.T) []byte {
 				data := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 				hdr := header.ICMPv6(make([]byte, header.ICMPv6MinimumSize+len(data)))
@@ -272,30 +220,30 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 		{
 			name:             "IPv4 with resolvable remote",
 			netProto:         ipv4.ProtocolNumber,
-			remoteAddr:       ipv4Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
 			expectedWriteErr: nil,
 		},
 		{
 			name:             "IPv6 with resolvable remote",
 			netProto:         ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
 			expectedWriteErr: nil,
 		},
 		{
 			name:             "IPv4 without resolvable remote",
 			netProto:         ipv4.ProtocolNumber,
-			remoteAddr:       ipv4Addr3.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr3.AddressWithPrefix.Address,
 			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
 				Err: &tcpip.ErrNoRoute{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
-					Addr: ipv4Addr3.AddressWithPrefix.Address,
+					Addr: utils.Ipv4Addr3.AddressWithPrefix.Address,
 					Port: 1234,
 				},
 				Offender: tcpip.FullAddress{
 					NIC:  host1NICID,
-					Addr: ipv4Addr1.AddressWithPrefix.Address,
+					Addr: utils.Ipv4Addr1.AddressWithPrefix.Address,
 				},
 				NetProto: ipv4.ProtocolNumber,
 			},
@@ -309,18 +257,18 @@ func TestTCPLinkResolutionFailure(t *testing.T) {
 		{
 			name:             "IPv6 without resolvable remote",
 			netProto:         ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr3.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr3.AddressWithPrefix.Address,
 			expectedWriteErr: &tcpip.ErrNoRoute{},
 			sockError: tcpip.SockError{
 				Err: &tcpip.ErrNoRoute{},
 				Dst: tcpip.FullAddress{
 					NIC:  host1NICID,
-					Addr: ipv6Addr3.AddressWithPrefix.Address,
+					Addr: utils.Ipv6Addr3.AddressWithPrefix.Address,
 					Port: 1234,
 				},
 				Offender: tcpip.FullAddress{
 					NIC:  host1NICID,
-					Addr: ipv6Addr1.AddressWithPrefix.Address,
+					Addr: utils.Ipv6Addr1.AddressWithPrefix.Address,
 				},
 				NetProto: ipv6.ProtocolNumber,
 			},
@@ -462,25 +410,25 @@ func TestGetLinkAddress(t *testing.T) {
 		{
 			name:       "IPv4 resolvable",
 			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: ipv4Addr2.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv4Addr2.AddressWithPrefix.Address,
 			expectedOk: true,
 		},
 		{
 			name:       "IPv6 resolvable",
 			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: ipv6Addr2.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
 			expectedOk: true,
 		},
 		{
 			name:       "IPv4 not resolvable",
 			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: ipv4Addr3.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv4Addr3.AddressWithPrefix.Address,
 			expectedOk: false,
 		},
 		{
 			name:       "IPv6 not resolvable",
 			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: ipv6Addr3.AddressWithPrefix.Address,
+			remoteAddr: utils.Ipv6Addr3.AddressWithPrefix.Address,
 			expectedOk: false,
 		},
 	}
@@ -502,7 +450,7 @@ func TestGetLinkAddress(t *testing.T) {
 			}
 			wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
 			if test.expectedOk {
-				wantRes.LinkAddress = linkAddr2
+				wantRes.LinkAddress = utils.LinkAddr2
 			}
 			if diff := cmp.Diff(wantRes, <-ch); diff != "" {
 				t.Fatalf("link resolution result mismatch (-want +got):\n%s", diff)
@@ -529,7 +477,7 @@ func TestRouteResolvedFields(t *testing.T) {
 		{
 			name:                  "IPv4 immediately resolvable",
 			netProto:              ipv4.ProtocolNumber,
-			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
 			remoteAddr:            header.IPv4AllSystems,
 			immediatelyResolvable: true,
 			expectedSuccess:       true,
@@ -538,7 +486,7 @@ func TestRouteResolvedFields(t *testing.T) {
 		{
 			name:                  "IPv6 immediately resolvable",
 			netProto:              ipv6.ProtocolNumber,
-			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
 			remoteAddr:            header.IPv6AllNodesMulticastAddress,
 			immediatelyResolvable: true,
 			expectedSuccess:       true,
@@ -547,34 +495,34 @@ func TestRouteResolvedFields(t *testing.T) {
 		{
 			name:                  "IPv4 resolvable",
 			netProto:              ipv4.ProtocolNumber,
-			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
-			remoteAddr:            ipv4Addr2.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:            utils.Ipv4Addr2.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
 			expectedSuccess:       true,
-			expectedLinkAddr:      linkAddr2,
+			expectedLinkAddr:      utils.LinkAddr2,
 		},
 		{
 			name:                  "IPv6 resolvable",
 			netProto:              ipv6.ProtocolNumber,
-			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
-			remoteAddr:            ipv6Addr2.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:            utils.Ipv6Addr2.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
 			expectedSuccess:       true,
-			expectedLinkAddr:      linkAddr2,
+			expectedLinkAddr:      utils.LinkAddr2,
 		},
 		{
 			name:                  "IPv4 not resolvable",
 			netProto:              ipv4.ProtocolNumber,
-			localAddr:             ipv4Addr1.AddressWithPrefix.Address,
-			remoteAddr:            ipv4Addr3.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:            utils.Ipv4Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
 			expectedSuccess:       false,
 		},
 		{
 			name:                  "IPv6 not resolvable",
 			netProto:              ipv6.ProtocolNumber,
-			localAddr:             ipv6Addr1.AddressWithPrefix.Address,
-			remoteAddr:            ipv6Addr3.AddressWithPrefix.Address,
+			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:            utils.Ipv6Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
 			expectedSuccess:       false,
 		},
@@ -594,7 +542,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			defer r.Release()
 
 			var wantRouteInfo stack.RouteInfo
-			wantRouteInfo.LocalLinkAddress = linkAddr1
+			wantRouteInfo.LocalLinkAddress = utils.LinkAddr1
 			wantRouteInfo.LocalAddress = test.localAddr
 			wantRouteInfo.RemoteAddress = test.remoteAddr
 			wantRouteInfo.NetProto = test.netProto
@@ -657,13 +605,13 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 		{
 			name:             "IPv4",
 			netProto:         ipv4.ProtocolNumber,
-			remoteAddr:       ipv4Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
 			expectedWriteErr: nil,
 		},
 		{
 			name:             "IPv6",
 			netProto:         ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
 			expectedWriteErr: nil,
 		},
 	}
@@ -850,8 +798,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv4 active connection through neighbor",
 			netProto:     ipv4.ProtocolNumber,
-			remoteAddr:   host2IPv4Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host2IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
@@ -874,8 +822,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv6 active connection through neighbor",
 			netProto:     ipv6.ProtocolNumber,
-			remoteAddr:   host2IPv6Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host2IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host2Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
@@ -898,8 +846,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv4 active connection to neighbor",
 			netProto:     ipv4.ProtocolNumber,
-			remoteAddr:   routerNIC1IPv4Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
@@ -922,8 +870,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv6 active connection to neighbor",
 			netProto:     ipv6.ProtocolNumber,
-			remoteAddr:   routerNIC1IPv6Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := routerStack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
@@ -946,8 +894,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv4 passive connection to neighbor",
 			netProto:     ipv4.ProtocolNumber,
-			remoteAddr:   host1IPv4Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
@@ -971,8 +919,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv6 passive connection to neighbor",
 			netProto:     ipv6.ProtocolNumber,
-			remoteAddr:   host1IPv6Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, routerStack, _ *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
@@ -996,8 +944,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv4 passive connection through neighbor",
 			netProto:     ipv4.ProtocolNumber,
-			remoteAddr:   host1IPv4Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv4Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host1IPv4Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &listenerWQ)
@@ -1021,8 +969,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 		{
 			name:         "IPv6 passive connection through neighbor",
 			netProto:     ipv6.ProtocolNumber,
-			remoteAddr:   host1IPv6Addr.AddressWithPrefix.Address,
-			neighborAddr: routerNIC1IPv6Addr.AddressWithPrefix.Address,
+			remoteAddr:   utils.Host1IPv6Addr.AddressWithPrefix.Address,
+			neighborAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
 			getEndpoints: func(t *testing.T, host1Stack, _, host2Stack *stack.Stack) (tcpip.Endpoint, tcpip.Endpoint, <-chan struct{}) {
 				var listenerWQ waiter.Queue
 				listenerEP, err := host1Stack.NewEndpoint(tcp.ProtocolNumber, ipv6.ProtocolNumber, &listenerWQ)
@@ -1062,41 +1010,41 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			host1Stack := stack.New(host1StackOpts)
 			routerStack := stack.New(stackOpts)
 			host2Stack := stack.New(stackOpts)
-			setupRoutedStacks(t, host1Stack, routerStack, host2Stack)
+			utils.SetupRoutedStacks(t, host1Stack, routerStack, host2Stack)
 
 			// Add a reachable dynamic entry to our neighbor table for the remote.
 			{
 				ch := make(chan stack.LinkResolutionResult, 1)
-				err := host1Stack.GetLinkAddress(host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+				err := host1Stack.GetLinkAddress(utils.Host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
 					ch <- r
 				})
 				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.neighborAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
+					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", utils.Host1NICID, test.neighborAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
 				}
-				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: linkAddr2, Success: true}, <-ch); diff != "" {
+				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: utils.LinkAddr2, Success: true}, <-ch); diff != "" {
 					t.Fatalf("link resolution mismatch (-want +got):\n%s", diff)
 				}
 			}
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryAdded,
-				nicID:     host1NICID,
+				nicID:     utils.Host1NICID,
 				entry:     stack.NeighborEntry{State: stack.Incomplete, Addr: test.neighborAddr},
 			}); err != nil {
 				t.Fatalf("error waiting for initial NUD event: %s", err)
 			}
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for reachable NUD event: %s", err)
 			}
 
 			// Wait for the remote's neighbor entry to be stale before creating a
 			// TCP connection from host1 to some remote.
-			nudConfigs, err := host1Stack.NUDConfigurations(host1NICID, test.netProto)
+			nudConfigs, err := host1Stack.NUDConfigurations(utils.Host1NICID, test.netProto)
 			if err != nil {
-				t.Fatalf("host1Stack.NUDConfigurations(%d, %d): %s", host1NICID, test.netProto, err)
+				t.Fatalf("host1Stack.NUDConfigurations(%d, %d): %s", utils.Host1NICID, test.netProto, err)
 			}
 			// The maximum reachable time for a neighbor is some maximum random factor
 			// applied to the base reachable time.
@@ -1106,8 +1054,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			clock.Advance(maxReachableTime)
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for stale NUD event: %s", err)
 			}
@@ -1136,15 +1084,15 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			<-clientCH
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for delay NUD event: %s", err)
 			}
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for reachable NUD event: %s", err)
 			}
@@ -1157,8 +1105,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			clock.Advance(maxReachableTime)
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Stale, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for stale NUD event: %s", err)
 			}
@@ -1170,8 +1118,8 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			}
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Delay, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for delay NUD event: %s", err)
 			}
@@ -1183,16 +1131,16 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				clock.Advance(nudConfigs.DelayFirstProbeTime)
 				if err := nudDisp.waitForEvent(eventInfo{
 					eventType: entryChanged,
-					nicID:     host1NICID,
-					entry:     stack.NeighborEntry{State: stack.Probe, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+					nicID:     utils.Host1NICID,
+					entry:     stack.NeighborEntry{State: stack.Probe, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 				}); err != nil {
 					t.Fatalf("error waiting for probe NUD event: %s", err)
 				}
 			}
 			if err := nudDisp.waitForEvent(eventInfo{
 				eventType: entryChanged,
-				nicID:     host1NICID,
-				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: linkAddr2},
+				nicID:     utils.Host1NICID,
+				entry:     stack.NeighborEntry{State: stack.Reachable, Addr: test.neighborAddr, LinkAddr: utils.LinkAddr2},
 			}); err != nil {
 				t.Fatalf("error waiting for reachable NUD event: %s", err)
 			}
@@ -1201,11 +1149,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 }
 
 func TestDAD(t *testing.T) {
-	const (
-		host1NICID = 1
-		host2NICID = 4
-	)
-
 	dadConfigs := stack.DADConfigurations{
 		DupAddrDetectTransmits: 1,
 		RetransmitTimer:        time.Second,
@@ -1222,42 +1165,42 @@ func TestDAD(t *testing.T) {
 			name:             "IPv4 own address",
 			netProto:         ipv4.ProtocolNumber,
 			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       ipv4Addr1.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr1.AddressWithPrefix.Address,
 			expectedResolved: true,
 		},
 		{
 			name:             "IPv6 own address",
 			netProto:         ipv6.ProtocolNumber,
 			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr1.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr1.AddressWithPrefix.Address,
 			expectedResolved: true,
 		},
 		{
 			name:             "IPv4 duplicate address",
 			netProto:         ipv4.ProtocolNumber,
 			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       ipv4Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
 			expectedResolved: false,
 		},
 		{
 			name:             "IPv6 duplicate address",
 			netProto:         ipv6.ProtocolNumber,
 			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr2.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
 			expectedResolved: false,
 		},
 		{
 			name:             "IPv4 no duplicate address",
 			netProto:         ipv4.ProtocolNumber,
 			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       ipv4Addr3.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv4Addr3.AddressWithPrefix.Address,
 			expectedResolved: true,
 		},
 		{
 			name:             "IPv6 no duplicate address",
 			netProto:         ipv6.ProtocolNumber,
 			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       ipv6Addr3.AddressWithPrefix.Address,
+			remoteAddr:       utils.Ipv6Addr3.AddressWithPrefix.Address,
 			expectedResolved: true,
 		},
 	}
@@ -1274,21 +1217,21 @@ func TestDAD(t *testing.T) {
 				},
 			}
 
-			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
+			host1Stack, _ := setupStack(t, stackOpts, utils.Host1NICID, utils.Host2NICID)
 
 			// DAD should be disabled by default.
-			if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+			if res, err := host1Stack.CheckDuplicateAddress(utils.Host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
 				t.Errorf("unexpectedly called DAD completion handler when DAD was supposed to be disabled")
 			}); err != nil {
-				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", utils.Host1NICID, test.netProto, test.remoteAddr, err)
 			} else if res != stack.DADDisabled {
-				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADDisabled)
+				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", utils.Host1NICID, test.netProto, test.remoteAddr, res, stack.DADDisabled)
 			}
 
 			// Enable DAD then attempt to check if an address is duplicated.
-			netEP, err := host1Stack.GetNetworkEndpoint(host1NICID, test.dadNetProto)
+			netEP, err := host1Stack.GetNetworkEndpoint(utils.Host1NICID, test.dadNetProto)
 			if err != nil {
-				t.Fatalf("host1Stack.GetNetworkEndpoint(%d, %d): %s", host1NICID, test.dadNetProto, err)
+				t.Fatalf("host1Stack.GetNetworkEndpoint(%d, %d): %s", utils.Host1NICID, test.dadNetProto, err)
 			}
 			dad, ok := netEP.(stack.DuplicateAddressDetector)
 			if !ok {
@@ -1296,12 +1239,12 @@ func TestDAD(t *testing.T) {
 			}
 			dad.SetDADConfigurations(dadConfigs)
 			ch := make(chan stack.DADResult, 3)
-			if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+			if res, err := host1Stack.CheckDuplicateAddress(utils.Host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
 				ch <- r
 			}); err != nil {
-				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+				t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", utils.Host1NICID, test.netProto, test.remoteAddr, err)
 			} else if res != stack.DADStarting {
-				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADStarting)
+				t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", utils.Host1NICID, test.netProto, test.remoteAddr, res, stack.DADStarting)
 			}
 
 			expectResults := 1
@@ -1318,12 +1261,12 @@ func TestDAD(t *testing.T) {
 				// same address. The handler for the new request should be called once
 				// the original DAD request completes.
 				expectResults = 2
-				if res, err := host1Stack.CheckDuplicateAddress(host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
+				if res, err := host1Stack.CheckDuplicateAddress(utils.Host1NICID, test.netProto, test.remoteAddr, func(r stack.DADResult) {
 					ch <- r
 				}); err != nil {
-					t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", host1NICID, test.netProto, test.remoteAddr, err)
+					t.Fatalf("host1Stack.CheckDuplicateAddress(%d, %d, %s, _): %s", utils.Host1NICID, test.netProto, test.remoteAddr, err)
 				} else if res != stack.DADAlreadyRunning {
-					t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", host1NICID, test.netProto, test.remoteAddr, res, stack.DADAlreadyRunning)
+					t.Errorf("got host1Stack.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", utils.Host1NICID, test.netProto, test.remoteAddr, res, stack.DADAlreadyRunning)
 				}
 
 				clock.Advance(delta)

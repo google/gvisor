@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package loopback_test
 
 import (
 	"bytes"
@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -109,7 +110,7 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 
 	ipv4ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv4ProtocolNumber,
-		AddressWithPrefix: ipv4Addr,
+		AddressWithPrefix: utils.Ipv4Addr,
 	}
 	ipv4Bytes := []byte(ipv4ProtocolAddress.AddressWithPrefix.Address)
 	ipv4Bytes[len(ipv4Bytes)-1]++
@@ -117,9 +118,9 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 
 	ipv6ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv6ProtocolNumber,
-		AddressWithPrefix: ipv6Addr,
+		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	ipv6Bytes := []byte(ipv6Addr.Address)
+	ipv6Bytes := []byte(utils.Ipv6Addr.Address)
 	ipv6Bytes[len(ipv6Bytes)-1]++
 	otherIPv6Address := tcpip.Address(ipv6Bytes)
 
@@ -145,7 +146,7 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		{
 			name:       "IPv4 bind to wildcard send to other address",
 			addAddress: ipv4ProtocolAddress,
-			dstAddr:    remoteIPv4Addr,
+			dstAddr:    utils.RemoteIPv4Addr,
 			expectRx:   false,
 		},
 		{
@@ -173,8 +174,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		{
 			name:       "IPv6 bind and send to assigned address",
 			addAddress: ipv6ProtocolAddress,
-			bindAddr:   ipv6Addr.Address,
-			dstAddr:    ipv6Addr.Address,
+			bindAddr:   utils.Ipv6Addr.Address,
+			dstAddr:    utils.Ipv6Addr.Address,
 			expectRx:   true,
 		},
 		{
@@ -277,9 +278,9 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 
 	protoAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: ipv4Addr,
+		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	addrBytes := []byte(ipv4Addr.Address)
+	addrBytes := []byte(utils.Ipv4Addr.Address)
 	addrBytes[len(addrBytes)-1]++
 	otherAddr := tcpip.Address(addrBytes)
 
@@ -299,9 +300,9 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		},
 	})
 
-	r, err := s.FindRoute(nicID, otherAddr, remoteIPv4Addr, ipv4.ProtocolNumber, false /* multicastLoop */)
+	r, err := s.FindRoute(nicID, otherAddr, utils.RemoteIPv4Addr, ipv4.ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
-		t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, otherAddr, remoteIPv4Addr, ipv4.ProtocolNumber, err)
+		t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, otherAddr, utils.RemoteIPv4Addr, ipv4.ProtocolNumber, err)
 	}
 	defer r.Release()
 
@@ -344,7 +345,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 
 	ipv4ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv4ProtocolNumber,
-		AddressWithPrefix: ipv4Addr,
+		AddressWithPrefix: utils.Ipv4Addr,
 	}
 	ipv4ProtocolAddress.AddressWithPrefix.PrefixLen = 8
 	ipv4Bytes := []byte(ipv4ProtocolAddress.AddressWithPrefix.Address)
@@ -353,9 +354,9 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 
 	ipv6ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv6ProtocolNumber,
-		AddressWithPrefix: ipv6Addr,
+		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	ipv6Bytes := []byte(ipv6Addr.Address)
+	ipv6Bytes := []byte(utils.Ipv6Addr.Address)
 	ipv6Bytes[len(ipv6Bytes)-1]++
 	otherIPv6Address := tcpip.Address(ipv6Bytes)
 
@@ -381,7 +382,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		{
 			name:         "IPv4 bind to wildcard send to other address",
 			addAddress:   ipv4ProtocolAddress,
-			dstAddr:      remoteIPv4Addr,
+			dstAddr:      utils.RemoteIPv4Addr,
 			expectAccept: false,
 		},
 		{
@@ -409,8 +410,8 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		{
 			name:         "IPv6 bind and send to assigned address",
 			addAddress:   ipv6ProtocolAddress,
-			bindAddr:     ipv6Addr.Address,
-			dstAddr:      ipv6Addr.Address,
+			bindAddr:     utils.Ipv6Addr.Address,
+			dstAddr:      utils.Ipv6Addr.Address,
 			expectAccept: true,
 		},
 		{
