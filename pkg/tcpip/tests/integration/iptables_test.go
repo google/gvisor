@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package iptables_test
 
 import (
 	"testing"
@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
@@ -375,7 +376,7 @@ func TestIPTableWritePackets(t *testing.T) {
 	const (
 		nicID = 1
 
-		dropLocalPort = localPort - 1
+		dropLocalPort = utils.LocalPort - 1
 		acceptPackets = 2
 		dropPackets   = 3
 	)
@@ -411,7 +412,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-				udpHdr(hdr, r.LocalAddress, r.RemoteAddress, localPort, remotePort)
+				udpHdr(hdr, r.LocalAddress, r.RemoteAddress, utils.LocalPort, utils.RemotePort)
 				pkts.PushFront(pkt)
 
 				return pkts
@@ -473,7 +474,7 @@ func TestIPTableWritePackets(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, localPort, remotePort)
+					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, utils.LocalPort, utils.RemotePort)
 					pkts.PushFront(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
@@ -481,7 +482,7 @@ func TestIPTableWritePackets(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, dropLocalPort, remotePort)
+					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, dropLocalPort, utils.RemotePort)
 					pkts.PushFront(pkt)
 				}
 
@@ -502,7 +503,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 				})
 				hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-				udpHdr(hdr, r.LocalAddress, r.RemoteAddress, localPort, remotePort)
+				udpHdr(hdr, r.LocalAddress, r.RemoteAddress, utils.LocalPort, utils.RemotePort)
 				pkts.PushFront(pkt)
 
 				return pkts
@@ -564,7 +565,7 @@ func TestIPTableWritePackets(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, localPort, remotePort)
+					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, utils.LocalPort, utils.RemotePort)
 					pkts.PushFront(pkt)
 				}
 				for i := 0; i < dropPackets; i++ {
@@ -572,7 +573,7 @@ func TestIPTableWritePackets(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength() + header.UDPMinimumSize),
 					})
 					hdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
-					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, dropLocalPort, remotePort)
+					udpHdr(hdr, r.LocalAddress, r.RemoteAddress, dropLocalPort, utils.RemotePort)
 					pkts.PushFront(pkt)
 				}
 
