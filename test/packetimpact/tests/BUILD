@@ -103,7 +103,10 @@ packetimpact_testbench(
     name = "tcp_retransmits",
     srcs = ["tcp_retransmits_test.go"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/binary",
         "//pkg/tcpip/header",
+        "//pkg/usermem",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
