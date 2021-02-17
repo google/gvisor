@@ -45,19 +45,16 @@ func TestTCPSynRcvdReset(t *testing.T) {
 
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	//
-	// Retransmit the ACK a few times to give time for the DUT to
-	// transition to CLOSED. We cannot use TCP_INFO to lookup the state
-	// as this is a passive DUT connection.
-	i := 0
-	for ; i < 5; i++ {
+	// Retransmit the ACK a few times to give time for the DUT to transition to
+	// CLOSED. We cannot use TCP_INFO to lookup the state as this is a passive
+	// DUT connection.
+	for i := 0; i < 5; i++ {
 		conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
 		if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
 			t.Logf("retransmit%d ACK as we did not get the expected RST, %s", i, err)
-		} else {
-			break
+			continue
 		}
+		return
 	}
-	if i == 5 {
-		t.Fatalf("expected a TCP RST")
-	}
+	t.Fatal("did not receive a TCP RST")
 }
