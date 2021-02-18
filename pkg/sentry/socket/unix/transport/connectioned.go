@@ -364,7 +364,9 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 		e.connected = ce
 		// Make sure the newly created connected endpoint's write queue is updated
 		// to reflect this endpoint's send buffer size.
-		e.connected.SetSendBufferSize(e.ops.GetSendBufferSize())
+		if bufSz := e.connected.SetSendBufferSize(e.ops.GetSendBufferSize()); bufSz != e.ops.GetSendBufferSize() {
+			e.ops.SetSendBufferSize(bufSz, false /* notify */)
+		}
 	}
 
 	return server.BidirectionalConnect(ctx, e, returnConnect)

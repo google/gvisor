@@ -91,7 +91,20 @@ TEST_P(SeqpacketUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
       setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size)),
       SyscallSucceeds());
 
-  // The send should succeed again.
+  // Skip test if the setsockopt didn't increase the sendbuf. This happens for
+  // tests where the socket is a host fd where gVisor does not permit increasing
+  // send buffer size.
+  int new_buf_size = 0;
+  buf_size_len = sizeof(new_buf_size);
+  ASSERT_THAT(
+      getsockopt(sock, SOL_SOCKET, SO_SNDBUF, &new_buf_size, &buf_size_len),
+      SyscallSucceeds());
+  if (IsRunningOnGvisor() && (new_buf_size <= buf_size)) {
+    GTEST_SKIP() << "Skipping test new send buffer size " << new_buf_size
+                 << " is the same as the value before setsockopt, "
+                 << " socket is probably a host backed socket." << std ::endl;
+  }
+  //  send should succeed again.
   ASSERT_THAT(RetryEINTR(send)(sock, buf.data(), buf.size(), 0),
               SyscallSucceeds());
 }
