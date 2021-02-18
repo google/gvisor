@@ -39,7 +39,7 @@ func (tcpMarshaler) name() string {
 }
 
 // marshal implements matchMaker.marshal.
-func (tcpMarshaler) marshal(mr stack.Matcher) []byte {
+func (tcpMarshaler) marshal(mr matcher) []byte {
 	matcher := mr.(*TCPMatcher)
 	xttcp := linux.XTTCP{
 		SourcePortStart:      matcher.sourcePortStart,
@@ -90,8 +90,8 @@ type TCPMatcher struct {
 	destinationPortEnd   uint16
 }
 
-// Name implements Matcher.Name.
-func (*TCPMatcher) Name() string {
+// name implements matcher.name.
+func (*TCPMatcher) name() string {
 	return matcherNameTCP
 }
 

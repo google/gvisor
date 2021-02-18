@@ -40,11 +40,15 @@ type matchMaker interface {
 	name() string
 
 	// marshal converts from a stack.Matcher to an ABI struct.
-	marshal(matcher stack.Matcher) []byte
+	marshal(matcher matcher) []byte
 
 	// unmarshal converts from the ABI matcher struct to an
 	// stack.Matcher.
 	unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
+}
+
+type matcher interface {
+	name() string
 }
 
 // matchMakers maps the name of supported matchers to the matchMaker that
@@ -60,8 +64,9 @@ func registerMatchMaker(mm matchMaker) {
 	matchMakers[mm.name()] = mm
 }
 
-func marshalMatcher(matcher stack.Matcher) []byte {
-	matchMaker, ok := matchMakers[matcher.Name()]
+func marshalMatcher(mr stack.Matcher) []byte {
+	matcher := mr.(matcher)
+	matchMaker, ok := matchMakers[matcher.name()]
 	if !ok {
 		panic(fmt.Sprintf("Unknown matcher of type %T.", matcher))
 	}
