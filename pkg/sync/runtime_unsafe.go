@@ -4,9 +4,10 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.13
-// +build !go1.17
+// +build !go1.18
 
-// Check function signatures and constants when updating Go version.
+// Check go:linkname function signatures, type definitions, and constants when
+// updating Go version.
 
 package sync
 
@@ -95,6 +96,7 @@ func MapKeyHasher(m interface{}) func(unsafe.Pointer, uintptr) uintptr {
 	return mtyp.hasher
 }
 
+// maptype is equivalent to the beginning of runtime.maptype.
 type maptype struct {
 	size       uintptr
 	ptrdata    uintptr

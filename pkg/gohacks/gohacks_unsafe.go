@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build go1.13
-// +build !go1.17
+// +build !go1.18
 
 // Check type signatures when updating Go version.
 
