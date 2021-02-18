@@ -562,7 +562,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 
 	if opts := h.Options(); len(opts) != 0 {
-		newOpts, optProblem := e.processIPOptions(pkt, opts, &optionUsageForward{})
+		newOpts, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageForward{})
 		if optProblem != nil {
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
@@ -776,7 +776,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			// If there are options we need to check them before we do assembly
 			// or we could be assembling errant packets. However we do not change the
 			// options as that could lead to double processing later.
-			if _, optProblem := e.processIPOptions(pkt, opts, &optionUsageVerify{}); optProblem != nil {
+			if _, _, optProblem := e.processIPOptions(pkt, opts, &optionUsageVerify{}); optProblem != nil {
 				if optProblem.NeedICMP {
 					_ = e.protocol.returnError(&icmpReasonParamProblem{
 						pointer: optProblem.Pointer,
@@ -846,8 +846,9 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 	// ICMP handles options itself but do it here for all remaining destinations.
+	var hasRouterAlertOption bool
 	if opts := h.Options(); len(opts) != 0 {
-		newOpts, optProblem := e.processIPOptions(pkt, opts, &optionUsageReceive{})
+		newOpts, processedOpts, optProblem := e.processIPOptions(pkt, opts, &optionUsageReceive{})
 		if optProblem != nil {
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
@@ -858,6 +859,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			}
 			return
 		}
+		hasRouterAlertOption = processedOpts.routerAlert
 		copied := copy(opts, newOpts)
 		if copied != len(newOpts) {
 			panic(fmt.Sprintf("copied %d bytes of new options, expected %d bytes", copied, len(newOpts)))
@@ -869,7 +871,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 	}
 	if p == header.IGMPProtocolNumber {
 		e.mu.Lock()
-		e.mu.igmp.handleIGMP(pkt)
+		e.mu.igmp.handleIGMP(pkt, hasRouterAlertOption)
 		e.mu.Unlock()
 		return
 	}
@@ -1291,8 +1293,11 @@ type optionActions struct {
 	// timestamp controls what to do with a Timestamp option.
 	timestamp optionAction
 
-	// recordroute controls what to do with a Record Route option.
+	// recordRoute controls what to do with a Record Route option.
 	recordRoute optionAction
+
+	// routerAlert controls what to do with a Router Alert option.
+	routerAlert optionAction
 
 	// unknown controls what to do with an unknown option.
 	unknown optionAction
@@ -1314,6 +1319,7 @@ func (*optionUsageVerify) actions() optionActions {
 	return optionActions{
 		timestamp:   optionVerify,
 		recordRoute: optionVerify,
+		routerAlert: optionVerify,
 		unknown:     optionRemove,
 	}
 }
@@ -1327,6 +1333,7 @@ func (*optionUsageReceive) actions() optionActions {
 	return optionActions{
 		timestamp:   optionProcess,
 		recordRoute: optionProcess,
+		routerAlert: optionVerify,
 		unknown:     optionPass,
 	}
 }
@@ -1341,6 +1348,7 @@ func (*optionUsageForward) actions() optionActions {
 	return optionActions{
 		timestamp:   optionProcess,
 		recordRoute: optionProcess,
+		routerAlert: optionVerify,
 		unknown:     optionPass,
 	}
 }
@@ -1354,6 +1362,7 @@ func (*optionUsageEcho) actions() optionActions {
 	return optionActions{
 		timestamp:   optionProcess,
 		recordRoute: optionProcess,
+		routerAlert: optionVerify,
 		unknown:     optionRemove,
 	}
 }
@@ -1551,45 +1560,64 @@ func handleRecordRoute(rrOpt header.IPv4OptionRecordRoute, localAddress tcpip.Ad
 	return nil
 }
 
+// handleRouterAlert performs sanity checks on a Router Alert option.
+func handleRouterAlert(raOpt header.IPv4OptionRouterAlert) *header.IPv4OptParameterProblem {
+	// Only the zero value is acceptable, as per RFC 2113, section 2.1:
+	//   Value:  A two octet code with the following values:
+	//     0 - Router shall examine packet
+	//     1-65535 - Reserved
+	if raOpt.Value() != header.IPv4OptionRouterAlertValue {
+		return &header.IPv4OptParameterProblem{
+			Pointer:  header.IPv4OptionRouterAlertValueOffset,
+			NeedICMP: true,
+		}
+	}
+	return nil
+}
+
+type optionTracker struct {
+	timestamp   bool
+	recordRoute bool
+	routerAlert bool
+}
+
 // processIPOptions parses the IPv4 options and produces a new set of options
 // suitable for use in the next step of packet processing as informed by usage.
 // The original will not be touched.
 //
-// Returns
-// - The location of an error if there was one (or 0 if no error)
-// - If there is an error, information as to what it was was.
-// - The replacement option set.
-func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Options, usage optionsUsage) (header.IPv4Options, *header.IPv4OptParameterProblem) {
+// If there were no errors during parsing, the new set of options is returned as
+// a new buffer.
+func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Options, usage optionsUsage) (header.IPv4Options, optionTracker, *header.IPv4OptParameterProblem) {
 	stats := e.stats.ip
 	opts := header.IPv4Options(orig)
 	optIter := opts.MakeIterator()
 
-	// Each option other than NOP must only appear (RFC 791 section 3.1, at the
-	// definition of every type). Keep track of each of the possible types in
-	// the 8 bit 'type' field.
+	// Except NOP, each option must only appear at most once (RFC 791 section 3.1,
+	// at the definition of every type).
+	// Keep track of each option we find to enable duplicate option detection.
 	var seenOptions [math.MaxUint8 + 1]bool
 
-	// TODO(gvisor.dev/issue/4586):
-	// This will need tweaking  when we start really forwarding packets
-	// as we may need to get two addresses, for rx and tx interfaces.
-	// We will also have to take usage into account.
+	// TODO(https://gvisor.dev/issue/4586): This will need tweaking when we start
+	// really forwarding packets as we may need to get two addresses, for rx and
+	// tx interfaces. We will also have to take usage into account.
 	prefixedAddress, ok := e.protocol.stack.GetMainNICAddress(e.nic.ID(), ProtocolNumber)
 	localAddress := prefixedAddress.Address
 	if !ok {
 		h := header.IPv4(pkt.NetworkHeader().View())
 		dstAddr := h.DestinationAddress()
 		if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(dstAddr) {
-			return nil, &header.IPv4OptParameterProblem{
+			return nil, optionTracker{}, &header.IPv4OptParameterProblem{
 				NeedICMP: false,
 			}
 		}
 		localAddress = dstAddr
 	}
 
+	var optionsProcessed optionTracker
 	for {
 		option, done, optProblem := optIter.Next()
 		if done || optProblem != nil {
-			return optIter.Finalize(), optProblem
+			return optIter.Finalize(), optionsProcessed, optProblem
 		}
 		optType := option.Type()
 		if optType == header.IPv4OptionNOPType {
@@ -1598,53 +1626,61 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 		}
 		if optType == header.IPv4OptionListEndType {
 			optIter.PushNOPOrEnd(optType)
-			return optIter.Finalize(), nil
+			return optIter.Finalize(), optionsProcessed, nil
 		}
 
 		// check for repeating options (multiple NOPs are OK)
 		if seenOptions[optType] {
-			return nil, &header.IPv4OptParameterProblem{
+			return nil, optionTracker{}, &header.IPv4OptParameterProblem{
 				Pointer:  optIter.ErrCursor,
 				NeedICMP: true,
 			}
 		}
 		seenOptions[optType] = true
 
-		optLen := int(option.Size())
-		switch option := option.(type) {
-		case *header.IPv4OptionTimestamp:
-			stats.OptionTSReceived.Increment()
-			if usage.actions().timestamp != optionRemove {
-				clock := e.protocol.stack.Clock()
-				newBuffer := optIter.RemainingBuffer()[:len(*option)]
-				_ = copy(newBuffer, option.Contents())
-				if optProblem := handleTimestamp(header.IPv4OptionTimestamp(newBuffer), localAddress, clock, usage); optProblem != nil {
-					optProblem.Pointer += optIter.ErrCursor
-					return nil, optProblem
+		optLen, optProblem := func() (int, *header.IPv4OptParameterProblem) {
+			switch option := option.(type) {
+			case *header.IPv4OptionTimestamp:
+				stats.OptionTimestampReceived.Increment()
+				optionsProcessed.timestamp = true
+				if usage.actions().timestamp != optionRemove {
+					clock := e.protocol.stack.Clock()
+					newBuffer := optIter.InitReplacement(option)
+					optProblem := handleTimestamp(header.IPv4OptionTimestamp(newBuffer), localAddress, clock, usage)
+					return len(newBuffer), optProblem
 				}
-				optIter.ConsumeBuffer(optLen)
-			}
 
-		case *header.IPv4OptionRecordRoute:
-			stats.OptionRRReceived.Increment()
-			if usage.actions().recordRoute != optionRemove {
-				newBuffer := optIter.RemainingBuffer()[:len(*option)]
-				_ = copy(newBuffer, option.Contents())
-				if optProblem := handleRecordRoute(header.IPv4OptionRecordRoute(newBuffer), localAddress, usage); optProblem != nil {
-					optProblem.Pointer += optIter.ErrCursor
-					return nil, optProblem
+			case *header.IPv4OptionRecordRoute:
+				stats.OptionRecordRouteReceived.Increment()
+				optionsProcessed.recordRoute = true
+				if usage.actions().recordRoute != optionRemove {
+					newBuffer := optIter.InitReplacement(option)
+					optProblem := handleRecordRoute(header.IPv4OptionRecordRoute(newBuffer), localAddress, usage)
+					return len(newBuffer), optProblem
 				}
-				optIter.ConsumeBuffer(optLen)
-			}
 
-		default:
-			stats.OptionUnknownReceived.Increment()
-			if usage.actions().unknown == optionPass {
-				newBuffer := optIter.RemainingBuffer()[:optLen]
-				// Arguments already heavily checked.. ignore result.
-				_ = copy(newBuffer, option.Contents())
-				optIter.ConsumeBuffer(optLen)
+			case *header.IPv4OptionRouterAlert:
+				stats.OptionRouterAlertReceived.Increment()
+				optionsProcessed.routerAlert = true
+				if usage.actions().routerAlert != optionRemove {
+					newBuffer := optIter.InitReplacement(option)
+					optProblem := handleRouterAlert(header.IPv4OptionRouterAlert(newBuffer))
+					return len(newBuffer), optProblem
+				}
+
+			default:
+				stats.OptionUnknownReceived.Increment()
+				if usage.actions().unknown == optionPass {
+					return len(optIter.InitReplacement(option)), nil
+				}
 			}
+			return 0, nil
+		}()
+
+		if optProblem != nil {
+			optProblem.Pointer += optIter.ErrCursor
+			return nil, optionTracker{}, optProblem
 		}
+		optIter.ConsumeBuffer(optLen)
 	}
 }

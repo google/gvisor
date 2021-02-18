@@ -1581,11 +1581,16 @@ type IPStats struct {
 	// the Output chain.
 	IPTablesOutputDropped *StatCounter
 
-	// OptionTSReceived is the number of Timestamp options seen.
-	OptionTSReceived *StatCounter
+	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
+	// of IPStats.
+	// OptionTimestampReceived is the number of Timestamp options seen.
+	OptionTimestampReceived *StatCounter
 
-	// OptionRRReceived is the number of Record Route options seen.
-	OptionRRReceived *StatCounter
+	// OptionRecordRouteReceived is the number of Record Route options seen.
+	OptionRecordRouteReceived *StatCounter
+
+	// OptionRouterAlertReceived is the number of Router Alert options seen.
+	OptionRouterAlertReceived *StatCounter
 
 	// OptionUnknownReceived is the number of unknown IP options seen.
 	OptionUnknownReceived *StatCounter

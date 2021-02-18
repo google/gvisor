@@ -35,8 +35,9 @@ import (
 const (
 	linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 
-	ipv4Addr = tcpip.Address("\x0a\x00\x00\x01")
-	ipv6Addr = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	stackIPv4Addr           = tcpip.Address("\x0a\x00\x00\x01")
+	defaultIPv4PrefixLength = 24
+	ipv6Addr                = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
 
 	ipv4MulticastAddr1 = tcpip.Address("\xe0\x00\x00\x03")
 	ipv4MulticastAddr2 = tcpip.Address("\xe0\x00\x00\x04")
@@ -99,7 +100,7 @@ func validateIGMPPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.
 
 	payload := header.IPv4(stack.PayloadSince(p.Pkt.NetworkHeader()))
 	checker.IPv4(t, payload,
-		checker.SrcAddr(ipv4Addr),
+		checker.SrcAddr(stackIPv4Addr),
 		checker.DstAddr(remoteAddress),
 		// TTL for an IGMP message must be 1 as per RFC 2236 section 2.
 		checker.TTL(1),
@@ -145,8 +146,12 @@ func createStackWithLinkEndpoint(t *testing.T, v4, mgpEnabled bool, e stack.Link
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
-	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, ipv4Addr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, ipv4Addr, err)
+	addr := tcpip.AddressWithPrefix{
+		Address:   stackIPv4Addr,
+		PrefixLen: defaultIPv4PrefixLength,
+	}
+	if err := s.AddAddressWithPrefix(nicID, ipv4.ProtocolNumber, addr); err != nil {
+		t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
 	}
 	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, ipv6Addr); err != nil {
 		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, ipv6Addr, err)
@@ -202,24 +207,23 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 
 // createAndInjectIGMPPacket creates and injects an IGMP packet with the
 // specified fields.
-//
-// Note, the router alert option is not included in this packet.
-//
-// TODO(b/162198658): set the router alert option.
 func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime byte, groupAddress tcpip.Address) {
-	buf := buffer.NewView(header.IPv4MinimumSize + header.IGMPQueryMinimumSize)
-
+	options := header.IPv4OptionsSerializer{
+		&header.IPv4SerializableRouterAlertOption{},
+	}
+	buf := buffer.NewView(header.IPv4MinimumSize + int(options.Length()) + header.IGMPQueryMinimumSize)
 	ip := header.IPv4(buf)
 	ip.Encode(&header.IPv4Fields{
 		TotalLength: uint16(len(buf)),
 		TTL:         header.IGMPTTL,
 		Protocol:    uint8(header.IGMPProtocolNumber),
-		SrcAddr:     header.IPv4Any,
+		SrcAddr:     remoteIPv4Addr,
 		DstAddr:     header.IPv4AllSystems,
+		Options:     options,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
 
-	igmp := header.IGMP(buf[header.IPv4MinimumSize:])
+	igmp := header.IGMP(ip.Payload())
 	igmp.SetType(header.IGMPType(igmpType))
 	igmp.SetMaxRespTime(maxRespTime)
 	igmp.SetGroupAddress(groupAddress)

@@ -519,6 +519,7 @@ func (o *IPv4OptionGeneric) Contents() []byte { return []byte(*o) }
 // IPv4OptionIterator is an iterator pointing to a specific IP option
 // at any point of time. It also holds information as to a new options buffer
 // that we are building up to hand back to the caller.
+// TODO(https://gvisor.dev/issues/5513): Add unit tests for IPv4OptionIterator.
 type IPv4OptionIterator struct {
 	options IPv4Options
 	// ErrCursor is where we are while parsing options. It is exported as any
@@ -537,6 +538,15 @@ func (o IPv4Options) MakeIterator() IPv4OptionIterator {
 		options:       o,
 		nextErrCursor: IPv4MinimumSize,
 	}
+}
+
+// InitReplacement copies the option into the new option buffer.
+func (i *IPv4OptionIterator) InitReplacement(option IPv4Option) IPv4Options {
+	replacementOption := i.RemainingBuffer()[:option.Size()]
+	if copied := copy(replacementOption, option.Contents()); copied != len(replacementOption) {
+		panic(fmt.Sprintf("copied %d bytes in the replacement option buffer, expected %d bytes", copied, len(replacementOption)))
+	}
+	return replacementOption
 }
 
 // RemainingBuffer returns the remaining (unused) part of the new option buffer,
@@ -648,6 +658,17 @@ func (i *IPv4OptionIterator) Next() (IPv4Option, bool, *IPv4OptParameterProblem)
 			}
 		}
 		retval := IPv4OptionRecordRoute(optionBody)
+		return &retval, false, nil
+
+	case IPv4OptionRouterAlertType:
+		if optLen != IPv4OptionRouterAlertLength {
+			i.ErrCursor++
+			return nil, false, &IPv4OptParameterProblem{
+				Pointer:  i.ErrCursor,
+				NeedICMP: true,
+			}
+		}
+		retval := IPv4OptionRouterAlert(optionBody)
 		return &retval, false, nil
 	}
 	retval := IPv4OptionGeneric(optionBody)
@@ -896,10 +917,29 @@ const (
 	// payload of the router alert option.
 	IPv4OptionRouterAlertValue = 0
 
-	// iPv4OptionRouterAlertValueOffset is the offset for the value of a
+	// IPv4OptionRouterAlertValueOffset is the offset for the value of a
 	// RouterAlert option.
-	iPv4OptionRouterAlertValueOffset = 2
+	IPv4OptionRouterAlertValueOffset = 2
 )
+
+var _ IPv4Option = (*IPv4OptionRouterAlert)(nil)
+
+// IPv4OptionRouterAlert is an IPv4 RouterAlert option defined by RFC 2113.
+type IPv4OptionRouterAlert []byte
+
+// Type implements IPv4Option.
+func (*IPv4OptionRouterAlert) Type() IPv4OptionType { return IPv4OptionRouterAlertType }
+
+// Size implements IPv4Option.
+func (ra *IPv4OptionRouterAlert) Size() uint8 { return uint8(len(*ra)) }
+
+// Contents implements IPv4Option.
+func (ra *IPv4OptionRouterAlert) Contents() []byte { return []byte(*ra) }
+
+// Value returns the value of the IPv4OptionRouterAlert.
+func (ra *IPv4OptionRouterAlert) Value() uint16 {
+	return binary.BigEndian.Uint16(ra.Contents()[IPv4OptionRouterAlertValueOffset:])
+}
 
 // IPv4SerializableOption is an interface to represent serializable IPv4 option
 // types.
@@ -999,7 +1039,7 @@ func (*IPv4SerializableRouterAlertOption) optionType() IPv4OptionType {
 
 // Length implements IPv4SerializableOption.
 func (*IPv4SerializableRouterAlertOption) length() uint8 {
-	return IPv4OptionRouterAlertLength - iPv4OptionRouterAlertValueOffset
+	return IPv4OptionRouterAlertLength - IPv4OptionRouterAlertValueOffset
 }
 
 // SerializeInto implements IPv4SerializableOption.
