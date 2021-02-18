@@ -15,8 +15,6 @@
 package arch
 
 import (
-	"reflect"
-	"runtime"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -33,35 +31,22 @@ import (
 // On error, the contents of the stack and the bottom cursor are undefined.
 func (s *Stack) pushAddrSliceAndTerminator(src []usermem.Addr) (int, error) {
 	// Note: Stack grows upwards, so push the terminator first.
-	srcHdr := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	switch s.Arch.Width() {
 	case 8:
 		nNull, err := primitive.CopyUint64Out(s, StackBottomMagic, 0)
 		if err != nil {
 			return 0, err
 		}
-		var dst []uint64
-		dstHdr := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-		dstHdr.Data = srcHdr.Data
-		dstHdr.Len = srcHdr.Len
-		dstHdr.Cap = srcHdr.Cap
-		n, err := primitive.CopyUint64SliceOut(s, StackBottomMagic, dst)
-		// Ensures src doesn't get GCed until we're done using it through dst.
-		runtime.KeepAlive(src)
+		srcAsUint64 := *(*[]uint64)(unsafe.Pointer(&src))
+		n, err := primitive.CopyUint64SliceOut(s, StackBottomMagic, srcAsUint64)
 		return n + nNull, err
 	case 4:
 		nNull, err := primitive.CopyUint32Out(s, StackBottomMagic, 0)
 		if err != nil {
 			return 0, err
 		}
-		var dst []uint32
-		dstHdr := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-		dstHdr.Data = srcHdr.Data
-		dstHdr.Len = srcHdr.Len
-		dstHdr.Cap = srcHdr.Cap
-		n, err := primitive.CopyUint32SliceOut(s, StackBottomMagic, dst)
-		// Ensure src doesn't get GCed until we're done using it through dst.
-		runtime.KeepAlive(src)
+		srcAsUint32 := *(*[]uint32)(unsafe.Pointer(&src))
+		n, err := primitive.CopyUint32SliceOut(s, StackBottomMagic, srcAsUint32)
 		return n + nNull, err
 	default:
 		panic("Unsupported arch width")

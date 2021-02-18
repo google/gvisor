@@ -17,8 +17,6 @@
 package atomicptrmap
 
 import (
-	"reflect"
-	"runtime"
 	"sync/atomic"
 	"unsafe"
 
@@ -372,9 +370,8 @@ func (shard *apmShard) rehash(oldSlots unsafe.Pointer) {
 
 	// Allocate the new table.
 	newSlotsSlice := make([]apmSlot, newSize)
-	newSlotsReflect := (*reflect.SliceHeader)(unsafe.Pointer(&newSlotsSlice))
-	newSlots := unsafe.Pointer(newSlotsReflect.Data)
-	runtime.KeepAlive(newSlotsSlice)
+	newSlotsHeader := (*gohacks.SliceHeader)(unsafe.Pointer(&newSlotsSlice))
+	newSlots := newSlotsHeader.Data
 	newMask := newSize - 1
 
 	// Start a writer critical section now so that racing users of the old

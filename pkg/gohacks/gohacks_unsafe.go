@@ -12,13 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build go1.13
+// +build !go1.17
+
+// Check type signatures when updating Go version.
+
 // Package gohacks contains utilities for subverting the Go compiler.
 package gohacks
 
 import (
-	"reflect"
 	"unsafe"
 )
+
+// SliceHeader is equivalent to reflect.SliceHeader, but represents the pointer
+// to the underlying array as unsafe.Pointer rather than uintptr, allowing
+// SliceHeaders to be directly converted to slice objects.
+type SliceHeader struct {
+	Data unsafe.Pointer
+	Len  int
+	Cap  int
+}
+
+// StringHeader is equivalent to reflect.StringHeader, but represents the
+// pointer to the underlying array as unsafe.Pointer rather than uintptr,
+// allowing StringHeaders to be directly converted to strings.
+type StringHeader struct {
+	Data unsafe.Pointer
+	Len  int
+}
 
 // Noescape hides a pointer from escape analysis. Noescape is the identity
 // function but escape analysis doesn't think the output depends on the input.
@@ -36,22 +57,21 @@ func Noescape(p unsafe.Pointer) unsafe.Pointer {
 // ImmutableBytesFromString is equivalent to []byte(s), except that it uses the
 // same memory backing s instead of making a heap-allocated copy. This is only
 // valid if the returned slice is never mutated.
-func ImmutableBytesFromString(s string) []byte {
-	shdr := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	var bs []byte
-	bshdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
+func ImmutableBytesFromString(s string) (bs []byte) {
+	shdr := (*StringHeader)(unsafe.Pointer(&s))
+	bshdr := (*SliceHeader)(unsafe.Pointer(&bs))
 	bshdr.Data = shdr.Data
 	bshdr.Len = shdr.Len
 	bshdr.Cap = shdr.Len
-	return bs
+	return
 }
 
 // StringFromImmutableBytes is equivalent to string(bs), except that it uses
 // the same memory backing bs instead of making a heap-allocated copy. This is
 // only valid if bs is never mutated after StringFromImmutableBytes returns.
 func StringFromImmutableBytes(bs []byte) string {
-	// This is cheaper than messing with reflect.StringHeader and
-	// reflect.SliceHeader, which as of this writing produces many dead stores
-	// of zeroes. Compare strings.Builder.String().
+	// This is cheaper than messing with StringHeader and SliceHeader, which as
+	// of this writing produces many dead stores of zeroes. Compare
+	// strings.Builder.String().
 	return *(*string)(unsafe.Pointer(&bs))
 }

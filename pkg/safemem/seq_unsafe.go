@@ -17,9 +17,10 @@ package safemem
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"syscall"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // A BlockSeq represents a sequence of Blocks, each of which has non-zero
@@ -184,8 +185,8 @@ func (bs BlockSeq) Tail() BlockSeq {
 		return BlockSeq{}
 	}
 	var extSlice []Block
-	extSliceHdr := (*reflect.SliceHeader)(unsafe.Pointer(&extSlice))
-	extSliceHdr.Data = uintptr(bs.data)
+	extSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&extSlice))
+	extSliceHdr.Data = bs.data
 	extSliceHdr.Len = bs.length
 	extSliceHdr.Cap = bs.length
 	tailSlice := skipEmpty(extSlice[1:])

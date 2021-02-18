@@ -6,6 +6,9 @@ go_library(
     name = "fdchannel",
     srcs = ["fdchannel_unsafe.go"],
     visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/gohacks",
+    ],
 )
 
 go_test(
@@ -13,5 +16,7 @@ go_test(
     size = "small",
     srcs = ["fdchannel_test.go"],
     library = ":fdchannel",
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/sync",
+    ],
 )
