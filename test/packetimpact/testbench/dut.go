@@ -486,6 +486,23 @@ func (dut *DUT) ListenWithErrno(ctx context.Context, t *testing.T, sockfd, backl
 	return resp.GetRet(), syscall.Errno(resp.GetErrno_())
 }
 
+// PollOne calls poll on the DUT and asserts that the expected event must be
+// signaled on the given fd within the given timeout.
+func (dut *DUT) PollOne(t *testing.T, fd int32, events int16, timeout time.Duration) {
+	t.Helper()
+
+	pfds := dut.Poll(t, []unix.PollFd{{Fd: fd, Events: events}}, timeout)
+	if n := len(pfds); n != 1 {
+		t.Fatalf("Poll returned %d ready file descriptors, expected 1", n)
+	}
+	if readyFd := pfds[0].Fd; readyFd != fd {
+		t.Fatalf("Poll returned an fd %d that was not requested (%d)", readyFd, fd)
+	}
+	if got, want := pfds[0].Revents, int16(events); got&want == 0 {
+		t.Fatalf("Poll returned no events in our interest, got: %#b, want: %#b", got, want)
+	}
+}
+
 // Poll calls poll on the DUT and causes a fatal test failure if it doesn't
 // succeed. If more control over error handling is needed, use PollWithErrno.
 // Only pollfds with non-empty revents are returned, the only way to tie the
