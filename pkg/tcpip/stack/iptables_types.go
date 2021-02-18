@@ -332,9 +332,6 @@ func filterAddress(addr, mask, filterAddr tcpip.Address, invert bool) bool {
 
 // A Matcher is the interface for matching packets.
 type Matcher interface {
-	// Name returns the name of the Matcher.
-	Name() string
-
 	// Match returns whether the packet matches and whether the packet
 	// should be "hotdropped", i.e. dropped immediately. This is usually
 	// used for suspicious packets.
