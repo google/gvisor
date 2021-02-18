@@ -97,7 +97,7 @@ func BenchmarkIperf(b *testing.B) {
 			}
 
 			iperf := tools.Iperf{
-				Num: b.N,
+				Num: b.N, // KB for the client to send.
 			}
 
 			// Run the client.
