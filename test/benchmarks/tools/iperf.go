@@ -26,7 +26,7 @@ const length = 64 * 1024
 
 // Iperf is for the client side of `iperf`.
 type Iperf struct {
-	Num int
+	Num int // Number of bytes to send in KB.
 }
 
 // MakeCmd returns a iperf client command.
@@ -34,8 +34,8 @@ func (i *Iperf) MakeCmd(ip net.IP, port int) []string {
 	return []string{
 		"iperf",
 		"--format", "K", // Output in KBytes.
-		"--realtime", // Measured in realtime.
-		"--num", fmt.Sprintf("%d", i.Num),
+		"--realtime",                       // Measured in realtime.
+		"--num", fmt.Sprintf("%dK", i.Num), // Number of bytes to send in KB.
 		"--length", fmt.Sprintf("%d", length),
 		"--client", ip.String(),
 		"--port", fmt.Sprintf("%d", port),
