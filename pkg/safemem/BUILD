@@ -11,7 +11,10 @@ go_library(
         "seq_unsafe.go",
     ],
     visibility = ["//:sandbox"],
-    deps = ["//pkg/safecopy"],
+    deps = [
+        "//pkg/gohacks",
+        "//pkg/safecopy",
+    ],
 )
 
 go_test(
