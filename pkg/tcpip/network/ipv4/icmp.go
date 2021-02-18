@@ -214,7 +214,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 			op = &optionUsageReceive{}
 		}
 		var optProblem *header.IPv4OptParameterProblem
-		newOptions, optProblem = e.processIPOptions(pkt, opts, op)
+		newOptions, _, optProblem = e.processIPOptions(pkt, opts, op)
 		if optProblem != nil {
 			if optProblem.NeedICMP {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
