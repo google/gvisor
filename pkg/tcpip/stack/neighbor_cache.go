@@ -25,10 +25,6 @@ const neighborCacheSize = 512 // max entries per interface
 
 // NeighborStats holds metrics for the neighbor table.
 type NeighborStats struct {
-	// FailedEntryLookups is deprecated; UnreachableEntryLookups should be used
-	// instead.
-	FailedEntryLookups *tcpip.StatCounter
-
 	// UnreachableEntryLookups counts the number of lookups performed on an
 	// entry in Unreachable state.
 	UnreachableEntryLookups *tcpip.StatCounter

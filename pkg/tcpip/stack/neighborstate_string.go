@@ -29,13 +29,12 @@ func _() {
 	_ = x[Delay-4]
 	_ = x[Probe-5]
 	_ = x[Static-6]
-	_ = x[Failed-7]
-	_ = x[Unreachable-8]
+	_ = x[Unreachable-7]
 }
 
-const _NeighborState_name = "UnknownIncompleteReachableStaleDelayProbeStaticFailedUnreachable"
+const _NeighborState_name = "UnknownIncompleteReachableStaleDelayProbeStaticUnreachable"
 
-var _NeighborState_index = [...]uint8{0, 7, 17, 26, 31, 36, 41, 47, 53, 64}
+var _NeighborState_index = [...]uint8{0, 7, 17, 26, 31, 36, 41, 47, 58}
 
 func (i NeighborState) String() string {
 	if i >= NeighborState(len(_NeighborState_index)-1) {
