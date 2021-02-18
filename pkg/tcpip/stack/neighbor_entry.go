@@ -68,11 +68,6 @@ const (
 	// Static describes entries that have been explicitly added by the user. They
 	// do not expire and are not deleted until explicitly removed.
 	Static
-	// Failed is deprecated and should no longer be used.
-	//
-	// TODO(gvisor.dev/issue/4667): Remove this once all references to Failed
-	// are removed from Fuchsia.
-	Failed
 	// Unreachable means reachability confirmation failed; the maximum number of
 	// reachability probes has been sent and no replies have been received.
 	//
