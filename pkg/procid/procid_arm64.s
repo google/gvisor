@@ -14,7 +14,7 @@
 
 // +build arm64
 // +build go1.8
-// +build !go1.17
+// +build !go1.18
 
 #include "textflag.h"
 
