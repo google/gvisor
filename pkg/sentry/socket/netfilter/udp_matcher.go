@@ -39,7 +39,7 @@ func (udpMarshaler) name() string {
 }
 
 // marshal implements matchMaker.marshal.
-func (udpMarshaler) marshal(mr stack.Matcher) []byte {
+func (udpMarshaler) marshal(mr matcher) []byte {
 	matcher := mr.(*UDPMatcher)
 	xtudp := linux.XTUDP{
 		SourcePortStart:      matcher.sourcePortStart,
@@ -87,8 +87,8 @@ type UDPMatcher struct {
 	destinationPortEnd   uint16
 }
 
-// Name implements Matcher.Name.
-func (*UDPMatcher) Name() string {
+// name implements Matcher.name.
+func (*UDPMatcher) name() string {
 	return matcherNameUDP
 }
 

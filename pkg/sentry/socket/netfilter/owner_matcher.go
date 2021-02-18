@@ -38,7 +38,7 @@ func (ownerMarshaler) name() string {
 }
 
 // marshal implements matchMaker.marshal.
-func (ownerMarshaler) marshal(mr stack.Matcher) []byte {
+func (ownerMarshaler) marshal(mr matcher) []byte {
 	matcher := mr.(*OwnerMatcher)
 	iptOwnerInfo := linux.IPTOwnerInfo{
 		UID: matcher.uid,
@@ -106,8 +106,8 @@ type OwnerMatcher struct {
 	invertGID bool
 }
 
-// Name implements Matcher.Name.
-func (*OwnerMatcher) Name() string {
+// name implements matcher.name.
+func (*OwnerMatcher) name() string {
 	return matcherNameOwner
 }
 
