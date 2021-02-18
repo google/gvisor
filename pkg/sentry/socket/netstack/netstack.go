@@ -184,6 +184,10 @@ var Metrics = tcpip.Stats{
 		IPTablesPreroutingDropped:           mustCreateMetric("/netstack/ip/iptables/prerouting_dropped", "Total number of IP packets dropped in the Prerouting chain."),
 		IPTablesInputDropped:                mustCreateMetric("/netstack/ip/iptables/input_dropped", "Total number of IP packets dropped in the Input chain."),
 		IPTablesOutputDropped:               mustCreateMetric("/netstack/ip/iptables/output_dropped", "Total number of IP packets dropped in the Output chain."),
+		OptionTimestampReceived:             mustCreateMetric("/netstack/ip/options/timestamp_received", "Total number of timestamp options found in received IP packets."),
+		OptionRecordRouteReceived:           mustCreateMetric("/netstack/ip/options/record_route_received", "Total number of record route options found in received IP packets."),
+		OptionRouterAlertReceived:           mustCreateMetric("/netstack/ip/options/router_alert_received", "Total number of router alert options found in received IP packets."),
+		OptionUnknownReceived:               mustCreateMetric("/netstack/ip/options/unknown_received", "Total number of unknown options found in received IP packets."),
 	},
 	ARP: tcpip.ARPStats{
 		PacketsReceived:                                 mustCreateMetric("/netstack/arp/packets_received", "Number of ARP packets received from the link layer."),

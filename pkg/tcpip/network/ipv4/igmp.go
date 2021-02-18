@@ -145,10 +145,57 @@ func (igmp *igmpState) init(ep *endpoint) {
 	})
 }
 
+// Precondition: igmp.ep.mu must be locked.
+func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType header.IGMPType) bool {
+	if messageType == header.IGMPMembershipQuery {
+		// RFC 2236 does not require the IGMP implementation to check the source IP
+		// for Membership Query messages.
+		return true
+	}
+
+	// As per RFC 2236 section 10,
+	//
+	//   Ignore the Report if you cannot identify the source address of the
+	//   packet as belonging to a subnet assigned to the interface on which the
+	//   packet was received.
+	//
+	//   Ignore the Leave message if you cannot identify the source address of
+	//   the packet as belonging to a subnet assigned to the interface on which
+	//   the packet was received.
+	//
+	// Note: this rule applies to both V1 and V2 Membership Reports.
+	var isSourceIPValid bool
+	igmp.ep.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+		if subnet := addressEndpoint.Subnet(); subnet.Contains(src) {
+			isSourceIPValid = true
+			return false
+		}
+		return true
+	})
+
+	return isSourceIPValid
+}
+
+// Precondition: igmp.ep.mu must be locked.
+func (igmp *igmpState) isPacketValidLocked(pkt *stack.PacketBuffer, messageType header.IGMPType, hasRouterAlertOption bool) bool {
+	// We can safely assume that the IP header is valid if we got this far.
+	iph := header.IPv4(pkt.NetworkHeader().View())
+
+	// As per RFC 2236 section 2,
+	//
+	//   All IGMP messages described in this document are sent with IP TTL 1, and
+	//   contain the IP Router Alert option [RFC 2113] in their IP header.
+	if !hasRouterAlertOption || iph.TTL() != header.IGMPTTL {
+		return false
+	}
+
+	return igmp.isSourceIPValidLocked(iph.SourceAddress(), messageType)
+}
+
 // handleIGMP handles an IGMP packet.
 //
 // Precondition: igmp.ep.mu must be locked.
-func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
+func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer, hasRouterAlertOption bool) {
 	received := igmp.ep.stats.igmp.packetsReceived
 	headerView, ok := pkt.Data.PullUp(header.IGMPMinimumSize)
 	if !ok {
@@ -168,30 +215,38 @@ func (igmp *igmpState) handleIGMP(pkt *stack.PacketBuffer) {
 		return
 	}
 
+	isValid := func(minimumSize int) bool {
+		return len(headerView) >= minimumSize && igmp.isPacketValidLocked(pkt, h.Type(), hasRouterAlertOption)
+	}
+
 	switch h.Type() {
 	case header.IGMPMembershipQuery:
 		received.membershipQuery.Increment()
-		if len(headerView) < header.IGMPQueryMinimumSize {
+		if !isValid(header.IGMPQueryMinimumSize) {
 			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipQuery(h.GroupAddress(), h.MaxRespTime())
 	case header.IGMPv1MembershipReport:
 		received.v1MembershipReport.Increment()
-		if len(headerView) < header.IGMPReportMinimumSize {
+		if !isValid(header.IGMPReportMinimumSize) {
 			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipReport(h.GroupAddress())
 	case header.IGMPv2MembershipReport:
 		received.v2MembershipReport.Increment()
-		if len(headerView) < header.IGMPReportMinimumSize {
+		if !isValid(header.IGMPReportMinimumSize) {
 			received.invalid.Increment()
 			return
 		}
 		igmp.handleMembershipReport(h.GroupAddress())
 	case header.IGMPLeaveGroup:
 		received.leaveGroup.Increment()
+		if !isValid(header.IGMPLeaveMessageMinimumSize) {
+			received.invalid.Increment()
+			return
+		}
 		// As per RFC 2236 Section 6, Page 7: "IGMP messages other than Query or
 		// Report, are ignored in all states"
 
