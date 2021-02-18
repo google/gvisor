@@ -61,13 +61,12 @@ func (ep *Endpoint) dataLen() *uint32 {
 // - Writers must not assume that they will read back the same data that they
 // have written. In other words, writers should avoid reading from Data() at
 // all.
-func (ep *Endpoint) Data() []byte {
-	var bs []byte
-	bsReflect := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
-	bsReflect.Data = ep.packet + PacketHeaderBytes
-	bsReflect.Len = int(ep.dataCap)
-	bsReflect.Cap = int(ep.dataCap)
-	return bs
+func (ep *Endpoint) Data() (bs []byte) {
+	bshdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
+	bshdr.Data = ep.packet + PacketHeaderBytes
+	bshdr.Len = int(ep.dataCap)
+	bshdr.Cap = int(ep.dataCap)
+	return
 }
 
 // ioSync is a dummy variable used to indicate synchronization to the Go race
