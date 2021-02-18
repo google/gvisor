@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
 # Download the JDK test library.
 WORKDIR /root
 RUN set -ex \
- && curl -fsSL --retry 10 -o /tmp/jdktests.tar.gz http://hg.openjdk.java.net/jdk/jdk11/archive/76072a077ee1.tar.gz/test \
+ && curl -fsSL --retry 10 -o /tmp/jdktests.tar.gz http://hg.openjdk.java.net/jdk-updates/jdk11u/archive/8b3498547395.tar.gz/test \
  && tar -xzf /tmp/jdktests.tar.gz \
- && mv jdk11-76072a077ee1/test test \
+ && mv jdk11u-8b3498547395/test test \
  && rm -f /tmp/jdktests.tar.gz
 
 # Install jtreg and add to PATH.

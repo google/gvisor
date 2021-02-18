@@ -2,6 +2,7 @@ test name,bug id,comment
 com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java,,Fails in Docker
 com/sun/jdi/InvokeHangTest.java,https://bugs.openjdk.java.net/browse/JDK-8218463,
 com/sun/jdi/NashornPopFrameTest.java,,
+com/sun/jdi/OnJcmdTest.java,b/180542784,
 com/sun/jdi/ProcessAttachTest.java,,
 com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,Fails in Docker
 com/sun/management/OperatingSystemMXBean/GetCommittedVirtualMemorySize.java,,
@@ -20,6 +21,8 @@ java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Fails in Docker
 java/lang/module/ModuleDescriptorTest.java,,
 java/lang/String/nativeEncoding/StringPlatformChars.java,,
 java/net/CookieHandler/B6791927.java,,java.lang.RuntimeException: Expiration date shouldn't be 0
+java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
+java/net/httpclient/websocket/WebSocketProxyTest.java,,Times out on runc too
 java/net/ipv6tests/TcpTest.java,,java.net.ConnectException: Connection timed out (Connection timed out)
 java/net/ipv6tests/UdpTest.java,,Times out
 java/net/Inet6Address/B6558853.java,,Times out
@@ -150,12 +153,14 @@ jdk/jfr/event/runtime/TestModuleEvents.java,,java.lang.RuntimeException: assertE
 jdk/jfr/event/runtime/TestNetworkUtilizationEvent.java,,
 jdk/jfr/event/runtime/TestThreadParkEvent.java,,
 jdk/jfr/event/sampling/TestNative.java,,
+jdk/jfr/javaagent/TestLoadedAgent.java,b/180542638,
 jdk/jfr/jcmd/TestJcmdChangeLogLevel.java,,
 jdk/jfr/jcmd/TestJcmdConfigure.java,,
 jdk/jfr/jcmd/TestJcmdDump.java,,
 jdk/jfr/jcmd/TestJcmdDumpGeneratedFilename.java,,
 jdk/jfr/jcmd/TestJcmdDumpLimited.java,,
 jdk/jfr/jcmd/TestJcmdDumpPathToGCRoots.java,,
+jdk/jfr/jcmd/TestJcmdDumpWithFileName.java,b/180542783,
 jdk/jfr/jcmd/TestJcmdLegacy.java,,
 jdk/jfr/jcmd/TestJcmdSaveToFile.java,,
 jdk/jfr/jcmd/TestJcmdStartDirNotExist.java,,
@@ -165,6 +170,7 @@ jdk/jfr/jcmd/TestJcmdStartStopDefault.java,,
 jdk/jfr/jcmd/TestJcmdStartWithOptions.java,,
 jdk/jfr/jcmd/TestJcmdStartWithSettings.java,,
 jdk/jfr/jcmd/TestJcmdStopInvalidFile.java,,
+jdk/jfr/jmx/TestGetRecordings.java,b/180542639,
 jdk/jfr/jvm/TestGetAllEventClasses.java,,Compilation failed
 jdk/jfr/jvm/TestJfrJavaBase.java,,
 jdk/jfr/startupargs/TestStartRecording.java,,
@@ -190,6 +196,7 @@ sun/tools/jhsdb/AlternateHashingTest.java,,
 sun/tools/jhsdb/BasicLauncherTest.java,,
 sun/tools/jhsdb/HeapDumpTest.java,,
 sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,
+sun/tools/jhsdb/JShellHeapDumpTest.java,,Fails on runc too
 sun/tools/jinfo/BasicJInfoTest.java,,
 sun/tools/jinfo/JInfoTest.java,,
 sun/tools/jmap/BasicJMapTest.java,,
@@ -208,5 +215,6 @@ tools/jlink/plugins/IncludeLocalesPluginTest.java,,
 tools/jmod/hashes/HashesTest.java,,
 tools/launcher/BigJar.java,b/111611473,
 tools/launcher/HelpFlagsTest.java,,java.lang.AssertionError: HelpFlagsTest failed: Tool jfr not covered by this test. Add specification to jdkTools array!
+tools/launcher/JliLaunchTest.java,,Fails on runc too
 tools/launcher/VersionCheck.java,,java.lang.AssertionError: VersionCheck failed: testToolVersion: [jfr];
 tools/launcher/modules/patch/systemmodules/PatchSystemModules.java,,
