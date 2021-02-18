@@ -17,7 +17,6 @@ package vfs
 import (
 	"fmt"
 	"math/bits"
-	"reflect"
 	"sync/atomic"
 	"unsafe"
 
@@ -153,8 +152,8 @@ func (mt *mountTable) Init() {
 
 func newMountTableSlots(cap uintptr) unsafe.Pointer {
 	slice := make([]mountSlot, cap, cap)
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	return unsafe.Pointer(hdr.Data)
+	hdr := (*gohacks.SliceHeader)(unsafe.Pointer(&slice))
+	return hdr.Data
 }
 
 // Lookup returns the Mount with the given parent, mounted at the given point.

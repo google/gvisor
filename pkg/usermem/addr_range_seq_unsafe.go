@@ -17,8 +17,9 @@ package usermem
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // An AddrRangeSeq represents a sequence of AddrRanges.
@@ -163,8 +164,8 @@ func (ars AddrRangeSeq) externalTail() AddrRangeSeq {
 		tailLimit = int64(ars.limit - headLen)
 	}
 	var extSlice []AddrRange
-	extSliceHdr := (*reflect.SliceHeader)(unsafe.Pointer(&extSlice))
-	extSliceHdr.Data = uintptr(ars.data)
+	extSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&extSlice))
+	extSliceHdr.Data = ars.data
 	extSliceHdr.Len = ars.length
 	extSliceHdr.Cap = ars.length
 	return addrRangeSeqFromSliceLimited(extSlice[1:], tailLimit)

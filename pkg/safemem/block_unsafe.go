@@ -16,9 +16,9 @@ package safemem
 
 import (
 	"fmt"
-	"reflect"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/safecopy"
 )
 
@@ -148,12 +148,11 @@ func (b Block) TakeFirst64(n uint64) Block {
 
 // ToSlice returns a []byte equivalent to b.
 func (b Block) ToSlice() []byte {
-	var bs []byte
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
-	hdr.Data = uintptr(b.start)
-	hdr.Len = b.length
-	hdr.Cap = b.length
-	return bs
+	return *(*[]byte)(unsafe.Pointer(&gohacks.SliceHeader{
+		Data: b.start,
+		Len:  b.length,
+		Cap:  b.length,
+	}))
 }
 
 // Addr returns b's start address as a uintptr. It returns uintptr instead of

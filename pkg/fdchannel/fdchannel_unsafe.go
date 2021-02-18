@@ -20,9 +20,10 @@ package fdchannel
 
 import (
 	"fmt"
-	"reflect"
 	"syscall"
 	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // int32 is the real type of a file descriptor.
@@ -53,10 +54,10 @@ func (ep *Endpoint) Init(sockfd int) {
 	// sendmsg+recvmsg for a zero-length datagram is slightly faster than
 	// sendmsg+recvmsg for a single byte over a stream socket.
 	cmsgSlice := make([]byte, syscall.CmsgSpace(sizeofInt32))
-	cmsgReflect := (*reflect.SliceHeader)(unsafe.Pointer(&cmsgSlice))
+	cmsgSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&cmsgSlice))
 	ep.sockfd = int32(sockfd)
-	ep.msghdr.Control = (*byte)(unsafe.Pointer(cmsgReflect.Data))
-	ep.cmsg = (*syscall.Cmsghdr)(unsafe.Pointer(cmsgReflect.Data))
+	ep.msghdr.Control = (*byte)(cmsgSliceHdr.Data)
+	ep.cmsg = (*syscall.Cmsghdr)(cmsgSliceHdr.Data)
 	// ep.msghdr.Controllen and ep.cmsg.* are mutated by recvmsg(2), so they're
 	// set before calling sendmsg/recvmsg.
 }
