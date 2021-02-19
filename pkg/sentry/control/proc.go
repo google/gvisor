@@ -147,6 +147,10 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		args.Capabilities,
 		proc.Kernel.RootUserNamespace())
 
+	pidns := args.PIDNamespace
+	if pidns == nil {
+		pidns = proc.Kernel.RootPIDNamespace()
+	}
 	initArgs := kernel.CreateProcessArgs{
 		Filename:                args.Filename,
 		Argv:                    args.Argv,
@@ -163,7 +167,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 		ContainerID:             args.ContainerID,
-		PIDNamespace:            args.PIDNamespace,
+		PIDNamespace:            pidns,
 	}
 	if initArgs.MountNamespace != nil {
 		// initArgs must hold a reference on MountNamespace, which will
