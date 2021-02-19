@@ -726,7 +726,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 
 // statInternalMask is the set of stat fields that is set by
 // dentry.statInternalTo().
-const statInternalMask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
+const statInternalMask = linux.STATX_TYPE | linux.STATX_INO
 
 // statInternalTo writes fields to stat that are stored in d, and therefore do
 // not requiring invoking StatAt on the overlay's layers.
@@ -739,9 +739,6 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 		// and some of our tests expect this.
 		stat.Nlink = 2
 	}
-	stat.UID = atomic.LoadUint32(&d.uid)
-	stat.GID = atomic.LoadUint32(&d.gid)
-	stat.Mode = uint16(atomic.LoadUint32(&d.mode))
 	stat.Ino = atomic.LoadUint64(&d.ino)
 	stat.DevMajor = atomic.LoadUint32(&d.devMajor)
 	stat.DevMinor = atomic.LoadUint32(&d.devMinor)
