@@ -13,9 +13,54 @@ If you're interested in contributing to gVisor through Google Summer of Code
 [roadmap](../roadmap.md) for areas of development, and get in touch through our
 [mailing list][gvisor-mailing-list] or [chat][gvisor-chat]!
 
+## Implement the `setns` syscall
+
+Estimated complexity: *easy*
+
+This project involves implementing the [`setns`][man-setns] syscall. gVisor
+currently supports manipulation of namespaces through the `clone` and `unshare`
+syscalls. These two syscalls essentially implement the requisite logic for
+`setns`, but there is currently no way to obtain a file descriptor referring to
+a namespace in gVisor. As described in the `setns` man page, the two typical
+ways of obtaining such a file descriptor in Linux are by opening a file in
+`/proc/[pid]/ns`, or through the `pidfd_open` syscall.
+
+For gVisor, we recommend implementing the `/proc/[pid]/ns` mechanism first,
+which would involve implementing a trivial namespace file type in procfs.
+
+## Implement `fanotify`
+
+Estimated complexity: *medium*
+
+Implement [`fanotify`][man-fanotify] in gVisor, which is a filesystem event
+notification mechanism. gVisor currently supports `inotify`, which is a similar
+mechanism with slightly different capabilities, but which should serve as a good
+reference.
+
+The `fanotify` interface adds two new syscalls:
+
+-   `fanotify_init` creates a new notification group, which is a collection of
+    filesystem objects watched by the kernel. The group is represented by a file
+    descriptor returned by this syscall. Events on the watched objects can be
+    retrieved by reading from this file descriptor.
+
+-   `fanotify_mark` adds a filesystem object to a watch group, or modifies the
+    parameters of an existing watch.
+
+Unlike `inotify`, `fanotify` can set watches on filesystems and mount points,
+which will require some additional data tracking on the corresponding filesystem
+objects within the sentry.
+
+A well-designed implementation should reuse the notifications from `inotify` for
+files and directories (this is also how Linux implements these mechanisms), and
+should implement the necessary tracking and notifications for filesystems and
+mount points.
+
 ## Implement `io_uring`
 
-`io_uring` is the lastest asynchronous I/O API in Linux. This project will
+Estimated complexity: *hard*
+
+`io_uring` is the latest asynchronous I/O API in Linux. This project will
 involve implementing the system interfaces required to support `io_uring` in
 gVisor. A successful implementation should have similar relatively performance
 and scalability characteristics compared to synchronous I/O syscalls, as in
@@ -55,7 +100,7 @@ supported operations, it should be implemented in two stages:
 In the first stage, a simplified version of the `io_uring_setup` and
 `io_uring_enter` syscalls should be implemented, which will only support a
 minimal set of arguments and just one or two simple opcodes. This simplified
-implementation can be used to figure out how to integreate `io_uring` with
+implementation can be used to figure out how to integrate `io_uring` with
 gVisor's virtual filesystem and memory management subsystems, as well as
 benchmark the implementation to ensure it has the desired performance
 characteristics. The goal in this stage should be to implement the smallest
@@ -65,7 +110,37 @@ In the second stage, support can be added for all the I/O operations supported
 by Linux, as well as advanced `io_uring` features such as fixed files and
 buffers (via `io_uring_register`), polled I/O and kernel-side request polling.
 
+A single contributor can expect to make reasonable progress on the first stage
+within the scope of Google Summer of Code. The second stage, while not
+necessarily difficult, is likely to be very time consuming. However it also
+lends itself well to parallel development by multiple contributors.
+
+## Implement message queues
+
+Estimated complexity: *hard*
+
+Linux provides two alternate message queues:
+[System V message queues][man-sysvmq] and [POSIX message queues][man-posixmq].
+gVisor currently doesn't implement either.
+
+Both mechanisms add multiple syscalls for managing and using the message queues,
+see the relevant man pages above for their full description.
+
+The core of both mechanisms are very similar, it may be possible to back both
+mechanisms with a common implementation in gVisor. Linux however has two
+distinct implementations.
+
+An individual contributor can reasonably implement a minimal version of one of
+these two mechanisms within the scope of Google Summer of Code. The System V
+queue may be slightly easier to implement, as gVisor already implements System V
+semaphores and shared memory regions, so the code for managing IPC objects and
+the registry already exist.
+
 [gsoc-2021-site]: https://summerofcode.withgoogle.com
 [gvisor-chat]: https://gitter.im/gvisor/community
 [gvisor-mailing-list]: https://groups.google.com/g/gvisor-dev
 [io-uring-doc]: https://kernel.dk/io_uring.pdf
+[man-fanotify]: https://man7.org/linux/man-pages/man7/fanotify.7.html
+[man-sysvmq]: https://man7.org/linux/man-pages/man7/sysvipc.7.html
+[man-posixmq]: https://man7.org/linux/man-pages//man7/mq_overview.7.html
+[man-setns]: https://man7.org/linux/man-pages/man2/setns.2.html
