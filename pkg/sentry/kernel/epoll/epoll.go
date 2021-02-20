@@ -14,6 +14,12 @@
 
 // Package epoll provides an implementation of Linux's IO event notification
 // facility. See epoll(7) for more details.
+//
+// Lock order:
+// EventPoll.mu
+//   fdnotifier.notifier.mu
+//     EventPoll.listsMu
+//       unix.baseEndpoint.Mutex
 package epoll
 
 import (

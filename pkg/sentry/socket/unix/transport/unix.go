@@ -742,8 +742,8 @@ func (e *connectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
 	return v
 }
 
-// baseEndpoint is an embeddable unix endpoint base used in both the connected and connectionless
-// unix domain socket Endpoint implementations.
+// baseEndpoint is an embeddable unix endpoint base used in both the connected
+// and connectionless unix domain socket Endpoint implementations.
 //
 // Not to be used on its own.
 //
@@ -753,6 +753,9 @@ type baseEndpoint struct {
 	tcpip.DefaultSocketOptionsHandler
 
 	// Mutex protects the below fields.
+	//
+	// See the lock ordering comment in package kernel/epoll regarding when
+	// this lock can safely be held.
 	sync.Mutex `state:"nosave"`
 
 	// receiver allows Messages to be received.
@@ -774,20 +777,22 @@ type baseEndpoint struct {
 func (e *baseEndpoint) EventRegister(we *waiter.Entry, mask waiter.EventMask) {
 	e.Queue.EventRegister(we, mask)
 	e.Lock()
-	if e.connected != nil {
-		e.connected.EventUpdate()
-	}
+	c := e.connected
 	e.Unlock()
+	if c != nil {
+		c.EventUpdate()
+	}
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (e *baseEndpoint) EventUnregister(we *waiter.Entry) {
 	e.Queue.EventUnregister(we)
 	e.Lock()
-	if e.connected != nil {
-		e.connected.EventUpdate()
-	}
+	c := e.connected
 	e.Unlock()
+	if c != nil {
+		c.EventUpdate()
+	}
 }
 
 // Passcred implements Credentialer.Passcred.
@@ -942,22 +947,26 @@ func (e *baseEndpoint) Shutdown(flags tcpip.ShutdownFlags) *syserr.Error {
 		return syserr.ErrNotConnected
 	}
 
-	if flags&tcpip.ShutdownRead != 0 {
-		e.receiver.CloseRecv()
+	var (
+		r             = e.receiver
+		c             = e.connected
+		shutdownRead  = flags&tcpip.ShutdownRead != 0
+		shutdownWrite = flags&tcpip.ShutdownWrite != 0
+	)
+	if shutdownRead {
+		r.CloseRecv()
 	}
-
-	if flags&tcpip.ShutdownWrite != 0 {
-		e.connected.CloseSend()
+	if shutdownWrite {
+		c.CloseSend()
 	}
-
 	e.Unlock()
 
-	if flags&tcpip.ShutdownRead != 0 {
-		e.receiver.CloseNotify()
+	// Don't hold e.Mutex while calling CloseNotify.
+	if shutdownRead {
+		r.CloseNotify()
 	}
-
-	if flags&tcpip.ShutdownWrite != 0 {
-		e.connected.CloseNotify()
+	if shutdownWrite {
+		c.CloseNotify()
 	}
 
 	return nil
