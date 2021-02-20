@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
@@ -87,6 +88,10 @@ func Boot() (*kernel.Kernel, error) {
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
+
+	// Initialize file system setup handler.
+	kernel.RegisterPipefsSetup(pipefs.NewFilesystem)
+	kernel.RegisterTmpfsSetup(tmpfs.NewFilesystem)
 
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.

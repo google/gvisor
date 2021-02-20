@@ -17,6 +17,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/memutil",
         "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

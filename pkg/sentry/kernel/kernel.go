@@ -50,10 +50,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	oldtimerfd "gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -389,28 +387,38 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
 		}
 
-		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
-		if err != nil {
-			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
+		log.Infof("Initialized Pipe filesystem setup: %v", PipefsSetup)
+		if PipefsSetup != nil {
+			pipeFilesystem, err := PipefsSetup(&k.vfs)
+			if err != nil {
+				return fmt.Errorf("failed to create pipefs filesystem: %v", err)
+			}
+			defer pipeFilesystem.DecRef(ctx)
+			pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create pipefs mount: %v", err)
+			}
+			k.pipeMount = pipeMount
+		} else {
+			return fmt.Errorf("failed to setup pipe filesystem")
 		}
-		defer pipeFilesystem.DecRef(ctx)
-		pipeMount, err := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create pipefs mount: %v", err)
-		}
-		k.pipeMount = pipeMount
 
-		tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
-		if err != nil {
-			return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
+		log.Infof("Initialized Tmpfs filesystem setup: %v", TmpfsSetup)
+		if TmpfsSetup != nil {
+			tmpfsFilesystem, tmpfsRoot, err := TmpfsSetup(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
+			if err != nil {
+				return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
+			}
+			defer tmpfsFilesystem.DecRef(ctx)
+			defer tmpfsRoot.DecRef(ctx)
+			shmMount, err := k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create tmpfs mount: %v", err)
+			}
+			k.shmMount = shmMount
+		} else {
+			return fmt.Errorf("failed to setup tmpfs filesystem")
 		}
-		defer tmpfsFilesystem.DecRef(ctx)
-		defer tmpfsRoot.DecRef(ctx)
-		shmMount, err := k.vfs.NewDisconnectedMount(tmpfsFilesystem, tmpfsRoot, &vfs.MountOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create tmpfs mount: %v", err)
-		}
-		k.shmMount = shmMount
 
 		socketFilesystem, err := sockfs.NewFilesystem(&k.vfs)
 		if err != nil {
@@ -1817,4 +1825,20 @@ func (k *Kernel) Release() {
 	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
+}
+
+// PipefsSetup is an handler to setup new pipe filesystem.
+var PipefsSetup func(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)
+
+// RegisterPipefsSetup register handler to set up new pipe filesystem.
+func RegisterPipefsSetup(handler func(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error)) {
+	PipefsSetup = handler
+}
+
+// TmpfsSetup is an handler to setup new tmpfs filesystem.
+var TmpfsSetup func(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*vfs.Filesystem, *vfs.Dentry, error)
+
+// RegisterTmpfsSetup register handler to set up new tmpfs filesystem.
+func RegisterTmpfsSetup(handler func(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*vfs.Filesystem, *vfs.Dentry, error)) {
+	TmpfsSetup = handler
 }

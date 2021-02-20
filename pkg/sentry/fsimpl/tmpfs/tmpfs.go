@@ -36,6 +36,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -838,4 +839,9 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 // filesystem state is in-memory.
 func (*fileDescription) Sync(context.Context) error {
 	return nil
+}
+
+// init Initialize pipe filesytem setup handler.
+func init() {
+	kernel.RegisterTmpfsSetup(NewFilesystem)
 }

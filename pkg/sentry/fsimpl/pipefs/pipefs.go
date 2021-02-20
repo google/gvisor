@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -171,4 +172,9 @@ func NewConnectedPipeFDs(ctx context.Context, mnt *vfs.Mount, flags uint32) (*vf
 	d.Init(&fs.Filesystem, inode)
 	defer d.DecRef(ctx)
 	return inode.pipe.ReaderWriterPair(ctx, mnt, d.VFSDentry(), flags)
+}
+
+// init Initialize pipe filesytem setup handler.
+func init() {
+	kernel.RegisterPipefsSetup(NewFilesystem)
 }
