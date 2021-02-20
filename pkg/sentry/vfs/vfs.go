@@ -23,7 +23,9 @@
 //         Dentry.mu
 //           Locks acquired by FilesystemImpls between Prepare{Delete,Rename}Dentry and Commit{Delete,Rename*}Dentry
 //         VirtualFilesystem.filesystemsMu
-//       EpollInstance.mu
+//       fdnotifier.notifier.mu
+//         EpollInstance.mu
+//           Locks acquired by FileDescriptionImpl.Readiness
 //       Inotify.mu
 //         Watches.mu
 //           Inotify.evMu
