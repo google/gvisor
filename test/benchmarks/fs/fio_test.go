@@ -34,37 +34,31 @@ func BenchmarkFio(b *testing.B) {
 	testCases := []tools.Fio{
 		{
 			Test:      "write",
-			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		{
 			Test:      "write",
-			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		{
 			Test:      "read",
-			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		{
 			Test:      "read",
-			Size:      b.N,
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		{
 			Test:      "randwrite",
-			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
 		{
 			Test:      "randread",
-			Size:      b.N,
 			BlockSize: 4,
 			IODepth:   4,
 		},
@@ -95,6 +89,8 @@ func BenchmarkFio(b *testing.B) {
 				b.Fatalf("Failed to parser paramters: %v", err)
 			}
 			b.Run(name, func(b *testing.B) {
+				b.StopTimer()
+				tc.Size = b.N
 				ctx := context.Background()
 				container := machine.GetContainer(ctx, b)
 				defer container.CleanUp(ctx)
@@ -141,24 +137,18 @@ func BenchmarkFio(b *testing.B) {
 				}
 				cmd := tc.MakeCmd(outfile)
 
-				b.ResetTimer()
-				b.StopTimer()
-
-				for i := 0; i < b.N; i++ {
-					if err := harness.DropCaches(machine); err != nil {
-						b.Fatalf("failed to drop caches: %v", err)
-					}
-
-					// Run fio.
-					b.StartTimer()
-					data, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
-					if err != nil {
-						b.Fatalf("failed to run cmd %v: %v", cmd, err)
-					}
-					b.StopTimer()
-					b.SetBytes(1024 * 1024) // Bytes for go reporting (Size is in megabytes).
-					tc.Report(b, data)
+				if err := harness.DropCaches(machine); err != nil {
+					b.Fatalf("failed to drop caches: %v", err)
 				}
+
+				// Run fio.
+				b.StartTimer()
+				data, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
+				if err != nil {
+					b.Fatalf("failed to run cmd %v: %v", cmd, err)
+				}
+				b.StopTimer()
+				tc.Report(b, data)
 			})
 		}
 	}

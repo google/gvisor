@@ -62,18 +62,15 @@ func (f *Fio) Report(b *testing.B, output string) {
 
 // parseBandwidth reports the bandwidth in b/s.
 func (f *Fio) parseBandwidth(data string, isRead bool) (float64, error) {
+	op := "write"
 	if isRead {
-		result, err := f.parseFioJSON(data, "read", "bw")
-		if err != nil {
-			return 0, err
-		}
-		return 1024 * result, nil
+		op = "read"
 	}
-	result, err := f.parseFioJSON(data, "write", "bw")
+	result, err := f.parseFioJSON(data, op, "bw")
 	if err != nil {
 		return 0, err
 	}
-	return 1024 * result, nil
+	return result * 1024, nil
 }
 
 // parseIOps reports the write IO per second metric.
