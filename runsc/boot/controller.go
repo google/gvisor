@@ -547,7 +547,8 @@ type SignalArgs struct {
 	// Signo is the signal to send to the process.
 	Signo int32
 
-	// PID is the process ID in the given container that will be signaled.
+	// PID is the process ID in the given container that will be signaled,
+	// relative to the root PID namespace, not the container's.
 	// If 0, the root container will be signalled.
 	PID int32
 
