@@ -32,6 +32,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -57,6 +58,16 @@ var controllers = map[string]config{
 	"perf_event": {ctrlr: &noop{}},
 	"rdma":       {ctrlr: &noop{}, optional: true},
 	"systemd":    {ctrlr: &noop{}},
+}
+
+// IsOnlyV2 checks whether cgroups V2 is enabled and V1 is not.
+func IsOnlyV2() bool {
+	var stat unix.Statfs_t
+	if err := unix.Statfs(cgroupRoot, &stat); err != nil {
+		// It's not used for anything important, assume not V2 on failure.
+		return false
+	}
+	return stat.Type == unix.CGROUP2_SUPER_MAGIC
 }
 
 func setOptionalValueInt(path, name string, val *int64) error {
