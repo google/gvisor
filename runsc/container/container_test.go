@@ -112,6 +112,39 @@ func blockUntilWaitable(pid int) error {
 	return err
 }
 
+// execPS executes `ps` inside the container and return the processes.
+func execPS(c *Container) ([]*control.Process, error) {
+	out, err := executeCombinedOutput(c, "/bin/ps", "-e")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(out), "\n")
+	if len(lines) < 1 {
+		return nil, fmt.Errorf("missing header: %q", lines)
+	}
+	procs := make([]*control.Process, 0, len(lines)-1)
+	for _, line := range lines[1:] {
+		if len(line) == 0 {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("malformed line: %s", line)
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			return nil, err
+		}
+		cmd := fields[3]
+		// Fill only the fields we need thus far.
+		procs = append(procs, &control.Process{
+			PID: kernel.ThreadID(pid),
+			Cmd: cmd,
+		})
+	}
+	return procs, nil
+}
+
 // procListsEqual is used to check whether 2 Process lists are equal. Fields
 // set to -1 in wants are ignored. Timestamp and threads fields are always
 // ignored.
@@ -1568,9 +1601,9 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Read mounts to check that root is readonly.
-			out, ws, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / '")
-			if err != nil || ws != 0 {
-				t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+			out, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / '")
+			if err != nil {
+				t.Fatalf("exec failed: %v", err)
 			}
 			t.Logf("root mount: %q", out)
 			if !strings.Contains(string(out), "(ro)") {
@@ -1578,7 +1611,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err = execute(c, "/bin/touch", "/foo")
+			ws, err := execute(c, "/bin/touch", "/foo")
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -1627,9 +1660,9 @@ func TestReadonlyMount(t *testing.T) {
 
 			// Read mounts to check that volume is readonly.
 			cmd := fmt.Sprintf("mount | grep ' %s '", dir)
-			out, ws, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
-			if err != nil || ws != 0 {
-				t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+			out, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
+			if err != nil {
+				t.Fatalf("exec failed, err: %v", err)
 			}
 			t.Logf("mount: %q", out)
 			if !strings.Contains(string(out), "(ro)") {
@@ -1637,7 +1670,7 @@ func TestReadonlyMount(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err = execute(c, "/bin/touch", path.Join(dir, "file"))
+			ws, err := execute(c, "/bin/touch", path.Join(dir, "file"))
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -2424,10 +2457,10 @@ func execute(cont *Container, name string, arg ...string) (syscall.WaitStatus, e
 	return cont.executeSync(args)
 }
 
-func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, syscall.WaitStatus, error) {
+func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer r.Close()
 
@@ -2439,10 +2472,14 @@ func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte,
 	ws, err := cont.executeSync(args)
 	w.Close()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
+	if ws != 0 {
+		return nil, fmt.Errorf("exec failed, status: %v", ws)
+	}
+
 	out, err := ioutil.ReadAll(r)
-	return out, ws, err
+	return out, err
 }
 
 // executeSync synchronously executes a new process.
