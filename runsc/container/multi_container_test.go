@@ -166,8 +166,8 @@ func TestMultiContainerSanity(t *testing.T) {
 	}
 }
 
-// TestMultiPIDNS checks that it is possible to run 2 dead-simple
-// containers in the same sandbox with different pidns.
+// TestMultiPIDNS checks that it is possible to run 2 dead-simple containers in
+// the same sandbox with different pidns.
 func TestMultiPIDNS(t *testing.T) {
 	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
@@ -207,6 +207,33 @@ func TestMultiPIDNS(t *testing.T) {
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
+			}
+
+			// Root container runs in the root PID namespace and can see all
+			// processes.
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().PID(2).Cmd("sleep").Process(),
+				newProcessBuilder().Cmd("ps").Process(),
+			}
+			got, err := execPS(containers[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !procListsEqual(got, expectedPL) {
+				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+			}
+
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().Cmd("ps").Process(),
+			}
+			got, err = execPS(containers[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !procListsEqual(got, expectedPL) {
+				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
 			}
 		})
 	}
@@ -273,6 +300,144 @@ func TestMultiPIDNSPath(t *testing.T) {
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
+			}
+
+			// Root container runs in the root PID namespace and can see all
+			// processes.
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().PID(2).Cmd("sleep").Process(),
+				newProcessBuilder().PID(3).Cmd("sleep").Process(),
+				newProcessBuilder().Cmd("ps").Process(),
+			}
+			got, err := execPS(containers[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !procListsEqual(got, expectedPL) {
+				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+			}
+
+			// Container 1 runs in the same PID namespace as the root container.
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().PID(2).Cmd("sleep").Process(),
+				newProcessBuilder().PID(3).Cmd("sleep").Process(),
+				newProcessBuilder().Cmd("ps").Process(),
+			}
+			got, err = execPS(containers[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !procListsEqual(got, expectedPL) {
+				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+			}
+
+			// Container 2 runs on its own namespace.
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().Cmd("ps").Process(),
+			}
+			got, err = execPS(containers[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !procListsEqual(got, expectedPL) {
+				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
+			}
+		})
+	}
+}
+
+// TestMultiPIDNSKill kills processes using PID when containers are using
+// different PID namespaces to ensure PID is taken from the root namespace.
+func TestMultiPIDNSKill(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	for name, conf := range configs(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			// Setup the containers.
+			cmd := []string{app, "task-tree", "--depth=1", "--width=2", "--pause=true"}
+			const processes = 3
+			testSpecs, ids := createSpecs(cmd, cmd)
+
+			// TODO: Uncomment after https://github.com/google/gvisor/pull/5519.
+			//testSpecs[1].Linux = &specs.Linux{
+			//	Namespaces: []specs.LinuxNamespace{
+			//		{
+			//			Type: "pid",
+			//		},
+			//	},
+			//}
+
+			containers, cleanup, err := startContainers(conf, testSpecs, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			// Wait until all processes are created.
+			for _, c := range containers {
+				if err := waitForProcessCount(c, processes); err != nil {
+					t.Fatalf("error waitting for processes: %v", err)
+				}
+			}
+
+			for i, c := range containers {
+				// First, kill a process that belongs to the container.
+				procs, err := c.Processes()
+				if err != nil {
+					t.Fatalf("container.Processes(): %v", err)
+				}
+				t.Logf("Container %q procs: %s", c.ID, procListToString(procs))
+				pidToKill := procs[processes-1].PID
+				t.Logf("PID to kill: %d", pidToKill)
+				if err := c.SignalProcess(syscall.SIGKILL, int32(pidToKill)); err != nil {
+					t.Errorf("container.SignalProcess: %v", err)
+				}
+				// Wait for the process to get killed.
+				if err := waitForProcessCount(c, processes-1); err != nil {
+					t.Fatalf("error waitting for processes: %v", err)
+				}
+				procs, err = c.Processes()
+				if err != nil {
+					t.Fatalf("container.Processes(): %v", err)
+				}
+				t.Logf("Container %q procs after kill: %s", c.ID, procListToString(procs))
+				for _, proc := range procs {
+					if proc.PID == pidToKill {
+						t.Errorf("process %d not killed: %+v", pidToKill, proc)
+					}
+				}
+
+				// Next, attempt to kill a process from another container and check that
+				// it fails.
+				other := containers[(i+1)%len(containers)]
+				procs, err = other.Processes()
+				if err != nil {
+					t.Fatalf("container.Processes(): %v", err)
+				}
+				t.Logf("Other container %q procs: %s", other.ID, procListToString(procs))
+
+				pidToKill = procs[len(procs)-1].PID
+				t.Logf("PID that should not be killed: %d", pidToKill)
+				err = c.SignalProcess(syscall.SIGKILL, int32(pidToKill))
+				if err == nil {
+					t.Fatalf("killing another container's process should fail")
+				}
+				if !strings.Contains(err.Error(), "belongs to a different container") {
+					t.Errorf("wrong error message from killing another container's: %v", err)
+				}
 			}
 		})
 	}
