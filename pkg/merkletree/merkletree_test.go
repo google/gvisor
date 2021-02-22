@@ -159,11 +159,12 @@ func TestLayout(t *testing.T) {
 }
 
 const (
-	defaultName        = "merkle_test"
-	defaultMode        = 0644
-	defaultUID         = 0
-	defaultGID         = 0
-	defaultSymlinkPath = "merkle_test_link"
+	defaultName          = "merkle_test"
+	defaultMode          = 0644
+	defaultUID           = 0
+	defaultGID           = 0
+	defaultSymlinkPath   = "merkle_test_link"
+	defaultHashAlgorithm = linux.FS_VERITY_HASH_ALG_SHA256
 )
 
 // bytesReadWriter is used to read from/write to/seek in a byte array. Unlike
@@ -433,7 +434,7 @@ func TestVerifyInvalidRange(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, linux.FS_VERITY_HASH_ALG_SHA256, false /* dataAndTreeInSameFile */, false /* isSymlink */, tc.verifyStart, tc.verifySize, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, false /* dataAndTreeInSameFile */, false /* isSymlink */, tc.verifyStart, tc.verifySize, &buf)
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
 			}
@@ -441,43 +442,32 @@ func TestVerifyInvalidRange(t *testing.T) {
 	}
 }
 
-// TODO(b/179422935): Cleanup merkletree verify tests.
 func TestVerifyUnmodifiedMetadata(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 		isSymlink             bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 			isSymlink:             true,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-			isSymlink:             false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 			isSymlink:             false,
 		},
 		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFileSymlink",
 			dataAndTreeInSameFile: true,
-			isSymlink:             false,
+			isSymlink:             true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, tc.isSymlink, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, tc.isSymlink, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			if tc.isSymlink {
 				params.SymlinkTarget = defaultSymlinkPath
 			}
@@ -491,34 +481,21 @@ func TestVerifyUnmodifiedMetadata(t *testing.T) {
 func TestVerifyModifiedName(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.Name += "abc"
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -530,34 +507,21 @@ func TestVerifyModifiedName(t *testing.T) {
 func TestVerifyModifiedSize(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.Size--
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -569,34 +533,21 @@ func TestVerifyModifiedSize(t *testing.T) {
 func TestVerifyModifiedMode(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.Mode++
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -608,34 +559,21 @@ func TestVerifyModifiedMode(t *testing.T) {
 func TestVerifyModifiedUID(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.UID++
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -647,34 +585,21 @@ func TestVerifyModifiedUID(t *testing.T) {
 func TestVerifyModifiedGID(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.GID++
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -686,34 +611,21 @@ func TestVerifyModifiedGID(t *testing.T) {
 func TestVerifyModifiedChildren(t *testing.T) {
 	testCases := []struct {
 		name                  string
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
+			name:                  "SeparateFile",
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
+			name:                  "SameFile",
 			dataAndTreeInSameFile: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
 			params.Children["abc"] = struct{}{}
 			if _, err := Verify(&params); errors.Is(err, nil) {
 				t.Errorf("Verification succeeded when expected to fail")
@@ -723,41 +635,11 @@ func TestVerifyModifiedChildren(t *testing.T) {
 }
 
 func TestVerifyModifiedSymlink(t *testing.T) {
-	testCases := []struct {
-		name                  string
-		hashAlgorithm         int
-		dataAndTreeInSameFile bool
-	}{
-		{
-			name:                  "SHA256SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA512SeparateFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "SHA256SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "SHA512SameFile",
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: true,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			_, params := prepareVerify(t, usermem.PageSize /* dataSize */, tc.hashAlgorithm, tc.dataAndTreeInSameFile, true /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
-			params.SymlinkTarget = "merkle_modified_test_link"
-			if _, err := Verify(&params); err == nil {
-				t.Errorf("Verification succeeded when expected to fail")
-			}
-		})
+	var buf bytes.Buffer
+	_, params := prepareVerify(t, usermem.PageSize /* dataSize */, defaultHashAlgorithm, false /* dataAndTreeInSameFile */, true /* isSymlink */, 0 /* verifyStart */, 0 /* verifySize */, &buf)
+	params.SymlinkTarget = "merkle_modified_test_link"
+	if _, err := Verify(&params); err == nil {
+		t.Errorf("Verification succeeded when expected to fail")
 	}
 }
 
@@ -766,55 +648,26 @@ func TestModifyOutsideVerifyRange(t *testing.T) {
 		name string
 		// The byte with index modifyByte is modified.
 		modifyByte            int64
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		{
-			name:                  "BeforeRangeSHA256SeparateFile",
+			name:                  "BeforeRangeSeparateFile",
 			modifyByte:            4*usermem.PageSize - 1,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "BeforeRangeSHA512SeparateFile",
+			name:                  "BeforeRangeSameFile",
 			modifyByte:            4*usermem.PageSize - 1,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "BeforeRangeSHA256SameFile",
-			modifyByte:            4*usermem.PageSize - 1,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: true,
 		},
 		{
-			name:                  "BeforeRangeSHA512SameFile",
-			modifyByte:            4*usermem.PageSize - 1,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "AfterRangeSHA256SeparateFile",
+			name:                  "AfterRangeSeparateFile",
 			modifyByte:            5 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "AfterRangeSHA512SeparateFile",
+			name:                  "AfterRangeSameFile",
 			modifyByte:            5 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "AfterRangeSHA256SameFile",
-			modifyByte:            5 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "AfterRangeSHA256SameFile",
-			modifyByte:            5 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 	}
@@ -825,7 +678,7 @@ func TestModifyOutsideVerifyRange(t *testing.T) {
 			verifySize := int64(usermem.PageSize)
 			var buf bytes.Buffer
 			// Modified byte is outside verify range. Verify should succeed.
-			data, params := prepareVerify(t, dataSize, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, verifyStart, verifySize, &buf)
+			data, params := prepareVerify(t, dataSize, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, verifyStart, verifySize, &buf)
 			// Flip a bit in data and checks Verify results.
 			data[tc.modifyByte] ^= 1
 			n, err := Verify(&params)
@@ -852,215 +705,106 @@ func TestModifyInsideVerifyRange(t *testing.T) {
 		verifySize  int64
 		// The byte with index modifyByte is modified.
 		modifyByte            int64
-		hashAlgorithm         int
 		dataAndTreeInSameFile bool
 	}{
 		// Test a block-aligned verify range.
 		// Modifying a byte in the verified range should cause verify
 		// to fail.
 		{
-			name:                  "BlockAlignedRangeSHA256SeparateFile",
+			name:                  "BlockAlignedRangeSeparateFile",
 			verifyStart:           4 * usermem.PageSize,
 			verifySize:            usermem.PageSize,
 			modifyByte:            4 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "BlockAlignedRangeSHA512SeparateFile",
+			name:                  "BlockAlignedRangeSameFile",
 			verifyStart:           4 * usermem.PageSize,
 			verifySize:            usermem.PageSize,
 			modifyByte:            4 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "BlockAlignedRangeSHA256SameFile",
-			verifyStart:           4 * usermem.PageSize,
-			verifySize:            usermem.PageSize,
-			modifyByte:            4 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "BlockAlignedRangeSHA512SameFile",
-			verifyStart:           4 * usermem.PageSize,
-			verifySize:            usermem.PageSize,
-			modifyByte:            4 * usermem.PageSize,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 		// The tests below use a non-block-aligned verify range.
 		// Modifying a byte at strat of verify range should cause
 		// verify to fail.
 		{
-			name:                  "ModifyStartSHA256SeparateFile",
+			name:                  "ModifyStartSeparateFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            4*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "ModifyStartSHA512SeparateFile",
+			name:                  "ModifyStartSameFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            4*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "ModifyStartSHA256SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            4*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "ModifyStartSHA512SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            4*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 		// Modifying a byte at the end of verify range should cause
 		// verify to fail.
 		{
-			name:                  "ModifyEndSHA256SeparateFile",
+			name:                  "ModifyEndSeparateFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            6*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "ModifyEndSHA512SeparateFile",
+			name:                  "ModifyEndSameFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            6*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "ModifyEndSHA256SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            6*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "ModifyEndSHA512SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            6*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 		// Modifying a byte in the middle verified block should cause
 		// verify to fail.
 		{
-			name:                  "ModifyMiddleSHA256SeparateFile",
+			name:                  "ModifyMiddleSeparateFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            5*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "ModifyMiddleSHA512SeparateFile",
+			name:                  "ModifyMiddleSameFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            5*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "ModifyMiddleSHA256SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            5*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "ModifyMiddleSHA512SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            5*usermem.PageSize + 123,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 		// Modifying a byte in the first block in the verified range
 		// should cause verify to fail, even the modified bit itself is
 		// out of verify range.
 		{
-			name:                  "ModifyFirstBlockSHA256SeparateFile",
+			name:                  "ModifyFirstBlockSeparateFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            4*usermem.PageSize + 122,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "ModifyFirstBlockSHA512SeparateFile",
+			name:                  "ModifyFirstBlockSameFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            4*usermem.PageSize + 122,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "ModifyFirstBlockSHA256SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            4*usermem.PageSize + 122,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "ModifyFirstBlockSHA512SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            4*usermem.PageSize + 122,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 		// Modifying a byte in the last block in the verified range
 		// should cause verify to fail, even the modified bit itself is
 		// out of verify range.
 		{
-			name:                  "ModifyLastBlockSHA256SeparateFile",
+			name:                  "ModifyLastBlockSeparateFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            6*usermem.PageSize + 124,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
 			dataAndTreeInSameFile: false,
 		},
 		{
-			name:                  "ModifyLastBlockSHA512SeparateFile",
+			name:                  "ModifyLastBlockSameFile",
 			verifyStart:           4*usermem.PageSize + 123,
 			verifySize:            2 * usermem.PageSize,
 			modifyByte:            6*usermem.PageSize + 124,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
-			dataAndTreeInSameFile: false,
-		},
-		{
-			name:                  "ModifyLastBlockSHA256SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            6*usermem.PageSize + 124,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA256,
-			dataAndTreeInSameFile: true,
-		},
-		{
-			name:                  "ModifyLastBlockSHA512SameFile",
-			verifyStart:           4*usermem.PageSize + 123,
-			verifySize:            2 * usermem.PageSize,
-			modifyByte:            6*usermem.PageSize + 124,
-			hashAlgorithm:         linux.FS_VERITY_HASH_ALG_SHA512,
 			dataAndTreeInSameFile: true,
 		},
 	}
@@ -1068,7 +812,7 @@ func TestModifyInsideVerifyRange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dataSize := int64(8 * usermem.PageSize)
 			var buf bytes.Buffer
-			data, params := prepareVerify(t, dataSize, tc.hashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, tc.verifyStart, tc.verifySize, &buf)
+			data, params := prepareVerify(t, dataSize, defaultHashAlgorithm, tc.dataAndTreeInSameFile, false /* isSymlink */, tc.verifyStart, tc.verifySize, &buf)
 			// Flip a bit in data and checks Verify results.
 			data[tc.modifyByte] ^= 1
 			if _, err := Verify(&params); errors.Is(err, nil) {
