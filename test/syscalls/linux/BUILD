@@ -2305,7 +2305,7 @@ cc_library(
     name = "socket_generic_test_cases",
     testonly = 1,
     srcs = [
-        "socket_generic.cc",
+        "socket_generic_test_cases.cc",
     ],
     hdrs = [
         "socket_generic.h",
