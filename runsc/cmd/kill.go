@@ -52,7 +52,7 @@ func (*Kill) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (k *Kill) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&k.all, "all", false, "send the specified signal to all processes inside the container")
-	f.IntVar(&k.pid, "pid", 0, "send the specified signal to a specific process")
+	f.IntVar(&k.pid, "pid", 0, "send the specified signal to a specific process. pid is relative to the root PID namespace")
 }
 
 // Execute implements subcommands.Command.Execute.
