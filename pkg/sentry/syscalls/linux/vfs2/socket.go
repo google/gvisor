@@ -660,6 +660,10 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.EINVAL
 	}
 
+	if vlen > linux.UIO_MAXIOV {
+		vlen = linux.UIO_MAXIOV
+	}
+
 	// Reject flags that we don't handle yet.
 	if flags & ^(baseRecvFlags|linux.MSG_CMSG_CLOEXEC|linux.MSG_ERRQUEUE) != 0 {
 		return 0, nil, syserror.EINVAL
@@ -939,6 +943,10 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if t.Arch().Width() != 8 {
 		// We only handle 64-bit for now.
 		return 0, nil, syserror.EINVAL
+	}
+
+	if vlen > linux.UIO_MAXIOV {
+		vlen = linux.UIO_MAXIOV
 	}
 
 	// Get socket from the file descriptor.
