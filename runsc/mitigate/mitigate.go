@@ -36,11 +36,7 @@ type Mitigate struct {
 func (m Mitigate) Usage() string {
 	usageString := `mitigate [flags]
 
-This command mitigates an underlying system against side channel attacks.
-The command checks /proc/cpuinfo for cpus having key vulnerablilities (meltdown,
-l1tf, mds, swapgs, taa). If cpus are found to have one of the vulnerabilities,
-all but one cpu is shutdown on each core via
-/sys/devices/system/cpu/cpu{N}/online.
+Mitigate mitigates a system to the "MDS" vulnerability by implementing a manual shutdown of SMT. The command checks /proc/cpuinfo for cpus having the MDS vulnerability, and if found, shutdown all but one CPU per hyperthread pair via /sys/devices/system/cpu/cpu{N}/online. CPUs can be restored by writing "2" to each file in /sys/devices/system/cpu/cpu{N}/online or performing a system reboot.
 `
 	return usageString + m.other.usage()
 }
