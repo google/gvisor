@@ -140,6 +140,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
+        "//pkg/sentry/securityhooks",
         "//pkg/sentry/usage",
         "//pkg/sync",
         "//pkg/syserror",

@@ -108,7 +108,7 @@ func TestDataASUpdates(t *testing.T) {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
 	}
 
-	mm.MProtect(addr+usermem.PageSize, usermem.PageSize, usermem.Read, false)
+	mm.MProtect(ctx, addr+usermem.PageSize, usermem.PageSize, usermem.Read, false)
 	realDataAS = mm.realDataAS()
 	if mm.dataAS != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
@@ -204,7 +204,7 @@ func TestIOAfterMProtect(t *testing.T) {
 		t.Errorf("CopyOut got %d want 1", n)
 	}
 
-	err = mm.MProtect(addr, usermem.PageSize, usermem.Read, false)
+	err = mm.MProtect(ctx, addr, usermem.PageSize, usermem.Read, false)
 	if err != nil {
 		t.Errorf("MProtect got err %v want nil", err)
 	}

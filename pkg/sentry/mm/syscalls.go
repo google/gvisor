@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/securityhooks"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -588,7 +589,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 }
 
 // MProtect implements the semantics of Linux's mprotect(2).
-func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms usermem.AccessType, growsDown bool) error {
+func (mm *MemoryManager) MProtect(ctx context.Context, addr usermem.Addr, length uint64, realPerms usermem.AccessType, growsDown bool) error {
 	if addr.RoundDown() != addr {
 		return syserror.EINVAL
 	}
@@ -630,6 +631,11 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 		}
 	}
 
+	var externalHooks securityhooks.SecurityHooks
+	if v := ctx.Value(securityhooks.CtxSecurityHooks); v != nil {
+		externalHooks = v.(securityhooks.SecurityHooks)
+	}
+
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
 	defer func() {
@@ -653,6 +659,20 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 		vmaLength := vseg.Range().Length()
 		if vma.isPrivateDataLocked() {
 			mm.dataAS -= uint64(vmaLength)
+		}
+
+		if externalHooks != nil {
+			v := securityhooks.VMA{
+				RealPerm: vma.realPerms,
+				MaxPerms: vma.maxPerms,
+				ID:       vma.id,
+				Start:    vseg.Start(),
+				End:      vseg.End(),
+			}
+			err := externalHooks.OnFileMProtect(ctx, &v, realPerms)
+			if err != nil {
+				return err
+			}
 		}
 
 		vma.realPerms = realPerms

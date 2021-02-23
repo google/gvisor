@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/securityhooks"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
@@ -233,6 +234,10 @@ func New(args Args) (*Loader, error) {
 	}
 	k := &kernel.Kernel{
 		Platform: p,
+	}
+
+	if h := securityhooks.LookupModule(args.Conf.SecurityModule); h != nil {
+		k.SecurityHooks = h
 	}
 
 	// Create memory file.

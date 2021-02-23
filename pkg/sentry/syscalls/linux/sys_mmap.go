@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -87,14 +88,19 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		}
 		defer file.DecRef(t)
 
-		flags := file.Flags()
+		fileFlags := file.Flags()
 		// mmap unconditionally requires that the FD is readable.
-		if !flags.Read {
+		if !fileFlags.Read {
 			return 0, nil, syserror.EACCES
 		}
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
-		if shared && !flags.Write {
+		if shared && !fileFlags.Write {
 			opts.MaxPerms.Write = false
+		}
+
+		if t.Kernel().SecurityHooks != nil {
+			fb := fsbridge.NewFSFile(file)
+			t.Kernel().SecurityHooks.OnFileMMap(t, fb, opts.Perms, flags)
 		}
 
 		if err := file.ConfigureMMap(t, &opts); err != nil {
@@ -160,7 +166,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	length := args[1].Uint64()
 	prot := args[2].Int()
-	err := t.MemoryManager().MProtect(args[0].Pointer(), length, usermem.AccessType{
+	err := t.MemoryManager().MProtect(t, args[0].Pointer(), length, usermem.AccessType{
 		Read:    linux.PROT_READ&prot != 0,
 		Write:   linux.PROT_WRITE&prot != 0,
 		Execute: linux.PROT_EXEC&prot != 0,

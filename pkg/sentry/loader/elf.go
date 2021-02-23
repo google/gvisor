@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/securityhooks"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -288,6 +289,10 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 				mopts.MappingIdentity.DecRef(ctx)
 			}
 		}()
+		if v := ctx.Value(securityhooks.CtxSecurityHooks); v != nil {
+			flags := int32(linux.MAP_PRIVATE | linux.MAP_FIXED)
+			v.(securityhooks.SecurityHooks).OnFileMMap(ctx, f, mopts.Perms, flags)
+		}
 		if err := f.ConfigureMMap(ctx, &mopts); err != nil {
 			ctx.Infof("File is not memory-mappable: %v", err)
 			return err

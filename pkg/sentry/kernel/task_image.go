@@ -142,6 +142,12 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 		args.Filename = args.File.PathnameWithDeleted(ctx)
 	}
 
+	if k.SecurityHooks != nil {
+		args.SecurityHook = func(args *loader.LoadArgs) error {
+			return k.SecurityHooks.OnTaskExecve(ctx, args)
+		}
+	}
+
 	// Prepare a new user address space to load into.
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
 	defer m.DecUsers(ctx)

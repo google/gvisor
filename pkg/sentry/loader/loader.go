@@ -77,6 +77,9 @@ type LoadArgs struct {
 
 	// Features specifies the CPU feature set for the executable.
 	Features *cpuid.FeatureSet
+
+	// SecurityHook is called right before loading the executable.
+	SecurityHook func(args *LoadArgs) error
 }
 
 // openPath opens args.Filename and checks that it is valid for loading.
@@ -157,6 +160,13 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 			defer args.File.DecRef(ctx)
 		} else {
 			if err := checkIsRegularFile(ctx, args.File, args.Filename); err != nil {
+				return loadedELF{}, nil, nil, nil, err
+			}
+		}
+
+		if i == 0 && args.SecurityHook != nil {
+			err := args.SecurityHook(&args)
+			if err != nil {
 				return loadedELF{}, nil, nil, nil, err
 			}
 		}

@@ -9,7 +9,9 @@ go_library(
         "tcpip.go",
         "time.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

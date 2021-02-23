@@ -259,6 +259,7 @@ go_library(
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
+        "//pkg/sentry/securityhooks",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
