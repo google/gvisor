@@ -286,6 +286,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Flags: linux.O_RDWR | linux.O_CREAT,
 			Mode:  0644,
 		})
+
 		if err != nil {
 			fs.vfsfs.DecRef(ctx)
 			d.DecRef(ctx)
