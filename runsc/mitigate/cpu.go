@@ -23,15 +23,10 @@ import (
 )
 
 const (
-	// constants of coomm
-	meltdown = "cpu_meltdown"
-	l1tf     = "l1tf"
-	mds      = "mds"
-	swapgs   = "swapgs"
-	taa      = "taa"
-)
+	// mds is the only bug we care about.
+	mds = "mds"
 
-const (
+	// Constants for parsing /proc/cpuinfo.
 	processorKey  = "processor"
 	vendorIDKey   = "vendor_id"
 	cpuFamilyKey  = "cpu family"
@@ -39,9 +34,8 @@ const (
 	physicalIDKey = "physical id"
 	coreIDKey     = "core id"
 	bugsKey       = "bugs"
-)
 
-const (
+	// Path to shutdown a CPU.
 	cpuOnlineTemplate = "/sys/devices/system/cpu/cpu%d/online"
 )
 
@@ -249,24 +243,10 @@ func (t *thread) shutdown() error {
 	return ioutil.WriteFile(cpuPath, []byte{'0'}, 0644)
 }
 
-// List of pertinent side channel vulnerablilites.
-// For mds, see: https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/mds.html.
-var vulnerabilities = []string{
-	meltdown,
-	l1tf,
-	mds,
-	swapgs,
-	taa,
-}
-
-// isVulnerable checks if a CPU is vulnerable to pertinent bugs.
+// isVulnerable checks if a CPU is vulnerable to mds.
 func (t *thread) isVulnerable() bool {
-	for _, bug := range vulnerabilities {
-		if _, ok := t.bugs[bug]; ok {
-			return true
-		}
-	}
-	return false
+	_, ok := t.bugs[mds]
+	return ok
 }
 
 // isActive checks if a CPU is active from /sys/devices/system/cpu/cpu{N}/online
