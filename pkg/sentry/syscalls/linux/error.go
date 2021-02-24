@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -36,16 +37,16 @@ var (
 // errors, we may consume the error and return only the partial read/write.
 //
 // op and f are used only for panics.
-func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, ioerr, intr error, op string, f *vfs.FileDescription) error {
-	known, err := handleIOErrorImpl(t, partialResult, ioerr, intr, op)
+func HandleIOErrorVFS2(ctx context.Context, partialResult bool, ioerr, intr error, op string, f *vfs.FileDescription) error {
+	known, err := handleIOErrorImpl(ctx, partialResult, ioerr, intr, op)
 	if err != nil {
 		return err
 	}
 	if !known {
 		// An unknown error is encountered with a partial read/write.
 		fs := f.Mount().Filesystem().VirtualFilesystem()
-		root := vfs.RootFromContext(t)
-		name, _ := fs.PathnameWithDeleted(t, root, f.VirtualDentry())
+		root := vfs.RootFromContext(ctx)
+		name, _ := fs.PathnameWithDeleted(ctx, root, f.VirtualDentry())
 		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q", partialResult, ioerr, ioerr, op, name)
 		partialResultOnce.Do(partialResultMetric.Increment)
 	}
@@ -56,8 +57,8 @@ func HandleIOErrorVFS2(t *kernel.Task, partialResult bool, ioerr, intr error, op
 // errors, we may consume the error and return only the partial read/write.
 //
 // op and f are used only for panics.
-func handleIOError(t *kernel.Task, partialResult bool, ioerr, intr error, op string, f *fs.File) error {
-	known, err := handleIOErrorImpl(t, partialResult, ioerr, intr, op)
+func handleIOError(ctx context.Context, partialResult bool, ioerr, intr error, op string, f *fs.File) error {
+	known, err := handleIOErrorImpl(ctx, partialResult, ioerr, intr, op)
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func handleIOError(t *kernel.Task, partialResult bool, ioerr, intr error, op str
 // errors, we may consume the error and return only the partial read/write.
 //
 // Returns false if error is unknown.
-func handleIOErrorImpl(t *kernel.Task, partialResult bool, err, intr error, op string) (bool, error) {
+func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error, op string) (bool, error) {
 	switch err {
 	case nil:
 		// Typical successful syscall.
@@ -85,6 +86,10 @@ func handleIOErrorImpl(t *kernel.Task, partialResult bool, err, intr error, op s
 		// they will see 0.
 		return true, nil
 	case syserror.ErrExceedsFileSizeLimit:
+		t := kernel.TaskFromContext(ctx)
+		if t == nil {
+			panic("I/O error should only occur from a context associated with a Task")
+		}
 		// Ignore partialResult because this error only applies to
 		// normal files, and for those files we cannot accumulate
 		// write results.
