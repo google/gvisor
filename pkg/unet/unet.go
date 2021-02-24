@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/gate"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // backlog is used for the listen request.
@@ -67,7 +67,7 @@ func eventFD() (int, error) {
 // Socket is a connected unix domain socket.
 type Socket struct {
 	// gate protects use of fd.
-	gate gate.Gate
+	gate sync.Gate
 
 	// fd is the bound socket.
 	//

@@ -22,7 +22,7 @@
 package waitable
 
 import (
-	"gvisor.dev/gvisor/pkg/gate"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -30,10 +30,10 @@ import (
 
 // Endpoint is a waitable link-layer endpoint.
 type Endpoint struct {
-	dispatchGate gate.Gate
+	dispatchGate sync.Gate
 	dispatcher   stack.NetworkDispatcher
 
-	writeGate gate.Gate
+	writeGate sync.Gate
 	lower     stack.LinkEndpoint
 }
 

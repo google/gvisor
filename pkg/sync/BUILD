@@ -52,6 +52,7 @@ go_library(
         "aliases.go",
         "checklocks_off_unsafe.go",
         "checklocks_on_unsafe.go",
+        "gate_unsafe.go",
         "goyield_go113_unsafe.go",
         "goyield_unsafe.go",
         "mutex_unsafe.go",
@@ -69,6 +70,7 @@ go_library(
     stateify = False,
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/gohacks",
         "//pkg/goid",
     ],
 )
@@ -77,6 +79,7 @@ go_test(
     name = "sync_test",
     size = "small",
     srcs = [
+        "gate_test.go",
         "mutex_test.go",
         "rwmutex_test.go",
         "seqcount_test.go",
