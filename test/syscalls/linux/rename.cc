@@ -424,6 +424,20 @@ TEST(RenameTest, SysfsPathEndingWithDots) {
               SyscallFailsWithErrno(EBUSY));
 }
 
+TEST(RenameTest, SysfsFileToSelf) {
+  // If a non-root user tries to rename inside /sys then we get EPERM.
+  SKIP_IF(geteuid() != 0);
+  std::string const path = "/sys/devices/system/cpu/online";
+  EXPECT_THAT(rename(path.c_str(), path.c_str()), SyscallSucceeds());
+}
+
+TEST(RenameTest, SysfsDirectoryToSelf) {
+  // If a non-root user tries to rename inside /sys then we get EPERM.
+  SKIP_IF(geteuid() != 0);
+  std::string const path = "/sys/devices";
+  EXPECT_THAT(rename(path.c_str(), path.c_str()), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
