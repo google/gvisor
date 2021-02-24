@@ -313,22 +313,16 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		return nil, topLookupLayer, syserror.ENOENT
 	}
 
-	// Device and inode numbers were copied from the topmost layer above;
-	// override them if necessary.
-	if child.isDir() {
-		child.devMajor = linux.UNNAMED_MAJOR
-		child.devMinor = fs.dirDevMinor
-		child.ino = fs.newDirIno()
-	} else if !child.upperVD.Ok() {
-		childDevMinor, err := fs.getLowerDevMinor(child.devMajor, child.devMinor)
-		if err != nil {
-			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor, child.devMinor, err)
-			child.destroyLocked(ctx)
-			return nil, topLookupLayer, err
-		}
-		child.devMajor = linux.UNNAMED_MAJOR
-		child.devMinor = childDevMinor
+	// Device and inode numbers were copied from the topmost layer above. Remap
+	// the device number to an appropriate overlay-private one.
+	childDevMinor, err := fs.getPrivateDevMinor(child.devMajor, child.devMinor)
+	if err != nil {
+		ctx.Infof("overlay.filesystem.lookupLocked: failed to map layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor, child.devMinor, err)
+		child.destroyLocked(ctx)
+		return nil, topLookupLayer, err
 	}
+	child.devMajor = linux.UNNAMED_MAJOR
+	child.devMinor = childDevMinor
 
 	parent.IncRef()
 	child.parent = parent
