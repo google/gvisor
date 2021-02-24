@@ -282,6 +282,18 @@ type Kernel struct {
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
 	SleepForAddressSpaceActivation bool
+
+	// Exceptions to YAMA ptrace restrictions. Each key-value pair represents a
+	// tracee-tracer relationship. The key is a process (technically, the thread
+	// group leader) that can be traced by any thread that is a descendant of the
+	// value. If the value is nil, then anyone can trace the process represented by
+	// the key.
+	//
+	// ptraceExceptions is protected by the TaskSet mutex.
+	ptraceExceptions map[*Task]*Task
+
+	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
+	YAMAPtraceScope int32
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -382,6 +394,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
+	k.ptraceExceptions = make(map[*Task]*Task)
+	k.YAMAPtraceScope = linux.YAMA_SCOPE_RELATIONAL
 
 	if VFS2Enabled {
 		ctx := k.SupervisorContext()
@@ -425,7 +439,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
 	}
-
 	return nil
 }
 

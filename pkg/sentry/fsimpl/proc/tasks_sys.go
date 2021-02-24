@@ -48,6 +48,9 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"shmall":   fs.newInode(ctx, root, 0444, shmData(linux.SHMALL)),
 			"shmmax":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMAX)),
 			"shmmni":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMNI)),
+			"yama": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
+			}),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"mmap_min_addr":     fs.newInode(ctx, root, 0444, &mmapMinAddrData{k: k}),

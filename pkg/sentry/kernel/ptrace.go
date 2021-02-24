@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -95,7 +96,11 @@ const (
 // checks for access mode PTRACE_MODE_ATTACH; otherwise, it checks for access
 // mode PTRACE_MODE_READ.
 //
-// NOTE(b/30815691): The result of CanTrace is immediately stale (e.g., a
+// In Linux, ptrace access restrictions may be configured by LSMs. While we do
+// not support LSMs, we do add additional restrictions based on the commoncap
+// and YAMA LSMs.
+//
+// TODO(gvisor.dev/issue/212): The result of CanTrace is immediately stale (e.g., a
 // racing setuid(2) may change traceability). This may pose a risk when a task
 // changes from traceable to not traceable. This is only problematic across
 // execve, where privileges may increase.
@@ -103,7 +108,7 @@ const (
 // We currently do not implement privileged executables (set-user/group-ID bits
 // and file capabilities), so that case is not reachable.
 func (t *Task) CanTrace(target *Task, attach bool) bool {
-	// "1. If the calling thread and the target thread are in the same thread
+	// "If the calling thread and the target thread are in the same thread
 	// group, access is always allowed." - ptrace(2)
 	//
 	// Note: Strictly speaking, prior to 73af963f9f30 ("__ptrace_may_access()
@@ -115,9 +120,57 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return true
 	}
 
+	if !t.canTraceStandard(target, attach) {
+		return false
+	}
+
+	// YAMA only supported for vfs2.
+	if !VFS2Enabled {
+		return true
+	}
+
+	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+		t.tg.pidns.owner.mu.RLock()
+		defer t.tg.pidns.owner.mu.RUnlock()
+		if !t.canTraceYAMALocked(target) {
+			return false
+		}
+	}
+	return true
+}
+
+// canTraceLocked is the same as CanTrace, except the caller must already hold
+// the TaskSet mutex (for reading or writing).
+func (t *Task) canTraceLocked(target *Task, attach bool) bool {
+	if t.tg == target.tg {
+		return true
+	}
+
+	if !t.canTraceStandard(target, attach) {
+		return false
+	}
+
+	// YAMA only supported for vfs2.
+	if !VFS2Enabled {
+		return true
+	}
+
+	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+		if !t.canTraceYAMALocked(target) {
+			return false
+		}
+	}
+	return true
+}
+
+// canTraceStandard performs standard ptrace access checks as defined by
+// kernel/ptrace.c:__ptrace_may_access as well as the commoncap LSM
+// implementation of the security_ptrace_access_check() interface, which is
+// always invoked.
+func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// """
-	// 2. If the access mode specifies PTRACE_MODE_FSCREDS (ED: snipped,
-	// doesn't exist until Linux 4.5).
+	// TODO(gvisor.dev/issue/260): 1. If the access mode specifies
+	// PTRACE_MODE_FSCREDS (ED: snipped, doesn't exist until Linux 4.5).
 	//
 	// Otherwise, the access mode specifies PTRACE_MODE_REALCREDS, so use the
 	// caller's real UID and GID for the checks in the next step. (Most APIs
@@ -125,7 +178,7 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	// historical reasons, the PTRACE_MODE_REALCREDS check uses the real IDs
 	// instead.)
 	//
-	// 3. Deny access if neither of the following is true:
+	// 2. Deny access if neither of the following is true:
 	//
 	// - The real, effective, and saved-set user IDs of the target match the
 	// caller's user ID, *and* the real, effective, and saved-set group IDs of
@@ -134,15 +187,12 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	// - The caller has the CAP_SYS_PTRACE capability in the user namespace of
 	// the target.
 	//
-	// 4. Deny access if the target process "dumpable" attribute has a value
+	// 3. Deny access if the target process "dumpable" attribute has a value
 	// other than 1 (SUID_DUMP_USER; see the discussion of PR_SET_DUMPABLE in
 	// prctl(2)), and the caller does not have the CAP_SYS_PTRACE capability in
 	// the user namespace of the target process.
 	//
-	// 5. The kernel LSM security_ptrace_access_check() interface is invoked to
-	// see if ptrace access is permitted. The results depend on the LSM(s). The
-	// implementation of this interface in the commoncap LSM performs the
-	// following steps:
+	// 4. The commoncap LSM performs the following steps:
 	//
 	// a) If the access mode includes PTRACE_MODE_FSCREDS, then use the
 	// caller's effective capability set; otherwise (the access mode specifies
@@ -186,6 +236,94 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 	return true
+}
+
+// canTraceYAMALocked performs ptrace access checks as defined by the YAMA LSM
+// implementation of the security_ptrace_access_check() interface, with YAMA
+// configured to mode 1. This is a common default among various Linux
+// distributions.
+//
+// It only permits the tracer to proceed if one of the following conditions is
+// met:
+//
+// a) The tracer is already attached to the tracee.
+//
+// b) The target is a descendant of the tracer.
+//
+// c) The target has explicitly given permission to the tracer through the
+// PR_SET_PTRACER prctl.
+//
+// d) The tracer has CAP_SYS_PTRACE.
+//
+// See security/yama/yama_lsm.c:yama_ptrace_access_check.
+//
+// Precondition: the TaskSet mutex must be locked (for reading or writing).
+func (t *Task) canTraceYAMALocked(target *Task) bool {
+	if tracer := target.Tracer(); tracer != nil {
+		if tracer.tg == t.tg {
+			return true
+		}
+	}
+	if target.isYAMADescendantOfLocked(t) {
+		return true
+	}
+	if target.hasYAMAExceptionForLocked(t) {
+		return true
+	}
+	if t.HasCapabilityIn(linux.CAP_SYS_PTRACE, target.UserNamespace()) {
+		return true
+	}
+	return false
+}
+
+// Determines whether t is considered a descendant of ancestor for the purposes
+// of YAMA permissions (specifically, whether t's thread group is descended from
+// ancestor's).
+//
+// Precondition: the TaskSet mutex must be locked (for reading or writing).
+func (t *Task) isYAMADescendantOfLocked(ancestor *Task) bool {
+	walker := t
+	for walker != nil {
+		if walker.tg.leader == ancestor.tg.leader {
+			return true
+		}
+		walker = walker.parent
+	}
+	return false
+}
+
+// Precondition: the TaskSet mutex must be locked (for reading or writing).
+func (t *Task) hasYAMAExceptionForLocked(tracer *Task) bool {
+	allowed, ok := t.k.ptraceExceptions[t]
+	if !ok {
+		return false
+	}
+	return allowed == nil || tracer.isYAMADescendantOfLocked(allowed)
+}
+
+// ClearYAMAException removes any YAMA exception with t as the tracee.
+func (t *Task) ClearYAMAException() {
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
+	tracee := t.tg.leader
+	delete(t.k.ptraceExceptions, tracee)
+}
+
+// SetYAMAException creates a YAMA exception allowing all descendants of tracer
+// to trace t. If tracer is nil, then any task is allowed to trace t.
+//
+// If there was an existing exception, it is overwritten with the new one.
+func (t *Task) SetYAMAException(tracer *Task) {
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
+
+	tracee := t.tg.leader
+	tracee.ptraceYAMAExceptionAdded = true
+	if tracer != nil {
+		tracer.ptraceYAMAExceptionAdded = true
+	}
+
+	t.k.ptraceExceptions[tracee] = tracer
 }
 
 // Tracer returns t's ptrace Tracer.
@@ -358,7 +496,7 @@ func (t *Task) ptraceTraceme() error {
 		// returning nil here is correct.
 		return nil
 	}
-	if !t.parent.CanTrace(t, true) {
+	if !t.parent.canTraceLocked(t, true) {
 		return syserror.EPERM
 	}
 	if t.parent.exitState != TaskExitNone {
@@ -377,11 +515,11 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	if t.tg == target.tg {
 		return syserror.EPERM
 	}
-	if !t.CanTrace(target, true) {
-		return syserror.EPERM
-	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
+	if !t.canTraceLocked(target, true) {
+		return syserror.EPERM
+	}
 	if target.hasTracer() {
 		return syserror.EPERM
 	}
@@ -459,6 +597,15 @@ func (t *Task) exitPtrace() {
 	}
 	// "nil maps cannot be saved"
 	t.ptraceTracees = make(map[*Task]struct{})
+
+	if t.ptraceYAMAExceptionAdded {
+		delete(t.k.ptraceExceptions, t)
+		for tracee, tracer := range t.k.ptraceExceptions {
+			if tracer == t {
+				delete(t.k.ptraceExceptions, tracee)
+			}
+		}
+	}
 }
 
 // forgetTracerLocked detaches t's tracer and ensures that t is no longer
