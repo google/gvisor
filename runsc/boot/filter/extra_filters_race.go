@@ -27,6 +27,7 @@ func instrumentationFilters() seccomp.SyscallRules {
 	Report("TSAN is enabled: syscall filters less restrictive!")
 	return seccomp.SyscallRules{
 		syscall.SYS_BRK:             {},
+		syscall.SYS_CLOCK_NANOSLEEP: {},
 		syscall.SYS_CLONE:           {},
 		syscall.SYS_FUTEX:           {},
 		syscall.SYS_MMAP:            {},
