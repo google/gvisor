@@ -87,3 +87,9 @@ const (
 	PTRACE_O_EXITKILL        = 1 << 20
 	PTRACE_O_SUSPEND_SECCOMP = 1 << 21
 )
+
+// YAMA ptrace_scope levels from security/yama/yama_lsm.c.
+const (
+	YAMA_SCOPE_DISABLED   = 0
+	YAMA_SCOPE_RELATIONAL = 1
+)

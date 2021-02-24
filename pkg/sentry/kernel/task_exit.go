@@ -694,7 +694,8 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		}
 		if t.parent != nil {
 			delete(t.parent.children, t)
-			t.parent = nil
+			// Do not clear t.parent. It may be still be needed after the task has exited
+			// (for example, to perform ptrace access checks on /proc/[pid] files).
 		}
 	}
 }

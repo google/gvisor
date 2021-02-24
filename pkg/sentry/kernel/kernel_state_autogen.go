@@ -331,6 +331,8 @@ func (k *Kernel) StateFields() []string {
 		"shmMount",
 		"socketMount",
 		"SleepForAddressSpaceActivation",
+		"ptraceExceptions",
+		"YAMAPtraceScope",
 	}
 }
 
@@ -377,6 +379,8 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(34, &k.shmMount)
 	stateSinkObject.Save(35, &k.socketMount)
 	stateSinkObject.Save(36, &k.SleepForAddressSpaceActivation)
+	stateSinkObject.Save(37, &k.ptraceExceptions)
+	stateSinkObject.Save(38, &k.YAMAPtraceScope)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -417,6 +421,8 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(34, &k.shmMount)
 	stateSourceObject.Load(35, &k.socketMount)
 	stateSourceObject.Load(36, &k.SleepForAddressSpaceActivation)
+	stateSourceObject.Load(37, &k.ptraceExceptions)
+	stateSourceObject.Load(38, &k.YAMAPtraceScope)
 	stateSourceObject.LoadValue(24, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	stateSourceObject.LoadValue(28, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
@@ -1179,6 +1185,7 @@ func (t *Task) StateFields() []string {
 		"ptraceCode",
 		"ptraceSiginfo",
 		"ptraceEventMsg",
+		"ptraceYAMAExceptionAdded",
 		"ioUsage",
 		"creds",
 		"utsns",
@@ -1214,7 +1221,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	var ptraceTracerValue *Task = t.savePtraceTracer()
 	stateSinkObject.SaveValue(31, ptraceTracerValue)
 	var syscallFiltersValue []bpf.Program = t.saveSyscallFilters()
-	stateSinkObject.SaveValue(47, syscallFiltersValue)
+	stateSinkObject.SaveValue(48, syscallFiltersValue)
 	stateSinkObject.Save(0, &t.taskNode)
 	stateSinkObject.Save(1, &t.runState)
 	stateSinkObject.Save(2, &t.taskWorkCount)
@@ -1254,27 +1261,28 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(37, &t.ptraceCode)
 	stateSinkObject.Save(38, &t.ptraceSiginfo)
 	stateSinkObject.Save(39, &t.ptraceEventMsg)
-	stateSinkObject.Save(40, &t.ioUsage)
-	stateSinkObject.Save(41, &t.creds)
-	stateSinkObject.Save(42, &t.utsns)
-	stateSinkObject.Save(43, &t.ipcns)
-	stateSinkObject.Save(44, &t.abstractSockets)
-	stateSinkObject.Save(45, &t.mountNamespaceVFS2)
-	stateSinkObject.Save(46, &t.parentDeathSignal)
-	stateSinkObject.Save(48, &t.cleartid)
-	stateSinkObject.Save(49, &t.allowedCPUMask)
-	stateSinkObject.Save(50, &t.cpu)
-	stateSinkObject.Save(51, &t.niceness)
-	stateSinkObject.Save(52, &t.numaPolicy)
-	stateSinkObject.Save(53, &t.numaNodeMask)
-	stateSinkObject.Save(54, &t.netns)
-	stateSinkObject.Save(55, &t.rseqCPU)
-	stateSinkObject.Save(56, &t.oldRSeqCPUAddr)
-	stateSinkObject.Save(57, &t.rseqAddr)
-	stateSinkObject.Save(58, &t.rseqSignature)
-	stateSinkObject.Save(59, &t.robustList)
-	stateSinkObject.Save(60, &t.startTime)
-	stateSinkObject.Save(61, &t.kcov)
+	stateSinkObject.Save(40, &t.ptraceYAMAExceptionAdded)
+	stateSinkObject.Save(41, &t.ioUsage)
+	stateSinkObject.Save(42, &t.creds)
+	stateSinkObject.Save(43, &t.utsns)
+	stateSinkObject.Save(44, &t.ipcns)
+	stateSinkObject.Save(45, &t.abstractSockets)
+	stateSinkObject.Save(46, &t.mountNamespaceVFS2)
+	stateSinkObject.Save(47, &t.parentDeathSignal)
+	stateSinkObject.Save(49, &t.cleartid)
+	stateSinkObject.Save(50, &t.allowedCPUMask)
+	stateSinkObject.Save(51, &t.cpu)
+	stateSinkObject.Save(52, &t.niceness)
+	stateSinkObject.Save(53, &t.numaPolicy)
+	stateSinkObject.Save(54, &t.numaNodeMask)
+	stateSinkObject.Save(55, &t.netns)
+	stateSinkObject.Save(56, &t.rseqCPU)
+	stateSinkObject.Save(57, &t.oldRSeqCPUAddr)
+	stateSinkObject.Save(58, &t.rseqAddr)
+	stateSinkObject.Save(59, &t.rseqSignature)
+	stateSinkObject.Save(60, &t.robustList)
+	stateSinkObject.Save(61, &t.startTime)
+	stateSinkObject.Save(62, &t.kcov)
 }
 
 func (t *Task) StateLoad(stateSourceObject state.Source) {
@@ -1317,29 +1325,30 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(37, &t.ptraceCode)
 	stateSourceObject.Load(38, &t.ptraceSiginfo)
 	stateSourceObject.Load(39, &t.ptraceEventMsg)
-	stateSourceObject.Load(40, &t.ioUsage)
-	stateSourceObject.Load(41, &t.creds)
-	stateSourceObject.Load(42, &t.utsns)
-	stateSourceObject.Load(43, &t.ipcns)
-	stateSourceObject.Load(44, &t.abstractSockets)
-	stateSourceObject.Load(45, &t.mountNamespaceVFS2)
-	stateSourceObject.Load(46, &t.parentDeathSignal)
-	stateSourceObject.Load(48, &t.cleartid)
-	stateSourceObject.Load(49, &t.allowedCPUMask)
-	stateSourceObject.Load(50, &t.cpu)
-	stateSourceObject.Load(51, &t.niceness)
-	stateSourceObject.Load(52, &t.numaPolicy)
-	stateSourceObject.Load(53, &t.numaNodeMask)
-	stateSourceObject.Load(54, &t.netns)
-	stateSourceObject.Load(55, &t.rseqCPU)
-	stateSourceObject.Load(56, &t.oldRSeqCPUAddr)
-	stateSourceObject.Load(57, &t.rseqAddr)
-	stateSourceObject.Load(58, &t.rseqSignature)
-	stateSourceObject.Load(59, &t.robustList)
-	stateSourceObject.Load(60, &t.startTime)
-	stateSourceObject.Load(61, &t.kcov)
+	stateSourceObject.Load(40, &t.ptraceYAMAExceptionAdded)
+	stateSourceObject.Load(41, &t.ioUsage)
+	stateSourceObject.Load(42, &t.creds)
+	stateSourceObject.Load(43, &t.utsns)
+	stateSourceObject.Load(44, &t.ipcns)
+	stateSourceObject.Load(45, &t.abstractSockets)
+	stateSourceObject.Load(46, &t.mountNamespaceVFS2)
+	stateSourceObject.Load(47, &t.parentDeathSignal)
+	stateSourceObject.Load(49, &t.cleartid)
+	stateSourceObject.Load(50, &t.allowedCPUMask)
+	stateSourceObject.Load(51, &t.cpu)
+	stateSourceObject.Load(52, &t.niceness)
+	stateSourceObject.Load(53, &t.numaPolicy)
+	stateSourceObject.Load(54, &t.numaNodeMask)
+	stateSourceObject.Load(55, &t.netns)
+	stateSourceObject.Load(56, &t.rseqCPU)
+	stateSourceObject.Load(57, &t.oldRSeqCPUAddr)
+	stateSourceObject.Load(58, &t.rseqAddr)
+	stateSourceObject.Load(59, &t.rseqSignature)
+	stateSourceObject.Load(60, &t.robustList)
+	stateSourceObject.Load(61, &t.startTime)
+	stateSourceObject.Load(62, &t.kcov)
 	stateSourceObject.LoadValue(31, new(*Task), func(y interface{}) { t.loadPtraceTracer(y.(*Task)) })
-	stateSourceObject.LoadValue(47, new([]bpf.Program), func(y interface{}) { t.loadSyscallFilters(y.([]bpf.Program)) })
+	stateSourceObject.LoadValue(48, new([]bpf.Program), func(y interface{}) { t.loadSyscallFilters(y.([]bpf.Program)) })
 	stateSourceObject.AfterLoad(t.afterLoad)
 }
 
