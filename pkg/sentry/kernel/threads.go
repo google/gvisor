@@ -55,7 +55,7 @@ const InitTID ThreadID = 1
 //
 // +stateify savable
 type TaskSet struct {
-	// mu protects all relationships betweens tasks and thread groups in the
+	// mu protects all relationships between tasks and thread groups in the
 	// TaskSet. (mu is approximately equivalent to Linux's tasklist_lock.)
 	mu sync.RWMutex `state:"nosave"`
 

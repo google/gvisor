@@ -75,6 +75,7 @@ go_library(
         "tasks_files.go",
         "tasks_inode_refs.go",
         "tasks_sys.go",
+        "yama.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

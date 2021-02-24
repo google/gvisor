@@ -1814,6 +1814,7 @@ cc_binary(
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:logging",

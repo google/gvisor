@@ -15,7 +15,9 @@
 #include <elf.h>
 #include <signal.h>
 #include <stddef.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/user.h>
@@ -30,6 +32,7 @@
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/capability_util.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -45,6 +48,49 @@ ABSL_FLAG(bool, ptrace_test_execve_child, false,
           "If true, run the "
           "PtraceExecveTest_Execve_GetRegs_PeekUser_SIGKILL_TraceClone_"
           "TraceExit child workload.");
+ABSL_FLAG(bool, ptrace_test_trace_descendants_allowed, false,
+          "If set, run the child workload for "
+          "PtraceTest_TraceDescendantsAllowed.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_pid, false,
+          "If set, run the child workload for PtraceTest_PrctlSetPtracerPID.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_any, false,
+          "If set, run the child workload for PtraceTest_PrctlSetPtracerAny.");
+ABSL_FLAG(bool, ptrace_test_prctl_clear_ptracer, false,
+          "If set, run the child workload for PtraceTest_PrctlClearPtracer.");
+ABSL_FLAG(bool, ptrace_test_prctl_replace_ptracer, false,
+          "If set, run the child workload for PtraceTest_PrctlReplacePtracer.");
+ABSL_FLAG(int, ptrace_test_prctl_replace_ptracer_tid, -1,
+          "Specifies the replacement tracer tid in the child workload for "
+          "PtraceTest_PrctlReplacePtracer.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_and_exit_tracee_thread, false,
+          "If set, run the child workload for "
+          "PtraceTest_PrctlSetPtracerPersistsPastTraceeThreadExit.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_and_exec_non_leader, false,
+          "If set, run the child workload for "
+          "PtraceTest_PrctlSetPtracerDoesNotPersistPastNonLeaderExec.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_and_exit_tracer_thread, false,
+          "If set, run the child workload for "
+          "PtraceTest_PrctlSetPtracerDoesNotPersistPastTracerThreadExit.");
+ABSL_FLAG(int, ptrace_test_prctl_set_ptracer_and_exit_tracer_thread_tid, -1,
+          "Specifies the tracee tid in the child workload for "
+          "PtraceTest_PrctlSetPtracerDoesNotPersistPastTracerThreadExit.");
+ABSL_FLAG(bool, ptrace_test_prctl_set_ptracer_respects_tracer_thread_id, false,
+          "If set, run the child workload for PtraceTest_PrctlSetPtracePID.");
+ABSL_FLAG(int, ptrace_test_prctl_set_ptracer_respects_tracer_thread_id_tid, -1,
+          "Specifies the thread tid to be traced in the child workload "
+          "for PtraceTest_PrctlSetPtracerRespectsTracerThreadID.");
+
+ABSL_FLAG(bool, ptrace_test_tracee, false,
+          "If true, run the tracee process for the "
+          "PrctlSetPtracerDoesNotPersistPastLeaderExec and "
+          "PrctlSetPtracerDoesNotPersistPastNonLeaderExec workloads.");
+ABSL_FLAG(int, ptrace_test_trace_tid, -1,
+          "If set, run a process to ptrace attach to the thread with the "
+          "specified pid for the PrctlSetPtracerRespectsTracerThreadID "
+          "workload.");
+ABSL_FLAG(int, ptrace_test_fd, -1,
+          "Specifies the fd used for communication between tracer and tracee "
+          "processes across exec.");
 
 namespace gvisor {
 namespace testing {
@@ -78,10 +124,10 @@ void RaiseSignal(int sig) {
   TEST_PCHECK(tgkill(pid, tid, sig) == 0);
 }
 
+constexpr char kYamaPtraceScopePath[] = "/proc/sys/kernel/yama/ptrace_scope";
+
 // Returns the Yama ptrace scope.
 PosixErrorOr<int> YamaPtraceScope() {
-  constexpr char kYamaPtraceScopePath[] = "/proc/sys/kernel/yama/ptrace_scope";
-
   ASSIGN_OR_RETURN_ERRNO(bool exists, Exists(kYamaPtraceScopePath));
   if (!exists) {
     // File doesn't exist means no Yama, so the scope is disabled -> 0.
@@ -99,6 +145,22 @@ PosixErrorOr<int> YamaPtraceScope() {
   return scope;
 }
 
+int CheckPtraceAttach(pid_t pid) {
+  int ret = ptrace(PTRACE_ATTACH, pid, 0, 0);
+  MaybeSave();
+  if (ret < 0) {
+    return ret;
+  }
+
+  int status;
+  TEST_PCHECK(waitpid(pid, &status, 0) == pid);
+  MaybeSave();
+  TEST_CHECK(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+  TEST_PCHECK(ptrace(PTRACE_DETACH, pid, 0, 0) == 0);
+  MaybeSave();
+  return 0;
+}
+
 TEST(PtraceTest, AttachSelf) {
   EXPECT_THAT(ptrace(PTRACE_ATTACH, gettid(), 0, 0),
               SyscallFailsWithErrno(EPERM));
@@ -111,10 +173,995 @@ TEST(PtraceTest, AttachSameThreadGroup) {
   });
 }
 
+TEST(PtraceTest, TraceParentNotAllowed) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) < 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    TEST_CHECK(CheckPtraceAttach(getppid()) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
+TEST(PtraceTest, TraceNonDescendantNotAllowed) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) < 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    TEST_CHECK(CheckPtraceAttach(tracee_pid) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  EXPECT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+TEST(PtraceTest, TraceNonDescendantWithCapabilityAllowed) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+  // Skip if disallowed by YAMA despite having CAP_SYS_PTRACE.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 2);
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    TEST_PCHECK(CheckPtraceAttach(tracee_pid) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+TEST(PtraceTest, TraceDescendantsAllowed) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use socket pair to communicate tids to this process from its grandchild.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_trace_descendants_allowed",
+      "--ptrace_test_fd", std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    TEST_PCHECK(close(sockets[1]) == 0);
+    pid_t const grandchild_pid = fork();
+    if (grandchild_pid == 0) {
+      // This test will create a new thread in the grandchild process.
+      // pthread_create(2) isn't async-signal-safe, so we execve() first.
+      execve(child_argv[0], child_argv, /* envp = */ nullptr);
+      TEST_PCHECK_MSG(false, "Survived execve to test child");
+    }
+    TEST_PCHECK(grandchild_pid > 0);
+    MaybeSave();
+
+    // Wait for grandchild. Our parent process will kill it once it's done.
+    int status;
+    TEST_PCHECK(waitpid(grandchild_pid, &status, 0) == grandchild_pid);
+    TEST_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+    MaybeSave();
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  // We should be able to attach to any thread in the grandchild.
+  pid_t grandchild_tid1, grandchild_tid2;
+  ASSERT_THAT(read(sockets[1], &grandchild_tid1, sizeof(grandchild_tid1)),
+              SyscallSucceedsWithValue(sizeof(grandchild_tid1)));
+  ASSERT_THAT(read(sockets[1], &grandchild_tid2, sizeof(grandchild_tid2)),
+              SyscallSucceedsWithValue(sizeof(grandchild_tid2)));
+
+  EXPECT_THAT(CheckPtraceAttach(grandchild_tid1), SyscallSucceeds());
+  EXPECT_THAT(CheckPtraceAttach(grandchild_tid2), SyscallSucceeds());
+
+  // Clean up grandchild.
+  ASSERT_THAT(kill(grandchild_tid1, SIGKILL), SyscallSucceeds());
+
+  // Clean up child.
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
+[[noreturn]] void RunTraceDescendantsAllowed(int fd) {
+  // Let the tracer know our tid through the socket fd.
+  pid_t const tid = gettid();
+  TEST_PCHECK(write(fd, &tid, sizeof(tid)) == sizeof(tid));
+  MaybeSave();
+
+  ScopedThread t([fd] {
+    // See if any arbitrary thread (whose tid differs from the process id) can
+    // be traced as well.
+    pid_t const tid = gettid();
+    TEST_PCHECK(write(fd, &tid, sizeof(tid)) == sizeof(tid));
+    MaybeSave();
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  });
+
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+TEST(PtraceTest, PrctlSetPtracerInvalidPID) {
+  // EINVAL should also be returned if PR_SET_PTRACER is not supported.
+  EXPECT_THAT(prctl(PR_SET_PTRACER, 123456789), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(PtraceTest, PrctlSetPtracerPID) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_prctl_set_ptracer_pid",
+      "--ptrace_test_fd", std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(CheckPtraceAttach(tracee_pid) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerPID(int fd) {
+  ScopedThread t([fd] {
+    // Perform prctl in a separate thread to verify that it is process-wide.
+    TEST_PCHECK(prctl(PR_SET_PTRACER, getppid()) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(fd, "x", 1) == 1);
+    MaybeSave();
+  });
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+TEST(PtraceTest, PrctlSetPtracerAny) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_prctl_set_ptracer_any",
+      "--ptrace_test_fd", std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    TEST_PCHECK(close(sockets[1]) == 0);
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(CheckPtraceAttach(tracee_pid) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerAny(int fd) {
+  ScopedThread t([fd] {
+    // Perform prctl in a separate thread to verify that it is process-wide.
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(fd, "x", 1) == 1);
+    MaybeSave();
+  });
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+TEST(PtraceTest, PrctlClearPtracer) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_prctl_clear_ptracer", "--ptrace_test_fd",
+      std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    TEST_PCHECK(close(sockets[1]) == 0);
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_CHECK(CheckPtraceAttach(tracee_pid) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlClearPtracer(int fd) {
+  ScopedThread t([fd] {
+    // Perform prctl in a separate thread to verify that it is process-wide.
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+    TEST_PCHECK(prctl(PR_SET_PTRACER, 0) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set/cleared.
+    TEST_PCHECK(write(fd, "x", 1) == 1);
+    MaybeSave();
+  });
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+TEST(PtraceTest, PrctlReplacePtracer) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  pid_t const unused_pid = fork();
+  if (unused_pid == 0) {
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(unused_pid, SyscallSucceeds());
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe",
+      "--ptrace_test_prctl_replace_ptracer",
+      "--ptrace_test_prctl_replace_ptracer_tid",
+      std::to_string(unused_pid),
+      "--ptrace_test_fd",
+      std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_CHECK(CheckPtraceAttach(tracee_pid) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+
+  // Clean up unused.
+  ASSERT_THAT(kill(unused_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(unused_pid, &status, 0),
+              SyscallSucceedsWithValue(unused_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlReplacePtracer(int new_tracer_pid, int fd) {
+  TEST_PCHECK(prctl(PR_SET_PTRACER, getppid()) == 0);
+  MaybeSave();
+
+  ScopedThread t([new_tracer_pid, fd] {
+    TEST_PCHECK(prctl(PR_SET_PTRACER, new_tracer_pid) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(fd, "x", 1) == 1);
+    MaybeSave();
+  });
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+// Tests that YAMA exceptions store tracees by thread group leader. Exceptions
+// are preserved even after the tracee thread exits, as long as the tracee's
+// thread group leader is still around.
+TEST(PtraceTest, PrctlSetPtracerPersistsPastTraceeThreadExit) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe",
+      "--ptrace_test_prctl_set_ptracer_and_exit_tracee_thread",
+      "--ptrace_test_fd", std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    TEST_PCHECK(close(sockets[1]) == 0);
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until the tracee thread calling prctl has terminated.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(CheckPtraceAttach(tracee_pid) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerPersistsPastTraceeThreadExit(int fd) {
+  ScopedThread t([] {
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+  });
+  t.Join();
+  // Indicate that thread setting the prctl has exited.
+  TEST_PCHECK(write(fd, "x", 1) == 1);
+  MaybeSave();
+
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+// Tests that YAMA exceptions store tracees by thread group leader. Exceptions
+// are preserved across exec as long as the thread group leader does not change,
+// even if the tracee thread is terminated.
+TEST(PtraceTest, PrctlSetPtracerPersistsPastLeaderExec) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_tracee", "--ptrace_test_fd",
+      std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until the tracee has exec'd.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(CheckPtraceAttach(tracee_pid) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunTracee(int fd) {
+  // Indicate that we have exec'd.
+  TEST_PCHECK(write(fd, "x", 1) == 1);
+  MaybeSave();
+
+  while (true) {
+    SleepSafe(absl::Seconds(1));
+  }
+}
+
+// Tests that YAMA exceptions store tracees by thread group leader. Exceptions
+// are cleared if the tracee process's thread group leader is terminated by
+// exec.
+TEST(PtraceTest, PrctlSetPtracerDoesNotPersistPastNonLeaderExec) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe", "--ptrace_test_prctl_set_ptracer_and_exec_non_leader",
+      "--ptrace_test_fd", std::to_string(sockets[0])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    TEST_PCHECK(close(sockets[1]) == 0);
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until the tracee has exec'd.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_CHECK(CheckPtraceAttach(tracee_pid) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(int fd) {
+  ScopedThread t([fd] {
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+
+    ExecveArray const owned_child_argv = {
+        "/proc/self/exe", "--ptrace_test_tracee", "--ptrace_test_fd",
+        std::to_string(fd)};
+    char* const* const child_argv = owned_child_argv.get();
+
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  });
+  t.Join();
+  TEST_CHECK_MSG(false, "Survived execve? (main)");
+  _exit(1);
+}
+
+// Tests that YAMA exceptions store the tracer itself rather than the thread
+// group leader. Exceptions are cleared when the tracer task exits, rather than
+// when its thread group leader exits.
+TEST(PtraceTest, PrctlSetPtracerDoesNotPersistPastTracerThreadExit) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    pid_t tracer_tid;
+    TEST_PCHECK(read(sockets[0], &tracer_tid, sizeof(tracer_tid)) ==
+                sizeof(tracer_tid));
+    MaybeSave();
+
+    TEST_PCHECK(prctl(PR_SET_PTRACER, tracer_tid) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(sockets[0], "x", 1) == 1);
+    MaybeSave();
+
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe",
+      "--ptrace_test_prctl_set_ptracer_and_exit_tracer_thread",
+      "--ptrace_test_prctl_set_ptracer_and_exit_tracer_thread_tid",
+      std::to_string(tracee_pid),
+      "--ptrace_test_fd",
+      std::to_string(sockets[1])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerDoesNotPersistPastTracerThreadExit(
+    int tracee_tid, int fd) {
+  TEST_PCHECK(SetCapability(CAP_SYS_PTRACE, false).ok());
+
+  ScopedThread t([fd] {
+    pid_t const tracer_tid = gettid();
+    TEST_PCHECK(write(fd, &tracer_tid, sizeof(tracer_tid)) ==
+                sizeof(tracer_tid));
+
+    // Wait until the prctl has been set.
+    char done;
+    TEST_PCHECK(read(fd, &done, 1) == 1);
+    MaybeSave();
+  });
+  t.Join();
+
+  // Sleep for a bit before verifying the invalidation. The thread exit above
+  // should cause the ptrace exception to be invalidated, but in Linux, this is
+  // not done immediately. The YAMA exception is dropped during
+  // __put_task_struct(), which occurs (at the earliest) one RCU grace period
+  // after exit_notify() ==> release_task().
+  SleepSafe(absl::Milliseconds(100));
+
+  TEST_CHECK(CheckPtraceAttach(tracee_tid) == -1);
+  TEST_PCHECK(errno == EPERM);
+  _exit(0);
+}
+
+// Tests that YAMA exceptions store the tracer thread itself rather than the
+// thread group leader. Exceptions are preserved across exec in the tracer
+// thread, even if the thread group leader is terminated.
+TEST(PtraceTest, PrctlSetPtracerRespectsTracerThreadID) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    pid_t tracer_tid;
+    TEST_PCHECK(read(sockets[0], &tracer_tid, sizeof(tracer_tid)) ==
+                sizeof(tracer_tid));
+    MaybeSave();
+
+    TEST_PCHECK(prctl(PR_SET_PTRACER, tracer_tid) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(sockets[0], "x", 1) == 1);
+    MaybeSave();
+
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  // Allocate vector before forking (not async-signal-safe).
+  ExecveArray const owned_child_argv = {
+      "/proc/self/exe",
+      "--ptrace_test_prctl_set_ptracer_respects_tracer_thread_id",
+      "--ptrace_test_prctl_set_ptracer_respects_tracer_thread_id_tid",
+      std::to_string(tracee_pid),
+      "--ptrace_test_fd",
+      std::to_string(sockets[1])};
+  char* const* const child_argv = owned_child_argv.get();
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // This test will create a new thread in the child process.
+    // pthread_create(2) isn't async-signal-safe, so we execve() first.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+[[noreturn]] void RunPrctlSetPtracerRespectsTracerThreadID(int tracee_tid,
+                                                           int fd) {
+  // Create a separate thread for tracing (i.e., not the thread group
+  // leader). After the subsequent execve(), the current thread group leader
+  // will no longer be exist, but the YAMA exception installed with this
+  // thread should still be valid.
+  ScopedThread t([tracee_tid, fd] {
+    pid_t const tracer_tid = gettid();
+    TEST_PCHECK(write(fd, &tracer_tid, sizeof(tracer_tid)));
+    MaybeSave();
+
+    // Wait until the tracee has made the PR_SET_PTRACER prctl.
+    char done;
+    TEST_PCHECK(read(fd, &done, 1) == 1);
+    MaybeSave();
+
+    ExecveArray const owned_child_argv = {
+        "/proc/self/exe", "--ptrace_test_trace_tid", std::to_string(tracee_tid),
+        "--ptrace_test_fd", std::to_string(fd)};
+    char* const* const child_argv = owned_child_argv.get();
+
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
+  });
+  t.Join();
+  TEST_CHECK_MSG(false, "Survived execve? (main)");
+  _exit(1);
+}
+
+[[noreturn]] void RunTraceTID(int tracee_tid, int fd) {
+  TEST_PCHECK(SetCapability(CAP_SYS_PTRACE, false).ok());
+  TEST_PCHECK(CheckPtraceAttach(tracee_tid) == 0);
+  _exit(0);
+}
+
+// Tests that removing a YAMA exception does not affect a tracer that is already
+// attached.
+TEST(PtraceTest, PrctlClearPtracerDoesNotAffectCurrentTracer) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Use sockets to synchronize between tracer and tracee.
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), SyscallSucceeds());
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    TEST_PCHECK(close(sockets[1]) == 0);
+    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(sockets[0], "x", 1) == 1);
+    MaybeSave();
+
+    // Wait until tracer has attached before clearing PR_SET_PTRACER.
+    char done;
+    TEST_PCHECK(read(sockets[0], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(prctl(PR_SET_PTRACER, 0) == 0);
+    MaybeSave();
+    // Indicate that the prctl has been set.
+    TEST_PCHECK(write(sockets[0], "x", 1) == 1);
+    MaybeSave();
+
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+  ASSERT_THAT(close(sockets[0]), SyscallSucceeds());
+
+  std::string mem_path = "/proc/" + std::to_string(tracee_pid) + "/mem";
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    // Wait until tracee has called prctl, or else we won't be able to attach.
+    char done;
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    TEST_PCHECK(ptrace(PTRACE_ATTACH, tracee_pid, 0, 0) == 0);
+    MaybeSave();
+    // Indicate that we have attached.
+    TEST_PCHECK(write(sockets[1], &done, 1) == 1);
+    MaybeSave();
+
+    // Block until tracee enters signal-delivery-stop as a result of the
+    // SIGSTOP sent by PTRACE_ATTACH.
+    int status;
+    TEST_PCHECK(waitpid(tracee_pid, &status, 0) == tracee_pid);
+    MaybeSave();
+    TEST_CHECK(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+    MaybeSave();
+
+    TEST_PCHECK(ptrace(PTRACE_CONT, tracee_pid, 0, 0) == 0);
+    MaybeSave();
+
+    // Wait until tracee has cleared PR_SET_PTRACER. Even though it was cleared,
+    // we should still be able to access /proc/[pid]/mem because we are already
+    // attached.
+    TEST_PCHECK(read(sockets[1], &done, 1) == 1);
+    MaybeSave();
+    TEST_PCHECK(open(mem_path.c_str(), O_RDONLY) != -1);
+    MaybeSave();
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
+TEST(PtraceTest, PrctlNotInherited) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+
+  // Allow any ptracer. This should not affect the child processes.
+  ASSERT_THAT(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY), SyscallSucceeds());
+
+  pid_t const tracee_pid = fork();
+  if (tracee_pid == 0) {
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+  ASSERT_THAT(tracee_pid, SyscallSucceeds());
+
+  pid_t const tracer_pid = fork();
+  if (tracer_pid == 0) {
+    TEST_CHECK(CheckPtraceAttach(tracee_pid) == -1);
+    TEST_PCHECK(errno == EPERM);
+    _exit(0);
+  }
+  ASSERT_THAT(tracer_pid, SyscallSucceeds());
+
+  // Clean up tracer.
+  int status;
+  ASSERT_THAT(waitpid(tracer_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Clean up tracee.
+  ASSERT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(tracee_pid, &status, 0),
+              SyscallSucceedsWithValue(tracee_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
 TEST(PtraceTest, AttachParent_PeekData_PokeData_SignalSuppression) {
   // Yama prevents attaching to a parent. Skip the test if the scope is anything
   // except disabled.
-  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 0);
+  const int yama_scope = ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope());
+  SKIP_IF(yama_scope > 1);
+  if (yama_scope == 1) {
+    // Allow child to trace us.
+    ASSERT_THAT(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY), SyscallSucceeds());
+  }
 
   // Test PTRACE_POKE/PEEKDATA on both anonymous and file mappings.
   const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -1238,6 +2285,46 @@ TEST(PtraceTest, SeizeSetOptions) {
       << " status " << status;
 }
 
+TEST(PtraceTest, SetYAMAPtraceScope) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  // Do not modify the ptrace scope on the host.
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(std::string(kYamaPtraceScopePath), O_RDWR));
+
+  ASSERT_THAT(write(fd.get(), "0", 1), SyscallSucceedsWithValue(1));
+
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  std::vector<char> buf(10);
+  EXPECT_THAT(read(fd.get(), buf.data(), buf.size()), SyscallSucceeds());
+  EXPECT_STREQ(buf.data(), "0\n");
+
+  // Test that a child can attach to its parent when ptrace_scope is 0.
+  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    TEST_PCHECK(CheckPtraceAttach(getppid()) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+
+  // Set ptrace_scope back to 1 (and try writing with a newline).
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  ASSERT_THAT(write(fd.get(), "1\n", 2), SyscallSucceedsWithValue(2));
+
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(read(fd.get(), buf.data(), buf.size()), SyscallSucceeds());
+  EXPECT_STREQ(buf.data(), "1\n");
+}
+
 }  // namespace
 
 }  // namespace testing
@@ -1248,6 +2335,64 @@ int main(int argc, char** argv) {
 
   if (absl::GetFlag(FLAGS_ptrace_test_execve_child)) {
     gvisor::testing::RunExecveChild();
+  }
+
+  int fd = absl::GetFlag(FLAGS_ptrace_test_fd);
+
+  if (absl::GetFlag(FLAGS_ptrace_test_trace_descendants_allowed)) {
+    gvisor::testing::RunTraceDescendantsAllowed(fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_pid)) {
+    gvisor::testing::RunPrctlSetPtracerPID(fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_any)) {
+    gvisor::testing::RunPrctlSetPtracerAny(fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_prctl_clear_ptracer)) {
+    gvisor::testing::RunPrctlClearPtracer(fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_prctl_replace_ptracer)) {
+    gvisor::testing::RunPrctlReplacePtracer(
+        absl::GetFlag(FLAGS_ptrace_test_prctl_replace_ptracer_tid), fd);
+  }
+
+  if (absl::GetFlag(
+          FLAGS_ptrace_test_prctl_set_ptracer_and_exit_tracee_thread)) {
+    gvisor::testing::RunPrctlSetPtracerPersistsPastTraceeThreadExit(fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_and_exec_non_leader)) {
+    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(
+        fd);
+  }
+
+  if (absl::GetFlag(
+          FLAGS_ptrace_test_prctl_set_ptracer_and_exit_tracer_thread)) {
+    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastTracerThreadExit(
+        absl::GetFlag(
+            FLAGS_ptrace_test_prctl_set_ptracer_and_exit_tracer_thread_tid),
+        fd);
+  }
+
+  if (absl::GetFlag(
+          FLAGS_ptrace_test_prctl_set_ptracer_respects_tracer_thread_id)) {
+    gvisor::testing::RunPrctlSetPtracerRespectsTracerThreadID(
+        absl::GetFlag(
+            FLAGS_ptrace_test_prctl_set_ptracer_respects_tracer_thread_id_tid),
+        fd);
+  }
+
+  if (absl::GetFlag(FLAGS_ptrace_test_tracee)) {
+    gvisor::testing::RunTracee(fd);
+  }
+
+  int pid = absl::GetFlag(FLAGS_ptrace_test_trace_tid);
+  if (pid != -1) {
+    gvisor::testing::RunTraceTID(pid, fd);
   }
 
   return gvisor::testing::RunAllTests();
