@@ -203,7 +203,7 @@ func TestMultiPIDNS(t *testing.T) {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 			expectedPL = []*control.Process{
-				newProcessBuilder().PID(1).Cmd("sleep").Process(),
+				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
@@ -291,14 +291,16 @@ func TestMultiPIDNSPath(t *testing.T) {
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			if err := waitForProcessList(containers[2], expectedPL); err != nil {
-				t.Errorf("failed to wait for sleep to start: %v", err)
-			}
-
 			expectedPL = []*control.Process{
 				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
+				t.Errorf("failed to wait for sleep to start: %v", err)
+			}
+			expectedPL = []*control.Process{
+				newProcessBuilder().PID(3).PPID(0).Cmd("sleep").Process(),
+			}
+			if err := waitForProcessList(containers[2], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
 
@@ -371,14 +373,13 @@ func TestMultiPIDNSKill(t *testing.T) {
 			const processes = 3
 			testSpecs, ids := createSpecs(cmd, cmd)
 
-			// TODO: Uncomment after https://github.com/google/gvisor/pull/5519.
-			//testSpecs[1].Linux = &specs.Linux{
-			//	Namespaces: []specs.LinuxNamespace{
-			//		{
-			//			Type: "pid",
-			//		},
-			//	},
-			//}
+			testSpecs[1].Linux = &specs.Linux{
+				Namespaces: []specs.LinuxNamespace{
+					{
+						Type: "pid",
+					},
+				},
+			}
 
 			containers, cleanup, err := startContainers(conf, testSpecs, ids)
 			if err != nil {
