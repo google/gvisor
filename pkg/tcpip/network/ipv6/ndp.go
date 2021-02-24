@@ -1497,9 +1497,11 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 	ndp.cleanupSLAACPrefixResources(prefix, state)
 
 	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
-		// Since we are already invalidating the prefix, do not invalidate the
-		// prefix when removing the address.
-		if err := ndp.ep.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, false /* dadFailure */); err != nil {
+		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+			ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
+		}
+
+		if err := ndp.ep.removePermanentEndpointInnerLocked(addressEndpoint, false /* dadFailure */); err != nil {
 			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", addressEndpoint.AddressWithPrefix(), err))
 		}
 	}
@@ -1556,28 +1558,19 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
-	// Since we are already invalidating the address, do not invalidate the
-	// address when removing the address.
-	if err := ndp.ep.removePermanentEndpointLocked(tempAddrState.addressEndpoint, false /* allowSLAACInvalidation */, false /* dadFailure */); err != nil {
+	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs, tempAddr, tempAddrState)
+
+	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, false /* dadFailure */); err != nil {
 		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.addressEndpoint.AddressWithPrefix(), err))
 	}
-
-	ndp.cleanupTempSLAACAddrResources(tempAddrs, tempAddr, tempAddrState)
 }
 
 // cleanupTempSLAACAddrResourcesAndNotify cleans up an invalidated temporary
-// SLAAC address's resources from ndp.
+// SLAAC address's resources from ndp and notifies the NDP dispatcher that the
+// address was invalidated.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidateAddr bool) {
-	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
-		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addr)
-	}
-
-	if !invalidateAddr {
-		return
-	}
-
+func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix) {
 	prefix := addr.Subnet()
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
@@ -1589,14 +1582,19 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWi
 		panic(fmt.Sprintf("ndp: must have a tempAddr entry to clean up temp addr %s resources", addr))
 	}
 
-	ndp.cleanupTempSLAACAddrResources(state.tempAddrs, addr.Address, tempAddrState)
+	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(state.tempAddrs, addr.Address, tempAddrState)
 }
 
-// cleanupTempSLAACAddrResourcesAndNotify cleans up a temporary SLAAC address's
-// jobs and entry.
+// cleanupTempSLAACAddrResourcesAndNotifyInner is like
+// cleanupTempSLAACAddrResourcesAndNotify except it does not lookup the
+// temporary address's state in ndp - it assumes the passed state is valid.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupTempSLAACAddrResources(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), tempAddrState.addressEndpoint.AddressWithPrefix())
+	}
+
 	tempAddrState.addressEndpoint.DecRef()
 	tempAddrState.addressEndpoint = nil
 	tempAddrState.deprecationJob.Cancel()
