@@ -1994,6 +1994,32 @@ func (ipf *ipForwarding) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &ipf.enabled)
 }
 
+func (s *yamaPtraceScope) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.yamaPtraceScope"
+}
+
+func (s *yamaPtraceScope) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"level",
+	}
+}
+
+func (s *yamaPtraceScope) beforeSave() {}
+
+func (s *yamaPtraceScope) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.DynamicBytesFile)
+	stateSinkObject.Save(1, &s.level)
+}
+
+func (s *yamaPtraceScope) afterLoad() {}
+
+func (s *yamaPtraceScope) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.DynamicBytesFile)
+	stateSourceObject.Load(1, &s.level)
+}
+
 func init() {
 	state.Register((*fdDirInodeRefs)(nil))
 	state.Register((*fdInfoDirInodeRefs)(nil))
@@ -2064,4 +2090,5 @@ func init() {
 	state.Register((*tcpRecoveryData)(nil))
 	state.Register((*tcpMemData)(nil))
 	state.Register((*ipForwarding)(nil))
+	state.Register((*yamaPtraceScope)(nil))
 }
