@@ -1441,26 +1441,28 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 // Precondition: e.mu must be write locked.
 func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation, dadFailure bool) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
-	unicast := header.IsV6UnicastAddress(addr.Address)
-	if unicast {
-		e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadFailure)
-
-		// If we are removing an address generated via SLAAC, cleanup
-		// its SLAAC resources and notify the integrator.
-		switch addressEndpoint.ConfigType() {
-		case stack.AddressConfigSlaac:
-			e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
-		case stack.AddressConfigSlaacTemp:
-			e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
-		}
+	// If we are removing an address generated via SLAAC, cleanup
+	// its SLAAC resources and notify the integrator.
+	switch addressEndpoint.ConfigType() {
+	case stack.AddressConfigSlaac:
+		e.mu.ndp.cleanupSLAACAddrResourcesAndNotify(addr, allowSLAACInvalidation)
+	case stack.AddressConfigSlaacTemp:
+		e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
 	}
+
+	return e.removePermanentEndpointInnerLocked(addressEndpoint, dadFailure)
+}
+
+// removePermanentEndpointInnerLocked is like removePermanentEndpointLocked
+// except it does not cleanup SLAAC address state.
+//
+// Precondition: e.mu must be write locked.
+func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.AddressEndpoint, dadFailure bool) tcpip.Error {
+	addr := addressEndpoint.AddressWithPrefix()
+	e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadFailure)
 
 	if err := e.mu.addressableEndpointState.RemovePermanentEndpoint(addressEndpoint); err != nil {
 		return err
-	}
-
-	if !unicast {
-		return nil
 	}
 
 	snmc := header.SolicitedNodeAddr(addr.Address)

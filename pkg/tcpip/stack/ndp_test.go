@@ -2602,11 +2602,13 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 		addrs         []tcpip.AddressWithPrefix
 		tempAddrs     bool
 		initialExpect tcpip.AddressWithPrefix
+		maxAddrs      int
 		nicNameFromID func(tcpip.NICID, string) string
 	}{
 		{
-			name:  "Stable addresses with opaque IIDs",
-			addrs: stableAddrsWithOpaqueIID[:],
+			name:     "Stable addresses with opaque IIDs",
+			addrs:    stableAddrsWithOpaqueIID[:],
+			maxAddrs: 1,
 			nicNameFromID: func(tcpip.NICID, string) string {
 				return nicName
 			},
@@ -2616,6 +2618,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			addrs:         tempAddrsWithOpaqueIID[:],
 			tempAddrs:     true,
 			initialExpect: stableAddrsWithOpaqueIID[0],
+			maxAddrs:      1 /* initial (stable) address */ + maxSLAACAddrLocalRegenAttempts,
 			nicNameFromID: func(tcpip.NICID, string) string {
 				return nicName
 			},
@@ -2624,21 +2627,22 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			name:          "Temporary addresses with modified EUI64",
 			addrs:         tempAddrsWithModifiedEUI64[:],
 			tempAddrs:     true,
+			maxAddrs:      1 /* initial (stable) address */ + maxSLAACAddrLocalRegenAttempts,
 			initialExpect: stableAddrWithModifiedEUI64,
 		},
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
-				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
+				// We may receive a deprecated and invalidated event for each SLAAC
+				// address that is assigned.
+				autoGenAddrC: make(chan ndpAutoGenAddrEvent, test.maxAddrs*2),
 			}
 			e := channel.New(0, 1280, linkAddr1)
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
+				Clock: clock,
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPConfigs: ipv6.NDPConfigurations{
 						HandleRAs:                     true,
@@ -2664,6 +2668,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
+			manuallyAssignedAddresses := make(map[tcpip.Address]struct{})
 			for j := 0; j < len(test.addrs)-1; j++ {
 				// The NIC will not attempt to generate an address in response to a
 				// NIC-local conflict after some maximum number of attempts. We skip
@@ -2677,6 +2682,8 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 				if err := s.AddAddress(nicID, ipv6.ProtocolNumber, test.addrs[j].Address); err != nil {
 					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, test.addrs[j].Address, err)
 				}
+
+				manuallyAssignedAddresses[test.addrs[j].Address] = struct{}{}
 			}
 
 			expectAutoGenAddrEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
@@ -2695,26 +2702,17 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			expectAutoGenAddrAsyncEvent := func(addr tcpip.AddressWithPrefix, eventType ndpAutoGenAddrEventType) {
 				t.Helper()
 
-				select {
-				case e := <-ndpDisp.autoGenAddrC:
-					if diff := checkAutoGenAddrEvent(e, addr, eventType); diff != "" {
-						t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
-					}
-				case <-time.After(defaultAsyncPositiveEventTimeout):
-					t.Fatal("timed out waiting for addr auto gen event")
+				if diff := checkAutoGenAddrEvent(<-ndpDisp.autoGenAddrC, addr, eventType); diff != "" {
+					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 				}
 			}
 
 			expectDADEventAsync := func(addr tcpip.Address) {
 				t.Helper()
 
-				select {
-				case e := <-ndpDisp.dadC:
-					if diff := checkDADEvent(e, nicID, addr, true, nil); diff != "" {
-						t.Errorf("dad event mismatch (-want +got):\n%s", diff)
-					}
-				case <-time.After(dupAddrTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
-					t.Fatal("timed out waiting for DAD event")
+				clock.Advance(dupAddrTransmits * retransmitTimer)
+				if diff := checkDADEvent(<-ndpDisp.dadC, nicID, addr, true, nil); diff != "" {
+					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
 
@@ -2761,6 +2759,16 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			case e := <-ndpDisp.autoGenAddrC:
 				t.Fatalf("unexpected auto gen addr event = %+v", e)
 			default:
+			}
+
+			// Wait for all the SLAAC addresses to be invalidated.
+			clock.Advance(lifetimeSeconds * time.Second)
+			gotAddresses := make(map[tcpip.Address]struct{})
+			for _, a := range s.NICInfo()[nicID].ProtocolAddresses {
+				gotAddresses[a.AddressWithPrefix.Address] = struct{}{}
+			}
+			if diff := cmp.Diff(manuallyAssignedAddresses, gotAddresses); diff != "" {
+				t.Fatalf("assigned addresses mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
