@@ -95,9 +95,7 @@ func (fs *filesystem) StateFields() []string {
 		"vfsfs",
 		"opts",
 		"creds",
-		"dirDevMinor",
-		"lowerDevMinors",
-		"lastDirIno",
+		"privateDevMinors",
 	}
 }
 
@@ -108,9 +106,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(1, &fs.opts)
 	stateSinkObject.Save(2, &fs.creds)
-	stateSinkObject.Save(3, &fs.dirDevMinor)
-	stateSinkObject.Save(4, &fs.lowerDevMinors)
-	stateSinkObject.Save(5, &fs.lastDirIno)
+	stateSinkObject.Save(3, &fs.privateDevMinors)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -119,9 +115,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.opts)
 	stateSourceObject.Load(2, &fs.creds)
-	stateSourceObject.Load(3, &fs.dirDevMinor)
-	stateSourceObject.Load(4, &fs.lowerDevMinors)
-	stateSourceObject.Load(5, &fs.lastDirIno)
+	stateSourceObject.Load(3, &fs.privateDevMinors)
 }
 
 func (l *layerDevNumber) StateTypeName() string {
