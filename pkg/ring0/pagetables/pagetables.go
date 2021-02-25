@@ -221,7 +221,17 @@ func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 		},
 	}
 	w.iterateRange(uintptr(addr), uintptr(addr)+length)
-	return w.visitor.count > 0
+	if w.visitor.count > 0 {
+		// Call Lookup to travel the first visited pmd,pud,pgd and
+		// the last visited pmd,pud,pgd to do garbage collection for
+		// these pagetables.
+		p.Lookup(addr &^ usermem.Addr(pmdSize-1), true)
+		p.Lookup(addr &^ usermem.Addr(pudSize-1), true)
+		p.Lookup(addr &^ usermem.Addr(pgdSize-1), true)
+		p.Lookup(usermem.Addr(uintptr(addr)+length) &^ usermem.Addr(pgdSize-1), true)
+		return true
+	}
+	return false
 }
 
 // emptyVisitor is used for emptiness checks.
