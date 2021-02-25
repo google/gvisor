@@ -381,15 +381,24 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 
 // GetStat extracts semid_ds information from the set.
 func (s *Set) GetStat(creds *auth.Credentials) (*linux.SemidDS, error) {
+	// "The calling process must have read permission on the semaphore set."
+	return s.semStat(creds, fs.PermMask{Read: true})
+}
+
+// GetStatAny extracts semid_ds information from the set without requiring read access.
+func (s *Set) GetStatAny(creds *auth.Credentials) (*linux.SemidDS, error) {
+	return s.semStat(creds, fs.PermMask{})
+}
+
+func (s *Set) semStat(creds *auth.Credentials, permMask fs.PermMask) (*linux.SemidDS, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !s.checkPerms(creds, permMask) {
 		return nil, syserror.EACCES
 	}
 
-	ds := &linux.SemidDS{
+	return &linux.SemidDS{
 		SemPerm: linux.IPCPerm{
 			Key:  uint32(s.key),
 			UID:  uint32(creds.UserNamespace.MapFromKUID(s.owner.UID)),
@@ -402,8 +411,7 @@ func (s *Set) GetStat(creds *auth.Credentials) (*linux.SemidDS, error) {
 		SemOTime: s.opTime.TimeT(),
 		SemCTime: s.changeTime.TimeT(),
 		SemNSems: uint64(s.Size()),
-	}
-	return ds, nil
+	}, nil
 }
 
 // SetVal overrides a semaphore value, waking up waiters as needed.
