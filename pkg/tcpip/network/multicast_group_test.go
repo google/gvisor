@@ -37,7 +37,8 @@ const (
 
 	stackIPv4Addr           = tcpip.Address("\x0a\x00\x00\x01")
 	defaultIPv4PrefixLength = 24
-	ipv6Addr                = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	linkLocalIPv6Addr1      = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	linkLocalIPv6Addr2      = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 
 	ipv4MulticastAddr1 = tcpip.Address("\xe0\x00\x00\x03")
 	ipv4MulticastAddr2 = tcpip.Address("\xe0\x00\x00\x04")
@@ -69,7 +70,7 @@ var (
 		return uint8(ipv4.UnsolicitedReportIntervalMax / decisecond)
 	}()
 
-	ipv6AddrSNMC = header.SolicitedNodeAddr(ipv6Addr)
+	ipv6AddrSNMC = header.SolicitedNodeAddr(linkLocalIPv6Addr1)
 )
 
 // validateMLDPacket checks that a passed PacketInfo is an IPv6 MLD packet
@@ -82,7 +83,7 @@ func validateMLDPacket(t *testing.T, p channel.PacketInfo, remoteAddress tcpip.A
 		checker.IPv6ExtHdr(
 			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
 		),
-		checker.SrcAddr(ipv6Addr),
+		checker.SrcAddr(linkLocalIPv6Addr1),
 		checker.DstAddr(remoteAddress),
 		// Hop Limit for an MLD message must be 1 as per RFC 2710 section 3.
 		checker.TTL(1),
@@ -153,8 +154,8 @@ func createStackWithLinkEndpoint(t *testing.T, v4, mgpEnabled bool, e stack.Link
 	if err := s.AddAddressWithPrefix(nicID, ipv4.ProtocolNumber, addr); err != nil {
 		t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, addr, err)
 	}
-	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, ipv6Addr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, ipv6Addr, err)
+	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, linkLocalIPv6Addr1); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, linkLocalIPv6Addr1, err)
 	}
 
 	return s, clock
@@ -236,29 +237,33 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 
 // createAndInjectMLDPacket creates and injects an MLD packet with the
 // specified fields.
-//
-// Note, the router alert option is not included in this packet.
-//
-// TODO(b/162198658): set the router alert option.
 func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay byte, groupAddress tcpip.Address) {
-	icmpSize := header.ICMPv6HeaderSize + header.MLDMinimumSize
-	buf := buffer.NewView(header.IPv6MinimumSize + icmpSize)
+	extensionHeaders := header.IPv6ExtHdrSerializer{
+		header.IPv6SerializableHopByHopExtHdr{
+			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
+		},
+	}
+
+	extensionHeadersLength := extensionHeaders.Length()
+	payloadLength := extensionHeadersLength + header.ICMPv6HeaderSize + header.MLDMinimumSize
+	buf := buffer.NewView(header.IPv6MinimumSize + payloadLength)
 
 	ip := header.IPv6(buf)
 	ip.Encode(&header.IPv6Fields{
-		PayloadLength:     uint16(icmpSize),
+		PayloadLength:     uint16(payloadLength),
 		HopLimit:          header.MLDHopLimit,
 		TransportProtocol: header.ICMPv6ProtocolNumber,
-		SrcAddr:           header.IPv4Any,
+		SrcAddr:           linkLocalIPv6Addr2,
 		DstAddr:           header.IPv6AllNodesMulticastAddress,
+		ExtensionHeaders:  extensionHeaders,
 	})
 
-	icmp := header.ICMPv6(buf[header.IPv6MinimumSize:])
+	icmp := header.ICMPv6(ip.Payload()[extensionHeadersLength:])
 	icmp.SetType(header.ICMPv6Type(mldType))
 	mld := header.MLD(icmp.MessageBody())
 	mld.SetMaximumResponseDelay(uint16(maxRespDelay))
 	mld.SetMulticastAddress(groupAddress)
-	icmp.SetChecksum(header.ICMPv6Checksum(icmp, header.IPv6Any, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(icmp, linkLocalIPv6Addr2, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
 
 	e.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
 		Data: buf.ToVectorisedView(),

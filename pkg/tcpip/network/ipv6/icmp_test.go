@@ -48,6 +48,8 @@ const (
 
 	// Extra time to use when waiting for an async event to occur.
 	defaultAsyncPositiveEventTimeout = 30 * time.Second
+
+	arbitraryHopLimit = 42
 )
 
 var (
@@ -157,20 +159,29 @@ func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Addre
 	return false
 }
 
-func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp header.ICMPv6) {
-	ip := buffer.NewView(header.IPv6MinimumSize)
+func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp header.ICMPv6, hopLimit uint8, includeRouterAlert bool) {
+	var extensionHeaders header.IPv6ExtHdrSerializer
+	if includeRouterAlert {
+		extensionHeaders = header.IPv6ExtHdrSerializer{
+			header.IPv6SerializableHopByHopExtHdr{
+				&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
+			},
+		}
+	}
+	ip := buffer.NewView(header.IPv6MinimumSize + extensionHeaders.Length())
 	header.IPv6(ip).Encode(&header.IPv6Fields{
 		PayloadLength:     uint16(len(icmp)),
 		TransportProtocol: header.ICMPv6ProtocolNumber,
-		HopLimit:          header.NDPHopLimit,
+		HopLimit:          hopLimit,
 		SrcAddr:           src,
 		DstAddr:           dst,
+		ExtensionHeaders:  extensionHeaders,
 	})
+
 	vv := ip.ToVectorisedView()
 	vv.AppendView(buffer.View(icmp))
 	ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: header.IPv6MinimumSize,
-		Data:               vv,
+		Data: vv,
 	}))
 }
 
@@ -223,66 +234,85 @@ func TestICMPCounts(t *testing.T) {
 	})
 
 	types := []struct {
-		typ       header.ICMPv6Type
-		size      int
-		extraData []byte
+		typ                header.ICMPv6Type
+		hopLimit           uint8
+		includeRouterAlert bool
+		size               int
+		extraData          []byte
 	}{
 		{
-			typ:  header.ICMPv6DstUnreachable,
-			size: header.ICMPv6DstUnreachableMinimumSize,
+			typ:      header.ICMPv6DstUnreachable,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6DstUnreachableMinimumSize,
 		},
 		{
-			typ:  header.ICMPv6PacketTooBig,
-			size: header.ICMPv6PacketTooBigMinimumSize,
+			typ:      header.ICMPv6PacketTooBig,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6PacketTooBigMinimumSize,
 		},
 		{
-			typ:  header.ICMPv6TimeExceeded,
-			size: header.ICMPv6MinimumSize,
+			typ:      header.ICMPv6TimeExceeded,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6MinimumSize,
 		},
 		{
-			typ:  header.ICMPv6ParamProblem,
-			size: header.ICMPv6MinimumSize,
+			typ:      header.ICMPv6ParamProblem,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6MinimumSize,
 		},
 		{
-			typ:  header.ICMPv6EchoRequest,
-			size: header.ICMPv6EchoMinimumSize,
+			typ:      header.ICMPv6EchoRequest,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6EchoMinimumSize,
 		},
 		{
-			typ:  header.ICMPv6EchoReply,
-			size: header.ICMPv6EchoMinimumSize,
+			typ:      header.ICMPv6EchoReply,
+			hopLimit: arbitraryHopLimit,
+			size:     header.ICMPv6EchoMinimumSize,
 		},
 		{
-			typ:  header.ICMPv6RouterSolicit,
-			size: header.ICMPv6MinimumSize,
+			typ:      header.ICMPv6RouterSolicit,
+			hopLimit: header.NDPHopLimit,
+			size:     header.ICMPv6MinimumSize,
 		},
 		{
-			typ:  header.ICMPv6RouterAdvert,
-			size: header.ICMPv6HeaderSize + header.NDPRAMinimumSize,
+			typ:      header.ICMPv6RouterAdvert,
+			hopLimit: header.NDPHopLimit,
+			size:     header.ICMPv6HeaderSize + header.NDPRAMinimumSize,
 		},
 		{
-			typ:  header.ICMPv6NeighborSolicit,
-			size: header.ICMPv6NeighborSolicitMinimumSize,
+			typ:      header.ICMPv6NeighborSolicit,
+			hopLimit: header.NDPHopLimit,
+			size:     header.ICMPv6NeighborSolicitMinimumSize,
 		},
 		{
 			typ:       header.ICMPv6NeighborAdvert,
+			hopLimit:  header.NDPHopLimit,
 			size:      header.ICMPv6NeighborAdvertMinimumSize,
 			extraData: tllData[:],
 		},
 		{
-			typ:  header.ICMPv6RedirectMsg,
-			size: header.ICMPv6MinimumSize,
+			typ:      header.ICMPv6RedirectMsg,
+			hopLimit: header.NDPHopLimit,
+			size:     header.ICMPv6MinimumSize,
 		},
 		{
-			typ:  header.ICMPv6MulticastListenerQuery,
-			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+			typ:                header.ICMPv6MulticastListenerQuery,
+			hopLimit:           header.MLDHopLimit,
+			includeRouterAlert: true,
+			size:               header.MLDMinimumSize + header.ICMPv6HeaderSize,
 		},
 		{
-			typ:  header.ICMPv6MulticastListenerReport,
-			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+			typ:                header.ICMPv6MulticastListenerReport,
+			hopLimit:           header.MLDHopLimit,
+			includeRouterAlert: true,
+			size:               header.MLDMinimumSize + header.ICMPv6HeaderSize,
 		},
 		{
-			typ:  header.ICMPv6MulticastListenerDone,
-			size: header.MLDMinimumSize + header.ICMPv6HeaderSize,
+			typ:                header.ICMPv6MulticastListenerDone,
+			hopLimit:           header.MLDHopLimit,
+			includeRouterAlert: true,
+			size:               header.MLDMinimumSize + header.ICMPv6HeaderSize,
 		},
 		{
 			typ:  255, /* Unrecognized */
@@ -295,12 +325,12 @@ func TestICMPCounts(t *testing.T) {
 		copy(icmp[typ.size:], typ.extraData)
 		icmp.SetType(typ.typ)
 		icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
-		handleICMPInIPv6(ep, lladdr1, lladdr0, icmp)
+		handleICMPInIPv6(ep, lladdr1, lladdr0, icmp, typ.hopLimit, typ.includeRouterAlert)
 	}
 
 	// Construct an empty ICMP packet so that
 	// Stats().ICMP.ICMPv6ReceivedPacketStats.Invalid is incremented.
-	handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)))
+	handleICMPInIPv6(ep, lladdr1, lladdr0, header.ICMPv6(buffer.NewView(header.IPv6MinimumSize)), arbitraryHopLimit, false)
 
 	icmpv6Stats := s.Stats().ICMP.V6.PacketsReceived
 	visitStats(reflect.ValueOf(&icmpv6Stats).Elem(), func(name string, s *tcpip.StatCounter) {
@@ -1632,7 +1662,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 
 			icmp := test.createPacket()
 			icmp.SetChecksum(header.ICMPv6Checksum(icmp, test.source, test.destination, buffer.VectorisedView{}))
-			handleICMPInIPv6(ep, test.source, test.destination, icmp)
+			handleICMPInIPv6(ep, test.source, test.destination, icmp, header.NDPHopLimit, false)
 
 			// Confirm the endpoint calls the correct NUDHandler method.
 			if testInterface.probeCount != test.wantProbeCount {
