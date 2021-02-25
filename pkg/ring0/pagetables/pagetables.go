@@ -205,13 +205,33 @@ func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 	if uintptr(addr)+length < uintptr(addr) {
 		panic("addr & length overflow")
 	}
+	// Extend the unmap range to ensure all the empty pmd, pud, and pgd
+	// pagetables can be freed.
+	moveBack := func(p *PageTables, curr, back usermem.Addr) usermem.Addr {
+		if back < curr {
+			first, _, _, _ := p.Lookup(back, true)
+			if curr <= first {
+				return back
+			}
+		}
+		return curr
+	}
+	start := addr &^ usermem.Addr(usermem.PageSize-1)
+	start = moveBack(p, start, start&^usermem.Addr(pgdSize-1))
+	start = moveBack(p, start, start&^usermem.Addr(pudSize-1))
+	start = moveBack(p, start, start&^usermem.Addr(pmdSize-1))
+	end, _, _, _ := p.Lookup(usermem.Addr(uintptr(addr)+length), true)
+	// It is possible when addr+length is not PageSize aligned.
+	if end < usermem.Addr(uintptr(addr)+length) {
+		end = usermem.Addr(uintptr(addr) + length)
+	}
 	if p.upperSharedPageTables != nil {
 		// ignore change to the read-only upper shared portion.
 		if uintptr(addr) >= p.upperStart {
 			return false
 		}
-		if uintptr(addr)+length > p.upperStart {
-			length = p.upperStart - uintptr(addr)
+		if end > usermem.Addr(p.upperStart) {
+			end = usermem.Addr(p.upperStart)
 		}
 	}
 	w := unmapWalker{
@@ -220,7 +240,7 @@ func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 			count: 0,
 		},
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
+	w.iterateRange(uintptr(start), uintptr(end))
 	return w.visitor.count > 0
 }
 
@@ -294,7 +314,8 @@ func (*lookupVisitor) requiresSplit() bool { return false }
 // If findFirst is true, then the next valid address after addr is returned.
 // If findFirst is false, then only a mapping for addr will be returned.
 //
-// Note that if size is zero, then no matching entry was found.
+// Note that if size is zero, then no matching entry was found and the
+// returned virtual is the original addr.
 //
 // +checkescape:hard,stack
 //go:nosplit
