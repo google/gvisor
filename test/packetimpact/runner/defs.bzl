@@ -128,14 +128,14 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
     packetimpact_native_test(
         name = name,
         expect_failure = expect_native_failure,
-        testbench_binary = testbench_binary,
         num_duts = num_duts,
+        testbench_binary = testbench_binary,
     )
     packetimpact_netstack_test(
         name = name,
         expect_failure = expect_netstack_failure,
-        testbench_binary = testbench_binary,
         num_duts = num_duts,
+        testbench_binary = testbench_binary,
     )
 
 def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
@@ -161,7 +161,11 @@ def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
 
 PacketimpactTestInfo = provider(
     doc = "Provide information for packetimpact tests",
-    fields = ["name", "expect_netstack_failure", "num_duts"],
+    fields = [
+        "name",
+        "expect_netstack_failure",
+        "num_duts",
+    ],
 )
 
 ALL_TESTS = [
@@ -219,7 +223,7 @@ ALL_TESTS = [
         name = "tcp_zero_receive_window",
     ),
     PacketimpactTestInfo(
-        name = "tcp_queue_receive_in_syn_sent",
+        name = "tcp_queue_send_recv_in_syn_sent",
     ),
     PacketimpactTestInfo(
         name = "tcp_synsent_reset",
@@ -240,9 +244,6 @@ ALL_TESTS = [
         name = "tcp_timewait_reset",
         # TODO(b/168523247): Fix netstack then remove the line below.
         expect_netstack_failure = True,
-    ),
-    PacketimpactTestInfo(
-        name = "tcp_queue_send_in_syn_sent",
     ),
     PacketimpactTestInfo(
         name = "icmpv6_param_problem",

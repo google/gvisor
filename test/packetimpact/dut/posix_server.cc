@@ -180,16 +180,6 @@ class PosixImpl final : public posix_server::Posix::Service {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status Fcntl(grpc::ServerContext *context,
-                       const ::posix_server::FcntlRequest *request,
-                       ::posix_server::FcntlResponse *response) override {
-    response->set_ret(::fcntl(request->fd(), request->cmd(), request->arg()));
-    if (response->ret() < 0) {
-      response->set_errno_(errno);
-    }
-    return ::grpc::Status::OK;
-  }
-
   ::grpc::Status GetSockName(
       grpc::ServerContext *context,
       const ::posix_server::GetSockNameRequest *request,
@@ -326,6 +316,31 @@ class PosixImpl final : public posix_server::Posix::Service {
                                reinterpret_cast<sockaddr *>(&addr), addr_len));
     if (response->ret() < 0) {
       response->set_errno_(errno);
+    }
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status SetNonblocking(
+      grpc::ServerContext *context,
+      const ::posix_server::SetNonblockingRequest *request,
+      ::posix_server::SetNonblockingResponse *response) override {
+    int flags = fcntl(request->fd(), F_GETFL);
+    if (flags == -1) {
+      response->set_ret(-1);
+      response->set_errno_(errno);
+      response->set_cmd("F_GETFL");
+      return ::grpc::Status::OK;
+    }
+    if (request->nonblocking()) {
+      flags |= O_NONBLOCK;
+    } else {
+      flags &= ~O_NONBLOCK;
+    }
+    int ret = fcntl(request->fd(), F_SETFL, flags);
+    response->set_ret(ret);
+    if (ret == -1) {
+      response->set_errno_(errno);
+      response->set_cmd("F_SETFL");
     }
     return ::grpc::Status::OK;
   }
