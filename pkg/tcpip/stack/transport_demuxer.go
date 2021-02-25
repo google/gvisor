@@ -582,17 +582,18 @@ func (d *transportDemuxer) deliverRawPacket(protocol tcpip.TransportProtocolNumb
 	// As in net/ipv4/ip_input.c:ip_local_deliver, attempt to deliver via
 	// raw endpoint first. If there are multiple raw endpoints, they all
 	// receive the packet.
-	foundRaw := false
 	eps.mu.RLock()
-	for _, rawEP := range eps.rawEndpoints {
+	// Copy the list of raw endpoints so we can release eps.mu earlier.
+	rawEPs := make([]RawTransportEndpoint, len(eps.rawEndpoints))
+	copy(rawEPs, eps.rawEndpoints)
+	eps.mu.RUnlock()
+	for _, rawEP := range rawEPs {
 		// Each endpoint gets its own copy of the packet for the sake
 		// of save/restore.
 		rawEP.HandlePacket(pkt.Clone())
-		foundRaw = true
 	}
-	eps.mu.RUnlock()
 
-	return foundRaw
+	return len(rawEPs) > 0
 }
 
 // deliverError attempts to deliver the given error to the appropriate transport
