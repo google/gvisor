@@ -382,9 +382,10 @@ func TestAddIpv6Address(t *testing.T) {
 
 func TestReceiveIPv6ExtHdrs(t *testing.T) {
 	tests := []struct {
-		name         string
-		extHdr       func(nextHdr uint8) ([]byte, uint8)
-		shouldAccept bool
+		name                    string
+		extHdr                  func(nextHdr uint8) ([]byte, uint8)
+		shouldAccept            bool
+		countersToBeIncremented func(*tcpip.Stats) []*tcpip.StatCounter
 		// Should we expect an ICMP response and if so, with what contents?
 		expectICMP bool
 		ICMPType   header.ICMPv6Type
@@ -397,6 +398,42 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, nextHdr },
 			shouldAccept: true,
 			expectICMP:   false,
+		},
+		{
+			name: "hopbyhop with router alert option",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 0,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: true,
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{stats.IP.OptionRouterAlertReceived}
+			},
+		},
+		{
+			name: "hopbyhop with two router alert options",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{
+					nextHdr, 1,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0,
+
+					// Router Alert option.
+					5, 2, 0, 0, 0, 0, 0, 0,
+				}, hopByHopExtHdrID
+			},
+			shouldAccept: false,
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{
+					stats.IP.OptionRouterAlertReceived,
+					stats.IP.MalformedPacketsReceived,
+				}
+			},
 		},
 		{
 			name: "hopbyhop with unknown option skippable action",
@@ -924,14 +961,32 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				DstAddr:           dstAddr,
 			})
 
+			stats := s.Stats()
+			var counters []*tcpip.StatCounter
+			// Make sure that the counters we expect to be incremented are initially
+			// set to zero.
+			if fn := test.countersToBeIncremented; fn != nil {
+				counters = fn(&stats)
+			}
+			for i := range counters {
+				if got := counters[i].Value(); got != 0 {
+					t.Errorf("before writing packet: got test.countersToBeIncremented(&stats)[%d].Value() = %d, want = 0", i, got)
+				}
+			}
+
 			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			}))
 
-			stats := s.Stats().UDP.PacketsReceived
+			for i := range counters {
+				if got := counters[i].Value(); got != 1 {
+					t.Errorf("after writing packet: got test.countersToBeIncremented(&stats)[%d].Value() = %d, want = 1", i, got)
+				}
+			}
 
+			udpReceiveStat := stats.UDP.PacketsReceived
 			if !test.shouldAccept {
-				if got := stats.Value(); got != 0 {
+				if got := udpReceiveStat.Value(); got != 0 {
 					t.Errorf("got UDP Rx Packets = %d, want = 0", got)
 				}
 
@@ -977,7 +1032,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			}
 
 			// Expect a UDP packet.
-			if got := stats.Value(); got != 1 {
+			if got := udpReceiveStat.Value(); got != 1 {
 				t.Errorf("got UDP Rx Packets = %d, want = 1", got)
 			}
 			var buf bytes.Buffer

@@ -260,12 +260,31 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 	})
 }
 
-func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
+func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IPv6RouterAlertOption) bool {
+	// As per RFC 2710 section 3:
+	//   All MLD messages described in this document are sent with a link-local
+	//   IPv6 Source Address, an IPv6 Hop Limit of 1, and an IPv6 Router Alert
+	//   option in a Hop-by-Hop Options header.
+	if routerAlert == nil || routerAlert.Value != header.IPv6RouterAlertMLD {
+		return false
+	}
+	if pkt.Data.Size() < header.ICMPv6HeaderSize+header.MLDMinimumSize {
+		return false
+	}
+	if iph.HopLimit() != header.MLDHopLimit {
+		return false
+	}
+	if !header.IsV6LinkLocalAddress(iph.SourceAddress()) {
+		return false
+	}
+	return true
+}
+
+func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
-	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
-	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
-	// full explanation.
+	// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
+	// fields set. See icmp/protocol.go:protocol.Parse for a full explanation.
 	v, ok := pkt.Data.PullUp(header.ICMPv6HeaderSize)
 	if !ok {
 		received.invalid.Increment()
@@ -823,7 +842,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool) {
 			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
 		}
 
-		if pkt.Data.Size()-header.ICMPv6HeaderSize < header.MLDMinimumSize {
+		if !isMLDValid(pkt, iph, routerAlert) {
 			received.invalid.Increment()
 			return
 		}

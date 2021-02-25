@@ -1001,7 +1001,6 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 	vv.AppendView(pkt.TransportHeader().View())
 	vv.Append(pkt.Data)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
-	hasFragmentHeader := false
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and need not be forwarded.
@@ -1011,6 +1010,11 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		stats.IPTablesInputDropped.Increment()
 		return
 	}
+
+	var (
+		hasFragmentHeader bool
+		routerAlert       *header.IPv6RouterAlertOption
+	)
 
 	for {
 		// Keep track of the start of the previous header so we can report the
@@ -1049,34 +1053,46 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 					break
 				}
 
-				// We currently do not support any IPv6 Hop By Hop extension header
-				// options.
-				switch opt.UnknownAction() {
-				case header.IPv6OptionUnknownActionSkip:
-				case header.IPv6OptionUnknownActionDiscard:
-					return
-				case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
-					if header.IsV6MulticastAddress(dstAddr) {
+				switch opt := opt.(type) {
+				case *header.IPv6RouterAlertOption:
+					if routerAlert != nil {
+						// As per RFC 2711 section 3, there should be at most one Router
+						// Alert option per packet.
+						//
+						//    There MUST only be one option of this type, regardless of
+						//    value, per Hop-by-Hop header.
+						stats.MalformedPacketsReceived.Increment()
 						return
 					}
-					fallthrough
-				case header.IPv6OptionUnknownActionDiscardSendICMP:
-					// This case satisfies a requirement of RFC 8200 section 4.2
-					// which states that an unknown option starting with bits [10] should:
-					//
-					//    discard the packet and, regardless of whether or not the
-					//    packet's Destination Address was a multicast address, send an
-					//    ICMP Parameter Problem, Code 2, message to the packet's
-					//    Source Address, pointing to the unrecognized Option Type.
-					//
-					_ = e.protocol.returnError(&icmpReasonParameterProblem{
-						code:               header.ICMPv6UnknownOption,
-						pointer:            it.ParseOffset() + optsIt.OptionOffset(),
-						respondToMulticast: true,
-					}, pkt)
-					return
+					routerAlert = opt
+					stats.OptionRouterAlertReceived.Increment()
 				default:
-					panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %d", opt))
+					switch opt.UnknownAction() {
+					case header.IPv6OptionUnknownActionSkip:
+					case header.IPv6OptionUnknownActionDiscard:
+						return
+					case header.IPv6OptionUnknownActionDiscardSendICMPNoMulticastDest:
+						if header.IsV6MulticastAddress(dstAddr) {
+							return
+						}
+						fallthrough
+					case header.IPv6OptionUnknownActionDiscardSendICMP:
+						// This case satisfies a requirement of RFC 8200 section 4.2 which
+						// states that an unknown option starting with bits [10] should:
+						//
+						//    discard the packet and, regardless of whether or not the
+						//    packet's Destination Address was a multicast address, send an
+						//    ICMP Parameter Problem, Code 2, message to the packet's
+						//    Source Address, pointing to the unrecognized Option Type.
+						_ = e.protocol.returnError(&icmpReasonParameterProblem{
+							code:               header.ICMPv6UnknownOption,
+							pointer:            it.ParseOffset() + optsIt.OptionOffset(),
+							respondToMulticast: true,
+						}, pkt)
+						return
+					default:
+						panic(fmt.Sprintf("unrecognized action for an unrecognized Hop By Hop extension header option = %d", opt))
+					}
 				}
 			}
 
@@ -1303,7 +1319,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			stats.PacketsDelivered.Increment()
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
 				pkt.TransportProtocolNumber = p
-				e.handleICMP(pkt, hasFragmentHeader)
+				e.handleICMP(pkt, hasFragmentHeader, routerAlert)
 			} else {
 				stats.PacketsDelivered.Increment()
 				switch res := e.dispatcher.DeliverTransportPacket(p, pkt); res {

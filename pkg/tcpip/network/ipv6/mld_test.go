@@ -48,8 +48,7 @@ func validateMLDPacket(t *testing.T, p buffer.View, localAddress, remoteAddress 
 		),
 		checker.SrcAddr(localAddress),
 		checker.DstAddr(remoteAddress),
-		// Hop Limit for an MLD message must be 1 as per RFC 2710 section 3.
-		checker.TTL(1),
+		checker.TTL(header.MLDHopLimit),
 		checker.MLD(mldType, header.MLDMinimumSize,
 			checker.MLDMaxRespDelay(0),
 			checker.MLDMulticastAddress(groupAddress),
@@ -195,7 +194,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 
 			// Adding a global address should not send reports for the already joined
 			// group since we should only send queued reports when a link-local
-			// addres sis assigned.
+			// address is assigned.
 			//
 			// Note, we will still expect to send a report for the global address's
 			// solicited node address from the unspecified address as per  RFC 3590
@@ -291,6 +290,156 @@ func TestSendQueuedMLDReports(t *testing.T) {
 			clock.Advance(time.Hour)
 			if p, ok := e.Read(); ok {
 				t.Errorf("got unexpected packet = %#v", p)
+			}
+		})
+	}
+}
+
+// createAndInjectMLDPacket creates and injects an MLD packet with the
+// specified fields.
+func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, hopLimit uint8, srcAddress tcpip.Address, withRouterAlertOption bool, routerAlertValue header.IPv6RouterAlertValue) {
+	var extensionHeaders header.IPv6ExtHdrSerializer
+	if withRouterAlertOption {
+		extensionHeaders = header.IPv6ExtHdrSerializer{
+			header.IPv6SerializableHopByHopExtHdr{
+				&header.IPv6RouterAlertOption{Value: routerAlertValue},
+			},
+		}
+	}
+
+	extensionHeadersLength := extensionHeaders.Length()
+	payloadLength := extensionHeadersLength + header.ICMPv6HeaderSize + header.MLDMinimumSize
+	buf := buffer.NewView(header.IPv6MinimumSize + payloadLength)
+
+	ip := header.IPv6(buf)
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(payloadLength),
+		HopLimit:          hopLimit,
+		TransportProtocol: header.ICMPv6ProtocolNumber,
+		SrcAddr:           srcAddress,
+		DstAddr:           header.IPv6AllNodesMulticastAddress,
+		ExtensionHeaders:  extensionHeaders,
+	})
+
+	icmp := header.ICMPv6(ip.Payload()[extensionHeadersLength:])
+	icmp.SetType(mldType)
+	mld := header.MLD(icmp.MessageBody())
+	mld.SetMaximumResponseDelay(0)
+	mld.SetMulticastAddress(header.IPv6Any)
+	icmp.SetChecksum(header.ICMPv6Checksum(icmp, srcAddress, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+
+	e.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+		Data: buf.ToVectorisedView(),
+	})
+}
+
+func TestMLDPacketValidation(t *testing.T) {
+	const (
+		nicID          = 1
+		linkLocalAddr2 = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	)
+
+	tests := []struct {
+		name                     string
+		messageType              header.ICMPv6Type
+		srcAddr                  tcpip.Address
+		includeRouterAlertOption bool
+		routerAlertValue         header.IPv6RouterAlertValue
+		hopLimit                 uint8
+		expectValidMLD           bool
+		getMessageTypeStatValue  func(tcpip.Stats) uint64
+	}{
+		{
+			name:                     "valid",
+			messageType:              header.ICMPv6MulticastListenerQuery,
+			includeRouterAlertOption: true,
+			routerAlertValue:         header.IPv6RouterAlertMLD,
+			srcAddr:                  linkLocalAddr2,
+			hopLimit:                 header.MLDHopLimit,
+			expectValidMLD:           true,
+			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.ICMP.V6.PacketsReceived.MulticastListenerQuery.Value() },
+		},
+		{
+			name:                     "bad hop limit",
+			messageType:              header.ICMPv6MulticastListenerReport,
+			includeRouterAlertOption: true,
+			routerAlertValue:         header.IPv6RouterAlertMLD,
+			srcAddr:                  linkLocalAddr2,
+			hopLimit:                 header.MLDHopLimit + 1,
+			expectValidMLD:           false,
+			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.ICMP.V6.PacketsReceived.MulticastListenerReport.Value() },
+		},
+		{
+			name:                     "src ip not link local",
+			messageType:              header.ICMPv6MulticastListenerReport,
+			includeRouterAlertOption: true,
+			routerAlertValue:         header.IPv6RouterAlertMLD,
+			srcAddr:                  globalAddr,
+			hopLimit:                 header.MLDHopLimit,
+			expectValidMLD:           false,
+			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.ICMP.V6.PacketsReceived.MulticastListenerReport.Value() },
+		},
+		{
+			name:                     "missing router alert ip option",
+			messageType:              header.ICMPv6MulticastListenerDone,
+			includeRouterAlertOption: false,
+			srcAddr:                  linkLocalAddr2,
+			hopLimit:                 header.MLDHopLimit,
+			expectValidMLD:           false,
+			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.ICMP.V6.PacketsReceived.MulticastListenerDone.Value() },
+		},
+		{
+			name:                     "incorrect router alert value",
+			messageType:              header.ICMPv6MulticastListenerDone,
+			includeRouterAlertOption: true,
+			routerAlertValue:         header.IPv6RouterAlertRSVP,
+			srcAddr:                  linkLocalAddr2,
+			hopLimit:                 header.MLDHopLimit,
+			expectValidMLD:           false,
+			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.ICMP.V6.PacketsReceived.MulticastListenerDone.Value() },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					MLD: ipv6.MLDOptions{
+						Enabled: true,
+					},
+				})},
+			})
+			e := channel.New(nicID, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			stats := s.Stats()
+			// Verify that every relevant stats is zero'd before we send a packet.
+			if got := test.getMessageTypeStatValue(s.Stats()); got != 0 {
+				t.Errorf("got test.getMessageTypeStatValue(s.Stats()) = %d, want = 0", got)
+			}
+			if got := stats.ICMP.V6.PacketsReceived.Invalid.Value(); got != 0 {
+				t.Errorf("got stats.ICMP.V6.PacketsReceived.Invalid.Value() = %d, want = 0", got)
+			}
+			if got := stats.IP.PacketsDelivered.Value(); got != 0 {
+				t.Fatalf("got stats.IP.PacketsDelivered.Value() = %d, want = 0", got)
+			}
+			createAndInjectMLDPacket(e, test.messageType, test.hopLimit, test.srcAddr, test.includeRouterAlertOption, test.routerAlertValue)
+			// We always expect the packet to pass IP validation.
+			if got := stats.IP.PacketsDelivered.Value(); got != 1 {
+				t.Fatalf("got stats.IP.PacketsDelivered.Value() = %d, want = 1", got)
+			}
+			// Even when the MLD-specific validation checks fail, we expect the
+			// corresponding MLD counter to be incremented.
+			if got := test.getMessageTypeStatValue(s.Stats()); got != 1 {
+				t.Errorf("got test.getMessageTypeStatValue(s.Stats()) = %d, want = 1", got)
+			}
+			var expectedInvalidCount uint64
+			if !test.expectValidMLD {
+				expectedInvalidCount = 1
+			}
+			if got := stats.ICMP.V6.PacketsReceived.Invalid.Value(); got != expectedInvalidCount {
+				t.Errorf("got stats.ICMP.V6.PacketsReceived.Invalid.Value() = %d, want = %d", got, expectedInvalidCount)
 			}
 		})
 	}
