@@ -68,6 +68,15 @@ class AutoSem {
   int id_ = -1;
 };
 
+bool operator==(struct semid_ds const& a, struct semid_ds const& b) {
+  return a.sem_perm.__key == b.sem_perm.__key &&
+         a.sem_perm.uid == b.sem_perm.uid && a.sem_perm.gid == b.sem_perm.gid &&
+         a.sem_perm.cuid == b.sem_perm.cuid &&
+         a.sem_perm.cgid == b.sem_perm.cgid &&
+         a.sem_perm.mode == b.sem_perm.mode && a.sem_otime == b.sem_otime &&
+         a.sem_ctime == b.sem_ctime && a.sem_nsems == b.sem_nsems;
+}
+
 TEST(SemaphoreTest, SemGet) {
   // Test creation and lookup.
   AutoSem sem(semget(1, 10, IPC_CREAT));
@@ -843,6 +852,10 @@ TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
   EXPECT_EQ(semctl(sem.get(), 0, GETNCNT), 0);
 }
 
+#ifndef SEM_STAT_ANY
+#define SEM_STAT_ANY 20
+#endif  // SEM_STAT_ANY
+
 TEST(SemaphoreTest, IpcInfo) {
   constexpr int kLoops = 5;
   std::set<int> sem_ids;
@@ -868,15 +881,7 @@ TEST(SemaphoreTest, IpcInfo) {
     if (sem_ids.find(sem_id) != sem_ids.end()) {
       struct semid_ds ipc_stat_ds;
       ASSERT_THAT(semctl(sem_id, 0, IPC_STAT, &ipc_stat_ds), SyscallSucceeds());
-      EXPECT_EQ(ds.sem_perm.__key, ipc_stat_ds.sem_perm.__key);
-      EXPECT_EQ(ds.sem_perm.uid, ipc_stat_ds.sem_perm.uid);
-      EXPECT_EQ(ds.sem_perm.gid, ipc_stat_ds.sem_perm.gid);
-      EXPECT_EQ(ds.sem_perm.cuid, ipc_stat_ds.sem_perm.cuid);
-      EXPECT_EQ(ds.sem_perm.cgid, ipc_stat_ds.sem_perm.cgid);
-      EXPECT_EQ(ds.sem_perm.mode, ipc_stat_ds.sem_perm.mode);
-      EXPECT_EQ(ds.sem_otime, ipc_stat_ds.sem_otime);
-      EXPECT_EQ(ds.sem_ctime, ipc_stat_ds.sem_ctime);
-      EXPECT_EQ(ds.sem_nsems, ipc_stat_ds.sem_nsems);
+      EXPECT_TRUE(ds == ipc_stat_ds);
 
       // Remove the semaphore set's read permission.
       struct semid_ds ipc_set_ds;
@@ -884,9 +889,21 @@ TEST(SemaphoreTest, IpcInfo) {
       ipc_set_ds.sem_perm.gid = getgid();
       // Keep the semaphore set's write permission so that it could be removed.
       ipc_set_ds.sem_perm.mode = 0200;
+      // IPC_SET command here updates sem_ctime member of the sem.
       ASSERT_THAT(semctl(sem_id, 0, IPC_SET, &ipc_set_ds), SyscallSucceeds());
       ASSERT_THAT(semctl(i, 0, SEM_STAT, &ds), SyscallFailsWithErrno(EACCES));
-
+      int val = semctl(i, 0, SEM_STAT_ANY, &ds);
+      if (val == -1) {
+        // Only if the kernel doesn't support the command SEM_STAT_ANY.
+        EXPECT_TRUE(errno == EINVAL || errno == EFAULT);
+      } else {
+        EXPECT_EQ(sem_id, val);
+        EXPECT_LE(ipc_stat_ds.sem_ctime, ds.sem_ctime);
+        ipc_stat_ds.sem_ctime = 0;
+        ipc_stat_ds.sem_perm.mode = 0200;
+        ds.sem_ctime = 0;
+        EXPECT_TRUE(ipc_stat_ds == ds);
+      }
       sem_ids_before_max_index.insert(sem_id);
     }
   }
@@ -946,15 +963,7 @@ TEST(SemaphoreTest, SemInfo) {
     if (sem_ids.find(sem_id) != sem_ids.end()) {
       struct semid_ds ipc_stat_ds;
       ASSERT_THAT(semctl(sem_id, 0, IPC_STAT, &ipc_stat_ds), SyscallSucceeds());
-      EXPECT_EQ(ds.sem_perm.__key, ipc_stat_ds.sem_perm.__key);
-      EXPECT_EQ(ds.sem_perm.uid, ipc_stat_ds.sem_perm.uid);
-      EXPECT_EQ(ds.sem_perm.gid, ipc_stat_ds.sem_perm.gid);
-      EXPECT_EQ(ds.sem_perm.cuid, ipc_stat_ds.sem_perm.cuid);
-      EXPECT_EQ(ds.sem_perm.cgid, ipc_stat_ds.sem_perm.cgid);
-      EXPECT_EQ(ds.sem_perm.mode, ipc_stat_ds.sem_perm.mode);
-      EXPECT_EQ(ds.sem_otime, ipc_stat_ds.sem_otime);
-      EXPECT_EQ(ds.sem_ctime, ipc_stat_ds.sem_ctime);
-      EXPECT_EQ(ds.sem_nsems, ipc_stat_ds.sem_nsems);
+      EXPECT_TRUE(ds == ipc_stat_ds);
 
       // Remove the semaphore set's read permission.
       struct semid_ds ipc_set_ds;
@@ -962,9 +971,22 @@ TEST(SemaphoreTest, SemInfo) {
       ipc_set_ds.sem_perm.gid = getgid();
       // Keep the semaphore set's write permission so that it could be removed.
       ipc_set_ds.sem_perm.mode = 0200;
+      // IPC_SET command here updates sem_ctime member of the sem.
       ASSERT_THAT(semctl(sem_id, 0, IPC_SET, &ipc_set_ds), SyscallSucceeds());
       ASSERT_THAT(semctl(i, 0, SEM_STAT, &ds), SyscallFailsWithErrno(EACCES));
+      int val = semctl(i, 0, SEM_STAT_ANY, &ds);
 
+      if (val == -1) {
+        // Only if the kernel doesn't support the command SEM_STAT_ANY.
+        EXPECT_TRUE(errno == EINVAL || errno == EFAULT);
+      } else {
+        EXPECT_EQ(val, sem_id);
+        EXPECT_LE(ipc_stat_ds.sem_ctime, ds.sem_ctime);
+        ipc_stat_ds.sem_ctime = 0;
+        ipc_stat_ds.sem_perm.mode = 0200;
+        ds.sem_ctime = 0;
+        EXPECT_TRUE(ipc_stat_ds == ds);
+      }
       sem_ids_before_max_index.insert(sem_id);
     }
   }
