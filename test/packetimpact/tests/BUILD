@@ -176,8 +176,8 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "tcp_queue_receive_in_syn_sent",
-    srcs = ["tcp_queue_receive_in_syn_sent_test.go"],
+    name = "tcp_queue_send_recv_in_syn_sent",
+    srcs = ["tcp_queue_send_recv_in_syn_sent_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
@@ -238,16 +238,6 @@ packetimpact_testbench(
 packetimpact_testbench(
     name = "tcp_timewait_reset",
     srcs = ["tcp_timewait_reset_test.go"],
-    deps = [
-        "//pkg/tcpip/header",
-        "//test/packetimpact/testbench",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-packetimpact_testbench(
-    name = "tcp_queue_send_in_syn_sent",
-    srcs = ["tcp_queue_send_in_syn_sent_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",

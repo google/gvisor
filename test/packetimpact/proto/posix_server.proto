@@ -91,17 +91,6 @@ message ConnectResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
-message FcntlRequest {
-  int32 fd = 1;
-  int32 cmd = 2;
-  int32 arg = 3;
-}
-
-message FcntlResponse {
-  int32 ret = 1;
-  int32 errno_ = 2;
-}
-
 message GetSockNameRequest {
   int32 sockfd = 1;
 }
@@ -184,6 +173,18 @@ message SendToResponse {
   int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
+message SetNonblockingRequest {
+  int32 fd = 1;
+  bool nonblocking = 2;
+}
+
+message SetNonblockingResponse {
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
+  // The failed fcntl cmd.
+  string cmd = 3;
+}
+
 message SetSockOptRequest {
   int32 sockfd = 1;
   int32 level = 2;
@@ -237,8 +238,6 @@ service Posix {
   rpc Close(CloseRequest) returns (CloseResponse);
   // Call connect() on the DUT.
   rpc Connect(ConnectRequest) returns (ConnectResponse);
-  // Call fcntl() on the DUT.
-  rpc Fcntl(FcntlRequest) returns (FcntlResponse);
   // Call getsockname() on the DUT.
   rpc GetSockName(GetSockNameRequest) returns (GetSockNameResponse);
   // Call getsockopt() on the DUT.
@@ -253,6 +252,10 @@ service Posix {
   rpc Send(SendRequest) returns (SendResponse);
   // Call sendto() on the DUT.
   rpc SendTo(SendToRequest) returns (SendToResponse);
+  // Set/Clear O_NONBLOCK flag on the requested fd. This is needed because the
+  // operating system on DUT may have a different definition for O_NONBLOCK, it
+  // is not sound to assemble flags on testbench.
+  rpc SetNonblocking(SetNonblockingRequest) returns (SetNonblockingResponse);
   // Call setsockopt() on the DUT.
   rpc SetSockOpt(SetSockOptRequest) returns (SetSockOptResponse);
   // Call socket() on the DUT.
