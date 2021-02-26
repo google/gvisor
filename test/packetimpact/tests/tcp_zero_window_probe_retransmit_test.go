@@ -78,7 +78,7 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 		// first retransmission time. The retransmission times is supposed to
 		// exponentially increase.
 		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: probeSeq}, nil, time.Duration(i)*time.Second); err != nil {
-			t.Fatalf("expected a probe with sequence number %d: loop %d", probeSeq, i)
+			t.Fatalf("%d: expected a probe with sequence number %d: %s", i, probeSeq, err)
 		}
 		if i == 1 {
 			// Skip the first probe as computing transmit time for that is
