@@ -475,9 +475,11 @@ func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 			break
 		}
 
-		snd.outstanding++
+		if sent := snd.maybeSendSegment(seg, int(snd.ep.scoreboard.SMSS()), snd.sndUna.Add(snd.sndWnd)); !sent {
+			break
+		}
 		dataSent = true
-		snd.sendSegment(seg)
+		snd.outstanding += snd.pCount(seg, snd.maxPayloadSize)
 	}
 
 	snd.postXmit(dataSent, true /* shouldScheduleProbe */)
