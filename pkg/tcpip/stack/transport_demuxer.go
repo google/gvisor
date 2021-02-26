@@ -583,9 +583,14 @@ func (d *transportDemuxer) deliverRawPacket(protocol tcpip.TransportProtocolNumb
 	// raw endpoint first. If there are multiple raw endpoints, they all
 	// receive the packet.
 	eps.mu.RLock()
-	// Copy the list of raw endpoints so we can release eps.mu earlier.
-	rawEPs := make([]RawTransportEndpoint, len(eps.rawEndpoints))
-	copy(rawEPs, eps.rawEndpoints)
+	// Copy the list of raw endpoints to avoid packet handling under lock.
+	var rawEPs []RawTransportEndpoint
+	if n := len(eps.rawEndpoints); n != 0 {
+		rawEPs = make([]RawTransportEndpoint, n)
+		if m := copy(rawEPs, eps.rawEndpoints); m != n {
+			panic(fmt.Sprintf("unexpected copy = %d, want %d", m, n))
+		}
+	}
 	eps.mu.RUnlock()
 	for _, rawEP := range rawEPs {
 		// Each endpoint gets its own copy of the packet for the sake
@@ -593,7 +598,7 @@ func (d *transportDemuxer) deliverRawPacket(protocol tcpip.TransportProtocolNumb
 		rawEP.HandlePacket(pkt.Clone())
 	}
 
-	return len(rawEPs) > 0
+	return len(rawEPs) != 0
 }
 
 // deliverError attempts to deliver the given error to the appropriate transport
