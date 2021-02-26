@@ -139,10 +139,10 @@ func (e testEntryEventInfo) String() string {
 // testNUDDispatcher implements NUDDispatcher to validate the dispatching of
 // events upon certain NUD state machine events.
 type testNUDDispatcher struct {
-	// TODO(gvisor.bug/issue/5541): Refactor to use the embedded sync.Mutex
-	// pattern.
-	mu     sync.Mutex
-	events []testEntryEventInfo
+	mu struct {
+		sync.Mutex
+		events []testEntryEventInfo
+	}
 }
 
 var _ NUDDispatcher = (*testNUDDispatcher)(nil)
@@ -150,7 +150,7 @@ var _ NUDDispatcher = (*testNUDDispatcher)(nil)
 func (d *testNUDDispatcher) queueEvent(e testEntryEventInfo) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.events = append(d.events, e)
+	d.mu.events = append(d.mu.events, e)
 }
 
 func (d *testNUDDispatcher) OnNeighborAdded(nicID tcpip.NICID, entry NeighborEntry) {
@@ -178,10 +178,10 @@ func (d *testNUDDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry NeighborE
 }
 
 type entryTestLinkResolver struct {
-	// TODO(gvisor.bug/issue/5541): Refactor to use the embedded sync.Mutex
-	// pattern.
-	mu     sync.Mutex
-	probes []entryTestProbeInfo
+	mu struct {
+		sync.Mutex
+		probes []entryTestProbeInfo
+	}
 }
 
 var _ LinkAddressResolver = (*entryTestLinkResolver)(nil)
@@ -199,14 +199,13 @@ func (p entryTestProbeInfo) String() string {
 // LinkAddressRequest sends a request for the LinkAddress of addr. Broadcasts
 // to the local network if linkAddr is the zero value.
 func (r *entryTestLinkResolver) LinkAddressRequest(targetAddr, localAddr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
-	p := entryTestProbeInfo{
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mu.probes = append(r.mu.probes, entryTestProbeInfo{
 		RemoteAddress:     targetAddr,
 		RemoteLinkAddress: linkAddr,
 		LocalAddress:      localAddr,
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.probes = append(r.probes, p)
+	})
 	return nil
 }
 
@@ -276,7 +275,7 @@ func TestEntryInitiallyUnknown(t *testing.T) {
 
 	// No probes should have been sent.
 	linkRes.mu.Lock()
-	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -284,7 +283,7 @@ func TestEntryInitiallyUnknown(t *testing.T) {
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -309,7 +308,7 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 
 	// No probes should have been sent.
 	linkRes.mu.Lock()
-	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+	diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 	linkRes.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -317,7 +316,7 @@ func TestEntryUnknownToUnknownWhenConfirmationWithUnknownAddress(t *testing.T) {
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -358,8 +357,8 @@ func unknownToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(wantProbes, linkRes.probes)
-	linkRes.probes = nil
+	diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+	linkRes.mu.probes = nil
 	linkRes.mu.Unlock()
 	if diff != "" {
 		return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -378,8 +377,8 @@ func unknownToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -418,7 +417,7 @@ func unknownToStale(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entry
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -438,8 +437,8 @@ func unknownToStale(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entry
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -476,8 +475,8 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 			},
 		}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(wantProbes, linkRes.probes)
-		linkRes.probes = nil
+		diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+		linkRes.mu.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -506,7 +505,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -554,7 +553,7 @@ func incompleteToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -574,8 +573,8 @@ func incompleteToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -669,7 +668,7 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -702,7 +701,7 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -742,8 +741,8 @@ func incompleteToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *tes
 			LocalAddress:      entryTestAddr2,
 		}}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(wantProbes, linkRes.probes)
-		linkRes.probes = nil
+		diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+		linkRes.mu.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probe #%d mismatch (-want, +got):\n%s", i+1, diff)
@@ -780,8 +779,8 @@ func incompleteToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *tes
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -830,7 +829,7 @@ func TestEntryReachableToReachableClearsRouterWhenConfirmationWithoutRouter(t *t
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -839,7 +838,7 @@ func TestEntryReachableToReachableClearsRouterWhenConfirmationWithoutRouter(t *t
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -871,7 +870,7 @@ func TestEntryReachableToReachableWhenProbeWithSameAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -880,7 +879,7 @@ func TestEntryReachableToReachableWhenProbeWithSameAddress(t *testing.T) {
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -946,7 +945,7 @@ func reachableToStale(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDis
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -967,8 +966,8 @@ func reachableToStale(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDis
 	{
 
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1000,7 +999,7 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1019,7 +1018,7 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1051,7 +1050,7 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1070,7 +1069,7 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1102,7 +1101,7 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1121,7 +1120,7 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1149,7 +1148,7 @@ func TestEntryStaleToStaleWhenProbeWithSameAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1158,7 +1157,7 @@ func TestEntryStaleToStaleWhenProbeWithSameAddress(t *testing.T) {
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1190,7 +1189,7 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1209,7 +1208,7 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1241,7 +1240,7 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1260,7 +1259,7 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1300,7 +1299,7 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1328,7 +1327,7 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1347,7 +1346,7 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1386,7 +1385,7 @@ func staleToDelay(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entryTe
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1405,8 +1404,8 @@ func staleToDelay(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entryTe
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1437,7 +1436,7 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1456,7 +1455,7 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1491,7 +1490,7 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1510,7 +1509,7 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1545,7 +1544,7 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1564,7 +1563,7 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1599,7 +1598,7 @@ func TestEntryDelayToDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) 
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1608,7 +1607,7 @@ func TestEntryDelayToDelayWhenOverrideConfirmationWithSameAddress(t *testing.T) 
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1636,7 +1635,7 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1655,7 +1654,7 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1687,7 +1686,7 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1706,7 +1705,7 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1758,8 +1757,8 @@ func delayToProbe(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDispatc
 	}
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff(wantProbes, linkRes.probes)
-		linkRes.probes = nil
+		diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+		linkRes.mu.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1779,8 +1778,8 @@ func delayToProbe(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDispatc
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1815,7 +1814,7 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1834,7 +1833,7 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1869,7 +1868,7 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1888,7 +1887,7 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1926,7 +1925,7 @@ func TestEntryProbeToProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) 
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			t.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -1935,7 +1934,7 @@ func TestEntryProbeToProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) 
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1989,7 +1988,7 @@ func probeToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher, lin
 	runImmediatelyScheduledJobs(clock)
 	{
 		linkRes.mu.Lock()
-		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.probes)
+		diff := cmp.Diff([]entryTestProbeInfo(nil), linkRes.mu.probes)
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -2009,8 +2008,8 @@ func probeToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher, lin
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -2121,8 +2120,8 @@ func probeToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDD
 			RemoteLinkAddress: entryTestLinkAddr1,
 		}}
 		linkRes.mu.Lock()
-		diff := cmp.Diff(wantProbes, linkRes.probes)
-		linkRes.probes = nil
+		diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+		linkRes.mu.probes = nil
 		linkRes.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("link address resolver probe #%d mismatch (-want, +got):\n%s", i+1, diff)
@@ -2159,8 +2158,8 @@ func probeToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDD
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -2211,8 +2210,8 @@ func unreachableToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkR
 		},
 	}
 	linkRes.mu.Lock()
-	diff := cmp.Diff(wantProbes, linkRes.probes)
-	linkRes.probes = nil
+	diff := cmp.Diff(wantProbes, linkRes.mu.probes)
+	linkRes.mu.probes = nil
 	linkRes.mu.Unlock()
 	if diff != "" {
 		return fmt.Errorf("link address resolver probes mismatch (-want, +got):\n%s", diff)
@@ -2231,8 +2230,8 @@ func unreachableToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkR
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)

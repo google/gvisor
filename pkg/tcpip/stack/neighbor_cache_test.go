@@ -253,7 +253,7 @@ func TestNeighborCacheGetConfig(t *testing.T) {
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
 	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
@@ -275,7 +275,7 @@ func TestNeighborCacheSetConfig(t *testing.T) {
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
 	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
@@ -317,8 +317,8 @@ func TestNeighborCacheEntry(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -331,7 +331,7 @@ func TestNeighborCacheEntry(t *testing.T) {
 	// No more events should have been dispatched.
 	nudDisp.mu.Lock()
 	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
@@ -375,8 +375,8 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -397,7 +397,7 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 			},
 		}
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -489,8 +489,8 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 		})
 
 		c.nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-		c.nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+		c.nudDisp.mu.events = nil
 		c.nudDisp.mu.Unlock()
 		if diff != "" {
 			return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -521,7 +521,7 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 	// No more events should have been dispatched.
 	c.nudDisp.mu.Lock()
 	defer c.nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), c.nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), c.nudDisp.mu.events); diff != "" {
 		return fmt.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 
@@ -587,8 +587,8 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -610,8 +610,8 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 			},
 		}
 		c.nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-		c.nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+		c.nudDisp.mu.events = nil
 		c.nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -652,8 +652,8 @@ func TestNeighborCacheDuplicateStaticEntryWithSameLinkAddress(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -665,7 +665,7 @@ func TestNeighborCacheDuplicateStaticEntryWithSameLinkAddress(t *testing.T) {
 	// No more events should have been dispatched.
 	c.nudDisp.mu.Lock()
 	defer c.nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), c.nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), c.nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
@@ -696,8 +696,8 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -720,7 +720,7 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 		}
 		c.nudDisp.mu.Lock()
 		defer c.nudDisp.mu.Unlock()
-		if diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...); diff != "" {
+		if diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...); diff != "" {
 			t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 		}
 	}
@@ -758,8 +758,8 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -780,8 +780,8 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 			},
 		}
 		c.nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-		c.nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+		c.nudDisp.mu.events = nil
 		c.nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -839,8 +839,8 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -871,8 +871,8 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 			},
 		}
 		c.nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-		c.nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+		c.nudDisp.mu.events = nil
 		c.nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -933,8 +933,8 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -993,8 +993,8 @@ func TestNeighborCacheClear(t *testing.T) {
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-	nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1016,8 +1016,8 @@ func TestNeighborCacheClear(t *testing.T) {
 			},
 		}
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1051,7 +1051,7 @@ func TestNeighborCacheClear(t *testing.T) {
 	}
 	nudDisp.mu.Lock()
 	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff(wantUnsortedEvents, nudDisp.events, eventDiffOptsWithSort()...); diff != "" {
+	if diff := cmp.Diff(wantUnsortedEvents, nudDisp.mu.events, eventDiffOptsWithSort()...); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
@@ -1098,8 +1098,8 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 		},
 	}
 	c.nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-	c.nudDisp.events = nil
+	diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+	c.nudDisp.mu.events = nil
 	c.nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1120,8 +1120,8 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 			},
 		}
 		c.nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, c.nudDisp.events, eventDiffOpts()...)
-		c.nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, c.nudDisp.mu.events, eventDiffOpts()...)
+		c.nudDisp.mu.events = nil
 		c.nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1195,8 +1195,8 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			},
 		}
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1266,8 +1266,8 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			},
 		}
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.events, eventDiffOpts()...)
-		nudDisp.events = nil
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
 			t.Fatalf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -1305,7 +1305,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	// No more events should have been dispatched.
 	nudDisp.mu.Lock()
 	defer nudDisp.mu.Unlock()
-	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.events); diff != "" {
+	if diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 }
