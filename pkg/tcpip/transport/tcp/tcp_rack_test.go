@@ -987,3 +987,71 @@ func TestRACKUpdateSackedOut(t *testing.T) {
 	// test completes.
 	<-probeDone
 }
+
+// TestRACKWithWindowFull tests that RACK honors the receive window size.
+func TestRACKWithWindowFull(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	setStackSACKPermitted(t, c, true)
+	setStackRACKPermitted(t, c)
+	createConnectedWithSACKAndTS(c)
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	const numPkts = 10
+	data := make([]byte, numPkts*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	// Write the data.
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	bytesRead := 0
+	for i := 0; i < numPkts; i++ {
+		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
+		bytesRead += maxPayload
+		if i == 0 {
+			// Send ACK for the first packet to establish RTT.
+			c.SendAck(seq, maxPayload)
+		}
+	}
+
+	// SACK for #10 packet.
+	start := c.IRS.Add(seqnum.Size(1 + (numPkts-1)*maxPayload))
+	end := start.Add(seqnum.Size(maxPayload))
+	c.SendAckWithSACK(seq, 2*maxPayload, []header.SACKBlock{{start, end}})
+
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("GetSockOpt failed: %v", err)
+	}
+	// Wait for RTT to trigger recovery.
+	time.Sleep(info.RTT)
+
+	// Expect retransmission of #2 packet.
+	c.ReceiveAndCheckPacketWithOptions(data, 2*maxPayload, maxPayload, tsOptionSize)
+
+	// Send ACK for #2 packet.
+	c.SendAck(seq, 3*maxPayload)
+
+	// Expect retransmission of #3 packet.
+	c.ReceiveAndCheckPacketWithOptions(data, 3*maxPayload, maxPayload, tsOptionSize)
+
+	// Send ACK with zero window size.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1 + 4*maxPayload),
+		RcvWnd:  0,
+	})
+
+	// No packet should be received as the receive window size is zero.
+	c.CheckNoPacket("unexpected packet received after userTimeout has expired")
+}
