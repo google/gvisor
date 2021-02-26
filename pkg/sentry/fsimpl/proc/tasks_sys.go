@@ -79,7 +79,7 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				// netstack, most of these files are configuration related. We use the
 				// value closest to the actual netstack behavior or any empty file, all
 				// of these files will have mode 0444 (read-only for all users).
-				"ip_local_port_range":     fs.newInode(ctx, root, 0444, newStaticFile("16000   65535")),
+				"ip_local_port_range":     fs.newInode(ctx, root, 0444, newStaticFile("16000   65535\n")),
 				"ip_local_reserved_ports": fs.newInode(ctx, root, 0444, newStaticFile("")),
 				"ipfrag_time":             fs.newInode(ctx, root, 0444, newStaticFile("30")),
 				"ip_nonlocal_bind":        fs.newInode(ctx, root, 0444, newStaticFile("0")),

@@ -22,6 +22,8 @@
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -31,14 +33,35 @@
 namespace gvisor {
 namespace testing {
 
+PosixErrorOr<std::pair<int, int>> PortRange() {
+  // Read the valid local port range.
+  int min = 0;
+  int max = 1 << 16;
+  if (!IsRunningWithVFS1()) {
+    ASSIGN_OR_RETURN_ERRNO(
+        std::string rangefile,
+        GetContents("/proc/sys/net/ipv4/ip_local_port_range"));
+    EXPECT_EQ(rangefile.back(), '\n');
+    rangefile.pop_back();
+    std::vector<std::string> range = absl::StrSplit(rangefile, '\t');
+    EXPECT_EQ(range.size(), 2);
+    printf("range[0]: %s, range[1]: %s\n", range[0].c_str(), range[1].c_str());
+    EXPECT_TRUE(absl::SimpleAtoi(range[0], &min));
+    EXPECT_TRUE(absl::SimpleAtoi(range[1], &max));
+    printf("min: %d, max: %d\n", min, max);
+  }
+  return std::make_pair<>(min, max);
+}
+
 // Test fixture for tests that apply to pairs of connected sockets.
 using ConnectStressTest = SocketPairTest;
 
-TEST_P(ConnectStressTest, Reset65kTimes) {
+TEST_P(ConnectStressTest, Reset) {
   // TODO(b/165912341): These are too slow on KVM platform with nested virt.
   SKIP_IF(GvisorPlatform() == Platform::kKVM);
 
-  for (int i = 0; i < 1 << 16; ++i) {
+  auto range = ASSERT_NO_ERRNO_AND_VALUE(PortRange());
+  for (int i = range.first; i < range.second + 1; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
     // Send some data to ensure that the connection gets reset and the port gets
@@ -75,11 +98,12 @@ INSTANTIATE_TEST_SUITE_P(
 // a persistent listener (if applicable).
 using PersistentListenerConnectStressTest = SocketPairTest;
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
+TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
   // TODO(b/165912341): These are too slow on KVM platform with nested virt.
   SKIP_IF(GvisorPlatform() == Platform::kKVM);
 
-  for (int i = 0; i < 1 << 16; ++i) {
+  auto range = ASSERT_NO_ERRNO_AND_VALUE(PortRange());
+  for (int i = range.first; i < range.second; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
     if (GetParam().type == SOCK_STREAM) {
@@ -97,11 +121,12 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
   }
 }
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
+TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
   // TODO(b/165912341): These are too slow on KVM platform with nested virt.
   SKIP_IF(GvisorPlatform() == Platform::kKVM);
 
-  for (int i = 0; i < 1 << 16; ++i) {
+  auto range = ASSERT_NO_ERRNO_AND_VALUE(PortRange());
+  for (int i = range.first; i < range.second; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RDWR), SyscallSucceeds());
     if (GetParam().type == SOCK_STREAM) {
@@ -119,11 +144,12 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
   }
 }
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesClose) {
+TEST_P(PersistentListenerConnectStressTest, Close) {
   // TODO(b/165912341): These are too slow on KVM platform with nested virt.
   SKIP_IF(GvisorPlatform() == Platform::kKVM);
 
-  for (int i = 0; i < 1 << 16; ++i) {
+  auto range = ASSERT_NO_ERRNO_AND_VALUE(PortRange());
+  for (int i = range.first; i < range.second; ++i) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   }
 }

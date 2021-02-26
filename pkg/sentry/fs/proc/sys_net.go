@@ -511,7 +511,7 @@ func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s ine
 		// configuration related. We use the value closest to the
 		// actual netstack behavior or any empty file, all of these
 		// files will have mode 0444 (read-only for all users).
-		"ip_local_port_range":     newStaticProcInode(ctx, msrc, []byte("16000   65535")),
+		"ip_local_port_range":     newStaticProcInode(ctx, msrc, []byte("16000   65535\n")),
 		"ip_local_reserved_ports": newStaticProcInode(ctx, msrc, []byte("")),
 		"ipfrag_time":             newStaticProcInode(ctx, msrc, []byte("30")),
 		"ip_nonlocal_bind":        newStaticProcInode(ctx, msrc, []byte("0")),
