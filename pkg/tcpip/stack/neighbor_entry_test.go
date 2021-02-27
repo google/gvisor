@@ -369,15 +369,16 @@ func unknownToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: tcpip.LinkAddress(""),
-				State:    Incomplete,
+				Addr:           entryTestAddr1,
+				LinkAddr:       tcpip.LinkAddress(""),
+				State:          Incomplete,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -429,15 +430,16 @@ func unknownToStale(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entry
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -459,7 +461,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 
 	// UpdatedAt should remain the same during address resolution.
 	e.mu.Lock()
-	updatedAtNanos := e.mu.neigh.UpdatedAtNanos
+	startedAt := e.mu.neigh.UpdatedAtNanos
 	e.mu.Unlock()
 
 	// Wait for the rest of the reachability probe transmissions, signifying
@@ -483,7 +485,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		}
 
 		e.mu.Lock()
-		if got, want := e.mu.neigh.UpdatedAtNanos, updatedAtNanos; got != want {
+		if got, want := e.mu.neigh.UpdatedAtNanos, startedAt; got != want {
 			t.Errorf("got e.mu.neigh.UpdatedAt = %q, want = %q", got, want)
 		}
 		e.mu.Unlock()
@@ -498,23 +500,18 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: tcpip.LinkAddress(""),
-				State:    Unreachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       tcpip.LinkAddress(""),
+				State:          Unreachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
-
-	e.mu.Lock()
-	if got, notWant := e.mu.neigh.UpdatedAtNanos, updatedAtNanos; got == notWant {
-		t.Errorf("expected e.mu.neigh.UpdatedAt to change, got = %q", got)
-	}
-	e.mu.Unlock()
 }
 
 func TestEntryIncompleteToReachable(t *testing.T) {
@@ -565,15 +562,16 @@ func incompleteToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -661,14 +659,15 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -694,14 +693,15 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -772,14 +772,15 @@ func incompleteToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *tes
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: tcpip.LinkAddress(""),
-				State:    Unreachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       tcpip.LinkAddress(""),
+				State:          Unreachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
@@ -838,7 +839,7 @@ func TestEntryReachableToReachableClearsRouterWhenConfirmationWithoutRouter(t *t
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -879,7 +880,7 @@ func TestEntryReachableToReachableWhenProbeWithSameAddress(t *testing.T) {
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -957,16 +958,17 @@ func reachableToStale(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDis
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -1011,14 +1013,15 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1062,14 +1065,15 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1113,14 +1117,15 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1201,14 +1206,15 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1252,14 +1258,15 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1292,14 +1299,15 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1339,14 +1347,15 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1397,14 +1406,15 @@ func staleToDelay(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entryTe
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Delay,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Delay,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
@@ -1448,14 +1458,15 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1502,14 +1513,15 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1556,14 +1568,15 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1647,14 +1660,15 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1698,14 +1712,15 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1770,15 +1785,16 @@ func delayToProbe(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDispatc
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Probe,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Probe,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -1826,14 +1842,15 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1880,14 +1897,15 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr2,
-				State:    Stale,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr2,
+				State:          Stale,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	if diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...); diff != "" {
+	if diff := cmp.Diff(wantEvents, nudDisp.mu.events); diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
 	}
 	nudDisp.mu.Unlock()
@@ -1934,7 +1952,7 @@ func TestEntryProbeToProbeWhenOverrideConfirmationWithSameAddress(t *testing.T) 
 
 	// No events should have been dispatched.
 	nudDisp.mu.Lock()
-	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff([]testEntryEventInfo(nil), nudDisp.mu.events)
 	nudDisp.mu.Unlock()
 	if diff != "" {
 		t.Errorf("nud dispatcher events mismatch (-want, +got):\n%s", diff)
@@ -2000,15 +2018,16 @@ func probeToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher, lin
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: linkAddr,
-				State:    Reachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       linkAddr,
+				State:          Reachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
@@ -2151,14 +2170,15 @@ func probeToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDD
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: entryTestLinkAddr1,
-				State:    Unreachable,
+				Addr:           entryTestAddr1,
+				LinkAddr:       entryTestLinkAddr1,
+				State:          Unreachable,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	nudDisp.mu.Lock()
-	diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+	diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 	nudDisp.mu.events = nil
 	nudDisp.mu.Unlock()
 	if diff != "" {
@@ -2222,15 +2242,16 @@ func unreachableToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkR
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:     entryTestAddr1,
-				LinkAddr: tcpip.LinkAddress(""),
-				State:    Incomplete,
+				Addr:           entryTestAddr1,
+				LinkAddr:       tcpip.LinkAddress(""),
+				State:          Incomplete,
+				UpdatedAtNanos: clock.NowNanoseconds(),
 			},
 		},
 	}
 	{
 		nudDisp.mu.Lock()
-		diff := cmp.Diff(wantEvents, nudDisp.mu.events, eventDiffOpts()...)
+		diff := cmp.Diff(wantEvents, nudDisp.mu.events)
 		nudDisp.mu.events = nil
 		nudDisp.mu.Unlock()
 		if diff != "" {
