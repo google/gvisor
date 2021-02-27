@@ -1586,7 +1586,9 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 		return e.drainSendQueueLocked(), len(v), nil
 	}()
-	if err != nil {
+	// Return if either we didn't queue anything or if an error occurred while
+	// attempting to queue data.
+	if n == 0 || err != nil {
 		return 0, err
 	}
 	e.sendData(nextSeg)
