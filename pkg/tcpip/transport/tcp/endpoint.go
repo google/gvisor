@@ -1552,10 +1552,11 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 				return nil, nil
 			}
 			v := make([]byte, avail)
-			if _, err := io.ReadFull(p, v); err != nil {
+			n, err := p.Read(v)
+			if err != nil && err != io.EOF {
 				return nil, &tcpip.ErrBadBuffer{}
 			}
-			return v, nil
+			return v[:n], nil
 		}()
 		if len(v) == 0 || err != nil {
 			return nil, 0, err
