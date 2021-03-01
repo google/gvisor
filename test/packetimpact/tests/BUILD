@@ -407,6 +407,17 @@ packetimpact_testbench(
     ],
 )
 
+packetimpact_testbench(
+    name = "tcp_nagle",
+    srcs = ["tcp_nagle_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 validate_all_tests()
 
 [packetimpact_go_test(
