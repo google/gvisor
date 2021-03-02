@@ -4455,7 +4455,7 @@ func TestStaticGetLinkAddress(t *testing.T) {
 				t.Fatalf("s.GetLinkAddress(%d, %s, '', %d, _): %s", nicID, test.addr, test.proto, err)
 			}
 
-			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Success: true}, <-ch); diff != "" {
+			if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: test.expectedLinkAddr, Err: nil}, <-ch); diff != "" {
 				t.Fatalf("link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})

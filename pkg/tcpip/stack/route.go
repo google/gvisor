@@ -318,7 +318,7 @@ func (r *Route) ResolveWith(addr tcpip.LinkAddress) {
 // ResolvedFieldsResult is the result of a route resolution attempt.
 type ResolvedFieldsResult struct {
 	RouteInfo RouteInfo
-	Success   bool
+	Err       tcpip.Error
 }
 
 // ResolvedFields attempts to resolve the remote link address if it is not
@@ -349,7 +349,7 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 	r.mu.RUnlock()
 	if !resolutionRequired {
 		if afterResolve != nil {
-			afterResolve(ResolvedFieldsResult{RouteInfo: fields, Success: true})
+			afterResolve(ResolvedFieldsResult{RouteInfo: fields, Err: nil})
 		}
 		return fields, nil, nil
 	}
@@ -364,11 +364,11 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 	afterResolveFields := fields
 	linkAddr, ch, err := r.linkRes.getNeighborLinkAddress(r.nextHop(), linkAddressResolutionRequestLocalAddr, func(r LinkResolutionResult) {
 		if afterResolve != nil {
-			if r.Success {
+			if r.Err == nil {
 				afterResolveFields.RemoteLinkAddress = r.LinkAddress
 			}
 
-			afterResolve(ResolvedFieldsResult{RouteInfo: afterResolveFields, Success: r.Success})
+			afterResolve(ResolvedFieldsResult{RouteInfo: afterResolveFields, Err: r.Err})
 		}
 	})
 	if err == nil {
