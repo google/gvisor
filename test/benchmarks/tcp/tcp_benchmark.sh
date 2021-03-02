@@ -91,6 +91,9 @@ while [ $# -gt 0 ]; do
     --sack)
       netstack_opts="${netstack_opts} -sack"
       ;;
+    --rack)
+      netstack_opts="${netstack_opts} -rack"
+      ;;
     --cubic)
       netstack_opts="${netstack_opts} -cubic"
       ;;
@@ -150,8 +153,9 @@ while [ $# -gt 0 ]; do
       echo " --client              use netstack as the client"
       echo " --ideal               reset all network emulation"
       echo " --server              use netstack as the server"
-      echo " --mtu                 set the mtu (bytes)"      
+      echo " --mtu                 set the mtu (bytes)"
       echo " --sack                enable SACK support"
+      echo " --rack                enable RACK support"
       echo " --moderate-recv-buf   enable TCP receive buffer auto-tuning"
       echo " --cubic               enable CUBIC congestion control for Netstack"
       echo " --duration            set the test duration (s)"
