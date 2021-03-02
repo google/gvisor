@@ -1542,7 +1542,7 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) tcpip.Error {
 // LinkResolutionResult is the result of a link address resolution attempt.
 type LinkResolutionResult struct {
 	LinkAddress tcpip.LinkAddress
-	Success     bool
+	Err         tcpip.Error
 }
 
 // GetLinkAddress finds the link address corresponding to a network address.

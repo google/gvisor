@@ -157,8 +157,8 @@ func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr t
 // the link address if resolution completed successfully.
 //
 // Precondition: e.mu MUST be locked.
-func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
-	res := LinkResolutionResult{LinkAddress: e.mu.neigh.LinkAddr, Success: succeeded}
+func (e *neighborEntry) notifyCompletionLocked(err tcpip.Error) {
+	res := LinkResolutionResult{LinkAddress: e.mu.neigh.LinkAddr, Err: err}
 	for _, callback := range e.mu.onResolve {
 		callback(res)
 	}
@@ -173,7 +173,7 @@ func (e *neighborEntry) notifyCompletionLocked(succeeded bool) {
 		// is resolved (which ends up obtaining the entry's lock) while holding the
 		// link resolution queue's lock. Dequeuing packets in a new goroutine avoids
 		// a lock ordering violation.
-		go e.cache.nic.linkResQueue.dequeue(ch, e.mu.neigh.LinkAddr, succeeded)
+		go e.cache.nic.linkResQueue.dequeue(ch, e.mu.neigh.LinkAddr, err)
 	}
 }
 
@@ -227,7 +227,13 @@ func (e *neighborEntry) removeLocked() {
 	e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
 	e.dispatchRemoveEventLocked()
 	e.cancelTimerLocked()
-	e.notifyCompletionLocked(false /* succeeded */)
+	// TODO(https://gvisor.dev/issues/5583): test the case where this function is
+	// called during resolution; that can happen in at least these scenarios:
+	//
+	// - manual address removal during resolution
+	//
+	// - neighbor cache eviction during resolution
+	e.notifyCompletionLocked(&tcpip.ErrAborted{})
 }
 
 // setStateLocked transitions the entry to the specified state immediately.
@@ -302,9 +308,8 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
-				var err tcpip.Error
-				timedoutResolution := remaining == 0
-				if !timedoutResolution {
+				var err tcpip.Error = &tcpip.ErrTimeout{}
+				if remaining != 0 {
 					err = e.cache.linkRes.LinkAddressRequest(addr, "" /* localAddr */, linkAddr)
 				}
 
@@ -316,8 +321,9 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 					return
 				}
 
-				if timedoutResolution || err != nil {
+				if err != nil {
 					e.setStateLocked(Unreachable)
+					e.notifyCompletionLocked(err)
 					e.dispatchChangeEventLocked()
 					return
 				}
@@ -328,7 +334,6 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		}
 
 	case Unreachable:
-		e.notifyCompletionLocked(false /* succeeded */)
 
 	case Unknown, Stale, Static:
 		// Do nothing
@@ -374,9 +379,8 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		e.mu.timer = timer{
 			done: &done,
 			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
-				var err tcpip.Error
-				timedoutResolution := remaining == 0
-				if !timedoutResolution {
+				var err tcpip.Error = &tcpip.ErrTimeout{}
+				if remaining != 0 {
 					// As per RFC 4861 section 7.2.2:
 					//
 					//  If the source address of the packet prompting the solicitation is
@@ -395,8 +399,9 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 					return
 				}
 
-				if timedoutResolution || err != nil {
+				if err != nil {
 					e.setStateLocked(Unreachable)
+					e.notifyCompletionLocked(err)
 					e.dispatchChangeEventLocked()
 					return
 				}
@@ -442,7 +447,7 @@ func (e *neighborEntry) handleProbeLocked(remoteLinkAddr tcpip.LinkAddress) {
 		//  - RFC 4861 section 7.2.3
 		e.mu.neigh.LinkAddr = remoteLinkAddr
 		e.setStateLocked(Stale)
-		e.notifyCompletionLocked(true /* succeeded */)
+		e.notifyCompletionLocked(nil)
 		e.dispatchChangeEventLocked()
 
 	case Reachable, Delay, Probe:
@@ -504,7 +509,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 		}
 		e.dispatchChangeEventLocked()
 		e.mu.isRouter = flags.IsRouter
-		e.notifyCompletionLocked(true /* succeeded */)
+		e.notifyCompletionLocked(nil)
 
 		// "Note that the Override flag is ignored if the entry is in the
 		// INCOMPLETE state." - RFC 4861 section 7.2.5
@@ -539,7 +544,7 @@ func (e *neighborEntry) handleConfirmationLocked(linkAddr tcpip.LinkAddress, fla
 			wasReachable := e.mu.neigh.State == Reachable
 			// Set state to Reachable again to refresh timers.
 			e.setStateLocked(Reachable)
-			e.notifyCompletionLocked(true /* succeeded */)
+			e.notifyCompletionLocked(nil)
 			if !wasReachable {
 				e.dispatchChangeEventLocked()
 			}
