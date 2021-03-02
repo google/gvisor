@@ -1065,7 +1065,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 						return
 					}
 					routerAlert = opt
-					stats.OptionRouterAlertReceived.Increment()
+					stats.options.optionRouterAlertReceived.Increment()
 				default:
 					switch opt.UnknownAction() {
 					case header.IPv6OptionUnknownActionSkip:

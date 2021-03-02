@@ -1641,7 +1641,7 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 		optLen, optProblem := func() (int, *header.IPv4OptParameterProblem) {
 			switch option := option.(type) {
 			case *header.IPv4OptionTimestamp:
-				stats.OptionTimestampReceived.Increment()
+				stats.options.optionTimestampReceived.Increment()
 				optionsProcessed.timestamp = true
 				if usage.actions().timestamp != optionRemove {
 					clock := e.protocol.stack.Clock()
@@ -1651,7 +1651,7 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 				}
 
 			case *header.IPv4OptionRecordRoute:
-				stats.OptionRecordRouteReceived.Increment()
+				stats.options.optionRecordRouteReceived.Increment()
 				optionsProcessed.recordRoute = true
 				if usage.actions().recordRoute != optionRemove {
 					newBuffer := optIter.InitReplacement(option)
@@ -1660,7 +1660,7 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 				}
 
 			case *header.IPv4OptionRouterAlert:
-				stats.OptionRouterAlertReceived.Increment()
+				stats.options.optionRouterAlertReceived.Increment()
 				optionsProcessed.routerAlert = true
 				if usage.actions().routerAlert != optionRemove {
 					newBuffer := optIter.InitReplacement(option)
@@ -1669,7 +1669,7 @@ func (e *endpoint) processIPOptions(pkt *stack.PacketBuffer, orig header.IPv4Opt
 				}
 
 			default:
-				stats.OptionUnknownReceived.Increment()
+				stats.options.optionUnknownReceived.Increment()
 				if usage.actions().unknown == optionPass {
 					return len(optIter.InitReplacement(option)), nil
 				}

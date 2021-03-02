@@ -1258,44 +1258,38 @@ func (m *MultiCounterStat) IncrementBy(v uint64) {
 type ICMPv4PacketStats struct {
 	// LINT.IfChange(ICMPv4PacketStats)
 
-	// Echo is the total number of ICMPv4 echo packets counted.
-	Echo *StatCounter
+	// EchoRequest is the number of ICMPv4 echo packets counted.
+	EchoRequest *StatCounter
 
-	// EchoReply is the total number of ICMPv4 echo reply packets counted.
+	// EchoReply is the number of ICMPv4 echo reply packets counted.
 	EchoReply *StatCounter
 
-	// DstUnreachable is the total number of ICMPv4 destination unreachable
-	// packets counted.
+	// DstUnreachable is the number of ICMPv4 destination unreachable packets
+	// counted.
 	DstUnreachable *StatCounter
 
-	// SrcQuench is the total number of ICMPv4 source quench packets
-	// counted.
+	// SrcQuench is the number of ICMPv4 source quench packets counted.
 	SrcQuench *StatCounter
 
-	// Redirect is the total number of ICMPv4 redirect packets counted.
+	// Redirect is the number of ICMPv4 redirect packets counted.
 	Redirect *StatCounter
 
-	// TimeExceeded is the total number of ICMPv4 time exceeded packets
-	// counted.
+	// TimeExceeded is the number of ICMPv4 time exceeded packets counted.
 	TimeExceeded *StatCounter
 
-	// ParamProblem is the total number of ICMPv4 parameter problem packets
-	// counted.
+	// ParamProblem is the number of ICMPv4 parameter problem packets counted.
 	ParamProblem *StatCounter
 
-	// Timestamp is the total number of ICMPv4 timestamp packets counted.
+	// Timestamp is the number of ICMPv4 timestamp packets counted.
 	Timestamp *StatCounter
 
-	// TimestampReply is the total number of ICMPv4 timestamp reply packets
-	// counted.
+	// TimestampReply is the number of ICMPv4 timestamp reply packets counted.
 	TimestampReply *StatCounter
 
-	// InfoRequest is the total number of ICMPv4 information request
-	// packets counted.
+	// InfoRequest is the number of ICMPv4 information request packets counted.
 	InfoRequest *StatCounter
 
-	// InfoReply is the total number of ICMPv4 information reply packets
-	// counted.
+	// InfoReply is the number of ICMPv4 information reply packets counted.
 	InfoReply *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterICMPv4PacketStats)
@@ -1307,12 +1301,11 @@ type ICMPv4SentPacketStats struct {
 
 	ICMPv4PacketStats
 
-	// Dropped is the total number of ICMPv4 packets dropped due to link
-	// layer errors.
+	// Dropped is the number of ICMPv4 packets dropped due to link layer errors.
 	Dropped *StatCounter
 
-	// RateLimited is the total number of ICMPv4 packets dropped due to
-	// rate limit being exceeded.
+	// RateLimited is the number of ICMPv4 packets dropped due to rate limit being
+	// exceeded.
 	RateLimited *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterICMPv4SentPacketStats)
@@ -1324,7 +1317,7 @@ type ICMPv4ReceivedPacketStats struct {
 
 	ICMPv4PacketStats
 
-	// Invalid is the total number of invalid ICMPv4 packets received.
+	// Invalid is the number of invalid ICMPv4 packets received.
 	Invalid *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterICMPv4ReceivedPacketStats)
@@ -1347,59 +1340,50 @@ type ICMPv4Stats struct {
 type ICMPv6PacketStats struct {
 	// LINT.IfChange(ICMPv6PacketStats)
 
-	// EchoRequest is the total number of ICMPv6 echo request packets
-	// counted.
+	// EchoRequest is the number of ICMPv6 echo request packets counted.
 	EchoRequest *StatCounter
 
-	// EchoReply is the total number of ICMPv6 echo reply packets counted.
+	// EchoReply is the number of ICMPv6 echo reply packets counted.
 	EchoReply *StatCounter
 
-	// DstUnreachable is the total number of ICMPv6 destination unreachable
-	// packets counted.
+	// DstUnreachable is the number of ICMPv6 destination unreachable packets
+	// counted.
 	DstUnreachable *StatCounter
 
-	// PacketTooBig is the total number of ICMPv6 packet too big packets
-	// counted.
+	// PacketTooBig is the number of ICMPv6 packet too big packets counted.
 	PacketTooBig *StatCounter
 
-	// TimeExceeded is the total number of ICMPv6 time exceeded packets
-	// counted.
+	// TimeExceeded is the number of ICMPv6 time exceeded packets counted.
 	TimeExceeded *StatCounter
 
-	// ParamProblem is the total number of ICMPv6 parameter problem packets
-	// counted.
+	// ParamProblem is the number of ICMPv6 parameter problem packets counted.
 	ParamProblem *StatCounter
 
-	// RouterSolicit is the total number of ICMPv6 router solicit packets
-	// counted.
+	// RouterSolicit is the number of ICMPv6 router solicit packets counted.
 	RouterSolicit *StatCounter
 
-	// RouterAdvert is the total number of ICMPv6 router advert packets
-	// counted.
+	// RouterAdvert is the number of ICMPv6 router advert packets counted.
 	RouterAdvert *StatCounter
 
-	// NeighborSolicit is the total number of ICMPv6 neighbor solicit
-	// packets counted.
+	// NeighborSolicit is the number of ICMPv6 neighbor solicit packets counted.
 	NeighborSolicit *StatCounter
 
-	// NeighborAdvert is the total number of ICMPv6 neighbor advert packets
-	// counted.
+	// NeighborAdvert is the number of ICMPv6 neighbor advert packets counted.
 	NeighborAdvert *StatCounter
 
-	// RedirectMsg is the total number of ICMPv6 redirect message packets
-	// counted.
+	// RedirectMsg is the number of ICMPv6 redirect message packets counted.
 	RedirectMsg *StatCounter
 
-	// MulticastListenerQuery is the total number of Multicast Listener Query
-	// messages counted.
+	// MulticastListenerQuery is the number of Multicast Listener Query messages
+	// counted.
 	MulticastListenerQuery *StatCounter
 
-	// MulticastListenerReport is the total number of Multicast Listener Report
-	// messages counted.
+	// MulticastListenerReport is the number of Multicast Listener Report messages
+	// counted.
 	MulticastListenerReport *StatCounter
 
-	// MulticastListenerDone is the total number of Multicast Listener Done
-	// messages counted.
+	// MulticastListenerDone is the number of Multicast Listener Done messages
+	// counted.
 	MulticastListenerDone *StatCounter
 
 	// LINT.ThenChange(network/ipv6/stats.go:multiCounterICMPv6PacketStats)
@@ -1411,12 +1395,11 @@ type ICMPv6SentPacketStats struct {
 
 	ICMPv6PacketStats
 
-	// Dropped is the total number of ICMPv6 packets dropped due to link
-	// layer errors.
+	// Dropped is the number of ICMPv6 packets dropped due to link layer errors.
 	Dropped *StatCounter
 
-	// RateLimited is the total number of ICMPv6 packets dropped due to
-	// rate limit being exceeded.
+	// RateLimited is the number of ICMPv6 packets dropped due to rate limit being
+	// exceeded.
 	RateLimited *StatCounter
 
 	// LINT.ThenChange(network/ipv6/stats.go:multiCounterICMPv6SentPacketStats)
@@ -1428,15 +1411,15 @@ type ICMPv6ReceivedPacketStats struct {
 
 	ICMPv6PacketStats
 
-	// Unrecognized is the total number of ICMPv6 packets received that the
-	// transport layer does not know how to parse.
+	// Unrecognized is the number of ICMPv6 packets received that the transport
+	// layer does not know how to parse.
 	Unrecognized *StatCounter
 
-	// Invalid is the total number of invalid ICMPv6 packets received.
+	// Invalid is the number of invalid ICMPv6 packets received.
 	Invalid *StatCounter
 
-	// RouterOnlyPacketsDroppedByHost is the total number of ICMPv6 packets
-	// dropped due to being router-specific packets.
+	// RouterOnlyPacketsDroppedByHost is the number of ICMPv6 packets dropped due
+	// to being router-specific packets.
 	RouterOnlyPacketsDroppedByHost *StatCounter
 
 	// LINT.ThenChange(network/ipv6/stats.go:multiCounterICMPv6ReceivedPacketStats)
@@ -1468,18 +1451,18 @@ type ICMPStats struct {
 type IGMPPacketStats struct {
 	// LINT.IfChange(IGMPPacketStats)
 
-	// MembershipQuery is the total number of Membership Query messages counted.
+	// MembershipQuery is the number of Membership Query messages counted.
 	MembershipQuery *StatCounter
 
-	// V1MembershipReport is the total number of Version 1 Membership Report
-	// messages counted.
+	// V1MembershipReport is the number of Version 1 Membership Report messages
+	// counted.
 	V1MembershipReport *StatCounter
 
-	// V2MembershipReport is the total number of Version 2 Membership Report
-	// messages counted.
+	// V2MembershipReport is the number of Version 2 Membership Report messages
+	// counted.
 	V2MembershipReport *StatCounter
 
-	// LeaveGroup is the total number of Leave Group messages counted.
+	// LeaveGroup is the number of Leave Group messages counted.
 	LeaveGroup *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPPacketStats)
@@ -1491,7 +1474,7 @@ type IGMPSentPacketStats struct {
 
 	IGMPPacketStats
 
-	// Dropped is the total number of IGMP packets dropped.
+	// Dropped is the number of IGMP packets dropped.
 	Dropped *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPSentPacketStats)
@@ -1503,15 +1486,14 @@ type IGMPReceivedPacketStats struct {
 
 	IGMPPacketStats
 
-	// Invalid is the total number of invalid IGMP packets received.
+	// Invalid is the number of invalid IGMP packets received.
 	Invalid *StatCounter
 
-	// ChecksumErrors is the total number of IGMP packets dropped due to bad
-	// checksums.
+	// ChecksumErrors is the number of IGMP packets dropped due to bad checksums.
 	ChecksumErrors *StatCounter
 
-	// Unrecognized is the total number of unrecognized messages counted, these
-	// are silently ignored for forward-compatibilty.
+	// Unrecognized is the number of unrecognized messages counted, these are
+	// silently ignored for forward-compatibilty.
 	Unrecognized *StatCounter
 
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPReceivedPacketStats)
@@ -1530,59 +1512,63 @@ type IGMPStats struct {
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPStats)
 }
 
-// IPStats collects IP-specific stats (both v4 and v6).
-type IPStats struct {
-	// LINT.IfChange(IPStats)
+// IPPacketStats collects IP-specific stats shared by IPv4 and IPv6.
+type IPPacketStats struct {
+	// LINT.IfChange(IPPacketStats)
 
-	// PacketsReceived is the total number of IP packets received from the
-	// link layer.
+	// PacketsReceived is the number of IP packets received from the link layer.
 	PacketsReceived *StatCounter
 
-	// DisabledPacketsReceived is the total number of IP packets received from the
-	// link layer when the IP layer is disabled.
+	// DisabledPacketsReceived is the number of IP packets received from the link
+	// layer when the IP layer is disabled.
 	DisabledPacketsReceived *StatCounter
 
-	// InvalidDestinationAddressesReceived is the total number of IP packets
-	// received with an unknown or invalid destination address.
+	// InvalidDestinationAddressesReceived is the number of IP packets received
+	// with an unknown or invalid destination address.
 	InvalidDestinationAddressesReceived *StatCounter
 
-	// InvalidSourceAddressesReceived is the total number of IP packets received
-	// with a source address that should never have been received on the wire.
+	// InvalidSourceAddressesReceived is the number of IP packets received with a
+	// source address that should never have been received on the wire.
 	InvalidSourceAddressesReceived *StatCounter
 
-	// PacketsDelivered is the total number of incoming IP packets that
-	// are successfully delivered to the transport layer.
+	// PacketsDelivered is the number of incoming IP packets that are successfully
+	// delivered to the transport layer.
 	PacketsDelivered *StatCounter
 
-	// PacketsSent is the total number of IP packets sent via WritePacket.
+	// PacketsSent is the number of IP packets sent via WritePacket.
 	PacketsSent *StatCounter
 
-	// OutgoingPacketErrors is the total number of IP packets which failed
-	// to write to a link-layer endpoint.
+	// OutgoingPacketErrors is the number of IP packets which failed to write to a
+	// link-layer endpoint.
 	OutgoingPacketErrors *StatCounter
 
-	// MalformedPacketsReceived is the total number of IP Packets that were
-	// dropped due to the IP packet header failing validation checks.
+	// MalformedPacketsReceived is the number of IP Packets that were dropped due
+	// to the IP packet header failing validation checks.
 	MalformedPacketsReceived *StatCounter
 
-	// MalformedFragmentsReceived is the total number of IP Fragments that were
-	// dropped due to the fragment failing validation checks.
+	// MalformedFragmentsReceived is the number of IP Fragments that were dropped
+	// due to the fragment failing validation checks.
 	MalformedFragmentsReceived *StatCounter
 
-	// IPTablesPreroutingDropped is the total number of IP packets dropped
-	// in the Prerouting chain.
+	// IPTablesPreroutingDropped is the number of IP packets dropped in the
+	// Prerouting chain.
 	IPTablesPreroutingDropped *StatCounter
 
-	// IPTablesInputDropped is the total number of IP packets dropped in
-	// the Input chain.
+	// IPTablesInputDropped is the number of IP packets dropped in the Input
+	// chain.
 	IPTablesInputDropped *StatCounter
 
-	// IPTablesOutputDropped is the total number of IP packets dropped in
-	// the Output chain.
+	// IPTablesOutputDropped is the number of IP packets dropped in the Output
+	// chain.
 	IPTablesOutputDropped *StatCounter
 
-	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
-	// of IPStats.
+	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPStats)
+}
+
+// IPv4OptionStats collects stats related to IPv4 options.
+type IPv4OptionStats struct {
+	// LINT.IfChange(IPv4OptionStats)
+
 	// OptionTimestampReceived is the number of Timestamp options seen.
 	OptionTimestampReceived *StatCounter
 
@@ -1595,7 +1581,28 @@ type IPStats struct {
 	// OptionUnknownReceived is the number of unknown IP options seen.
 	OptionUnknownReceived *StatCounter
 
-	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPStats)
+	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIPv4OptionStats)
+}
+
+// IPv6OptionStats collects stats related to IPv4 options.
+type IPv6OptionStats struct {
+	// LINT.IfChange(IPv6OptionStats)
+
+	// OptionRouterAlertReceived is the number of Router Alert options seen.
+	OptionRouterAlertReceived *StatCounter
+
+	// LINT.ThenChange(network/ipv6/stats.go:multiCounterIPv6OptionStats)
+}
+
+// IPStats collects IP-specific stats (both v4 and v6).
+type IPStats struct {
+	IPPacketStats
+
+	// V4Options contains statistics about options IPv4 options.
+	V4Options IPv4OptionStats
+
+	// V6Options contains statistics about options IPv6 options.
+	V6Options IPv6OptionStats
 }
 
 // ARPStats collects ARP-specific stats.
