@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"context"
-	"io/ioutil"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
@@ -56,14 +55,7 @@ func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 		return subcommands.ExitUsageError
 	}
 
-	const path = "/proc/cpuinfo"
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		log.Warningf("Failed to read %s: %v", path, err)
-		return subcommands.ExitFailure
-	}
-
-	if err := m.mitigate.Execute(data); err != nil {
+	if err := m.mitigate.Execute(); err != nil {
 		log.Warningf("Execute failed: %v", err)
 		return subcommands.ExitFailure
 	}
