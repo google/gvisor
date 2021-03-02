@@ -21,8 +21,8 @@ import (
 	"testing"
 )
 
-// cpuTestCase represents data from CPUs that will be mitigated.
-type cpuTestCase struct {
+// mockCPU represents data from CPUs that will be mitigated.
+type mockCPU struct {
 	name           string
 	vendorID       string
 	family         int
@@ -34,7 +34,7 @@ type cpuTestCase struct {
 	threadsPerCore int
 }
 
-var cascadeLake4 = cpuTestCase{
+var cascadeLake4 = mockCPU{
 	name:           "CascadeLake",
 	vendorID:       "GenuineIntel",
 	family:         6,
@@ -46,7 +46,7 @@ var cascadeLake4 = cpuTestCase{
 	threadsPerCore: 2,
 }
 
-var haswell2 = cpuTestCase{
+var haswell2 = mockCPU{
 	name:           "Haswell",
 	vendorID:       "GenuineIntel",
 	family:         6,
@@ -58,7 +58,7 @@ var haswell2 = cpuTestCase{
 	threadsPerCore: 2,
 }
 
-var haswell2core = cpuTestCase{
+var haswell2core = mockCPU{
 	name:           "Haswell2Physical",
 	vendorID:       "GenuineIntel",
 	family:         6,
@@ -70,7 +70,7 @@ var haswell2core = cpuTestCase{
 	threadsPerCore: 1,
 }
 
-var amd8 = cpuTestCase{
+var amd8 = mockCPU{
 	name:           "AMD",
 	vendorID:       "AuthenticAMD",
 	family:         23,
@@ -83,7 +83,7 @@ var amd8 = cpuTestCase{
 }
 
 // makeCPUString makes a string formated like /proc/cpuinfo for each cpuTestCase
-func (tc cpuTestCase) makeCPUString() string {
+func (tc mockCPU) makeCPUString() string {
 	template := `processor	: %d
 vendor_id	: %s
 cpu family	: %d
@@ -115,10 +115,18 @@ bugs		: %s
 	return ret
 }
 
+func (tc mockCPU) makeSysPossibleString() string {
+	max := tc.physicalCores * tc.cores * tc.threadsPerCore
+	if max == 1 {
+		return "0"
+	}
+	return fmt.Sprintf("0-%d", max-1)
+}
+
 // TestMockCPUSet tests mock cpu test cases against the cpuSet functions.
 func TestMockCPUSet(t *testing.T) {
 	for _, tc := range []struct {
-		testCase     cpuTestCase
+		testCase     mockCPU
 		isVulnerable bool
 	}{
 		{
@@ -141,7 +149,7 @@ func TestMockCPUSet(t *testing.T) {
 	} {
 		t.Run(tc.testCase.name, func(t *testing.T) {
 			data := tc.testCase.makeCPUString()
-			vulnerable := func(t *thread) bool {
+			vulnerable := func(t thread) bool {
 				return t.isVulnerable()
 			}
 			set, err := newCPUSet([]byte(data), vulnerable)
@@ -169,6 +177,18 @@ func TestMockCPUSet(t *testing.T) {
 					t.Fatalf("Entry %+v not in map, there must be two entries in the same thread group.", r)
 				}
 				delete(set, r.id)
+			}
+
+			possible := tc.testCase.makeSysPossibleString()
+			set, err = newCPUSetFromPossible([]byte(possible))
+			if err != nil {
+				t.Fatalf("Failed to make cpuSet: %v", err)
+			}
+
+			want = tc.testCase.physicalCores * tc.testCase.cores * tc.testCase.threadsPerCore
+			got := len(set.getRemainingList())
+			if got != want {
+				t.Fatalf("Returned the wrong number of CPUs want: %d got: %d", want, got)
 			}
 		})
 	}
@@ -328,7 +348,7 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("Failed to read cpuinfo: %v", err)
 	}
 
-	vulnerable := func(t *thread) bool {
+	vulnerable := func(t thread) bool {
 		return t.isVulnerable()
 	}
 
@@ -500,5 +520,86 @@ power management:`
 				}
 			}
 		})
+	}
+}
+
+func TestReverse(t *testing.T) {
+	const noParse = "-1-"
+	for _, tc := range []struct {
+		name      string
+		output    string
+		wantErr   error
+		wantCount int
+	}{
+		{
+			name:      "base",
+			output:    "0-7",
+			wantErr:   nil,
+			wantCount: 8,
+		},
+		{
+			name:      "huge",
+			output:    "0-111",
+			wantErr:   nil,
+			wantCount: 112,
+		},
+		{
+			name:      "not zero",
+			output:    "50-53",
+			wantErr:   nil,
+			wantCount: 4,
+		},
+		{
+			name:      "small",
+			output:    "0",
+			wantErr:   nil,
+			wantCount: 1,
+		},
+		{
+			name:    "invalid order",
+			output:  "10-6",
+			wantErr: fmt.Errorf("invalid cpu bounds from possible: begin: %d end: %d", 10, 6),
+		},
+		{
+			name:    "no parse",
+			output:  noParse,
+			wantErr: fmt.Errorf(`mismatch regex from /sys/devices/system/cpu/possible: %q`, noParse),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			threads, err := getThreadsFromPossible([]byte(tc.output))
+
+			switch {
+			case tc.wantErr == nil:
+				if err != nil {
+					t.Fatalf("Wanted nil err, got: %v", err)
+				}
+			case err == nil:
+				t.Fatalf("Want error: %v got: %v", tc.wantErr, err)
+			default:
+				if tc.wantErr.Error() != err.Error() {
+					t.Fatalf("Want error: %v got error: %v", tc.wantErr, err)
+				}
+			}
+
+			if len(threads) != tc.wantCount {
+				t.Fatalf("Want count: %d got: %d", tc.wantCount, len(threads))
+			}
+		})
+	}
+}
+
+func TestReverseSmoke(t *testing.T) {
+	data, err := ioutil.ReadFile(allPossibleCPUs)
+	if err != nil {
+		t.Fatalf("Failed to read from possible: %v", err)
+	}
+	threads, err := getThreadsFromPossible(data)
+	if err != nil {
+		t.Fatalf("Could not parse possible output: %v", err)
+	}
+
+	if len(threads) <= 0 {
+		t.Fatalf("Didn't get any CPU cores: %d", len(threads))
 	}
 }
