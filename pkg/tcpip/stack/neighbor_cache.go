@@ -140,7 +140,7 @@ func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve fun
 		//   a node continues sending packets to that neighbor using the cached
 		//   link-layer address."
 		if onResolve != nil {
-			onResolve(LinkResolutionResult{LinkAddress: entry.mu.neigh.LinkAddr, Success: true})
+			onResolve(LinkResolutionResult{LinkAddress: entry.mu.neigh.LinkAddr, Err: nil})
 		}
 		return entry.mu.neigh, nil, nil
 	case Unknown, Incomplete, Unreachable:

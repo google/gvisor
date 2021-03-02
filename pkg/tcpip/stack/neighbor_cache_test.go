@@ -1162,7 +1162,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			t.Fatalf("linkRes.entries.entry(%d) not found", i)
 		}
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1218,7 +1218,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		}
 
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1379,7 +1379,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 	}
 
 	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-		if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+		if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
 	})
@@ -1485,7 +1485,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	// First, sanity check that resolution is working
 	{
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1519,7 +1519,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	entry.Addr += "2"
 	{
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1559,7 +1559,7 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 	}
 
 	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-		if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+		if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
 	})
@@ -1593,7 +1593,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	// Perform address resolution with a faulty link, which will fail.
 	{
 		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{Success: false}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1625,7 +1625,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	linkRes.dropReplies = false
 	{
 		incompleteEntry, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -1678,7 +1678,7 @@ func BenchmarkCacheClear(b *testing.B) {
 			}
 
 			_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
-				if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Success: true}, r); diff != "" {
+				if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 					b.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 				}
 			})

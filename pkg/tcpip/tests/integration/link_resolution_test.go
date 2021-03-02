@@ -402,34 +402,48 @@ func TestGetLinkAddress(t *testing.T) {
 	)
 
 	tests := []struct {
-		name       string
-		netProto   tcpip.NetworkProtocolNumber
-		remoteAddr tcpip.Address
-		expectedOk bool
+		name                  string
+		netProto              tcpip.NetworkProtocolNumber
+		remoteAddr, localAddr tcpip.Address
+		expectedErr           tcpip.Error
 	}{
 		{
-			name:       "IPv4 resolvable",
-			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: utils.Ipv4Addr2.AddressWithPrefix.Address,
-			expectedOk: true,
+			name:        "IPv4 resolvable",
+			netProto:    ipv4.ProtocolNumber,
+			remoteAddr:  utils.Ipv4Addr2.AddressWithPrefix.Address,
+			expectedErr: nil,
 		},
 		{
-			name:       "IPv6 resolvable",
-			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: utils.Ipv6Addr2.AddressWithPrefix.Address,
-			expectedOk: true,
+			name:        "IPv6 resolvable",
+			netProto:    ipv6.ProtocolNumber,
+			remoteAddr:  utils.Ipv6Addr2.AddressWithPrefix.Address,
+			expectedErr: nil,
 		},
 		{
-			name:       "IPv4 not resolvable",
-			netProto:   ipv4.ProtocolNumber,
-			remoteAddr: utils.Ipv4Addr3.AddressWithPrefix.Address,
-			expectedOk: false,
+			name:        "IPv4 not resolvable",
+			netProto:    ipv4.ProtocolNumber,
+			remoteAddr:  utils.Ipv4Addr3.AddressWithPrefix.Address,
+			expectedErr: &tcpip.ErrTimeout{},
 		},
 		{
-			name:       "IPv6 not resolvable",
-			netProto:   ipv6.ProtocolNumber,
-			remoteAddr: utils.Ipv6Addr3.AddressWithPrefix.Address,
-			expectedOk: false,
+			name:        "IPv6 not resolvable",
+			netProto:    ipv6.ProtocolNumber,
+			remoteAddr:  utils.Ipv6Addr3.AddressWithPrefix.Address,
+			expectedErr: &tcpip.ErrTimeout{},
+		},
+		{
+			name:        "IPv4 bad local address",
+			netProto:    ipv4.ProtocolNumber,
+			remoteAddr:  utils.Ipv4Addr2.AddressWithPrefix.Address,
+			localAddr:   utils.Ipv4Addr2.AddressWithPrefix.Address,
+			expectedErr: &tcpip.ErrBadLocalAddress{},
+		},
+		{
+			name:        "IPv6 bad local address",
+			netProto:    ipv6.ProtocolNumber,
+			remoteAddr:  utils.Ipv6Addr2.AddressWithPrefix.Address,
+			localAddr:   utils.Ipv6Addr2.AddressWithPrefix.Address,
+			expectedErr: &tcpip.ErrBadLocalAddress{},
 		},
 	}
 
@@ -442,14 +456,14 @@ func TestGetLinkAddress(t *testing.T) {
 			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
 
 			ch := make(chan stack.LinkResolutionResult, 1)
-			err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+			err := host1Stack.GetLinkAddress(host1NICID, test.remoteAddr, test.localAddr, test.netProto, func(r stack.LinkResolutionResult) {
 				ch <- r
 			})
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", host1NICID, test.remoteAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
 			}
-			wantRes := stack.LinkResolutionResult{Success: test.expectedOk}
-			if test.expectedOk {
+			wantRes := stack.LinkResolutionResult{Err: test.expectedErr}
+			if test.expectedErr == nil {
 				wantRes.LinkAddress = utils.LinkAddr2
 			}
 			if diff := cmp.Diff(wantRes, <-ch); diff != "" {
@@ -471,7 +485,7 @@ func TestRouteResolvedFields(t *testing.T) {
 		localAddr             tcpip.Address
 		remoteAddr            tcpip.Address
 		immediatelyResolvable bool
-		expectedSuccess       bool
+		expectedErr           tcpip.Error
 		expectedLinkAddr      tcpip.LinkAddress
 	}{
 		{
@@ -480,7 +494,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
 			remoteAddr:            header.IPv4AllSystems,
 			immediatelyResolvable: true,
-			expectedSuccess:       true,
+			expectedErr:           nil,
 			expectedLinkAddr:      header.EthernetAddressFromMulticastIPv4Address(header.IPv4AllSystems),
 		},
 		{
@@ -489,7 +503,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
 			remoteAddr:            header.IPv6AllNodesMulticastAddress,
 			immediatelyResolvable: true,
-			expectedSuccess:       true,
+			expectedErr:           nil,
 			expectedLinkAddr:      header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllNodesMulticastAddress),
 		},
 		{
@@ -498,7 +512,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv4Addr2.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedSuccess:       true,
+			expectedErr:           nil,
 			expectedLinkAddr:      utils.LinkAddr2,
 		},
 		{
@@ -507,7 +521,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv6Addr2.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedSuccess:       true,
+			expectedErr:           nil,
 			expectedLinkAddr:      utils.LinkAddr2,
 		},
 		{
@@ -516,7 +530,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv4Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv4Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedSuccess:       false,
+			expectedErr:           &tcpip.ErrTimeout{},
 		},
 		{
 			name:                  "IPv6 not resolvable",
@@ -524,7 +538,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			localAddr:             utils.Ipv6Addr1.AddressWithPrefix.Address,
 			remoteAddr:            utils.Ipv6Addr3.AddressWithPrefix.Address,
 			immediatelyResolvable: false,
-			expectedSuccess:       false,
+			expectedErr:           &tcpip.ErrTimeout{},
 		},
 	}
 
@@ -535,9 +549,9 @@ func TestRouteResolvedFields(t *testing.T) {
 			}
 
 			host1Stack, _ := setupStack(t, stackOpts, host1NICID, host2NICID)
-			r, err := host1Stack.FindRoute(host1NICID, "", test.remoteAddr, test.netProto, false /* multicastLoop */)
+			r, err := host1Stack.FindRoute(host1NICID, test.localAddr, test.remoteAddr, test.netProto, false /* multicastLoop */)
 			if err != nil {
-				t.Fatalf("host1Stack.FindRoute(%d, '', %s, %d, false): %s", host1NICID, test.remoteAddr, test.netProto, err)
+				t.Fatalf("host1Stack.FindRoute(%d, %s, %s, %d, false): %s", host1NICID, test.localAddr, test.remoteAddr, test.netProto, err)
 			}
 			defer r.Release()
 
@@ -561,11 +575,11 @@ func TestRouteResolvedFields(t *testing.T) {
 				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 					t.Errorf("got r.ResolvedFields(_) = %s, want = %s", err, &tcpip.ErrWouldBlock{})
 				}
-				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: test.expectedSuccess}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Err: test.expectedErr}, <-ch, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
 					t.Errorf("route resolve result mismatch (-want +got):\n%s", diff)
 				}
 
-				if !test.expectedSuccess {
+				if test.expectedErr != nil {
 					return
 				}
 
@@ -580,7 +594,7 @@ func TestRouteResolvedFields(t *testing.T) {
 			}
 			select {
 			case routeResolveRes := <-ch:
-				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Success: true}, routeResolveRes, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
+				if diff := cmp.Diff(stack.ResolvedFieldsResult{RouteInfo: wantRouteInfo, Err: nil}, routeResolveRes, cmp.AllowUnexported(stack.RouteInfo{})); diff != "" {
 					t.Errorf("route resolve result from resolved route mismatch (-want +got):\n%s", diff)
 				}
 			default:
@@ -1021,7 +1035,7 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 					t.Fatalf("got host1Stack.GetLinkAddress(%d, %s, '', %d, _) = %s, want = %s", utils.Host1NICID, test.neighborAddr, test.netProto, err, &tcpip.ErrWouldBlock{})
 				}
-				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: utils.LinkAddr2, Success: true}, <-ch); diff != "" {
+				if diff := cmp.Diff(stack.LinkResolutionResult{LinkAddress: utils.LinkAddr2, Err: nil}, <-ch); diff != "" {
 					t.Fatalf("link resolution mismatch (-want +got):\n%s", diff)
 				}
 			}

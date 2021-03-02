@@ -613,7 +613,7 @@ func (n *nic) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.Netwo
 	}
 
 	if linkAddr, ok := linkRes.resolver.ResolveStaticAddress(addr); ok {
-		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Success: true})
+		onResolve(LinkResolutionResult{LinkAddress: linkAddr, Err: nil})
 		return nil
 	}
 
