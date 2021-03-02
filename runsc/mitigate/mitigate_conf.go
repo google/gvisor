@@ -32,6 +32,6 @@ func (m mitigate) execute(set cpuSet, dryrun bool) error {
 	return nil
 }
 
-func (m mitigate) vulnerable(other *thread) bool {
+func (m mitigate) vulnerable(other thread) bool {
 	return other.isVulnerable()
 }

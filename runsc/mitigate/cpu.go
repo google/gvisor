@@ -45,7 +45,7 @@ const (
 type cpuSet map[cpuID]*threadGroup
 
 // newCPUSet creates a CPUSet from data read from /proc/cpuinfo.
-func newCPUSet(data []byte, vulnerable func(*thread) bool) (cpuSet, error) {
+func newCPUSet(data []byte, vulnerable func(thread) bool) (cpuSet, error) {
 	processors, err := getThreads(string(data))
 	if err != nil {
 		return nil, err
@@ -68,6 +68,26 @@ func newCPUSet(data []byte, vulnerable func(*thread) bool) (cpuSet, error) {
 	return set, nil
 }
 
+// newCPUSetFromPossible makes a cpuSet data read from
+// /sys/devices/system/cpu/possible. This is used in enable operations
+// where the caller simply wants to enable all CPUS.
+func newCPUSetFromPossible(data []byte) (cpuSet, error) {
+	threads, err := getThreadsFromPossible(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// We don't care if a CPU is vulnerable or not, we just
+	// want to return a list of all CPUs on the host.
+	set := cpuSet{
+		threads[0].id: &threadGroup{
+			threads:      threads,
+			isVulnerable: false,
+		},
+	}
+	return set, nil
+}
+
 // String implements the String method for CPUSet.
 func (c cpuSet) String() string {
 	ret := ""
@@ -79,8 +99,8 @@ func (c cpuSet) String() string {
 
 // getRemainingList returns the list of threads that will remain active
 // after mitigation.
-func (c cpuSet) getRemainingList() []*thread {
-	threads := make([]*thread, 0, len(c))
+func (c cpuSet) getRemainingList() []thread {
+	threads := make([]thread, 0, len(c))
 	for _, core := range c {
 		// If we're vulnerable, take only one thread from the pair.
 		if core.isVulnerable {
@@ -95,8 +115,8 @@ func (c cpuSet) getRemainingList() []*thread {
 
 // getShutdownList returns the list of threads that will be shutdown on
 // mitigation.
-func (c cpuSet) getShutdownList() []*thread {
-	threads := make([]*thread, 0)
+func (c cpuSet) getShutdownList() []thread {
+	threads := make([]thread, 0)
 	for _, core := range c {
 		// Only if we're vulnerable do shutdown anything. In this case,
 		// shutdown all but the first entry.
@@ -109,12 +129,12 @@ func (c cpuSet) getShutdownList() []*thread {
 
 // threadGroup represents Hyperthread pairs on the same physical/core ID.
 type threadGroup struct {
-	threads      []*thread
+	threads      []thread
 	isVulnerable bool
 }
 
 // String implements the String method for threadGroup.
-func (c *threadGroup) String() string {
+func (c threadGroup) String() string {
 	ret := fmt.Sprintf("ThreadGroup:\nIsVulnerable: %t\n", c.isVulnerable)
 	for _, processor := range c.threads {
 		ret += fmt.Sprintf("%s\n", processor)
@@ -123,13 +143,13 @@ func (c *threadGroup) String() string {
 }
 
 // getThreads returns threads structs from reading /proc/cpuinfo.
-func getThreads(data string) ([]*thread, error) {
+func getThreads(data string) ([]thread, error) {
 	// Each processor entry should start with the
 	// processor key. Find the beginings of each.
 	r := buildRegex(processorKey, `\d+`)
 	indices := r.FindAllStringIndex(data, -1)
 	if len(indices) < 1 {
-		return nil, fmt.Errorf("no cpus found for: %s", data)
+		return nil, fmt.Errorf("no cpus found for: %q", data)
 	}
 
 	// Add the ending index for last entry.
@@ -139,7 +159,7 @@ func getThreads(data string) ([]*thread, error) {
 	// indexes (e.g. data[index[i], index[i+1]]).
 	// There should be len(indicies) - 1 CPUs
 	// since the last index is the end of the string.
-	var cpus = make([]*thread, 0, len(indices)-1)
+	cpus := make([]thread, 0, len(indices))
 	// Find each string that represents a CPU. These begin "processor".
 	for i := 1; i < len(indices); i++ {
 		start := indices[i-1][0]
@@ -152,6 +172,45 @@ func getThreads(data string) ([]*thread, error) {
 		cpus = append(cpus, c)
 	}
 	return cpus, nil
+}
+
+// getThreadsFromPossible makes threads from data read from /sys/devices/system/cpu/possible.
+func getThreadsFromPossible(data []byte) ([]thread, error) {
+	possibleRegex := regexp.MustCompile(`(?m)^(\d+)(-(\d+))?$`)
+	matches := possibleRegex.FindStringSubmatch(string(data))
+	if len(matches) != 4 {
+		return nil, fmt.Errorf("mismatch regex from %s: %q", allPossibleCPUs, string(data))
+	}
+
+	// If matches[3] is empty, we only have one cpu entry.
+	if matches[3] == "" {
+		matches[3] = matches[1]
+	}
+
+	begin, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse begin: %v", err)
+	}
+	end, err := strconv.ParseInt(matches[3], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse end: %v", err)
+	}
+	if begin > end || begin < 0 || end < 0 {
+		return nil, fmt.Errorf("invalid cpu bounds from possible: begin: %d end: %d", begin, end)
+	}
+
+	ret := make([]thread, 0, end-begin)
+	for i := begin; i <= end; i++ {
+		ret = append(ret, thread{
+			processorNumber: i,
+			id: cpuID{
+				physicalID: 0, // we don't care about id for enable ops.
+				coreID:     0,
+			},
+		})
+	}
+
+	return ret, nil
 }
 
 // cpuID for each thread is defined by the physical and
@@ -172,43 +231,44 @@ type thread struct {
 }
 
 // newThread parses a CPU from a single cpu entry from /proc/cpuinfo.
-func newThread(data string) (*thread, error) {
+func newThread(data string) (thread, error) {
+	empty := thread{}
 	processor, err := parseProcessor(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	vendorID, err := parseVendorID(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	cpuFamily, err := parseCPUFamily(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	model, err := parseModel(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	physicalID, err := parsePhysicalID(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	coreID, err := parseCoreID(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
 	bugs, err := parseBugs(data)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 
-	return &thread{
+	return thread{
 		processorNumber: processor,
 		vendorID:        vendorID,
 		cpuFamily:       cpuFamily,
@@ -222,7 +282,7 @@ func newThread(data string) (*thread, error) {
 }
 
 // String implements the String method for thread.
-func (t *thread) String() string {
+func (t thread) String() string {
 	template := `CPU: %d
 CPU ID: %+v
 Vendor: %s
@@ -237,21 +297,27 @@ Bugs: %s
 	return fmt.Sprintf(template, t.processorNumber, t.id, t.vendorID, t.cpuFamily, t.model, strings.Join(bugs, ","))
 }
 
-// shutdown turns off the CPU by writing 0 to /sys/devices/cpu/cpu{N}/online.
-func (t *thread) shutdown() error {
+// enable turns on the CPU by writing 1 to /sys/devices/cpu/cpu{N}/online.
+func (t thread) enable() error {
+	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
+	return ioutil.WriteFile(cpuPath, []byte{'1'}, 0644)
+}
+
+// disable turns off the CPU by writing 0 to /sys/devices/cpu/cpu{N}/online.
+func (t thread) disable() error {
 	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
 	return ioutil.WriteFile(cpuPath, []byte{'0'}, 0644)
 }
 
 // isVulnerable checks if a CPU is vulnerable to mds.
-func (t *thread) isVulnerable() bool {
+func (t thread) isVulnerable() bool {
 	_, ok := t.bugs[mds]
 	return ok
 }
 
 // isActive checks if a CPU is active from /sys/devices/system/cpu/cpu{N}/online
 // If the file does not exist (ioutil returns in error), we assume the CPU is on.
-func (t *thread) isActive() bool {
+func (t thread) isActive() bool {
 	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
 	data, err := ioutil.ReadFile(cpuPath)
 	if err != nil {
@@ -262,7 +328,7 @@ func (t *thread) isActive() bool {
 
 // similarTo checks family/model/bugs fields for equality of two
 // processors.
-func (t *thread) similarTo(other *thread) bool {
+func (t thread) similarTo(other thread) bool {
 	if t.vendorID != other.vendorID {
 		return false
 	}
@@ -351,7 +417,7 @@ func parseRegex(data, key, match string) (string, error) {
 	r := buildRegex(key, match)
 	matches := r.FindStringSubmatch(data)
 	if len(matches) < 2 {
-		return "", fmt.Errorf("failed to match key %s: %s", key, data)
+		return "", fmt.Errorf("failed to match key %q: %q", key, data)
 	}
 	return matches[1], nil
 }
