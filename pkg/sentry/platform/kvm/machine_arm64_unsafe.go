@@ -253,6 +253,19 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	case ring0.Vector(bounce): // ring0.VirtualizationException.
 		return usermem.NoAccess, platform.ErrContextInterrupt
 	case ring0.El0SyncUndef:
+		var p uintptr = uintptr(switchOpts.Registers.Pc)
+		var insp uint32 = *(*uint32)(unsafe.Pointer(p))
+		var funcId uint32 = getFunc(insp)
+		if funcId == _AARCH64_INSN_FUNCS_MRS {
+			var sysReg uint32 = getSysReg(insp)
+			if sysReg == _AARCH64_INSN_SYSREG_MIDR ||
+				sysReg == _AARCH64_INSN_SYSREG_MPIDR ||
+				sysReg == _AARCH64_INSN_SYSREG_REVIDR {
+				// Got CPUID:MIDR/MPIDR/REVIDR.
+				return usermem.AccessType{}, platform.ErrContextSignalCPUID
+			}
+		}
+
 		return c.fault(int32(syscall.SIGILL), info)
 	case ring0.El0SyncDbg:
 		*info = arch.SignalInfo{

@@ -144,6 +144,27 @@ func isWriteFault(code uint64) bool {
 	return (code & _ESR_ELx_WNR) != 0
 }
 
+// getFunc returns function id by decoding instruction value.
+//
+//go:nosplit
+func getFunc(insn uint32) uint32 {
+	return (insn & _AARCH64_INSN_FUNCS_MASK)
+}
+
+// getSysReg returns sysreg id by decoding instruction value.
+//
+//go:nosplit
+func getSysReg(insn uint32) uint32 {
+	return ((insn >> _AARCH64_INSN_SYSREG_SHIFT) & _AARCH64_INSN_SYSREG_MASK) << _AARCH64_INSN_SYSREG_SHIFT
+}
+
+// getReg returns common register id by decoding instruction value.
+//
+//go:nosplit
+func getReg(insn uint32) uint32 {
+	return (insn & _AARCH64_INSN_COMMONREG_MASK)
+}
+
 // fault generates an appropriate fault return.
 //
 //go:nosplit
