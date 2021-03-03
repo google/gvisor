@@ -18,7 +18,6 @@ go_library(
     deps = [
         "//pkg/linewriter",
         "//pkg/sync",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
