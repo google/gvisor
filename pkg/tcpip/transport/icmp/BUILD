@@ -31,6 +31,8 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/ports",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/raw",

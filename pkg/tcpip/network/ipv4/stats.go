@@ -44,15 +44,38 @@ func (s *Stats) IPStats() *tcpip.IPStats {
 
 type sharedStats struct {
 	localStats Stats
-	ip         ip.MultiCounterIPStats
+	ip         multiCounterIPv4Stats
 	icmp       multiCounterICMPv4Stats
 	igmp       multiCounterIGMPStats
 }
 
+type multiCounterIPv4Stats struct {
+	ip.MultiCounterIPStats
+	options multiCounterIPv4OptionStats
+}
+
+// LINT.IfChange(multiCounterIPv4OptionStats)
+
+type multiCounterIPv4OptionStats struct {
+	optionTimestampReceived   tcpip.MultiCounterStat
+	optionRecordRouteReceived tcpip.MultiCounterStat
+	optionRouterAlertReceived tcpip.MultiCounterStat
+	optionUnknownReceived     tcpip.MultiCounterStat
+}
+
+func (m *multiCounterIPv4OptionStats) init(a, b *tcpip.IPv4OptionStats) {
+	m.optionTimestampReceived.Init(a.OptionTimestampReceived, b.OptionTimestampReceived)
+	m.optionRecordRouteReceived.Init(a.OptionRecordRouteReceived, b.OptionRecordRouteReceived)
+	m.optionRouterAlertReceived.Init(a.OptionRouterAlertReceived, b.OptionRouterAlertReceived)
+	m.optionUnknownReceived.Init(a.OptionUnknownReceived, b.OptionUnknownReceived)
+}
+
+// LINT.ThenChange(../../tcpip.go:IPv4OptionStats)
+
 // LINT.IfChange(multiCounterICMPv4PacketStats)
 
 type multiCounterICMPv4PacketStats struct {
-	echo           tcpip.MultiCounterStat
+	echoRequest    tcpip.MultiCounterStat
 	echoReply      tcpip.MultiCounterStat
 	dstUnreachable tcpip.MultiCounterStat
 	srcQuench      tcpip.MultiCounterStat
@@ -66,7 +89,7 @@ type multiCounterICMPv4PacketStats struct {
 }
 
 func (m *multiCounterICMPv4PacketStats) init(a, b *tcpip.ICMPv4PacketStats) {
-	m.echo.Init(a.Echo, b.Echo)
+	m.echoRequest.Init(a.EchoRequest, b.EchoRequest)
 	m.echoReply.Init(a.EchoReply, b.EchoReply)
 	m.dstUnreachable.Init(a.DstUnreachable, b.DstUnreachable)
 	m.srcQuench.Init(a.SrcQuench, b.SrcQuench)

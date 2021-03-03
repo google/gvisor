@@ -21,6 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -391,6 +393,12 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	return &tcpip.ErrUnknownProtocolOption{}
 }
 
+func increment(stat *tcpip.StatCounter) {
+	if stat != nil {
+		stat.Increment()
+	}
+}
+
 func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpip.PacketOwner) tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
 		return &tcpip.ErrInvalidEndpointState{}
@@ -422,7 +430,26 @@ func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpi
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt)
+
+	var endpointStatsEchoRequest, endpointStatsDropped *tcpip.StatCounter
+	if networkEndpoint, err := r.Stack().GetNetworkEndpoint(r.NICID(), header.IPv4ProtocolNumber); err != nil {
+		if endpointStats, ok := networkEndpoint.Stats().(*ipv4.Stats); ok {
+			endpointStatsEchoRequest = endpointStats.ICMP.PacketsSent.EchoRequest
+			endpointStatsDropped = endpointStats.ICMP.PacketsSent.Dropped
+		}
+	}
+
+	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
+		increment(endpointStatsDropped)
+		r.Stats().ICMP.V4.PacketsSent.Dropped.Increment()
+		return err
+	}
+
+	// The only allowed ICMP packet type that can be sent from this function is
+	// Echo, so the corresponding counter is incremented.
+	increment(endpointStatsEchoRequest)
+	r.Stats().ICMP.V4.PacketsSent.EchoRequest.Increment()
+	return nil
 }
 
 func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) tcpip.Error {
@@ -452,7 +479,25 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) tcpip.Erro
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt)
+
+	var endpointStatsEchoRequest, endpointStatsDropped *tcpip.StatCounter
+	if networkEndpoint, err := r.Stack().GetNetworkEndpoint(r.NICID(), header.IPv6ProtocolNumber); err != nil {
+		if endpointStats, ok := networkEndpoint.Stats().(*ipv6.Stats); ok {
+			endpointStatsEchoRequest = endpointStats.ICMP.PacketsSent.EchoRequest
+			endpointStatsDropped = endpointStats.ICMP.PacketsSent.Dropped
+		}
+	}
+
+	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
+		increment(endpointStatsDropped)
+		r.Stats().ICMP.V6.PacketsSent.Dropped.Increment()
+	}
+
+	// Only Echo requests can be send by this function, so the corresponding
+	// stat counter is incremented.
+	increment(endpointStatsEchoRequest)
+	r.Stats().ICMP.V6.PacketsSent.EchoRequest.Increment()
+	return nil
 }
 
 // checkV4MappedLocked determines the effective network protocol and converts

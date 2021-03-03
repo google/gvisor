@@ -41,9 +41,26 @@ func (s *Stats) IPStats() *tcpip.IPStats {
 
 type sharedStats struct {
 	localStats Stats
-	ip         ip.MultiCounterIPStats
+	ip         multiCounterIPv6Stats
 	icmp       multiCounterICMPv6Stats
 }
+
+type multiCounterIPv6Stats struct {
+	ip.MultiCounterIPStats
+	options multiCounterIPv6OptionStats
+}
+
+// LINT.IfChange(multiCounterIPv6OptionStats)
+
+type multiCounterIPv6OptionStats struct {
+	optionRouterAlertReceived tcpip.MultiCounterStat
+}
+
+func (m *multiCounterIPv6OptionStats) init(a, b *tcpip.IPv6OptionStats) {
+	m.optionRouterAlertReceived.Init(a.OptionRouterAlertReceived, b.OptionRouterAlertReceived)
+}
+
+// LINT.ThenChange(../../tcpip.go:IPv6OptionStats)
 
 // LINT.IfChange(multiCounterICMPv6PacketStats)
 

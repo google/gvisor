@@ -67,21 +67,6 @@ type MultiCounterIPStats struct {
 	// IPTablesOutputDropped is the total number of IP packets dropped in the
 	// Output chain.
 	IPTablesOutputDropped tcpip.MultiCounterStat
-
-	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
-
-	// of IPStats.
-	// OptionTimestampReceived is the number of Timestamp options seen.
-	OptionTimestampReceived tcpip.MultiCounterStat
-
-	// OptionRecordRouteReceived is the number of Record Route options seen.
-	OptionRecordRouteReceived tcpip.MultiCounterStat
-
-	// OptionRouterAlertReceived is the number of Router Alert options seen.
-	OptionRouterAlertReceived tcpip.MultiCounterStat
-
-	// OptionUnknownReceived is the number of unknown IP options seen.
-	OptionUnknownReceived tcpip.MultiCounterStat
 }
 
 // Init sets internal counters to track a and b counters.
@@ -98,10 +83,6 @@ func (m *MultiCounterIPStats) Init(a, b *tcpip.IPStats) {
 	m.IPTablesPreroutingDropped.Init(a.IPTablesPreroutingDropped, b.IPTablesPreroutingDropped)
 	m.IPTablesInputDropped.Init(a.IPTablesInputDropped, b.IPTablesInputDropped)
 	m.IPTablesOutputDropped.Init(a.IPTablesOutputDropped, b.IPTablesOutputDropped)
-	m.OptionTimestampReceived.Init(a.OptionTimestampReceived, b.OptionTimestampReceived)
-	m.OptionRecordRouteReceived.Init(a.OptionRecordRouteReceived, b.OptionRecordRouteReceived)
-	m.OptionRouterAlertReceived.Init(a.OptionRouterAlertReceived, b.OptionRouterAlertReceived)
-	m.OptionUnknownReceived.Init(a.OptionUnknownReceived, b.OptionUnknownReceived)
 }
 
-// LINT.ThenChange(:MultiCounterIPStats, ../../../tcpip.go:IPStats)
+// LINT.ThenChange(../../../tcpip.go:IPPacketStats)

@@ -238,7 +238,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	// TODO(b/112892170): Meaningfully handle all ICMP types.
 	switch h.Type() {
 	case header.ICMPv4Echo:
-		received.echo.Increment()
+		received.echoRequest.Increment()
 
 		sent := e.stats.icmp.packetsSent
 		if !e.protocol.stack.AllowICMPMessage() {
