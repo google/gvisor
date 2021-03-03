@@ -15,27 +15,27 @@
 package host
 
 import (
-	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestWait(t *testing.T) {
 	var fds [2]int
-	err := syscall.Pipe(fds[:])
+	err := unix.Pipe(fds[:])
 	if err != nil {
 		t.Fatalf("Unable to create pipe: %v", err)
 	}
 
-	defer syscall.Close(fds[1])
+	defer unix.Close(fds[1])
 
 	ctx := contexttest.Context(t)
 	file, err := NewFile(ctx, fds[0])
 	if err != nil {
-		syscall.Close(fds[0])
+		unix.Close(fds[0])
 		t.Fatalf("NewFile failed: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestWait(t *testing.T) {
 	}
 
 	// Write to the pipe, so it should be writable now.
-	syscall.Write(fds[1], []byte{1})
+	unix.Write(fds[1], []byte{1})
 
 	// Check that we get a notification. We need to yield the current thread
 	// so that the fdnotifier can deliver notifications, so we use a

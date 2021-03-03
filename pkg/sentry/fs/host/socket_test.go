@@ -16,9 +16,9 @@ package host
 
 import (
 	"reflect"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -40,7 +40,7 @@ var (
 )
 
 func getFl(fd int) (uint32, error) {
-	fl, _, err := syscall.RawSyscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFL, 0)
+	fl, _, err := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFL, 0)
 	if err == 0 {
 		return uint32(fl), nil
 	}
@@ -49,7 +49,7 @@ func getFl(fd int) (uint32, error) {
 
 func TestSocketIsBlocking(t *testing.T) {
 	// Using socketpair here because it's already connected.
-	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
@@ -58,13 +58,13 @@ func TestSocketIsBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[0], err)
 	}
-	if fl&syscall.O_NONBLOCK == syscall.O_NONBLOCK {
+	if fl&unix.O_NONBLOCK == unix.O_NONBLOCK {
 		t.Fatalf("Expected socket %v to be blocking", pair[0])
 	}
 	if fl, err = getFl(pair[1]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[1], err)
 	}
-	if fl&syscall.O_NONBLOCK == syscall.O_NONBLOCK {
+	if fl&unix.O_NONBLOCK == unix.O_NONBLOCK {
 		t.Fatalf("Expected socket %v to be blocking", pair[1])
 	}
 	ctx := contexttest.Context(t)
@@ -77,20 +77,20 @@ func TestSocketIsBlocking(t *testing.T) {
 	if fl, err = getFl(pair[0]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[0], err)
 	}
-	if fl&syscall.O_NONBLOCK != syscall.O_NONBLOCK {
+	if fl&unix.O_NONBLOCK != unix.O_NONBLOCK {
 		t.Errorf("Expected socket %v to have become non-blocking", pair[0])
 	}
 	if fl, err = getFl(pair[1]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[1], err)
 	}
-	if fl&syscall.O_NONBLOCK == syscall.O_NONBLOCK {
+	if fl&unix.O_NONBLOCK == unix.O_NONBLOCK {
 		t.Errorf("Did not expect socket %v to become non-blocking", pair[1])
 	}
 }
 
 func TestSocketWritev(t *testing.T) {
 	// Using socketpair here because it's already connected.
-	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestSocketWritev(t *testing.T) {
 
 func TestSocketWritevLen0(t *testing.T) {
 	// Using socketpair here because it's already connected.
-	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestSocketWritevLen0(t *testing.T) {
 
 func TestSocketSendMsgLen0(t *testing.T) {
 	// Using socketpair here because it's already connected.
-	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatalf("host socket creation failed: %v", err)
 	}
@@ -158,9 +158,9 @@ func TestSocketSendMsgLen0(t *testing.T) {
 }
 
 func TestListen(t *testing.T) {
-	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
-		t.Fatalf("syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0) => %v", err)
+		t.Fatalf("unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0) => %v", err)
 	}
 	ctx := contexttest.Context(t)
 	sfile1, err := newSocket(ctx, pair[0], false)
@@ -186,9 +186,9 @@ func TestListen(t *testing.T) {
 	}
 
 	// Create a Unix socket, do not bind it.
-	sock, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	sock, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
-		t.Fatalf("syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0) => %v", err)
+		t.Fatalf("unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0) => %v", err)
 	}
 	sfile3, err := newSocket(ctx, sock, false)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestQueuedSize(t *testing.T) {
 }
 
 func TestRelease(t *testing.T) {
-	f, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
+	f, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}

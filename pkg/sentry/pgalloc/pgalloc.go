@@ -26,9 +26,9 @@ import (
 	"math"
 	"os"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -341,12 +341,12 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	// Work around IMA by immediately creating a temporary PROT_EXEC mapping,
 	// while the backing file is still small. IMA will ignore any future
 	// mappings.
-	m, _, errno := syscall.Syscall6(
-		syscall.SYS_MMAP,
+	m, _, errno := unix.Syscall6(
+		unix.SYS_MMAP,
 		0,
 		usermem.PageSize,
-		syscall.PROT_EXEC,
-		syscall.MAP_SHARED,
+		unix.PROT_EXEC,
+		unix.MAP_SHARED,
 		file.Fd(),
 		0)
 	if errno != 0 {
@@ -354,8 +354,8 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		// don't return it.
 		log.Warningf("Failed to pre-map MemoryFile PROT_EXEC: %v", errno)
 	} else {
-		if _, _, errno := syscall.Syscall(
-			syscall.SYS_MUNMAP,
+		if _, _, errno := unix.Syscall(
+			unix.SYS_MUNMAP,
 			m,
 			usermem.PageSize,
 			0); errno != 0 {
@@ -584,7 +584,7 @@ func (f *MemoryFile) decommitFile(fr memmap.FileRange) error {
 	// "After a successful call, subsequent reads from this range will
 	// return zeroes. The FALLOC_FL_PUNCH_HOLE flag must be ORed with
 	// FALLOC_FL_KEEP_SIZE in mode ..." - fallocate(2)
-	return syscall.Fallocate(
+	return unix.Fallocate(
 		int(f.file.Fd()),
 		_FALLOC_FL_PUNCH_HOLE|_FALLOC_FL_KEEP_SIZE,
 		int64(fr.Start),
@@ -730,12 +730,12 @@ func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 	if m := mappings[chunk]; m != 0 {
 		return mappings, m, nil
 	}
-	m, _, errno := syscall.Syscall6(
-		syscall.SYS_MMAP,
+	m, _, errno := unix.Syscall6(
+		unix.SYS_MMAP,
 		0,
 		chunkSize,
-		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_SHARED,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_SHARED,
 		f.file.Fd(),
 		uintptr(chunk<<chunkShift))
 	if errno != 0 {
@@ -1012,8 +1012,8 @@ func (f *MemoryFile) TotalUsage() (uint64, error) {
 	// Stat the underlying file to discover the underlying usage. stat(2)
 	// always reports the allocated block count in units of 512 bytes. This
 	// includes pages in the page cache and swapped pages.
-	var stat syscall.Stat_t
-	if err := syscall.Fstat(int(f.file.Fd()), &stat); err != nil {
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(f.file.Fd()), &stat); err != nil {
 		return 0, err
 	}
 	return uint64(stat.Blocks * 512), nil
@@ -1093,7 +1093,7 @@ func (f *MemoryFile) runReclaim() {
 	mappings := f.mappings.Load().([]uintptr)
 	for i, m := range mappings {
 		if m != 0 {
-			_, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m, chunkSize, 0)
+			_, _, errno := unix.Syscall(unix.SYS_MUNMAP, m, chunkSize, 0)
 			if errno != 0 {
 				log.Warningf("Failed to unmap mapping %#x for MemoryFile chunk %d: %v", m, i, errno)
 			}

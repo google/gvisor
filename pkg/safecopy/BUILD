@@ -17,7 +17,10 @@ go_library(
         "sighandler_arm64.s",
     ],
     visibility = ["//:sandbox"],
-    deps = ["//pkg/syserror"],
+    deps = [
+        "//pkg/syserror",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
 
 go_test(
@@ -26,4 +29,5 @@ go_test(
         "safecopy_test.go",
     ],
     library = ":safecopy",
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

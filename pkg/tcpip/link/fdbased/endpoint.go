@@ -41,7 +41,6 @@ package fdbased
 
 import (
 	"fmt"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
@@ -237,8 +236,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	// Create per channel dispatchers.
 	for i := 0; i < len(e.fds); i++ {
 		fd := e.fds[i]
-		if err := syscall.SetNonblock(fd, true); err != nil {
-			return nil, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", fd, err)
+		if err := unix.SetNonblock(fd, true); err != nil {
+			return nil, fmt.Errorf("unix.SetNonblock(%v) failed: %v", fd, err)
 		}
 
 		isSocket, err := isSocketFD(fd)
@@ -291,7 +290,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 			// hard to test fragmentation reassembly code in Netstack.
 			const fanoutType = unix.PACKET_FANOUT_HASH
 			fanoutArg := fanoutID | fanoutType<<16
-			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
+			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
 			}
 		}
@@ -316,11 +315,11 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 }
 
 func isSocketFD(fd int) (bool, error) {
-	var stat syscall.Stat_t
-	if err := syscall.Fstat(fd, &stat); err != nil {
-		return false, fmt.Errorf("syscall.Fstat(%v,...) failed: %v", fd, err)
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return false, fmt.Errorf("unix.Fstat(%v,...) failed: %v", fd, err)
 	}
-	return (stat.Mode & syscall.S_IFSOCK) == syscall.S_IFSOCK, nil
+	return (stat.Mode & unix.S_IFSOCK) == unix.S_IFSOCK, nil
 }
 
 // Attach launches the goroutine that reads packets from the file descriptor and
@@ -614,7 +613,7 @@ func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
 func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) *InjectableEndpoint {
-	syscall.SetNonblock(fd, true)
+	unix.SetNonblock(fd, true)
 
 	return &InjectableEndpoint{endpoint: endpoint{
 		fds:  []int{fd},

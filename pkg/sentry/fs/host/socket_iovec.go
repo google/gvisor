@@ -15,8 +15,7 @@
 package host
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/iovec"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -54,7 +53,7 @@ func copyFromMulti(dst []byte, src [][]byte) {
 //
 // If intermediate != nil, iovecs references intermediate rather than bufs and
 // the caller must copy to/from bufs as necessary.
-func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovecs []syscall.Iovec, intermediate []byte, err error) {
+func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovecs []unix.Iovec, intermediate []byte, err error) {
 	var iovsRequired int
 	for _, b := range bufs {
 		length += int64(len(b))
@@ -78,14 +77,14 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 		// Use a single intermediate buffer instead.
 		b := make([]byte, stopLen)
 
-		return stopLen, []syscall.Iovec{{
+		return stopLen, []unix.Iovec{{
 			Base: &b[0],
 			Len:  uint64(stopLen),
 		}}, b, err
 	}
 
 	var total int64
-	iovecs = make([]syscall.Iovec, 0, iovsRequired)
+	iovecs = make([]unix.Iovec, 0, iovsRequired)
 	for i := range bufs {
 		l := len(bufs[i])
 		if l == 0 {
@@ -97,7 +96,7 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 			stop = stopLen - total
 		}
 
-		iovecs = append(iovecs, syscall.Iovec{
+		iovecs = append(iovecs, unix.Iovec{
 			Base: &bufs[i][0],
 			Len:  uint64(stop),
 		})

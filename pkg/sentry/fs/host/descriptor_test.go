@@ -17,9 +17,9 @@ package host
 import (
 	"io/ioutil"
 	"path/filepath"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -40,7 +40,7 @@ func TestDescriptorRelease(t *testing.T) {
 				t.Fatal("ioutil.TempDir() failed:", err)
 			}
 
-			fd, err := syscall.Open(filepath.Join(dir, "file"), syscall.O_RDWR|syscall.O_CREAT, 0666)
+			fd, err := unix.Open(filepath.Join(dir, "file"), unix.O_RDWR|unix.O_CREAT, 0666)
 			if err != nil {
 				t.Fatal("failed to open temp file:", err)
 			}
@@ -49,7 +49,7 @@ func TestDescriptorRelease(t *testing.T) {
 			queue := &waiter.Queue{}
 			d, err := newDescriptor(fd, tc.saveable, tc.wouldBlock, queue)
 			if err != nil {
-				syscall.Close(fd)
+				unix.Close(fd)
 				t.Fatalf("newDescriptor(%d, %t, %t, queue) failed, err: %v", fd, tc.saveable, tc.wouldBlock, err)
 			}
 			if tc.saveable {

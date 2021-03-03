@@ -22,10 +22,10 @@ import (
 	"math/rand"
 	"os"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -72,9 +72,9 @@ func initQueue(t *testing.T, q *queueBuffers, c *QueueConfig) {
 }
 
 func (q *queueBuffers) cleanup() {
-	syscall.Munmap(q.tx.Bytes())
-	syscall.Munmap(q.rx.Bytes())
-	syscall.Munmap(q.data)
+	unix.Munmap(q.tx.Bytes())
+	unix.Munmap(q.rx.Bytes())
+	unix.Munmap(q.data)
 }
 
 type packetInfo struct {
@@ -200,7 +200,7 @@ func createFile(t *testing.T, size int64, initQueue bool) int {
 		t.Fatalf("TempFile failed: %v", err)
 	}
 	defer f.Close()
-	syscall.Unlink(f.Name())
+	unix.Unlink(f.Name())
 
 	if initQueue {
 		// Write the "slot-free" flag in the initial queue.
@@ -210,13 +210,13 @@ func createFile(t *testing.T, size int64, initQueue bool) int {
 		}
 	}
 
-	fd, err := syscall.Dup(int(f.Fd()))
+	fd, err := unix.Dup(int(f.Fd()))
 	if err != nil {
 		t.Fatalf("Dup failed: %v", err)
 	}
 
-	if err := syscall.Ftruncate(fd, size); err != nil {
-		syscall.Close(fd)
+	if err := unix.Ftruncate(fd, size); err != nil {
+		unix.Close(fd)
 		t.Fatalf("Ftruncate failed: %v", err)
 	}
 
@@ -224,11 +224,11 @@ func createFile(t *testing.T, size int64, initQueue bool) int {
 }
 
 func closeFDs(c *QueueConfig) {
-	syscall.Close(c.DataFD)
-	syscall.Close(c.EventFD)
-	syscall.Close(c.TxPipeFD)
-	syscall.Close(c.RxPipeFD)
-	syscall.Close(c.SharedDataFD)
+	unix.Close(c.DataFD)
+	unix.Close(c.EventFD)
+	unix.Close(c.TxPipeFD)
+	unix.Close(c.RxPipeFD)
+	unix.Close(c.SharedDataFD)
 }
 
 type queueSizes struct {
@@ -239,7 +239,7 @@ type queueSizes struct {
 }
 
 func createQueueFDs(t *testing.T, s queueSizes) QueueConfig {
-	fd, _, err := syscall.RawSyscall(syscall.SYS_EVENTFD2, 0, 0, 0)
+	fd, _, err := unix.RawSyscall(unix.SYS_EVENTFD2, 0, 0, 0)
 	if err != 0 {
 		t.Fatalf("eventfd failed: %v", error(err))
 	}
@@ -671,7 +671,7 @@ func TestSimpleReceive(t *testing.T) {
 		// Push completion.
 		c.pushRxCompletion(uint32(len(contents)), bufs)
 		c.rxq.rx.Flush()
-		syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 		// Wait for packet to be received, then check it.
 		c.waitForPackets(1, time.After(5*time.Second), "Timeout waiting for packet")
@@ -717,7 +717,7 @@ func TestRxBuffersReposted(t *testing.T) {
 		// Complete the buffer.
 		c.pushRxCompletion(buffers[i].Size, buffers[i:][:1])
 		c.rxq.rx.Flush()
-		syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 		// Wait for it to be reposted.
 		bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
@@ -733,7 +733,7 @@ func TestRxBuffersReposted(t *testing.T) {
 		// Complete with two buffers.
 		c.pushRxCompletion(2*bufferSize, buffers[2*i:][:2])
 		c.rxq.rx.Flush()
-		syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 		// Wait for them to be reposted.
 		for j := 0; j < 2; j++ {
@@ -758,7 +758,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	first := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for first buffer to be posted"))
 	c.pushRxCompletion(first.Size, []queue.RxBuffer{first})
 	c.rxq.rx.Flush()
-	syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 	// Check that packet is received.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for completed packet")
@@ -767,7 +767,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	second := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for second buffer to be posted"))
 	c.pushRxCompletion(second.Size, []queue.RxBuffer{second})
 	c.rxq.rx.Flush()
-	syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 	// Check that no packet is received yet, as the worker is blocked trying
 	// to repost.
@@ -780,7 +780,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	// Flush tx queue, which will allow the first buffer to be reposted,
 	// and the second completion to be pulled.
 	c.rxq.tx.Flush()
-	syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 	// Check that second packet completes.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for second completed packet")
@@ -802,7 +802,7 @@ func TestCloseWhileWaitingToPost(t *testing.T) {
 	bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for initial buffer to be posted"))
 	c.pushRxCompletion(bi.Size, []queue.RxBuffer{bi})
 	c.rxq.rx.Flush()
-	syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 	// Wait for packet to be indicated.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for completed packet")

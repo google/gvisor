@@ -19,7 +19,10 @@ go_test(
         "procid_test.go",
     ],
     library = ":procid",
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
 
 go_test(
@@ -30,5 +33,8 @@ go_test(
         "procid_test.go",
     ],
     library = ":procid",
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

@@ -33,6 +33,7 @@ go_library(
         "//pkg/sync",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

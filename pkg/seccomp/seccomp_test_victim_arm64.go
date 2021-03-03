@@ -20,10 +20,10 @@
 package main
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
-	"syscall"
 )
 
 func arch_syscalls(syscalls seccomp.SyscallRules) {
-	syscalls[syscall.SYS_FSTATAT] = []seccomp.Rule{}
+	syscalls[unix.SYS_FSTATAT] = []seccomp.Rule{}
 }

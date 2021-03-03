@@ -17,8 +17,8 @@ package route
 
 import (
 	"bytes"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -436,7 +436,7 @@ func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 				Flags:     ifa.Flags,
 				Addr:      value,
 			})
-			if err == syscall.EEXIST {
+			if err == unix.EEXIST {
 				flags := msg.Header().Flags
 				if flags&linux.NLM_F_EXCL != 0 {
 					return syserr.ErrExists

@@ -18,10 +18,10 @@ package p9test
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -118,7 +118,7 @@ func (m *Mock) Walk(names []string) ([]p9.QID, p9.File, error) {
 		return []p9.QID{nm.QID}, nm, nil
 	} else if len(names) != 1 {
 		m.harness.t.Fail() // Should not happen.
-		return nil, nil, syscall.EINVAL
+		return nil, nil, unix.EINVAL
 	}
 
 	if m.Attr.Mode.IsDir() {
@@ -130,7 +130,7 @@ func (m *Mock) Walk(names []string) ([]p9.QID, p9.File, error) {
 			return []p9.QID{nm.QID}, nm, nil
 		}
 		// No child found.
-		return nil, nil, syscall.ENOENT
+		return nil, nil, unix.ENOENT
 	}
 
 	// Call the underlying mock.

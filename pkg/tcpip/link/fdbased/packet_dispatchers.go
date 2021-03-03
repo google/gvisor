@@ -17,8 +17,7 @@
 package fdbased
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -38,7 +37,7 @@ type iovecBuffer struct {
 	// (skipsVnetHdr) then the first iovec points to a buffer for the vnet header
 	// which is stripped before the views are passed up the stack for further
 	// processing.
-	iovecs []syscall.Iovec
+	iovecs []unix.Iovec
 
 	// sizes is an array of buffer sizes for the underlying views. sizes is
 	// immutable.
@@ -58,18 +57,18 @@ func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 	if b.skipsVnetHdr {
 		niov++
 	}
-	b.iovecs = make([]syscall.Iovec, niov)
+	b.iovecs = make([]unix.Iovec, niov)
 	return b
 }
 
-func (b *iovecBuffer) nextIovecs() []syscall.Iovec {
+func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	vnetHdrOff := 0
 	if b.skipsVnetHdr {
 		var vnetHdr [virtioNetHdrSize]byte
 		// The kernel adds virtioNetHdr before each packet, but
 		// we don't use it, so so we allocate a buffer for it,
 		// add it in iovecs but don't add it in a view.
-		b.iovecs[0] = syscall.Iovec{
+		b.iovecs[0] = unix.Iovec{
 			Base: &vnetHdr[0],
 			Len:  uint64(virtioNetHdrSize),
 		}
@@ -81,7 +80,7 @@ func (b *iovecBuffer) nextIovecs() []syscall.Iovec {
 		}
 		v := buffer.NewView(b.sizes[i])
 		b.views[i] = v
-		b.iovecs[i+vnetHdrOff] = syscall.Iovec{
+		b.iovecs[i+vnetHdrOff] = unix.Iovec{
 			Base: &v[0],
 			Len:  uint64(len(v)),
 		}
@@ -200,7 +199,7 @@ type recvMMsgDispatcher struct {
 	// msgHdrs is an array of MMsgHdr objects where each MMsghdr is used to
 	// reference an array of iovecs in the iovecs field defined above.  This
 	// array is passed as the parameter to recvmmsg call to retrieve
-	// potentially more than 1 packet per syscall.
+	// potentially more than 1 packet per unix.
 	msgHdrs []rawfile.MMsgHdr
 }
 

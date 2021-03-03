@@ -17,9 +17,9 @@ package procid
 import (
 	"os"
 	"runtime"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -36,7 +36,7 @@ func checkProcid(t *testing.T, start *sync.WaitGroup, done *sync.WaitGroup) {
 	start.Wait()
 
 	procID := Current()
-	tid := syscall.Gettid()
+	tid := unix.Gettid()
 
 	if procID != uint64(tid) {
 		t.Logf("Bad procid: expected %v, got %v", tid, procID)

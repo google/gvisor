@@ -24,6 +24,7 @@ go_library(
         "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -44,5 +45,6 @@ go_test(
         "//pkg/syserror",
         "//pkg/usermem",
         "@com_github_google_uuid//:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

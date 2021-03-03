@@ -52,8 +52,8 @@ package lock
 import (
 	"fmt"
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -456,7 +456,7 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 	// fcntl(2): "l_start can be a negative number provided the offset
 	// does not lie before the start of the file"
 	if offset < 0 {
-		return LockRange{}, syscall.EINVAL
+		return LockRange{}, unix.EINVAL
 	}
 
 	// fcntl(2): Specifying 0 for l_len has the  special meaning: lock all
@@ -478,10 +478,10 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 		// Add to offset using a negative length (subtract).
 		offset += length
 		if offset < 0 {
-			return LockRange{}, syscall.EINVAL
+			return LockRange{}, unix.EINVAL
 		}
 		if signedEnd < offset {
-			return LockRange{}, syscall.EOVERFLOW
+			return LockRange{}, unix.EOVERFLOW
 		}
 		// At this point signedEnd cannot be negative,
 		// since we asserted that offset is not negative

@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"io"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
@@ -31,7 +31,7 @@ func (i *inode) beforeSave() {
 	if !i.savable {
 		panic("host.inode is not savable")
 	}
-	if i.ftype == syscall.S_IFIFO {
+	if i.ftype == unix.S_IFIFO {
 		// If this pipe FD is readable, drain it so that bytes in the pipe can
 		// be read after restore. (This is a legacy VFS1 feature.) We don't
 		// know if the pipe FD is readable, so just try reading and tolerate
@@ -45,7 +45,7 @@ func (i *inode) beforeSave() {
 				i.buf = append(i.buf, buf[:n]...)
 			}
 			if err != nil {
-				if err == io.EOF || err == syscall.EAGAIN || err == syscall.EBADF {
+				if err == io.EOF || err == unix.EAGAIN || err == unix.EBADF {
 					break
 				}
 				panic(fmt.Errorf("host.inode.beforeSave: buffering from pipe failed: %v", err))
@@ -60,7 +60,7 @@ func (i *inode) beforeSave() {
 // afterLoad is invoked by stateify.
 func (i *inode) afterLoad() {
 	if i.mayBlock {
-		if err := syscall.SetNonblock(i.hostFD, true); err != nil {
+		if err := unix.SetNonblock(i.hostFD, true); err != nil {
 			panic(fmt.Sprintf("host.inode.afterLoad: failed to set host FD %d non-blocking: %v", i.hostFD, err))
 		}
 		if err := fdnotifier.AddFD(int32(i.hostFD), &i.queue); err != nil {

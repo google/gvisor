@@ -46,6 +46,7 @@ go_library(
         "//pkg/log",
         "//pkg/sync",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -57,4 +58,5 @@ go_test(
         "lock_test.go",
     ],
     library = ":lock",
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

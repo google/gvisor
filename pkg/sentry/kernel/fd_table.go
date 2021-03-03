@@ -19,8 +19,8 @@ import (
 	"math"
 	"strings"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -253,7 +253,7 @@ func (f *FDTable) String() string {
 func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags FDFlags) (fds []int32, err error) {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return nil, syscall.EINVAL
+		return nil, unix.EINVAL
 	}
 
 	// Default limit.
@@ -266,7 +266,7 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 			end = int32(lim.Cur)
 		}
 		if fd >= end {
-			return nil, syscall.EMFILE
+			return nil, unix.EMFILE
 		}
 	}
 
@@ -300,7 +300,7 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 		for _, file := range files[:len(fds)] {
 			file.DecRef(ctx)
 		}
-		return nil, syscall.EMFILE
+		return nil, unix.EMFILE
 	}
 
 	if fd == f.next {
@@ -318,7 +318,7 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDescription, flags FDFlags) (fds []int32, err error) {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return nil, syscall.EINVAL
+		return nil, unix.EINVAL
 	}
 
 	// Default limit.
@@ -331,7 +331,7 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 			end = int32(lim.Cur)
 		}
 		if fd >= end {
-			return nil, syscall.EMFILE
+			return nil, unix.EMFILE
 		}
 	}
 
@@ -365,7 +365,7 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 		for _, file := range files[:len(fds)] {
 			file.DecRef(ctx)
 		}
-		return nil, syscall.EMFILE
+		return nil, unix.EMFILE
 	}
 
 	if fd == f.next {
@@ -382,7 +382,7 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
 	if minfd < 0 {
 		// Don't accept negative FDs.
-		return -1, syscall.EINVAL
+		return -1, unix.EINVAL
 	}
 
 	// Default limit.
@@ -395,7 +395,7 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 			end = int32(lim.Cur)
 		}
 		if minfd >= end {
-			return -1, syscall.EMFILE
+			return -1, unix.EMFILE
 		}
 	}
 
@@ -418,7 +418,7 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 		}
 		fd++
 	}
-	return -1, syscall.EMFILE
+	return -1, unix.EMFILE
 }
 
 // NewFDAt sets the file reference for the given FD. If there is an active
@@ -452,13 +452,13 @@ func (f *FDTable) NewFDAtVFS2(ctx context.Context, fd int32, file *vfs.FileDescr
 func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) (*fs.File, *vfs.FileDescription, error) {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return nil, nil, syscall.EBADF
+		return nil, nil, unix.EBADF
 	}
 
 	// Check the limit for the provided file.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		if lim := limitSet.Get(limits.NumberOfFiles); lim.Cur != limits.Infinity && uint64(fd) >= lim.Cur {
-			return nil, nil, syscall.EMFILE
+			return nil, nil, unix.EMFILE
 		}
 	}
 
@@ -476,7 +476,7 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return syscall.EBADF
+		return unix.EBADF
 	}
 
 	f.mu.Lock()
@@ -485,7 +485,7 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	file, _, _ := f.get(fd)
 	if file == nil {
 		// No file found.
-		return syscall.EBADF
+		return unix.EBADF
 	}
 
 	// Update the flags.
@@ -499,7 +499,7 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 func (f *FDTable) SetFlagsVFS2(ctx context.Context, fd int32, flags FDFlags) error {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return syscall.EBADF
+		return unix.EBADF
 	}
 
 	f.mu.Lock()
@@ -508,7 +508,7 @@ func (f *FDTable) SetFlagsVFS2(ctx context.Context, fd int32, flags FDFlags) err
 	file, _, _ := f.getVFS2(fd)
 	if file == nil {
 		// No file found.
-		return syscall.EBADF
+		return unix.EBADF
 	}
 
 	// Update the flags.

@@ -31,7 +31,6 @@ import (
 	"io/ioutil"
 	"math"
 	"reflect"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -835,7 +834,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 		return &optP, nil
 
 	case linux.SO_PEERCRED:
-		if family != linux.AF_UNIX || outLen < syscall.SizeofUcred {
+		if family != linux.AF_UNIX || outLen < unix.SizeofUcred {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -3199,15 +3198,15 @@ func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 }
 
 func isTCPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_STREAM && (skProto == 0 || skProto == syscall.IPPROTO_TCP)
+	return skType == linux.SOCK_STREAM && (skProto == 0 || skProto == unix.IPPROTO_TCP)
 }
 
 func isUDPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_DGRAM && (skProto == 0 || skProto == syscall.IPPROTO_UDP)
+	return skType == linux.SOCK_DGRAM && (skProto == 0 || skProto == unix.IPPROTO_UDP)
 }
 
 func isICMPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_DGRAM && (skProto == syscall.IPPROTO_ICMP || skProto == syscall.IPPROTO_ICMPV6)
+	return skType == linux.SOCK_DGRAM && (skProto == unix.IPPROTO_ICMP || skProto == unix.IPPROTO_ICMPV6)
 }
 
 // State implements socket.Socket.State. State translates the internal state

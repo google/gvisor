@@ -19,14 +19,13 @@ package fdbased
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
 // tPacketHdrlen is the TPACKET_HDRLEN variable defined in <linux/if_packet.h>.
-var tPacketHdrlen = tPacketAlign(unsafe.Sizeof(tPacketHdr{}) + unsafe.Sizeof(syscall.RawSockaddrLinklayer{}))
+var tPacketHdrlen = tPacketAlign(unsafe.Sizeof(tPacketHdr{}) + unsafe.Sizeof(unix.RawSockaddrLinklayer{}))
 
 // tpStatus returns the frame status field.
 // The status is concurrently updated by the kernel as a result we must
@@ -62,21 +61,21 @@ func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		tpFrameNR:   uint32(tpFrameNR),
 	}
 	// Setup PACKET_RX_RING.
-	if err := setsockopt(d.fd, syscall.SOL_PACKET, syscall.PACKET_RX_RING, unsafe.Pointer(&tReq), unsafe.Sizeof(tReq)); err != nil {
+	if err := setsockopt(d.fd, unix.SOL_PACKET, unix.PACKET_RX_RING, unsafe.Pointer(&tReq), unsafe.Sizeof(tReq)); err != nil {
 		return nil, fmt.Errorf("failed to enable PACKET_RX_RING: %v", err)
 	}
 	// Let's mmap the blocks.
 	sz := tpBlockSize * tpBlockNR
-	buf, err := syscall.Mmap(d.fd, 0, sz, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	buf, err := unix.Mmap(d.fd, 0, sz, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
-		return nil, fmt.Errorf("syscall.Mmap(...,0, %v, ...) failed = %v", sz, err)
+		return nil, fmt.Errorf("unix.Mmap(...,0, %v, ...) failed = %v", sz, err)
 	}
 	d.ringBuffer = buf
 	return d, nil
 }
 
 func setsockopt(fd, level, name int, val unsafe.Pointer, vallen uintptr) error {
-	if _, _, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
+	if _, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(val), vallen, 0); errno != 0 {
 		return error(errno)
 	}
 

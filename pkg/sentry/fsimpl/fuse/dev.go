@@ -15,8 +15,7 @@
 package fuse
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -176,9 +175,9 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		// The request is too large. Cannot process it. All requests must be smaller than the
 		// negotiated size as specified by Connection.MaxWrite set as part of the FUSE_INIT
 		// handshake.
-		errno := -int32(syscall.EIO)
+		errno := -int32(unix.EIO)
 		if req.hdr.Opcode == linux.FUSE_SETXATTR {
-			errno = -int32(syscall.E2BIG)
+			errno = -int32(unix.E2BIG)
 		}
 
 		// Return the error to the calling task.

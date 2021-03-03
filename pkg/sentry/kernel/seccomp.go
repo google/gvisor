@@ -15,8 +15,7 @@
 package kernel
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -83,7 +82,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 		// the system call is not executed."
 		if !t.ptraceSeccomp(result.Data()) {
 			// This useless-looking temporary is needed because Go.
-			tmp := uintptr(syscall.ENOSYS)
+			tmp := uintptr(unix.ENOSYS)
 			t.Arch().SetReturn(-tmp)
 			return linux.SECCOMP_RET_ERRNO
 		}

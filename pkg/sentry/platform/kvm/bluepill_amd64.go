@@ -17,15 +17,14 @@
 package kvm
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 var (
 	// The action for bluepillSignal is changed by sigaction().
-	bluepillSignal = syscall.SIGSEGV
+	bluepillSignal = unix.SIGSEGV
 )
 
 // bluepillArchEnter is called during bluepillEnter.

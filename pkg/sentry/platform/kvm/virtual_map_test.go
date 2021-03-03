@@ -15,9 +15,9 @@
 package kvm
 
 import (
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -45,31 +45,31 @@ func TestParseMaps(t *testing.T) {
 	}
 
 	// MMap a new page.
-	addr, _, errno := syscall.RawSyscall6(
-		syscall.SYS_MMAP, 0, usermem.PageSize,
-		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_ANONYMOUS|syscall.MAP_PRIVATE, 0, 0)
+	addr, _, errno := unix.RawSyscall6(
+		unix.SYS_MMAP, 0, usermem.PageSize,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_ANONYMOUS|unix.MAP_PRIVATE, 0, 0)
 	if errno != 0 {
 		t.Fatalf("unexpected map error: %v", errno)
 	}
 
 	// Re-parse maps.
 	if err := applyVirtualRegions(c.Containing(addr)); err != nil {
-		syscall.RawSyscall(syscall.SYS_MUNMAP, addr, usermem.PageSize, 0)
+		unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Assert that it now does contain the region.
 	if !c.ok {
-		syscall.RawSyscall(syscall.SYS_MUNMAP, addr, usermem.PageSize, 0)
+		unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
 		t.Fatalf("updated map does not contain 0x%08x, expected true", addr)
 	}
 
 	// Map the region as PROT_NONE.
-	newAddr, _, errno := syscall.RawSyscall6(
-		syscall.SYS_MMAP, addr, usermem.PageSize,
-		syscall.PROT_NONE,
-		syscall.MAP_ANONYMOUS|syscall.MAP_FIXED|syscall.MAP_PRIVATE, 0, 0)
+	newAddr, _, errno := unix.RawSyscall6(
+		unix.SYS_MMAP, addr, usermem.PageSize,
+		unix.PROT_NONE,
+		unix.MAP_ANONYMOUS|unix.MAP_FIXED|unix.MAP_PRIVATE, 0, 0)
 	if errno != 0 {
 		t.Fatalf("unexpected map error: %v", errno)
 	}
@@ -89,5 +89,5 @@ func TestParseMaps(t *testing.T) {
 	}
 
 	// Unmap the region.
-	syscall.RawSyscall(syscall.SYS_MUNMAP, addr, usermem.PageSize, 0)
+	unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
 }

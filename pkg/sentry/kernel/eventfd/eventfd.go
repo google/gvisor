@@ -18,8 +18,8 @@ package eventfd
 
 import (
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -91,13 +91,13 @@ func (e *EventOperations) HostFD() (int, error) {
 		flags |= linux.EFD_SEMAPHORE
 	}
 
-	fd, _, err := syscall.Syscall(syscall.SYS_EVENTFD2, uintptr(e.val), uintptr(flags), 0)
+	fd, _, err := unix.Syscall(unix.SYS_EVENTFD2, uintptr(e.val), uintptr(flags), 0)
 	if err != 0 {
 		return -1, err
 	}
 
 	if err := fdnotifier.AddFD(int32(fd), &e.wq); err != nil {
-		syscall.Close(int(fd))
+		unix.Close(int(fd))
 		return -1, err
 	}
 
@@ -111,7 +111,7 @@ func (e *EventOperations) Release(context.Context) {
 	defer e.mu.Unlock()
 	if e.hostfd >= 0 {
 		fdnotifier.RemoveFD(int32(e.hostfd))
-		syscall.Close(e.hostfd)
+		unix.Close(e.hostfd)
 		e.hostfd = -1
 	}
 }
@@ -119,7 +119,7 @@ func (e *EventOperations) Release(context.Context) {
 // Read implements fs.FileOperations.Read.
 func (e *EventOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
 	if dst.NumBytes() < 8 {
-		return 0, syscall.EINVAL
+		return 0, unix.EINVAL
 	}
 	if err := e.read(ctx, dst); err != nil {
 		return 0, err
@@ -130,7 +130,7 @@ func (e *EventOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSe
 // Write implements fs.FileOperations.Write.
 func (e *EventOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	if src.NumBytes() < 8 {
-		return 0, syscall.EINVAL
+		return 0, unix.EINVAL
 	}
 	if err := e.write(ctx, src); err != nil {
 		return 0, err
@@ -142,8 +142,8 @@ func (e *EventOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 func (e *EventOperations) hostRead(ctx context.Context, dst usermem.IOSequence) error {
 	var buf [8]byte
 
-	if _, err := syscall.Read(e.hostfd, buf[:]); err != nil {
-		if err == syscall.EWOULDBLOCK {
+	if _, err := unix.Read(e.hostfd, buf[:]); err != nil {
+		if err == unix.EWOULDBLOCK {
 			return syserror.ErrWouldBlock
 		}
 		return err
@@ -195,8 +195,8 @@ func (e *EventOperations) read(ctx context.Context, dst usermem.IOSequence) erro
 func (e *EventOperations) hostWrite(val uint64) error {
 	var buf [8]byte
 	usermem.ByteOrder.PutUint64(buf[:], val)
-	_, err := syscall.Write(e.hostfd, buf[:])
-	if err == syscall.EWOULDBLOCK {
+	_, err := unix.Write(e.hostfd, buf[:])
+	if err == unix.EWOULDBLOCK {
 		return syserror.ErrWouldBlock
 	}
 	return err
@@ -215,7 +215,7 @@ func (e *EventOperations) write(ctx context.Context, src usermem.IOSequence) err
 // Signal is an internal function to signal the event fd.
 func (e *EventOperations) Signal(val uint64) error {
 	if val == math.MaxUint64 {
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
 
 	e.mu.Lock()

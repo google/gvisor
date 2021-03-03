@@ -9,5 +9,8 @@ go_library(
         "sighandling_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/abi/linux"],
+    deps = [
+        "//pkg/abi/linux",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

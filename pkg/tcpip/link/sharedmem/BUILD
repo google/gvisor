@@ -20,6 +20,7 @@ go_library(
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/link/sharedmem/queue",
         "//pkg/tcpip/stack",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -37,5 +38,6 @@ go_test(
         "//pkg/tcpip/link/sharedmem/pipe",
         "//pkg/tcpip/link/sharedmem/queue",
         "//pkg/tcpip/stack",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

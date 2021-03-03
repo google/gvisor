@@ -38,9 +38,9 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/linewriter"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -105,7 +105,7 @@ func (l *Writer) Write(data []byte) (int, error) {
 		n += w
 
 		// Is it a non-blocking socket?
-		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == syscall.EAGAIN {
+		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == unix.EAGAIN {
 			runtime.Gosched()
 			continue
 		}

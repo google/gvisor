@@ -18,8 +18,8 @@ package arch
 
 import (
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -187,7 +187,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// for the signal stack. This is not allowed, and should immediately
 	// force signal delivery (reverting to the default handler).
 	if act.IsOnStack() && alt.IsEnabled() && !alt.Contains(frameBottom) {
-		return syscall.EFAULT
+		return unix.EFAULT
 	}
 
 	// Adjust the code.
@@ -210,7 +210,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		}
 	} else {
 		// amd64 requires a restorer.
-		return syscall.EFAULT
+		return unix.EFAULT
 	}
 
 	// Set up registers.

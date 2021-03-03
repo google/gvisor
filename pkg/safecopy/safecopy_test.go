@@ -21,9 +21,10 @@ import (
 	"math/rand"
 	"os"
 	"runtime/debug"
-	"syscall"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Size of a page in bytes. Cloned from usermem.PageSize to avoid a circular
@@ -224,12 +225,12 @@ func TestCompareAndSwapUint32AlignmentError(t *testing.T) {
 // withSegvErrorTestMapping calls fn with a two-page mapping. The first page
 // contains random data, and the second page generates SIGSEGV when accessed.
 func withSegvErrorTestMapping(t *testing.T, fn func(m []byte)) {
-	mapping, err := syscall.Mmap(-1, 0, 2*pageSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANONYMOUS|syscall.MAP_PRIVATE)
+	mapping, err := unix.Mmap(-1, 0, 2*pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_PRIVATE)
 	if err != nil {
 		t.Fatalf("Mmap failed: %v", err)
 	}
-	defer syscall.Munmap(mapping)
-	if err := syscall.Mprotect(mapping[pageSize:], syscall.PROT_NONE); err != nil {
+	defer unix.Munmap(mapping)
+	if err := unix.Mprotect(mapping[pageSize:], unix.PROT_NONE); err != nil {
 		t.Fatalf("Mprotect failed: %v", err)
 	}
 	initRandom(mapping[:pageSize])
@@ -248,11 +249,11 @@ func withBusErrorTestMapping(t *testing.T, fn func(m []byte)) {
 	if err := f.Truncate(pageSize); err != nil {
 		t.Fatalf("Truncate failed: %v", err)
 	}
-	mapping, err := syscall.Mmap(int(f.Fd()), 0, 2*pageSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	mapping, err := unix.Mmap(int(f.Fd()), 0, 2*pageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
 		t.Fatalf("Mmap failed: %v", err)
 	}
-	defer syscall.Munmap(mapping)
+	defer unix.Munmap(mapping)
 	initRandom(mapping[:pageSize])
 
 	fn(mapping)
@@ -583,12 +584,12 @@ func TestSegVOnMemmove(t *testing.T) {
 	// Test that SIGSEGVs received by runtime.memmove when *not* doing
 	// CopyIn or CopyOut work gets propagated to the runtime.
 	const bufLen = pageSize
-	a, err := syscall.Mmap(-1, 0, bufLen, syscall.PROT_NONE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
+	a, err := unix.Mmap(-1, 0, bufLen, unix.PROT_NONE, unix.MAP_ANON|unix.MAP_PRIVATE)
 	if err != nil {
 		t.Fatalf("Mmap failed: %v", err)
 
 	}
-	defer syscall.Munmap(a)
+	defer unix.Munmap(a)
 	b := randBuf(bufLen)
 
 	if !testCopy(b, a) {
@@ -611,12 +612,12 @@ func TestSigbusOnMemmove(t *testing.T) {
 	os.Remove(f.Name())
 	defer f.Close()
 
-	a, err := syscall.Mmap(int(f.Fd()), 0, bufLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	a, err := unix.Mmap(int(f.Fd()), 0, bufLen, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
 		t.Fatalf("Mmap failed: %v", err)
 
 	}
-	defer syscall.Munmap(a)
+	defer unix.Munmap(a)
 	b := randBuf(bufLen)
 
 	if !testCopy(b, a) {

@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"math/bits"
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/memutil"
 )
@@ -85,8 +85,8 @@ func (pwa *PacketWindowAllocator) Init() error {
 	// Apply F_SEAL_SHRINK to prevent either party from causing SIGBUS in the
 	// other by truncating the file, and F_SEAL_SEAL to prevent either party
 	// from applying F_SEAL_GROW or F_SEAL_WRITE.
-	if _, _, e := syscall.RawSyscall(syscall.SYS_FCNTL, uintptr(fd), linux.F_ADD_SEALS, linux.F_SEAL_SHRINK|linux.F_SEAL_SEAL); e != 0 {
-		syscall.Close(fd)
+	if _, _, e := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), linux.F_ADD_SEALS, linux.F_SEAL_SHRINK|linux.F_SEAL_SEAL); e != 0 {
+		unix.Close(fd)
 		return fmt.Errorf("failed to apply memfd seals: %v", e)
 	}
 	pwa.fd = fd
@@ -106,7 +106,7 @@ func NewPacketWindowAllocator() (*PacketWindowAllocator, error) {
 // Destroy releases resources owned by pwa. This invalidates file descriptors
 // previously returned by pwa.FD() and pwd.Allocate().
 func (pwa *PacketWindowAllocator) Destroy() {
-	syscall.Close(pwa.fd)
+	unix.Close(pwa.fd)
 }
 
 // FD represents the file descriptor of the shared memory file backing pwa.
@@ -158,7 +158,7 @@ func (pwa *PacketWindowAllocator) ensureFileSize(min int64) error {
 		}
 		newSize = newNewSize
 	}
-	if err := syscall.Ftruncate(pwa.FD(), newSize); err != nil {
+	if err := unix.Ftruncate(pwa.FD(), newSize); err != nil {
 		return fmt.Errorf("ftruncate failed: %v", err)
 	}
 	pwa.fileSize = newSize

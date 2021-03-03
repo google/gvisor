@@ -14,5 +14,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/syserror",
         "//pkg/tcpip",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

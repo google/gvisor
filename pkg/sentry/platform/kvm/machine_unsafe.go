@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -41,7 +41,7 @@ func exitsyscall()
 // directly (instead of wrapping in an error) to avoid allocations.
 //
 //go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) syscall.Errno {
+func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) unix.Errno {
 	userRegion := userMemoryRegion{
 		slot:          uint32(slot),
 		flags:         uint32(flags),
@@ -51,8 +51,8 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	}
 
 	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	_, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		_KVM_SET_USER_MEMORY_REGION,
 		uintptr(unsafe.Pointer(&userRegion)))
@@ -61,12 +61,12 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 
 // mapRunData maps the vCPU run data.
 func mapRunData(fd int) (*runData, error) {
-	r, _, errno := syscall.RawSyscall6(
-		syscall.SYS_MMAP,
+	r, _, errno := unix.RawSyscall6(
+		unix.SYS_MMAP,
 		0,
 		uintptr(runDataSize),
-		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_SHARED,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_SHARED,
 		uintptr(fd),
 		0)
 	if errno != 0 {
@@ -77,8 +77,8 @@ func mapRunData(fd int) (*runData, error) {
 
 // unmapRunData unmaps the vCPU run data.
 func unmapRunData(r *runData) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_MUNMAP,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_MUNMAP,
 		uintptr(unsafe.Pointer(r)),
 		uintptr(runDataSize),
 		0); errno != 0 {
@@ -115,8 +115,8 @@ func (a *atomicAddressSpace) get() *addressSpace {
 //
 //go:nosplit
 func (c *vCPU) notify() {
-	_, _, errno := syscall.RawSyscall6( // escapes: no.
-		syscall.SYS_FUTEX,
+	_, _, errno := unix.RawSyscall6( // escapes: no.
+		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
 		math.MaxInt32, // Number of waiters.
@@ -133,13 +133,13 @@ func (c *vCPU) notify() {
 //
 // This panics on error.
 func (c *vCPU) waitUntilNot(state uint32) {
-	_, _, errno := syscall.Syscall6(
-		syscall.SYS_FUTEX,
+	_, _, errno := unix.Syscall6(
+		unix.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
 		uintptr(state),
 		0, 0, 0)
-	if errno != 0 && errno != syscall.EINTR && errno != syscall.EAGAIN {
+	if errno != 0 && errno != unix.EINTR && errno != unix.EAGAIN {
 		panic("futex wait error")
 	}
 }
@@ -159,8 +159,8 @@ func (c *vCPU) setSignalMask() error {
 	data.length = 8 // Fixed sigset size.
 	data.mask1 = ^uint32(bounceSignalMask & 0xffffffff)
 	data.mask2 = ^uint32(bounceSignalMask >> 32)
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_SIGNAL_MASK,
 		uintptr(unsafe.Pointer(&data))); errno != 0 {

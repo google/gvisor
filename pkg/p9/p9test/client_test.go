@@ -22,11 +22,11 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -45,7 +45,7 @@ func TestPanic(t *testing.T) {
 	})
 
 	// Attach to the client.
-	if _, err := c.Attach("/"); err != syscall.EFAULT {
+	if _, err := c.Attach("/"); err != unix.EFAULT {
 		t.Fatalf("got attach err %v, want EFAULT", err)
 	}
 }
@@ -75,11 +75,11 @@ func TestBadAttach(t *testing.T) {
 	defer h.Finish()
 
 	// Return an error on attach.
-	h.Attacher.EXPECT().Attach().Return(nil, syscall.EINVAL).Times(1)
+	h.Attacher.EXPECT().Attach().Return(nil, unix.EINVAL).Times(1)
 
 	// Attach to the client.
-	if _, err := c.Attach("/"); err != syscall.EINVAL {
-		t.Fatalf("got attach err %v, want syscall.EINVAL", err)
+	if _, err := c.Attach("/"); err != unix.EINVAL {
+		t.Fatalf("got attach err %v, want unix.EINVAL", err)
 	}
 }
 
@@ -201,29 +201,29 @@ func TestWalkInvalid(t *testing.T) {
 		// construct compound paths. They should all be rejected, as
 		// any compound that contains a / is not allowed, as well as
 		// the singular paths of '.' and '..'.
-		if _, _, err := root.Walk([]string{".", name}); err != syscall.EINVAL {
+		if _, _, err := root.Walk([]string{".", name}); err != unix.EINVAL {
 			t.Errorf("Walk through . %s wanted EINVAL, got %v", name, err)
 		}
-		if _, _, err := root.Walk([]string{"..", name}); err != syscall.EINVAL {
+		if _, _, err := root.Walk([]string{"..", name}); err != unix.EINVAL {
 			t.Errorf("Walk through . %s wanted EINVAL, got %v", name, err)
 		}
-		if _, _, err := root.Walk([]string{name, "."}); err != syscall.EINVAL {
+		if _, _, err := root.Walk([]string{name, "."}); err != unix.EINVAL {
 			t.Errorf("Walk through %s . wanted EINVAL, got %v", name, err)
 		}
-		if _, _, err := root.Walk([]string{name, ".."}); err != syscall.EINVAL {
+		if _, _, err := root.Walk([]string{name, ".."}); err != unix.EINVAL {
 			t.Errorf("Walk through %s .. wanted EINVAL, got %v", name, err)
 		}
 		for _, invalidName := range allInvalidNames(name) {
-			if _, _, err := root.Walk([]string{invalidName}); err != syscall.EINVAL {
+			if _, _, err := root.Walk([]string{invalidName}); err != unix.EINVAL {
 				t.Errorf("Walk through %s wanted EINVAL, got %v", invalidName, err)
 			}
 		}
-		wantErr := syscall.EINVAL
+		wantErr := unix.EINVAL
 		if name == "directory" {
 			// We can attempt a walk through a directory. However,
 			// we should never see a file named "other", so we
 			// expect this to return ENOENT.
-			wantErr = syscall.ENOENT
+			wantErr = unix.ENOENT
 		}
 		if _, _, err := root.Walk([]string{name, "other"}); err != wantErr {
 			t.Errorf("Walk through %s/other wanted %v, got %v", name, wantErr, err)
@@ -245,10 +245,10 @@ func TestWalkInvalid(t *testing.T) {
 		}
 
 		// Ensure we can't walk backwards.
-		if _, _, err := f.Walk([]string{"."}); err != syscall.EINVAL {
+		if _, _, err := f.Walk([]string{"."}); err != unix.EINVAL {
 			t.Errorf("Walk through %s/. wanted EINVAL, got %v", name, err)
 		}
-		if _, _, err := f.Walk([]string{".."}); err != syscall.EINVAL {
+		if _, _, err := f.Walk([]string{".."}); err != unix.EINVAL {
 			t.Errorf("Walk through %s/.. wanted EINVAL, got %v", name, err)
 		}
 	}
@@ -295,7 +295,7 @@ func walkAndOpenHelper(h *Harness, name string, dir p9.File) (*Mock, *Mock, p9.F
 		}
 	} else {
 		// ... or assert an error for others.
-		if _, _, _, err := walked.Open(p9.ReadOnly); err != syscall.EINVAL {
+		if _, _, _, err := walked.Open(p9.ReadOnly); err != unix.EINVAL {
 			h.t.Errorf("got open err %v, want EINVAL", err)
 		}
 	}
@@ -344,42 +344,42 @@ type deprecatedRemover interface {
 func checkDeleted(h *Harness, file p9.File) {
 	defer file.Close() // See doc.
 
-	if _, _, _, err := file.Open(p9.ReadOnly); err != syscall.EINVAL {
+	if _, _, _, err := file.Open(p9.ReadOnly); err != unix.EINVAL {
 		h.t.Errorf("open while deleted, got %v, want EINVAL", err)
 	}
-	if _, _, _, _, err := file.Create("created", p9.ReadOnly, 0, 0, 0); err != syscall.EINVAL {
+	if _, _, _, _, err := file.Create("created", p9.ReadOnly, 0, 0, 0); err != unix.EINVAL {
 		h.t.Errorf("create while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Symlink("old", "new", 0, 0); err != syscall.EINVAL {
+	if _, err := file.Symlink("old", "new", 0, 0); err != unix.EINVAL {
 		h.t.Errorf("symlink while deleted, got %v, want EINVAL", err)
 	}
 	// N.B. This link is technically invalid, but if a call to link is
 	// actually made in the backend then the mock will panic.
-	if err := file.Link(file, "new"); err != syscall.EINVAL {
+	if err := file.Link(file, "new"); err != unix.EINVAL {
 		h.t.Errorf("link while deleted, got %v, want EINVAL", err)
 	}
-	if err := file.RenameAt("src", file, "dst"); err != syscall.EINVAL {
+	if err := file.RenameAt("src", file, "dst"); err != unix.EINVAL {
 		h.t.Errorf("renameAt while deleted, got %v, want EINVAL", err)
 	}
-	if err := file.UnlinkAt("file", 0); err != syscall.EINVAL {
+	if err := file.UnlinkAt("file", 0); err != unix.EINVAL {
 		h.t.Errorf("unlinkAt while deleted, got %v, want EINVAL", err)
 	}
-	if err := file.Rename(file, "dst"); err != syscall.EINVAL {
+	if err := file.Rename(file, "dst"); err != unix.EINVAL {
 		h.t.Errorf("rename while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Readlink(); err != syscall.EINVAL {
+	if _, err := file.Readlink(); err != unix.EINVAL {
 		h.t.Errorf("readlink while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Mkdir("dir", p9.ModeDirectory, 0, 0); err != syscall.EINVAL {
+	if _, err := file.Mkdir("dir", p9.ModeDirectory, 0, 0); err != unix.EINVAL {
 		h.t.Errorf("mkdir while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Mknod("dir", p9.ModeDirectory, 0, 0, 0, 0); err != syscall.EINVAL {
+	if _, err := file.Mknod("dir", p9.ModeDirectory, 0, 0, 0, 0); err != unix.EINVAL {
 		h.t.Errorf("mknod while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Readdir(0, 1); err != syscall.EINVAL {
+	if _, err := file.Readdir(0, 1); err != unix.EINVAL {
 		h.t.Errorf("readdir while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Connect(p9.ConnectFlags(0)); err != syscall.EINVAL {
+	if _, err := file.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
 		h.t.Errorf("connect while deleted, got %v, want EINVAL", err)
 	}
 
@@ -387,7 +387,7 @@ func checkDeleted(h *Harness, file p9.File) {
 	// that it still checks for deleted appropriately. We must first clone
 	// the file because remove is equivalent to close.
 	_, newFile, err := file.Walk(nil)
-	if err == syscall.EBUSY {
+	if err == unix.EBUSY {
 		// We can't walk from here because this reference is open
 		// already. Okay, we will also have unopened cases through
 		// TestUnlink, just skip the remove operation for now.
@@ -395,7 +395,7 @@ func checkDeleted(h *Harness, file p9.File) {
 	} else if err != nil {
 		h.t.Fatalf("clone failed, got %v, want nil", err)
 	}
-	if err := newFile.(deprecatedRemover).Remove(); err != syscall.EINVAL {
+	if err := newFile.(deprecatedRemover).Remove(); err != unix.EINVAL {
 		h.t.Errorf("remove while deleted, got %v, want EINVAL", err)
 	}
 }
@@ -428,8 +428,8 @@ func remove(parent p9.File, name string) error {
 	}
 
 	// Ensure that the remove closed the file.
-	if err := newFile.(deprecatedRemover).Remove(); err != syscall.EBADF {
-		return syscall.EBADF // Propagate this code.
+	if err := newFile.(deprecatedRemover).Remove(); err != unix.EBADF {
+		return unix.EBADF // Propagate this code.
 	}
 
 	return nil
@@ -529,7 +529,7 @@ func TestUnlinkAtInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if err := root.UnlinkAt(invalidName, 0); err != syscall.EINVAL {
+			if err := root.UnlinkAt(invalidName, 0); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -686,7 +686,7 @@ func renameHelper(h *Harness, root p9.File, srcNames []string, dstNames []string
 			// technically allowed and a no-op, but all the
 			// triggers will fire.
 			if !selfRename {
-				expectedErr = syscall.EINVAL
+				expectedErr = unix.EINVAL
 			}
 			dst.Close()
 		}
@@ -827,7 +827,7 @@ func TestRenameInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if err := root.Rename(root, invalidName); err != syscall.EINVAL {
+			if err := root.Rename(root, invalidName); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -843,10 +843,10 @@ func TestRenameAtInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if err := root.RenameAt(invalidName, root, "okay"); err != syscall.EINVAL {
+			if err := root.RenameAt(invalidName, root, "okay"); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
-			if err := root.RenameAt("okay", root, invalidName); err != syscall.EINVAL {
+			if err := root.RenameAt("okay", root, invalidName); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -935,7 +935,7 @@ func TestReadlink(t *testing.T) {
 
 			// Attempt a Readlink operation.
 			target, err := f.Readlink()
-			if err != nil && err != syscall.EINVAL {
+			if err != nil && err != unix.EINVAL {
 				t.Errorf("readlink got %v, wanted EINVAL", err)
 			} else if err == nil && target != symlinkTarget {
 				t.Errorf("readlink got %v, wanted %v", target, symlinkTarget)
@@ -998,7 +998,7 @@ func TestConnect(t *testing.T) {
 			// Catch all the non-socket cases.
 			if !backend.Attr.Mode.IsSocket() {
 				// This has been set up to fail if Connect is called.
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != syscall.EINVAL {
+				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
 					t.Errorf("connect got %v, wanted EINVAL", err)
 				}
 				return
@@ -1033,20 +1033,20 @@ func TestReaddir(t *testing.T) {
 			// Catch all the non-directory cases.
 			if !backend.Attr.Mode.IsDir() {
 				// This has also been set up to fail if Readdir is called.
-				if _, err := f.Readdir(0, 1); err != syscall.EINVAL {
+				if _, err := f.Readdir(0, 1); err != unix.EINVAL {
 					t.Errorf("readdir got %v, wanted EINVAL", err)
 				}
 				return
 			}
 
 			// Ensure that readdir works for directories.
-			if _, err := f.Readdir(0, 1); err != syscall.EINVAL {
+			if _, err := f.Readdir(0, 1); err != unix.EINVAL {
 				t.Errorf("readdir got %v, wanted EINVAL", err)
 			}
-			if _, _, _, err := f.Open(p9.ReadWrite); err != syscall.EISDIR {
+			if _, _, _, err := f.Open(p9.ReadWrite); err != unix.EISDIR {
 				t.Errorf("readdir got %v, wanted EISDIR", err)
 			}
-			if _, _, _, err := f.Open(p9.WriteOnly); err != syscall.EISDIR {
+			if _, _, _, err := f.Open(p9.WriteOnly); err != unix.EISDIR {
 				t.Errorf("readdir got %v, wanted EISDIR", err)
 			}
 			backend.EXPECT().Open(p9.ReadOnly).Times(1)
@@ -1073,19 +1073,19 @@ func TestOpen(t *testing.T) {
 		{
 			name:  "not-openable-read-only",
 			flags: p9.ReadOnly,
-			err:   syscall.EINVAL,
+			err:   unix.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
 			name:  "not-openable-write-only",
 			flags: p9.WriteOnly,
-			err:   syscall.EINVAL,
+			err:   unix.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
 			name:  "not-openable-read-write",
 			flags: p9.ReadWrite,
-			err:   syscall.EINVAL,
+			err:   unix.EINVAL,
 			match: func(mode p9.FileMode) bool { return !p9.CanOpen(mode) },
 		},
 		{
@@ -1097,13 +1097,13 @@ func TestOpen(t *testing.T) {
 		{
 			name:  "directory-read-write",
 			flags: p9.ReadWrite,
-			err:   syscall.EISDIR,
+			err:   unix.EISDIR,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
 			name:  "directory-write-only",
 			flags: p9.WriteOnly,
-			err:   syscall.EISDIR,
+			err:   unix.EISDIR,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
@@ -1127,7 +1127,7 @@ func TestOpen(t *testing.T) {
 		{
 			name:  "directory-read-only-truncate",
 			flags: p9.ReadOnly | p9.OpenTruncate,
-			err:   syscall.EISDIR,
+			err:   unix.EISDIR,
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 		},
 		{
@@ -1172,16 +1172,16 @@ func TestOpen(t *testing.T) {
 				}
 
 				// Ensure open-required operations fail.
-				if _, err := f.ReadAt([]byte("hello"), 0); err != syscall.EINVAL {
+				if _, err := f.ReadAt([]byte("hello"), 0); err != unix.EINVAL {
 					t.Errorf("readAt got %v, wanted EINVAL", err)
 				}
-				if _, err := f.WriteAt(make([]byte, 6), 0); err != syscall.EINVAL {
+				if _, err := f.WriteAt(make([]byte, 6), 0); err != unix.EINVAL {
 					t.Errorf("writeAt got %v, wanted EINVAL", err)
 				}
-				if err := f.FSync(); err != syscall.EINVAL {
+				if err := f.FSync(); err != unix.EINVAL {
 					t.Errorf("fsync got %v, wanted EINVAL", err)
 				}
-				if _, err := f.Readdir(0, 1); err != syscall.EINVAL {
+				if _, err := f.Readdir(0, 1); err != unix.EINVAL {
 					t.Errorf("readdir got %v, wanted EINVAL", err)
 				}
 
@@ -1205,15 +1205,15 @@ func TestOpen(t *testing.T) {
 				})
 
 				// If the open was successful, attempt another one.
-				if _, _, _, err := f.Open(tc.flags); err != syscall.EINVAL {
+				if _, _, _, err := f.Open(tc.flags); err != unix.EINVAL {
 					t.Errorf("second open with flags %v got %v, want EINVAL", tc.flags, err)
 				}
 
 				// Ensure that all illegal operations fail.
-				if _, _, err := f.Walk(nil); err != syscall.EINVAL && err != syscall.EBUSY {
+				if _, _, err := f.Walk(nil); err != unix.EINVAL && err != unix.EBUSY {
 					t.Errorf("walk got %v, wanted EINVAL or EBUSY", err)
 				}
-				if _, _, _, _, err := f.WalkGetAttr(nil); err != syscall.EINVAL && err != syscall.EBUSY {
+				if _, _, _, _, err := f.WalkGetAttr(nil); err != unix.EINVAL && err != unix.EBUSY {
 					t.Errorf("walkgetattr got %v, wanted EINVAL or EBUSY", err)
 				}
 			})
@@ -1271,70 +1271,70 @@ func TestClose(t *testing.T) {
 				}
 
 				// Everything should fail with EBADF.
-				if _, _, err := f.Walk(nil); err != syscall.EBADF {
+				if _, _, err := f.Walk(nil); err != unix.EBADF {
 					t.Errorf("walk got %v, wanted EBADF", err)
 				}
-				if _, err := f.StatFS(); err != syscall.EBADF {
+				if _, err := f.StatFS(); err != unix.EBADF {
 					t.Errorf("statfs got %v, wanted EBADF", err)
 				}
-				if _, _, _, err := f.GetAttr(p9.AttrMaskAll()); err != syscall.EBADF {
+				if _, _, _, err := f.GetAttr(p9.AttrMaskAll()); err != unix.EBADF {
 					t.Errorf("getattr got %v, wanted EBADF", err)
 				}
-				if err := f.SetAttr(p9.SetAttrMask{}, p9.SetAttr{}); err != syscall.EBADF {
+				if err := f.SetAttr(p9.SetAttrMask{}, p9.SetAttr{}); err != unix.EBADF {
 					t.Errorf("setattrk got %v, wanted EBADF", err)
 				}
-				if err := f.Rename(root, "new-name"); err != syscall.EBADF {
+				if err := f.Rename(root, "new-name"); err != unix.EBADF {
 					t.Errorf("rename got %v, wanted EBADF", err)
 				}
-				if err := f.Close(); err != syscall.EBADF {
+				if err := f.Close(); err != unix.EBADF {
 					t.Errorf("close got %v, wanted EBADF", err)
 				}
-				if _, _, _, err := f.Open(p9.ReadOnly); err != syscall.EBADF {
+				if _, _, _, err := f.Open(p9.ReadOnly); err != unix.EBADF {
 					t.Errorf("open got %v, wanted EBADF", err)
 				}
-				if _, err := f.ReadAt([]byte("hello"), 0); err != syscall.EBADF {
+				if _, err := f.ReadAt([]byte("hello"), 0); err != unix.EBADF {
 					t.Errorf("readAt got %v, wanted EBADF", err)
 				}
-				if _, err := f.WriteAt(make([]byte, 6), 0); err != syscall.EBADF {
+				if _, err := f.WriteAt(make([]byte, 6), 0); err != unix.EBADF {
 					t.Errorf("writeAt got %v, wanted EBADF", err)
 				}
-				if err := f.FSync(); err != syscall.EBADF {
+				if err := f.FSync(); err != unix.EBADF {
 					t.Errorf("fsync got %v, wanted EBADF", err)
 				}
-				if _, _, _, _, err := f.Create("new-file", p9.ReadWrite, 0, 0, 0); err != syscall.EBADF {
+				if _, _, _, _, err := f.Create("new-file", p9.ReadWrite, 0, 0, 0); err != unix.EBADF {
 					t.Errorf("create got %v, wanted EBADF", err)
 				}
-				if _, err := f.Mkdir("new-directory", 0, 0, 0); err != syscall.EBADF {
+				if _, err := f.Mkdir("new-directory", 0, 0, 0); err != unix.EBADF {
 					t.Errorf("mkdir got %v, wanted EBADF", err)
 				}
-				if _, err := f.Symlink("old-name", "new-name", 0, 0); err != syscall.EBADF {
+				if _, err := f.Symlink("old-name", "new-name", 0, 0); err != unix.EBADF {
 					t.Errorf("symlink got %v, wanted EBADF", err)
 				}
-				if err := f.Link(root, "new-name"); err != syscall.EBADF {
+				if err := f.Link(root, "new-name"); err != unix.EBADF {
 					t.Errorf("link got %v, wanted EBADF", err)
 				}
-				if _, err := f.Mknod("new-block-device", 0, 0, 0, 0, 0); err != syscall.EBADF {
+				if _, err := f.Mknod("new-block-device", 0, 0, 0, 0, 0); err != unix.EBADF {
 					t.Errorf("mknod got %v, wanted EBADF", err)
 				}
-				if err := f.RenameAt("old-name", root, "new-name"); err != syscall.EBADF {
+				if err := f.RenameAt("old-name", root, "new-name"); err != unix.EBADF {
 					t.Errorf("renameAt got %v, wanted EBADF", err)
 				}
-				if err := f.UnlinkAt("name", 0); err != syscall.EBADF {
+				if err := f.UnlinkAt("name", 0); err != unix.EBADF {
 					t.Errorf("unlinkAt got %v, wanted EBADF", err)
 				}
-				if _, err := f.Readdir(0, 1); err != syscall.EBADF {
+				if _, err := f.Readdir(0, 1); err != unix.EBADF {
 					t.Errorf("readdir got %v, wanted EBADF", err)
 				}
-				if _, err := f.Readlink(); err != syscall.EBADF {
+				if _, err := f.Readlink(); err != unix.EBADF {
 					t.Errorf("readlink got %v, wanted EBADF", err)
 				}
-				if err := f.Flush(); err != syscall.EBADF {
+				if err := f.Flush(); err != unix.EBADF {
 					t.Errorf("flush got %v, wanted EBADF", err)
 				}
-				if _, _, _, _, err := f.WalkGetAttr(nil); err != syscall.EBADF {
+				if _, _, _, _, err := f.WalkGetAttr(nil); err != unix.EBADF {
 					t.Errorf("walkgetattr got %v, wanted EBADF", err)
 				}
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != syscall.EBADF {
+				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EBADF {
 					t.Errorf("connect got %v, wanted EBADF", err)
 				}
 			})
@@ -1350,7 +1350,7 @@ func onlyWorksOnOpenThings(h *Harness, t *testing.T, name string, root p9.File, 
 	defer f.Close()
 
 	// Does it work before opening?
-	if err := fn(backend, f, false); err != syscall.EINVAL {
+	if err := fn(backend, f, false); err != unix.EINVAL {
 		t.Errorf("operation got %v, wanted EINVAL", err)
 	}
 
@@ -1397,7 +1397,7 @@ func TestRead(t *testing.T) {
 		{
 			name: "write-only",
 			mode: p9.WriteOnly,
-			err:  syscall.EPERM,
+			err:  unix.EPERM,
 		},
 	}
 
@@ -1455,7 +1455,7 @@ func TestWrite(t *testing.T) {
 		{
 			name: "read-only",
 			mode: p9.ReadOnly,
-			err:  syscall.EPERM,
+			err:  unix.EPERM,
 		},
 		{
 			name: "read-write",
@@ -1560,7 +1560,7 @@ func onlyWorksOnDirectories(h *Harness, t *testing.T, name string, root p9.File,
 
 	// Only directories support mknod.
 	if !backend.Attr.Mode.IsDir() {
-		if err := fn(backend, f, false); err != syscall.EINVAL {
+		if err := fn(backend, f, false); err != unix.EINVAL {
 			t.Errorf("operation got %v, wanted EINVAL", err)
 		}
 		return // Nothing else to do.
@@ -1578,7 +1578,7 @@ func onlyWorksOnDirectories(h *Harness, t *testing.T, name string, root p9.File,
 	}
 
 	// Should not work again.
-	if err := fn(backend, f, false); err != syscall.EINVAL {
+	if err := fn(backend, f, false); err != unix.EINVAL {
 		t.Fatalf("operation got %v, wanted EINVAL", err)
 	}
 }
@@ -1640,7 +1640,7 @@ func TestCreateInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if _, _, _, _, err := root.Create(invalidName, p9.ReadWrite, 0, 0, 0); err != syscall.EINVAL {
+			if _, _, _, _, err := root.Create(invalidName, p9.ReadWrite, 0, 0, 0); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -1676,7 +1676,7 @@ func TestMkdirInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if _, err := root.Mkdir(invalidName, 0, 0, 0); err != syscall.EINVAL {
+			if _, err := root.Mkdir(invalidName, 0, 0, 0); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -1715,7 +1715,7 @@ func TestSyminkInvalid(t *testing.T) {
 			// We need only test for invalid names in the new name,
 			// the target can be an arbitrary string and we don't
 			// need to sanity check it.
-			if _, err := root.Symlink("old-name", invalidName, 0, 0); err != syscall.EINVAL {
+			if _, err := root.Symlink("old-name", invalidName, 0, 0); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -1750,7 +1750,7 @@ func TestLinkInvalid(t *testing.T) {
 
 	for name := range newTypeMap(nil) {
 		for _, invalidName := range allInvalidNames(name) {
-			if err := root.Link(root, invalidName); err != syscall.EINVAL {
+			if err := root.Link(root, invalidName); err != unix.EINVAL {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
@@ -2049,7 +2049,7 @@ func TestConcurrency(t *testing.T) {
 			match: func(mode p9.FileMode) bool { return mode.IsDir() },
 			op: func(h *Harness, backend *Mock, f p9.File, callback func()) {
 				// Return an error for the creation operation, as this is the simplest.
-				backend.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, p9.QID{}, uint32(0), syscall.EINVAL).Do(func(string, p9.OpenFlags, p9.FileMode, p9.UID, p9.GID) {
+				backend.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, p9.QID{}, uint32(0), unix.EINVAL).Do(func(string, p9.OpenFlags, p9.FileMode, p9.UID, p9.GID) {
 					callback()
 				})
 				f.Create(randomFileName(), p9.ReadOnly, 0, 0, 0)

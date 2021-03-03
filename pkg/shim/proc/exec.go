@@ -22,7 +22,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/containerd/console"
@@ -216,7 +215,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 		return e.parent.runtimeError(err, "OCI runtime exec failed")
 	}
 	if e.stdio.Stdin != "" {
-		sc, err := fifo.OpenFifo(context.Background(), e.stdio.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+		sc, err := fifo.OpenFifo(context.Background(), e.stdio.Stdin, unix.O_WRONLY|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return fmt.Errorf("failed to open stdin fifo %s: %w", e.stdio.Stdin, err)
 		}

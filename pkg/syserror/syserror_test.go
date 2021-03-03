@@ -16,9 +16,9 @@ package syserror_test
 
 import (
 	"errors"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -26,7 +26,7 @@ var globalError error
 
 func BenchmarkAssignErrno(b *testing.B) {
 	for i := b.N; i > 0; i-- {
-		globalError = syscall.EINVAL
+		globalError = unix.EINVAL
 	}
 }
 
@@ -37,10 +37,10 @@ func BenchmarkAssignError(b *testing.B) {
 }
 
 func BenchmarkCompareErrno(b *testing.B) {
-	globalError = syscall.EAGAIN
+	globalError = unix.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
-		if globalError == syscall.EINVAL {
+		if globalError == unix.EINVAL {
 			j++
 		}
 	}
@@ -57,15 +57,15 @@ func BenchmarkCompareError(b *testing.B) {
 }
 
 func BenchmarkSwitchErrno(b *testing.B) {
-	globalError = syscall.EPERM
+	globalError = unix.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
 		switch globalError {
-		case syscall.EINVAL:
+		case unix.EINVAL:
 			j += 1
-		case syscall.EINTR:
+		case unix.EINTR:
 			j += 2
-		case syscall.EAGAIN:
+		case unix.EAGAIN:
 			j += 3
 		}
 	}
@@ -89,9 +89,9 @@ func BenchmarkSwitchError(b *testing.B) {
 type translationTestTable struct {
 	fn                  string
 	errIn               error
-	syscallErrorIn      syscall.Errno
+	syscallErrorIn      unix.Errno
 	expectedBool        bool
-	expectedTranslation syscall.Errno
+	expectedTranslation unix.Errno
 }
 
 func TestErrorTranslation(t *testing.T) {
@@ -100,16 +100,16 @@ func TestErrorTranslation(t *testing.T) {
 	testTable := []translationTestTable{
 		{"TranslateError", myError, 0, false, 0},
 		{"TranslateError", myError2, 0, false, 0},
-		{"AddErrorTranslation", myError, syscall.EAGAIN, true, 0},
-		{"AddErrorTranslation", myError, syscall.EAGAIN, false, 0},
-		{"AddErrorTranslation", myError, syscall.EPERM, false, 0},
-		{"TranslateError", myError, 0, true, syscall.EAGAIN},
+		{"AddErrorTranslation", myError, unix.EAGAIN, true, 0},
+		{"AddErrorTranslation", myError, unix.EAGAIN, false, 0},
+		{"AddErrorTranslation", myError, unix.EPERM, false, 0},
+		{"TranslateError", myError, 0, true, unix.EAGAIN},
 		{"TranslateError", myError2, 0, false, 0},
-		{"AddErrorTranslation", myError2, syscall.EPERM, true, 0},
-		{"AddErrorTranslation", myError2, syscall.EPERM, false, 0},
-		{"AddErrorTranslation", myError2, syscall.EAGAIN, false, 0},
-		{"TranslateError", myError, 0, true, syscall.EAGAIN},
-		{"TranslateError", myError2, 0, true, syscall.EPERM},
+		{"AddErrorTranslation", myError2, unix.EPERM, true, 0},
+		{"AddErrorTranslation", myError2, unix.EPERM, false, 0},
+		{"AddErrorTranslation", myError2, unix.EAGAIN, false, 0},
+		{"TranslateError", myError, 0, true, unix.EAGAIN},
+		{"TranslateError", myError2, 0, true, unix.EPERM},
 	}
 	for _, tt := range testTable {
 		switch tt.fn {

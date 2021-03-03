@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -112,7 +111,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 	seekable := err != syserror.ESPIPE
 	// We expect regular files to be seekable, as this is required for them to
 	// be memory-mappable.
-	if !seekable && fileType == syscall.S_IFREG {
+	if !seekable && fileType == unix.S_IFREG {
 		ctx.Infof("host.newInode: host FD %d is a non-seekable regular file", hostFD)
 		return nil, syserror.ESPIPE
 	}
@@ -121,7 +120,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 		hostFD:   hostFD,
 		ino:      fs.NextIno(),
 		ftype:    uint16(fileType),
-		mayBlock: fileType != syscall.S_IFREG && fileType != syscall.S_IFDIR,
+		mayBlock: fileType != unix.S_IFREG && fileType != unix.S_IFDIR,
 		seekable: seekable,
 		isTTY:    isTTY,
 		savable:  savable,
@@ -132,7 +131,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 	// If the hostFD can return EWOULDBLOCK when set to non-blocking, do so and
 	// handle blocking behavior in the sentry.
 	if i.mayBlock {
-		if err := syscall.SetNonblock(i.hostFD, true); err != nil {
+		if err := unix.SetNonblock(i.hostFD, true); err != nil {
 			return nil, err
 		}
 		if err := fdnotifier.AddFD(int32(i.hostFD), &i.queue); err != nil {
@@ -175,7 +174,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	flags := opts.Flags
 	if !opts.HaveFlags {
 		// Get flags for the imported FD.
-		flagsInt, err := unix.FcntlInt(uintptr(hostFD), syscall.F_GETFL, 0)
+		flagsInt, err := unix.FcntlInt(uintptr(hostFD), unix.F_GETFL, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -263,8 +262,8 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(i.hostFD, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.hostFD, &s); err != nil {
 		return err
 	}
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
@@ -272,8 +271,8 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 
 // Mode implements kernfs.Inode.Mode.
 func (i *inode) Mode() linux.FileMode {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(i.hostFD, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.hostFD, &s); err != nil {
 		// Retrieving the mode from the host fd using fstat(2) should not fail.
 		// If the syscall does not succeed, something is fundamentally wrong.
 		panic(fmt.Sprintf("failed to retrieve mode from host fd %d: %v", i.hostFD, err))
@@ -405,8 +404,8 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
 		return syserror.EPERM
 	}
-	var hostStat syscall.Stat_t
-	if err := syscall.Fstat(i.hostFD, &hostStat); err != nil {
+	var hostStat unix.Stat_t
+	if err := unix.Fstat(i.hostFD, &hostStat); err != nil {
 		return err
 	}
 	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
@@ -414,7 +413,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 
 	if m&linux.STATX_MODE != 0 {
-		if err := syscall.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
+		if err := unix.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
 			return err
 		}
 	}
@@ -422,7 +421,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		if hostStat.Mode&linux.S_IFMT != linux.S_IFREG {
 			return syserror.EINVAL
 		}
-		if err := syscall.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
+		if err := unix.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
 			return err
 		}
 		oldSize := uint64(hostStat.Size)
@@ -435,7 +434,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		}
 	}
 	if m&(linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
-		ts := [2]syscall.Timespec{
+		ts := [2]unix.Timespec{
 			toTimespec(s.Atime, m&linux.STATX_ATIME == 0),
 			toTimespec(s.Mtime, m&linux.STATX_MTIME == 0),
 		}
@@ -468,8 +467,8 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 }
 
 func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, error) {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(i.hostFD, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.hostFD, &s); err != nil {
 		return nil, err
 	}
 	fileType := s.Mode & linux.FileTypeMask
@@ -477,10 +476,10 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 	// Constrain flags to a subset we can handle.
 	//
 	// TODO(gvisor.dev/issue/2601): Support O_NONBLOCK by adding RWF_NOWAIT to pread/pwrite calls.
-	flags &= syscall.O_ACCMODE | syscall.O_NONBLOCK | syscall.O_DSYNC | syscall.O_SYNC | syscall.O_APPEND
+	flags &= unix.O_ACCMODE | unix.O_NONBLOCK | unix.O_DSYNC | unix.O_SYNC | unix.O_APPEND
 
 	switch fileType {
-	case syscall.S_IFSOCK:
+	case unix.S_IFSOCK:
 		if i.isTTY {
 			log.Warningf("cannot use host socket fd %d as TTY", i.hostFD)
 			return nil, syserror.ENOTTY
@@ -493,7 +492,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 		// Currently, we only allow Unix sockets to be imported.
 		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d.VFSDentry(), &i.locks)
 
-	case syscall.S_IFREG, syscall.S_IFIFO, syscall.S_IFCHR:
+	case unix.S_IFREG, unix.S_IFIFO, unix.S_IFCHR:
 		if i.isTTY {
 			fd := &TTYFileDescription{
 				fileDescription: fileDescription{inode: i},
@@ -675,8 +674,8 @@ func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opt
 	// and writing to the host fd. This is an unavoidable race condition because
 	// we cannot enforce synchronization on the host.
 	if f.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
-		var s syscall.Stat_t
-		if err := syscall.Fstat(i.hostFD, &s); err != nil {
+		var s unix.Stat_t
+		if err := unix.Fstat(i.hostFD, &s); err != nil {
 			f.offsetMu.Unlock()
 			return 0, err
 		}
@@ -737,8 +736,8 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 		f.offset += offset
 
 	case linux.SEEK_END:
-		var s syscall.Stat_t
-		if err := syscall.Fstat(i.hostFD, &s); err != nil {
+		var s unix.Stat_t
+		if err := unix.Fstat(i.hostFD, &s); err != nil {
 			return f.offset, err
 		}
 		size := s.Size
@@ -781,7 +780,7 @@ func (f *fileDescription) Sync(ctx context.Context) error {
 func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts) error {
 	// NOTE(b/38213152): Technically, some obscure char devices can be memory
 	// mapped, but we only allow regular files.
-	if f.inode.ftype != syscall.S_IFREG {
+	if f.inode.ftype != unix.S_IFREG {
 		return syserror.ENODEV
 	}
 	i := f.inode

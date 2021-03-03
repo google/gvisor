@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//pkg/gohacks",
         "//pkg/safecopy",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

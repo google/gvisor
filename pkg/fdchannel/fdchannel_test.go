@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -41,7 +42,7 @@ func TestSendRecvFD(t *testing.T) {
 	defer recvEP.Destroy()
 
 	recvFD, err := recvEP.RecvFDNonblock()
-	if err != syscall.EAGAIN && err != syscall.EWOULDBLOCK {
+	if err != unix.EAGAIN && err != unix.EWOULDBLOCK {
 		t.Errorf("RecvFDNonblock before SendFD: got (%d, %v), wanted (<unspecified>, EAGAIN or EWOULDBLOCK", recvFD, err)
 	}
 

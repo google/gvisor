@@ -15,16 +15,15 @@
 package ptrace
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // SyscallFilters returns syscalls made exclusively by the ptrace platform.
 func (*PTrace) SyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		syscall.SYS_PTRACE: {},
-		syscall.SYS_TGKILL: {},
-		syscall.SYS_WAIT4:  {},
+		unix.SYS_PTRACE: {},
+		unix.SYS_TGKILL: {},
+		unix.SYS_WAIT4:  {},
 	}
 }

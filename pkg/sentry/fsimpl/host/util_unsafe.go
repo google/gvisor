@@ -15,13 +15,14 @@
 package host
 
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
-func setTimestamps(fd int, ts *[2]syscall.Timespec) error {
-	_, _, errno := syscall.Syscall6(
-		syscall.SYS_UTIMENSAT,
+func setTimestamps(fd int, ts *[2]unix.Timespec) error {
+	_, _, errno := unix.Syscall6(
+		unix.SYS_UTIMENSAT,
 		uintptr(fd),
 		0, /* path */
 		uintptr(unsafe.Pointer(ts)),

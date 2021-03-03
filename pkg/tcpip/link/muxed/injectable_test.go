@@ -18,9 +18,9 @@ import (
 	"bytes"
 	"net"
 	"os"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -89,8 +89,8 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 
 func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tcpip.Address) {
 	dstIP := tcpip.Address(net.ParseIP("1.2.3.4").To4())
-	pair, err := syscall.Socketpair(syscall.AF_UNIX,
-		syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC|syscall.SOCK_NONBLOCK, 0)
+	pair, err := unix.Socketpair(unix.AF_UNIX,
+		unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC|unix.SOCK_NONBLOCK, 0)
 	if err != nil {
 		t.Fatal("Failed to create socket pair:", err)
 	}

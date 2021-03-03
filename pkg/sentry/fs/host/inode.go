@@ -15,8 +15,7 @@
 package host
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -117,12 +116,12 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 		return syserror.EPERM
 	}
 	if mask.Perms {
-		if err := syscall.Fchmod(i.FD(), uint32(attr.Perms.LinuxMode())); err != nil {
+		if err := unix.Fchmod(i.FD(), uint32(attr.Perms.LinuxMode())); err != nil {
 			return err
 		}
 	}
 	if mask.Size {
-		if err := syscall.Ftruncate(i.FD(), attr.Size); err != nil {
+		if err := unix.Ftruncate(i.FD(), attr.Size); err != nil {
 			return err
 		}
 	}
@@ -142,7 +141,7 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 
 // Sync implements fsutil.CachedFileObject.Sync.
 func (i *inodeFileState) Sync(ctx context.Context) error {
-	return syscall.Fsync(i.FD())
+	return unix.Fsync(i.FD())
 }
 
 // FD implements fsutil.CachedFileObject.FD.
@@ -151,8 +150,8 @@ func (i *inodeFileState) FD() int {
 }
 
 func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, error) {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(i.FD(), &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.FD(), &s); err != nil {
 		return fs.UnstableAttr{}, err
 	}
 	return unstableAttr(&s), nil
@@ -160,7 +159,7 @@ func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, err
 
 // Allocate implements fsutil.CachedFileObject.Allocate.
 func (i *inodeFileState) Allocate(_ context.Context, offset, length int64) error {
-	return syscall.Fallocate(i.FD(), 0, offset, length)
+	return unix.Fallocate(i.FD(), 0, offset, length)
 }
 
 // inodeOperations implements fs.InodeOperations.
@@ -169,8 +168,8 @@ var _ fs.InodeOperations = (*inodeOperations)(nil)
 // newInode returns a new fs.Inode backed by the host FD.
 func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool) (*fs.Inode, error) {
 	// Retrieve metadata.
-	var s syscall.Stat_t
-	err := syscall.Fstat(fd, &s)
+	var s unix.Stat_t
+	err := unix.Fstat(fd, &s)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +323,7 @@ func (i *inodeOperations) SetPermissions(ctx context.Context, inode *fs.Inode, f
 		// Then just change the timestamps on the FD, the host
 		// will synchronize the metadata update with any host
 		// inode and page cache.
-		return syscall.Fchmod(i.fileState.FD(), uint32(f.LinuxMode())) == nil
+		return unix.Fchmod(i.fileState.FD(), uint32(f.LinuxMode())) == nil
 	}
 	// Otherwise update our cached metadata.
 	return i.cachingInodeOps.SetPermissions(ctx, inode, f)
@@ -350,7 +349,7 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, size in
 		// Then just change the file size on the FD, the host
 		// will synchronize the metadata update with any host
 		// inode and page cache.
-		return syscall.Ftruncate(i.fileState.FD(), size)
+		return unix.Ftruncate(i.fileState.FD(), size)
 	}
 	// Otherwise we need to go through cachingInodeOps, even if the host page
 	// cache is in use, to invalidate private copies of truncated pages.

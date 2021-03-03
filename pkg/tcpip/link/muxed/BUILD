@@ -24,5 +24,6 @@ go_test(
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -22,10 +22,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kr/pty"
+	"golang.org/x/sys/unix"
 )
 
 // Prompt is used as shell prompt.
@@ -477,7 +477,7 @@ func NewShell(ctx context.Context, logger Logger) (*Shell, func(), error) {
 	cmd.Stdin = ptyReplica
 	cmd.Stdout = ptyReplica
 	cmd.Stderr = ptyReplica
-	cmd.SysProcAttr = &syscall.SysProcAttr{
+	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setsid:  true,
 		Setctty: true,
 		Ctty:    0,

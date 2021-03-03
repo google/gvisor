@@ -15,8 +15,9 @@
 package limits
 
 import (
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestSet(t *testing.T) {
@@ -27,9 +28,9 @@ func TestSet(t *testing.T) {
 	}{
 		{limit: Limit{Cur: 50, Max: 50}, privileged: false, expectedErr: nil},
 		{limit: Limit{Cur: 20, Max: 50}, privileged: false, expectedErr: nil},
-		{limit: Limit{Cur: 20, Max: 60}, privileged: false, expectedErr: syscall.EPERM},
-		{limit: Limit{Cur: 60, Max: 50}, privileged: false, expectedErr: syscall.EINVAL},
-		{limit: Limit{Cur: 11, Max: 10}, privileged: false, expectedErr: syscall.EINVAL},
+		{limit: Limit{Cur: 20, Max: 60}, privileged: false, expectedErr: unix.EPERM},
+		{limit: Limit{Cur: 60, Max: 50}, privileged: false, expectedErr: unix.EINVAL},
+		{limit: Limit{Cur: 11, Max: 10}, privileged: false, expectedErr: unix.EINVAL},
 		{limit: Limit{Cur: 20, Max: 60}, privileged: true, expectedErr: nil},
 	}
 

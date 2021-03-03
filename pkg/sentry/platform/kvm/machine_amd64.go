@@ -21,8 +21,8 @@ import (
 	"math/big"
 	"reflect"
 	"runtime/debug"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -36,8 +36,8 @@ import (
 func (m *machine) initArchState() error {
 	// Set the legacy TSS address. This address is covered by the reserved
 	// range (up to 4GB). In fact, this is a main reason it exists.
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		_KVM_SET_TSS_ADDR,
 		uintptr(reservedMemory-(3*usermem.PageSize))); errno != 0 {
@@ -297,13 +297,13 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, e
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
-		return nonCanonical(regs.Rip, int32(syscall.SIGSEGV), info)
+		return nonCanonical(regs.Rip, int32(unix.SIGSEGV), info)
 	} else if !ring0.IsCanonical(regs.Rsp) {
-		return nonCanonical(regs.Rsp, int32(syscall.SIGBUS), info)
+		return nonCanonical(regs.Rsp, int32(unix.SIGBUS), info)
 	} else if !ring0.IsCanonical(regs.Fs_base) {
-		return nonCanonical(regs.Fs_base, int32(syscall.SIGBUS), info)
+		return nonCanonical(regs.Fs_base, int32(unix.SIGBUS), info)
 	} else if !ring0.IsCanonical(regs.Gs_base) {
-		return nonCanonical(regs.Gs_base, int32(syscall.SIGBUS), info)
+		return nonCanonical(regs.Gs_base, int32(unix.SIGBUS), info)
 	}
 
 	// Assign PCIDs.
@@ -332,11 +332,11 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return usermem.NoAccess, nil
 
 	case ring0.PageFault:
-		return c.fault(int32(syscall.SIGSEGV), info)
+		return c.fault(int32(unix.SIGSEGV), info)
 
 	case ring0.Debug, ring0.Breakpoint:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGTRAP),
+			Signo: int32(unix.SIGTRAP),
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -348,7 +348,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		ring0.InvalidTSS,
 		ring0.StackSegmentFault:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGSEGV),
+			Signo: int32(unix.SIGSEGV),
 			Code:  arch.SignalInfoKernel,
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -362,7 +362,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.InvalidOpcode:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGILL),
+			Signo: int32(unix.SIGILL),
 			Code:  1, // ILL_ILLOPC (illegal opcode).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -370,7 +370,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.DivideByZero:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGFPE),
+			Signo: int32(unix.SIGFPE),
 			Code:  1, // FPE_INTDIV (divide by zero).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -378,7 +378,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.Overflow:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGFPE),
+			Signo: int32(unix.SIGFPE),
 			Code:  2, // FPE_INTOVF (integer overflow).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -387,7 +387,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	case ring0.X87FloatingPointException,
 		ring0.SIMDFloatingPointException:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGFPE),
+			Signo: int32(unix.SIGFPE),
 			Code:  7, // FPE_FLTINV (invalid operation).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
@@ -398,7 +398,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.AlignmentCheck:
 		*info = arch.SignalInfo{
-			Signo: int32(syscall.SIGBUS),
+			Signo: int32(unix.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}
 		return usermem.NoAccess, platform.ErrContextSignal
@@ -409,7 +409,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		// really not. This could happen, e.g. if some file is
 		// truncated (and would generate a SIGBUS) and we map it
 		// directly into the instance.
-		return c.fault(int32(syscall.SIGBUS), info)
+		return c.fault(int32(unix.SIGBUS), info)
 
 	case ring0.DeviceNotAvailable,
 		ring0.DoubleFault,

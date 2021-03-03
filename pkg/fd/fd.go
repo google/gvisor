@@ -21,7 +21,8 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // ReadWriter implements io.ReadWriter, io.ReaderAt, and io.WriterAt for fd. It
@@ -49,7 +50,7 @@ func fixCount(n int, err error) (int, error) {
 
 // Read implements io.Reader.
 func (r *ReadWriter) Read(b []byte) (int, error) {
-	c, err := fixCount(syscall.Read(r.FD(), b))
+	c, err := fixCount(unix.Read(r.FD(), b))
 	if c == 0 && len(b) > 0 && err == nil {
 		return 0, io.EOF
 	}
@@ -62,7 +63,7 @@ func (r *ReadWriter) Read(b []byte) (int, error) {
 func (r *ReadWriter) ReadAt(b []byte, off int64) (c int, err error) {
 	for len(b) > 0 {
 		var m int
-		m, err = fixCount(syscall.Pread(r.FD(), b, off))
+		m, err = fixCount(unix.Pread(r.FD(), b, off))
 		if m == 0 && err == nil {
 			return c, io.EOF
 		}
@@ -82,21 +83,21 @@ func (r *ReadWriter) Write(b []byte) (int, error) {
 	var n, remaining int
 	for remaining = len(b); remaining > 0; {
 		woff := len(b) - remaining
-		n, err = syscall.Write(r.FD(), b[woff:])
+		n, err = unix.Write(r.FD(), b[woff:])
 
 		if n > 0 {
-			// syscall.Write wrote some bytes. This is the common case.
+			// unix.Write wrote some bytes. This is the common case.
 			remaining -= n
 		} else {
 			if err == nil {
-				// syscall.Write did not write anything nor did it return an error.
+				// unix.Write did not write anything nor did it return an error.
 				//
-				// There is no way to guarantee that a subsequent syscall.Write will
+				// There is no way to guarantee that a subsequent unix.Write will
 				// make forward progress so just panic.
-				panic(fmt.Sprintf("syscall.Write returned %d with no error", n))
+				panic(fmt.Sprintf("unix.Write returned %d with no error", n))
 			}
 
-			if err != syscall.EINTR {
+			if err != unix.EINTR {
 				// If the write failed for anything other than a signal, bail out.
 				break
 			}
@@ -110,7 +111,7 @@ func (r *ReadWriter) Write(b []byte) (int, error) {
 func (r *ReadWriter) WriteAt(b []byte, off int64) (c int, err error) {
 	for len(b) > 0 {
 		var m int
-		m, err = fixCount(syscall.Pwrite(r.FD(), b, off))
+		m, err = fixCount(unix.Pwrite(r.FD(), b, off))
 		if err != nil {
 			break
 		}
@@ -167,7 +168,7 @@ func New(fd int) *FD {
 //
 // The returned FD is always blocking (Go 1.9+).
 func NewFromFile(file *os.File) (*FD, error) {
-	fd, err := syscall.Dup(int(file.Fd()))
+	fd, err := unix.Dup(int(file.Fd()))
 	// Technically, the runtime may call the finalizer on file as soon as
 	// Fd() returns.
 	runtime.KeepAlive(file)
@@ -196,7 +197,7 @@ func NewFromFiles(files []*os.File) ([]*FD, error) {
 
 // Open is equivalent to open(2).
 func Open(path string, openmode int, perm uint32) (*FD, error) {
-	f, err := syscall.Open(path, openmode|syscall.O_LARGEFILE, perm)
+	f, err := unix.Open(path, openmode|unix.O_LARGEFILE, perm)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +206,7 @@ func Open(path string, openmode int, perm uint32) (*FD, error) {
 
 // OpenAt is equivalent to openat(2).
 func OpenAt(dir *FD, path string, flags int, mode uint32) (*FD, error) {
-	f, err := syscall.Openat(dir.FD(), path, flags, mode)
+	f, err := unix.Openat(dir.FD(), path, flags, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +221,7 @@ func OpenAt(dir *FD, path string, flags int, mode uint32) (*FD, error) {
 // Concurrently calling Close and any other method is undefined.
 func (f *FD) Close() error {
 	runtime.SetFinalizer(f, nil)
-	return syscall.Close(int(atomic.SwapInt64(&f.fd, -1)))
+	return unix.Close(int(atomic.SwapInt64(&f.fd, -1)))
 }
 
 // Release relinquishes ownership of the contained file descriptor.
@@ -241,7 +242,7 @@ func (f *FD) Release() int {
 // This operation is somewhat expensive, so care should be taken to minimize
 // its use.
 func (f *FD) File() (*os.File, error) {
-	fd, err := syscall.Dup(f.FD())
+	fd, err := unix.Dup(f.FD())
 	if err != nil {
 		return nil, err
 	}

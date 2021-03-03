@@ -16,8 +16,8 @@ package host
 
 import (
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/device"
@@ -27,21 +27,21 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-func nodeType(s *syscall.Stat_t) fs.InodeType {
-	switch x := (s.Mode & syscall.S_IFMT); x {
-	case syscall.S_IFLNK:
+func nodeType(s *unix.Stat_t) fs.InodeType {
+	switch x := (s.Mode & unix.S_IFMT); x {
+	case unix.S_IFLNK:
 		return fs.Symlink
-	case syscall.S_IFIFO:
+	case unix.S_IFIFO:
 		return fs.Pipe
-	case syscall.S_IFCHR:
+	case unix.S_IFCHR:
 		return fs.CharacterDevice
-	case syscall.S_IFBLK:
+	case unix.S_IFBLK:
 		return fs.BlockDevice
-	case syscall.S_IFSOCK:
+	case unix.S_IFSOCK:
 		return fs.Socket
-	case syscall.S_IFDIR:
+	case unix.S_IFDIR:
 		return fs.Directory
-	case syscall.S_IFREG:
+	case unix.S_IFREG:
 		return fs.RegularFile
 	default:
 		// This shouldn't happen, but just in case...
@@ -50,12 +50,12 @@ func nodeType(s *syscall.Stat_t) fs.InodeType {
 	}
 }
 
-func wouldBlock(s *syscall.Stat_t) bool {
+func wouldBlock(s *unix.Stat_t) bool {
 	typ := nodeType(s)
 	return typ == fs.Pipe || typ == fs.Socket || typ == fs.CharacterDevice
 }
 
-func stableAttr(s *syscall.Stat_t) fs.StableAttr {
+func stableAttr(s *unix.Stat_t) fs.StableAttr {
 	return fs.StableAttr{
 		Type:     nodeType(s),
 		DeviceID: hostFileDevice.DeviceID(),
@@ -67,14 +67,14 @@ func stableAttr(s *syscall.Stat_t) fs.StableAttr {
 	}
 }
 
-func owner(s *syscall.Stat_t) fs.FileOwner {
+func owner(s *unix.Stat_t) fs.FileOwner {
 	return fs.FileOwner{
 		UID: auth.KUID(s.Uid),
 		GID: auth.KGID(s.Gid),
 	}
 }
 
-func unstableAttr(s *syscall.Stat_t) fs.UnstableAttr {
+func unstableAttr(s *unix.Stat_t) fs.UnstableAttr {
 	return fs.UnstableAttr{
 		Size:             s.Size,
 		Usage:            s.Blocks * 512,

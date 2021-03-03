@@ -16,8 +16,8 @@ package gofer
 
 import (
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -376,7 +376,7 @@ func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error
 		// RPC.
 		if fd.handle.fd >= 0 {
 			ctx.UninterruptibleSleepStart(false)
-			err := syscall.Fsync(int(fd.handle.fd))
+			err := unix.Fsync(int(fd.handle.fd))
 			ctx.UninterruptibleSleepFinish(false)
 			return err
 		}

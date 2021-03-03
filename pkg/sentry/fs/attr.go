@@ -17,8 +17,8 @@ package fs
 import (
 	"fmt"
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -355,17 +355,17 @@ func (p PermMask) String() string {
 	return fmt.Sprintf("PermMask{Read: %v, Write: %v, Execute: %v}", p.Read, p.Write, p.Execute)
 }
 
-// Mode returns the system mode (syscall.S_IXOTH, etc.) for these permissions
+// Mode returns the system mode (unix.S_IXOTH, etc.) for these permissions
 // in the "other" bits.
 func (p PermMask) Mode() (mode os.FileMode) {
 	if p.Read {
-		mode |= syscall.S_IROTH
+		mode |= unix.S_IROTH
 	}
 	if p.Write {
-		mode |= syscall.S_IWOTH
+		mode |= unix.S_IWOTH
 	}
 	if p.Execute {
-		mode |= syscall.S_IXOTH
+		mode |= unix.S_IXOTH
 	}
 	return
 }

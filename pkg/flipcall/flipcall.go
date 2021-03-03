@@ -20,7 +20,8 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // An Endpoint provides the ability to synchronously transfer data and control
@@ -130,7 +131,7 @@ func (ep *Endpoint) Destroy() {
 }
 
 func (ep *Endpoint) unmapPacket() {
-	syscall.RawSyscall(syscall.SYS_MUNMAP, ep.packet, uintptr(ep.dataCap)+PacketHeaderBytes, 0)
+	unix.RawSyscall(unix.SYS_MUNMAP, ep.packet, uintptr(ep.dataCap)+PacketHeaderBytes, 0)
 	ep.packet = 0
 }
 

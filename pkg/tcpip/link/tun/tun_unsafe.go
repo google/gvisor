@@ -18,24 +18,25 @@
 package tun
 
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Open opens the specified TUN device, sets it to non-blocking mode, and
 // returns its file descriptor.
 func Open(name string) (int, error) {
-	return open(name, syscall.IFF_TUN|syscall.IFF_NO_PI)
+	return open(name, unix.IFF_TUN|unix.IFF_NO_PI)
 }
 
 // OpenTAP opens the specified TAP device, sets it to non-blocking mode, and
 // returns its file descriptor.
 func OpenTAP(name string) (int, error) {
-	return open(name, syscall.IFF_TAP|syscall.IFF_NO_PI)
+	return open(name, unix.IFF_TAP|unix.IFF_NO_PI)
 }
 
 func open(name string, flags uint16) (int, error) {
-	fd, err := syscall.Open("/dev/net/tun", syscall.O_RDWR, 0)
+	fd, err := unix.Open("/dev/net/tun", unix.O_RDWR, 0)
 	if err != nil {
 		return -1, err
 	}
@@ -48,14 +49,14 @@ func open(name string, flags uint16) (int, error) {
 
 	copy(ifr.name[:], name)
 	ifr.flags = flags
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.TUNSETIFF, uintptr(unsafe.Pointer(&ifr)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.TUNSETIFF, uintptr(unsafe.Pointer(&ifr)))
 	if errno != 0 {
-		syscall.Close(fd)
+		unix.Close(fd)
 		return -1, errno
 	}
 
-	if err = syscall.SetNonblock(fd, true); err != nil {
-		syscall.Close(fd)
+	if err = unix.SetNonblock(fd, true); err != nil {
+		unix.Close(fd)
 		return -1, err
 	}
 
