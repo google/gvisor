@@ -16,9 +16,9 @@ package ptrace
 
 import (
 	"reflect"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -56,17 +56,17 @@ func stubInit() {
 		// something that may have been there already. We just walk
 		// down the address space until we find a place where the stub
 		// can be placed.
-		addr, _, errno := syscall.RawSyscall6(
-			syscall.SYS_MMAP,
+		addr, _, errno := unix.RawSyscall6(
+			unix.SYS_MMAP,
 			stubStart,
 			mapLen,
-			syscall.PROT_WRITE|syscall.PROT_READ,
-			syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS,
+			unix.PROT_WRITE|unix.PROT_READ,
+			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
 			0 /* fd */, 0 /* offset */)
 		if addr != stubStart || errno != 0 {
 			if addr != 0 {
 				// Unmap the region we've mapped accidentally.
-				syscall.RawSyscall(syscall.SYS_MUNMAP, addr, mapLen, 0)
+				unix.RawSyscall(unix.SYS_MUNMAP, addr, mapLen, 0)
 			}
 
 			// Attempt to begin at a lower address.
@@ -79,11 +79,11 @@ func stubInit() {
 		copy(targetSlice, stubSlice)
 
 		// Make the stub executable.
-		if _, _, errno := syscall.RawSyscall(
-			syscall.SYS_MPROTECT,
+		if _, _, errno := unix.RawSyscall(
+			unix.SYS_MPROTECT,
 			stubStart,
 			mapLen,
-			syscall.PROT_EXEC|syscall.PROT_READ); errno != 0 {
+			unix.PROT_EXEC|unix.PROT_READ); errno != 0 {
 			panic("mprotect failed: " + errno.Error())
 		}
 

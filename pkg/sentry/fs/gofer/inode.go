@@ -16,8 +16,8 @@ package gofer
 
 import (
 	"errors"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -273,7 +273,7 @@ func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handle
 	// operations on the old will see the new data. Then, make the new handle take
 	// ownereship of the old FD and mark the old readHandle to not close the FD
 	// when done.
-	if err := syscall.Dup3(h.Host.FD(), i.readHandles.Host.FD(), syscall.O_CLOEXEC); err != nil {
+	if err := unix.Dup3(h.Host.FD(), i.readHandles.Host.FD(), unix.O_CLOEXEC); err != nil {
 		return err
 	}
 
@@ -489,7 +489,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 func (i *inodeOperations) getFileSocket(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	f, err := i.fileState.file.connect(ctx, p9.AnonymousSocket)
 	if err != nil {
-		return nil, syscall.EIO
+		return nil, unix.EIO
 	}
 	fsf, err := host.NewSocketWithDirent(ctx, d, f, flags)
 	if err != nil {
@@ -654,7 +654,7 @@ func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
 // Readlink implements fs.InodeOperations.Readlink.
 func (i *inodeOperations) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if !fs.IsSymlink(inode.StableAttr) {
-		return "", syscall.ENOLINK
+		return "", unix.ENOLINK
 	}
 	return i.fileState.file.readlink(ctx)
 }
@@ -704,10 +704,10 @@ func (i *inodeOperations) configureMMap(file *fs.File, opts *memmap.MMapOpts) er
 }
 
 func init() {
-	syserror.AddErrorUnwrapper(func(err error) (syscall.Errno, bool) {
+	syserror.AddErrorUnwrapper(func(err error) (unix.Errno, bool) {
 		if _, ok := err.(p9.ErrSocket); ok {
 			// Treat as an I/O error.
-			return syscall.EIO, true
+			return unix.EIO, true
 		}
 		return 0, false
 	})

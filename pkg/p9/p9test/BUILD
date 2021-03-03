@@ -71,6 +71,7 @@ go_library(
         "//pkg/sync",
         "//pkg/unet",
         "@com_github_golang_mock//gomock:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -84,5 +85,6 @@ go_test(
         "//pkg/p9",
         "//pkg/sync",
         "@com_github_golang_mock//gomock:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

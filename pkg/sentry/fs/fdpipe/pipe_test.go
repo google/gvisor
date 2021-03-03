@@ -18,9 +18,9 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -31,15 +31,15 @@ import (
 
 func singlePipeFD() (int, error) {
 	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	if err := unix.Pipe(fds); err != nil {
 		return -1, err
 	}
-	syscall.Close(fds[1])
+	unix.Close(fds[1])
 	return fds[0], nil
 }
 
 func singleDirFD() (int, error) {
-	return syscall.Open(os.TempDir(), syscall.O_RDONLY, 0666)
+	return unix.Open(os.TempDir(), unix.O_RDONLY, 0666)
 }
 
 func mockPipeDirent(t *testing.T) *fs.Dirent {
@@ -77,12 +77,12 @@ func TestNewPipe(t *testing.T) {
 		{
 			desc:  "Cannot make new pipe from bad fd",
 			getfd: func() (int, error) { return -1, nil },
-			err:   syscall.EINVAL,
+			err:   unix.EINVAL,
 		},
 		{
 			desc:  "Cannot make new pipe from non-pipe fd",
 			getfd: singleDirFD,
-			err:   syscall.EINVAL,
+			err:   unix.EINVAL,
 		},
 		{
 			desc:            "Can make new pipe from pipe fd",
@@ -127,12 +127,12 @@ func TestNewPipe(t *testing.T) {
 				t.Errorf("%s: got read ahead buffer length %d, want %d", test.desc, len(p.readAheadBuffer), len(test.readAheadBuffer))
 				continue
 			}
-			fileFlags, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(p.file.FD()), syscall.F_GETFL, 0)
+			fileFlags, _, errno := unix.Syscall(unix.SYS_FCNTL, uintptr(p.file.FD()), unix.F_GETFL, 0)
 			if errno != 0 {
 				t.Errorf("%s: failed to get file flags for fd %d, got %v, want 0", test.desc, p.file.FD(), errno)
 				continue
 			}
-			if fileFlags&syscall.O_NONBLOCK == 0 {
+			if fileFlags&unix.O_NONBLOCK == 0 {
 				t.Errorf("%s: pipe is blocking, expected non-blocking", test.desc)
 				continue
 			}
@@ -145,13 +145,13 @@ func TestNewPipe(t *testing.T) {
 
 func TestPipeDestruction(t *testing.T) {
 	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	if err := unix.Pipe(fds); err != nil {
 		t.Fatalf("failed to create pipes: got %v, want nil", err)
 	}
 	f := fd.New(fds[0])
 
 	// We don't care about the other end, just use the read end.
-	syscall.Close(fds[1])
+	unix.Close(fds[1])
 
 	// Test the read end, but it doesn't really matter which.
 	ctx := contexttest.Context(t)
@@ -207,17 +207,17 @@ func TestPipeRequest(t *testing.T) {
 		{
 			desc:    "ReadDir on pipe returns ENOTDIR",
 			context: &ReadDir{},
-			err:     syscall.ENOTDIR,
+			err:     unix.ENOTDIR,
 		},
 		{
 			desc:    "Fsync on pipe returns EINVAL",
 			context: &Fsync{},
-			err:     syscall.EINVAL,
+			err:     unix.EINVAL,
 		},
 		{
 			desc:    "Seek on pipe returns ESPIPE",
 			context: &Seek{},
-			err:     syscall.ESPIPE,
+			err:     unix.ESPIPE,
 		},
 		{
 			desc:    "Readv on pipe from empty buffer returns nil",
@@ -246,7 +246,7 @@ func TestPipeRequest(t *testing.T) {
 			desc:    "Writev on pipe from non-empty buffer and closed partner returns EPIPE",
 			context: &Writev{Src: usermem.BytesIOSequence([]byte("hello"))},
 			flags:   fs.FileFlags{Write: true},
-			err:     syscall.EPIPE,
+			err:     unix.EPIPE,
 		},
 		{
 			desc:            "Writev on pipe from non-empty buffer and open partner succeeds",
@@ -260,7 +260,7 @@ func TestPipeRequest(t *testing.T) {
 		}
 
 		fds := make([]int, 2)
-		if err := syscall.Pipe(fds); err != nil {
+		if err := unix.Pipe(fds); err != nil {
 			t.Errorf("%s: failed to create pipes: got %v, want nil", test.desc, err)
 			continue
 		}
@@ -273,9 +273,9 @@ func TestPipeRequest(t *testing.T) {
 
 		// Configure closing the fds.
 		if test.keepOpenPartner {
-			defer syscall.Close(partnerFd)
+			defer unix.Close(partnerFd)
 		} else {
-			syscall.Close(partnerFd)
+			unix.Close(partnerFd)
 		}
 
 		// Create the pipe.
@@ -313,17 +313,17 @@ func TestPipeRequest(t *testing.T) {
 
 func TestPipeReadAheadBuffer(t *testing.T) {
 	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	if err := unix.Pipe(fds); err != nil {
 		t.Fatalf("failed to create pipes: got %v, want nil", err)
 	}
 	rfile := fd.New(fds[0])
 
 	// Eventually close the write end, which is not wrapped in a pipe object.
-	defer syscall.Close(fds[1])
+	defer unix.Close(fds[1])
 
 	// Write some bytes to this end.
 	data := []byte("world")
-	if n, err := syscall.Write(fds[1], data); n != len(data) || err != nil {
+	if n, err := unix.Write(fds[1], data); n != len(data) || err != nil {
 		rfile.Close()
 		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(data))
 	}
@@ -365,13 +365,13 @@ func TestPipeReadAheadBuffer(t *testing.T) {
 // all of the data (and report it as such).
 func TestPipeReadsAccumulate(t *testing.T) {
 	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	if err := unix.Pipe(fds); err != nil {
 		t.Fatalf("failed to create pipes: got %v, want nil", err)
 	}
 	rfile := fd.New(fds[0])
 
 	// Eventually close the write end, it doesn't depend on a pipe object.
-	defer syscall.Close(fds[1])
+	defer unix.Close(fds[1])
 
 	// Get a new read only pipe reference.
 	ctx := contexttest.Context(t)
@@ -391,7 +391,7 @@ func TestPipeReadsAccumulate(t *testing.T) {
 
 	// Write some some bytes to the pipe.
 	data := []byte("some message")
-	if n, err := syscall.Write(fds[1], data); n != len(data) || err != nil {
+	if n, err := unix.Write(fds[1], data); n != len(data) || err != nil {
 		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(data))
 	}
 
@@ -409,7 +409,7 @@ func TestPipeReadsAccumulate(t *testing.T) {
 
 	// Write a few more bytes to allow us to read more/accumulate.
 	extra := []byte("extra")
-	if n, err := syscall.Write(fds[1], extra); n != len(extra) || err != nil {
+	if n, err := unix.Write(fds[1], extra); n != len(extra) || err != nil {
 		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(extra))
 	}
 
@@ -433,13 +433,13 @@ func TestPipeReadsAccumulate(t *testing.T) {
 // Same as TestReadsAccumulate.
 func TestPipeWritesAccumulate(t *testing.T) {
 	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	if err := unix.Pipe(fds); err != nil {
 		t.Fatalf("failed to create pipes: got %v, want nil", err)
 	}
 	wfile := fd.New(fds[1])
 
 	// Eventually close the read end, it doesn't depend on a pipe object.
-	defer syscall.Close(fds[0])
+	defer unix.Close(fds[0])
 
 	// Get a new write only pipe reference.
 	ctx := contexttest.Context(t)
@@ -457,7 +457,7 @@ func TestPipeWritesAccumulate(t *testing.T) {
 	})
 	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
-	pipeSize, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(wfile.FD()), syscall.F_GETPIPE_SZ, 0)
+	pipeSize, _, errno := unix.Syscall(unix.SYS_FCNTL, uintptr(wfile.FD()), unix.F_GETPIPE_SZ, 0)
 	if errno != 0 {
 		t.Fatalf("fcntl(F_GETPIPE_SZ) failed: %v", errno)
 	}
@@ -483,7 +483,7 @@ func TestPipeWritesAccumulate(t *testing.T) {
 
 	// Read the entire pipe buf size to make space for the second half.
 	readBuffer := make([]byte, n)
-	if n, err := syscall.Read(fds[0], readBuffer); n != len(readBuffer) || err != nil {
+	if n, err := unix.Read(fds[0], readBuffer); n != len(readBuffer) || err != nil {
 		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(readBuffer))
 	}
 	if !bytes.Equal(readBuffer, writeBuffer[:len(readBuffer)]) {

@@ -17,15 +17,14 @@
 package kvm
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 var (
 	// The action for bluepillSignal is changed by sigaction().
-	bluepillSignal = syscall.SIGILL
+	bluepillSignal = unix.SIGILL
 
 	// vcpuSErrBounce is the event of system error for bouncing KVM.
 	vcpuSErrBounce = kvmVcpuEvents{

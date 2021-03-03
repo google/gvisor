@@ -14,9 +14,7 @@
 
 package usermem
 
-import (
-	"syscall"
-)
+import "golang.org/x/sys/unix"
 
 // AccessType specifies memory access types. This is used for
 // setting mapping permissions, as well as communicating faults.
@@ -54,17 +52,17 @@ func (a AccessType) Any() bool {
 	return a.Read || a.Write || a.Execute
 }
 
-// Prot returns the system prot (syscall.PROT_READ, etc.) for this access.
+// Prot returns the system prot (unix.PROT_READ, etc.) for this access.
 func (a AccessType) Prot() int {
 	var prot int
 	if a.Read {
-		prot |= syscall.PROT_READ
+		prot |= unix.PROT_READ
 	}
 	if a.Write {
-		prot |= syscall.PROT_WRITE
+		prot |= unix.PROT_WRITE
 	}
 	if a.Execute {
-		prot |= syscall.PROT_EXEC
+		prot |= unix.PROT_EXEC
 	}
 	return prot
 }

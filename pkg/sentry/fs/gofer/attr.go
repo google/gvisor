@@ -15,8 +15,7 @@
 package gofer
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -36,7 +35,7 @@ func getattr(ctx context.Context, file contextFile) (p9.QID, p9.AttrMask, p9.Att
 
 	// Require mode, size, and raw device id.
 	if !valid.Mode || !valid.Size || !valid.RDev {
-		return qid, valid, attr, syscall.EIO
+		return qid, valid, attr, unix.EIO
 	}
 
 	return qid, valid, attr, nil

@@ -37,5 +37,6 @@ go_library(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/stack",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

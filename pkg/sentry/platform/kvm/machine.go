@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
@@ -153,7 +153,7 @@ type dieState struct {
 func (m *machine) newVCPU() *vCPU {
 	// Create the vCPU.
 	id := int(atomic.AddUint32(&m.nextID, 1) - 1)
-	fd, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
+	fd, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
 		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
 	}
@@ -193,7 +193,7 @@ func newMachine(vm int) (*machine, error) {
 	m.available.L = &m.mu
 
 	// Pull the maximum vCPUs.
-	maxVCPUs, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
 		m.maxVCPUs = _KVM_NR_VCPUS
 	} else {
@@ -205,7 +205,7 @@ func newMachine(vm int) (*machine, error) {
 	m.kernel.Init(m.maxVCPUs)
 
 	// Pull the maximum slots.
-	maxSlots, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
+	maxSlots, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
 	if errno != 0 {
 		m.maxSlots = _KVM_NR_MEMSLOTS
 	} else {
@@ -357,13 +357,13 @@ func (m *machine) Destroy() {
 				panic(fmt.Sprintf("error unmapping rundata: %v", err))
 			}
 		}
-		if err := syscall.Close(int(c.fd)); err != nil {
+		if err := unix.Close(int(c.fd)); err != nil {
 			panic(fmt.Sprintf("error closing vCPU fd: %v", err))
 		}
 	}
 
 	// vCPUs are gone: teardown machine state.
-	if err := syscall.Close(m.fd); err != nil {
+	if err := unix.Close(m.fd); err != nil {
 		panic(fmt.Sprintf("error closing VM fd: %v", err))
 	}
 }
@@ -546,7 +546,7 @@ func (c *vCPU) NotifyInterrupt() {
 }
 
 // pid is used below in bounce.
-var pid = syscall.Getpid()
+var pid = unix.Getpid()
 
 // bounce forces a return to the kernel or to host mode.
 //
@@ -588,9 +588,9 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 				// under memory pressure. Since we already
 				// marked ourselves as a waiter, we need to
 				// ensure that a signal is actually delivered.
-				if err := syscall.Tgkill(pid, int(atomic.LoadUint64(&c.tid)), bounceSignal); err == nil {
+				if err := unix.Tgkill(pid, int(atomic.LoadUint64(&c.tid)), bounceSignal); err == nil {
 					break
-				} else if err.(syscall.Errno) == syscall.EAGAIN {
+				} else if err.(unix.Errno) == unix.EAGAIN {
 					continue
 				} else {
 					// Nothing else should be returned by tgkill.

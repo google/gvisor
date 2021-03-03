@@ -15,8 +15,7 @@
 package gofer
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -73,7 +72,7 @@ func (h *handle) close(ctx context.Context) {
 	h.file.close(ctx)
 	h.file = p9file{}
 	if h.fd >= 0 {
-		syscall.Close(int(h.fd))
+		unix.Close(int(h.fd))
 		h.fd = -1
 	}
 }

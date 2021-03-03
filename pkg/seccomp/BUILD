@@ -11,7 +11,10 @@ go_binary(
         "seccomp_test_victim_arm64.go",
     ],
     nogo = False,
-    deps = [":seccomp"],
+    deps = [
+        ":seccomp",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
 
 go_embed_data(
@@ -36,6 +39,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/log",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

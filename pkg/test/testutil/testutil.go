@@ -36,12 +36,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -408,7 +408,7 @@ func (r *Reaper) Start() {
 	}
 
 	r.ch = make(chan os.Signal, 1)
-	signal.Notify(r.ch, syscall.SIGCHLD)
+	signal.Notify(r.ch, unix.SIGCHLD)
 
 	go func() {
 		for {
@@ -425,7 +425,7 @@ func (r *Reaper) Start() {
 				return
 			}
 			for {
-				cpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil)
+				cpid, _ := unix.Wait4(-1, nil, unix.WNOHANG, nil)
 				if cpid < 1 {
 					break
 				}

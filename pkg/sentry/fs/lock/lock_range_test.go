@@ -15,8 +15,9 @@
 package lock
 
 import (
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestComputeRange(t *testing.T) {
@@ -56,7 +57,7 @@ func TestComputeRange(t *testing.T) {
 			name:   "zero offset, negative start",
 			start:  -4096,
 			offset: 0,
-			err:    syscall.EINVAL,
+			err:    unix.EINVAL,
 		},
 		{
 			name:      "large offset, negative start, positive length",
@@ -77,7 +78,7 @@ func TestComputeRange(t *testing.T) {
 			start:  0,
 			length: -4096,
 			offset: 0,
-			err:    syscall.EINVAL,
+			err:    unix.EINVAL,
 		},
 		{
 			name:      "large offset, zero start, negative length",
@@ -112,7 +113,7 @@ func TestComputeRange(t *testing.T) {
 			start:  -1024,
 			length: -1024,
 			offset: -1024,
-			err:    syscall.EINVAL,
+			err:    unix.EINVAL,
 		},
 		{
 			name:      "offset, start, and length equal, all positive",

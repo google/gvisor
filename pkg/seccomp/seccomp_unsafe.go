@@ -15,9 +15,9 @@
 package seccomp
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -26,9 +26,9 @@ import (
 // This is safe to call from an afterFork context.
 //
 //go:nosplit
-func SetFilter(instrs []linux.BPFInstruction) syscall.Errno {
+func SetFilter(instrs []linux.BPFInstruction) unix.Errno {
 	// PR_SET_NO_NEW_PRIVS is required in order to enable seccomp. See seccomp(2) for details.
-	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall6(unix.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0, 0); errno != 0 {
 		return errno
 	}
 
@@ -44,7 +44,7 @@ func isKillProcessAvailable() (bool, error) {
 	if errno := seccomp(linux.SECCOMP_GET_ACTION_AVAIL, 0, unsafe.Pointer(&action)); errno != 0 {
 		// EINVAL: SECCOMP_GET_ACTION_AVAIL not in this kernel yet.
 		// EOPNOTSUPP: SECCOMP_RET_KILL_PROCESS not supported.
-		if errno == syscall.EINVAL || errno == syscall.EOPNOTSUPP {
+		if errno == unix.EINVAL || errno == unix.EOPNOTSUPP {
 			return false, nil
 		}
 		return false, errno
@@ -55,8 +55,8 @@ func isKillProcessAvailable() (bool, error) {
 // seccomp calls seccomp(2). This is safe to call from an afterFork context.
 //
 //go:nosplit
-func seccomp(op, flags uint32, ptr unsafe.Pointer) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr)); errno != 0 {
+func seccomp(op, flags uint32, ptr unsafe.Pointer) unix.Errno {
+	if _, _, errno := unix.RawSyscall(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr)); errno != 0 {
 		return errno
 	}
 	return 0

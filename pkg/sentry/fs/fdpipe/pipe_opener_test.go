@@ -20,11 +20,11 @@ import (
 	"io"
 	"os"
 	"path"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -42,15 +42,15 @@ func (h *hostOpener) NonBlockingOpen(_ context.Context, p fs.PermMask) (*fd.FD, 
 	var flags int
 	switch {
 	case p.Read && p.Write:
-		flags = syscall.O_RDWR
+		flags = unix.O_RDWR
 	case p.Write:
-		flags = syscall.O_WRONLY
+		flags = unix.O_WRONLY
 	case p.Read:
-		flags = syscall.O_RDONLY
+		flags = unix.O_RDONLY
 	default:
-		return nil, syscall.EINVAL
+		return nil, unix.EINVAL
 	}
-	f, err := syscall.Open(h.name, flags|syscall.O_NONBLOCK, 0666)
+	f, err := unix.Open(h.name, flags|unix.O_NONBLOCK, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func pipename() string {
 }
 
 func mkpipe(name string) error {
-	return syscall.Mknod(name, syscall.S_IFIFO|0666, 0)
+	return unix.Mknod(name, unix.S_IFIFO|0666, 0)
 }
 
 func TestTryOpen(t *testing.T) {
@@ -87,14 +87,14 @@ func TestTryOpen(t *testing.T) {
 			makePipe:   false,
 			flags:      fs.FileFlags{}, /* bogus */
 			expectFile: false,
-			err:        syscall.EINVAL,
+			err:        unix.EINVAL,
 		},
 		{
 			desc:       "NonBlocking Read only error returns immediately",
 			makePipe:   false, /* causes the error */
 			flags:      fs.FileFlags{Read: true, NonBlocking: true},
 			expectFile: false,
-			err:        syscall.ENOENT,
+			err:        unix.ENOENT,
 		},
 		{
 			desc:       "NonBlocking Read only success returns immediately",
@@ -108,21 +108,21 @@ func TestTryOpen(t *testing.T) {
 			makePipe:   false, /* causes the error */
 			flags:      fs.FileFlags{Write: true, NonBlocking: true},
 			expectFile: false,
-			err:        syscall.ENOENT,
+			err:        unix.ENOENT,
 		},
 		{
 			desc:       "NonBlocking Write only no reader error returns immediately",
 			makePipe:   true,
 			flags:      fs.FileFlags{Write: true, NonBlocking: true},
 			expectFile: false,
-			err:        syscall.ENXIO,
+			err:        unix.ENXIO,
 		},
 		{
 			desc:       "ReadWrite error returns immediately",
 			makePipe:   false, /* causes the error */
 			flags:      fs.FileFlags{Read: true, Write: true},
 			expectFile: false,
-			err:        syscall.ENOENT,
+			err:        unix.ENOENT,
 		},
 		{
 			desc:       "ReadWrite returns immediately",
@@ -136,14 +136,14 @@ func TestTryOpen(t *testing.T) {
 			makePipe:   false, /* causes the error */
 			flags:      fs.FileFlags{Write: true},
 			expectFile: false,
-			err:        syscall.ENOENT, /* from bogus perms */
+			err:        unix.ENOENT, /* from bogus perms */
 		},
 		{
 			desc:       "Blocking Read only returns open error",
 			makePipe:   false, /* causes the error */
 			flags:      fs.FileFlags{Read: true},
 			expectFile: false,
-			err:        syscall.ENOENT,
+			err:        unix.ENOENT,
 		},
 		{
 			desc:       "Blocking Write only returns with syserror.ErrWouldBlock",
@@ -167,7 +167,7 @@ func TestTryOpen(t *testing.T) {
 				t.Errorf("%s: failed to make host pipe: %v", test.desc, err)
 				continue
 			}
-			defer syscall.Unlink(name)
+			defer unix.Unlink(name)
 		}
 
 		// Use a host opener to keep things simple.
@@ -238,7 +238,7 @@ func TestPipeOpenUnblocksEventually(t *testing.T) {
 			t.Errorf("%s: failed to make host pipe: %v", test.desc, err)
 			continue
 		}
-		defer syscall.Unlink(name)
+		defer unix.Unlink(name)
 
 		// Spawn the partner.
 		type fderr struct {
@@ -249,18 +249,18 @@ func TestPipeOpenUnblocksEventually(t *testing.T) {
 		go func() {
 			var flags int
 			if test.partnerIsReader {
-				flags = syscall.O_RDONLY
+				flags = unix.O_RDONLY
 			} else {
-				flags = syscall.O_WRONLY
+				flags = unix.O_WRONLY
 			}
 			if test.partnerIsBlocking {
-				fd, err := syscall.Open(name, flags, 0666)
+				fd, err := unix.Open(name, flags, 0666)
 				errch <- fderr{fd: fd, err: err}
 			} else {
 				var fd int
-				err := error(syscall.ENXIO)
-				for err == syscall.ENXIO {
-					fd, err = syscall.Open(name, flags|syscall.O_NONBLOCK, 0666)
+				err := error(unix.ENXIO)
+				for err == unix.ENXIO {
+					fd, err = unix.Open(name, flags|unix.O_NONBLOCK, 0666)
 					time.Sleep(1 * time.Second)
 				}
 				errch <- fderr{fd: fd, err: err}
@@ -289,7 +289,7 @@ func TestPipeOpenUnblocksEventually(t *testing.T) {
 			continue
 		}
 		// If so, then close the partner fd to avoid leaking an fd.
-		syscall.Close(e.fd)
+		unix.Close(e.fd)
 
 		// Check that our blocking open was successful.
 		if err != nil {
@@ -309,7 +309,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	if err := mkpipe(name); err != nil {
 		t.Fatalf("failed to make host pipe: %v", err)
 	}
-	defer syscall.Unlink(name)
+	defer unix.Unlink(name)
 
 	// We're taking advantage of the fact that pipes opened read only always return
 	// success, but internally they are not deemed "opened" until we're sure that
@@ -326,35 +326,35 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	pipeOps, err := pipeOpenState.TryOpen(ctx, opener, fs.FileFlags{Read: true})
 	if pipeOps != nil {
 		pipeOps.Release(ctx)
-		t.Fatalf("open(%s, %o) got file, want nil", name, syscall.O_RDONLY)
+		t.Fatalf("open(%s, %o) got file, want nil", name, unix.O_RDONLY)
 	}
 	if err != syserror.ErrWouldBlock {
-		t.Fatalf("open(%s, %o) got error %v, want %v", name, syscall.O_RDONLY, err, syserror.ErrWouldBlock)
+		t.Fatalf("open(%s, %o) got error %v, want %v", name, unix.O_RDONLY, err, syserror.ErrWouldBlock)
 	}
 
 	// Then open the same pipe write only and write some bytes to it.  The next
 	// time we try to open the pipe read only again via the pipeOpenState, we should
 	// succeed and buffer some of the bytes written.
-	fd, err := syscall.Open(name, syscall.O_WRONLY, 0666)
+	fd, err := unix.Open(name, unix.O_WRONLY, 0666)
 	if err != nil {
-		t.Fatalf("open(%s, %o) got error %v, want nil", name, syscall.O_WRONLY, err)
+		t.Fatalf("open(%s, %o) got error %v, want nil", name, unix.O_WRONLY, err)
 	}
-	defer syscall.Close(fd)
+	defer unix.Close(fd)
 
 	data := []byte("hello")
-	if n, err := syscall.Write(fd, data); n != len(data) || err != nil {
+	if n, err := unix.Write(fd, data); n != len(data) || err != nil {
 		t.Fatalf("write(%v) got (%d, %v), want (%d, nil)", data, n, err, len(data))
 	}
 
 	// Try the read again, knowing that it should succeed this time.
 	pipeOps, err = pipeOpenState.TryOpen(ctx, opener, fs.FileFlags{Read: true})
 	if pipeOps == nil {
-		t.Fatalf("open(%s, %o) got nil file, want not nil", name, syscall.O_RDONLY)
+		t.Fatalf("open(%s, %o) got nil file, want not nil", name, unix.O_RDONLY)
 	}
 	defer pipeOps.Release(ctx)
 
 	if err != nil {
-		t.Fatalf("open(%s, %o) got error %v, want nil", name, syscall.O_RDONLY, err)
+		t.Fatalf("open(%s, %o) got error %v, want nil", name, unix.O_RDONLY, err)
 	}
 
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
@@ -432,7 +432,7 @@ func TestPipeHangup(t *testing.T) {
 			t.Errorf("%s: failed to make host pipe: %v", test.desc, err)
 			continue
 		}
-		defer syscall.Unlink(name)
+		defer unix.Unlink(name)
 
 		// Fire off a partner routine which tries to open the same pipe blocking,
 		// which will synchronize with us.  The channel allows us to get back the
@@ -444,11 +444,11 @@ func TestPipeHangup(t *testing.T) {
 			// misconfiguration.
 			var flags int
 			if test.flags.Read {
-				flags = syscall.O_WRONLY
+				flags = unix.O_WRONLY
 			} else {
-				flags = syscall.O_RDONLY
+				flags = unix.O_RDONLY
 			}
-			fd, err := syscall.Open(name, flags, 0666)
+			fd, err := unix.Open(name, flags, 0666)
 			if err != nil {
 				t.Logf("Open(%q, %o, 0666) partner failed: %v", name, flags, err)
 			}
@@ -489,7 +489,7 @@ func TestPipeHangup(t *testing.T) {
 			}
 		} else {
 			// Hangup our partner and expect us to get the hangup error.
-			syscall.Close(f)
+			unix.Close(f)
 			defer pipeOps.Release(ctx)
 
 			if test.flags.Read {
@@ -515,8 +515,8 @@ func assertReaderHungup(t *testing.T, desc string, reader io.Reader) bool {
 }
 
 func assertWriterHungup(t *testing.T, desc string, writer io.Writer) bool {
-	if _, err := writer.Write([]byte("hello")); unwrapError(err) != syscall.EPIPE {
-		t.Errorf("%s: write to self after hangup got error %v, want %v", desc, err, syscall.EPIPE)
+	if _, err := writer.Write([]byte("hello")); unwrapError(err) != unix.EPIPE {
+		t.Errorf("%s: write to self after hangup got error %v, want %v", desc, err, unix.EPIPE)
 		return false
 	}
 	return true

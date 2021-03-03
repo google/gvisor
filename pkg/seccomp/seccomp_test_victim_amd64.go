@@ -20,13 +20,13 @@
 package main
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
-	"syscall"
 )
 
 func arch_syscalls(syscalls seccomp.SyscallRules) {
-	syscalls[syscall.SYS_ARCH_PRCTL] = []seccomp.Rule{}
-	syscalls[syscall.SYS_EPOLL_WAIT] = []seccomp.Rule{}
-	syscalls[syscall.SYS_NEWFSTATAT] = []seccomp.Rule{}
-	syscalls[syscall.SYS_OPEN] = []seccomp.Rule{}
+	syscalls[unix.SYS_ARCH_PRCTL] = []seccomp.Rule{}
+	syscalls[unix.SYS_EPOLL_WAIT] = []seccomp.Rule{}
+	syscalls[unix.SYS_NEWFSTATAT] = []seccomp.Rule{}
+	syscalls[unix.SYS_OPEN] = []seccomp.Rule{}
 }

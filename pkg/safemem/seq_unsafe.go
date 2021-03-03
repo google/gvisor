@@ -17,9 +17,9 @@ package safemem
 import (
 	"bytes"
 	"fmt"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
@@ -304,12 +304,12 @@ func ZeroSeq(dsts BlockSeq) (uint64, error) {
 	return done, nil
 }
 
-// IovecsFromBlockSeq returns a []syscall.Iovec representing seq.
-func IovecsFromBlockSeq(bs BlockSeq) []syscall.Iovec {
-	iovs := make([]syscall.Iovec, 0, bs.NumBlocks())
+// IovecsFromBlockSeq returns a []unix.Iovec representing seq.
+func IovecsFromBlockSeq(bs BlockSeq) []unix.Iovec {
+	iovs := make([]unix.Iovec, 0, bs.NumBlocks())
 	for ; !bs.IsEmpty(); bs = bs.Tail() {
 		b := bs.Head()
-		iovs = append(iovs, syscall.Iovec{
+		iovs = append(iovs, unix.Iovec{
 			Base: &b.ToSlice()[0],
 			Len:  uint64(b.Len()),
 		})

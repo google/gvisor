@@ -49,6 +49,7 @@ go_library(
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -63,5 +64,6 @@ go_test(
         "//pkg/p9/p9test",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -20,68 +20,69 @@ package syserror
 
 import (
 	"errors"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // The following variables have the same meaning as their syscall equivalent.
 var (
-	E2BIG        = error(syscall.E2BIG)
-	EACCES       = error(syscall.EACCES)
-	EADDRINUSE   = error(syscall.EADDRINUSE)
-	EAGAIN       = error(syscall.EAGAIN)
-	EBADF        = error(syscall.EBADF)
-	EBADFD       = error(syscall.EBADFD)
-	EBUSY        = error(syscall.EBUSY)
-	ECHILD       = error(syscall.ECHILD)
-	ECONNABORTED = error(syscall.ECONNABORTED)
-	ECONNREFUSED = error(syscall.ECONNREFUSED)
-	ECONNRESET   = error(syscall.ECONNRESET)
-	EDEADLK      = error(syscall.EDEADLK)
-	EEXIST       = error(syscall.EEXIST)
-	EFAULT       = error(syscall.EFAULT)
-	EFBIG        = error(syscall.EFBIG)
-	EIDRM        = error(syscall.EIDRM)
-	EINTR        = error(syscall.EINTR)
-	EINVAL       = error(syscall.EINVAL)
-	EIO          = error(syscall.EIO)
-	EISDIR       = error(syscall.EISDIR)
-	ELIBBAD      = error(syscall.ELIBBAD)
-	ELOOP        = error(syscall.ELOOP)
-	EMFILE       = error(syscall.EMFILE)
-	EMLINK       = error(syscall.EMLINK)
-	EMSGSIZE     = error(syscall.EMSGSIZE)
-	ENAMETOOLONG = error(syscall.ENAMETOOLONG)
+	E2BIG        = error(unix.E2BIG)
+	EACCES       = error(unix.EACCES)
+	EADDRINUSE   = error(unix.EADDRINUSE)
+	EAGAIN       = error(unix.EAGAIN)
+	EBADF        = error(unix.EBADF)
+	EBADFD       = error(unix.EBADFD)
+	EBUSY        = error(unix.EBUSY)
+	ECHILD       = error(unix.ECHILD)
+	ECONNABORTED = error(unix.ECONNABORTED)
+	ECONNREFUSED = error(unix.ECONNREFUSED)
+	ECONNRESET   = error(unix.ECONNRESET)
+	EDEADLK      = error(unix.EDEADLK)
+	EEXIST       = error(unix.EEXIST)
+	EFAULT       = error(unix.EFAULT)
+	EFBIG        = error(unix.EFBIG)
+	EIDRM        = error(unix.EIDRM)
+	EINTR        = error(unix.EINTR)
+	EINVAL       = error(unix.EINVAL)
+	EIO          = error(unix.EIO)
+	EISDIR       = error(unix.EISDIR)
+	ELIBBAD      = error(unix.ELIBBAD)
+	ELOOP        = error(unix.ELOOP)
+	EMFILE       = error(unix.EMFILE)
+	EMLINK       = error(unix.EMLINK)
+	EMSGSIZE     = error(unix.EMSGSIZE)
+	ENAMETOOLONG = error(unix.ENAMETOOLONG)
 	ENOATTR      = ENODATA
-	ENOBUFS      = error(syscall.ENOBUFS)
-	ENODATA      = error(syscall.ENODATA)
-	ENODEV       = error(syscall.ENODEV)
-	ENOENT       = error(syscall.ENOENT)
-	ENOEXEC      = error(syscall.ENOEXEC)
-	ENOLCK       = error(syscall.ENOLCK)
-	ENOLINK      = error(syscall.ENOLINK)
-	ENOMEM       = error(syscall.ENOMEM)
-	ENOSPC       = error(syscall.ENOSPC)
-	ENOSYS       = error(syscall.ENOSYS)
-	ENOTCONN     = error(syscall.ENOTCONN)
-	ENOTDIR      = error(syscall.ENOTDIR)
-	ENOTEMPTY    = error(syscall.ENOTEMPTY)
-	ENOTSOCK     = error(syscall.ENOTSOCK)
-	ENOTSUP      = error(syscall.ENOTSUP)
-	ENOTTY       = error(syscall.ENOTTY)
-	ENXIO        = error(syscall.ENXIO)
-	EOPNOTSUPP   = error(syscall.EOPNOTSUPP)
-	EOVERFLOW    = error(syscall.EOVERFLOW)
-	EPERM        = error(syscall.EPERM)
-	EPIPE        = error(syscall.EPIPE)
-	ERANGE       = error(syscall.ERANGE)
-	EREMOTE      = error(syscall.EREMOTE)
-	EROFS        = error(syscall.EROFS)
-	ESPIPE       = error(syscall.ESPIPE)
-	ESRCH        = error(syscall.ESRCH)
-	ETIMEDOUT    = error(syscall.ETIMEDOUT)
-	EUSERS       = error(syscall.EUSERS)
-	EWOULDBLOCK  = error(syscall.EWOULDBLOCK)
-	EXDEV        = error(syscall.EXDEV)
+	ENOBUFS      = error(unix.ENOBUFS)
+	ENODATA      = error(unix.ENODATA)
+	ENODEV       = error(unix.ENODEV)
+	ENOENT       = error(unix.ENOENT)
+	ENOEXEC      = error(unix.ENOEXEC)
+	ENOLCK       = error(unix.ENOLCK)
+	ENOLINK      = error(unix.ENOLINK)
+	ENOMEM       = error(unix.ENOMEM)
+	ENOSPC       = error(unix.ENOSPC)
+	ENOSYS       = error(unix.ENOSYS)
+	ENOTCONN     = error(unix.ENOTCONN)
+	ENOTDIR      = error(unix.ENOTDIR)
+	ENOTEMPTY    = error(unix.ENOTEMPTY)
+	ENOTSOCK     = error(unix.ENOTSOCK)
+	ENOTSUP      = error(unix.ENOTSUP)
+	ENOTTY       = error(unix.ENOTTY)
+	ENXIO        = error(unix.ENXIO)
+	EOPNOTSUPP   = error(unix.EOPNOTSUPP)
+	EOVERFLOW    = error(unix.EOVERFLOW)
+	EPERM        = error(unix.EPERM)
+	EPIPE        = error(unix.EPIPE)
+	ERANGE       = error(unix.ERANGE)
+	EREMOTE      = error(unix.EREMOTE)
+	EROFS        = error(unix.EROFS)
+	ESPIPE       = error(unix.ESPIPE)
+	ESRCH        = error(unix.ESRCH)
+	ETIMEDOUT    = error(unix.ETIMEDOUT)
+	EUSERS       = error(unix.EUSERS)
+	EWOULDBLOCK  = error(unix.EWOULDBLOCK)
+	EXDEV        = error(unix.EXDEV)
 )
 
 var (
@@ -102,16 +103,16 @@ var (
 )
 
 // errorMap is the map used to convert generic errors into errnos.
-var errorMap = map[error]syscall.Errno{}
+var errorMap = map[error]unix.Errno{}
 
 // errorUnwrappers is an array of unwrap functions to extract typed errors.
-var errorUnwrappers = []func(error) (syscall.Errno, bool){}
+var errorUnwrappers = []func(error) (unix.Errno, bool){}
 
 // AddErrorTranslation allows modules to populate the error map by adding their
 // own translations during initialization. Returns if the error translation is
 // accepted or not. A pre-existing translation will not be overwritten by the
 // new translation.
-func AddErrorTranslation(from error, to syscall.Errno) bool {
+func AddErrorTranslation(from error, to unix.Errno) bool {
 	if _, ok := errorMap[from]; ok {
 		return false
 	}
@@ -122,13 +123,13 @@ func AddErrorTranslation(from error, to syscall.Errno) bool {
 
 // AddErrorUnwrapper registers an unwrap method that can extract a concrete error
 // from a typed, but not initialized, error.
-func AddErrorUnwrapper(unwrap func(e error) (syscall.Errno, bool)) {
+func AddErrorUnwrapper(unwrap func(e error) (unix.Errno, bool)) {
 	errorUnwrappers = append(errorUnwrappers, unwrap)
 }
 
 // TranslateError translates errors to errnos, it will return false if
 // the error was not registered.
-func TranslateError(from error) (syscall.Errno, bool) {
+func TranslateError(from error) (unix.Errno, bool) {
 	err, ok := errorMap[from]
 	if ok {
 		return err, ok
@@ -222,7 +223,7 @@ func SyscallRestartErrnoFromReturn(rv uintptr) (SyscallRestartErrno, bool) {
 }
 
 func init() {
-	AddErrorTranslation(ErrWouldBlock, syscall.EWOULDBLOCK)
-	AddErrorTranslation(ErrInterrupted, syscall.EINTR)
-	AddErrorTranslation(ErrExceedsFileSizeLimit, syscall.EFBIG)
+	AddErrorTranslation(ErrWouldBlock, unix.EWOULDBLOCK)
+	AddErrorTranslation(ErrInterrupted, unix.EINTR)
+	AddErrorTranslation(ErrExceedsFileSizeLimit, unix.EFBIG)
 }

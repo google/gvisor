@@ -82,6 +82,7 @@ go_test(
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/time",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

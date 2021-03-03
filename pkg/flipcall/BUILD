@@ -20,6 +20,7 @@ go_library(
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

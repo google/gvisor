@@ -24,8 +24,8 @@ package epoll
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -173,12 +173,12 @@ func (e *EventPoll) Release(ctx context.Context) {
 
 // Read implements fs.FileOperations.Read.
 func (*EventPoll) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syscall.ENOSYS
+	return 0, unix.ENOSYS
 }
 
 // Write implements fs.FileOperations.Write.
 func (*EventPoll) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syscall.ENOSYS
+	return 0, unix.ENOSYS
 }
 
 // eventsAvailable determines if 'e' has events available for delivery.
@@ -358,18 +358,18 @@ func (e *EventPoll) AddEntry(id FileIdentifier, flags EntryFlags, mask waiter.Ev
 
 	// Fail if the file already has an entry.
 	if _, ok := e.files[id]; ok {
-		return syscall.EEXIST
+		return unix.EEXIST
 	}
 
 	// Check if a cycle would be created. We use 4 as the limit because
 	// that's the value used by linux and we want to emulate it.
 	if ep != nil {
 		if e == ep {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		if ep.observes(e, 4) {
-			return syscall.ELOOP
+			return unix.ELOOP
 		}
 	}
 
@@ -404,7 +404,7 @@ func (e *EventPoll) UpdateEntry(id FileIdentifier, flags EntryFlags, mask waiter
 	// Fail if the file doesn't have an entry.
 	entry, ok := e.files[id]
 	if !ok {
-		return syscall.ENOENT
+		return unix.ENOENT
 	}
 
 	// Unregister the old mask and remove entry from the list it's in, so
@@ -435,7 +435,7 @@ func (e *EventPoll) RemoveEntry(ctx context.Context, id FileIdentifier) error {
 	// Fail if the file doesn't have an entry.
 	entry, ok := e.files[id]
 	if !ok {
-		return syscall.ENOENT
+		return unix.ENOENT
 	}
 
 	// Unregister from file first so that no concurrent attempts will be

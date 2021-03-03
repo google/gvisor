@@ -20,8 +20,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // profile represents profile-like operations on a container.
@@ -114,7 +115,7 @@ func (p *profile) createProcess(c *Container) error {
 // killProcess kills the process, if running.
 func (p *profile) killProcess() error {
 	if p.cmd != nil && p.cmd.Process != nil {
-		return p.cmd.Process.Signal(syscall.SIGTERM)
+		return p.cmd.Process.Signal(unix.SIGTERM)
 	}
 	return nil
 }

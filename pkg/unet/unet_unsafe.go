@@ -17,7 +17,6 @@ package unet
 import (
 	"io"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -52,8 +51,8 @@ func (s *Socket) wait(write bool) error {
 			events[0].Events = unix.POLLOUT
 		}
 
-		_, _, e := syscall.Syscall6(syscall.SYS_PPOLL, uintptr(unsafe.Pointer(&events[0])), 2, 0, 0, 0, 0)
-		if e == syscall.EINTR {
+		_, _, e := unix.Syscall6(unix.SYS_PPOLL, uintptr(unsafe.Pointer(&events[0])), 2, 0, 0, 0, 0)
+		if e == unix.EINTR {
 			continue
 		}
 		if e != 0 {
@@ -72,11 +71,11 @@ func (s *Socket) wait(write bool) error {
 // buildIovec builds an iovec slice from the given []byte slice.
 //
 // iovecs is used as an initial slice, to avoid excessive allocations.
-func buildIovec(bufs [][]byte, iovecs []syscall.Iovec) ([]syscall.Iovec, int) {
+func buildIovec(bufs [][]byte, iovecs []unix.Iovec) ([]unix.Iovec, int) {
 	var length int
 	for i := range bufs {
 		if l := len(bufs[i]); l > 0 {
-			iovecs = append(iovecs, syscall.Iovec{
+			iovecs = append(iovecs, unix.Iovec{
 				Base: &bufs[i][0],
 				Len:  uint64(l),
 			})
@@ -93,9 +92,9 @@ func buildIovec(bufs [][]byte, iovecs []syscall.Iovec) ([]syscall.Iovec, int) {
 // This function is not guaranteed to read all available data, it
 // returns as soon as a single recvmsg call succeeds.
 func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
-	iovecs, length := buildIovec(bufs, make([]syscall.Iovec, 0, 2))
+	iovecs, length := buildIovec(bufs, make([]unix.Iovec, 0, 2))
 
-	var msg syscall.Msghdr
+	var msg unix.Msghdr
 	if len(r.source) != 0 {
 		msg.Name = &r.source[0]
 		msg.Namelen = uint32(len(r.source))
@@ -116,25 +115,25 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 
 	fd, ok := r.socket.enterFD()
 	if !ok {
-		return 0, syscall.EBADF
+		return 0, unix.EBADF
 	}
 	// Leave on returns below.
 	for {
-		var e syscall.Errno
+		var e unix.Errno
 
 		// Try a non-blocking recv first, so we don't give up the go runtime M.
-		n, _, e = syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), syscall.MSG_DONTWAIT|syscall.MSG_TRUNC)
+		n, _, e = unix.RawSyscall(unix.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_TRUNC)
 		if e == 0 {
 			break
 		}
-		if e == syscall.EINTR {
+		if e == unix.EINTR {
 			continue
 		}
 		if !r.blocking {
 			r.socket.gate.Leave()
 			return 0, e
 		}
-		if e != syscall.EAGAIN && e != syscall.EWOULDBLOCK {
+		if e != unix.EAGAIN && e != unix.EWOULDBLOCK {
 			r.socket.gate.Leave()
 			return 0, e
 		}
@@ -142,7 +141,7 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 		// Wait for the socket to become readable.
 		err := r.socket.wait(false)
 		if err == errClosing {
-			err = syscall.EBADF
+			err = unix.EBADF
 		}
 		if err != nil {
 			r.socket.gate.Leave()
@@ -184,14 +183,14 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 // This function is not guaranteed to send all data, it returns
 // as soon as a single sendmsg call succeeds.
 func (w *SocketWriter) WriteVec(bufs [][]byte) (int, error) {
-	iovecs, _ := buildIovec(bufs, make([]syscall.Iovec, 0, 2))
+	iovecs, _ := buildIovec(bufs, make([]unix.Iovec, 0, 2))
 
 	if w.race != nil {
 		// See comments on Socket.race.
 		atomic.AddInt32(w.race, 1)
 	}
 
-	var msg syscall.Msghdr
+	var msg unix.Msghdr
 	if len(w.to) != 0 {
 		msg.Name = &w.to[0]
 		msg.Namelen = uint32(len(w.to))
@@ -209,24 +208,24 @@ func (w *SocketWriter) WriteVec(bufs [][]byte) (int, error) {
 
 	fd, ok := w.socket.enterFD()
 	if !ok {
-		return 0, syscall.EBADF
+		return 0, unix.EBADF
 	}
 	// Leave on returns below.
 	for {
 		// Try a non-blocking send first, so we don't give up the go runtime M.
-		n, _, e := syscall.RawSyscall(syscall.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), syscall.MSG_DONTWAIT|syscall.MSG_NOSIGNAL)
+		n, _, e := unix.RawSyscall(unix.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL)
 		if e == 0 {
 			w.socket.gate.Leave()
 			return int(n), nil
 		}
-		if e == syscall.EINTR {
+		if e == unix.EINTR {
 			continue
 		}
 		if !w.blocking {
 			w.socket.gate.Leave()
 			return 0, e
 		}
-		if e != syscall.EAGAIN && e != syscall.EWOULDBLOCK {
+		if e != unix.EAGAIN && e != unix.EWOULDBLOCK {
 			w.socket.gate.Leave()
 			return 0, e
 		}
@@ -234,7 +233,7 @@ func (w *SocketWriter) WriteVec(bufs [][]byte) (int, error) {
 		// Wait for the socket to become writeable.
 		err := w.socket.wait(true)
 		if err == errClosing {
-			err = syscall.EBADF
+			err = unix.EBADF
 		}
 		if err != nil {
 			w.socket.gate.Leave()
@@ -244,10 +243,10 @@ func (w *SocketWriter) WriteVec(bufs [][]byte) (int, error) {
 	// Unreachable, no s.gate.Leave needed.
 }
 
-// getsockopt issues a getsockopt syscall.
+// getsockopt issues a getsockopt unix.
 func getsockopt(fd int, level int, optname int, buf []byte) (uint32, error) {
 	l := uint32(len(buf))
-	_, _, e := syscall.RawSyscall6(syscall.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(optname), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)), 0)
+	_, _, e := unix.RawSyscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(optname), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)), 0)
 	if e != 0 {
 		return 0, e
 	}
@@ -255,9 +254,9 @@ func getsockopt(fd int, level int, optname int, buf []byte) (uint32, error) {
 	return l, nil
 }
 
-// setsockopt issues a setsockopt syscall.
+// setsockopt issues a setsockopt unix.
 func setsockopt(fd int, level int, optname int, buf []byte) error {
-	_, _, e := syscall.RawSyscall6(syscall.SYS_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(optname), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
+	_, _, e := unix.RawSyscall6(unix.SYS_SETSOCKOPT, uintptr(fd), uintptr(level), uintptr(optname), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
 	if e != 0 {
 		return e
 	}
@@ -265,10 +264,10 @@ func setsockopt(fd int, level int, optname int, buf []byte) error {
 	return nil
 }
 
-// getsockname issues a getsockname syscall.
+// getsockname issues a getsockname unix.
 func getsockname(fd int, buf []byte) (uint32, error) {
 	l := uint32(len(buf))
-	_, _, e := syscall.RawSyscall(syscall.SYS_GETSOCKNAME, uintptr(fd), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)))
+	_, _, e := unix.RawSyscall(unix.SYS_GETSOCKNAME, uintptr(fd), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)))
 	if e != 0 {
 		return 0, e
 	}
@@ -276,10 +275,10 @@ func getsockname(fd int, buf []byte) (uint32, error) {
 	return l, nil
 }
 
-// getpeername issues a getpeername syscall.
+// getpeername issues a getpeername unix.
 func getpeername(fd int, buf []byte) (uint32, error) {
 	l := uint32(len(buf))
-	_, _, e := syscall.RawSyscall(syscall.SYS_GETPEERNAME, uintptr(fd), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)))
+	_, _, e := unix.RawSyscall(unix.SYS_GETPEERNAME, uintptr(fd), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&l)))
 	if e != 0 {
 		return 0, e
 	}

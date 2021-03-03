@@ -22,5 +22,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

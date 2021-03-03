@@ -8,6 +8,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/gohacks",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -18,5 +19,6 @@ go_test(
     library = ":fdchannel",
     deps = [
         "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

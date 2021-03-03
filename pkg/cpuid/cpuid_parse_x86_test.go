@@ -22,13 +22,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func kernelVersion() (int, int, error) {
-	var u syscall.Utsname
-	if err := syscall.Uname(&u); err != nil {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
 		return 0, 0, err
 	}
 

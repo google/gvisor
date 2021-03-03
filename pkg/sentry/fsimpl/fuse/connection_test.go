@@ -16,9 +16,9 @@ package fuse
 
 import (
 	"math/rand"
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -96,7 +96,7 @@ func TestConnectionAbort(t *testing.T) {
 
 	// Abort will return ECONNABORTED error to unblocked requests.
 	for _, fut := range futNormal {
-		if fut.getResponse().hdr.Error != -int32(syscall.ECONNABORTED) {
+		if fut.getResponse().hdr.Error != -int32(unix.ECONNABORTED) {
 			t.Fatalf("Incorrect error code received for aborted connection: %v", fut.getResponse().hdr.Error)
 		}
 	}

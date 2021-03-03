@@ -16,8 +16,8 @@ package kernel
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -97,7 +97,7 @@ func (a *AbstractSocketNamespace) Bind(ctx context.Context, name string, ep tran
 	if ep, ok := a.endpoints[name]; ok {
 		if ep.socket.TryIncRef() {
 			ep.socket.DecRef(ctx)
-			return syscall.EADDRINUSE
+			return unix.EADDRINUSE
 		}
 	}
 

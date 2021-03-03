@@ -16,9 +16,9 @@ package gofer
 
 import (
 	"fmt"
-	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -307,7 +307,7 @@ func (f *fileOperations) Fsync(ctx context.Context, file *fs.File, start, end in
 		// Sync remote caches.
 		if f.handles.Host != nil {
 			// Sync the host fd directly.
-			return syscall.Fsync(f.handles.Host.FD())
+			return unix.Fsync(f.handles.Host.FD())
 		}
 		// Otherwise sync on the p9.File handle.
 		return f.handles.File.fsync(ctx)

@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"syscall"
 
 	"github.com/containerd/console"
 	"github.com/containerd/fifo"
+	"golang.org/x/sys/unix"
 )
 
 type linuxPlatform struct {
@@ -43,7 +43,7 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
 	}
 
 	if stdin != "" {
-		in, err := fifo.OpenFifo(context.Background(), stdin, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
+		in, err := fifo.OpenFifo(context.Background(), stdin, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -54,11 +54,11 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
 		}()
 	}
 
-	outw, err := fifo.OpenFifo(ctx, stdout, syscall.O_WRONLY, 0)
+	outw, err := fifo.OpenFifo(ctx, stdout, unix.O_WRONLY, 0)
 	if err != nil {
 		return nil, err
 	}
-	outr, err := fifo.OpenFifo(ctx, stdout, syscall.O_RDONLY, 0)
+	outr, err := fifo.OpenFifo(ctx, stdout, unix.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
 	}

@@ -19,7 +19,6 @@ package ptrace
 import (
 	"fmt"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -96,7 +95,7 @@ func updateSyscallRegs(regs *arch.Registers) {
 func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
 	rval := int64(regs.Rax)
 	if rval < 0 {
-		return 0, syscall.Errno(-rval)
+		return 0, unix.Errno(-rval)
 	}
 	return uintptr(rval), nil
 }
@@ -179,7 +178,7 @@ func patchSignalInfo(regs *arch.Registers, signalInfo *arch.SignalInfo) {
 //
 //go:nosplit
 func enableCpuidFault() {
-	syscall.RawSyscall6(syscall.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0, 0, 0, 0)
+	unix.RawSyscall6(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0, 0, 0, 0)
 }
 
 // appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
@@ -189,9 +188,9 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 		// Rules for trapping vsyscall access.
 		seccomp.RuleSet{
 			Rules: seccomp.SyscallRules{
-				syscall.SYS_GETTIMEOFDAY: {},
-				syscall.SYS_TIME:         {},
-				unix.SYS_GETCPU:          {}, // SYS_GETCPU was not defined in package syscall on amd64.
+				unix.SYS_GETTIMEOFDAY: {},
+				unix.SYS_TIME:         {},
+				unix.SYS_GETCPU:       {}, // SYS_GETCPU was not defined in package syscall on amd64.
 			},
 			Action:   linux.SECCOMP_RET_TRAP,
 			Vsyscall: true,
@@ -200,7 +199,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction linux.BPFActi
 		rules = append(rules,
 			seccomp.RuleSet{
 				Rules: seccomp.SyscallRules{
-					syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
+					unix.SYS_ARCH_PRCTL: []seccomp.Rule{
 						{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
 					},
 				},
@@ -227,19 +226,19 @@ func probeSeccomp() bool {
 
 	// Set registers to the yield system call. This call is not allowed
 	// by the filters specified in the attachThread function.
-	regs := createSyscallRegs(&t.initRegs, syscall.SYS_SCHED_YIELD)
+	regs := createSyscallRegs(&t.initRegs, unix.SYS_SCHED_YIELD)
 	if err := t.setRegs(&regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
 	}
 
 	for {
 		// Attempt an emulation.
-		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, unix.PTRACE_SYSEMU, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+		if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_SYSEMU, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 		}
 
 		sig := t.wait(stopped)
-		if sig == (syscallEvent | syscall.SIGTRAP) {
+		if sig == (syscallEvent | unix.SIGTRAP) {
 			// Did the seccomp errno hook already run? This would
 			// indicate that seccomp is first in line and we're
 			// less than 4.8.

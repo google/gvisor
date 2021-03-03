@@ -16,8 +16,8 @@ package linux
 
 import (
 	"path"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -417,7 +417,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	si.SetUID(int32(wr.UID))
 	// TODO(b/73541790): convert kernel.ExitStatus to functions and make
 	// WaitResult.Status a linux.WaitStatus.
-	s := syscall.WaitStatus(wr.Status)
+	s := unix.WaitStatus(wr.Status)
 	switch {
 	case s.Exited():
 		si.Code = arch.CLD_EXITED

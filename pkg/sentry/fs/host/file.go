@@ -16,8 +16,8 @@ package host
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -78,16 +78,16 @@ func ImportFile(ctx context.Context, fd int, isTTY bool) (*fs.File, error) {
 // newFileFromDonatedFD returns an fs.File from a donated FD. If the FD is
 // saveable, then saveable is true.
 func newFileFromDonatedFD(ctx context.Context, donated int, saveable, isTTY bool) (*fs.File, error) {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(donated, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(donated, &s); err != nil {
 		return nil, err
 	}
 	flags, err := fileFlagsFromDonatedFD(donated)
 	if err != nil {
 		return nil, err
 	}
-	switch s.Mode & syscall.S_IFMT {
-	case syscall.S_IFSOCK:
+	switch s.Mode & unix.S_IFMT {
+	case unix.S_IFSOCK:
 		if isTTY {
 			return nil, fmt.Errorf("cannot import host socket as TTY")
 		}
@@ -121,19 +121,19 @@ func newFileFromDonatedFD(ctx context.Context, donated int, saveable, isTTY bool
 }
 
 func fileFlagsFromDonatedFD(donated int) (fs.FileFlags, error) {
-	flags, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(donated), syscall.F_GETFL, 0)
+	flags, _, errno := unix.Syscall(unix.SYS_FCNTL, uintptr(donated), unix.F_GETFL, 0)
 	if errno != 0 {
 		log.Warningf("Failed to get file flags for donated FD %d (errno=%d)", donated, errno)
-		return fs.FileFlags{}, syscall.EIO
+		return fs.FileFlags{}, unix.EIO
 	}
-	accmode := flags & syscall.O_ACCMODE
+	accmode := flags & unix.O_ACCMODE
 	return fs.FileFlags{
-		Direct:      flags&syscall.O_DIRECT != 0,
-		NonBlocking: flags&syscall.O_NONBLOCK != 0,
-		Sync:        flags&syscall.O_SYNC != 0,
-		Append:      flags&syscall.O_APPEND != 0,
-		Read:        accmode == syscall.O_RDONLY || accmode == syscall.O_RDWR,
-		Write:       accmode == syscall.O_WRONLY || accmode == syscall.O_RDWR,
+		Direct:      flags&unix.O_DIRECT != 0,
+		NonBlocking: flags&unix.O_NONBLOCK != 0,
+		Sync:        flags&unix.O_SYNC != 0,
+		Append:      flags&unix.O_APPEND != 0,
+		Read:        accmode == unix.O_RDONLY || accmode == unix.O_RDWR,
+		Write:       accmode == unix.O_WRONLY || accmode == unix.O_RDWR,
 	}, nil
 }
 
@@ -182,7 +182,7 @@ func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer 
 func (f *fileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
 	// We only support non-directory file descriptors that have been
 	// imported, so just claim that this isn't a directory, even if it is.
-	return offset, syscall.ENOTDIR
+	return offset, unix.ENOTDIR
 }
 
 // Write implements fs.FileOperations.Write.
@@ -252,7 +252,7 @@ func (f *fileOperations) Fsync(ctx context.Context, file *fs.File, start int64, 
 		}
 		fallthrough
 	case fs.SyncBackingStorage:
-		return syscall.Fsync(f.iops.fileState.FD())
+		return unix.Fsync(f.iops.fileState.FD())
 	}
 	panic("invalid sync type")
 }

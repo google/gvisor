@@ -19,10 +19,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -291,7 +291,7 @@ func TestNonBlockingSend(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		w := client.Writer(false)
 		if n, err := w.WriteVec([][]byte{make([]byte, 1000)}); n != 1000 || err != nil {
-			if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			if err == unix.EWOULDBLOCK || err == unix.EAGAIN {
 				// We're good. That's what we wanted.
 				blockCount++
 			} else {
@@ -319,7 +319,7 @@ func TestNonBlockingRecv(t *testing.T) {
 
 	// Expected to block immediately.
 	_, err := r.ReadVec(b)
-	if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+	if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
 		t.Fatalf("Read didn't block, got err %v expected blocking err", err)
 	}
 
@@ -337,7 +337,7 @@ func TestNonBlockingRecv(t *testing.T) {
 	// Expect it to return a block error again.
 	r = client.Reader(false)
 	_, err = r.ReadVec(b)
-	if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+	if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
 		t.Fatalf("Read didn't block, got err %v expected blocking err", err)
 	}
 }
@@ -469,8 +469,8 @@ func recvFDs(t *testing.T, s *Socket, enableSize int, origFDs []int) {
 
 	// Make sure they can be accessed as expected.
 	for i := 0; i < len(fds); i++ {
-		var st syscall.Stat_t
-		if err := syscall.Fstat(fds[i], &st); err != nil {
+		var st unix.Stat_t
+		if err := unix.Fstat(fds[i], &st); err != nil {
 			t.Errorf("fds[%d] can't be stated, got err %v expected nil", i, err)
 		}
 	}
@@ -561,7 +561,7 @@ func TestGetPeerCred(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	want := &syscall.Ucred{
+	want := &unix.Ucred{
 		Pid: int32(os.Getpid()),
 		Uid: uint32(os.Getuid()),
 		Gid: uint32(os.Getgid()),
@@ -573,14 +573,14 @@ func TestGetPeerCred(t *testing.T) {
 }
 
 func newClosedSocket() (*Socket, error) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	s, err := NewSocket(fd)
 	if err != nil {
-		syscall.Close(fd)
+		unix.Close(fd)
 		return nil, err
 	}
 
@@ -667,7 +667,7 @@ func TestReleaseAfterAcceptStart(t *testing.T) {
 		if err != nil {
 			t.Errorf("Release failed, got err %v expected nil", err)
 		}
-		syscall.Close(fd)
+		unix.Close(fd)
 	}()
 
 	if _, err := ss.Accept(); err == nil {

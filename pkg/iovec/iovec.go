@@ -19,18 +19,17 @@
 package iovec
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // MaxIovs is the maximum number of iovecs host platform can accept.
 var MaxIovs = linux.UIO_MAXIOV
 
-// Builder is a builder for slice of syscall.Iovec.
+// Builder is a builder for slice of unix.Iovec.
 type Builder struct {
-	iovec   []syscall.Iovec
-	storage [8]syscall.Iovec
+	iovec   []unix.Iovec
+	storage [8]unix.Iovec
 
 	// overflow tracks the last buffer when iovec length is at MaxIovs.
 	overflow []byte
@@ -48,7 +47,7 @@ func (b *Builder) Add(buf []byte) {
 		b.addByAppend(buf)
 		return
 	}
-	b.iovec = append(b.iovec, syscall.Iovec{
+	b.iovec = append(b.iovec, unix.Iovec{
 		Base: &buf[0],
 		Len:  uint64(len(buf)),
 	})
@@ -62,7 +61,7 @@ func (b *Builder) Add(buf []byte) {
 
 func (b *Builder) addByAppend(buf []byte) {
 	b.overflow = append(b.overflow, buf...)
-	b.iovec[len(b.iovec)-1] = syscall.Iovec{
+	b.iovec[len(b.iovec)-1] = unix.Iovec{
 		Base: &b.overflow[0],
 		Len:  uint64(len(b.overflow)),
 	}
@@ -70,6 +69,6 @@ func (b *Builder) addByAppend(buf []byte) {
 
 // Build returns the final Iovec slice. The length of returned iovec will not
 // excceed MaxIovs.
-func (b *Builder) Build() []syscall.Iovec {
+func (b *Builder) Build() []unix.Iovec {
 	return b.iovec
 }

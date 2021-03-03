@@ -16,8 +16,8 @@ package host
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -48,14 +48,14 @@ func newDescriptor(fd int, saveable bool, wouldBlock bool, queue *waiter.Queue) 
 	origFD := -1
 	if saveable {
 		var err error
-		ownedFD, err = syscall.Dup(fd)
+		ownedFD, err = unix.Dup(fd)
 		if err != nil {
 			return nil, err
 		}
 		origFD = fd
 	}
 	if wouldBlock {
-		if err := syscall.SetNonblock(ownedFD, true); err != nil {
+		if err := unix.SetNonblock(ownedFD, true); err != nil {
 			return nil, err
 		}
 		if err := fdnotifier.AddFD(int32(ownedFD), queue); err != nil {
@@ -72,12 +72,12 @@ func newDescriptor(fd int, saveable bool, wouldBlock bool, queue *waiter.Queue) 
 // initAfterLoad initializes the value of the descriptor after Load.
 func (d *descriptor) initAfterLoad(id uint64, queue *waiter.Queue) error {
 	var err error
-	d.value, err = syscall.Dup(d.origFD)
+	d.value, err = unix.Dup(d.origFD)
 	if err != nil {
 		return fmt.Errorf("failed to dup restored fd %d: %v", d.origFD, err)
 	}
 	if d.wouldBlock {
-		if err := syscall.SetNonblock(d.value, true); err != nil {
+		if err := unix.SetNonblock(d.value, true); err != nil {
 			return err
 		}
 		if err := fdnotifier.AddFD(int32(d.value), queue); err != nil {
@@ -92,7 +92,7 @@ func (d *descriptor) Release() {
 	if d.wouldBlock {
 		fdnotifier.RemoveFD(int32(d.value))
 	}
-	if err := syscall.Close(d.value); err != nil {
+	if err := unix.Close(d.value); err != nil {
 		log.Warningf("error closing fd %d: %v", d.value, err)
 	}
 	d.value = -1

@@ -15,8 +15,7 @@
 package linux
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -368,7 +367,7 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 
 			// Are we able to resolve further?
 			if remainingTraversals == 0 {
-				return syscall.ELOOP
+				return unix.ELOOP
 			}
 
 			// Resolve the symlink to a path via Readlink.
@@ -2217,7 +2216,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	allowSeals := flags&linux.MFD_ALLOW_SEALING != 0
 	cloExec := flags&linux.MFD_CLOEXEC != 0
 
-	name, err := t.CopyInString(addr, syscall.PathMax-len(memfdPrefix))
+	name, err := t.CopyInString(addr, unix.PathMax-len(memfdPrefix))
 	if err != nil {
 		return 0, nil, err
 	}

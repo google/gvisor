@@ -16,10 +16,10 @@ package gofer
 
 import (
 	"fmt"
-	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/p9/p9test"
@@ -97,7 +97,7 @@ func TestLookup(t *testing.T) {
 		},
 		{
 			name: "mock Walk fails (function fails)",
-			want: syscall.ENOENT,
+			want: unix.ENOENT,
 		},
 	}
 
@@ -123,7 +123,7 @@ func TestLookup(t *testing.T) {
 			var newInodeOperations fs.InodeOperations
 			if dirent != nil {
 				if dirent.IsNegative() {
-					err = syscall.ENOENT
+					err = unix.ENOENT
 				} else {
 					newInodeOperations = dirent.Inode.InodeOperations
 				}

@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/containerd/console"
@@ -35,6 +34,7 @@ import (
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
@@ -81,7 +81,7 @@ func NewRunsc(root, path, namespace, runtime string, config map[string]string) *
 	}
 	return &runsc.Runsc{
 		Command:      runtime,
-		PdeathSignal: syscall.SIGKILL,
+		PdeathSignal: unix.SIGKILL,
 		Log:          filepath.Join(path, "log.json"),
 		LogFormat:    runc.JSON,
 		Root:         filepath.Join(root, namespace),
@@ -136,7 +136,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		return p.runtimeError(err, "OCI runtime create failed")
 	}
 	if r.Stdin != "" {
-		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, unix.O_WRONLY|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return fmt.Errorf("failed to open stdin fifo %s: %w", r.Stdin, err)
 		}
@@ -366,7 +366,7 @@ func (p *Init) KillAll(context context.Context) error {
 }
 
 func (p *Init) killAll(context context.Context) error {
-	p.runtime.Kill(context, p.id, int(syscall.SIGKILL), &runsc.KillOpts{
+	p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsc.KillOpts{
 		All: true,
 	})
 	// Ignore error handling for `runsc kill --all` for now.

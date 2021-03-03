@@ -18,10 +18,10 @@ import (
 	"math/rand"
 	"reflect"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -195,7 +195,7 @@ func TestApplicationFault(t *testing.T) {
 			FullRestore:        true,
 		}, &si); err == platform.ErrContextInterrupt {
 			return true // Retry.
-		} else if err != platform.ErrContextSignal || si.Signo != int32(syscall.SIGSEGV) {
+		} else if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGSEGV) {
 			t.Errorf("application fault with full restore got (%v, %v), expected (%v, SIGSEGV)", err, si, platform.ErrContextSignal)
 		}
 		return false
@@ -209,7 +209,7 @@ func TestApplicationFault(t *testing.T) {
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			return true // Retry.
-		} else if err != platform.ErrContextSignal || si.Signo != int32(syscall.SIGSEGV) {
+		} else if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGSEGV) {
 			t.Errorf("application fault with partial restore got (%v, %v), expected (%v, SIGSEGV)", err, si, platform.ErrContextSignal)
 		}
 		return false
@@ -251,7 +251,7 @@ func TestRegistersFault(t *testing.T) {
 				FullRestore:        true,
 			}, &si); err == platform.ErrContextInterrupt {
 				continue // Retry.
-			} else if err != platform.ErrContextSignal || si.Signo != int32(syscall.SIGSEGV) {
+			} else if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGSEGV) {
 				t.Errorf("application register check with full restore got unexpected error: %v", err)
 			}
 			if err := testutil.CheckTestRegs(regs, true); err != nil {
@@ -371,7 +371,7 @@ func TestInvalidate(t *testing.T) {
 
 // IsFault returns true iff the given signal represents a fault.
 func IsFault(err error, si *arch.SignalInfo) bool {
-	return err == platform.ErrContextSignal && si.Signo == int32(syscall.SIGSEGV)
+	return err == platform.ErrContextSignal && si.Signo == int32(unix.SIGSEGV)
 }
 
 func TestEmptyAddressSpace(t *testing.T) {

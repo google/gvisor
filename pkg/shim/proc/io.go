@@ -22,11 +22,11 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
+	"golang.org/x/sys/unix"
 )
 
 // TODO(random-liu): This file can be a util.
@@ -89,10 +89,10 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 			fr io.Closer
 		)
 		if ok {
-			if fw, err = fifo.OpenFifo(ctx, i.name, syscall.O_WRONLY, 0); err != nil {
+			if fw, err = fifo.OpenFifo(ctx, i.name, unix.O_WRONLY, 0); err != nil {
 				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
 			}
-			if fr, err = fifo.OpenFifo(ctx, i.name, syscall.O_RDONLY, 0); err != nil {
+			if fr, err = fifo.OpenFifo(ctx, i.name, unix.O_RDONLY, 0); err != nil {
 				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
 			}
 		} else {
@@ -101,7 +101,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 				i.dest(sameFile, nil)
 				continue
 			}
-			if fw, err = os.OpenFile(i.name, syscall.O_WRONLY|syscall.O_APPEND, 0); err != nil {
+			if fw, err = os.OpenFile(i.name, unix.O_WRONLY|unix.O_APPEND, 0); err != nil {
 				return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", i.name, err)
 			}
 			if stdout == stderr {
@@ -116,7 +116,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 	if stdin == "" {
 		return nil
 	}
-	f, err := fifo.OpenFifo(context.Background(), stdin, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, err := fifo.OpenFifo(context.Background(), stdin, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("gvisor-containerd-shim: opening %s failed: %s", stdin, err)
 	}

@@ -20,9 +20,9 @@ package fdchannel
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
@@ -33,7 +33,7 @@ const sizeofInt32 = int(unsafe.Sizeof(int32(0)))
 // representing connected sockets that may be passed to separate calls to
 // NewEndpoint to create connected Endpoints.
 func NewConnectedSockets() ([2]int, error) {
-	return syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC, 0)
+	return unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
 }
 
 // Endpoint sends file descriptors to, and receives them from, another
@@ -42,8 +42,8 @@ func NewConnectedSockets() ([2]int, error) {
 // Endpoint is not copyable or movable by value.
 type Endpoint struct {
 	sockfd int32
-	msghdr syscall.Msghdr
-	cmsg   *syscall.Cmsghdr // followed by sizeofInt32 bytes of data
+	msghdr unix.Msghdr
+	cmsg   *unix.Cmsghdr // followed by sizeofInt32 bytes of data
 }
 
 // Init must be called on zero-value Endpoints before first use. sockfd must be
@@ -53,11 +53,11 @@ func (ep *Endpoint) Init(sockfd int) {
 	// domains) permit zero-length datagrams." - recv(2). Experimentally,
 	// sendmsg+recvmsg for a zero-length datagram is slightly faster than
 	// sendmsg+recvmsg for a single byte over a stream socket.
-	cmsgSlice := make([]byte, syscall.CmsgSpace(sizeofInt32))
+	cmsgSlice := make([]byte, unix.CmsgSpace(sizeofInt32))
 	cmsgSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&cmsgSlice))
 	ep.sockfd = int32(sockfd)
 	ep.msghdr.Control = (*byte)(cmsgSliceHdr.Data)
-	ep.cmsg = (*syscall.Cmsghdr)(cmsgSliceHdr.Data)
+	ep.cmsg = (*unix.Cmsghdr)(cmsgSliceHdr.Data)
 	// ep.msghdr.Controllen and ep.cmsg.* are mutated by recvmsg(2), so they're
 	// set before calling sendmsg/recvmsg.
 }
@@ -73,7 +73,7 @@ func NewEndpoint(sockfd int) *Endpoint {
 // Destroy releases resources owned by ep. No other Endpoint methods may be
 // called after Destroy.
 func (ep *Endpoint) Destroy() {
-	syscall.Close(int(ep.sockfd))
+	unix.Close(int(ep.sockfd))
 	ep.sockfd = -1
 }
 
@@ -84,19 +84,19 @@ func (ep *Endpoint) Destroy() {
 // Shutdown is the only Endpoint method that may be called concurrently with
 // other methods.
 func (ep *Endpoint) Shutdown() {
-	syscall.Shutdown(int(ep.sockfd), syscall.SHUT_RDWR)
+	unix.Shutdown(int(ep.sockfd), unix.SHUT_RDWR)
 }
 
 // SendFD sends the open file description represented by the given file
 // descriptor to the connected Endpoint.
 func (ep *Endpoint) SendFD(fd int) error {
-	cmsgLen := syscall.CmsgLen(sizeofInt32)
-	ep.cmsg.Level = syscall.SOL_SOCKET
-	ep.cmsg.Type = syscall.SCM_RIGHTS
+	cmsgLen := unix.CmsgLen(sizeofInt32)
+	ep.cmsg.Level = unix.SOL_SOCKET
+	ep.cmsg.Type = unix.SCM_RIGHTS
 	ep.cmsg.SetLen(cmsgLen)
 	*ep.cmsgData() = int32(fd)
 	ep.msghdr.SetControllen(cmsgLen)
-	_, _, e := syscall.Syscall(syscall.SYS_SENDMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), 0)
+	_, _, e := unix.Syscall(unix.SYS_SENDMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), 0)
 	if e != 0 {
 		return e
 	}
@@ -118,13 +118,13 @@ func (ep *Endpoint) RecvFDNonblock() (int, error) {
 }
 
 func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
-	cmsgLen := syscall.CmsgLen(sizeofInt32)
+	cmsgLen := unix.CmsgLen(sizeofInt32)
 	ep.msghdr.SetControllen(cmsgLen)
-	var e syscall.Errno
+	var e unix.Errno
 	if nonblock {
-		_, _, e = syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), syscall.MSG_TRUNC|syscall.MSG_DONTWAIT)
+		_, _, e = unix.RawSyscall(unix.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC|unix.MSG_DONTWAIT)
 	} else {
-		_, _, e = syscall.Syscall(syscall.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), syscall.MSG_TRUNC)
+		_, _, e = unix.Syscall(unix.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC)
 	}
 	if e != 0 {
 		return -1, e
@@ -132,13 +132,13 @@ func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
 	if int(ep.msghdr.Controllen) != cmsgLen {
 		return -1, fmt.Errorf("received control message has incorrect length: got %d, wanted %d", ep.msghdr.Controllen, cmsgLen)
 	}
-	if ep.cmsg.Level != syscall.SOL_SOCKET || ep.cmsg.Type != syscall.SCM_RIGHTS {
-		return -1, fmt.Errorf("received control message has incorrect (level, type): got (%v, %v), wanted (%v, %v)", ep.cmsg.Level, ep.cmsg.Type, syscall.SOL_SOCKET, syscall.SCM_RIGHTS)
+	if ep.cmsg.Level != unix.SOL_SOCKET || ep.cmsg.Type != unix.SCM_RIGHTS {
+		return -1, fmt.Errorf("received control message has incorrect (level, type): got (%v, %v), wanted (%v, %v)", ep.cmsg.Level, ep.cmsg.Type, unix.SOL_SOCKET, unix.SCM_RIGHTS)
 	}
 	return int(*ep.cmsgData()), nil
 }
 
 func (ep *Endpoint) cmsgData() *int32 {
-	// syscall.CmsgLen(0) == syscall.cmsgAlignOf(syscall.SizeofCmsghdr)
-	return (*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(ep.cmsg)) + uintptr(syscall.CmsgLen(0))))
+	// unix.CmsgLen(0) == unix.cmsgAlignOf(unix.SizeofCmsghdr)
+	return (*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(ep.cmsg)) + uintptr(unix.CmsgLen(0))))
 }

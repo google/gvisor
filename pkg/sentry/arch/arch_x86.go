@@ -19,8 +19,8 @@ package arch
 import (
 	"fmt"
 	"io"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -334,28 +334,28 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	regs.Ss = uint64(uint16(regs.Ss))
 	// In Linux this validation is via arch/x86/kernel/ptrace.c:putreg().
 	if !isUserSegmentSelector(regs.Cs) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if regs.Ds != 0 && !isUserSegmentSelector(regs.Ds) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if regs.Es != 0 && !isUserSegmentSelector(regs.Es) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if regs.Fs != 0 && !isUserSegmentSelector(regs.Fs) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if regs.Gs != 0 && !isUserSegmentSelector(regs.Gs) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if !isUserSegmentSelector(regs.Ss) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if !isValidSegmentBase(regs.Fs_base) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	if !isValidSegmentBase(regs.Gs_base) {
-		return 0, syscall.EIO
+		return 0, unix.EIO
 	}
 	// CS and SS are validated, but changes to them are otherwise silently
 	// ignored on amd64.
@@ -512,7 +512,7 @@ func (s *State) ptraceSetXstateRegs(src io.Reader, maxlen int) (int, error) {
 	// permits setting a register set smaller than minXstateBytes, but it has
 	// the same silent truncation behavior in kernel/ptrace.c:ptrace_regset().)
 	if maxlen < minXstateBytes {
-		return 0, syscall.EFAULT
+		return 0, unix.EFAULT
 	}
 	ess, _ := s.FeatureSet.ExtendedStateSize()
 	if maxlen > int(ess) {

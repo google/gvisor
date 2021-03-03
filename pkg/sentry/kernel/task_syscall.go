@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"os"
 	"runtime/trace"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -113,7 +113,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 
 	if bits.IsOn32(fe, ExternalAfterEnable) && (s.ExternalFilterAfter == nil || s.ExternalFilterAfter(t, sysno, args)) {
 		t.invokeExternal()
-		// Don't reinvoke the syscall.
+		// Don't reinvoke the unix.
 	}
 
 	if bits.IsAnyOn32(fe, StraceEnableBits) {
@@ -147,7 +147,7 @@ func (t *Task) doSyscall() taskRunState {
 	// Tracers expect to see this between when the task traps into the kernel
 	// to perform a syscall and when the syscall is actually invoked.
 	// This useless-looking temporary is needed because Go.
-	tmp := uintptr(syscall.ENOSYS)
+	tmp := uintptr(unix.ENOSYS)
 	t.Arch().SetReturn(-tmp)
 
 	// Check seccomp filters. The nil check is for performance (as seccomp use
@@ -379,7 +379,7 @@ func ExtractErrno(err error, sysno int) int {
 	switch err := err.(type) {
 	case nil:
 		return 0
-	case syscall.Errno:
+	case unix.Errno:
 		return int(err)
 	case syserror.SyscallRestartErrno:
 		return int(err)
@@ -387,7 +387,7 @@ func ExtractErrno(err error, sysno int) int {
 		// Bus errors may generate SIGBUS, but for syscalls they still
 		// return EFAULT. See case in task_run.go where the fault is
 		// handled (and the SIGBUS is delivered).
-		return int(syscall.EFAULT)
+		return int(unix.EFAULT)
 	case *os.PathError:
 		return ExtractErrno(err.Err, sysno)
 	case *os.LinkError:

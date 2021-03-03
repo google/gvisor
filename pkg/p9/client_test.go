@@ -15,9 +15,9 @@
 package p9
 
 import (
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -41,23 +41,23 @@ func TestVersion(t *testing.T) {
 	}
 
 	// Check a bogus version string.
-	if err := c.sendRecv(&Tversion{Version: "notokay", MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EINVAL {
-		t.Errorf("got %v expected %v", err, syscall.EINVAL)
+	if err := c.sendRecv(&Tversion{Version: "notokay", MSize: DefaultMessageSize}, &Rversion{}); err != unix.EINVAL {
+		t.Errorf("got %v expected %v", err, unix.EINVAL)
 	}
 
 	// Check a bogus version number.
-	if err := c.sendRecv(&Tversion{Version: "9P1000.L", MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EINVAL {
-		t.Errorf("got %v expected %v", err, syscall.EINVAL)
+	if err := c.sendRecv(&Tversion{Version: "9P1000.L", MSize: DefaultMessageSize}, &Rversion{}); err != unix.EINVAL {
+		t.Errorf("got %v expected %v", err, unix.EINVAL)
 	}
 
 	// Check a too high version number.
-	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion + 1), MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EAGAIN {
-		t.Errorf("got %v expected %v", err, syscall.EAGAIN)
+	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion + 1), MSize: DefaultMessageSize}, &Rversion{}); err != unix.EAGAIN {
+		t.Errorf("got %v expected %v", err, unix.EAGAIN)
 	}
 
 	// Check an invalid MSize.
-	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &Rversion{}); err != syscall.EINVAL {
-		t.Errorf("got %v expected %v", err, syscall.EINVAL)
+	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &Rversion{}); err != unix.EINVAL {
+		t.Errorf("got %v expected %v", err, unix.EINVAL)
 	}
 }
 

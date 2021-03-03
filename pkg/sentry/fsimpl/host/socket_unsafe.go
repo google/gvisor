@@ -15,8 +15,9 @@
 package host
 
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // fdReadVec receives from fd to bufs.
@@ -24,9 +25,9 @@ import (
 // If the total length of bufs is > maxlen, fdReadVec will do a partial read
 // and err will indicate why the message was truncated.
 func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (readLen int64, msgLen int64, controlLen uint64, controlTrunc bool, err error) {
-	flags := uintptr(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC)
+	flags := uintptr(unix.MSG_DONTWAIT | unix.MSG_TRUNC)
 	if peek {
-		flags |= syscall.MSG_PEEK
+		flags |= unix.MSG_PEEK
 	}
 
 	// Always truncate the receive buffer. All socket types will truncate
@@ -37,7 +38,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 		return 0, 0, 0, false, err
 	}
 
-	var msg syscall.Msghdr
+	var msg unix.Msghdr
 	if len(control) != 0 {
 		msg.Control = &control[0]
 		msg.Controllen = uint64(len(control))
@@ -48,7 +49,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 		msg.Iovlen = uint64(len(iovecs))
 	}
 
-	rawN, _, e := syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
+	rawN, _, e := unix.RawSyscall(unix.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
 	if e != 0 {
 		// N.B. prioritize the syscall error over the buildIovec error.
 		return 0, 0, 0, false, e
@@ -60,7 +61,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (
 		copyToMulti(bufs, intermediate)
 	}
 
-	controlTrunc = msg.Flags&syscall.MSG_CTRUNC == syscall.MSG_CTRUNC
+	controlTrunc = msg.Flags&unix.MSG_CTRUNC == unix.MSG_CTRUNC
 
 	if n > length {
 		return length, n, msg.Controllen, controlTrunc, nil
@@ -85,13 +86,13 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int6
 		copyFromMulti(intermediate, bufs)
 	}
 
-	var msg syscall.Msghdr
+	var msg unix.Msghdr
 	if len(iovecs) > 0 {
 		msg.Iov = &iovecs[0]
 		msg.Iovlen = uint64(len(iovecs))
 	}
 
-	n, _, e := syscall.RawSyscall(syscall.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), syscall.MSG_DONTWAIT|syscall.MSG_NOSIGNAL)
+	n, _, e := unix.RawSyscall(unix.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL)
 	if e != 0 {
 		// N.B. prioritize the syscall error over the buildIovec error.
 		return 0, length, e

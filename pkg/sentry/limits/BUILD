@@ -14,6 +14,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
@@ -24,4 +25,5 @@ go_test(
         "limits_test.go",
     ],
     library = ":limits",
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

@@ -17,8 +17,8 @@ package fs
 import (
 	"fmt"
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -571,13 +571,13 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		// Make sure we didn't exhaust the traversal budget.
 		if *remainingTraversals == 0 {
 			target.DecRef(ctx)
-			return nil, syscall.ELOOP
+			return nil, unix.ELOOP
 		}
 
 		node.DecRef(ctx) // Drop the original reference.
 		return target, nil
 
-	case syscall.ENOLINK:
+	case unix.ENOLINK:
 		// Not a symlink.
 		return node, nil
 
@@ -586,7 +586,7 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 
 		// First, check if we should traverse.
 		if *remainingTraversals == 0 {
-			return nil, syscall.ELOOP
+			return nil, unix.ELOOP
 		}
 
 		// Read the target path.

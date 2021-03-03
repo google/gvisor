@@ -19,7 +19,6 @@ package iovec
 import (
 	"bytes"
 	"fmt"
-	"syscall"
 	"testing"
 	"unsafe"
 
@@ -100,16 +99,16 @@ func TestBuilderBuildMaxIov(t *testing.T) {
 			if err := unix.Pipe(fds[:]); err != nil {
 				t.Fatalf("Pipe: %v", err)
 			}
-			defer syscall.Close(fds[0])
-			defer syscall.Close(fds[1])
+			defer unix.Close(fds[0])
+			defer unix.Close(fds[1])
 
-			wrote, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fds[1]), uintptr(unsafe.Pointer(&iovec[0])), uintptr(len(iovec)))
+			wrote, _, e := unix.RawSyscall(unix.SYS_WRITEV, uintptr(fds[1]), uintptr(unsafe.Pointer(&iovec[0])), uintptr(len(iovec)))
 			if int(wrote) != len(data) || e != 0 {
 				t.Fatalf("writev: %v, %v; want %v, 0", wrote, e, len(data))
 			}
 
 			got := make([]byte, len(data))
-			if n, err := syscall.Read(fds[0], got); n != len(got) || err != nil {
+			if n, err := unix.Read(fds[0], got); n != len(got) || err != nil {
 				t.Fatalf("read: %v, %v; want %v, nil", n, err, len(got))
 			}
 

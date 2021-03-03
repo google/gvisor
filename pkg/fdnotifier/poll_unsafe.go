@@ -17,9 +17,9 @@
 package fdnotifier
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -35,16 +35,16 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 		events: int16(mask.ToLinux()),
 	}
 
-	ts := syscall.Timespec{
+	ts := unix.Timespec{
 		Sec:  0,
 		Nsec: 0,
 	}
 
 	for {
-		n, _, err := syscall.RawSyscall6(syscall.SYS_PPOLL, uintptr(unsafe.Pointer(&e)), 1,
+		n, _, err := unix.RawSyscall6(unix.SYS_PPOLL, uintptr(unsafe.Pointer(&e)), 1,
 			uintptr(unsafe.Pointer(&ts)), 0, 0, 0)
 		// Interrupted by signal, try again.
-		if err == syscall.EINTR {
+		if err == unix.EINTR {
 			continue
 		}
 		// If an error occur we'll conservatively say the FD is ready for
@@ -66,14 +66,14 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 // epollWait performs a blocking wait on epfd.
 //
 // Preconditions: len(events) > 0
-func epollWait(epfd int, events []syscall.EpollEvent, msec int) (int, error) {
+func epollWait(epfd int, events []unix.EpollEvent, msec int) (int, error) {
 	if len(events) == 0 {
 		panic("Empty events passed to EpollWait")
 	}
 
 	// We actually use epoll_pwait with NULL sigmask instead of epoll_wait
 	// since that is what the Go >= 1.11 runtime prefers.
-	r, _, e := syscall.Syscall6(syscall.SYS_EPOLL_PWAIT, uintptr(epfd), uintptr(unsafe.Pointer(&events[0])), uintptr(len(events)), uintptr(msec), 0, 0)
+	r, _, e := unix.Syscall6(unix.SYS_EPOLL_PWAIT, uintptr(epfd), uintptr(unsafe.Pointer(&events[0])), uintptr(len(events)), uintptr(msec), 0, 0)
 	if e != 0 {
 		return 0, e
 	}

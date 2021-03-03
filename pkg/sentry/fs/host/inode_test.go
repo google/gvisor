@@ -15,20 +15,20 @@
 package host
 
 import (
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
 
 // TestCloseFD verifies fds will be closed.
 func TestCloseFD(t *testing.T) {
 	var p [2]int
-	if err := syscall.Pipe(p[0:]); err != nil {
+	if err := unix.Pipe(p[0:]); err != nil {
 		t.Fatalf("Failed to create pipe %v", err)
 	}
-	defer syscall.Close(p[0])
-	defer syscall.Close(p[1])
+	defer unix.Close(p[0])
+	defer unix.Close(p[1])
 
 	// Use the write-end because we will detect if it's closed on the read end.
 	ctx := contexttest.Context(t)
@@ -39,7 +39,7 @@ func TestCloseFD(t *testing.T) {
 	file.DecRef(ctx)
 
 	s := make([]byte, 10)
-	if c, err := syscall.Read(p[0], s); c != 0 || err != nil {
+	if c, err := unix.Read(p[0], s); c != 0 || err != nil {
 		t.Errorf("want 0, nil (EOF) from read end, got %v, %v", c, err)
 	}
 }

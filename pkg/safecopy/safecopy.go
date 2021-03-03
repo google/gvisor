@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -127,16 +127,16 @@ func initializeAddresses() {
 
 func init() {
 	initializeAddresses()
-	if err := ReplaceSignalHandler(syscall.SIGSEGV, reflect.ValueOf(signalHandler).Pointer(), &savedSigSegVHandler); err != nil {
+	if err := ReplaceSignalHandler(unix.SIGSEGV, reflect.ValueOf(signalHandler).Pointer(), &savedSigSegVHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGSEGV: %v", err))
 	}
-	if err := ReplaceSignalHandler(syscall.SIGBUS, reflect.ValueOf(signalHandler).Pointer(), &savedSigBusHandler); err != nil {
+	if err := ReplaceSignalHandler(unix.SIGBUS, reflect.ValueOf(signalHandler).Pointer(), &savedSigBusHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGBUS: %v", err))
 	}
-	syserror.AddErrorUnwrapper(func(e error) (syscall.Errno, bool) {
+	syserror.AddErrorUnwrapper(func(e error) (unix.Errno, bool) {
 		switch e.(type) {
 		case SegvError, BusError, AlignmentError:
-			return syscall.EFAULT, true
+			return unix.EFAULT, true
 		default:
 			return 0, false
 		}

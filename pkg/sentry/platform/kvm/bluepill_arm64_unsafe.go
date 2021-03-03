@@ -17,9 +17,9 @@
 package kvm
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -80,8 +80,8 @@ func getHypercallID(addr uintptr) int {
 //
 //go:nosplit
 func bluepillStopGuest(c *vCPU) {
-	if _, _, errno := syscall.RawSyscall( // escapes: no.
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall( // escapes: no.
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(&vcpuSErrBounce))); errno != 0 {
@@ -94,12 +94,12 @@ func bluepillStopGuest(c *vCPU) {
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
 	// Host must support ARM64_HAS_RAS_EXTN.
-	if _, _, errno := syscall.RawSyscall( // escapes: no.
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall( // escapes: no.
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(&vcpuSErrNMI))); errno != 0 {
-		if errno == syscall.EINVAL {
+		if errno == unix.EINVAL {
 			throw("No ARM64_HAS_RAS_EXTN feature in host.")
 		}
 		throw("nmi sErr injection failed")
@@ -110,8 +110,8 @@ func bluepillSigBus(c *vCPU) {
 //
 //go:nosplit
 func bluepillExtDabt(c *vCPU) {
-	if _, _, errno := syscall.RawSyscall( // escapes: no.
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall( // escapes: no.
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(&vcpuExtDabt))); errno != 0 {

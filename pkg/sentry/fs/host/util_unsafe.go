@@ -15,9 +15,9 @@
 package host
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -30,8 +30,8 @@ func readLink(fd int) (string, error) {
 	// Buffer sizing copied from os.Readlink.
 	for l := 128; ; l *= 2 {
 		b := make([]byte, l)
-		n, _, errno := syscall.Syscall6(
-			syscall.SYS_READLINKAT,
+		n, _, errno := unix.Syscall6(
+			unix.SYS_READLINKAT,
 			uintptr(fd),
 			uintptr(unsafe.Pointer(&NulByte)), // ""
 			uintptr(unsafe.Pointer(&b[0])),
@@ -46,25 +46,25 @@ func readLink(fd int) (string, error) {
 	}
 }
 
-func timespecFromTimestamp(t ktime.Time, omit, setSysTime bool) syscall.Timespec {
+func timespecFromTimestamp(t ktime.Time, omit, setSysTime bool) unix.Timespec {
 	if omit {
-		return syscall.Timespec{0, linux.UTIME_OMIT}
+		return unix.Timespec{0, linux.UTIME_OMIT}
 	}
 	if setSysTime {
-		return syscall.Timespec{0, linux.UTIME_NOW}
+		return unix.Timespec{0, linux.UTIME_NOW}
 	}
-	return syscall.NsecToTimespec(t.Nanoseconds())
+	return unix.NsecToTimespec(t.Nanoseconds())
 }
 
 func setTimestamps(fd int, ts fs.TimeSpec) error {
 	if ts.ATimeOmit && ts.MTimeOmit {
 		return nil
 	}
-	var sts [2]syscall.Timespec
+	var sts [2]unix.Timespec
 	sts[0] = timespecFromTimestamp(ts.ATime, ts.ATimeOmit, ts.ATimeSetSystemTime)
 	sts[1] = timespecFromTimestamp(ts.MTime, ts.MTimeOmit, ts.MTimeSetSystemTime)
-	_, _, errno := syscall.Syscall6(
-		syscall.SYS_UTIMENSAT,
+	_, _, errno := unix.Syscall6(
+		unix.SYS_UTIMENSAT,
 		uintptr(fd),
 		0, /* path */
 		uintptr(unsafe.Pointer(&sts)),

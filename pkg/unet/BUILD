@@ -22,5 +22,8 @@ go_test(
         "unet_test.go",
     ],
     library = ":unet",
-    deps = ["//pkg/sync"],
+    deps = [
+        "//pkg/sync",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

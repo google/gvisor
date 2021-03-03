@@ -19,7 +19,6 @@ package ptrace
 import (
 	"fmt"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -99,7 +98,7 @@ func updateSyscallRegs(regs *arch.Registers) {
 func syscallReturnValue(regs *arch.Registers) (uintptr, error) {
 	rval := int64(regs.Regs[0])
 	if rval < 0 {
-		return 0, syscall.Errno(-rval)
+		return 0, unix.Errno(-rval)
 	}
 	return uintptr(rval), nil
 }
@@ -185,8 +184,8 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 	// signal, resume a stub thread and catch it on a signal handling.
 	t.NotifyInterrupt()
 	for {
-		if _, _, errno := syscall.RawSyscall6(
-			syscall.SYS_PTRACE,
+		if _, _, errno := unix.RawSyscall6(
+			unix.SYS_PTRACE,
 			unix.PTRACE_SYSEMU,
 			uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace sysemu failed: %v", errno))
@@ -194,12 +193,12 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 
 		// Wait for the syscall-enter stop.
 		sig := t.wait(stopped)
-		if sig == syscall.SIGSTOP {
+		if sig == unix.SIGSTOP {
 			// SIGSTOP was delivered to another thread in the same thread
 			// group, which initiated another group stop. Just ignore it.
 			continue
 		}
-		if sig == (syscallEvent | syscall.SIGTRAP) {
+		if sig == (syscallEvent | unix.SIGTRAP) {
 			t.dumpAndPanic(fmt.Sprintf("unexpected syscall event"))
 		}
 		break

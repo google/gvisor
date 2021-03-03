@@ -21,8 +21,8 @@ import (
 	"io"
 	"runtime"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
@@ -66,7 +66,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 			// associated backing store. This is equivalent to punching a hole
 			// in the corresponding byte range of the backing store (see
 			// fallocate(2))." - madvise(2)
-			if err := syscall.Madvise(pg, syscall.MADV_REMOVE); err != nil {
+			if err := unix.Madvise(pg, unix.MADV_REMOVE); err != nil {
 				// This doesn't impact the correctness of saved memory, it
 				// just means that we're incrementally more likely to OOM.
 				// Complain, but don't abort saving.

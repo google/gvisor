@@ -17,8 +17,9 @@ package fd
 import (
 	"math"
 	"os"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestSetNegOne(t *testing.T) {
@@ -29,22 +30,22 @@ func TestSetNegOne(t *testing.T) {
 	}
 	var tests []entry
 
-	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
-		t.Fatal("syscall.Socket:", err)
+		t.Fatal("unix.Socket:", err)
 	}
 	f1 := New(fd)
 	tests = append(tests, entry{
 		"Release",
 		f1,
 		func() error {
-			return syscall.Close(f1.Release())
+			return unix.Close(f1.Release())
 		},
 	})
 
-	fd, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	fd, err = unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
-		t.Fatal("syscall.Socket:", err)
+		t.Fatal("unix.Socket:", err)
 	}
 	f2 := New(fd)
 	tests = append(tests, entry{
@@ -85,9 +86,9 @@ func TestStartsNegOne(t *testing.T) {
 }
 
 func TestFileDotFile(t *testing.T) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
-		t.Fatal("syscall.Socket:", err)
+		t.Fatal("unix.Socket:", err)
 	}
 
 	f := New(fd)

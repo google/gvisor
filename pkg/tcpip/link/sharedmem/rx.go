@@ -18,8 +18,8 @@ package sharedmem
 
 import (
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -46,43 +46,43 @@ func (r *rx) init(mtu uint32, c *QueueConfig) error {
 
 	rxPipe, err := getBuffer(c.RxPipeFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
+		unix.Munmap(txPipe)
 		return err
 	}
 
 	data, err := getBuffer(c.DataFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
-		syscall.Munmap(rxPipe)
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
 		return err
 	}
 
 	sharedData, err := getBuffer(c.SharedDataFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
-		syscall.Munmap(rxPipe)
-		syscall.Munmap(data)
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
+		unix.Munmap(data)
 		return err
 	}
 
 	// Duplicate the eventFD so that caller can close it but we can still
 	// use it.
-	efd, err := syscall.Dup(c.EventFD)
+	efd, err := unix.Dup(c.EventFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
-		syscall.Munmap(rxPipe)
-		syscall.Munmap(data)
-		syscall.Munmap(sharedData)
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
+		unix.Munmap(data)
+		unix.Munmap(sharedData)
 		return err
 	}
 
 	// Set the eventfd as non-blocking.
-	if err := syscall.SetNonblock(efd, true); err != nil {
-		syscall.Munmap(txPipe)
-		syscall.Munmap(rxPipe)
-		syscall.Munmap(data)
-		syscall.Munmap(sharedData)
-		syscall.Close(efd)
+	if err := unix.SetNonblock(efd, true); err != nil {
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
+		unix.Munmap(data)
+		unix.Munmap(sharedData)
+		unix.Close(efd)
 		return err
 	}
 
@@ -99,12 +99,12 @@ func (r *rx) init(mtu uint32, c *QueueConfig) error {
 // called if init() has previously succeeded.
 func (r *rx) cleanup() {
 	a, b := r.q.Bytes()
-	syscall.Munmap(a)
-	syscall.Munmap(b)
+	unix.Munmap(a)
+	unix.Munmap(b)
 
-	syscall.Munmap(r.data)
-	syscall.Munmap(r.sharedData)
-	syscall.Close(r.eventFD)
+	unix.Munmap(r.data)
+	unix.Munmap(r.sharedData)
+	unix.Close(r.eventFD)
 }
 
 // postAndReceive posts the provided buffers (if any), and then tries to read

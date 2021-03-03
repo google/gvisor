@@ -17,32 +17,32 @@
 package rawfile
 
 import (
-	"syscall"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func TestTranslateErrno(t *testing.T) {
 	for _, test := range []struct {
-		errno      syscall.Errno
+		errno      unix.Errno
 		translated tcpip.Error
 	}{
 		{
-			errno:      syscall.Errno(0),
+			errno:      unix.Errno(0),
 			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
-			errno:      syscall.Errno(maxErrno),
+			errno:      unix.Errno(maxErrno),
 			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
-			errno:      syscall.Errno(514),
+			errno:      unix.Errno(514),
 			translated: &tcpip.ErrInvalidEndpointState{},
 		},
 		{
-			errno:      syscall.EEXIST,
+			errno:      unix.EEXIST,
 			translated: &tcpip.ErrDuplicateAddress{},
 		},
 	} {

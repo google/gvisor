@@ -17,8 +17,7 @@
 package arch
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -115,7 +114,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// for the signal stack. This is not allowed, and should immediately
 	// force signal delivery (reverting to the default handler).
 	if act.IsOnStack() && alt.IsEnabled() && !alt.Contains(frameBottom) {
-		return syscall.EFAULT
+		return unix.EFAULT
 	}
 
 	// Adjust the code.

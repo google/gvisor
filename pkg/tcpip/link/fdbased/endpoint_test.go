@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
-	"syscall"
 	"testing"
 	"time"
 	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -85,11 +85,11 @@ type context struct {
 }
 
 func newContext(t *testing.T, opt *Options) *context {
-	firstFDPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+	firstFDPair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
 	if err != nil {
 		t.Fatalf("Socketpair failed: %v", err)
 	}
-	secondFDPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+	secondFDPair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
 	if err != nil {
 		t.Fatalf("Socketpair failed: %v", err)
 	}
@@ -121,12 +121,12 @@ func newContext(t *testing.T, opt *Options) *context {
 
 func (c *context) cleanup() {
 	for _, fd := range c.readFDs {
-		syscall.Close(fd)
+		unix.Close(fd)
 	}
 	<-c.done
 	<-c.done
 	for _, fd := range c.writeFDs {
-		syscall.Close(fd)
+		unix.Close(fd)
 	}
 }
 
@@ -225,7 +225,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	// Read from the corresponding FD, then compare with what we wrote.
 	b = make([]byte, mtu)
 	fd := c.readFDs[hash%uint32(len(c.readFDs))]
-	n, err := syscall.Read(fd, b)
+	n, err := unix.Read(fd, b)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 
 	// Read from the FD, then compare with what we wrote.
 	b := make([]byte, mtu)
-	n, err := syscall.Read(c.readFDs[0], b)
+	n, err := unix.Read(c.readFDs[0], b)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestDeliverPacket(t *testing.T) {
 				}
 
 				// Write packet via the file descriptor.
-				if _, err := syscall.Write(c.readFDs[0], all); err != nil {
+				if _, err := unix.Write(c.readFDs[0], all); err != nil {
 					t.Fatalf("Write failed: %v", err)
 				}
 
@@ -481,7 +481,7 @@ func TestIovecBuffer(t *testing.T) {
 
 			// Make a copy as iovecs points to internal slice. We will need this state
 			// later.
-			oldIovecs := append([]syscall.Iovec(nil), iovecs...)
+			oldIovecs := append([]unix.Iovec(nil), iovecs...)
 
 			// Test the views that get pulled.
 			vv := b.pullViews(c.n)
@@ -575,12 +575,12 @@ func TestDispatchPacketFormat(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// Create a socket pair to send/recv.
-			fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_DGRAM, 0)
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer syscall.Close(fds[0])
-			defer syscall.Close(fds[1])
+			defer unix.Close(fds[0])
+			defer unix.Close(fds[1])
 
 			data := []byte{
 				// Ethernet header.
@@ -590,7 +590,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 				// Mock network header.
 				40, 41, 42, 43,
 			}
-			err = syscall.Sendmsg(fds[1], data, nil, nil, 0)
+			err = unix.Sendmsg(fds[1], data, nil, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}

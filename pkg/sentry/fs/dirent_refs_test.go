@@ -15,9 +15,9 @@
 package fs
 
 import (
-	"syscall"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
@@ -83,8 +83,8 @@ func TestWalkNegative(t *testing.T) {
 	name := "d"
 	for i := 0; i < 100; i++ {
 		_, err := root.walk(ctx, root, name, false)
-		if err != syscall.ENOENT {
-			t.Fatalf("root.walk(root, %q) got %v, want %v", name, err, syscall.ENOENT)
+		if err != unix.ENOENT {
+			t.Fatalf("root.walk(root, %q) got %v, want %v", name, err, unix.ENOENT)
 		}
 	}
 
@@ -166,8 +166,8 @@ func TestHashNegativeToPositive(t *testing.T) {
 
 	name := "d"
 	_, err := root.walk(ctx, root, name, false)
-	if err != syscall.ENOENT {
-		t.Fatalf("root.walk(root, %q) got %v, want %v", name, err, syscall.ENOENT)
+	if err != unix.ENOENT {
+		t.Fatalf("root.walk(root, %q) got %v, want %v", name, err, unix.ENOENT)
 	}
 
 	if got := root.exists(ctx, root, name); got != false {

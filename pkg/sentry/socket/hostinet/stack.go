@@ -24,6 +24,7 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -138,14 +139,14 @@ func (s *Stack) Configure() error {
 // netlink messages.
 func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.NetlinkMessage, interfaces map[int32]inet.Interface, interfaceAddrs map[int32][]inet.InterfaceAddr) error {
 	for _, link := range links {
-		if link.Header.Type != syscall.RTM_NEWLINK {
+		if link.Header.Type != unix.RTM_NEWLINK {
 			continue
 		}
-		if len(link.Data) < syscall.SizeofIfInfomsg {
-			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), syscall.SizeofIfInfomsg)
+		if len(link.Data) < unix.SizeofIfInfomsg {
+			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), unix.SizeofIfInfomsg)
 		}
-		var ifinfo syscall.IfInfomsg
-		binary.Unmarshal(link.Data[:syscall.SizeofIfInfomsg], usermem.ByteOrder, &ifinfo)
+		var ifinfo unix.IfInfomsg
+		binary.Unmarshal(link.Data[:unix.SizeofIfInfomsg], usermem.ByteOrder, &ifinfo)
 		inetIF := inet.Interface{
 			DeviceType: ifinfo.Type,
 			Flags:      ifinfo.Flags,
@@ -159,9 +160,9 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		}
 		for _, attr := range attrs {
 			switch attr.Attr.Type {
-			case syscall.IFLA_ADDRESS:
+			case unix.IFLA_ADDRESS:
 				inetIF.Addr = attr.Value
-			case syscall.IFLA_IFNAME:
+			case unix.IFLA_IFNAME:
 				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
 			}
 		}
@@ -169,14 +170,14 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 	}
 
 	for _, addr := range addrs {
-		if addr.Header.Type != syscall.RTM_NEWADDR {
+		if addr.Header.Type != unix.RTM_NEWADDR {
 			continue
 		}
-		if len(addr.Data) < syscall.SizeofIfAddrmsg {
-			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), syscall.SizeofIfAddrmsg)
+		if len(addr.Data) < unix.SizeofIfAddrmsg {
+			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), unix.SizeofIfAddrmsg)
 		}
-		var ifaddr syscall.IfAddrmsg
-		binary.Unmarshal(addr.Data[:syscall.SizeofIfAddrmsg], usermem.ByteOrder, &ifaddr)
+		var ifaddr unix.IfAddrmsg
+		binary.Unmarshal(addr.Data[:unix.SizeofIfAddrmsg], usermem.ByteOrder, &ifaddr)
 		inetAddr := inet.InterfaceAddr{
 			Family:    ifaddr.Family,
 			PrefixLen: ifaddr.Prefixlen,
@@ -188,7 +189,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 		}
 		for _, attr := range attrs {
 			switch attr.Attr.Type {
-			case syscall.IFA_ADDRESS:
+			case unix.IFA_ADDRESS:
 				inetAddr.Addr = attr.Value
 			}
 		}
@@ -203,12 +204,12 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error) {
 	var routes []inet.Route
 	for _, routeMsg := range routeMsgs {
-		if routeMsg.Header.Type != syscall.RTM_NEWROUTE {
+		if routeMsg.Header.Type != unix.RTM_NEWROUTE {
 			continue
 		}
 
-		var ifRoute syscall.RtMsg
-		binary.Unmarshal(routeMsg.Data[:syscall.SizeofRtMsg], usermem.ByteOrder, &ifRoute)
+		var ifRoute unix.RtMsg
+		binary.Unmarshal(routeMsg.Data[:unix.SizeofRtMsg], usermem.ByteOrder, &ifRoute)
 		inetRoute := inet.Route{
 			Family:   ifRoute.Family,
 			DstLen:   ifRoute.Dst_len,
@@ -231,13 +232,13 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 
 		for _, attr := range attrs {
 			switch attr.Attr.Type {
-			case syscall.RTA_DST:
+			case unix.RTA_DST:
 				inetRoute.DstAddr = attr.Value
-			case syscall.RTA_SRC:
+			case unix.RTA_SRC:
 				inetRoute.SrcAddr = attr.Value
-			case syscall.RTA_GATEWAY:
+			case unix.RTA_GATEWAY:
 				inetRoute.GatewayAddr = attr.Value
-			case syscall.RTA_OIF:
+			case unix.RTA_OIF:
 				expected := int(binary.Size(inetRoute.OutputInterface))
 				if len(attr.Value) != expected {
 					return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid attribute data length (%d bytes, expected %d bytes)", len(attr.Value), expected)
@@ -253,12 +254,12 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 }
 
 func addHostInterfaces(s *Stack) error {
-	links, err := doNetlinkRouteRequest(syscall.RTM_GETLINK)
+	links, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
 	if err != nil {
 		return fmt.Errorf("RTM_GETLINK failed: %v", err)
 	}
 
-	addrs, err := doNetlinkRouteRequest(syscall.RTM_GETADDR)
+	addrs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
 	if err != nil {
 		return fmt.Errorf("RTM_GETADDR failed: %v", err)
 	}
@@ -267,7 +268,7 @@ func addHostInterfaces(s *Stack) error {
 }
 
 func addHostRoutes(s *Stack) error {
-	routes, err := doNetlinkRouteRequest(syscall.RTM_GETROUTE)
+	routes, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
 	if err != nil {
 		return fmt.Errorf("RTM_GETROUTE failed: %v", err)
 	}
