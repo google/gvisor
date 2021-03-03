@@ -15,15 +15,15 @@
 package host
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 func ioctlGetTermios(fd int) (*linux.Termios, error) {
 	var t linux.Termios
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), linux.TCGETS, uintptr(unsafe.Pointer(&t)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TCGETS, uintptr(unsafe.Pointer(&t)))
 	if errno != 0 {
 		return nil, errno
 	}
@@ -31,7 +31,7 @@ func ioctlGetTermios(fd int) (*linux.Termios, error) {
 }
 
 func ioctlSetTermios(fd int, req uint64, t *linux.Termios) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(unsafe.Pointer(t)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(unsafe.Pointer(t)))
 	if errno != 0 {
 		return errno
 	}
@@ -40,7 +40,7 @@ func ioctlSetTermios(fd int, req uint64, t *linux.Termios) error {
 
 func ioctlGetWinsize(fd int) (*linux.Winsize, error) {
 	var w linux.Winsize
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), linux.TIOCGWINSZ, uintptr(unsafe.Pointer(&w)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TIOCGWINSZ, uintptr(unsafe.Pointer(&w)))
 	if errno != 0 {
 		return nil, errno
 	}
@@ -48,7 +48,7 @@ func ioctlGetWinsize(fd int) (*linux.Winsize, error) {
 }
 
 func ioctlSetWinsize(fd int, w *linux.Winsize) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), linux.TIOCSWINSZ, uintptr(unsafe.Pointer(w)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), linux.TIOCSWINSZ, uintptr(unsafe.Pointer(w)))
 	if errno != 0 {
 		return errno
 	}

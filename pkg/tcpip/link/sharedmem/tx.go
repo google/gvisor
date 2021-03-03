@@ -16,8 +16,8 @@ package sharedmem
 
 import (
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -48,14 +48,14 @@ func (t *tx) init(mtu uint32, c *QueueConfig) error {
 
 	rxPipe, err := getBuffer(c.RxPipeFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
+		unix.Munmap(txPipe)
 		return err
 	}
 
 	data, err := getBuffer(c.DataFD)
 	if err != nil {
-		syscall.Munmap(txPipe)
-		syscall.Munmap(rxPipe)
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
 		return err
 	}
 
@@ -72,9 +72,9 @@ func (t *tx) init(mtu uint32, c *QueueConfig) error {
 // called if init() has previously succeeded.
 func (t *tx) cleanup() {
 	a, b := t.q.Bytes()
-	syscall.Munmap(a)
-	syscall.Munmap(b)
-	syscall.Munmap(t.data)
+	unix.Munmap(a)
+	unix.Munmap(b)
+	unix.Munmap(t.data)
 }
 
 // transmit sends a packet made of bufs. Returns a boolean that specifies
@@ -145,17 +145,17 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 // getBuffer returns a memory region mapped to the full contents of the given
 // file descriptor.
 func getBuffer(fd int) ([]byte, error) {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(fd, &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(fd, &s); err != nil {
 		return nil, err
 	}
 
 	// Check that size doesn't overflow an int.
 	if s.Size > int64(^uint(0)>>1) {
-		return nil, syscall.EDOM
+		return nil, unix.EDOM
 	}
 
-	return syscall.Mmap(fd, 0, int(s.Size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED|syscall.MAP_FILE)
+	return unix.Mmap(fd, 0, int(s.Size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_FILE)
 }
 
 // idDescriptor is used by idManager to either point to a tx buffer (in case

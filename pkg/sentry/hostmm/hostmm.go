@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -60,7 +60,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 	}
 
 	// Don't use fmt.Fprintf since the whole string needs to be written in a
-	// single syscall.
+	// single unix.
 	eventControlStr := fmt.Sprintf("%d %d %s", eventFD.FD(), pressureFile.Fd(), level)
 	if n, err := eventControlFile.Write([]byte(eventControlStr)); n != len(eventControlStr) || err != nil {
 		eventFD.Close()
@@ -80,7 +80,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 		for {
 			n, err := rw.Read(buf[:])
 			if err != nil {
-				if err == syscall.EINTR {
+				if err == unix.EINTR {
 					continue
 				}
 				panic(fmt.Sprintf("failed to read from memory pressure level eventfd: %v", err))
@@ -107,7 +107,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 		for {
 			n, err := rw.Write(buf[:])
 			if err != nil {
-				if err == syscall.EINTR {
+				if err == unix.EINTR {
 					continue
 				}
 				panic(fmt.Sprintf("failed to write to memory pressure level eventfd: %v", err))
@@ -122,7 +122,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 }
 
 func newEventFD() (*fd.FD, error) {
-	f, _, e := syscall.Syscall(syscall.SYS_EVENTFD2, 0, 0, 0)
+	f, _, e := unix.Syscall(unix.SYS_EVENTFD2, 0, 0, 0)
 	if e != 0 {
 		return nil, fmt.Errorf("failed to create eventfd: %v", e)
 	}

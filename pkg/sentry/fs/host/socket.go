@@ -17,8 +17,8 @@ package host
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -75,26 +75,26 @@ type ConnectedEndpoint struct {
 // init performs initialization required for creating new ConnectedEndpoints and
 // for restoring them.
 func (c *ConnectedEndpoint) init() *syserr.Error {
-	family, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_DOMAIN)
+	family, err := unix.GetsockoptInt(c.file.FD(), unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 
-	if family != syscall.AF_UNIX {
+	if family != unix.AF_UNIX {
 		// We only allow Unix sockets.
 		return syserr.ErrInvalidEndpointState
 	}
 
-	stype, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_TYPE)
+	stype, err := unix.GetsockoptInt(c.file.FD(), unix.SOL_SOCKET, unix.SO_TYPE)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 
-	if err := syscall.SetNonblock(c.file.FD(), true); err != nil {
+	if err := unix.SetNonblock(c.file.FD(), true); err != nil {
 		return syserr.FromError(err)
 	}
 
-	sndbuf, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	sndbuf, err := unix.GetsockoptInt(c.file.FD(), unix.SOL_SOCKET, unix.SO_SNDBUF)
 	if err != nil {
 		return syserr.FromError(err)
 	}
@@ -168,7 +168,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	srfd := -1
 	if saveable {
 		var err error
-		ownedfd, err = syscall.Dup(orgfd)
+		ownedfd, err = unix.Dup(orgfd)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +233,7 @@ func (c *ConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.file.FD(), syscall.SHUT_WR); err != nil {
+	if err := unix.Shutdown(c.file.FD(), unix.SHUT_WR); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed write shutdown on host socket %+v: %v", c, err))
@@ -333,7 +333,7 @@ func (c *ConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.file.FD(), syscall.SHUT_RD); err != nil {
+	if err := unix.Shutdown(c.file.FD(), unix.SHUT_RD); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed read shutdown on host socket %+v: %v", c, err))

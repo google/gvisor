@@ -18,8 +18,8 @@ package eventfd
 import (
 	"math"
 	"sync"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -92,13 +92,13 @@ func (efd *EventFileDescription) HostFD() (int, error) {
 		flags |= linux.EFD_SEMAPHORE
 	}
 
-	fd, _, errno := syscall.Syscall(syscall.SYS_EVENTFD2, uintptr(efd.val), uintptr(flags), 0)
+	fd, _, errno := unix.Syscall(unix.SYS_EVENTFD2, uintptr(efd.val), uintptr(flags), 0)
 	if errno != 0 {
 		return -1, errno
 	}
 
 	if err := fdnotifier.AddFD(int32(fd), &efd.queue); err != nil {
-		if closeErr := syscall.Close(int(fd)); closeErr != nil {
+		if closeErr := unix.Close(int(fd)); closeErr != nil {
 			log.Warningf("close(%d) eventfd failed: %v", fd, closeErr)
 		}
 		return -1, err
@@ -114,7 +114,7 @@ func (efd *EventFileDescription) Release(context.Context) {
 	defer efd.mu.Unlock()
 	if efd.hostfd >= 0 {
 		fdnotifier.RemoveFD(int32(efd.hostfd))
-		if closeErr := syscall.Close(int(efd.hostfd)); closeErr != nil {
+		if closeErr := unix.Close(int(efd.hostfd)); closeErr != nil {
 			log.Warningf("close(%d) eventfd failed: %v", efd.hostfd, closeErr)
 		}
 		efd.hostfd = -1
@@ -124,7 +124,7 @@ func (efd *EventFileDescription) Release(context.Context) {
 // Read implements vfs.FileDescriptionImpl.Read.
 func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequence, _ vfs.ReadOptions) (int64, error) {
 	if dst.NumBytes() < 8 {
-		return 0, syscall.EINVAL
+		return 0, unix.EINVAL
 	}
 	if err := efd.read(ctx, dst); err != nil {
 		return 0, err
@@ -135,7 +135,7 @@ func (efd *EventFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 // Write implements vfs.FileDescriptionImpl.Write.
 func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequence, _ vfs.WriteOptions) (int64, error) {
 	if src.NumBytes() < 8 {
-		return 0, syscall.EINVAL
+		return 0, unix.EINVAL
 	}
 	if err := efd.write(ctx, src); err != nil {
 		return 0, err
@@ -146,8 +146,8 @@ func (efd *EventFileDescription) Write(ctx context.Context, src usermem.IOSequen
 // Preconditions: Must be called with efd.mu locked.
 func (efd *EventFileDescription) hostReadLocked(ctx context.Context, dst usermem.IOSequence) error {
 	var buf [8]byte
-	if _, err := syscall.Read(efd.hostfd, buf[:]); err != nil {
-		if err == syscall.EWOULDBLOCK {
+	if _, err := unix.Read(efd.hostfd, buf[:]); err != nil {
+		if err == unix.EWOULDBLOCK {
 			return syserror.ErrWouldBlock
 		}
 		return err
@@ -197,8 +197,8 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
 	var buf [8]byte
 	usermem.ByteOrder.PutUint64(buf[:], val)
-	_, err := syscall.Write(efd.hostfd, buf[:])
-	if err == syscall.EWOULDBLOCK {
+	_, err := unix.Write(efd.hostfd, buf[:])
+	if err == unix.EWOULDBLOCK {
 		return syserror.ErrWouldBlock
 	}
 	return err
@@ -217,7 +217,7 @@ func (efd *EventFileDescription) write(ctx context.Context, src usermem.IOSequen
 // Signal is an internal function to signal the event fd.
 func (efd *EventFileDescription) Signal(val uint64) error {
 	if val == math.MaxUint64 {
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
 
 	efd.mu.Lock()

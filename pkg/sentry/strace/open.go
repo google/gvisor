@@ -15,62 +15,61 @@
 package strace
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi"
 )
 
 // OpenMode represents the mode to open(2) a file.
 var OpenMode = abi.ValueSet{
-	syscall.O_RDWR:   "O_RDWR",
-	syscall.O_WRONLY: "O_WRONLY",
-	syscall.O_RDONLY: "O_RDONLY",
+	unix.O_RDWR:   "O_RDWR",
+	unix.O_WRONLY: "O_WRONLY",
+	unix.O_RDONLY: "O_RDONLY",
 }
 
 // OpenFlagSet is the set of open(2) flags.
 var OpenFlagSet = abi.FlagSet{
 	{
-		Flag: syscall.O_APPEND,
+		Flag: unix.O_APPEND,
 		Name: "O_APPEND",
 	},
 	{
-		Flag: syscall.O_ASYNC,
+		Flag: unix.O_ASYNC,
 		Name: "O_ASYNC",
 	},
 	{
-		Flag: syscall.O_CLOEXEC,
+		Flag: unix.O_CLOEXEC,
 		Name: "O_CLOEXEC",
 	},
 	{
-		Flag: syscall.O_CREAT,
+		Flag: unix.O_CREAT,
 		Name: "O_CREAT",
 	},
 	{
-		Flag: syscall.O_DIRECT,
+		Flag: unix.O_DIRECT,
 		Name: "O_DIRECT",
 	},
 	{
-		Flag: syscall.O_DIRECTORY,
+		Flag: unix.O_DIRECTORY,
 		Name: "O_DIRECTORY",
 	},
 	{
-		Flag: syscall.O_EXCL,
+		Flag: unix.O_EXCL,
 		Name: "O_EXCL",
 	},
 	{
-		Flag: syscall.O_NOATIME,
+		Flag: unix.O_NOATIME,
 		Name: "O_NOATIME",
 	},
 	{
-		Flag: syscall.O_NOCTTY,
+		Flag: unix.O_NOCTTY,
 		Name: "O_NOCTTY",
 	},
 	{
-		Flag: syscall.O_NOFOLLOW,
+		Flag: unix.O_NOFOLLOW,
 		Name: "O_NOFOLLOW",
 	},
 	{
-		Flag: syscall.O_NONBLOCK,
+		Flag: unix.O_NONBLOCK,
 		Name: "O_NONBLOCK",
 	},
 	{
@@ -78,18 +77,18 @@ var OpenFlagSet = abi.FlagSet{
 		Name: "O_PATH",
 	},
 	{
-		Flag: syscall.O_SYNC,
+		Flag: unix.O_SYNC,
 		Name: "O_SYNC",
 	},
 	{
-		Flag: syscall.O_TRUNC,
+		Flag: unix.O_TRUNC,
 		Name: "O_TRUNC",
 	},
 }
 
 func open(val uint64) string {
-	s := OpenMode.Parse(val & syscall.O_ACCMODE)
-	if flags := OpenFlagSet.Parse(val &^ syscall.O_ACCMODE); flags != "" {
+	s := OpenMode.Parse(val & unix.O_ACCMODE)
+	if flags := OpenFlagSet.Parse(val &^ unix.O_ACCMODE); flags != "" {
 		s += "|" + flags
 	}
 	return s

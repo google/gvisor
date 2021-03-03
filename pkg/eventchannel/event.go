@@ -22,8 +22,8 @@ package eventchannel
 import (
 	"encoding/binary"
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	pb "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto"
@@ -155,7 +155,7 @@ func (s *socketEmitter) Emit(msg proto.Message) (bool, error) {
 	for done := 0; done < len(p); {
 		n, err := s.socket.Write(p[done:])
 		if err != nil {
-			return (err == syscall.EPIPE), err
+			return (err == unix.EPIPE), err
 		}
 		done += n
 	}

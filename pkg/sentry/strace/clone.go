@@ -15,99 +15,98 @@
 package strace
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi"
 )
 
 // CloneFlagSet is the set of clone(2) flags.
 var CloneFlagSet = abi.FlagSet{
 	{
-		Flag: syscall.CLONE_VM,
+		Flag: unix.CLONE_VM,
 		Name: "CLONE_VM",
 	},
 	{
-		Flag: syscall.CLONE_FS,
+		Flag: unix.CLONE_FS,
 		Name: "CLONE_FS",
 	},
 	{
-		Flag: syscall.CLONE_FILES,
+		Flag: unix.CLONE_FILES,
 		Name: "CLONE_FILES",
 	},
 	{
-		Flag: syscall.CLONE_SIGHAND,
+		Flag: unix.CLONE_SIGHAND,
 		Name: "CLONE_SIGHAND",
 	},
 	{
-		Flag: syscall.CLONE_PTRACE,
+		Flag: unix.CLONE_PTRACE,
 		Name: "CLONE_PTRACE",
 	},
 	{
-		Flag: syscall.CLONE_VFORK,
+		Flag: unix.CLONE_VFORK,
 		Name: "CLONE_VFORK",
 	},
 	{
-		Flag: syscall.CLONE_PARENT,
+		Flag: unix.CLONE_PARENT,
 		Name: "CLONE_PARENT",
 	},
 	{
-		Flag: syscall.CLONE_THREAD,
+		Flag: unix.CLONE_THREAD,
 		Name: "CLONE_THREAD",
 	},
 	{
-		Flag: syscall.CLONE_NEWNS,
+		Flag: unix.CLONE_NEWNS,
 		Name: "CLONE_NEWNS",
 	},
 	{
-		Flag: syscall.CLONE_SYSVSEM,
+		Flag: unix.CLONE_SYSVSEM,
 		Name: "CLONE_SYSVSEM",
 	},
 	{
-		Flag: syscall.CLONE_SETTLS,
+		Flag: unix.CLONE_SETTLS,
 		Name: "CLONE_SETTLS",
 	},
 	{
-		Flag: syscall.CLONE_PARENT_SETTID,
+		Flag: unix.CLONE_PARENT_SETTID,
 		Name: "CLONE_PARENT_SETTID",
 	},
 	{
-		Flag: syscall.CLONE_CHILD_CLEARTID,
+		Flag: unix.CLONE_CHILD_CLEARTID,
 		Name: "CLONE_CHILD_CLEARTID",
 	},
 	{
-		Flag: syscall.CLONE_DETACHED,
+		Flag: unix.CLONE_DETACHED,
 		Name: "CLONE_DETACHED",
 	},
 	{
-		Flag: syscall.CLONE_UNTRACED,
+		Flag: unix.CLONE_UNTRACED,
 		Name: "CLONE_UNTRACED",
 	},
 	{
-		Flag: syscall.CLONE_CHILD_SETTID,
+		Flag: unix.CLONE_CHILD_SETTID,
 		Name: "CLONE_CHILD_SETTID",
 	},
 	{
-		Flag: syscall.CLONE_NEWUTS,
+		Flag: unix.CLONE_NEWUTS,
 		Name: "CLONE_NEWUTS",
 	},
 	{
-		Flag: syscall.CLONE_NEWIPC,
+		Flag: unix.CLONE_NEWIPC,
 		Name: "CLONE_NEWIPC",
 	},
 	{
-		Flag: syscall.CLONE_NEWUSER,
+		Flag: unix.CLONE_NEWUSER,
 		Name: "CLONE_NEWUSER",
 	},
 	{
-		Flag: syscall.CLONE_NEWPID,
+		Flag: unix.CLONE_NEWPID,
 		Name: "CLONE_NEWPID",
 	},
 	{
-		Flag: syscall.CLONE_NEWNET,
+		Flag: unix.CLONE_NEWNET,
 		Name: "CLONE_NEWNET",
 	},
 	{
-		Flag: syscall.CLONE_IO,
+		Flag: unix.CLONE_IO,
 		Name: "CLONE_IO",
 	},
 }

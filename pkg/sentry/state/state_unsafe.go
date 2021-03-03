@@ -16,17 +16,17 @@ package state
 
 import (
 	"fmt"
-	"syscall"
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // CPUTime returns the CPU time usage by Sentry and app.
 func CPUTime() (time.Duration, error) {
-	var ts syscall.Timespec
-	_, _, errno := syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_PROCESS_CPUTIME_ID), uintptr(unsafe.Pointer(&ts)), 0)
+	var ts unix.Timespec
+	_, _, errno := unix.RawSyscall(unix.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_PROCESS_CPUTIME_ID), uintptr(unsafe.Pointer(&ts)), 0)
 	if errno != 0 {
 		return 0, fmt.Errorf("failed calling clock_gettime(CLOCK_PROCESS_CPUTIME_ID): errno=%d", errno)
 	}

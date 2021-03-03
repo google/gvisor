@@ -15,8 +15,7 @@
 package gofer
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -118,7 +117,7 @@ func (e *endpoint) newConnectedEndpoint(ctx context.Context, flags p9.ConnectFla
 		return nil, syserr.ErrConnectionRefused
 	}
 	// Dup the fd so that the new endpoint can manage its lifetime.
-	hostFD, err := syscall.Dup(hostFile.FD())
+	hostFD, err := unix.Dup(hostFile.FD())
 	if err != nil {
 		log.Warningf("Could not dup host socket fd %d: %v", hostFile.FD(), err)
 		return nil, syserr.FromError(err)

@@ -19,9 +19,9 @@ package kvm
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -31,15 +31,15 @@ import (
 //
 //go:nosplit
 func (c *vCPU) loadSegments(tid uint64) {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_ARCH_PRCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_ARCH_PRCTL,
 		linux.ARCH_GET_FS,
 		uintptr(unsafe.Pointer(&c.CPU.Registers().Fs_base)),
 		0); errno != 0 {
 		throw("getting FS segment")
 	}
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_ARCH_PRCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_ARCH_PRCTL,
 		linux.ARCH_GET_GS,
 		uintptr(unsafe.Pointer(&c.CPU.Registers().Gs_base)),
 		0); errno != 0 {
@@ -50,8 +50,8 @@ func (c *vCPU) loadSegments(tid uint64) {
 
 // setCPUID sets the CPUID to be used by the guest.
 func (c *vCPU) setCPUID() error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_CPUID2,
 		uintptr(unsafe.Pointer(&cpuidSupported))); errno != 0 {
@@ -64,8 +64,8 @@ func (c *vCPU) setCPUID() error {
 //
 // If mustSucceed is true, then this function panics on error.
 func (c *vCPU) getTSCFreq() (uintptr, error) {
-	rawFreq, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	rawFreq, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_TSC_KHZ,
 		0 /* ignored */)
@@ -77,8 +77,8 @@ func (c *vCPU) getTSCFreq() (uintptr, error) {
 
 // setTSCFreq sets the TSC frequency.
 func (c *vCPU) setTSCFreq(freq uintptr) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_TSC_KHZ,
 		freq /* khz */); errno != 0 {
@@ -95,8 +95,8 @@ func (c *vCPU) setTSC(value uint64) error {
 	}
 	registers.entries[0].index = _MSR_IA32_TSC
 	registers.entries[0].data = value
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_MSRS,
 		uintptr(unsafe.Pointer(&registers))); errno != 0 {
@@ -108,9 +108,9 @@ func (c *vCPU) setTSC(value uint64) error {
 // setUserRegisters sets user registers in the vCPU.
 //
 //go:nosplit
-func (c *vCPU) setUserRegisters(uregs *userRegs) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_REGS,
 		uintptr(unsafe.Pointer(uregs))); errno != 0 {
@@ -124,9 +124,9 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) syscall.Errno {
 // This is safe to call from a nosplit context.
 //
 //go:nosplit
-func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall( // escapes: no.
-		syscall.SYS_IOCTL,
+func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
+	if _, _, errno := unix.RawSyscall( // escapes: no.
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_REGS,
 		uintptr(unsafe.Pointer(uregs))); errno != 0 {
@@ -137,8 +137,8 @@ func (c *vCPU) getUserRegisters(uregs *userRegs) syscall.Errno {
 
 // setSystemRegisters sets system registers.
 func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_SET_SREGS,
 		uintptr(unsafe.Pointer(sregs))); errno != 0 {
@@ -150,9 +150,9 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 // getSystemRegisters sets system registers.
 //
 //go:nosplit
-func (c *vCPU) getSystemRegisters(sregs *systemRegs) syscall.Errno {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+func (c *vCPU) getSystemRegisters(sregs *systemRegs) unix.Errno {
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_GET_SREGS,
 		uintptr(unsafe.Pointer(sregs))); errno != 0 {

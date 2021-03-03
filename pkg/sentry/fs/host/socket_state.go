@@ -16,8 +16,8 @@ package host
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 )
 
@@ -30,7 +30,7 @@ func (c *ConnectedEndpoint) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (c *ConnectedEndpoint) afterLoad() {
-	f, err := syscall.Dup(c.srfd)
+	f, err := unix.Dup(c.srfd)
 	if err != nil {
 		panic(fmt.Sprintf("failed to dup restored FD %d: %v", c.srfd, err))
 	}

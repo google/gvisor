@@ -17,8 +17,7 @@
 package rawfile
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -29,47 +28,47 @@ const maxErrno = 134
 //
 // Valid, but unrecognized errnos will be translated to
 // *tcpip.ErrInvalidEndpointState (EINVAL).
-func TranslateErrno(e syscall.Errno) tcpip.Error {
+func TranslateErrno(e unix.Errno) tcpip.Error {
 	switch e {
-	case syscall.EEXIST:
+	case unix.EEXIST:
 		return &tcpip.ErrDuplicateAddress{}
-	case syscall.ENETUNREACH:
+	case unix.ENETUNREACH:
 		return &tcpip.ErrNoRoute{}
-	case syscall.EINVAL:
+	case unix.EINVAL:
 		return &tcpip.ErrInvalidEndpointState{}
-	case syscall.EALREADY:
+	case unix.EALREADY:
 		return &tcpip.ErrAlreadyConnecting{}
-	case syscall.EISCONN:
+	case unix.EISCONN:
 		return &tcpip.ErrAlreadyConnected{}
-	case syscall.EADDRINUSE:
+	case unix.EADDRINUSE:
 		return &tcpip.ErrPortInUse{}
-	case syscall.EADDRNOTAVAIL:
+	case unix.EADDRNOTAVAIL:
 		return &tcpip.ErrBadLocalAddress{}
-	case syscall.EPIPE:
+	case unix.EPIPE:
 		return &tcpip.ErrClosedForSend{}
-	case syscall.EWOULDBLOCK:
+	case unix.EWOULDBLOCK:
 		return &tcpip.ErrWouldBlock{}
-	case syscall.ECONNREFUSED:
+	case unix.ECONNREFUSED:
 		return &tcpip.ErrConnectionRefused{}
-	case syscall.ETIMEDOUT:
+	case unix.ETIMEDOUT:
 		return &tcpip.ErrTimeout{}
-	case syscall.EINPROGRESS:
+	case unix.EINPROGRESS:
 		return &tcpip.ErrConnectStarted{}
-	case syscall.EDESTADDRREQ:
+	case unix.EDESTADDRREQ:
 		return &tcpip.ErrDestinationRequired{}
-	case syscall.ENOTSUP:
+	case unix.ENOTSUP:
 		return &tcpip.ErrNotSupported{}
-	case syscall.ENOTTY:
+	case unix.ENOTTY:
 		return &tcpip.ErrQueueSizeNotSupported{}
-	case syscall.ENOTCONN:
+	case unix.ENOTCONN:
 		return &tcpip.ErrNotConnected{}
-	case syscall.ECONNRESET:
+	case unix.ECONNRESET:
 		return &tcpip.ErrConnectionReset{}
-	case syscall.ECONNABORTED:
+	case unix.ECONNABORTED:
 		return &tcpip.ErrConnectionAborted{}
-	case syscall.EMSGSIZE:
+	case unix.EMSGSIZE:
 		return &tcpip.ErrMessageTooLong{}
-	case syscall.ENOBUFS:
+	case unix.ENOBUFS:
 		return &tcpip.ErrNoBufferSpace{}
 	default:
 		return &tcpip.ErrInvalidEndpointState{}

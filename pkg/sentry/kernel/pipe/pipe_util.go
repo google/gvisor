@@ -17,8 +17,8 @@ package pipe
 import (
 	"io"
 	"math"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
@@ -139,7 +139,7 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 		_, err := primitive.CopyInt32Out(&iocc, args[2].Pointer(), int32(v))
 		return 0, err
 	default:
-		return 0, syscall.ENOTTY
+		return 0, unix.ENOTTY
 	}
 }
 

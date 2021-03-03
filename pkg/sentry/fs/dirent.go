@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"path"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -418,7 +418,7 @@ func (d *Dirent) descendantOf(p *Dirent) bool {
 // * name must must not contain "/"s.
 func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnlock bool) (*Dirent, error) {
 	if !IsDir(d.Inode.StableAttr) {
-		return nil, syscall.ENOTDIR
+		return nil, unix.ENOTDIR
 	}
 
 	if name == "" || name == "." {
@@ -452,7 +452,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 				// hard reference on them, and they contain virtually no state). But this is
 				// good house-keeping.
 				child.DecRef(ctx)
-				return nil, syscall.ENOENT
+				return nil, unix.ENOENT
 			}
 
 			// Do we need to revalidate this child?
@@ -518,7 +518,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 			if cd.IsNegative() {
 				// If so, don't leak a reference and short circuit.
 				child.DecRef(ctx)
-				return nil, syscall.ENOENT
+				return nil, unix.ENOENT
 			}
 
 			// We make the judgement call that if c raced with cd they are close enough to have
@@ -545,7 +545,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 	if c.IsNegative() {
 		// Don't drop a reference on the negative Dirent, it was just installed and this is the
 		// only reference we'll ever get. d owns the reference.
-		return nil, syscall.ENOENT
+		return nil, unix.ENOENT
 	}
 
 	// Return the positive Dirent.
@@ -611,7 +611,7 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
-		return nil, syscall.EEXIST
+		return nil, unix.EEXIST
 	}
 
 	// Try the create. We need to trust the file system to return EEXIST (or something
@@ -674,7 +674,7 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
-		return syscall.EEXIST
+		return unix.EEXIST
 	}
 
 	// Remove any negative Dirent. We've already asserted above with d.exists
@@ -718,12 +718,12 @@ func (d *Dirent) CreateLink(ctx context.Context, root *Dirent, oldname, newname 
 func (d *Dirent) CreateHardLink(ctx context.Context, root *Dirent, target *Dirent, name string) error {
 	// Make sure that target does not span filesystems.
 	if d.Inode.MountSource != target.Inode.MountSource {
-		return syscall.EXDEV
+		return unix.EXDEV
 	}
 
 	// Directories are never linkable. See fs/namei.c:vfs_link.
 	if IsDir(target.Inode.StableAttr) {
-		return syscall.EPERM
+		return unix.EPERM
 	}
 
 	return d.genericCreate(ctx, root, name, func() error {
@@ -759,8 +759,8 @@ func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data trans
 		d.finishCreate(ctx, childDir, name)
 		return nil
 	})
-	if err == syscall.EEXIST {
-		return nil, syscall.EADDRINUSE
+	if err == unix.EEXIST {
+		return nil, unix.EADDRINUSE
 	}
 	if err != nil {
 		return nil, err
@@ -1033,14 +1033,14 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 
 	// Remove cannot remove directories.
 	if IsDir(child.Inode.StableAttr) {
-		return syscall.EISDIR
+		return unix.EISDIR
 	} else if dirPath {
-		return syscall.ENOTDIR
+		return unix.ENOTDIR
 	}
 
 	// Remove cannot remove a mount point.
 	if child.isMountPoint() {
-		return syscall.EBUSY
+		return unix.EBUSY
 	}
 
 	// Try to remove name on the file system.
@@ -1087,11 +1087,11 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 	// Check for dots.
 	if name == "." {
 		// Rejected as the last component by rmdir(2).
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
 	if name == ".." {
 		// If d was found, then its parent is not empty.
-		return syscall.ENOTEMPTY
+		return unix.ENOTEMPTY
 	}
 
 	// Try to walk to the node.
@@ -1104,12 +1104,12 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 
 	// RemoveDirectory can only remove directories.
 	if !IsDir(child.Inode.StableAttr) {
-		return syscall.ENOTDIR
+		return unix.ENOTDIR
 	}
 
 	// Remove cannot remove a mount point.
 	if child.isMountPoint() {
-		return syscall.EBUSY
+		return unix.EBUSY
 	}
 
 	// Try to remove name on the file system.
@@ -1294,7 +1294,7 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 				// more specifically of oldParent/oldName. That is, we're
 				// trying to rename something into a subdirectory of
 				// itself.
-				err = syscall.EINVAL
+				err = unix.EINVAL
 			}
 			return func() {
 				newParent.mu.Unlock()
@@ -1420,12 +1420,12 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 
 	// Check that the renamed dirent is not a mount point.
 	if renamed.isMountPointLocked() {
-		return syscall.EBUSY
+		return unix.EBUSY
 	}
 
 	// Source should not be an ancestor of the target.
 	if newParent.descendantOf(renamed) {
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
 
 	// Per rename(2): "... EACCES: ... or oldpath is a directory and does not
@@ -1465,13 +1465,13 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 			// ancestor of target, but ENOTEMPTY if the target is
 			// an ancestor of source (unless RENAME_EXCHANGE flag
 			// is present).  See fs/namei.c:renameat2.
-			return syscall.ENOTEMPTY
+			return unix.ENOTEMPTY
 		}
 
 		// Check that replaced is not a mount point.
 		if replaced.isMountPointLocked() {
 			replaced.DecRef(ctx)
-			return syscall.EBUSY
+			return unix.EBUSY
 		}
 
 		// Require that a directory is replaced by a directory.
@@ -1479,11 +1479,11 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		newIsDir := IsDir(replaced.Inode.StableAttr)
 		if !newIsDir && oldIsDir {
 			replaced.DecRef(ctx)
-			return syscall.ENOTDIR
+			return unix.ENOTDIR
 		}
 		if !oldIsDir && newIsDir {
 			replaced.DecRef(ctx)
-			return syscall.EISDIR
+			return unix.EISDIR
 		}
 
 		// Allow the file system to drop extra references on replaced.

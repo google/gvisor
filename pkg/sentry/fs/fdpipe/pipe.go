@@ -17,8 +17,8 @@ package fdpipe
 
 import (
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -82,16 +82,16 @@ func newPipeOperations(ctx context.Context, opener NonBlockingOpener, flags fs.F
 
 // init initializes p.file.
 func (p *pipeOperations) init() error {
-	var s syscall.Stat_t
-	if err := syscall.Fstat(p.file.FD(), &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(p.file.FD(), &s); err != nil {
 		log.Warningf("pipe: cannot stat fd %d: %v", p.file.FD(), err)
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
-	if (s.Mode & syscall.S_IFMT) != syscall.S_IFIFO {
+	if (s.Mode & unix.S_IFMT) != unix.S_IFIFO {
 		log.Warningf("pipe: cannot load fd %d as pipe, file type: %o", p.file.FD(), s.Mode)
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
-	if err := syscall.SetNonblock(p.file.FD(), true); err != nil {
+	if err := unix.SetNonblock(p.file.FD(), true); err != nil {
 		return err
 	}
 	return fdnotifier.AddFD(int32(p.file.FD()), &p.Queue)

@@ -18,8 +18,8 @@ package kvm
 import (
 	"fmt"
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -77,7 +77,7 @@ var (
 
 // OpenDevice opens the KVM device at /dev/kvm and returns the File.
 func OpenDevice() (*os.File, error) {
-	f, err := os.OpenFile("/dev/kvm", syscall.O_RDWR, 0)
+	f, err := os.OpenFile("/dev/kvm", unix.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error opening /dev/kvm: %v", err)
 	}
@@ -99,11 +99,11 @@ func New(deviceFile *os.File) (*KVM, error) {
 	// Create a new VM fd.
 	var (
 		vm    uintptr
-		errno syscall.Errno
+		errno unix.Errno
 	)
 	for {
-		vm, _, errno = syscall.Syscall(syscall.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
-		if errno == syscall.EINTR {
+		vm, _, errno = unix.Syscall(unix.SYS_IOCTL, fd, _KVM_CREATE_VM, 0)
+		if errno == unix.EINTR {
 			continue
 		}
 		if errno != 0 {

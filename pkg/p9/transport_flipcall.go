@@ -16,8 +16,8 @@ package p9
 
 import (
 	"runtime"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
@@ -236,7 +236,7 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 
 	// Convert errors appropriately; see above.
 	if rlerr, ok := r.(*Rlerror); ok {
-		return r, syscall.Errno(rlerr.Error)
+		return r, unix.Errno(rlerr.Error)
 	}
 
 	return r, nil

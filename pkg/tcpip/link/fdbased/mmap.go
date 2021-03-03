@@ -19,7 +19,6 @@ package fdbased
 import (
 	"encoding/binary"
 	"fmt"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -137,7 +136,7 @@ func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
 			Events: unix.POLLIN | unix.POLLERR,
 		}
 		if _, errno := rawfile.BlockingPoll(&event, 1, nil); errno != 0 {
-			if errno == syscall.EINTR {
+			if errno == unix.EINTR {
 				continue
 			}
 			return nil, rawfile.TranslateErrno(errno)

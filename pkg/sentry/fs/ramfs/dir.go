@@ -17,8 +17,8 @@ package ramfs
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -378,8 +378,8 @@ func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport
 	inode, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewBoundEndpoint(ctx, dir, ep, perms)
 	})
-	if err == syscall.EEXIST {
-		return nil, syscall.EADDRINUSE
+	if err == unix.EEXIST {
+		return nil, unix.EADDRINUSE
 	}
 	if err != nil {
 		return nil, err

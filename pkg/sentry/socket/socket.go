@@ -21,8 +21,8 @@ import (
 	"bytes"
 	"fmt"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
@@ -198,42 +198,42 @@ type SocketVFS2 interface {
 //
 // It is implemented by both Socket and SocketVFS2.
 type SocketOps interface {
-	// Connect implements the connect(2) linux syscall.
+	// Connect implements the connect(2) linux unix.
 	Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error
 
-	// Accept implements the accept4(2) linux syscall.
+	// Accept implements the accept4(2) linux unix.
 	// Returns fd, real peer address length and error. Real peer address
 	// length is only set if len(peer) > 0.
 	Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error)
 
-	// Bind implements the bind(2) linux syscall.
+	// Bind implements the bind(2) linux unix.
 	Bind(t *kernel.Task, sockaddr []byte) *syserr.Error
 
-	// Listen implements the listen(2) linux syscall.
+	// Listen implements the listen(2) linux unix.
 	Listen(t *kernel.Task, backlog int) *syserr.Error
 
-	// Shutdown implements the shutdown(2) linux syscall.
+	// Shutdown implements the shutdown(2) linux unix.
 	Shutdown(t *kernel.Task, how int) *syserr.Error
 
-	// GetSockOpt implements the getsockopt(2) linux syscall.
+	// GetSockOpt implements the getsockopt(2) linux unix.
 	GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error)
 
-	// SetSockOpt implements the setsockopt(2) linux syscall.
+	// SetSockOpt implements the setsockopt(2) linux unix.
 	SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error
 
-	// GetSockName implements the getsockname(2) linux syscall.
+	// GetSockName implements the getsockname(2) linux unix.
 	//
 	// addrLen is the address length to be returned to the application, not
 	// necessarily the actual length of the address.
 	GetSockName(t *kernel.Task) (addr linux.SockAddr, addrLen uint32, err *syserr.Error)
 
-	// GetPeerName implements the getpeername(2) linux syscall.
+	// GetPeerName implements the getpeername(2) linux unix.
 	//
 	// addrLen is the address length to be returned to the application, not
 	// necessarily the actual length of the address.
 	GetPeerName(t *kernel.Task) (addr linux.SockAddr, addrLen uint32, err *syserr.Error)
 
-	// RecvMsg implements the recvmsg(2) linux syscall.
+	// RecvMsg implements the recvmsg(2) linux unix.
 	//
 	// senderAddrLen is the address length to be returned to the application,
 	// not necessarily the actual length of the address.
@@ -246,7 +246,7 @@ type SocketOps interface {
 	// If err != nil, the recv was not successful.
 	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr linux.SockAddr, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
 
-	// SendMsg implements the sendmsg(2) linux syscall. SendMsg does not take
+	// SendMsg implements the sendmsg(2) linux unix. SendMsg does not take
 	// ownership of the ControlMessage on error.
 	//
 	// If n > 0, err will either be nil or an error from t.Block.
@@ -569,21 +569,21 @@ func emitUnimplementedEvent(t *kernel.Task, name int) {
 // given family.
 func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
-	case syscall.AF_INET:
+	case unix.AF_INET:
 		var addr linux.SockAddrInet
-		binary.Unmarshal(data[:syscall.SizeofSockaddrInet4], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrInet4], usermem.ByteOrder, &addr)
 		return &addr
-	case syscall.AF_INET6:
+	case unix.AF_INET6:
 		var addr linux.SockAddrInet6
-		binary.Unmarshal(data[:syscall.SizeofSockaddrInet6], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrInet6], usermem.ByteOrder, &addr)
 		return &addr
-	case syscall.AF_UNIX:
+	case unix.AF_UNIX:
 		var addr linux.SockAddrUnix
-		binary.Unmarshal(data[:syscall.SizeofSockaddrUnix], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrUnix], usermem.ByteOrder, &addr)
 		return &addr
-	case syscall.AF_NETLINK:
+	case unix.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		binary.Unmarshal(data[:syscall.SizeofSockaddrNetlink], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrNetlink], usermem.ByteOrder, &addr)
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))

@@ -16,8 +16,9 @@ package pgalloc
 
 import (
 	"reflect"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 func unsafeSlice(addr uintptr, length int) (slice []byte) {
@@ -29,8 +30,8 @@ func unsafeSlice(addr uintptr, length int) (slice []byte) {
 }
 
 func mincore(s []byte, buf []byte) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_MINCORE,
+	if _, _, errno := unix.RawSyscall(
+		unix.SYS_MINCORE,
 		uintptr(unsafe.Pointer(&s[0])),
 		uintptr(len(s)),
 		uintptr(unsafe.Pointer(&buf[0]))); errno != 0 {

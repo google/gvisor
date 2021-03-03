@@ -26,12 +26,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/log"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 )
 
 // DefaultCommand is the default command for Runsc.
@@ -63,7 +63,7 @@ func (l *LogMonitor) Wait(cmd *exec.Cmd, ch chan runc.Exit) (int, error) {
 // Runsc is the client to the runsc cli.
 type Runsc struct {
 	Command      string
-	PdeathSignal syscall.Signal
+	PdeathSignal unix.Signal
 	Setpgid      bool
 	Root         string
 	Log          string
@@ -530,7 +530,7 @@ func (r *Runsc) command(context context.Context, args ...string) *exec.Cmd {
 		command = DefaultCommand
 	}
 	cmd := exec.CommandContext(context, command, append(r.args(), args...)...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
+	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid: r.Setpgid,
 	}
 	if r.PdeathSignal != 0 {

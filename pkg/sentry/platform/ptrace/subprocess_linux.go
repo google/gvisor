@@ -18,8 +18,8 @@ package ptrace
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
-const syscallEvent syscall.Signal = 0x80
+const syscallEvent unix.Signal = 0x80
 
 // createStub creates a fresh stub processes.
 //
@@ -63,7 +63,7 @@ func createStub() (*thread, error) {
 	//
 	// In addition, we set the PTRACE_O_TRACEEXIT option to log more
 	// information about a stub process when it receives a fatal signal.
-	return attachedThread(uintptr(syscall.SIGKILL)|syscall.CLONE_FILES, defaultAction)
+	return attachedThread(uintptr(unix.SIGKILL)|unix.CLONE_FILES, defaultAction)
 }
 
 // attachedThread returns a new attached thread.
@@ -78,38 +78,38 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	if defaultAction != linux.SECCOMP_RET_ALLOW {
 		rules = append(rules, seccomp.RuleSet{
 			Rules: seccomp.SyscallRules{
-				syscall.SYS_CLONE: []seccomp.Rule{
+				unix.SYS_CLONE: []seccomp.Rule{
 					// Allow creation of new subprocesses (used by the master).
-					{seccomp.EqualTo(syscall.CLONE_FILES | syscall.SIGKILL)},
+					{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
 					// Allow creation of new threads within a single address space (used by addresss spaces).
 					{seccomp.EqualTo(
-						syscall.CLONE_FILES |
-							syscall.CLONE_FS |
-							syscall.CLONE_SIGHAND |
-							syscall.CLONE_THREAD |
-							syscall.CLONE_PTRACE |
-							syscall.CLONE_VM)},
+						unix.CLONE_FILES |
+							unix.CLONE_FS |
+							unix.CLONE_SIGHAND |
+							unix.CLONE_THREAD |
+							unix.CLONE_PTRACE |
+							unix.CLONE_VM)},
 				},
 
 				// For the initial process creation.
-				syscall.SYS_WAIT4: {},
-				syscall.SYS_EXIT:  {},
+				unix.SYS_WAIT4: {},
+				unix.SYS_EXIT:  {},
 
 				// For the stub prctl dance (all).
-				syscall.SYS_PRCTL: []seccomp.Rule{
-					{seccomp.EqualTo(syscall.PR_SET_PDEATHSIG), seccomp.EqualTo(syscall.SIGKILL)},
+				unix.SYS_PRCTL: []seccomp.Rule{
+					{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
 				},
-				syscall.SYS_GETPPID: {},
+				unix.SYS_GETPPID: {},
 
 				// For the stub to stop itself (all).
-				syscall.SYS_GETPID: {},
-				syscall.SYS_KILL: []seccomp.Rule{
-					{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SIGSTOP)},
+				unix.SYS_GETPID: {},
+				unix.SYS_KILL: []seccomp.Rule{
+					{seccomp.MatchAny{}, seccomp.EqualTo(unix.SIGSTOP)},
 				},
 
 				// Injected to support the address space operations.
-				syscall.SYS_MMAP:   {},
-				syscall.SYS_MUNMAP: {},
+				unix.SYS_MMAP:   {},
+				unix.SYS_MUNMAP: {},
 			},
 			Action: linux.SECCOMP_RET_ALLOW,
 		})
@@ -125,17 +125,17 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	var (
 		pid   uintptr
 		ppid  uintptr
-		errno syscall.Errno
+		errno unix.Errno
 	)
 
 	// Remember the current ppid for the pdeathsig race.
-	ppid, _, _ = syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)
+	ppid, _, _ = unix.RawSyscall(unix.SYS_GETPID, 0, 0, 0)
 
 	// Among other things, beforeFork masks all signals.
 	beforeFork()
 
 	// Do the clone.
-	pid, _, errno = syscall.RawSyscall6(syscall.SYS_CLONE, flags, 0, 0, 0, 0, 0)
+	pid, _, errno = unix.RawSyscall6(unix.SYS_CLONE, flags, 0, 0, 0, 0, 0)
 	if errno != 0 {
 		afterFork()
 		return nil, errno
@@ -152,7 +152,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			tid:  int32(pid),
 			cpu:  ^uint32(0),
 		}
-		if sig := t.wait(stopped); sig != syscall.SIGSTOP {
+		if sig := t.wait(stopped); sig != unix.SIGSTOP {
 			return nil, fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 		}
 		t.attach()
@@ -165,8 +165,8 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	// prevents the stub from getting PTY job control signals intended only
 	// for the sentry process. We must call this before restoring signal
 	// mask.
-	if _, _, errno := syscall.RawSyscall(syscall.SYS_SETSID, 0, 0, 0); errno != 0 {
-		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETSID, 0, 0, 0); errno != 0 {
+		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// afterForkInChild resets all signals to their default dispositions
@@ -176,13 +176,13 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	// Explicitly unmask all signals to ensure that the tracer can see
 	// them.
 	if errno := unmaskAllSignals(); errno != 0 {
-		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
+		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
 	// the description of the BPF program built above.
 	if errno := seccomp.SetFilter(instrs); errno != 0 {
-		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
+		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
 	// Enable cpuid-faulting.
@@ -218,8 +218,8 @@ func (s *subprocess) createStub() (*thread, error) {
 	// See above re: SIGKILL.
 	pid, err := t.syscallIgnoreInterrupt(
 		&regs,
-		syscall.SYS_CLONE,
-		arch.SyscallArgument{Value: uintptr(syscall.SIGKILL | syscall.CLONE_FILES)},
+		unix.SYS_CLONE,
+		arch.SyscallArgument{Value: uintptr(unix.SIGKILL | unix.CLONE_FILES)},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
@@ -237,10 +237,10 @@ func (s *subprocess) createStub() (*thread, error) {
 	// If the child actually exited, the attach below will fail.
 	_, err = t.syscallIgnoreInterrupt(
 		&t.initRegs,
-		syscall.SYS_WAIT4,
+		unix.SYS_WAIT4,
 		arch.SyscallArgument{Value: uintptr(pid)},
 		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: syscall.WALL | syscall.WUNTRACED},
+		arch.SyscallArgument{Value: unix.WALL | unix.WUNTRACED},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})

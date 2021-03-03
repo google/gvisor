@@ -18,7 +18,8 @@ package syserr
 
 import (
 	"fmt"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 const maxErrno = 134
@@ -30,15 +31,15 @@ type linuxHostTranslation struct {
 
 var linuxHostTranslations [maxErrno]linuxHostTranslation
 
-// FromHost translates a syscall.Errno to a corresponding Error value.
-func FromHost(err syscall.Errno) *Error {
+// FromHost translates a unix.Errno to a corresponding Error value.
+func FromHost(err unix.Errno) *Error {
 	if int(err) >= len(linuxHostTranslations) || !linuxHostTranslations[err].ok {
 		panic(fmt.Sprintf("unknown host errno %q (%d)", err.Error(), err))
 	}
 	return linuxHostTranslations[err].err
 }
 
-func addLinuxHostTranslation(host syscall.Errno, trans *Error) {
+func addLinuxHostTranslation(host unix.Errno, trans *Error) {
 	if linuxHostTranslations[host].ok {
 		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
 	}

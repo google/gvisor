@@ -15,8 +15,7 @@
 package netstack
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -48,18 +47,18 @@ type provider struct {
 func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol int) (tcpip.TransportProtocolNumber, bool, *syserr.Error) {
 	switch stype {
 	case linux.SOCK_STREAM:
-		if protocol != 0 && protocol != syscall.IPPROTO_TCP {
+		if protocol != 0 && protocol != unix.IPPROTO_TCP {
 			return 0, true, syserr.ErrInvalidArgument
 		}
 		return tcp.ProtocolNumber, true, nil
 
 	case linux.SOCK_DGRAM:
 		switch protocol {
-		case 0, syscall.IPPROTO_UDP:
+		case 0, unix.IPPROTO_UDP:
 			return udp.ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMP:
+		case unix.IPPROTO_ICMP:
 			return header.ICMPv4ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMPV6:
+		case unix.IPPROTO_ICMPV6:
 			return header.ICMPv6ProtocolNumber, true, nil
 		}
 
@@ -71,18 +70,18 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		}
 
 		switch protocol {
-		case syscall.IPPROTO_ICMP:
+		case unix.IPPROTO_ICMP:
 			return header.ICMPv4ProtocolNumber, true, nil
-		case syscall.IPPROTO_ICMPV6:
+		case unix.IPPROTO_ICMPV6:
 			return header.ICMPv6ProtocolNumber, true, nil
-		case syscall.IPPROTO_UDP:
+		case unix.IPPROTO_UDP:
 			return header.UDPProtocolNumber, true, nil
-		case syscall.IPPROTO_TCP:
+		case unix.IPPROTO_TCP:
 			return header.TCPProtocolNumber, true, nil
 		// IPPROTO_RAW signifies that the raw socket isn't assigned to
 		// a transport protocol. Users will be able to write packets'
 		// IP headers and won't receive anything.
-		case syscall.IPPROTO_RAW:
+		case unix.IPPROTO_RAW:
 			return tcpip.TransportProtocolNumber(0), false, nil
 		}
 	}

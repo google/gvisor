@@ -16,8 +16,7 @@
 package limits
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -125,10 +124,10 @@ func (l *LimitSet) Set(t LimitType, v Limit, privileged bool) (Limit, error) {
 	if _, ok := l.data[t]; ok {
 		// Unprivileged users can only lower their hard limits.
 		if l.data[t].Max < v.Max && !privileged {
-			return Limit{}, syscall.EPERM
+			return Limit{}, unix.EPERM
 		}
 		if v.Cur > v.Max {
-			return Limit{}, syscall.EINVAL
+			return Limit{}, unix.EINVAL
 		}
 	}
 	old := l.data[t]

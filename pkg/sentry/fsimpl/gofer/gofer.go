@@ -40,8 +40,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -550,10 +550,10 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.dataMu.Unlock()
 		// Close host FDs if they exist.
 		if d.readFD >= 0 {
-			syscall.Close(int(d.readFD))
+			unix.Close(int(d.readFD))
 		}
 		if d.writeFD >= 0 && d.readFD != d.writeFD {
-			syscall.Close(int(d.writeFD))
+			unix.Close(int(d.writeFD))
 		}
 		d.readFD = -1
 		d.writeFD = -1
@@ -1505,10 +1505,10 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.readFile = p9file{}
 	d.writeFile = p9file{}
 	if d.readFD >= 0 {
-		syscall.Close(int(d.readFD))
+		unix.Close(int(d.readFD))
 	}
 	if d.writeFD >= 0 && d.readFD != d.writeFD {
-		syscall.Close(int(d.writeFD))
+		unix.Close(int(d.writeFD))
 	}
 	d.readFD = -1
 	d.writeFD = -1
@@ -1686,7 +1686,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						// may use the old or new file description, but this
 						// doesn't matter since they refer to the same file, and
 						// any racing mappings must be read-only.
-						if err := syscall.Dup3(int(h.fd), int(d.readFD), syscall.O_CLOEXEC); err != nil {
+						if err := unix.Dup3(int(h.fd), int(d.readFD), unix.O_CLOEXEC); err != nil {
 							oldFD := d.readFD
 							d.handleMu.Unlock()
 							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
@@ -1772,7 +1772,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		d.mapsMu.Unlock()
 	}
 	for _, fd := range fdsToClose {
-		syscall.Close(int(fd))
+		unix.Close(int(fd))
 	}
 
 	return nil
@@ -1808,7 +1808,7 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	// handles otherwise.
 	if d.writeFD >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		err := syscall.Fsync(int(d.writeFD))
+		err := unix.Fsync(int(d.writeFD))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
 	}
@@ -1817,7 +1817,7 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
 	}
 	if d.readFD >= 0 {
 		ctx.UninterruptibleSleepStart(false)
-		err := syscall.Fsync(int(d.readFD))
+		err := unix.Fsync(int(d.readFD))
 		ctx.UninterruptibleSleepFinish(false)
 		return err
 	}

@@ -21,8 +21,8 @@ package unet
 import (
 	"errors"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -39,15 +39,15 @@ var errMessageTruncated = errors.New("message truncated")
 // socketType returns the appropriate type.
 func socketType(packet bool) int {
 	if packet {
-		return syscall.SOCK_SEQPACKET
+		return unix.SOCK_SEQPACKET
 	}
-	return syscall.SOCK_STREAM
+	return unix.SOCK_STREAM
 }
 
 // socket creates a new host socket.
 func socket(packet bool) (int, error) {
 	// Make a new socket.
-	fd, err := syscall.Socket(syscall.AF_UNIX, socketType(packet), 0)
+	fd, err := unix.Socket(unix.AF_UNIX, socketType(packet), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -57,7 +57,7 @@ func socket(packet bool) (int, error) {
 
 // eventFD returns a new event FD with initial value 0.
 func eventFD() (int, error) {
-	f, _, e := syscall.Syscall(syscall.SYS_EVENTFD2, 0, 0, 0)
+	f, _, e := unix.Syscall(unix.SYS_EVENTFD2, 0, 0, 0)
 	if e != 0 {
 		return -1, e
 	}
@@ -89,9 +89,9 @@ type Socket struct {
 //
 // NewSocket takes ownership of fd.
 func NewSocket(fd int) (*Socket, error) {
-	// fd must be non-blocking for non-blocking syscall.Accept in
+	// fd must be non-blocking for non-blocking unix.Accept in
 	// ServerSocket.Accept.
-	if err := syscall.SetNonblock(fd, true); err != nil {
+	if err := unix.SetNonblock(fd, true); err != nil {
 		return nil, err
 	}
 
@@ -112,14 +112,14 @@ func (s *Socket) finish() error {
 	// Signal any blocked or future polls.
 	//
 	// N.B. eventfd writes must be 8 bytes.
-	if _, err := syscall.Write(s.efd, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+	if _, err := unix.Write(s.efd, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
 		return err
 	}
 
 	// Close the gate, blocking until all FD users leave.
 	s.gate.Close()
 
-	return syscall.Close(s.efd)
+	return unix.Close(s.efd)
 }
 
 // Close closes the socket.
@@ -129,7 +129,7 @@ func (s *Socket) Close() error {
 	fd := int(atomic.SwapInt32(&s.fd, -1))
 	if fd < 0 {
 		// Already closed or closing.
-		return syscall.EBADF
+		return unix.EBADF
 	}
 
 	// Shutdown the socket to cancel any pending accepts.
@@ -139,7 +139,7 @@ func (s *Socket) Close() error {
 		return err
 	}
 
-	return syscall.Close(fd)
+	return unix.Close(fd)
 }
 
 // Release releases ownership of the socket FD.
@@ -153,7 +153,7 @@ func (s *Socket) Release() (int, error) {
 	fd := int(atomic.SwapInt32(&s.fd, -1))
 	if fd < 0 {
 		// Already closed or closing.
-		return -1, syscall.EBADF
+		return -1, unix.EBADF
 	}
 
 	if err := s.finish(); err != nil {
@@ -201,7 +201,7 @@ func (s *Socket) enterFD() (int, bool) {
 // SocketPair creates a pair of connected sockets.
 func SocketPair(packet bool) (*Socket, *Socket, error) {
 	// Make a new pair.
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, socketType(packet)|syscall.SOCK_CLOEXEC, 0)
+	fds, err := unix.Socketpair(unix.AF_UNIX, socketType(packet)|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -216,15 +216,15 @@ func SocketPair(packet bool) (*Socket, *Socket, error) {
 	var race int32
 	a, err := NewSocket(fds[0])
 	if err != nil {
-		syscall.Close(fds[0])
-		syscall.Close(fds[1])
+		unix.Close(fds[0])
+		unix.Close(fds[1])
 		return nil, nil, err
 	}
 	a.race = &race
 	b, err := NewSocket(fds[1])
 	if err != nil {
 		a.Close()
-		syscall.Close(fds[1])
+		unix.Close(fds[1])
 		return nil, nil, err
 	}
 	b.race = &race
@@ -239,9 +239,9 @@ func Connect(addr string, packet bool) (*Socket, error) {
 	}
 
 	// Connect the socket.
-	usa := &syscall.SockaddrUnix{Name: addr}
-	if err := syscall.Connect(fd, usa); err != nil {
-		syscall.Close(fd)
+	usa := &unix.SockaddrUnix{Name: addr}
+	if err := unix.Connect(fd, usa); err != nil {
+		unix.Close(fd)
 		return nil, err
 	}
 
@@ -260,20 +260,20 @@ type ControlMessage []byte
 //
 // This must be called prior to ReadVec if you want to receive FDs.
 func (c *ControlMessage) EnableFDs(count int) {
-	*c = make([]byte, syscall.CmsgSpace(count*4))
+	*c = make([]byte, unix.CmsgSpace(count*4))
 }
 
 // ExtractFDs returns the list of FDs in the control message.
 //
 // Either this or CloseFDs should be used after EnableFDs.
 func (c *ControlMessage) ExtractFDs() ([]int, error) {
-	msgs, err := syscall.ParseSocketControlMessage(*c)
+	msgs, err := unix.ParseSocketControlMessage(*c)
 	if err != nil {
 		return nil, err
 	}
 	var fds []int
 	for _, msg := range msgs {
-		thisFds, err := syscall.ParseUnixRights(&msg)
+		thisFds, err := unix.ParseUnixRights(&msg)
 		if err != nil {
 			// Different control message.
 			return nil, err
@@ -294,7 +294,7 @@ func (c *ControlMessage) CloseFDs() {
 	fds, _ := c.ExtractFDs()
 	for _, fd := range fds {
 		if fd >= 0 {
-			syscall.Close(fd)
+			unix.Close(fd)
 		}
 	}
 }
@@ -303,7 +303,7 @@ func (c *ControlMessage) CloseFDs() {
 //
 // This must be used prior to WriteVec.
 func (c *ControlMessage) PackFDs(fds ...int) {
-	*c = ControlMessage(syscall.UnixRights(fds...))
+	*c = ControlMessage(unix.UnixRights(fds...))
 }
 
 // UnpackFDs clears the control message.
@@ -338,7 +338,7 @@ func (s *Socket) Write(p []byte) (int, error) {
 func (s *Socket) GetSockOpt(level int, name int, b []byte) (uint32, error) {
 	fd, ok := s.enterFD()
 	if !ok {
-		return 0, syscall.EBADF
+		return 0, unix.EBADF
 	}
 	defer s.gate.Leave()
 
@@ -349,7 +349,7 @@ func (s *Socket) GetSockOpt(level int, name int, b []byte) (uint32, error) {
 func (s *Socket) SetSockOpt(level, name int, b []byte) error {
 	fd, ok := s.enterFD()
 	if !ok {
-		return syscall.EBADF
+		return unix.EBADF
 	}
 	defer s.gate.Leave()
 
@@ -360,12 +360,12 @@ func (s *Socket) SetSockOpt(level, name int, b []byte) error {
 func (s *Socket) GetSockName() ([]byte, error) {
 	fd, ok := s.enterFD()
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer s.gate.Leave()
 
 	var buf []byte
-	l := syscall.SizeofSockaddrAny
+	l := unix.SizeofSockaddrAny
 
 	for {
 		// If the buffer is not large enough, allocate a new one with the hint.
@@ -385,12 +385,12 @@ func (s *Socket) GetSockName() ([]byte, error) {
 func (s *Socket) GetPeerName() ([]byte, error) {
 	fd, ok := s.enterFD()
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer s.gate.Leave()
 
 	var buf []byte
-	l := syscall.SizeofSockaddrAny
+	l := unix.SizeofSockaddrAny
 
 	for {
 		// See above.
@@ -407,14 +407,14 @@ func (s *Socket) GetPeerName() ([]byte, error) {
 }
 
 // GetPeerCred returns the peer's unix credentials.
-func (s *Socket) GetPeerCred() (*syscall.Ucred, error) {
+func (s *Socket) GetPeerCred() (*unix.Ucred, error) {
 	fd, ok := s.enterFD()
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer s.gate.Leave()
 
-	return syscall.GetsockoptUcred(fd, syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+	return unix.GetsockoptUcred(fd, unix.SOL_SOCKET, unix.SO_PEERCRED)
 }
 
 // SocketReader wraps an individual receive operation.
@@ -445,14 +445,14 @@ func (s *Socket) Read(p []byte) (int, error) {
 
 func (s *Socket) shutdown(fd int) error {
 	// Shutdown the socket to cancel any pending accepts.
-	return syscall.Shutdown(fd, syscall.SHUT_RDWR)
+	return unix.Shutdown(fd, unix.SHUT_RDWR)
 }
 
 // Shutdown closes the socket for read and write.
 func (s *Socket) Shutdown() error {
 	fd, ok := s.enterFD()
 	if !ok {
-		return syscall.EBADF
+		return unix.EBADF
 	}
 	defer s.gate.Leave()
 
@@ -481,9 +481,9 @@ func Bind(addr string, packet bool) (*ServerSocket, error) {
 	}
 
 	// Do the bind.
-	usa := &syscall.SockaddrUnix{Name: addr}
-	if err := syscall.Bind(fd, usa); err != nil {
-		syscall.Close(fd)
+	usa := &unix.SockaddrUnix{Name: addr}
+	if err := unix.Bind(fd, usa); err != nil {
+		unix.Close(fd)
 		return nil, err
 	}
 
@@ -510,11 +510,11 @@ func BindAndListen(addr string, packet bool) (*ServerSocket, error) {
 func (s *ServerSocket) Listen() error {
 	fd, ok := s.socket.enterFD()
 	if !ok {
-		return syscall.EBADF
+		return unix.EBADF
 	}
 	defer s.socket.gate.Leave()
 
-	return syscall.Listen(fd, backlog)
+	return unix.Listen(fd, backlog)
 }
 
 // Accept accepts a new connection.
@@ -526,19 +526,19 @@ func (s *ServerSocket) Listen() error {
 func (s *ServerSocket) Accept() (*Socket, error) {
 	fd, ok := s.socket.enterFD()
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer s.socket.gate.Leave()
 
 	for {
-		nfd, _, err := syscall.Accept(fd)
+		nfd, _, err := unix.Accept(fd)
 		switch err {
 		case nil:
 			return NewSocket(nfd)
-		case syscall.EAGAIN:
+		case unix.EAGAIN:
 			err = s.socket.wait(false)
 			if err == errClosing {
-				err = syscall.EBADF
+				err = unix.EBADF
 			}
 		}
 		if err != nil {
