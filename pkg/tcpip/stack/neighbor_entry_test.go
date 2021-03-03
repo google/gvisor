@@ -18,13 +18,11 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -50,23 +48,6 @@ const (
 // time.
 func runImmediatelyScheduledJobs(clock *faketime.ManualClock) {
 	clock.Advance(immediateDuration)
-}
-
-// eventDiffOpts are the options passed to cmp.Diff to compare entry events.
-// The UpdatedAtNanos field is ignored due to a lack of a deterministic method
-// to predict the time that an event will be dispatched.
-func eventDiffOpts() []cmp.Option {
-	return []cmp.Option{
-		cmpopts.IgnoreFields(NeighborEntry{}, "UpdatedAtNanos"),
-	}
-}
-
-// eventDiffOptsWithSort is like eventDiffOpts but also includes an option to
-// sort slices of events for cases where ordering must be ignored.
-func eventDiffOptsWithSort() []cmp.Option {
-	return append(eventDiffOpts(), cmpopts.SortSlices(func(a, b testEntryEventInfo) bool {
-		return strings.Compare(string(a.Entry.Addr), string(b.Entry.Addr)) < 0
-	}))
 }
 
 // The following unit tests exercise every state transition and verify its
