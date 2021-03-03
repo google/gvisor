@@ -69,8 +69,8 @@ type MultiCounterIPStats struct {
 	IPTablesOutputDropped tcpip.MultiCounterStat
 
 	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
-
 	// of IPStats.
+
 	// OptionTimestampReceived is the number of Timestamp options seen.
 	OptionTimestampReceived tcpip.MultiCounterStat
 
