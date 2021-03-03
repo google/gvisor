@@ -109,6 +109,7 @@ func (i *inodeFileState) loadLoading(_ struct{}) {
 }
 
 // afterLoad is invoked by stateify.
+// +checklocks:i.loading
 func (i *inodeFileState) afterLoad() {
 	load := func() (err error) {
 		// See comment on i.loading().
