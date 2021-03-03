@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -111,7 +110,7 @@ type State struct {
 	aarch64FPState `state:"wait"`
 
 	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
+	FeatureSet cpuid.FeatureSet
 
 	// OrigR0 stores the value of register R0.
 	OrigR0 uint64
@@ -174,10 +173,8 @@ func (s *State) StateData() *State {
 	return s
 }
 
-// CPUIDEmulate emulates a cpuid instruction.
-func (s *State) CPUIDEmulate(l log.Logger) {
-	// TODO(gvisor.dev/issue/1255): cpuid is not supported.
-}
+// CPUIDEmulate implements Context.CPUIDEmulate.
+func (s *State) CPUIDEmulate() {}
 
 // SingleStep implements Context.SingleStep.
 func (s *State) SingleStep() bool {
@@ -313,7 +310,7 @@ func (s *State) FullRestore() bool {
 }
 
 // New returns a new architecture context.
-func New(arch Arch, fs *cpuid.FeatureSet) Context {
+func New(arch Arch, fs cpuid.FeatureSet) Context {
 	switch arch {
 	case ARM64:
 		return &context64{

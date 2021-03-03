@@ -18,6 +18,7 @@ package ring0
 
 import (
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LoadFloatingPoint loads floating point state by the most efficient mechanism
@@ -91,14 +92,24 @@ var (
 
 // Init sets function pointers based on architectural features.
 //
-// This must be called prior to using ring0.
-func Init(featureSet *cpuid.FeatureSet) {
-	hasSMEP = featureSet.HasFeature(cpuid.X86FeatureSMEP)
-	hasPCID = featureSet.HasFeature(cpuid.X86FeaturePCID)
-	hasXSAVEOPT = featureSet.UseXsaveopt()
-	hasXSAVE = featureSet.UseXsave()
-	hasFSGSBASE = featureSet.HasFeature(cpuid.X86FeatureFSGSBase)
-	validXCR0Mask = uintptr(featureSet.ValidXCR0Mask())
+// This must be called prior to using ring0. By default, it will be called by
+// the init() function. However, it may be called at another time with a
+// different FeatureSet.
+func Init(fs cpuid.FeatureSet) {
+	// Initialize all sizes.
+	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
+	UserspaceSize = uintptr(1) << (VirtualAddressBits - 1)
+	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
+	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+
+	// Initialize all functions.
+	hasSMEP = fs.HasFeature(cpuid.X86FeatureSMEP)
+	hasPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	hasXSAVEOPT = fs.UseXsaveopt()
+	hasXSAVE = fs.UseXsave()
+	hasFSGSBASE = fs.HasFeature(cpuid.X86FeatureFSGSBase)
+	validXCR0Mask = uintptr(fs.ValidXCR0Mask())
 	if hasXSAVEOPT {
 		SaveFloatingPoint = xsaveopt
 		LoadFloatingPoint = xrstor
@@ -116,4 +127,9 @@ func Init(featureSet *cpuid.FeatureSet) {
 		WriteFS = wrfsmsr
 		WriteGS = wrgsmsr
 	}
+}
+
+func init() {
+	// See Init, above.
+	Init(cpuid.HostFeatureSet())
 }

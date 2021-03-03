@@ -12,26 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package proc
+#include "textflag.h"
 
-import (
-	"bytes"
-
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-)
-
-// LINT.IfChange
-
-func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	k := kernel.KernelFromContext(ctx)
-	features := k.FeatureSet()
-	var buf bytes.Buffer
-	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
-		features.WriteCPUInfoTo(i, &buf)
-	}
-	return newStaticProcInode(ctx, msrc, buf.Bytes())
-}
-
-// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)
+TEXT ·native(SB),NOSPLIT,$0-24
+	MOVL ax+0(FP), AX
+	MOVL cx+4(FP), CX
+	CPUID
+	MOVL AX, ret0+8(FP)
+	MOVL BX, ret1+12(FP)
+	MOVL CX, ret2+16(FP)
+	MOVL DX, ret3+20(FP)
+	RET

@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -210,16 +209,16 @@ func (s *State) StateData() *State {
 	return s
 }
 
-// CPUIDEmulate emulates a cpuid instruction.
-func (s *State) CPUIDEmulate(l log.Logger) {
-	argax := uint32(s.Regs.Rax)
-	argcx := uint32(s.Regs.Rcx)
-	ax, bx, cx, dx := s.FeatureSet.EmulateID(argax, argcx)
-	s.Regs.Rax = uint64(ax)
-	s.Regs.Rbx = uint64(bx)
-	s.Regs.Rcx = uint64(cx)
-	s.Regs.Rdx = uint64(dx)
-	l.Debugf("CPUID(%x,%x): %x %x %x %x", argax, argcx, ax, bx, cx, dx)
+// CPUIDEmulate implements Context.CPUIDEmulate.
+func (s *State) CPUIDEmulate() {
+	out := s.FeatureSet.Function.Query(cpuid.In{
+		Eax: uint32(s.Regs.Rax),
+		Ecx: uint32(s.Regs.Rcx),
+	})
+	s.Regs.Rax = uint64(out.Eax)
+	s.Regs.Rbx = uint64(out.Ebx)
+	s.Regs.Rcx = uint64(out.Ecx)
+	s.Regs.Rdx = uint64(out.Edx)
 }
 
 // SingleStep implements Context.SingleStep.
@@ -604,7 +603,7 @@ func (s *State) FullRestore() bool {
 }
 
 // New returns a new architecture context.
-func New(arch Arch, fs *cpuid.FeatureSet) Context {
+func New(arch Arch, fs cpuid.FeatureSet) Context {
 	switch arch {
 	case AMD64:
 		return &context64{

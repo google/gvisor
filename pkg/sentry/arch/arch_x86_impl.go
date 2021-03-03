@@ -32,7 +32,7 @@ type State struct {
 	x86FPState `state:"wait"`
 
 	// FeatureSet is a pointer to the currently active feature set.
-	FeatureSet *cpuid.FeatureSet
+	FeatureSet cpuid.FeatureSet
 }
 
 // afterLoad is invoked by stateify.

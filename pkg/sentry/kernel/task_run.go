@@ -151,7 +151,7 @@ func (*runApp) handleCPUIDInstruction(t *Task) error {
 	_, err := t.CopyInBytes(usermem.Addr(t.Arch().IP()), found)
 	if err == nil && bytes.Equal(expected, found) {
 		// Skip the cpuid instruction.
-		t.Arch().CPUIDEmulate(t)
+		t.Arch().CPUIDEmulate()
 		t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
 		region.End()
 

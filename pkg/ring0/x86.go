@@ -16,10 +16,6 @@
 
 package ring0
 
-import (
-	"gvisor.dev/gvisor/pkg/cpuid"
-)
-
 // Useful bits.
 const (
 	_CR0_PE = 1 << 0
@@ -143,24 +139,6 @@ const (
 const (
 	Syscall Vector = _NR_INTERRUPTS
 )
-
-// VirtualAddressBits returns the number bits available for virtual addresses.
-//
-// Note that sign-extension semantics apply to the highest order bit.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func VirtualAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return (ax >> 8) & 0xff
-}
-
-// PhysicalAddressBits returns the number of bits available for physical addresses.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func PhysicalAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return ax & 0xff
-}
 
 // Selector is a segment Selector.
 type Selector uint16

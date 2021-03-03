@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -174,8 +173,8 @@ type Context interface {
 	// SignalRestore returns the thread's new signal mask.
 	SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error)
 
-	// CPUIDEmulate emulates a CPUID instruction according to current register state.
-	CPUIDEmulate(l log.Logger)
+	// CPUIDEmulate emulates a CPUID instruction, if relevant.
+	CPUIDEmulate()
 
 	// SingleStep returns true if single stepping is enabled.
 	SingleStep() bool
@@ -200,7 +199,7 @@ type Context interface {
 	PIELoadAddress(l MmapLayout) usermem.Addr
 
 	// FeatureSet returns the FeatureSet in use in this context.
-	FeatureSet() *cpuid.FeatureSet
+	FeatureSet() cpuid.FeatureSet
 
 	// Hack around our package dependences being too broken to support the
 	// equivalent of arch_ptrace():

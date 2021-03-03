@@ -197,7 +197,7 @@ func (c *context64) Width() uint {
 }
 
 // FeatureSet returns the FeatureSet in use.
-func (c *context64) FeatureSet() *cpuid.FeatureSet {
+func (c *context64) FeatureSet() cpuid.FeatureSet {
 	return c.State.FeatureSet
 }
 

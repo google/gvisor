@@ -251,10 +251,6 @@ func newStaticFileSetStat(data string) *staticFileSetStat {
 
 func cpuInfoData(k *kernel.Kernel) string {
 	features := k.FeatureSet()
-	if features == nil {
-		// Kernel is always initialized with a FeatureSet.
-		panic("cpuinfo read with nil FeatureSet")
-	}
 	var buf bytes.Buffer
 	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
 		features.WriteCPUInfoTo(i, &buf)

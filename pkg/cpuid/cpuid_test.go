@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// func HostID(rax, rcx uint32) (ret0, ret1, ret2, ret3 uint32)
-TEXT ·HostID(SB),$0-48
-	MOVL ax+0(FP), AX
-	MOVL cx+4(FP), CX
-	CPUID
-	MOVL AX, ret0+8(FP)
-	MOVL BX, ret1+12(FP)
-	MOVL CX, ret2+16(FP)
-	MOVL DX, ret3+20(FP)
-	RET
+package cpuid
+
+import "testing"
+
+func TestFeatureFromString(t *testing.T) {
+	// Check that known features do match.
+	for feature, _ := range allFeatures {
+		f, ok := FeatureFromString(feature.String())
+		if f != feature || !ok {
+			t.Errorf("got %v, %v want %v, true", f, ok, feature)
+		}
+	}
+
+	// Check that "bad" doesn't match.
+	f, ok := FeatureFromString("bad")
+	if ok {
+		t.Errorf("got %v, %v want false", f, ok)
+	}
+}

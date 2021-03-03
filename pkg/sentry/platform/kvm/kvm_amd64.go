@@ -181,10 +181,34 @@ type cpuidEntries struct {
 	entries [_KVM_NR_CPUID_ENTRIES]cpuidEntry
 }
 
+// Query implements cpuid.Function.Query.
+func (c *cpuidEntries) Query(in cpuid.In) (out cpuid.Out) {
+	for i := 0; i < int(c.nr); i++ {
+		if c.entries[i].function == in.Eax && c.entries[i].index == in.Ecx {
+			out.Eax = c.entries[i].eax
+			out.Ebx = c.entries[i].ebx
+			out.Ecx = c.entries[i].ecx
+			out.Edx = c.entries[i].edx
+			return
+		}
+	}
+	return
+}
+
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
-	physicalInit()
 	err := updateSystemValues(int(fd))
-	ring0.Init(cpuid.HostFeatureSet())
+	// Create a static feature set from the KVM entries. Then, we
+	// explicitly set OSXSAVE, since this does not come in the feature
+	// entries, but can be provided when the relevant CR4 bit is set.
+	fs := cpuid.FeatureSet{
+		Function: &cpuidSupported,
+	}
+	s := fs.ToStatic()
+	s.Add(cpuid.X86FeatureOSXSAVE)
+	ring0.Init(cpuid.FeatureSet{
+		Function: s,
+	})
+	physicalInit()
 	return err
 }

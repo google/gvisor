@@ -16,19 +16,33 @@
 
 package ring0
 
-import (
-	"gvisor.dev/gvisor/pkg/usermem"
-)
-
 var (
+	// VirtualAddressBits is the number of bits available in the virtual
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	VirtualAddressBits uintptr
+
+	// PhysicalAddressBits is the number of bits available in the physical
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	PhysicalAddressBits uintptr
+
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+	//
+	// Initialized by ring0.Init.
+	UserspaceSize uintptr
 
 	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
+	//
+	// Initialized by ring0.Init.
+	MaximumUserAddress uintptr
 
 	// KernelStartAddress is the starting kernel address.
-	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+	//
+	// Initialized by ring0.Init.
+	KernelStartAddress uintptr
 )
 
 // Segment indices and Selectors.

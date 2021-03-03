@@ -76,7 +76,7 @@ type LoadArgs struct {
 	Envv []string
 
 	// Features specifies the CPU feature set for the executable.
-	Features *cpuid.FeatureSet
+	Features cpuid.FeatureSet
 }
 
 // openPath opens args.Filename and checks that it is valid for loading.

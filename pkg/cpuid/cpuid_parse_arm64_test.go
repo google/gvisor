@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,26 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package proc
+// +build arm64
 
-import (
-	"bytes"
+package cpuid
 
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-)
-
-// LINT.IfChange
-
-func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	k := kernel.KernelFromContext(ctx)
-	features := k.FeatureSet()
-	var buf bytes.Buffer
-	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
-		features.WriteCPUInfoTo(i, &buf)
-	}
-	return newStaticProcInode(ctx, msrc, buf.Bytes())
+func archSkipFeature(feature Feature, major, minor int) bool {
+	return false
 }
-
-// LINT.ThenChange(../../fsimpl/proc/tasks_files.go)
