@@ -105,6 +105,7 @@ func (rw *CrossGoroutineRWMutex) RUnlock() {
 
 // TryLock locks rw for writing. It returns true if it succeeds and false
 // otherwise. It does not block.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) TryLock() bool {
 	if RaceEnabled {
 		RaceDisable()
@@ -155,6 +156,7 @@ func (rw *CrossGoroutineRWMutex) Lock() {
 //
 // Preconditions:
 // * rw is locked for writing.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) Unlock() {
 	if RaceEnabled {
 		RaceRelease(unsafe.Pointer(&rw.writerSem))
@@ -181,6 +183,7 @@ func (rw *CrossGoroutineRWMutex) Unlock() {
 //
 // Preconditions:
 // * rw is locked for writing.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) DowngradeLock() {
 	if RaceEnabled {
 		RaceRelease(unsafe.Pointer(&rw.readerSem))
@@ -250,6 +253,7 @@ func (rw *RWMutex) RLock() {
 // Preconditions:
 // * rw is locked for reading.
 // * rw was locked by this goroutine.
+// +checklocksignore
 func (rw *RWMutex) RUnlock() {
 	rw.m.RUnlock()
 	noteUnlock(unsafe.Pointer(rw))
@@ -279,6 +283,7 @@ func (rw *RWMutex) Lock() {
 // Preconditions:
 // * rw is locked for writing.
 // * rw was locked by this goroutine.
+// +checklocksignore
 func (rw *RWMutex) Unlock() {
 	rw.m.Unlock()
 	noteUnlock(unsafe.Pointer(rw))
@@ -288,6 +293,7 @@ func (rw *RWMutex) Unlock() {
 //
 // Preconditions:
 // * rw is locked for writing.
+// +checklocksignore
 func (rw *RWMutex) DowngradeLock() {
 	// No note change for DowngradeLock.
 	rw.m.DowngradeLock()

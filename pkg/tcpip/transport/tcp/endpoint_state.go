@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+// +checklocks:e.mu
 func (e *endpoint) drainSegmentLocked() {
 	// Drain only up to once.
 	if e.drainDone != nil {

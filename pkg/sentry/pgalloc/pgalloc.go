@@ -876,6 +876,7 @@ func (f *MemoryFile) UpdateUsage() error {
 // in bs, sets committed[i] to 1 if the page is committed and 0 otherwise.
 //
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
+// +checklocks:f.mu
 func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(bs []byte, committed []byte) error) error {
 	// Track if anything changed to elide the merge. In the common case, we
 	// expect all segments to be committed and no merge to occur.
@@ -925,72 +926,73 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 		r := seg.Range()
 
 		var checkErr error
-		err := f.forEachMappingSlice(r, func(s []byte) {
-			if checkErr != nil {
-				return
-			}
-
-			// Ensure that we have sufficient buffer for the call
-			// (one byte per page). The length of each slice must
-			// be page-aligned.
-			bufLen := len(s) / usermem.PageSize
-			if len(buf) < bufLen {
-				buf = make([]byte, bufLen)
-			}
-
-			// Query for new pages in core.
-			// NOTE(b/165896008): mincore (which is passed as checkCommitted)
-			// by f.UpdateUsage() might take a really long time. So unlock f.mu
-			// while checkCommitted runs.
-			f.mu.Unlock()
-			err := checkCommitted(s, buf)
-			f.mu.Lock()
-			if err != nil {
-				checkErr = err
-				return
-			}
-
-			// Scan each page and switch out segments.
-			seg := f.usage.LowerBoundSegment(r.Start)
-			for i := 0; i < bufLen; {
-				if buf[i]&0x1 == 0 {
-					i++
-					continue
+		err := f.forEachMappingSlice(r,
+			func(s []byte) {
+				if checkErr != nil {
+					return
 				}
-				// Scan to the end of this committed range.
-				j := i + 1
-				for ; j < bufLen; j++ {
-					if buf[j]&0x1 == 0 {
-						break
+
+				// Ensure that we have sufficient buffer for the call
+				// (one byte per page). The length of each slice must
+				// be page-aligned.
+				bufLen := len(s) / usermem.PageSize
+				if len(buf) < bufLen {
+					buf = make([]byte, bufLen)
+				}
+
+				// Query for new pages in core.
+				// NOTE(b/165896008): mincore (which is passed as checkCommitted)
+				// by f.UpdateUsage() might take a really long time. So unlock f.mu
+				// while checkCommitted runs.
+				f.mu.Unlock()
+				err := checkCommitted(s, buf)
+				f.mu.Lock()
+				if err != nil {
+					checkErr = err
+					return
+				}
+
+				// Scan each page and switch out segments.
+				seg := f.usage.LowerBoundSegment(r.Start)
+				for i := 0; i < bufLen; {
+					if buf[i]&0x1 == 0 {
+						i++
+						continue
 					}
-				}
-				committedFR := memmap.FileRange{
-					Start: r.Start + uint64(i*usermem.PageSize),
-					End:   r.Start + uint64(j*usermem.PageSize),
-				}
-				// Advance seg to committedFR.Start.
-				for seg.Ok() && seg.End() < committedFR.Start {
-					seg = seg.NextSegment()
-				}
-				// Mark pages overlapping committedFR as committed.
-				for seg.Ok() && seg.Start() < committedFR.End {
-					if seg.ValuePtr().canCommit() {
-						seg = f.usage.Isolate(seg, committedFR)
-						seg.ValuePtr().knownCommitted = true
-						amount := seg.Range().Length()
-						usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind)
-						f.usageExpected += amount
-						changedAny = true
+					// Scan to the end of this committed range.
+					j := i + 1
+					for ; j < bufLen; j++ {
+						if buf[j]&0x1 == 0 {
+							break
+						}
 					}
-					seg = seg.NextSegment()
+					committedFR := memmap.FileRange{
+						Start: r.Start + uint64(i*usermem.PageSize),
+						End:   r.Start + uint64(j*usermem.PageSize),
+					}
+					// Advance seg to committedFR.Start.
+					for seg.Ok() && seg.End() < committedFR.Start {
+						seg = seg.NextSegment()
+					}
+					// Mark pages overlapping committedFR as committed.
+					for seg.Ok() && seg.Start() < committedFR.End {
+						if seg.ValuePtr().canCommit() {
+							seg = f.usage.Isolate(seg, committedFR)
+							seg.ValuePtr().knownCommitted = true
+							amount := seg.Range().Length()
+							usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind)
+							f.usageExpected += amount
+							changedAny = true
+						}
+						seg = seg.NextSegment()
+					}
+					// Continue scanning for committed pages.
+					i = j + 1
 				}
-				// Continue scanning for committed pages.
-				i = j + 1
-			}
 
-			// Advance r.Start.
-			r.Start += uint64(len(s))
-		})
+				// Advance r.Start.
+				r.Start += uint64(len(s))
+			})
 		if checkErr != nil {
 			return checkErr
 		}
