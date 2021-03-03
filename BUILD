@@ -122,6 +122,7 @@ go_path(
         # Packages that are not dependencies of the above.
         "//pkg/sentry/kernel/memevent",
         "//pkg/tcpip/adapters/gonet",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/muxed",
