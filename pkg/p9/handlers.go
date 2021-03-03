@@ -21,28 +21,28 @@ import (
 	"path"
 	"strings"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-// ExtractErrno extracts a syscall.Errno from a error, best effort.
-func ExtractErrno(err error) syscall.Errno {
+// ExtractErrno extracts a unix.Errno from a error, best effort.
+func ExtractErrno(err error) unix.Errno {
 	switch err {
 	case os.ErrNotExist:
-		return syscall.ENOENT
+		return unix.ENOENT
 	case os.ErrExist:
-		return syscall.EEXIST
+		return unix.EEXIST
 	case os.ErrPermission:
-		return syscall.EACCES
+		return unix.EACCES
 	case os.ErrInvalid:
-		return syscall.EINVAL
+		return unix.EINVAL
 	}
 
 	// Attempt to unwrap.
 	switch e := err.(type) {
-	case syscall.Errno:
+	case unix.Errno:
 		return e
 	case *os.PathError:
 		return ExtractErrno(e.Err)
@@ -54,7 +54,7 @@ func ExtractErrno(err error) syscall.Errno {
 
 	// Default case.
 	log.Warningf("unknown error: %v", err)
-	return syscall.EIO
+	return unix.EIO
 }
 
 // newErr returns a new error message from an error.
@@ -77,20 +77,20 @@ type handler interface {
 // handle implements handler.handle.
 func (t *Tversion) handle(cs *connState) message {
 	if t.MSize == 0 {
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 	if t.MSize > maximumLength {
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 	atomic.StoreUint32(&cs.messageSize, t.MSize)
 	requested, ok := parseVersion(t.Version)
 	if !ok {
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 	// The server cannot support newer versions that it doesn't know about.  In this
 	// case we return EAGAIN to tell the client to try again with a lower version.
 	if requested > highestSupportedVersion {
-		return newErr(syscall.EAGAIN)
+		return newErr(unix.EAGAIN)
 	}
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
@@ -112,13 +112,13 @@ func checkSafeName(name string) error {
 	if name != "" && !strings.Contains(name, "/") && name != "." && name != ".." {
 		return nil
 	}
-	return syscall.EINVAL
+	return unix.EINVAL
 }
 
 // handle implements handler.handle.
 func (t *Tclunk) handle(cs *connState) message {
 	if !cs.DeleteFID(t.FID) {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	return &Rclunk{}
 }
@@ -126,7 +126,7 @@ func (t *Tclunk) handle(cs *connState) message {
 func (t *Tsetattrclunk) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -136,7 +136,7 @@ func (t *Tsetattrclunk) handle(cs *connState) message {
 		// there were multiple links and you can still change the
 		// corresponding inode information.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Set the attributes.
@@ -146,7 +146,7 @@ func (t *Tsetattrclunk) handle(cs *connState) message {
 	// Try to delete FID even in case of failure above. Since the state of the
 	// file is unknown to the caller, it will not attempt to close the file again.
 	if !cs.DeleteFID(t.FID) {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	if setAttrErr != nil {
 		return newErr(setAttrErr)
@@ -158,7 +158,7 @@ func (t *Tsetattrclunk) handle(cs *connState) message {
 func (t *Tremove) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -172,7 +172,7 @@ func (t *Tremove) handle(cs *connState) message {
 	err := ref.safelyGlobal(func() error {
 		// Is this a root? Can't remove that.
 		if ref.isRoot() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// N.B. this remove operation is permitted, even if the file is open.
@@ -180,7 +180,7 @@ func (t *Tremove) handle(cs *connState) message {
 
 		// Is this file already deleted?
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Retrieve the file's proper name.
@@ -204,7 +204,7 @@ func (t *Tremove) handle(cs *connState) message {
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
 	if !cs.DeleteFID(t.FID) {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	if err != nil {
 		return newErr(err)
@@ -217,14 +217,14 @@ func (t *Tremove) handle(cs *connState) message {
 //
 // We don't support authentication, so this just returns ENOSYS.
 func (t *Tauth) handle(cs *connState) message {
-	return newErr(syscall.ENOSYS)
+	return newErr(unix.ENOSYS)
 }
 
 // handle implements handler.handle.
 func (t *Tattach) handle(cs *connState) message {
 	// Ensure no authentication FID is provided.
 	if t.Auth.AuthenticationFID != NoFID {
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 
 	// Must provide an absolute path.
@@ -247,7 +247,7 @@ func (t *Tattach) handle(cs *connState) message {
 	}
 	if !valid.Mode {
 		sf.Close() // Drop file.
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 
 	// Build a transient reference.
@@ -292,7 +292,7 @@ func CanOpen(mode FileMode) bool {
 func (t *Tlopen) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -304,22 +304,22 @@ func (t *Tlopen) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been deleted already?
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Has it been opened already?
 		if ref.opened || !CanOpen(ref.mode) {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		if ref.mode.IsDir() {
 			// Directory must be opened ReadOnly.
 			if t.Flags&OpenFlagsModeMask != ReadOnly {
-				return syscall.EISDIR
+				return unix.EISDIR
 			}
 			// Directory not truncatable.
 			if t.Flags&OpenTruncate != 0 {
-				return syscall.EISDIR
+				return unix.EISDIR
 			}
 		}
 
@@ -345,7 +345,7 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer ref.DecRef()
 
@@ -359,12 +359,12 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow creation from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the create.
@@ -422,7 +422,7 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer ref.DecRef()
 
@@ -430,12 +430,12 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow symlinks from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the symlink.
@@ -456,25 +456,25 @@ func (t *Tlink) handle(cs *connState) message {
 
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	refTarget, ok := cs.LookupFID(t.Target)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer refTarget.DecRef()
 
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow create links from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the link.
@@ -497,13 +497,13 @@ func (t *Trenameat) handle(cs *connState) message {
 
 	ref, ok := cs.LookupFID(t.OldDirectory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	refTarget, ok := cs.LookupFID(t.NewDirectory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer refTarget.DecRef()
 
@@ -511,12 +511,12 @@ func (t *Trenameat) handle(cs *connState) message {
 	if err := ref.safelyGlobal(func() (err error) {
 		// Don't allow renaming across deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() || refTarget.isDeleted() || !refTarget.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Is this the same file? If yes, short-circuit and return success.
@@ -547,19 +547,19 @@ func (t *Tunlinkat) handle(cs *connState) message {
 
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow deletion from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Before we do the unlink itself, we need to ensure that there
@@ -599,25 +599,25 @@ func (t *Trename) handle(cs *connState) message {
 
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	refTarget, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer refTarget.DecRef()
 
 	if err := ref.safelyGlobal(func() (err error) {
 		// Don't allow a root rename.
 		if ref.isRoot() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Don't allow renaming deleting entries, or target non-directories.
 		if ref.isDeleted() || refTarget.isDeleted() || !refTarget.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// If the parent is deleted, but we not, something is seriously wrong.
@@ -656,7 +656,7 @@ func (t *Trename) handle(cs *connState) message {
 func (t *Treadlink) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -666,7 +666,7 @@ func (t *Treadlink) handle(cs *connState) message {
 		// check if this file is opened because symlinks cannot be
 		// opened.
 		if ref.isDeleted() || !ref.mode.IsSymlink() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the read.
@@ -683,13 +683,13 @@ func (t *Treadlink) handle(cs *connState) message {
 func (t *Tread) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Constrain the size of the read buffer.
 	if int(t.Count) > int(maximumLength) {
-		return newErr(syscall.ENOBUFS)
+		return newErr(unix.ENOBUFS)
 	}
 
 	var (
@@ -699,12 +699,12 @@ func (t *Tread) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
 		if !ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Can it be read? Check permissions.
 		if ref.openFlags&OpenFlagsModeMask == WriteOnly {
-			return syscall.EPERM
+			return unix.EPERM
 		}
 
 		n, err = ref.file.ReadAt(data, t.Offset)
@@ -720,7 +720,7 @@ func (t *Tread) handle(cs *connState) message {
 func (t *Twrite) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -728,12 +728,12 @@ func (t *Twrite) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
 		if !ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Can it be written? Check permissions.
 		if ref.openFlags&OpenFlagsModeMask == ReadOnly {
-			return syscall.EPERM
+			return unix.EPERM
 		}
 
 		n, err = ref.file.WriteAt(t.Data, t.Offset)
@@ -761,7 +761,7 @@ func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
 
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer ref.DecRef()
 
@@ -769,12 +769,12 @@ func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow mknod on deleted files.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the mknod.
@@ -803,7 +803,7 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return nil, syscall.EBADF
+		return nil, unix.EBADF
 	}
 	defer ref.DecRef()
 
@@ -811,12 +811,12 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow mkdir on deleted files.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Not allowed on open directories.
 		if ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the mkdir.
@@ -833,7 +833,7 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 func (t *Tgetattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -861,7 +861,7 @@ func (t *Tgetattr) handle(cs *connState) message {
 func (t *Tsetattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -871,7 +871,7 @@ func (t *Tsetattr) handle(cs *connState) message {
 		// there were multiple links and you can still change the
 		// corresponding inode information.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Set the attributes.
@@ -887,24 +887,24 @@ func (t *Tsetattr) handle(cs *connState) message {
 func (t *Tallocate) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyWrite(func() error {
 		// Has it been opened already?
 		if !ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Can it be written? Check permissions.
 		if ref.openFlags&OpenFlagsModeMask == ReadOnly {
-			return syscall.EBADF
+			return unix.EBADF
 		}
 
 		// We don't allow allocate on files that have been deleted.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		return ref.file.Allocate(t.Mode, t.Offset, t.Length)
@@ -919,31 +919,31 @@ func (t *Tallocate) handle(cs *connState) message {
 func (t *Txattrwalk) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	// We don't support extended attributes.
-	return newErr(syscall.ENODATA)
+	return newErr(unix.ENODATA)
 }
 
 // handle implements handler.handle.
 func (t *Txattrcreate) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	// We don't support extended attributes.
-	return newErr(syscall.ENOSYS)
+	return newErr(unix.ENOSYS)
 }
 
 // handle implements handler.handle.
 func (t *Tgetxattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -951,7 +951,7 @@ func (t *Tgetxattr) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Don't allow getxattr on files that have been deleted.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 		val, err = ref.file.GetXattr(t.Name, t.Size)
 		return err
@@ -965,14 +965,14 @@ func (t *Tgetxattr) handle(cs *connState) message {
 func (t *Tsetxattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyWrite(func() error {
 		// Don't allow setxattr on files that have been deleted.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 		return ref.file.SetXattr(t.Name, t.Value, t.Flags)
 	}); err != nil {
@@ -985,7 +985,7 @@ func (t *Tsetxattr) handle(cs *connState) message {
 func (t *Tlistxattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -993,7 +993,7 @@ func (t *Tlistxattr) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Don't allow listxattr on files that have been deleted.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 		xattrs, err = ref.file.ListXattr(t.Size)
 		return err
@@ -1012,14 +1012,14 @@ func (t *Tlistxattr) handle(cs *connState) message {
 func (t *Tremovexattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyWrite(func() error {
 		// Don't allow removexattr on files that have been deleted.
 		if ref.isDeleted() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 		return ref.file.RemoveXattr(t.Name)
 	}); err != nil {
@@ -1032,7 +1032,7 @@ func (t *Tremovexattr) handle(cs *connState) message {
 func (t *Treaddir) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1040,12 +1040,12 @@ func (t *Treaddir) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Don't allow reading deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Has it been opened yet?
 		if !ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Read the entries.
@@ -1065,14 +1065,14 @@ func (t *Treaddir) handle(cs *connState) message {
 func (t *Tfsync) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened yet?
 		if !ref.opened {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Perform the sync.
@@ -1088,7 +1088,7 @@ func (t *Tfsync) handle(cs *connState) message {
 func (t *Tstatfs) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1104,7 +1104,7 @@ func (t *Tstatfs) handle(cs *connState) message {
 func (t *Tflushf) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1121,7 +1121,7 @@ func (t *Tflushf) handle(cs *connState) message {
 func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, AttrMask, Attr, error) {
 	if len(names) > 1 {
 		// We require exactly zero or one elements.
-		return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+		return nil, nil, AttrMask{}, Attr{}, unix.EINVAL
 	}
 	var (
 		localQIDs []QID
@@ -1134,7 +1134,7 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 	case getattr:
 		localQIDs, sf, valid, attr, err = from.WalkGetAttr(names)
 		// Can't put fallthrough in the if because Go.
-		if err != syscall.ENOSYS {
+		if err != unix.ENOSYS {
 			break
 		}
 		fallthrough
@@ -1159,7 +1159,7 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 	if len(localQIDs) != 1 {
 		// Expected a single QID.
 		sf.Close()
-		return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+		return nil, nil, AttrMask{}, Attr{}, unix.EINVAL
 	}
 	return append(qids, localQIDs...), sf, valid, attr, nil
 }
@@ -1181,7 +1181,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	// Has it been opened already?
 	err = ref.safelyRead(func() (err error) {
 		if ref.opened {
-			return syscall.EBUSY
+			return unix.EBUSY
 		}
 		return nil
 	})
@@ -1237,7 +1237,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 		// a proper directory and we have additional paths to walk.
 		if !walkRef.mode.IsDir() {
 			walkRef.DecRef() // Drop walk reference; no lock required.
-			return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+			return nil, nil, AttrMask{}, Attr{}, unix.EINVAL
 		}
 
 		var sf File // Temporary.
@@ -1283,7 +1283,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 func (t *Twalk) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1303,7 +1303,7 @@ func (t *Twalk) handle(cs *connState) message {
 func (t *Twalkgetattr) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1359,7 +1359,7 @@ func (t *Tumknod) handle(cs *connState) message {
 func (t *Tlconnect) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
-		return newErr(syscall.EBADF)
+		return newErr(unix.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -1367,7 +1367,7 @@ func (t *Tlconnect) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		// Don't allow connecting to deleted files.
 		if ref.isDeleted() || !ref.mode.IsSocket() {
-			return syscall.EINVAL
+			return unix.EINVAL
 		}
 
 		// Do the connect.
@@ -1391,7 +1391,7 @@ func (t *Tchannel) handle(cs *connState) message {
 
 	ch := cs.lookupChannel(t.ID)
 	if ch == nil {
-		return newErr(syscall.ENOSYS)
+		return newErr(unix.ENOSYS)
 	}
 
 	// Return the payload. Note that we need to duplicate the file
@@ -1405,19 +1405,19 @@ func (t *Tchannel) handle(cs *connState) message {
 	switch t.Control {
 	case 0:
 		// Open the main data channel.
-		mfd, err := syscall.Dup(int(cs.channelAlloc.FD()))
+		mfd, err := unix.Dup(int(cs.channelAlloc.FD()))
 		if err != nil {
 			return newErr(err)
 		}
 		rchannel.SetFilePayload(fd.New(mfd))
 	case 1:
-		cfd, err := syscall.Dup(ch.client.FD())
+		cfd, err := unix.Dup(ch.client.FD())
 		if err != nil {
 			return newErr(err)
 		}
 		rchannel.SetFilePayload(fd.New(cfd))
 	default:
-		return newErr(syscall.EINVAL)
+		return newErr(unix.EINVAL)
 	}
 	return rchannel
 }

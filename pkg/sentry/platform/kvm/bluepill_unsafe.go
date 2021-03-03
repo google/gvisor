@@ -21,9 +21,9 @@ package kvm
 
 import (
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -102,23 +102,23 @@ func bluepillHandler(context unsafe.Pointer) {
 	}
 
 	for {
-		_, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
+		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
 		switch errno {
 		case 0: // Expected case.
-		case syscall.EINTR:
+		case unix.EINTR:
 			// First, we process whatever pending signal
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
-			timeout := syscall.Timespec{}
-			sig, _, errno := syscall.RawSyscall6( // escapes: no.
-				syscall.SYS_RT_SIGTIMEDWAIT,
+			timeout := unix.Timespec{}
+			sig, _, errno := unix.RawSyscall6( // escapes: no.
+				unix.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
 				0,                                 // siginfo.
 				uintptr(unsafe.Pointer(&timeout)), // timeout.
 				8,                                 // sigset size.
 				0, 0)
-			if errno == syscall.EAGAIN {
+			if errno == unix.EAGAIN {
 				continue
 			}
 			if errno != 0 {
@@ -140,7 +140,7 @@ func bluepillHandler(context unsafe.Pointer) {
 				c.runData.requestInterruptWindow = 1
 				continue // Rerun vCPU.
 			}
-		case syscall.EFAULT:
+		case unix.EFAULT:
 			// If a fault is not serviceable due to the host
 			// backing pages having page permissions, instead of an
 			// MMIO exit we receive EFAULT from the run ioctl. We
@@ -148,7 +148,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			// mode and have interrupts disabled.
 			bluepillSigBus(c)
 			continue // Rerun vCPU.
-		case syscall.ENOSYS:
+		case unix.ENOSYS:
 			bluepillHandleEnosys(c)
 			continue
 		default:

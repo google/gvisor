@@ -19,8 +19,8 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -90,7 +90,7 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 		if sig == int(linux.SIGURG) {
 			continue
 		}
-		signal.Notify(sigchan, syscall.Signal(sig))
+		signal.Notify(sigchan, unix.Signal(sig))
 	}
 	// Start up our listener.
 	go handleSignals(sigchans, handler, stop, done) // S/R-SAFE: synchronized by Kernel.extMu.

@@ -18,8 +18,8 @@ import (
 	"io"
 	"runtime/debug"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
@@ -483,7 +483,7 @@ func (cs *connState) lookupChannel(id uint32) *channel {
 func (cs *connState) handle(m message) (r message) {
 	if !cs.reqGate.Enter() {
 		// connState.stop() has been called; the connection is shutting down.
-		r = newErr(syscall.ECONNRESET)
+		r = newErr(unix.ECONNRESET)
 		return
 	}
 	defer func() {
@@ -498,7 +498,7 @@ func (cs *connState) handle(m message) (r message) {
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErr(syscall.EFAULT)
+			r = newErr(unix.EFAULT)
 		}
 	}()
 	if handler, ok := m.(handler); ok {
@@ -506,7 +506,7 @@ func (cs *connState) handle(m message) (r message) {
 		r = handler.handle(cs)
 	} else {
 		// Produce an ENOSYS error.
-		r = newErr(syscall.ENOSYS)
+		r = newErr(unix.ENOSYS)
 	}
 	return
 }

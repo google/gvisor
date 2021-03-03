@@ -16,8 +16,8 @@ package fs
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -65,7 +65,7 @@ func SaveFileFsyncError(err error) error {
 	case nil:
 		// We succeeded, everything is great.
 		return nil
-	case syscall.EBADF, syscall.EINVAL, syscall.EROFS, syscall.ENOSYS, syscall.EPERM:
+	case unix.EBADF, unix.EINVAL, unix.EROFS, unix.ENOSYS, unix.EPERM:
 		// These errors mean that the underlying node might not be syncable,
 		// which we expect to be reported as such even from the gofer.
 		log.Infof("failed to sync during save: %v", err)

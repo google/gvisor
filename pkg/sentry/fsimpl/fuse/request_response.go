@@ -16,8 +16,8 @@ package fuse
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -199,7 +199,7 @@ func (r *Response) Error() error {
 		return nil
 	}
 
-	sysErrNo := syscall.Errno(-errno)
+	sysErrNo := unix.Errno(-errno)
 	return error(sysErrNo)
 }
 

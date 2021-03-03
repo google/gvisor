@@ -15,8 +15,6 @@
 package hostmm
 
 import (
-	"syscall"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -28,9 +26,9 @@ var (
 )
 
 func init() {
-	supported, _, e := syscall.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_QUERY, 0 /* flags */, 0 /* unused */)
+	supported, _, e := unix.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_QUERY, 0 /* flags */, 0 /* unused */)
 	if e != 0 {
-		if e != syscall.ENOSYS {
+		if e != unix.ENOSYS {
 			log.Warningf("membarrier(MEMBARRIER_CMD_QUERY) failed: %s", e.Error())
 		}
 		return
@@ -46,7 +44,7 @@ func init() {
 		haveMembarrierGlobal = true
 	}
 	if req := uintptr(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED | linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED); supported&req == req {
-		if _, _, e := syscall.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
+		if _, _, e := unix.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
 			log.Warningf("membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED) failed: %s", e.Error())
 		} else {
 			haveMembarrierPrivateExpedited = true
@@ -66,7 +64,7 @@ func HaveGlobalMemoryBarrier() bool {
 //
 // Preconditions: HaveGlobalMemoryBarrier() == true.
 func GlobalMemoryBarrier() error {
-	if _, _, e := syscall.Syscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_GLOBAL, 0 /* flags */, 0 /* unused */); e != 0 {
+	if _, _, e := unix.Syscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_GLOBAL, 0 /* flags */, 0 /* unused */); e != 0 {
 		return e
 	}
 	return nil
@@ -83,7 +81,7 @@ func HaveProcessMemoryBarrier() bool {
 //
 // Preconditions: HaveProcessMemoryBarrier() == true.
 func ProcessMemoryBarrier() error {
-	if _, _, e := syscall.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
+	if _, _, e := unix.RawSyscall(unix.SYS_MEMBARRIER, linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED, 0 /* flags */, 0 /* unused */); e != 0 {
 		return e
 	}
 	return nil

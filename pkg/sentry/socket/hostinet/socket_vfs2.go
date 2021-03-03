@@ -15,8 +15,7 @@
 package hostinet
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -160,16 +159,16 @@ func (p *socketProviderVFS2) Socket(t *kernel.Task, stypeflags linux.SockType, p
 	// Only accept TCP and UDP.
 	stype := stypeflags & linux.SOCK_TYPE_MASK
 	switch stype {
-	case syscall.SOCK_STREAM:
+	case unix.SOCK_STREAM:
 		switch protocol {
-		case 0, syscall.IPPROTO_TCP:
+		case 0, unix.IPPROTO_TCP:
 			// ok
 		default:
 			return nil, nil
 		}
-	case syscall.SOCK_DGRAM:
+	case unix.SOCK_DGRAM:
 		switch protocol {
-		case 0, syscall.IPPROTO_UDP:
+		case 0, unix.IPPROTO_UDP:
 			// ok
 		default:
 			return nil, nil
@@ -181,11 +180,11 @@ func (p *socketProviderVFS2) Socket(t *kernel.Task, stypeflags linux.SockType, p
 	// Conservatively ignore all flags specified by the application and add
 	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
 	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
-	fd, err := syscall.Socket(p.family, int(stype)|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
+	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
-	return newVFS2Socket(t, p.family, stype, protocol, fd, uint32(stypeflags&syscall.SOCK_NONBLOCK))
+	return newVFS2Socket(t, p.family, stype, protocol, fd, uint32(stypeflags&unix.SOCK_NONBLOCK))
 }
 
 // Pair implements socket.Provider.Pair.

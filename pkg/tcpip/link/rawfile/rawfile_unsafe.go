@@ -19,7 +19,6 @@
 package rawfile
 
 import (
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -28,12 +27,12 @@ import (
 
 // GetMTU determines the MTU of a network interface device.
 func GetMTU(name string) (uint32, error) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_DGRAM, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
 	if err != nil {
 		return 0, err
 	}
 
-	defer syscall.Close(fd)
+	defer unix.Close(fd)
 
 	var ifreq struct {
 		name [16]byte
@@ -42,7 +41,7 @@ func GetMTU(name string) (uint32, error) {
 	}
 
 	copy(ifreq.name[:], name)
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.SIOCGIFMTU, uintptr(unsafe.Pointer(&ifreq)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.SIOCGIFMTU, uintptr(unsafe.Pointer(&ifreq)))
 	if errno != 0 {
 		return 0, errno
 	}
@@ -58,7 +57,7 @@ func NonBlockingWrite(fd int, buf []byte) tcpip.Error {
 		ptr = unsafe.Pointer(&buf[0])
 	}
 
-	_, _, e := syscall.RawSyscall(syscall.SYS_WRITE, uintptr(fd), uintptr(ptr), uintptr(len(buf)))
+	_, _, e := unix.RawSyscall(unix.SYS_WRITE, uintptr(fd), uintptr(ptr), uintptr(len(buf)))
 	if e != 0 {
 		return TranslateErrno(e)
 	}
@@ -66,11 +65,11 @@ func NonBlockingWrite(fd int, buf []byte) tcpip.Error {
 	return nil
 }
 
-// NonBlockingWriteIovec writes iovec to a file descriptor in a single syscall.
+// NonBlockingWriteIovec writes iovec to a file descriptor in a single unix.
 // It fails if partial data is written.
-func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) tcpip.Error {
+func NonBlockingWriteIovec(fd int, iovec []unix.Iovec) tcpip.Error {
 	iovecLen := uintptr(len(iovec))
-	_, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
+	_, _, e := unix.RawSyscall(unix.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
 	if e != 0 {
 		return TranslateErrno(e)
 	}
@@ -79,7 +78,7 @@ func NonBlockingWriteIovec(fd int, iovec []syscall.Iovec) tcpip.Error {
 
 // NonBlockingSendMMsg sends multiple messages on a socket.
 func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
-	n, _, e := syscall.RawSyscall6(unix.SYS_SENDMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
+	n, _, e := unix.RawSyscall6(unix.SYS_SENDMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
 	if e != 0 {
 		return 0, TranslateErrno(e)
 	}
@@ -99,7 +98,7 @@ type PollEvent struct {
 // descriptor becomes readable.
 func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 	for {
-		n, _, e := syscall.RawSyscall(syscall.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
+		n, _, e := unix.RawSyscall(unix.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
 		if e == 0 {
 			return int(n), nil
 		}
@@ -110,7 +109,7 @@ func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 		}
 
 		_, e = BlockingPoll(&event, 1, nil)
-		if e != 0 && e != syscall.EINTR {
+		if e != 0 && e != unix.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}
@@ -119,9 +118,9 @@ func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 // BlockingReadv reads from a file descriptor that is set up as non-blocking and
 // stores the data in a list of iovecs buffers. If no data is available, it will
 // block in a poll() syscall until the file descriptor becomes readable.
-func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, tcpip.Error) {
+func BlockingReadv(fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
 	for {
-		n, _, e := syscall.RawSyscall(syscall.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
+		n, _, e := unix.RawSyscall(unix.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 		if e == 0 {
 			return int(n), nil
 		}
@@ -132,7 +131,7 @@ func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, tcpip.Error) {
 		}
 
 		_, e = BlockingPoll(&event, 1, nil)
-		if e != 0 && e != syscall.EINTR {
+		if e != 0 && e != unix.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}
@@ -140,7 +139,7 @@ func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, tcpip.Error) {
 
 // MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
 type MMsgHdr struct {
-	Msg syscall.Msghdr
+	Msg unix.Msghdr
 	Len uint32
 	_   [4]byte
 }
@@ -151,7 +150,7 @@ type MMsgHdr struct {
 // becomes readable.
 func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
 	for {
-		n, _, e := syscall.RawSyscall6(syscall.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
+		n, _, e := unix.RawSyscall6(unix.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
 		if e == 0 {
 			return int(n), nil
 		}
@@ -161,7 +160,7 @@ func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
 			Events: 1, // POLLIN
 		}
 
-		if _, e := BlockingPoll(&event, 1, nil); e != 0 && e != syscall.EINTR {
+		if _, e := BlockingPoll(&event, 1, nil); e != 0 && e != unix.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}

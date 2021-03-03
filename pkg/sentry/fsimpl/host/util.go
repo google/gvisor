@@ -15,21 +15,19 @@
 package host
 
 import (
-	"syscall"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-func toTimespec(ts linux.StatxTimestamp, omit bool) syscall.Timespec {
+func toTimespec(ts linux.StatxTimestamp, omit bool) unix.Timespec {
 	if omit {
-		return syscall.Timespec{
+		return unix.Timespec{
 			Sec:  0,
 			Nsec: unix.UTIME_OMIT,
 		}
 	}
-	return syscall.Timespec{
+	return unix.Timespec{
 		Sec:  ts.Sec,
 		Nsec: int64(ts.Nsec),
 	}

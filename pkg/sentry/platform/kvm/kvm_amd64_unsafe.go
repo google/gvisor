@@ -18,8 +18,9 @@ package kvm
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -30,7 +31,7 @@ var (
 
 func updateSystemValues(fd int) error {
 	// Extract the mmap size.
-	sz, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(fd), _KVM_GET_VCPU_MMAP_SIZE, 0)
+	sz, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), _KVM_GET_VCPU_MMAP_SIZE, 0)
 	if errno != 0 {
 		return fmt.Errorf("getting VCPU mmap size: %v", errno)
 	}
@@ -39,19 +40,19 @@ func updateSystemValues(fd int) error {
 	runDataSize = int(sz)
 
 	// Must do the dance to figure out the number of entries.
-	_, _, errno = syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	_, _, errno = unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(fd),
 		_KVM_GET_SUPPORTED_CPUID,
 		uintptr(unsafe.Pointer(&cpuidSupported)))
-	if errno != 0 && errno != syscall.ENOMEM {
+	if errno != 0 && errno != unix.ENOMEM {
 		// Some other error occurred.
 		return fmt.Errorf("getting supported CPUID: %v", errno)
 	}
 
 	// The number should now be correct.
-	_, _, errno = syscall.RawSyscall(
-		syscall.SYS_IOCTL,
+	_, _, errno = unix.RawSyscall(
+		unix.SYS_IOCTL,
 		uintptr(fd),
 		_KVM_GET_SUPPORTED_CPUID,
 		uintptr(unsafe.Pointer(&cpuidSupported)))

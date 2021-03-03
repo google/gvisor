@@ -19,8 +19,8 @@ package unix
 import (
 	"fmt"
 	"strings"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -600,14 +600,14 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	// Calculate the number of FDs for which we have space and if we are
 	// requesting credentials.
 	var wantCreds bool
-	rightsLen := int(controlDataLen) - syscall.SizeofCmsghdr
+	rightsLen := int(controlDataLen) - unix.SizeofCmsghdr
 	if s.Passcred() {
 		// Credentials take priority if they are enabled and there is space.
 		wantCreds = rightsLen > 0
 		if !wantCreds {
 			msgFlags |= linux.MSG_CTRUNC
 		}
-		credLen := syscall.CmsgSpace(syscall.SizeofUcred)
+		credLen := unix.CmsgSpace(unix.SizeofUcred)
 		rightsLen -= credLen
 	}
 	// FDs are 32 bit (4 byte) ints.

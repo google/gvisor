@@ -17,9 +17,9 @@ package fdpipe
 import (
 	"io"
 	"os"
-	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -96,7 +96,7 @@ func (p *pipeOpenState) TryOpen(ctx context.Context, opener NonBlockingOpener, f
 	switch {
 	// Reject invalid configurations so they don't accidentally succeed below.
 	case !flags.Read && !flags.Write:
-		return nil, syscall.EINVAL
+		return nil, unix.EINVAL
 
 	// Handle opening RDWR or with O_NONBLOCK: will never block, so try only once.
 	case (flags.Read && flags.Write) || flags.NonBlocking:
@@ -155,7 +155,7 @@ func (p *pipeOpenState) TryOpenReadOnly(ctx context.Context, opener NonBlockingO
 		// Any error that is not EWOULDBLOCK also means we're not
 		// ready yet, and probably never will be ready.  In this
 		// case we need to close the host pipe we opened.
-		if unwrapError(rerr) != syscall.EWOULDBLOCK {
+		if unwrapError(rerr) != unix.EWOULDBLOCK {
 			p.hostFile.Close()
 			return nil, rerr
 		}
@@ -183,7 +183,7 @@ func (p *pipeOpenState) TryOpenReadOnly(ctx context.Context, opener NonBlockingO
 // to an syserror.ErrWouldBlock, to tell callers to retry.
 func (*pipeOpenState) TryOpenWriteOnly(ctx context.Context, opener NonBlockingOpener) (*pipeOperations, error) {
 	hostFile, err := opener.NonBlockingOpen(ctx, fs.PermMask{Write: true})
-	if unwrapError(err) == syscall.ENXIO {
+	if unwrapError(err) == unix.ENXIO {
 		return nil, syserror.ErrWouldBlock
 	}
 	if err != nil {

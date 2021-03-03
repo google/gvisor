@@ -17,8 +17,8 @@ package kvm
 import (
 	"fmt"
 	"reflect"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -41,7 +41,7 @@ var (
 	//
 	// We use SIGCHLD because it is not masked by the runtime, and
 	// it will be ignored properly by other parts of the kernel.
-	bounceSignal = syscall.SIGCHLD
+	bounceSignal = unix.SIGCHLD
 
 	// bounceSignalMask has only bounceSignal set.
 	bounceSignalMask = uint64(1 << (uint64(bounceSignal) - 1))
@@ -62,7 +62,7 @@ var (
 //
 //go:nosplit
 func redpill() {
-	syscall.RawSyscall(^uintptr(0), 0, 0, 0)
+	unix.RawSyscall(^uintptr(0), 0, 0, 0)
 }
 
 // dieHandler is called by dieTrampoline.

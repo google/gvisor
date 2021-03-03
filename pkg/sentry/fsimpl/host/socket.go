@@ -17,8 +17,8 @@ package host
 import (
 	"fmt"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -87,26 +87,26 @@ type ConnectedEndpoint struct {
 func (c *ConnectedEndpoint) init() *syserr.Error {
 	c.InitRefs()
 
-	family, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_DOMAIN)
+	family, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 
-	if family != syscall.AF_UNIX {
+	if family != unix.AF_UNIX {
 		// We only allow Unix sockets.
 		return syserr.ErrInvalidEndpointState
 	}
 
-	stype, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_TYPE)
+	stype, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_TYPE)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 
-	if err := syscall.SetNonblock(c.fd, true); err != nil {
+	if err := unix.SetNonblock(c.fd, true); err != nil {
 		return syserr.FromError(err)
 	}
 
-	sndbuf, err := syscall.GetsockoptInt(c.fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	sndbuf, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_SNDBUF)
 	if err != nil {
 		return syserr.FromError(err)
 	}
@@ -177,7 +177,7 @@ func (c *ConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.fd, syscall.SHUT_WR); err != nil {
+	if err := unix.Shutdown(c.fd, unix.SHUT_WR); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed write shutdown on host socket %+v: %v", c, err))
@@ -270,7 +270,7 @@ func (c *ConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := syscall.Shutdown(c.fd, syscall.SHUT_RD); err != nil {
+	if err := unix.Shutdown(c.fd, unix.SHUT_RD); err != nil {
 		// A well-formed UDS shutdown can't fail. See
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed read shutdown on host socket %+v: %v", c, err))
@@ -358,7 +358,7 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 	e.DecRef(func() {
 		e.mu.Lock()
 		fdnotifier.RemoveFD(int32(e.fd))
-		if err := syscall.Close(e.fd); err != nil {
+		if err := unix.Close(e.fd); err != nil {
 			log.Warningf("Failed to close host fd %d: %v", err)
 		}
 		e.destroyLocked()

@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -132,7 +132,7 @@ func Init() error {
 	// always be the case for a newly mapped page from /dev/shm. If we obtain
 	// the shared memory through some other means in the future, we may have to
 	// explicitly zero the page.
-	mmap, err := syscall.Mmap(int(file.Fd()), 0, int(RTMemoryStatsSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	mmap, err := unix.Mmap(int(file.Fd()), 0, int(RTMemoryStatsSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
 	if err != nil {
 		return fmt.Errorf("error mapping usage file: %v", err)
 	}

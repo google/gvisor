@@ -16,8 +16,8 @@ package kvm
 
 import (
 	"sync/atomic"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -40,7 +40,7 @@ const (
 //
 //go:nosplit
 func yield() {
-	syscall.RawSyscall(syscall.SYS_SCHED_YIELD, 0, 0, 0)
+	unix.RawSyscall(unix.SYS_SCHED_YIELD, 0, 0, 0)
 }
 
 // calculateBluepillFault calculates the fault address range.
@@ -112,16 +112,16 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 	atomic.StoreUint32(&m.nextSlot, slot)
 
 	switch errno {
-	case syscall.EEXIST:
+	case unix.EEXIST:
 		// The region already exists. It's possible that we raced with
 		// another vCPU here. We just revert nextSlot and return true,
 		// because this must have been satisfied by some other vCPU.
 		return virtualStart + (physical - physicalStart), true
-	case syscall.EINVAL:
+	case unix.EINVAL:
 		throw("set memory region failed; out of slots")
-	case syscall.ENOMEM:
+	case unix.ENOMEM:
 		throw("set memory region failed: out of memory")
-	case syscall.EFAULT:
+	case unix.EFAULT:
 		throw("set memory region failed: invalid physical range")
 	default:
 		throw("set memory region failed: unknown reason")

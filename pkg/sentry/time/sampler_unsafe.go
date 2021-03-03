@@ -15,8 +15,9 @@
 package time
 
 import (
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // syscallTSCReferenceClocks is the standard referenceClocks, collecting
@@ -32,8 +33,8 @@ func (syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 	s.before = Rdtsc()
 
 	// Don't call clockGettime to avoid a call which may call morestack.
-	var ts syscall.Timespec
-	_, _, e := syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(c), uintptr(unsafe.Pointer(&ts)), 0)
+	var ts unix.Timespec
+	_, _, e := unix.RawSyscall(unix.SYS_CLOCK_GETTIME, uintptr(c), uintptr(unsafe.Pointer(&ts)), 0)
 	if e != 0 {
 		return sample{}, e
 	}
@@ -46,8 +47,8 @@ func (syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 
 // clockGettime calls SYS_CLOCK_GETTIME, returning time in nanoseconds.
 func clockGettime(c ClockID) (ReferenceNS, error) {
-	var ts syscall.Timespec
-	_, _, e := syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(c), uintptr(unsafe.Pointer(&ts)), 0)
+	var ts unix.Timespec
+	_, _, e := unix.RawSyscall(unix.SYS_CLOCK_GETTIME, uintptr(c), uintptr(unsafe.Pointer(&ts)), 0)
 	if e != 0 {
 		return 0, e
 	}

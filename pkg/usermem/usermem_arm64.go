@@ -18,13 +18,14 @@ package usermem
 
 import (
 	"encoding/binary"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
 	// PageSize is the system page size.
 	// arm64 support 4K/16K/64K page size,
-	// which can be get by syscall.Getpagesize().
+	// which can be get by unix.Getpagesize().
 	// Currently, only 4K page size is supported.
 	PageSize = 1 << PageShift
 
@@ -47,7 +48,7 @@ var (
 
 func init() {
 	// Make sure the page size is 4K on arm64 platform.
-	if size := syscall.Getpagesize(); size != PageSize {
+	if size := unix.Getpagesize(); size != PageSize {
 		panic("Only 4K page size is supported on arm64!")
 	}
 }

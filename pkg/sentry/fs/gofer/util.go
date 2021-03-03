@@ -15,8 +15,7 @@
 package gofer
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -67,6 +66,6 @@ func openFlagsFromPerms(p fs.PermMask) (p9.OpenFlags, error) {
 	case p.Read:
 		return p9.ReadOnly, nil
 	default:
-		return 0, syscall.EINVAL
+		return 0, unix.EINVAL
 	}
 }

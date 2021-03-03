@@ -16,8 +16,8 @@ package fsutil
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -44,7 +44,7 @@ type HostFileMapper struct {
 	mapsMu sync.Mutex `state:"nosave"`
 
 	// mappings maps chunk start offsets to mappings of those chunks,
-	// obtained by calling syscall.Mmap. mappings is protected by
+	// obtained by calling unix.Mmap. mappings is protected by
 	// mapsMu.
 	mappings map[uint64]mapping `state:"nosave"`
 }
@@ -157,19 +157,19 @@ func (f *HostFileMapper) MapInternal(fr memmap.FileRange, fd int, write bool) (s
 
 // Preconditions: f.mapsMu must be locked.
 func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, write bool, fn func(safemem.Block)) error {
-	prot := syscall.PROT_READ
+	prot := unix.PROT_READ
 	if write {
-		prot |= syscall.PROT_WRITE
+		prot |= unix.PROT_WRITE
 	}
 	for chunkStart := fr.Start &^ chunkMask; chunkStart < fr.End; chunkStart += chunkSize {
 		m, ok := f.mappings[chunkStart]
 		if !ok {
-			addr, _, errno := syscall.Syscall6(
-				syscall.SYS_MMAP,
+			addr, _, errno := unix.Syscall6(
+				unix.SYS_MMAP,
 				0,
 				chunkSize,
 				uintptr(prot),
-				syscall.MAP_SHARED,
+				unix.MAP_SHARED,
 				uintptr(fd),
 				uintptr(chunkStart))
 			if errno != 0 {
@@ -178,12 +178,12 @@ func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, 
 			m = mapping{addr, write}
 			f.mappings[chunkStart] = m
 		} else if write && !m.writable {
-			addr, _, errno := syscall.Syscall6(
-				syscall.SYS_MMAP,
+			addr, _, errno := unix.Syscall6(
+				unix.SYS_MMAP,
 				m.addr,
 				chunkSize,
 				uintptr(prot),
-				syscall.MAP_SHARED|syscall.MAP_FIXED,
+				unix.MAP_SHARED|unix.MAP_FIXED,
 				uintptr(fd),
 				uintptr(chunkStart))
 			if errno != 0 {
@@ -219,7 +219,7 @@ func (f *HostFileMapper) UnmapAll() {
 // * f.mapsMu must be locked.
 // * f.mappings[chunkStart] == m.
 func (f *HostFileMapper) unmapAndRemoveLocked(chunkStart uint64, m mapping) {
-	if _, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m.addr, chunkSize, 0); errno != 0 {
+	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, m.addr, chunkSize, 0); errno != 0 {
 		// This leaks address space and is unexpected, but is otherwise
 		// harmless, so complain but don't panic.
 		log.Warningf("HostFileMapper: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
@@ -234,16 +234,16 @@ func (f *HostFileMapper) RegenerateMappings(fd int) error {
 	defer f.mapsMu.Unlock()
 
 	for chunkStart, m := range f.mappings {
-		prot := syscall.PROT_READ
+		prot := unix.PROT_READ
 		if m.writable {
-			prot |= syscall.PROT_WRITE
+			prot |= unix.PROT_WRITE
 		}
-		_, _, errno := syscall.Syscall6(
-			syscall.SYS_MMAP,
+		_, _, errno := unix.Syscall6(
+			unix.SYS_MMAP,
 			m.addr,
 			chunkSize,
 			uintptr(prot),
-			syscall.MAP_SHARED|syscall.MAP_FIXED,
+			unix.MAP_SHARED|unix.MAP_FIXED,
 			uintptr(fd),
 			uintptr(chunkStart))
 		if errno != 0 {

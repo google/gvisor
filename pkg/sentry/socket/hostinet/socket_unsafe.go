@@ -15,9 +15,9 @@
 package hostinet
 
 import (
-	"syscall"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -36,8 +36,8 @@ func firstBytePtr(bs []byte) unsafe.Pointer {
 }
 
 // Preconditions: len(dsts) != 0.
-func readv(fd int, dsts []syscall.Iovec) (uint64, error) {
-	n, _, errno := syscall.Syscall(syscall.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&dsts[0])), uintptr(len(dsts)))
+func readv(fd int, dsts []unix.Iovec) (uint64, error) {
+	n, _, errno := unix.Syscall(unix.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&dsts[0])), uintptr(len(dsts)))
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}
@@ -45,8 +45,8 @@ func readv(fd int, dsts []syscall.Iovec) (uint64, error) {
 }
 
 // Preconditions: len(srcs) != 0.
-func writev(fd int, srcs []syscall.Iovec) (uint64, error) {
-	n, _, errno := syscall.Syscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&srcs[0])), uintptr(len(srcs)))
+func writev(fd int, srcs []unix.Iovec) (uint64, error) {
+	n, _, errno := unix.Syscall(unix.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&srcs[0])), uintptr(len(srcs)))
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}
@@ -55,9 +55,9 @@ func writev(fd int, srcs []syscall.Iovec) (uint64, error) {
 
 func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := uintptr(args[1].Int()); cmd {
-	case syscall.TIOCINQ, syscall.TIOCOUTQ:
+	case unix.TIOCINQ, unix.TIOCOUTQ:
 		var val int32
-		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&val))); errno != 0 {
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&val))); errno != 0 {
 			return 0, translateIOSyscallError(errno)
 		}
 		var buf [4]byte
@@ -73,7 +73,7 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 }
 
 func accept4(fd int, addr *byte, addrlen *uint32, flags int) (int, error) {
-	afd, _, errno := syscall.Syscall6(syscall.SYS_ACCEPT4, uintptr(fd), uintptr(unsafe.Pointer(addr)), uintptr(unsafe.Pointer(addrlen)), uintptr(flags), 0, 0)
+	afd, _, errno := unix.Syscall6(unix.SYS_ACCEPT4, uintptr(fd), uintptr(unsafe.Pointer(addr)), uintptr(unsafe.Pointer(addrlen)), uintptr(flags), 0, 0)
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}
@@ -83,7 +83,7 @@ func accept4(fd int, addr *byte, addrlen *uint32, flags int) (int, error) {
 func getsockopt(fd int, level, name int, optlen int) ([]byte, error) {
 	opt := make([]byte, optlen)
 	optlen32 := int32(len(opt))
-	_, _, errno := syscall.Syscall6(syscall.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(unsafe.Pointer(&optlen32)), 0)
+	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(unsafe.Pointer(&optlen32)), 0)
 	if errno != 0 {
 		return nil, errno
 	}
@@ -94,7 +94,7 @@ func getsockopt(fd int, level, name int, optlen int) ([]byte, error) {
 func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
-	_, _, errno := syscall.Syscall(syscall.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
+	_, _, errno := unix.Syscall(unix.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
@@ -105,7 +105,7 @@ func (s *socketOpsCommon) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *
 func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
-	_, _, errno := syscall.Syscall(syscall.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
+	_, _, errno := unix.Syscall(unix.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
@@ -114,7 +114,7 @@ func (s *socketOpsCommon) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *
 
 func recvfrom(fd int, dst []byte, flags int, from *[]byte) (uint64, error) {
 	fromLen := uint32(len(*from))
-	n, _, errno := syscall.Syscall6(syscall.SYS_RECVFROM, uintptr(fd), uintptr(firstBytePtr(dst)), uintptr(len(dst)), uintptr(flags), uintptr(firstBytePtr(*from)), uintptr(unsafe.Pointer(&fromLen)))
+	n, _, errno := unix.Syscall6(unix.SYS_RECVFROM, uintptr(fd), uintptr(firstBytePtr(dst)), uintptr(len(dst)), uintptr(flags), uintptr(firstBytePtr(*from)), uintptr(unsafe.Pointer(&fromLen)))
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}
@@ -122,16 +122,16 @@ func recvfrom(fd int, dst []byte, flags int, from *[]byte) (uint64, error) {
 	return uint64(n), nil
 }
 
-func recvmsg(fd int, msg *syscall.Msghdr, flags int) (uint64, error) {
-	n, _, errno := syscall.Syscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags))
+func recvmsg(fd int, msg *unix.Msghdr, flags int) (uint64, error) {
+	n, _, errno := unix.Syscall(unix.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags))
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}
 	return uint64(n), nil
 }
 
-func sendmsg(fd int, msg *syscall.Msghdr, flags int) (uint64, error) {
-	n, _, errno := syscall.Syscall(syscall.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags))
+func sendmsg(fd int, msg *unix.Msghdr, flags int) (uint64, error) {
+	n, _, errno := unix.Syscall(unix.SYS_SENDMSG, uintptr(fd), uintptr(unsafe.Pointer(msg)), uintptr(flags))
 	if errno != 0 {
 		return 0, translateIOSyscallError(errno)
 	}

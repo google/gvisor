@@ -17,7 +17,6 @@ package p9
 import (
 	"errors"
 	"fmt"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/flipcall"
@@ -180,7 +179,7 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 		}, &rversion)
 
 		// The server told us to try again with a lower version.
-		if err == syscall.EAGAIN {
+		if err == unix.EAGAIN {
 			if requested == lowestSupportedVersion {
 				return nil, ErrVersionsExhausted
 			}
@@ -250,7 +249,7 @@ func (c *Client) watch(socket *unet.Socket) {
 	// Wait for a shutdown event.
 	for {
 		n, err := unix.Ppoll(events, nil, nil)
-		if err == syscall.EINTR || err == syscall.EAGAIN {
+		if err == unix.EINTR || err == unix.EAGAIN {
 			continue
 		}
 		if err != nil {
@@ -437,7 +436,7 @@ func (c *Client) sendRecvLegacySyscallErr(t message, r message) error {
 	received, err := c.sendRecvLegacy(t, r)
 	if !received {
 		log.Warningf("p9.Client.sendRecvChannel: %v", err)
-		return syscall.EIO
+		return unix.EIO
 	}
 	return err
 }
@@ -485,7 +484,7 @@ func (c *Client) sendRecvLegacy(t message, r message) (bool, error) {
 	// For convenience, we transform these directly
 	// into errors. Handlers need not handle this case.
 	if rlerr, ok := resp.r.(*Rlerror); ok {
-		return true, syscall.Errno(rlerr.Error)
+		return true, unix.Errno(rlerr.Error)
 	}
 
 	// At this point, we know it matches.
@@ -524,7 +523,7 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 			// Map all transport errors to EIO, but ensure that the real error
 			// is logged.
 			log.Warningf("p9.Client.sendRecvChannel: flipcall.Endpoint.Connect: %v", err)
-			return syscall.EIO
+			return unix.EIO
 		}
 	}
 
@@ -537,14 +536,14 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 		c.channelsMu.Unlock()
 		c.channelsWg.Done()
 		log.Warningf("p9.Client.sendRecvChannel: p9.channel.send: %v", err)
-		return syscall.EIO
+		return unix.EIO
 	}
 
 	// Parse the server's response.
 	resp, retErr := ch.recv(r, rsz)
 	if resp == nil {
 		log.Warningf("p9.Client.sendRecvChannel: p9.channel.recv: %v", retErr)
-		retErr = syscall.EIO
+		retErr = unix.EIO
 	}
 
 	// Release the channel.

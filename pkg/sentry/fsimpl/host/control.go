@@ -15,8 +15,7 @@
 package host
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -60,7 +59,7 @@ func (c *scmRights) Clone() transport.RightsControlMessage {
 // Release implements transport.RightsControlMessage.Release.
 func (c *scmRights) Release(ctx context.Context) {
 	for _, fd := range c.fds {
-		syscall.Close(fd)
+		unix.Close(fd)
 	}
 	c.fds = nil
 }
@@ -72,7 +71,7 @@ func fdsToFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
 	for _, fd := range fds {
 		// Get flags. We do it here because they may be modified
 		// by subsequent functions.
-		fileFlags, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFL, 0)
+		fileFlags, _, errno := unix.Syscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFL, 0)
 		if errno != 0 {
 			ctx.Warningf("Error retrieving host FD flags: %v", error(errno))
 			break

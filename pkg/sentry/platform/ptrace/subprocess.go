@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
@@ -35,9 +34,9 @@ import (
 //
 // These constants are only used in subprocess.go.
 const (
-	ERESTARTSYS    = syscall.Errno(512)
-	ERESTARTNOINTR = syscall.Errno(513)
-	ERESTARTNOHAND = syscall.Errno(514)
+	ERESTARTSYS    = unix.Errno(512)
+	ERESTARTNOINTR = unix.Errno(513)
+	ERESTARTNOHAND = unix.Errno(514)
 )
 
 // globalPool exists to solve two distinct problems:
@@ -96,7 +95,7 @@ func (tp *threadPool) lookupOrCreate(currentTID int32, newThread func() *thread)
 		// threads never exiting.
 		for origTID, t := range tp.threads {
 			// Signal zero is an easy existence check.
-			if err := syscall.Tgkill(syscall.Getpid(), int(origTID), 0); err != nil {
+			if err := unix.Tgkill(unix.Getpid(), int(origTID), 0); err != nil {
 				// This thread has been abandoned; reuse it.
 				delete(tp.threads, origTID)
 				tp.threads[currentTID] = t
@@ -186,7 +185,7 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 			// (Hopefully nobody tgkilled it with a signal <
 			// SIGSTOP before the SIGSTOP was delivered, in which
 			// case that signal would be delivered before SIGSTOP.)
-			if sig := t.wait(stopped); sig != syscall.SIGSTOP {
+			if sig := t.wait(stopped); sig != unix.SIGSTOP {
 				panic(fmt.Sprintf("error waiting for new clone: expected SIGSTOP, got %v", sig))
 			}
 
@@ -269,7 +268,7 @@ func (s *subprocess) newThread() *thread {
 
 // attach attaches to the thread.
 func (t *thread) attach() {
-	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 		panic(fmt.Sprintf("unable to attach: %v", errno))
 	}
 
@@ -277,7 +276,7 @@ func (t *thread) attach() {
 	// stopped from the SIGSTOP queued by CLONE_PTRACE (see inner loop of
 	// newSubprocess), so we always expect to see signal-delivery-stop with
 	// SIGSTOP.
-	if sig := t.wait(stopped); sig != syscall.SIGSTOP {
+	if sig := t.wait(stopped); sig != unix.SIGSTOP {
 		panic(fmt.Sprintf("wait failed: expected SIGSTOP, got %v", sig))
 	}
 
@@ -301,7 +300,7 @@ func (t *thread) grabInitRegs() {
 //
 // Because the SIGSTOP is not suppressed, the thread will enter group-stop.
 func (t *thread) detach() {
-	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_DETACH, uintptr(t.tid), 0, uintptr(syscall.SIGSTOP), 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(t.tid), 0, uintptr(unix.SIGSTOP), 0, 0); errno != 0 {
 		panic(fmt.Sprintf("can't detach new clone: %v", errno))
 	}
 }
@@ -331,14 +330,14 @@ func (t *thread) dumpAndPanic(message string) {
 
 func (t *thread) unexpectedStubExit() {
 	msg, err := t.getEventMessage()
-	status := syscall.WaitStatus(msg)
-	if status.Signaled() && status.Signal() == syscall.SIGKILL {
+	status := unix.WaitStatus(msg)
+	if status.Signaled() && status.Signal() == unix.SIGKILL {
 		// SIGKILL can be only sent by a user or OOM-killer. In both
 		// these cases, we don't need to panic. There is no reasons to
 		// think that something wrong in gVisor.
 		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)
 		pid := os.Getpid()
-		syscall.Tgkill(pid, pid, syscall.Signal(syscall.SIGKILL))
+		unix.Tgkill(pid, pid, unix.Signal(unix.SIGKILL))
 	}
 	t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
 }
@@ -346,12 +345,12 @@ func (t *thread) unexpectedStubExit() {
 // wait waits for a stop event.
 //
 // Precondition: outcome is a valid waitOutcome.
-func (t *thread) wait(outcome waitOutcome) syscall.Signal {
-	var status syscall.WaitStatus
+func (t *thread) wait(outcome waitOutcome) unix.Signal {
+	var status unix.WaitStatus
 
 	for {
-		r, err := syscall.Wait4(int(t.tid), &status, syscall.WALL|syscall.WUNTRACED, nil)
-		if err == syscall.EINTR || err == syscall.EAGAIN {
+		r, err := unix.Wait4(int(t.tid), &status, unix.WALL|unix.WUNTRACED, nil)
+		if err == unix.EINTR || err == unix.EAGAIN {
 			// Wait was interrupted; wait again.
 			continue
 		} else if err != nil {
@@ -369,12 +368,12 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			if stopSig == 0 {
 				continue // Spurious stop.
 			}
-			if stopSig == syscall.SIGTRAP {
-				if status.TrapCause() == syscall.PTRACE_EVENT_EXIT {
+			if stopSig == unix.SIGTRAP {
+				if status.TrapCause() == unix.PTRACE_EVENT_EXIT {
 					t.unexpectedStubExit()
 				}
 				// Re-encode the trap cause the way it's expected.
-				return stopSig | syscall.Signal(status.TrapCause()<<8)
+				return stopSig | unix.Signal(status.TrapCause()<<8)
 			}
 			// Not a trap signal.
 			return stopSig
@@ -382,7 +381,7 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			if !status.Exited() && !status.Signaled() {
 				t.dumpAndPanic(fmt.Sprintf("ptrace status unexpected: got %v, wanted exited", status))
 			}
-			return syscall.Signal(status.ExitStatus())
+			return unix.Signal(status.ExitStatus())
 		default:
 			// Should not happen.
 			t.dumpAndPanic(fmt.Sprintf("unknown outcome: %v", outcome))
@@ -397,7 +396,7 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 // manually created threads.
 func (t *thread) destroy() {
 	t.detach()
-	syscall.Tgkill(int(t.tgid), int(t.tid), syscall.Signal(syscall.SIGKILL))
+	unix.Tgkill(int(t.tgid), int(t.tid), unix.Signal(unix.SIGKILL))
 	t.wait(killed)
 }
 
@@ -407,12 +406,12 @@ func (t *thread) init() {
 	// set PTRACE_O_EXITKILL to ensure that the unexpected exit of the
 	// sentry will immediately kill the associated stubs.
 	const PTRACE_O_EXITKILL = 0x100000
-	_, _, errno := syscall.RawSyscall6(
-		syscall.SYS_PTRACE,
-		syscall.PTRACE_SETOPTIONS,
+	_, _, errno := unix.RawSyscall6(
+		unix.SYS_PTRACE,
+		unix.PTRACE_SETOPTIONS,
 		uintptr(t.tid),
 		0,
-		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT|PTRACE_O_EXITKILL,
+		unix.PTRACE_O_TRACESYSGOOD|unix.PTRACE_O_TRACEEXIT|PTRACE_O_EXITKILL,
 		0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("ptrace set options failed: %v", errno))
@@ -434,17 +433,17 @@ func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 		// Execute the syscall instruction. The task has to stop on the
 		// trap instruction which is right after the syscall
 		// instruction.
-		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_CONT, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
+		if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 		}
 
 		sig := t.wait(stopped)
-		if sig == syscall.SIGTRAP {
+		if sig == unix.SIGTRAP {
 			// Reached syscall-enter-stop.
 			break
 		} else {
 			// Some other signal caused a thread stop; ignore.
-			if sig != syscall.SIGSTOP && sig != syscall.SIGCHLD {
+			if sig != unix.SIGSTOP && sig != unix.SIGCHLD {
 				log.Warningf("The thread %d:%d has been interrupted by %d", t.tgid, t.tid, sig)
 			}
 			continue
@@ -483,7 +482,7 @@ func (t *thread) syscallIgnoreInterrupt(
 
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
 func (t *thread) NotifyInterrupt() {
-	syscall.Tgkill(int(t.tgid), int(t.tid), syscall.Signal(platform.SignalInterrupt))
+	unix.Tgkill(int(t.tgid), int(t.tid), unix.Signal(platform.SignalInterrupt))
 }
 
 // switchToApp is called from the main SwitchToApp entrypoint.
@@ -532,15 +531,15 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	for {
 		// Start running until the next system call.
 		if isSingleStepping(regs) {
-			if _, _, errno := syscall.RawSyscall6(
-				syscall.SYS_PTRACE,
+			if _, _, errno := unix.RawSyscall6(
+				unix.SYS_PTRACE,
 				unix.PTRACE_SYSEMU_SINGLESTEP,
 				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				panic(fmt.Sprintf("ptrace sysemu failed: %v", errno))
 			}
 		} else {
-			if _, _, errno := syscall.RawSyscall6(
-				syscall.SYS_PTRACE,
+			if _, _, errno := unix.RawSyscall6(
+				unix.SYS_PTRACE,
 				unix.PTRACE_SYSEMU,
 				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				panic(fmt.Sprintf("ptrace sysemu failed: %v", errno))
@@ -550,7 +549,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		// Wait for the syscall-enter stop.
 		sig := t.wait(stopped)
 
-		if sig == syscall.SIGSTOP {
+		if sig == unix.SIGSTOP {
 			// SIGSTOP was delivered to another thread in the same thread
 			// group, which initiated another group stop. Just ignore it.
 			continue
@@ -571,7 +570,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		}
 
 		// Is it a system call?
-		if sig == (syscallEvent | syscall.SIGTRAP) {
+		if sig == (syscallEvent | unix.SIGTRAP) {
 			s.arm64SyscallWorkaround(t, regs)
 
 			// Ensure registers are sane.
@@ -619,14 +618,14 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 func (s *subprocess) MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error {
 	var flags int
 	if precommit {
-		flags |= syscall.MAP_POPULATE
+		flags |= unix.MAP_POPULATE
 	}
 	_, err := s.syscall(
-		syscall.SYS_MMAP,
+		unix.SYS_MMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},
 		arch.SyscallArgument{Value: uintptr(fr.Length())},
 		arch.SyscallArgument{Value: uintptr(at.Prot())},
-		arch.SyscallArgument{Value: uintptr(flags | syscall.MAP_SHARED | syscall.MAP_FIXED)},
+		arch.SyscallArgument{Value: uintptr(flags | unix.MAP_SHARED | unix.MAP_FIXED)},
 		arch.SyscallArgument{Value: uintptr(f.FD())},
 		arch.SyscallArgument{Value: uintptr(fr.Start)})
 	return err
@@ -653,7 +652,7 @@ func (s *subprocess) Unmap(addr usermem.Addr, length uint64) {
 	}
 	s.mu.Unlock()
 	_, err := s.syscall(
-		syscall.SYS_MUNMAP,
+		unix.SYS_MUNMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},
 		arch.SyscallArgument{Value: uintptr(length)})
 	if err != nil {

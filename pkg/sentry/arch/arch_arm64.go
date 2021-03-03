@@ -19,8 +19,8 @@ package arch
 import (
 	"fmt"
 	"math/rand"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -194,7 +194,7 @@ func mmapRand(max uint64) usermem.Addr {
 func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
-		return MmapLayout{}, syscall.EINVAL
+		return MmapLayout{}, unix.EINVAL
 	}
 	if max > maxAddr64 {
 		max = maxAddr64
@@ -202,7 +202,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 	max = max.RoundDown()
 
 	if min > max {
-		return MmapLayout{}, syscall.EINVAL
+		return MmapLayout{}, unix.EINVAL
 	}
 
 	stackSize := r.Get(limits.Stack)

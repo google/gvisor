@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -210,7 +210,7 @@ func mmapRand(max uint64) usermem.Addr {
 func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
-		return MmapLayout{}, syscall.EINVAL
+		return MmapLayout{}, unix.EINVAL
 	}
 	if max > maxAddr64 {
 		max = maxAddr64
@@ -218,7 +218,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 	max = max.RoundDown()
 
 	if min > max {
-		return MmapLayout{}, syscall.EINVAL
+		return MmapLayout{}, unix.EINVAL
 	}
 
 	stackSize := r.Get(limits.Stack)
@@ -297,7 +297,7 @@ const userStructSize = 928
 // PtracePeekUser implements Context.PtracePeekUser.
 func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 	if addr&7 != 0 || addr >= userStructSize {
-		return nil, syscall.EIO
+		return nil, unix.EIO
 	}
 	// PTRACE_PEEKUSER and PTRACE_POKEUSER are only effective on regs and
 	// u_debugreg, returning 0 or silently no-oping for other fields
@@ -315,7 +315,7 @@ func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 // PtracePokeUser implements Context.PtracePokeUser.
 func (c *context64) PtracePokeUser(addr, data uintptr) error {
 	if addr&7 != 0 || addr >= userStructSize {
-		return syscall.EIO
+		return unix.EIO
 	}
 	if addr < uintptr(ptraceRegistersSize) {
 		regs := c.ptraceGetRegs()

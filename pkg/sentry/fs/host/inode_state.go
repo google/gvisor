@@ -16,8 +16,8 @@ package host
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
@@ -30,8 +30,8 @@ func (i *inodeFileState) afterLoad() {
 	}
 
 	// Remap the inode number.
-	var s syscall.Stat_t
-	if err := syscall.Fstat(i.FD(), &s); err != nil {
+	var s unix.Stat_t
+	if err := unix.Fstat(i.FD(), &s); err != nil {
 		panic(fs.ErrCorruption{fmt.Errorf("failed to get metadata for fd %d: %v", i.FD(), err)})
 	}
 	key := device.MultiDeviceKey{

@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -187,7 +187,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		// fds are caught and used is handled below,
 		// and the fds variable will be set to nil.
 		for _, fd := range fds {
-			syscall.Close(fd)
+			unix.Close(fd)
 		}
 	}()
 	r.EnableFDs(0)
@@ -323,7 +323,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 
 		// Close the rest. We support only one.
 		for i := 1; i < len(fds); i++ {
-			syscall.Close(fds[i])
+			unix.Close(fds[i])
 		}
 
 		// Don't close in the defer.

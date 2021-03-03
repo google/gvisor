@@ -17,8 +17,9 @@ package safecopy
 import (
 	"fmt"
 	"runtime"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // maxRegisterSize is the maximum register size used in memcpy and memclr. It
@@ -310,9 +311,9 @@ func errorFromFaultSignal(addr uintptr, sig int32) error {
 	switch sig {
 	case 0:
 		return nil
-	case int32(syscall.SIGSEGV):
+	case int32(unix.SIGSEGV):
 		return SegvError{addr}
-	case int32(syscall.SIGBUS):
+	case int32(unix.SIGBUS):
 		return BusError{addr}
 	default:
 		panic(fmt.Sprintf("safecopy got unexpected signal %d at address %#x", sig, addr))
@@ -328,7 +329,7 @@ func errorFromFaultSignal(addr uintptr, sig int32) error {
 // handlers for appropriate signals. These handlers will call the previous
 // handler however, and if this is function is being used externally then the
 // same courtesy is expected.
-func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr) error {
+func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
 	var sa struct {
 		handler  uintptr
 		flags    uint64
@@ -340,7 +341,7 @@ func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr
 	// Get the existing signal handler information, and save the current
 	// handler. Once we replace it, we will use this pointer to fall back to
 	// it when we receive other signals.
-	if _, _, e := syscall.RawSyscall6(syscall.SYS_RT_SIGACTION, uintptr(sig), 0, uintptr(unsafe.Pointer(&sa)), maskLen, 0, 0); e != 0 {
+	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), 0, uintptr(unsafe.Pointer(&sa)), maskLen, 0, 0); e != 0 {
 		return e
 	}
 
@@ -353,7 +354,7 @@ func ReplaceSignalHandler(sig syscall.Signal, handler uintptr, previous *uintptr
 
 	// Install our own handler.
 	sa.handler = handler
-	if _, _, e := syscall.RawSyscall6(syscall.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, maskLen, 0, 0); e != 0 {
+	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, maskLen, 0, 0); e != 0 {
 		return e
 	}
 
