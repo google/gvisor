@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
 
@@ -6,6 +7,7 @@ go_library(
     name = "kvm",
     srcs = [
         "address_space.go",
+        "atomicptr_vcpu_unsafe.go",
         "bluepill.go",
         "bluepill_allocator.go",
         "bluepill_amd64.go",
@@ -81,9 +83,21 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/time",
+        "//pkg/sync",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_template_instance(
+    name = "atomicptr_vcpu",
+    out = "atomicptr_vcpu_unsafe.go",
+    package = "kvm",
+    suffix = "VCPU",
+    template = "//pkg/sync:generic_atomicptr",
+    types = {
+        "Value": "vCPU",
+    },
 )
 
 genrule(

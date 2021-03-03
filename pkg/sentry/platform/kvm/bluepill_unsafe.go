@@ -128,6 +128,11 @@ func bluepillHandler(context unsafe.Pointer) {
 				throw("unexpected signal")
 			}
 
+			c.watchdogSeqCount.BeginWrite()
+			c.getUserRegisters(&c.watchdogUserRegisters)
+			c.getSystemRegisters(&c.watchdogSystemRegisters)
+			c.watchdogSeqCount.EndWrite()
+
 			// Check whether the current state of the vCPU is ready
 			// for interrupt injection. Because we don't have a
 			// PIC, we can't inject an interrupt while they are
@@ -137,6 +142,10 @@ func bluepillHandler(context unsafe.Pointer) {
 				// Force injection below; the vCPU is ready.
 				c.runData.exitReason = _KVM_EXIT_IRQ_WINDOW_OPEN
 			} else {
+				if c.watchdogTimeStamp == 0 {
+					//syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_MONOTONIC), uintptr(unsafe.Pointer(&c.watchdogTimespec)), 0)
+					atomic.StoreInt64(&c.watchdogTimeStamp, watchdogTimestamp())
+				}
 				c.runData.requestInterruptWindow = 1
 				continue // Rerun vCPU.
 			}
@@ -154,6 +163,8 @@ func bluepillHandler(context unsafe.Pointer) {
 		default:
 			throw("run failed")
 		}
+
+		atomic.StoreInt64(&c.watchdogTimeStamp, 0)
 
 		switch c.runData.exitReason {
 		case _KVM_EXIT_EXCEPTION:

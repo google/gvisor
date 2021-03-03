@@ -169,3 +169,13 @@ func (c *vCPU) setSignalMask() error {
 
 	return nil
 }
+
+// watchdogTimestamp returns monotonic time in seconds.
+//
+//go:nosplit
+func watchdogTimestamp() int64 {
+	ts := unix.Timespec{}
+	unix.RawSyscall(unix.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_MONOTONIC), uintptr(unsafe.Pointer(&ts)), 0)
+	return ts.Sec
+
+}
