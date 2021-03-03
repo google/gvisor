@@ -217,20 +217,21 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		return err
 	}
 	vfs.mountMu.Lock()
-	vd.dentry.mu.Lock()
+	vdDentry := vd.dentry
+	vdDentry.mu.Lock()
 	for {
-		if vd.dentry.dead {
-			vd.dentry.mu.Unlock()
+		if vdDentry.dead {
+			vdDentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef(ctx)
 			return syserror.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
 		// vfs.mountMu.Lock().
-		if !vd.dentry.isMounted() {
+		if !vdDentry.isMounted() {
 			break
 		}
-		nextmnt := vfs.mounts.Lookup(vd.mount, vd.dentry)
+		nextmnt := vfs.mounts.Lookup(vd.mount, vdDentry)
 		if nextmnt == nil {
 			break
 		}
@@ -243,13 +244,13 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		}
 		// This can't fail since we're holding vfs.mountMu.
 		nextmnt.root.IncRef()
-		vd.dentry.mu.Unlock()
+		vdDentry.mu.Unlock()
 		vd.DecRef(ctx)
 		vd = VirtualDentry{
 			mount:  nextmnt,
 			dentry: nextmnt.root,
 		}
-		vd.dentry.mu.Lock()
+		vdDentry.mu.Lock()
 	}
 	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
 	// point and the mount root are directories, or neither are, and returns
@@ -258,7 +259,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	vfs.mounts.seq.BeginWrite()
 	vfs.connectLocked(mnt, vd, mntns)
 	vfs.mounts.seq.EndWrite()
-	vd.dentry.mu.Unlock()
+	vdDentry.mu.Unlock()
 	vfs.mountMu.Unlock()
 	return nil
 }
