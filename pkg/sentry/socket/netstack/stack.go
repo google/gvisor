@@ -336,7 +336,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			in.ParamProblem.Value(),   // InParmProbs.
 			in.SrcQuench.Value(),      // InSrcQuenchs.
 			in.Redirect.Value(),       // InRedirects.
-			in.Echo.Value(),           // InEchos.
+			in.EchoRequest.Value(),    // InEchos.
 			in.EchoReply.Value(),      // InEchoReps.
 			in.Timestamp.Value(),      // InTimestamps.
 			in.TimestampReply.Value(), // InTimestampReps.
@@ -349,7 +349,7 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 			out.ParamProblem.Value(),                        // OutParmProbs.
 			out.SrcQuench.Value(),                           // OutSrcQuenchs.
 			out.Redirect.Value(),                            // OutRedirects.
-			out.Echo.Value(),                                // OutEchos.
+			out.EchoRequest.Value(),                         // OutEchos.
 			out.EchoReply.Value(),                           // OutEchoReps.
 			out.Timestamp.Value(),                           // OutTimestamps.
 			out.TimestampReply.Value(),                      // OutTimestampReps.
