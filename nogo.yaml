@@ -77,6 +77,51 @@ analyzers:
     external: # Enabled.
   cgocall:
     external: # Enabled.
+  checklocks:
+    internal:
+      exclude:
+        - "^-$"                                                             # b/181776900: analyzer fails on buildkite
+        - pkg/sentry/fs/dirent.go                                          # unsupported usage.
+        - pkg/sentry/fs/fsutil/inode_cached.go                             # unsupported usage.
+        - pkg/sentry/fs/gofer/inode_state.go                               # unsupported usage.
+        - pkg/sentry/fs/gofer/session.go                                   # unsupported usage.
+        - pkg/sentry/fs/ramfs/dir.go                                       # unsupported usage.
+        - pkg/sentry/fsimpl/fuse/connection.go                             # unsupported usage.
+        - pkg/sentry/fsimpl/kernfs/filesystem.go                           # unsupported usage.
+        - pkg/sentry/fsimpl/kernfs/inode_impl_util.go                      # unsupported usage.
+        - pkg/sentry/fsimpl/fuse/dev_test.go                               # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/filesystem.go                            # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/gofer.go                                 # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/regular_file.go                          # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/special_file.go                          # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/symlink.go                               # unsupported usage.
+        - pkg/sentry/fsimpl/overlay/copy_up.go                             # unsupported usage.
+        - pkg/sentry/fsimpl/overlay/filesystem.go                          # unsupported usage.
+        - pkg/sentry/fsimpl/tmpfs/filesystem.go                            # unsupported usage.
+        - pkg/sentry/fsimpl/verity/filesystem.go                           # unsupported usage.
+        - pkg/sentry/kernel/futex/futex.go                                 # unsupported usage.
+        - pkg/sentry/kernel/pipe/vfs.go                                    # unsupported usage.
+        - pkg/sentry/mm/syscalls.go                                        # unsupported usage.
+        - pkg/sentry/kernel/fd_table.go                                    # unsupported usage.
+        - pkg/sentry/kernel/ptrace.go                                      # unsupported usage.
+        - pkg/sentry/time/calibrated_clock_test.go                         # unsupported usage.
+        - pkg/sentry/kernel/task_context.go                                # unsupported usage.
+        - pkg/sentry/pgalloc/pgalloc.go                                    # unsupported usage.
+        - pkg/sentry/socket/unix/transport/connectioned.go                 # unsupported usage.
+        - pkg/sentry/vfs/dentry.go                                         # unsupported usage.
+        - pkg/tcpip/network/internal/ip/generic_multicast_protocol_test.go # unsupported usage.
+        - pkg/tcpip/stack/conntrack.go                                     # unsupported usage.        
+        - pkg/tcpip/transport/packet/endpoint_state.go                     # unsupported usage.
+        - pkg/tcpip/transport/raw/endpoint_state.go                        # unsupported usage.
+        - pkg/tcpip/transport/icmp/endpoint.go                             # unsupported usage.
+        - pkg/tcpip/transport/icmp/endpoint_state.go                       # unsupported usage.
+        - pkg/tcpip/transport/tcp/accept.go                                # unsupported usage.
+        - pkg/tcpip/transport/tcp/connect.go                               # unsupported usage.
+        - pkg/tcpip/transport/tcp/dispatcher.go                            # unsupported usage (TryLock)
+        - pkg/tcpip/transport/tcp/endpoint.go                              # unsupported usage.
+        - pkg/tcpip/transport/tcp/endpoint_state.go                        # unsupported usage.
+        - pkg/tcpip/transport/udp/endpoint.go                              # unsupported usage (defer unlock in anonymous function)
+        - pkg/tcpip/transport/udp/endpoint_state.go                        # unsupported usage (missing nested mutex annotation support)
   shadow: # Disable for now.
     generated:
       exclude: [".*"]

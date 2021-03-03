@@ -211,12 +211,14 @@ func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dent
 
 // AbortDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // fails.
+// +checklocks:d.mu
 func (vfs *VirtualFilesystem) AbortDeleteDentry(d *Dentry) {
 	d.mu.Unlock()
 }
 
 // CommitDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // succeeds.
+// +checklocks:d.mu
 func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry) {
 	d.dead = true
 	d.mu.Unlock()
@@ -270,6 +272,8 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 
 // AbortRenameDentry must be called after PrepareRenameDentry if the rename
 // fails.
+// +checklocks:from.mu
+// +checklocks:to.mu
 func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 	from.mu.Unlock()
 	if to != nil {
@@ -282,6 +286,8 @@ func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 // that was replaced by from.
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
+// +checklocks:from.mu
+// +checklocks:to.mu
 func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) {
 	from.mu.Unlock()
 	if to != nil {
@@ -297,6 +303,8 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, fro
 // from and to are exchanged by rename(RENAME_EXCHANGE).
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
+// +checklocks:from.mu
+// +checklocks:to.mu
 func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 	from.mu.Unlock()
 	to.mu.Unlock()

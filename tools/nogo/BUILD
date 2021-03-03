@@ -35,6 +35,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//tools/checkescape",
+        "//tools/checklocks",
         "//tools/checkunsafe",
         "@co_honnef_go_tools//staticcheck:go_default_library",
         "@co_honnef_go_tools//stylecheck:go_default_library",

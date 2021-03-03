@@ -760,6 +760,7 @@ func (e *endpoint) LockUser() {
 // protocol goroutine altogether.
 //
 // Precondition: e.LockUser() must have been called before calling e.UnlockUser()
+// +checklocks:e.mu
 func (e *endpoint) UnlockUser() {
 	// Lock segment queue before checking so that we avoid a race where
 	// segments can be queued between the time we check if queue is empty
@@ -800,6 +801,7 @@ func (e *endpoint) StopWork() {
 }
 
 // ResumeWork resumes packet processing. Only to be used in tests.
+// +checklocks:e.mu
 func (e *endpoint) ResumeWork() {
 	e.mu.Unlock()
 }
