@@ -52,7 +52,7 @@ type sharedStats struct {
 // LINT.IfChange(multiCounterICMPv4PacketStats)
 
 type multiCounterICMPv4PacketStats struct {
-	echo           tcpip.MultiCounterStat
+	echoRequest    tcpip.MultiCounterStat
 	echoReply      tcpip.MultiCounterStat
 	dstUnreachable tcpip.MultiCounterStat
 	srcQuench      tcpip.MultiCounterStat
@@ -66,7 +66,7 @@ type multiCounterICMPv4PacketStats struct {
 }
 
 func (m *multiCounterICMPv4PacketStats) init(a, b *tcpip.ICMPv4PacketStats) {
-	m.echo.Init(a.Echo, b.Echo)
+	m.echoRequest.Init(a.EchoRequest, b.EchoRequest)
 	m.echoReply.Init(a.EchoReply, b.EchoReply)
 	m.dstUnreachable.Init(a.DstUnreachable, b.DstUnreachable)
 	m.srcQuench.Init(a.SrcQuench, b.SrcQuench)
