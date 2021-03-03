@@ -37,7 +37,7 @@ func init() {
 	testbench.Initialize(flag.CommandLine)
 }
 
-func fragmentedICMPEchoRequest(t *testing.T, n *testbench.DUTTestNet, conn *testbench.Connection, firstPayloadLength uint16, payload []byte, secondFragmentOffset uint16) ([]testbench.Layers, [][]byte) {
+func fragmentedICMPEchoRequest(t *testing.T, n *testbench.DUTTestNet, conn *testbench.IPv6Conn, firstPayloadLength uint16, payload []byte, secondFragmentOffset uint16) ([]testbench.Layers, [][]byte) {
 	t.Helper()
 
 	icmpv6Header := header.ICMPv6(make([]byte, header.ICMPv6EchoMinimumSize))
@@ -121,17 +121,16 @@ func TestIPv6ICMPEchoRequestFragmentReassembly(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			dut := testbench.NewDUT(t)
-			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-			conn := (*testbench.Connection)(&ipv6Conn)
-			defer ipv6Conn.Close(t)
+			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			defer conn.Close(t)
 
-			fragments, _ := fragmentedICMPEchoRequest(t, dut.Net, conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
+			fragments, _ := fragmentedICMPEchoRequest(t, dut.Net, &conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
 
 			for _, i := range test.sendFrameOrder {
 				conn.SendFrame(t, fragments[i-1])
 			}
 
-			gotEchoReply, err := ipv6Conn.ExpectFrame(t, testbench.Layers{
+			gotEchoReply, err := conn.ExpectFrame(t, testbench.Layers{
 				&testbench.Ether{},
 				&testbench.IPv6{},
 				&testbench.ICMPv6{
@@ -223,17 +222,16 @@ func TestIPv6FragmentReassemblyTimeout(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			dut := testbench.NewDUT(t)
-			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-			conn := (*testbench.Connection)(&ipv6Conn)
-			defer ipv6Conn.Close(t)
+			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			defer conn.Close(t)
 
-			fragments, ipv6Bytes := fragmentedICMPEchoRequest(t, dut.Net, conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
+			fragments, ipv6Bytes := fragmentedICMPEchoRequest(t, dut.Net, &conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
 
 			for _, i := range test.sendFrameOrder {
 				conn.SendFrame(t, fragments[i-1])
 			}
 
-			gotErrorMessage, err := ipv6Conn.ExpectFrame(t, testbench.Layers{
+			gotErrorMessage, err := conn.ExpectFrame(t, testbench.Layers{
 				&testbench.Ether{},
 				&testbench.IPv6{},
 				&testbench.ICMPv6{
@@ -319,17 +317,16 @@ func TestIPv6FragmentParamProblem(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			dut := testbench.NewDUT(t)
-			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-			conn := (*testbench.Connection)(&ipv6Conn)
-			defer ipv6Conn.Close(t)
+			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			defer conn.Close(t)
 
-			fragments, ipv6Bytes := fragmentedICMPEchoRequest(t, dut.Net, conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
+			fragments, ipv6Bytes := fragmentedICMPEchoRequest(t, dut.Net, &conn, test.firstPayloadLength, test.payload, test.secondFragmentOffset)
 
 			for _, i := range test.sendFrameOrder {
 				conn.SendFrame(t, fragments[i-1])
 			}
 
-			gotErrorMessage, err := ipv6Conn.ExpectFrame(t, testbench.Layers{
+			gotErrorMessage, err := conn.ExpectFrame(t, testbench.Layers{
 				&testbench.Ether{},
 				&testbench.IPv6{},
 				&testbench.ICMPv6{

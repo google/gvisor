@@ -44,8 +44,8 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 		Payload: []byte("hello world"),
 	}
 
-	toSend := (*testbench.Connection)(&conn).CreateFrame(t, testbench.Layers{&ipv6}, &icmpv6)
-	(*testbench.Connection)(&conn).SendFrame(t, toSend)
+	toSend := conn.CreateFrame(t, testbench.Layers{&ipv6}, &icmpv6)
+	conn.SendFrame(t, toSend)
 
 	// Build the expected ICMPv6 payload, which includes an index to the
 	// problematic byte and also the problematic packet as described in

@@ -633,7 +633,9 @@ func (conn *Connection) Drain(t *testing.T) {
 }
 
 // TCPIPv4 maintains the state for all the layers in a TCP/IPv4 connection.
-type TCPIPv4 Connection
+type TCPIPv4 struct {
+	Connection
+}
 
 // NewTCPIPv4 creates a new TCPIPv4 connection with reasonable defaults.
 func (n *DUTTestNet) NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
@@ -661,9 +663,11 @@ func (n *DUTTestNet) NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPI
 	}
 
 	return TCPIPv4{
-		layerStates: []layerState{etherState, ipv4State, tcpState},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv4State, tcpState},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -715,7 +719,7 @@ func (conn *TCPIPv4) ExpectData(t *testing.T, tcp *TCP, payload *Payload, timeou
 	if payload != nil {
 		expected = append(expected, payload)
 	}
-	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
+	return conn.ExpectFrame(t, expected, timeout)
 }
 
 // ExpectNextData attempts to receive the next incoming segment for the
@@ -739,7 +743,7 @@ func (conn *TCPIPv4) ExpectNextData(t *testing.T, tcp *TCP, payload *Payload, ti
 		expected = append(expected, payload)
 		tcp.SeqNum = Uint32(uint32(*conn.RemoteSeqNum(t)) - uint32(payload.Length()))
 	}
-	if !(*Connection)(conn).match(expected, got) {
+	if !conn.match(expected, got) {
 		return nil, fmt.Errorf("next frame is not matching %s during %s: got %s", expected, timeout, got)
 	}
 	return got, nil
@@ -750,14 +754,7 @@ func (conn *TCPIPv4) ExpectNextData(t *testing.T, tcp *TCP, payload *Payload, ti
 func (conn *TCPIPv4) Send(t *testing.T, tcp TCP, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&tcp}, additionalLayers...)
-}
-
-// Close frees associated resources held by the TCPIPv4 connection.
-func (conn *TCPIPv4) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(conn).Close(t)
+	conn.send(t, Layers{&tcp}, additionalLayers...)
 }
 
 // Expect expects a frame with the TCP layer matching the provided TCP within
@@ -765,7 +762,7 @@ func (conn *TCPIPv4) Close(t *testing.T) {
 func (conn *TCPIPv4) Expect(t *testing.T, tcp TCP, timeout time.Duration) (*TCP, error) {
 	t.Helper()
 
-	layer, err := (*Connection)(conn).Expect(t, &tcp, timeout)
+	layer, err := conn.Connection.Expect(t, &tcp, timeout)
 	if layer == nil {
 		return nil, err
 	}
@@ -826,16 +823,10 @@ func (conn *TCPIPv4) LocalAddr(t *testing.T) *unix.SockaddrInet4 {
 	return sa
 }
 
-// Drain drains the sniffer's receive buffer by receiving packets until there's
-// nothing else to receive.
-func (conn *TCPIPv4) Drain(t *testing.T) {
-	t.Helper()
-
-	conn.sniffer.Drain(t)
-}
-
 // IPv4Conn maintains the state for all the layers in a IPv4 connection.
-type IPv4Conn Connection
+type IPv4Conn struct {
+	Connection
+}
 
 // NewIPv4Conn creates a new IPv4Conn connection with reasonable defaults.
 func (n *DUTTestNet) NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) IPv4Conn {
@@ -860,9 +851,11 @@ func (n *DUTTestNet) NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) 
 	}
 
 	return IPv4Conn{
-		layerStates: []layerState{etherState, ipv4State},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv4State},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -871,26 +864,13 @@ func (n *DUTTestNet) NewIPv4Conn(t *testing.T, outgoingIPv4, incomingIPv4 IPv4) 
 func (c *IPv4Conn) Send(t *testing.T, ipv4 IPv4, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(c).send(t, Layers{&ipv4}, additionalLayers...)
-}
-
-// Close cleans up any resources held.
-func (c *IPv4Conn) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(c).Close(t)
-}
-
-// ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, an error is returned.
-func (c *IPv4Conn) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
-	t.Helper()
-
-	return (*Connection)(c).ExpectFrame(t, frame, timeout)
+	c.send(t, Layers{&ipv4}, additionalLayers...)
 }
 
 // IPv6Conn maintains the state for all the layers in a IPv6 connection.
-type IPv6Conn Connection
+type IPv6Conn struct {
+	Connection
+}
 
 // NewIPv6Conn creates a new IPv6Conn connection with reasonable defaults.
 func (n *DUTTestNet) NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) IPv6Conn {
@@ -915,9 +895,11 @@ func (n *DUTTestNet) NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) 
 	}
 
 	return IPv6Conn{
-		layerStates: []layerState{etherState, ipv6State},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv6State},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -926,26 +908,13 @@ func (n *DUTTestNet) NewIPv6Conn(t *testing.T, outgoingIPv6, incomingIPv6 IPv6) 
 func (conn *IPv6Conn) Send(t *testing.T, ipv6 IPv6, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&ipv6}, additionalLayers...)
-}
-
-// Close to clean up any resources held.
-func (conn *IPv6Conn) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(conn).Close(t)
-}
-
-// ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, an error is returned.
-func (conn *IPv6Conn) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
-	t.Helper()
-
-	return (*Connection)(conn).ExpectFrame(t, frame, timeout)
+	conn.send(t, Layers{&ipv6}, additionalLayers...)
 }
 
 // UDPIPv4 maintains the state for all the layers in a UDP/IPv4 connection.
-type UDPIPv4 Connection
+type UDPIPv4 struct {
+	Connection
+}
 
 // NewUDPIPv4 creates a new UDPIPv4 connection with reasonable defaults.
 func (n *DUTTestNet) NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv4 {
@@ -973,9 +942,11 @@ func (n *DUTTestNet) NewUDPIPv4(t *testing.T, outgoingUDP, incomingUDP UDP) UDPI
 	}
 
 	return UDPIPv4{
-		layerStates: []layerState{etherState, ipv4State, udpState},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv4State, udpState},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -1020,7 +991,7 @@ func (conn *UDPIPv4) SrcPort(t *testing.T) uint16 {
 func (conn *UDPIPv4) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&udp}, additionalLayers...)
+	conn.send(t, Layers{&udp}, additionalLayers...)
 }
 
 // SendIP sends a packet with reasonable defaults, potentially overriding the
@@ -1028,12 +999,12 @@ func (conn *UDPIPv4) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
 func (conn *UDPIPv4) SendIP(t *testing.T, ip IPv4, udp UDP, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&ip, &udp}, additionalLayers...)
+	conn.send(t, Layers{&ip, &udp}, additionalLayers...)
 }
 
 // SendFrame sends a frame on the wire and updates the state of all layers.
 func (conn *UDPIPv4) SendFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) {
-	(*Connection)(conn).send(t, overrideLayers, additionalLayers...)
+	conn.send(t, overrideLayers, additionalLayers...)
 }
 
 // Expect expects a frame with the UDP layer matching the provided UDP within
@@ -1041,7 +1012,7 @@ func (conn *UDPIPv4) SendFrame(t *testing.T, overrideLayers Layers, additionalLa
 func (conn *UDPIPv4) Expect(t *testing.T, udp UDP, timeout time.Duration) (*UDP, error) {
 	t.Helper()
 
-	layer, err := (*Connection)(conn).Expect(t, &udp, timeout)
+	layer, err := conn.Connection.Expect(t, &udp, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -1062,34 +1033,13 @@ func (conn *UDPIPv4) ExpectData(t *testing.T, udp UDP, payload Payload, timeout 
 	if payload.length() != 0 {
 		expected = append(expected, &payload)
 	}
-	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
-}
-
-// ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, an error is returned.
-func (conn *UDPIPv4) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
-	t.Helper()
-
-	return (*Connection)(conn).ExpectFrame(t, frame, timeout)
-}
-
-// Close frees associated resources held by the UDPIPv4 connection.
-func (conn *UDPIPv4) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(conn).Close(t)
-}
-
-// Drain drains the sniffer's receive buffer by receiving packets until there's
-// nothing else to receive.
-func (conn *UDPIPv4) Drain(t *testing.T) {
-	t.Helper()
-
-	conn.sniffer.Drain(t)
+	return conn.ExpectFrame(t, expected, timeout)
 }
 
 // UDPIPv6 maintains the state for all the layers in a UDP/IPv6 connection.
-type UDPIPv6 Connection
+type UDPIPv6 struct {
+	Connection
+}
 
 // NewUDPIPv6 creates a new UDPIPv6 connection with reasonable defaults.
 func (n *DUTTestNet) NewUDPIPv6(t *testing.T, outgoingUDP, incomingUDP UDP) UDPIPv6 {
@@ -1116,9 +1066,11 @@ func (n *DUTTestNet) NewUDPIPv6(t *testing.T, outgoingUDP, incomingUDP UDP) UDPI
 		t.Fatalf("can't make sniffer: %s", err)
 	}
 	return UDPIPv6{
-		layerStates: []layerState{etherState, ipv6State, udpState},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv6State, udpState},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -1168,7 +1120,7 @@ func (conn *UDPIPv6) SrcPort(t *testing.T) uint16 {
 func (conn *UDPIPv6) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&udp}, additionalLayers...)
+	conn.send(t, Layers{&udp}, additionalLayers...)
 }
 
 // SendIPv6 sends a packet with reasonable defaults, potentially overriding the
@@ -1176,12 +1128,12 @@ func (conn *UDPIPv6) Send(t *testing.T, udp UDP, additionalLayers ...Layer) {
 func (conn *UDPIPv6) SendIPv6(t *testing.T, ip IPv6, udp UDP, additionalLayers ...Layer) {
 	t.Helper()
 
-	(*Connection)(conn).send(t, Layers{&ip, &udp}, additionalLayers...)
+	conn.send(t, Layers{&ip, &udp}, additionalLayers...)
 }
 
 // SendFrame sends a frame on the wire and updates the state of all layers.
 func (conn *UDPIPv6) SendFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) {
-	(*Connection)(conn).send(t, overrideLayers, additionalLayers...)
+	conn.send(t, overrideLayers, additionalLayers...)
 }
 
 // Expect expects a frame with the UDP layer matching the provided UDP within
@@ -1189,7 +1141,7 @@ func (conn *UDPIPv6) SendFrame(t *testing.T, overrideLayers Layers, additionalLa
 func (conn *UDPIPv6) Expect(t *testing.T, udp UDP, timeout time.Duration) (*UDP, error) {
 	t.Helper()
 
-	layer, err := (*Connection)(conn).Expect(t, &udp, timeout)
+	layer, err := conn.Connection.Expect(t, &udp, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,34 +1162,13 @@ func (conn *UDPIPv6) ExpectData(t *testing.T, udp UDP, payload Payload, timeout 
 	if payload.length() != 0 {
 		expected = append(expected, &payload)
 	}
-	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
-}
-
-// ExpectFrame expects a frame that matches the provided Layers within the
-// timeout specified. If it doesn't arrive in time, an error is returned.
-func (conn *UDPIPv6) ExpectFrame(t *testing.T, frame Layers, timeout time.Duration) (Layers, error) {
-	t.Helper()
-
-	return (*Connection)(conn).ExpectFrame(t, frame, timeout)
-}
-
-// Close frees associated resources held by the UDPIPv6 connection.
-func (conn *UDPIPv6) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(conn).Close(t)
-}
-
-// Drain drains the sniffer's receive buffer by receiving packets until there's
-// nothing else to receive.
-func (conn *UDPIPv6) Drain(t *testing.T) {
-	t.Helper()
-
-	conn.sniffer.Drain(t)
+	return conn.ExpectFrame(t, expected, timeout)
 }
 
 // TCPIPv6 maintains the state for all the layers in a TCP/IPv6 connection.
-type TCPIPv6 Connection
+type TCPIPv6 struct {
+	Connection
+}
 
 // NewTCPIPv6 creates a new TCPIPv6 connection with reasonable defaults.
 func (n *DUTTestNet) NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv6 {
@@ -1263,9 +1194,11 @@ func (n *DUTTestNet) NewTCPIPv6(t *testing.T, outgoingTCP, incomingTCP TCP) TCPI
 	}
 
 	return TCPIPv6{
-		layerStates: []layerState{etherState, ipv6State, tcpState},
-		injector:    injector,
-		sniffer:     sniffer,
+		Connection: Connection{
+			layerStates: []layerState{etherState, ipv6State, tcpState},
+			injector:    injector,
+			sniffer:     sniffer,
+		},
 	}
 }
 
@@ -1285,12 +1218,5 @@ func (conn *TCPIPv6) ExpectData(t *testing.T, tcp *TCP, payload *Payload, timeou
 	if payload != nil {
 		expected = append(expected, payload)
 	}
-	return (*Connection)(conn).ExpectFrame(t, expected, timeout)
-}
-
-// Close frees associated resources held by the TCPIPv6 connection.
-func (conn *TCPIPv6) Close(t *testing.T) {
-	t.Helper()
-
-	(*Connection)(conn).Close(t)
+	return conn.ExpectFrame(t, expected, timeout)
 }

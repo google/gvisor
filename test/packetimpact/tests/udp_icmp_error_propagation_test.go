@@ -102,7 +102,7 @@ func wantErrno(c connectionMode, icmpErr icmpError) syscall.Errno {
 func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp *testbench.UDP) {
 	t.Helper()
 
-	layers := (*testbench.Connection)(conn).CreateFrame(t, nil)
+	layers := conn.CreateFrame(t, nil)
 	layers = layers[:len(layers)-1]
 	ip, ok := udp.Prev().(*testbench.IPv4)
 	if !ok {
@@ -120,7 +120,7 @@ func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp
 	// resulting in a mal-formed packet.
 	layers = append(layers, icmpErr.ToICMPv4(), ip, udp)
 
-	(*testbench.Connection)(conn).SendFrameStateless(t, layers)
+	conn.SendFrameStateless(t, layers)
 }
 
 // testRecv tests observing the ICMP error through the recv syscall. A packet

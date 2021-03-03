@@ -57,8 +57,7 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	}
 
 	// Send a host unreachable message.
-	rawConn := (*testbench.Connection)(&conn)
-	layers := rawConn.CreateFrame(t, nil)
+	layers := conn.CreateFrame(t, nil)
 	layers = layers[:len(layers)-1]
 	const ipLayer = 1
 	const tcpLayer = ipLayer + 1
@@ -76,7 +75,7 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	}
 
 	layers = append(layers, &icmpv4, ip, tcp)
-	rawConn.SendFrameStateless(t, layers)
+	conn.SendFrameStateless(t, layers)
 
 	if err := getConnectError(t, &dut, clientFD); err != unix.EHOSTUNREACH {
 		t.Errorf("got connect() = %v, want EHOSTUNREACH", err)
@@ -112,8 +111,7 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	}
 
 	// Send a host unreachable message.
-	rawConn := (*testbench.Connection)(&conn)
-	layers := rawConn.CreateFrame(t, nil)
+	layers := conn.CreateFrame(t, nil)
 	layers = layers[:len(layers)-1]
 	const ipLayer = 1
 	const tcpLayer = ipLayer + 1
@@ -132,7 +130,7 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 		Payload: []byte{0, 0, 0, 0},
 	}
 	layers = append(layers, &icmpv6, ip, tcp)
-	rawConn.SendFrameStateless(t, layers)
+	conn.SendFrameStateless(t, layers)
 
 	if err := getConnectError(t, &dut, clientFD); err != unix.ENETUNREACH {
 		t.Errorf("got connect() = %v, want EHOSTUNREACH", err)

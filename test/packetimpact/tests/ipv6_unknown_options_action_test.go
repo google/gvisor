@@ -141,9 +141,8 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 	} {
 		t.Run(tt.description, func(t *testing.T) {
 			dut := testbench.NewDUT(t)
-			ipv6Conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
-			conn := (*testbench.Connection)(&ipv6Conn)
-			defer ipv6Conn.Close(t)
+			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
+			defer conn.Close(t)
 
 			outgoingOverride := testbench.Layers{}
 			if tt.multicastDst {
@@ -166,7 +165,7 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 			// after the IPv6 header (after NextHeader and ExtHdrLen).
 			binary.BigEndian.PutUint32(icmpv6Payload, header.IPv6MinimumSize+2)
 			icmpv6Payload = append(icmpv6Payload, invokingPacket...)
-			gotICMPv6, err := ipv6Conn.ExpectFrame(t, testbench.Layers{
+			gotICMPv6, err := conn.ExpectFrame(t, testbench.Layers{
 				&testbench.Ether{},
 				&testbench.IPv6{},
 				&testbench.ICMPv6{
