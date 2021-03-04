@@ -606,7 +606,7 @@ func newBackoffTimer(timeout, maxTimeout time.Duration, f func()) (*backoffTimer
 
 func (bt *backoffTimer) reset() tcpip.Error {
 	bt.timeout *= 2
-	if bt.timeout > MaxRTO {
+	if bt.timeout > bt.maxTimeout {
 		return &tcpip.ErrTimeout{}
 	}
 	bt.t.Reset(bt.timeout)
