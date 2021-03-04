@@ -427,7 +427,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 				vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
 				vnetHdr.csumOffset = gso.CsumOffset
 			}
-			if gso.Type != stack.GSONone && uint16(pkt.Data.Size()) > gso.MSS {
+			if gso.Type != stack.GSONone && uint16(pkt.Data().Size()) > gso.MSS {
 				switch gso.Type {
 				case stack.GSOTCPv4:
 					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
@@ -468,7 +468,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcp
 					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
 					vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
 				}
-				if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data.Size()) > pkt.GSOOptions.MSS {
+				if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
 					switch pkt.GSOOptions.Type {
 					case stack.GSOTCPv4:
 						vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4

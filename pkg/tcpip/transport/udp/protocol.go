@@ -80,7 +80,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 // protocol but don't match any existing endpoint.
 func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
 	hdr := header.UDP(pkt.TransportHeader().View())
-	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
+	if int(hdr.Length()) > pkt.Data().Size()+header.UDPMinimumSize {
 		p.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		return stack.UnknownDestinationPacketMalformed
 	}

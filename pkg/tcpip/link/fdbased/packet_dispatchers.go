@@ -165,7 +165,7 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.
 		// IP version information is at the first octet, so pulling up 1 byte.
-		h, ok := pkt.Data.PullUp(1)
+		h, ok := pkt.Data().PullUp(1)
 		if !ok {
 			return true, nil
 		}
@@ -270,7 +270,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 			// We don't get any indication of what the packet is, so try to guess
 			// if it's an IPv4 or IPv6 packet.
 			// IP version information is at the first octet, so pulling up 1 byte.
-			h, ok := pkt.Data.PullUp(1)
+			h, ok := pkt.Data().PullUp(1)
 			if !ok {
 				// Skip this packet.
 				continue

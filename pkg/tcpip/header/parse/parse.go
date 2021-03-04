@@ -41,7 +41,7 @@ func ARP(pkt *stack.PacketBuffer) bool {
 //
 // Returns true if the header was successfully parsed.
 func IPv4(pkt *stack.PacketBuffer) bool {
-	hdr, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	hdr, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 	if !ok {
 		return false
 	}
@@ -62,27 +62,29 @@ func IPv4(pkt *stack.PacketBuffer) bool {
 	ipHdr = header.IPv4(hdr)
 
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-	pkt.Data.CapLength(int(ipHdr.TotalLength()) - len(hdr))
+	pkt.Data().CapLength(int(ipHdr.TotalLength()) - len(hdr))
 	return true
 }
 
 // IPv6 parses an IPv6 packet found in pkt.Data and populates pkt's network
 // header with the IPv6 header.
 func IPv6(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, fragID uint32, fragOffset uint16, fragMore bool, ok bool) {
-	hdr, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
+	hdr, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return 0, 0, 0, false, false
 	}
 	ipHdr := header.IPv6(hdr)
 
-	// dataClone consists of:
+	// Create a VV to parse the packet. We don't plan to modify anything here.
+	// dataVV consists of:
 	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
 	// - The transport header, if present.
 	// - Any other payload data.
 	views := [8]buffer.View{}
-	dataClone := pkt.Data.Clone(views[:])
-	dataClone.TrimFront(header.IPv6MinimumSize)
-	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(ipHdr.NextHeader()), dataClone)
+	dataVV := buffer.NewVectorisedView(0, views[:0])
+	dataVV.AppendViews(pkt.Data().Views())
+	dataVV.TrimFront(header.IPv6MinimumSize)
+	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(ipHdr.NextHeader()), dataVV)
 
 	// Iterate over the IPv6 extensions to find their length.
 	var nextHdr tcpip.TransportProtocolNumber
@@ -98,7 +100,7 @@ traverseExtensions:
 		// If we exhaust the extension list, the entire packet is the IPv6 header
 		// and (possibly) extensions.
 		if done {
-			extensionsSize = dataClone.Size()
+			extensionsSize = dataVV.Size()
 			break
 		}
 
@@ -110,12 +112,12 @@ traverseExtensions:
 				fragMore = extHdr.More()
 			}
 			rawPayload := it.AsRawHeader(true /* consume */)
-			extensionsSize = dataClone.Size() - rawPayload.Buf.Size()
+			extensionsSize = dataVV.Size() - rawPayload.Buf.Size()
 			break traverseExtensions
 
 		case header.IPv6RawPayloadHeader:
 			// We've found the payload after any extensions.
-			extensionsSize = dataClone.Size() - extHdr.Buf.Size()
+			extensionsSize = dataVV.Size() - extHdr.Buf.Size()
 			nextHdr = tcpip.TransportProtocolNumber(extHdr.Identifier)
 			break traverseExtensions
 
@@ -127,10 +129,10 @@ traverseExtensions:
 	// Put the IPv6 header with extensions in pkt.NetworkHeader().
 	hdr, ok = pkt.NetworkHeader().Consume(header.IPv6MinimumSize + extensionsSize)
 	if !ok {
-		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data.Size()))
+		panic(fmt.Sprintf("pkt.Data should have at least %d bytes, but only has %d.", header.IPv6MinimumSize+extensionsSize, pkt.Data().Size()))
 	}
 	ipHdr = header.IPv6(hdr)
-	pkt.Data.CapLength(int(ipHdr.PayloadLength()))
+	pkt.Data().CapLength(int(ipHdr.PayloadLength()))
 	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
 
 	return nextHdr, fragID, fragOffset, fragMore, true
@@ -153,13 +155,13 @@ func UDP(pkt *stack.PacketBuffer) bool {
 func TCP(pkt *stack.PacketBuffer) bool {
 	// TCP header is variable length, peek at it first.
 	hdrLen := header.TCPMinimumSize
-	hdr, ok := pkt.Data.PullUp(hdrLen)
+	hdr, ok := pkt.Data().PullUp(hdrLen)
 	if !ok {
 		return false
 	}
 
 	// If the header has options, pull those up as well.
-	if offset := int(header.TCP(hdr).DataOffset()); offset > header.TCPMinimumSize && offset <= pkt.Data.Size() {
+	if offset := int(header.TCP(hdr).DataOffset()); offset > header.TCPMinimumSize && offset <= pkt.Data().Size() {
 		// TODO(gvisor.dev/issue/2404): Figure out whether to reject this kind of
 		// packets.
 		hdrLen = offset

@@ -644,7 +644,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	} else {
 		combinedVV = append(buffer.View(nil), pkt.TransportHeader().View()...).ToVectorisedView()
 	}
-	combinedVV.Append(pkt.Data)
+	combinedVV.Append(pkt.Data().ExtractVV())
 	packet.data = combinedVV
 	packet.timestampNS = e.stack.Clock().NowNanoseconds()
 

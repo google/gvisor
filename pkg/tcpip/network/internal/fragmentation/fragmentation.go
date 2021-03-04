@@ -170,7 +170,7 @@ func (f *Fragmentation) Process(
 		return nil, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
 	}
 
-	if l := pkt.Data.Size(); l != int(fragmentSize) {
+	if l := pkt.Data().Size(); l != int(fragmentSize) {
 		return nil, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
 	}
 
@@ -293,7 +293,7 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, re
 	// these headers.
 	var fragmentableData buffer.VectorisedView
 	fragmentableData.AppendView(pkt.TransportHeader().View())
-	fragmentableData.Append(pkt.Data)
+	fragmentableData.Append(pkt.Data().ExtractVV())
 	fragmentCount := (uint32(fragmentableData.Size()) + fragmentPayloadLen - 1) / fragmentPayloadLen
 
 	return PacketFragmenter{
@@ -323,7 +323,7 @@ func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, 
 	})
 
 	// Copy data for the fragment.
-	copied := pf.data.ReadToVV(&fragPkt.Data, pf.fragmentPayloadLen)
+	copied := fragPkt.Data().ReadFromVV(&pf.data, pf.fragmentPayloadLen)
 
 	offset := pf.fragmentOffset
 	pf.fragmentOffset += copied

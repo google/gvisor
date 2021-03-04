@@ -492,7 +492,7 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
-	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 	if !ok {
 		return &tcpip.ErrMalformedHeader{}
 	}
@@ -502,14 +502,14 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 		return &tcpip.ErrMalformedHeader{}
 	}
 
-	h, ok = pkt.Data.PullUp(int(hdrLen))
+	h, ok = pkt.Data().PullUp(int(hdrLen))
 	if !ok {
 		return &tcpip.ErrMalformedHeader{}
 	}
 	ip := header.IPv4(h)
 
 	// Always set the total length.
-	pktSize := pkt.Data.Size()
+	pktSize := pkt.Data().Size()
 	ip.SetTotalLength(uint16(pktSize))
 
 	// Set the source address when zero.
@@ -687,7 +687,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 	stats := e.stats
 
 	h := header.IPv4(pkt.NetworkHeader().View())
-	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
+	if !h.IsValid(pkt.Data().Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		stats.ip.MalformedPacketsReceived.Increment()
 		return
 	}
@@ -765,7 +765,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 	}
 
 	if h.More() || h.FragmentOffset() != 0 {
-		if pkt.Data.Size()+pkt.TransportHeader().View().Size() == 0 {
+		if pkt.Data().Size()+pkt.TransportHeader().View().Size() == 0 {
 			// Drop the packet as it's marked as a fragment but has
 			// no payload.
 			stats.ip.MalformedPacketsReceived.Increment()
@@ -793,10 +793,10 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		// maximum payload size.
 		//
 		// Note that this addition doesn't overflow even on 32bit architecture
-		// because pkt.Data.Size() should not exceed 65535 (the max IP datagram
+		// because pkt.Data().Size() should not exceed 65535 (the max IP datagram
 		// size). Otherwise the packet would've been rejected as invalid before
 		// reaching here.
-		if int(start)+pkt.Data.Size() > header.IPv4MaximumPayloadSize {
+		if int(start)+pkt.Data().Size() > header.IPv4MaximumPayloadSize {
 			stats.ip.MalformedPacketsReceived.Increment()
 			stats.ip.MalformedFragmentsReceived.Increment()
 			return
@@ -813,7 +813,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 				Protocol:    proto,
 			},
 			start,
-			start+uint16(pkt.Data.Size())-1,
+			start+uint16(pkt.Data().Size())-1,
 			h.More(),
 			proto,
 			pkt,
@@ -831,7 +831,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.
-		h.SetTotalLength(uint16(pkt.Data.Size() + len((h))))
+		h.SetTotalLength(uint16(pkt.Data().Size() + len((h))))
 		h.SetFlagsFragmentOffset(0, 0)
 	}
 	stats.ip.PacketsDelivered.Increment()
@@ -1186,7 +1186,7 @@ func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error
 }
 
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
-	payload := pkt.TransportHeader().View().Size() + pkt.Data.Size()
+	payload := pkt.TransportHeader().View().Size() + pkt.Data().Size()
 	return (gso == nil || gso.Type == stack.GSONone) && uint32(payload) > networkMTU
 }
 

@@ -432,7 +432,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		// Cooked packets can simply be queued.
 		switch pkt.PktType {
 		case tcpip.PacketHost:
-			packet.data = pkt.Data
+			packet.data = pkt.Data().ExtractVV()
 		case tcpip.PacketOutgoing:
 			// Strip Link Header.
 			var combinedVV buffer.VectorisedView
@@ -442,7 +442,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			if v := pkt.TransportHeader().View(); !v.IsEmpty() {
 				combinedVV.AppendView(v)
 			}
-			combinedVV.Append(pkt.Data)
+			combinedVV.Append(pkt.Data().ExtractVV())
 			packet.data = combinedVV
 		default:
 			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
@@ -468,7 +468,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 				linkHeader = append(buffer.View(nil), pkt.LinkHeader().View()...)
 			}
 			combinedVV := linkHeader.ToVectorisedView()
-			combinedVV.Append(pkt.Data)
+			combinedVV.Append(pkt.Data().ExtractVV())
 			packet.data = combinedVV
 		} else {
 			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
