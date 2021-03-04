@@ -281,7 +281,7 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	vv.AppendView(info.Pkt.NetworkHeader().View())
 	vv.AppendView(info.Pkt.TransportHeader().View())
 	// Append data payload.
-	vv.Append(info.Pkt.Data)
+	vv.Append(info.Pkt.Data().ExtractVV())
 
 	return vv.ToView(), true
 }

@@ -98,7 +98,7 @@ func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *
 		netProto: pkt.NetworkProtocolNumber,
 		nicID:    pkt.NICID,
 	}
-	s.data = pkt.Data.Clone(s.views[:])
+	s.data = pkt.Data().ExtractVV().Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
 	s.rcvdTime = time.Now()
 	s.dataMemSize = s.data.Size()

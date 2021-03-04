@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // ICMPv6 represents an ICMPv6 header stored in a byte array.
@@ -262,12 +261,22 @@ func (b ICMPv6) Payload() []byte {
 	return b[ICMPv6PayloadOffset:]
 }
 
+// ICMPv6ChecksumParams contains parameters to calculate ICMPv6 checksum.
+type ICMPv6ChecksumParams struct {
+	Header      ICMPv6
+	Src         tcpip.Address
+	Dst         tcpip.Address
+	PayloadCsum uint16
+	PayloadLen  int
+}
+
 // ICMPv6Checksum calculates the ICMP checksum over the provided ICMPv6 header,
 // IPv6 src/dst addresses and the payload.
-func ICMPv6Checksum(h ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
-	xsum := PseudoHeaderChecksum(ICMPv6ProtocolNumber, src, dst, uint16(len(h)+vv.Size()))
+func ICMPv6Checksum(params ICMPv6ChecksumParams) uint16 {
+	h := params.Header
 
-	xsum = ChecksumVV(vv, xsum)
+	xsum := PseudoHeaderChecksum(ICMPv6ProtocolNumber, params.Src, params.Dst, uint16(len(h)+params.PayloadLen))
+	xsum = ChecksumCombine(xsum, params.PayloadCsum)
 
 	// h[2:4] is the checksum itself, skip it to avoid checksumming the checksum.
 	xsum = Checksum(h[:2], xsum)
