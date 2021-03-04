@@ -363,7 +363,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) tcpip.Error {
 
 	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as an
 	// attempt will be made to generate a new address for it.
-	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, true /* dadFailure */); err != nil {
+	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, &stack.DADDupAddrDetected{}); err != nil {
 		return err
 	}
 
@@ -536,8 +536,20 @@ func (e *endpoint) disableLocked() {
 	}
 
 	e.mu.ndp.stopSolicitingRouters()
+	// Stop DAD for all the tentative unicast addresses.
+	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+		if addressEndpoint.GetKind() != stack.PermanentTentative {
+			return true
+		}
+
+		addr := addressEndpoint.AddressWithPrefix().Address
+		if header.IsV6UnicastAddress(addr) {
+			e.mu.ndp.stopDuplicateAddressDetection(addr, &stack.DADAborted{})
+		}
+
+		return true
+	})
 	e.mu.ndp.cleanupState(false /* hostOnly */)
-	e.stopDADForPermanentAddressesLocked()
 
 	// The endpoint may have already left the multicast group.
 	switch err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress); err.(type) {
@@ -553,25 +565,6 @@ func (e *endpoint) disableLocked() {
 	if !e.setEnabled(false) {
 		panic("should have only done work to disable the endpoint if it was enabled")
 	}
-}
-
-// stopDADForPermanentAddressesLocked stops DAD for all permaneent addresses.
-//
-// Precondition: e.mu must be write locked.
-func (e *endpoint) stopDADForPermanentAddressesLocked() {
-	// Stop DAD for all the tentative unicast addresses.
-	e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
-		if addressEndpoint.GetKind() != stack.PermanentTentative {
-			return true
-		}
-
-		addr := addressEndpoint.AddressWithPrefix().Address
-		if header.IsV6UnicastAddress(addr) {
-			e.mu.ndp.stopDuplicateAddressDetection(addr, false /* failed */)
-		}
-
-		return true
-	})
 }
 
 // DefaultTTL is the default hop limit for this endpoint.
@@ -1384,8 +1377,6 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 func (e *endpoint) Close() {
 	e.mu.Lock()
 	e.disableLocked()
-	e.mu.ndp.removeSLAACAddresses(false /* keepLinkLocal */)
-	e.stopDADForPermanentAddressesLocked()
 	e.mu.addressableEndpointState.Cleanup()
 	e.mu.Unlock()
 
@@ -1451,14 +1442,14 @@ func (e *endpoint) RemovePermanentAddress(addr tcpip.Address) tcpip.Error {
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
-	return e.removePermanentEndpointLocked(addressEndpoint, true /* allowSLAACInvalidation */, false /* dadFailure */)
+	return e.removePermanentEndpointLocked(addressEndpoint, true /* allowSLAACInvalidation */, &stack.DADAborted{})
 }
 
 // removePermanentEndpointLocked is like removePermanentAddressLocked except
 // it works with a stack.AddressEndpoint.
 //
 // Precondition: e.mu must be write locked.
-func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation, dadFailure bool) tcpip.Error {
+func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEndpoint, allowSLAACInvalidation bool, dadResult stack.DADResult) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
 	// If we are removing an address generated via SLAAC, cleanup
 	// its SLAAC resources and notify the integrator.
@@ -1469,16 +1460,16 @@ func (e *endpoint) removePermanentEndpointLocked(addressEndpoint stack.AddressEn
 		e.mu.ndp.cleanupTempSLAACAddrResourcesAndNotify(addr)
 	}
 
-	return e.removePermanentEndpointInnerLocked(addressEndpoint, dadFailure)
+	return e.removePermanentEndpointInnerLocked(addressEndpoint, dadResult)
 }
 
 // removePermanentEndpointInnerLocked is like removePermanentEndpointLocked
 // except it does not cleanup SLAAC address state.
 //
 // Precondition: e.mu must be write locked.
-func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.AddressEndpoint, dadFailure bool) tcpip.Error {
+func (e *endpoint) removePermanentEndpointInnerLocked(addressEndpoint stack.AddressEndpoint, dadResult stack.DADResult) tcpip.Error {
 	addr := addressEndpoint.AddressWithPrefix()
-	e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadFailure)
+	e.mu.ndp.stopDuplicateAddressDetection(addr.Address, dadResult)
 
 	if err := e.mu.addressableEndpointState.RemovePermanentEndpoint(addressEndpoint); err != nil {
 		return err

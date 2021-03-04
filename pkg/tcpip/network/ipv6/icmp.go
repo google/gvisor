@@ -564,7 +564,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		targetAddr := na.TargetAddress()
 
 		e.dad.mu.Lock()
-		e.dad.mu.dad.StopLocked(targetAddr, false /* aborted */)
+		e.dad.mu.dad.StopLocked(targetAddr, &stack.DADDupAddrDetected{})
 		e.dad.mu.Unlock()
 
 		if e.hasTentativeAddr(targetAddr) {

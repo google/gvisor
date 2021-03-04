@@ -78,10 +78,10 @@ func (m *mockDADProtocol) checkDuplicateAddress(addr tcpip.Address, h stack.DADC
 	return m.mu.dad.CheckDuplicateAddressLocked(addr, h)
 }
 
-func (m *mockDADProtocol) stop(addr tcpip.Address, aborted bool) {
+func (m *mockDADProtocol) stop(addr tcpip.Address, reason stack.DADResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.dad.StopLocked(addr, aborted)
+	m.mu.dad.StopLocked(addr, reason)
 }
 
 func (m *mockDADProtocol) setConfigs(c stack.DADConfigurations) {
@@ -175,7 +175,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	}
 	clock.Advance(delta)
 	for i := 0; i < 2; i++ {
-		if diff := cmp.Diff(dadResult{Addr: addr1, R: stack.DADResult{Resolved: true, Err: nil}}, <-ch); diff != "" {
+		if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
 			t.Errorf("(i=%d) dad result mismatch (-want +got):\n%s", i, diff)
 		}
 	}
@@ -189,7 +189,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	default:
 	}
 	clock.Advance(delta)
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: stack.DADResult{Resolved: true, Err: nil}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -202,7 +202,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 	clock.Advance(dadConfig2Duration)
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: stack.DADResult{Resolved: true, Err: nil}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -241,19 +241,19 @@ func TestDADStop(t *testing.T) {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 
-	dad.stop(addr1, true /* aborted */)
-	if diff := cmp.Diff(dadResult{Addr: addr1, R: stack.DADResult{Resolved: false, Err: &tcpip.ErrAborted{}}}, <-ch); diff != "" {
+	dad.stop(addr1, &stack.DADAborted{})
+	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADAborted{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
-	dad.stop(addr2, false /* aborted */)
-	if diff := cmp.Diff(dadResult{Addr: addr2, R: stack.DADResult{Resolved: false, Err: nil}}, <-ch); diff != "" {
+	dad.stop(addr2, &stack.DADDupAddrDetected{})
+	if diff := cmp.Diff(dadResult{Addr: addr2, R: &stack.DADDupAddrDetected{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
 	dadResolutionDuration := time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer
 	clock.Advance(dadResolutionDuration)
-	if diff := cmp.Diff(dadResult{Addr: addr3, R: stack.DADResult{Resolved: true, Err: nil}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr3, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 
@@ -266,7 +266,7 @@ func TestDADStop(t *testing.T) {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
 	clock.Advance(dadResolutionDuration)
-	if diff := cmp.Diff(dadResult{Addr: addr1, R: stack.DADResult{Resolved: true, Err: nil}}, <-ch); diff != "" {
+	if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
 		t.Errorf("dad result mismatch (-want +got):\n%s", diff)
 	}
 

@@ -2605,7 +2605,7 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		// means something is wrong.
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, linkLocalAddr, true, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, linkLocalAddr, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
@@ -3289,7 +3289,7 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
 		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, true, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	}
