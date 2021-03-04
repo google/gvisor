@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // ICMPv4 represents an ICMPv4 header stored in a byte array.
@@ -198,8 +197,8 @@ func (b ICMPv4) SetSequence(sequence uint16) {
 
 // ICMPv4Checksum calculates the ICMP checksum over the provided ICMP header,
 // and payload.
-func ICMPv4Checksum(h ICMPv4, vv buffer.VectorisedView) uint16 {
-	xsum := ChecksumVV(vv, 0)
+func ICMPv4Checksum(h ICMPv4, payloadCsum uint16) uint16 {
+	xsum := payloadCsum
 
 	// h[2:4] is the checksum itself, skip it to avoid checksumming the checksum.
 	xsum = Checksum(h[:2], xsum)

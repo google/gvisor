@@ -59,7 +59,7 @@ type PacketBuffer struct {
 	// PacketBuffers.
 	PacketBufferEntry
 
-	// Data holds the payload of the packet.
+	// data holds the payload of the packet.
 	//
 	// For inbound packets, Data is initially the whole packet. Then gets moved to
 	// headers via PacketHeader.Consume, when the packet is being parsed.
@@ -69,7 +69,7 @@ type PacketBuffer struct {
 	//
 	// The bytes backing Data are immutable, a.k.a. users shouldn't write to its
 	// backing storage.
-	Data buffer.VectorisedView
+	data buffer.VectorisedView
 
 	// headers stores metadata about each header.
 	headers [numHeaderType]headerInfo
@@ -127,7 +127,7 @@ type PacketBuffer struct {
 // NewPacketBuffer creates a new PacketBuffer with opts.
 func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	pk := &PacketBuffer{
-		Data: opts.Data,
+		data: opts.Data,
 	}
 	if opts.ReserveHeaderBytes != 0 {
 		pk.header = buffer.NewPrependable(opts.ReserveHeaderBytes)
@@ -184,13 +184,18 @@ func (pk *PacketBuffer) HeaderSize() int {
 
 // Size returns the size of packet in bytes.
 func (pk *PacketBuffer) Size() int {
-	return pk.HeaderSize() + pk.Data.Size()
+	return pk.HeaderSize() + pk.data.Size()
 }
 
 // MemSize returns the estimation size of the pk in memory, including backing
 // buffer data.
 func (pk *PacketBuffer) MemSize() int {
-	return pk.HeaderSize() + pk.Data.MemSize() + packetBufferStructSize
+	return pk.HeaderSize() + pk.data.MemSize() + packetBufferStructSize
+}
+
+// Data returns the handle to data portion of pk.
+func (pk *PacketBuffer) Data() PacketData {
+	return PacketData{pk: pk}
 }
 
 // Views returns the underlying storage of the whole packet.
@@ -204,7 +209,7 @@ func (pk *PacketBuffer) Views() []buffer.View {
 		}
 	}
 
-	dataViews := pk.Data.Views()
+	dataViews := pk.data.Views()
 
 	var vs []buffer.View
 	if useHeader {
@@ -242,11 +247,11 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 	if h.buf != nil {
 		panic(fmt.Sprintf("consume must not be called twice: type %s", typ))
 	}
-	v, ok := pk.Data.PullUp(size)
+	v, ok := pk.data.PullUp(size)
 	if !ok {
 		return
 	}
-	pk.Data.TrimFront(size)
+	pk.data.TrimFront(size)
 	h.buf = v
 	return h.buf, true
 }
@@ -258,7 +263,7 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v buffer.View, consum
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	return &PacketBuffer{
 		PacketBufferEntry:            pk.PacketBufferEntry,
-		Data:                         pk.Data.Clone(nil),
+		data:                         pk.data.Clone(nil),
 		headers:                      pk.headers,
 		header:                       pk.header,
 		Hash:                         pk.Hash,
@@ -339,13 +344,234 @@ func (h PacketHeader) Consume(size int) (v buffer.View, consumed bool) {
 	return h.pk.consume(h.typ, size)
 }
 
+// PacketData represents the data portion of a PacketBuffer.
+type PacketData struct {
+	pk *PacketBuffer
+}
+
+// PullUp returns a contiguous view of size bytes from the beginning of d.
+// Callers should not write to or keep the view for later use.
+func (d PacketData) PullUp(size int) (buffer.View, bool) {
+	return d.pk.data.PullUp(size)
+}
+
+// TrimFront removes count from the beginning of d. It panics if count >
+// d.Size().
+func (d PacketData) TrimFront(count int) {
+	d.pk.data.TrimFront(count)
+}
+
+// CapLength reduces d to at most length bytes.
+func (d PacketData) CapLength(length int) {
+	d.pk.data.CapLength(length)
+}
+
+// Views returns the underlying storage of d in a slice of Views. Caller should
+// not modify the returned slice.
+func (d PacketData) Views() []buffer.View {
+	return d.pk.data.Views()
+}
+
+// AppendView appends v into d, taking the ownership of v.
+func (d PacketData) AppendView(v buffer.View) {
+	d.pk.data.AppendView(v)
+}
+
+// ReadFromData moves at most count bytes from the beginning of srcData to the
+// end of d and returns the number of bytes moved.
+func (d PacketData) ReadFromData(srcData PacketData, count int) int {
+	return srcData.pk.data.ReadToVV(&d.pk.data, count)
+}
+
+// ReadFromVV moves at most count bytes from the beginning of srcVV to the end
+// of d and returns the number of bytes moved.
+func (d PacketData) ReadFromVV(srcVV *buffer.VectorisedView, count int) int {
+	return srcVV.ReadToVV(&d.pk.data, count)
+}
+
+// Size returns the number of bytes in the data payload of the packet.
+func (d PacketData) Size() int {
+	return d.pk.data.Size()
+}
+
+// AsRange returns a Range representing the current data payload of the packet.
+func (d PacketData) AsRange() Range {
+	return Range{
+		pk:     d.pk,
+		offset: d.pk.HeaderSize(),
+		length: d.Size(),
+	}
+}
+
+// ExtractVV returns a VectorisedView of d. This method has the semantic to
+// destruct the underlying packet, hence the packet cannot be used again.
+//
+// This method exists for compatibility between PacketBuffer and VectorisedView.
+// It may be removed later and should be used with care.
+func (d PacketData) ExtractVV() buffer.VectorisedView {
+	return d.pk.data
+}
+
+// Replace replaces the data portion of the packet with vv, taking the ownership
+// of vv.
+//
+// This method exists for compatibility between PacketBuffer and VectorisedView.
+// It may be removed later and should be used with care.
+func (d PacketData) Replace(vv buffer.VectorisedView) {
+	d.pk.data = vv
+}
+
+// Range represents a contiguous subportion of a PacketBuffer.
+type Range struct {
+	pk     *PacketBuffer
+	offset int
+	length int
+}
+
+// Size returns the number of bytes in r.
+func (r Range) Size() int {
+	return r.length
+}
+
+// SubRange returns a new Range starting at off bytes of r. It returns an empty
+// range if off is out-of-bounds.
+func (r Range) SubRange(off int) Range {
+	if off > r.length {
+		return Range{pk: r.pk}
+	}
+	return Range{
+		pk:     r.pk,
+		offset: r.offset + off,
+		length: r.length - off,
+	}
+}
+
+// Capped returns a new Range with the same starting point of r and length
+// capped at max.
+func (r Range) Capped(max int) Range {
+	if r.length <= max {
+		return r
+	}
+	return Range{
+		pk:     r.pk,
+		offset: r.offset,
+		length: max,
+	}
+}
+
+// AsView returns the backing storage of r if possible. It will allocate a new
+// View if r spans multiple pieces internally. Caller should not write to the
+// returned View in any way.
+func (r Range) AsView() buffer.View {
+	var allocated bool
+	var v buffer.View
+	r.iterate(func(b []byte) {
+		if v == nil {
+			// v has not been assigned, allowing first view to be returned.
+			v = b
+		} else {
+			// v has been assigned. This range spans more than a view, a new view
+			// needs to be allocated.
+			if !allocated {
+				allocated = true
+				all := make([]byte, 0, r.length)
+				all = append(all, v...)
+				v = all
+			}
+			v = append(v, b...)
+		}
+	})
+	return v
+}
+
+// ToOwnedView returns a owned copy of data in r.
+func (r Range) ToOwnedView() buffer.View {
+	if r.length == 0 {
+		return nil
+	}
+	all := make([]byte, 0, r.length)
+	r.iterate(func(b []byte) {
+		all = append(all, b...)
+	})
+	return all
+}
+
+// Checksum calculates the RFC 1071 checksum for the underlying bytes of r.
+func (r Range) Checksum() uint16 {
+	var c header.Checksumer
+	r.iterate(c.Add)
+	return c.Checksum()
+}
+
+// iterate calls fn for each piece in r. fn is always called with a non-empty
+// slice.
+func (r Range) iterate(fn func([]byte)) {
+	w := window{
+		offset: r.offset,
+		length: r.length,
+	}
+	// Header portion.
+	for i := range r.pk.headers {
+		if b := w.process(r.pk.headers[i].buf); len(b) > 0 {
+			fn(b)
+		}
+		if w.isDone() {
+			break
+		}
+	}
+	// Data portion.
+	if !w.isDone() {
+		for _, v := range r.pk.data.Views() {
+			if b := w.process(v); len(b) > 0 {
+				fn(b)
+			}
+			if w.isDone() {
+				break
+			}
+		}
+	}
+}
+
+// window represents contiguous region of byte stream. User would call process()
+// to input bytes, and obtain a subslice that is inside the window.
+type window struct {
+	offset int
+	length int
+}
+
+// isDone returns true if the window has passed and further process() calls will
+// always return an empty slice. This can be used to end processing early.
+func (w *window) isDone() bool {
+	return w.length == 0
+}
+
+// process feeds b in and returns a subslice that is inside the window. The
+// returned slice will be a subslice of b, and it does not keep b after method
+// returns. This method may return an empty slice if nothing in b is inside the
+// window.
+func (w *window) process(b []byte) (inWindow []byte) {
+	if w.offset >= len(b) {
+		w.offset -= len(b)
+		return nil
+	}
+	if w.offset > 0 {
+		b = b[w.offset:]
+		w.offset = 0
+	}
+	if w.length < len(b) {
+		b = b[:w.length]
+	}
+	w.length -= len(b)
+	return b
+}
+
 // PayloadSince returns packet payload starting from and including a particular
 // header.
 //
 // The returned View is owned by the caller - its backing buffer is separate
 // from the packet header's underlying packet buffer.
 func PayloadSince(h PacketHeader) buffer.View {
-	size := h.pk.Data.Size()
+	size := h.pk.data.Size()
 	for _, hinfo := range h.pk.headers[h.typ:] {
 		size += len(hinfo.buf)
 	}
@@ -356,7 +582,7 @@ func PayloadSince(h PacketHeader) buffer.View {
 		v = append(v, hinfo.buf...)
 	}
 
-	for _, view := range h.pk.Data.Views() {
+	for _, view := range h.pk.data.Views() {
 		v = append(v, view...)
 	}
 

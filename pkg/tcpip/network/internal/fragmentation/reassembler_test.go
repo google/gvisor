@@ -204,7 +204,7 @@ func TestReassemblerProcess(t *testing.T) {
 				if a == nil || b == nil {
 					return a == b
 				}
-				return bytes.Equal(a.Data.ToOwnedView(), b.Data.ToOwnedView())
+				return bytes.Equal(a.Data().AsRange().ToOwnedView(), b.Data().AsRange().ToOwnedView())
 			}
 
 			if isDone {

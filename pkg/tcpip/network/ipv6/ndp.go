@@ -1721,7 +1721,11 @@ func (ndp *ndpState) startSolicitingRouters() {
 			icmpData.SetType(header.ICMPv6RouterSolicit)
 			rs := header.NDPRouterSolicit(icmpData.MessageBody())
 			rs.Options().Serialize(optsSerializer)
-			icmpData.SetChecksum(header.ICMPv6Checksum(icmpData, localAddr, header.IPv6AllRoutersMulticastAddress, buffer.VectorisedView{}))
+			icmpData.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: icmpData,
+				Src:    localAddr,
+				Dst:    header.IPv6AllRoutersMulticastAddress,
+			}))
 
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(ndp.ep.MaxHeaderLength()),
@@ -1812,7 +1816,11 @@ func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteL
 	ns := header.NDPNeighborSolicit(icmp.MessageBody())
 	ns.SetTargetAddress(targetAddr)
 	ns.Options().Serialize(opts)
-	icmp.SetChecksum(header.ICMPv6Checksum(icmp, srcAddr, dstAddr, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmp,
+		Src:    srcAddr,
+		Dst:    dstAddr,
+	}))
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(e.MaxHeaderLength()),

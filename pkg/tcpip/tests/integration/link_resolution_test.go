@@ -675,9 +675,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 					Length:  length,
 				})
 				xsum := r.PseudoHeaderChecksum(udp.ProtocolNumber, length)
-				for _, v := range pkt.Data.Views() {
-					xsum = header.Checksum(v, xsum)
-				}
+				xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
 				udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
 
 				pkts.PushBack(pkt)

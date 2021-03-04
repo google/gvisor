@@ -752,7 +752,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.RequiresTXTransportChecksum() {
-		xsum = header.ChecksumVV(pkt.Data, xsum)
+		xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 }
@@ -786,7 +786,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso 
 		})
 		pkt.Hash = tf.txHash
 		pkt.Owner = owner
-		data.ReadToVV(&pkt.Data, packetSize)
+		pkt.Data().ReadFromVV(&data, packetSize)
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
 		pkts.PushBack(pkt)

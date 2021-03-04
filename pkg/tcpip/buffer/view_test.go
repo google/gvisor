@@ -45,6 +45,11 @@ func vv(size int, pieces ...string) buffer.VectorisedView {
 	return buffer.NewVectorisedView(size, views)
 }
 
+// v returns a buffer.View containing piece.
+func v(piece string) buffer.View {
+	return buffer.View(piece)
+}
+
 var capLengthTestCases = []struct {
 	comment string
 	in      buffer.VectorisedView
@@ -121,6 +126,12 @@ var trimFrontTestCases = []struct {
 	{
 		comment: "Case spanning across two Views",
 		in:      vv(3, "1", "23"),
+		count:   2,
+		want:    vv(1, "3"),
+	},
+	{
+		comment: "Case with one empty Views",
+		in:      vv(3, "1", "", "23"),
 		count:   2,
 		want:    vv(1, "3"),
 	},
@@ -566,14 +577,39 @@ func TestAppendView(t *testing.T) {
 		in   buffer.View
 		want buffer.VectorisedView
 	}{
-		{buffer.VectorisedView{}, nil, buffer.VectorisedView{}},
-		{buffer.VectorisedView{}, buffer.View{}, buffer.VectorisedView{}},
-		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), nil, buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}})},
-		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), buffer.View{}, buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}})},
-		{buffer.NewVectorisedView(4, []buffer.View{{'a', 'b', 'c', 'd'}}), buffer.View{'e'}, buffer.NewVectorisedView(5, []buffer.View{{'a', 'b', 'c', 'd'}, {'e'}})},
+		{vv(0), nil, vv(0)},
+		{vv(0), v(""), vv(0)},
+		{vv(4, "abcd"), nil, vv(4, "abcd")},
+		{vv(4, "abcd"), v(""), vv(4, "abcd")},
+		{vv(4, "abcd"), v("e"), vv(5, "abcd", "e")},
 	}
 	for _, tc := range testCases {
 		tc.vv.AppendView(tc.in)
+		if got, want := tc.vv, tc.want; !reflect.DeepEqual(got, want) {
+			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
+		}
+	}
+}
+
+func TestAppendViews(t *testing.T) {
+	testCases := []struct {
+		vv   buffer.VectorisedView
+		in   []buffer.View
+		want buffer.VectorisedView
+	}{
+		{vv(0), nil, vv(0)},
+		{vv(0), []buffer.View{}, vv(0)},
+		{vv(0), []buffer.View{v("")}, vv(0, "")},
+		{vv(4, "abcd"), nil, vv(4, "abcd")},
+		{vv(4, "abcd"), []buffer.View{}, vv(4, "abcd")},
+		{vv(4, "abcd"), []buffer.View{v("")}, vv(4, "abcd", "")},
+		{vv(4, "abcd"), []buffer.View{v("")}, vv(4, "abcd", "")},
+		{vv(4, "abcd"), []buffer.View{v("e")}, vv(5, "abcd", "e")},
+		{vv(4, "abcd"), []buffer.View{v("e"), v("fg")}, vv(7, "abcd", "e", "fg")},
+		{vv(4, "abcd"), []buffer.View{v(""), v("fg")}, vv(6, "abcd", "", "fg")},
+	}
+	for _, tc := range testCases {
+		tc.vv.AppendViews(tc.in)
 		if got, want := tc.vv, tc.want; !reflect.DeepEqual(got, want) {
 			t.Errorf("(%v).ToVectorisedView failed got: %+v, want: %+v", tc.in, got, want)
 		}

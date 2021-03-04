@@ -619,7 +619,7 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 }
 
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
-	payload := pkt.TransportHeader().View().Size() + pkt.Data.Size()
+	payload := pkt.TransportHeader().View().Size() + pkt.Data().Size()
 	return (gso == nil || gso.Type == stack.GSONone) && uint32(payload) > networkMTU
 }
 
@@ -819,14 +819,14 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.Packe
 // WriteHeaderIncludedPacket implements stack.NetworkEndpoint.
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
 	// The packet already has an IP header, but there are a few required checks.
-	h, ok := pkt.Data.PullUp(header.IPv6MinimumSize)
+	h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return &tcpip.ErrMalformedHeader{}
 	}
 	ip := header.IPv6(h)
 
 	// Always set the payload length.
-	pktSize := pkt.Data.Size()
+	pktSize := pkt.Data().Size()
 	ip.SetPayloadLength(uint16(pktSize - header.IPv6MinimumSize))
 
 	// Set the source address when zero.
@@ -964,7 +964,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 	stats := e.stats.ip
 
 	h := header.IPv6(pkt.NetworkHeader().View())
-	if !h.IsValid(pkt.Data.Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
+	if !h.IsValid(pkt.Data().Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
@@ -993,13 +993,14 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
+	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// vv consists of:
 	// - Any IPv6 header bytes after the first 40 (i.e. extensions).
 	// - The transport header, if present.
 	// - Any other payload data.
 	vv := pkt.NetworkHeader().View()[header.IPv6MinimumSize:].ToVectorisedView()
 	vv.AppendView(pkt.TransportHeader().View())
-	vv.Append(pkt.Data)
+	vv.AppendViews(pkt.Data().Views())
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), vv)
 
 	// iptables filtering. All packets that reach here are intended for
@@ -1257,7 +1258,9 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 				// have more extension headers in the reassembled payload, as per RFC
 				// 8200 section 4.5. We also use the NextHeader value from the first
 				// fragment.
-				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), pkt.Data)
+				data := pkt.Data()
+				dataVV := buffer.NewVectorisedView(data.Size(), data.Views())
+				it = header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(proto), dataVV)
 			}
 
 		case header.IPv6DestinationOptionsExtHdr:
@@ -1314,7 +1317,7 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
 			// no-op and pkt.Data begins with the transport header.
 			extHdr.Buf.TrimFront(pkt.TransportHeader().View().Size())
-			pkt.Data = extHdr.Buf
+			pkt.Data().Replace(extHdr.Buf)
 
 			stats.PacketsDelivered.Increment()
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {

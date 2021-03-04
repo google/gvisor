@@ -90,8 +90,7 @@ type testObject struct {
 // checkValues verifies that the transport protocol, data contents, src & dst
 // addresses of a packet match what's expected. If any field doesn't match, the
 // test fails.
-func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView, srcAddr, dstAddr tcpip.Address) {
-	v := vv.ToView()
+func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, v buffer.View, srcAddr, dstAddr tcpip.Address) {
 	if protocol != t.protocol {
 		t.t.Errorf("protocol = %v, want %v", protocol, t.protocol)
 	}
@@ -120,7 +119,7 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 // parsing are expected.
 func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *stack.PacketBuffer) stack.TransportPacketDisposition {
 	netHdr := pkt.Network()
-	t.checkValues(protocol, pkt.Data, netHdr.SourceAddress(), netHdr.DestinationAddress())
+	t.checkValues(protocol, pkt.Data().AsRange().ToOwnedView(), netHdr.SourceAddress(), netHdr.DestinationAddress())
 	t.dataCalls++
 	return stack.TransportPacketHandled
 }
@@ -129,7 +128,7 @@ func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumb
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
 func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr stack.TransportError, pkt *stack.PacketBuffer) {
-	t.checkValues(trans, pkt.Data, remote, local)
+	t.checkValues(trans, pkt.Data().AsRange().ToOwnedView(), remote, local)
 	if diff := cmp.Diff(
 		t.transErr,
 		transportError{
@@ -198,7 +197,7 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.Ne
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 	}
-	t.checkValues(prot, pkt.Data, srcAddr, dstAddr)
+	t.checkValues(prot, pkt.Data().AsRange().ToOwnedView(), srcAddr, dstAddr)
 	return nil
 }
 
@@ -371,7 +370,11 @@ func TestSourceAddressValidation(t *testing.T) {
 		pkt.SetType(header.ICMPv6EchoRequest)
 		pkt.SetCode(0)
 		pkt.SetChecksum(0)
-		pkt.SetChecksum(header.ICMPv6Checksum(pkt, src, localIPv6Addr, buffer.VectorisedView{}))
+		pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+			Header: pkt,
+			Src:    src,
+			Dst:    localIPv6Addr,
+		}))
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     header.ICMPv6MinimumSize,
@@ -1199,7 +1202,11 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			nic.testObject.transErr = c.transErr
 
 			// Set ICMPv6 checksum.
-			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIPv6Addr, buffer.VectorisedView{}))
+			icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: icmp,
+				Src:    outerSrcAddr,
+				Dst:    localIPv6Addr,
+			}))
 
 			addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
 			if !ok {

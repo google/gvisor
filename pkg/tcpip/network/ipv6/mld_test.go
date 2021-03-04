@@ -326,11 +326,15 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, ho
 	mld := header.MLD(icmp.MessageBody())
 	mld.SetMaximumResponseDelay(0)
 	mld.SetMulticastAddress(header.IPv6Any)
-	icmp.SetChecksum(header.ICMPv6Checksum(icmp, srcAddress, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmp,
+		Src:    srcAddress,
+		Dst:    header.IPv6AllNodesMulticastAddress,
+	}))
 
-	e.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+	e.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 }
 
 func TestMLDPacketValidation(t *testing.T) {

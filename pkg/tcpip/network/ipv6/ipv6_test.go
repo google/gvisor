@@ -68,7 +68,11 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + header.ICMPv6NeighborAdvertMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertMinimumSize))
 	pkt.SetType(header.ICMPv6NeighborAdvert)
-	pkt.SetChecksum(header.ICMPv6Checksum(pkt, src, dst, buffer.VectorisedView{}))
+	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: pkt,
+		Src:    src,
+		Dst:    dst,
+	}))
 	payloadLength := hdr.UsedLength()
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
@@ -216,7 +220,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		// Store the reassembled payload as we parse each fragment. The payload
 		// includes the Transport header and everything after.
 		reassembledPayload.AppendView(fragment.TransportHeader().View())
-		reassembledPayload.Append(fragment.Data)
+		reassembledPayload.AppendView(fragment.Data().AsRange().ToOwnedView())
 	}
 
 	if diff := cmp.Diff(buffer.View(source[sourceIPHeadersLen:]), reassembledPayload.ToView()); diff != "" {
@@ -3065,7 +3069,11 @@ func TestForwarding(t *testing.T) {
 			icmp.SetType(header.ICMPv6EchoRequest)
 			icmp.SetCode(header.ICMPv6UnusedCode)
 			icmp.SetChecksum(0)
-			icmp.SetChecksum(header.ICMPv6Checksum(icmp, remoteIPv6Addr1, remoteIPv6Addr2, buffer.VectorisedView{}))
+			icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: icmp,
+				Src:    remoteIPv6Addr1,
+				Dst:    remoteIPv6Addr2,
+			}))
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength:     header.ICMPv6MinimumSize,

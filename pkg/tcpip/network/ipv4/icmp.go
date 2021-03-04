@@ -137,7 +137,7 @@ func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
 // is used to find out which transport endpoint must be notified about the ICMP
 // packet. We only expect the payload, not the enclosing ICMP packet.
 func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.PacketBuffer) {
-	h, ok := pkt.Data.PullUp(header.IPv4MinimumSize)
+	h, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 	if !ok {
 		return
 	}
@@ -156,7 +156,7 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 	}
 
 	hlen := int(hdr.HeaderLength())
-	if pkt.Data.Size() < hlen || hdr.FragmentOffset() != 0 {
+	if pkt.Data().Size() < hlen || hdr.FragmentOffset() != 0 {
 		// We won't be able to handle this if it doesn't contain the
 		// full IPv4 header, or if it's a fragment not at offset 0
 		// (because it won't have the transport header).
@@ -164,7 +164,7 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 	}
 
 	// Skip the ip header, then deliver the error.
-	pkt.Data.TrimFront(hlen)
+	pkt.Data().TrimFront(hlen)
 	p := hdr.TransportProtocol()
 	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, errInfo, pkt)
 }
@@ -174,7 +174,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
 	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
 	// full explanation.
-	v, ok := pkt.Data.PullUp(header.ICMPv4MinimumSize)
+	v, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
 	if !ok {
 		received.invalid.Increment()
 		return
@@ -182,7 +182,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	h := header.ICMPv4(v)
 
 	// Only do in-stack processing if the checksum is correct.
-	if header.ChecksumVV(pkt.Data, 0 /* initial */) != 0xffff {
+	if pkt.Data().AsRange().Checksum() != 0xffff {
 		received.invalid.Increment()
 		// It's possible that a raw socket expects to receive this regardless
 		// of checksum errors. If it's an echo request we know it's safe because
@@ -253,7 +253,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// TODO(gvisor.dev/issue/4399): The copy may not be needed if there are no
 		// waiting endpoints. Consider moving responsibility for doing the copy to
 		// DeliverTransportPacket so that is is only done when needed.
-		replyData := pkt.Data.ToOwnedView()
+		replyData := pkt.Data().AsRange().ToOwnedView()
 		ipHdr := header.IPv4(pkt.NetworkHeader().View())
 		localAddressBroadcast := pkt.NetworkPacketInfo.LocalAddressBroadcast
 
@@ -336,7 +336,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	case header.ICMPv4DstUnreachable:
 		received.dstUnreachable.Increment()
 
-		pkt.Data.TrimFront(header.ICMPv4MinimumSize)
+		pkt.Data().TrimFront(header.ICMPv4MinimumSize)
 		switch h.Code() {
 		case header.ICMPv4HostUnreachable:
 			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
@@ -571,7 +571,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		return nil
 	}
 
-	payloadLen := len(origIPHdr) + transportHeader.Size() + pkt.Data.Size()
+	payloadLen := len(origIPHdr) + transportHeader.Size() + pkt.Data().Size()
 	if payloadLen > available {
 		payloadLen = available
 	}
@@ -586,8 +586,11 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	newHeader := append(buffer.View(nil), origIPHdr...)
 	newHeader = append(newHeader, transportHeader...)
 	payload := newHeader.ToVectorisedView()
-	payload.AppendView(pkt.Data.ToView())
-	payload.CapLength(payloadLen)
+	if dataCap := payloadLen - payload.Size(); dataCap > 0 {
+		payload.AppendView(pkt.Data().AsRange().Capped(dataCap).ToOwnedView())
+	} else {
+		payload.CapLength(payloadLen)
+	}
 
 	icmpPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv4MinimumSize,
@@ -623,7 +626,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	default:
 		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 	}
-	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data))
+	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data().AsRange().Checksum()))
 
 	if err := route.WritePacket(
 		nil, /* gso */

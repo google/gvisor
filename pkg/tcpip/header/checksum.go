@@ -186,42 +186,29 @@ func Checksum(buf []byte, initial uint16) uint16 {
 //
 // The initial checksum must have been computed on an even number of bytes.
 func ChecksumVV(vv buffer.VectorisedView, initial uint16) uint16 {
-	return ChecksumVVWithOffset(vv, initial, 0, vv.Size())
+	var c Checksumer
+	for _, v := range vv.Views() {
+		c.Add([]byte(v))
+	}
+	return ChecksumCombine(initial, c.Checksum())
 }
 
-// ChecksumVVWithOffset calculates the checksum (as defined in RFC 1071) of the
-// bytes in the given VectorizedView.
-//
-// The initial checksum must have been computed on an even number of bytes.
-func ChecksumVVWithOffset(vv buffer.VectorisedView, initial uint16, off int, size int) uint16 {
-	odd := false
-	sum := initial
-	for _, v := range vv.Views() {
-		if len(v) == 0 {
-			continue
-		}
+// Checksumer calculates checksum defined in RFC 1071.
+type Checksumer struct {
+	sum uint16
+	odd bool
+}
 
-		if off >= len(v) {
-			off -= len(v)
-			continue
-		}
-		v = v[off:]
-
-		l := len(v)
-		if l > size {
-			l = size
-		}
-		v = v[:l]
-
-		sum, odd = unrolledCalculateChecksum(v, odd, uint32(sum))
-
-		size -= len(v)
-		if size == 0 {
-			break
-		}
-		off = 0
+// Add adds b to checksum.
+func (c *Checksumer) Add(b []byte) {
+	if len(b) > 0 {
+		c.sum, c.odd = unrolledCalculateChecksum(b, c.odd, uint32(c.sum))
 	}
-	return sum
+}
+
+// Checksum returns the latest checksum value.
+func (c *Checksumer) Checksum() uint16 {
+	return c.sum
 }
 
 // ChecksumCombine combines the two uint16 to form their checksum. This is done

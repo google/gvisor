@@ -407,12 +407,12 @@ func handlePacketOutput(pkt *PacketBuffer, conn *conn, gso *GSO, r *Route, dir d
 
 	// Calculate the TCP checksum and set it.
 	tcpHeader.SetChecksum(0)
-	length := uint16(len(tcpHeader) + pkt.Data.Size())
+	length := uint16(len(tcpHeader) + pkt.Data().Size())
 	xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
 	if gso != nil && gso.NeedsCsum {
 		tcpHeader.SetChecksum(xsum)
 	} else if r.RequiresTXTransportChecksum() {
-		xsum = header.ChecksumVV(pkt.Data, xsum)
+		xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
 		tcpHeader.SetChecksum(^tcpHeader.CalculateChecksum(xsum))
 	}
 

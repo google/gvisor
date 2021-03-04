@@ -573,7 +573,11 @@ func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
 	ns := header.NDPNeighborSolicit(pkt.MessageBody())
 	ns.SetTargetAddress(tgt)
 	snmc := header.SolicitedNodeAddr(tgt)
-	pkt.SetChecksum(header.ICMPv6Checksum(pkt, header.IPv6Any, snmc, buffer.VectorisedView{}))
+	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: pkt,
+		Src:    header.IPv6Any,
+		Dst:    snmc,
+	}))
 	payloadLength := hdr.UsedLength()
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
@@ -619,7 +623,11 @@ func TestDADFail(t *testing.T) {
 				na.Options().Serialize(header.NDPOptionsSerializer{
 					header.NDPTargetLinkLayerAddressOption(linkAddr1),
 				})
-				pkt.SetChecksum(header.ICMPv6Checksum(pkt, tgt, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header: pkt,
+					Src:    tgt,
+					Dst:    header.IPv6AllNodesMulticastAddress,
+				}))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
@@ -973,7 +981,11 @@ func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherCo
 	}
 	opts := ra.Options()
 	opts.Serialize(optSer)
-	pkt.SetChecksum(header.ICMPv6Checksum(pkt, ip, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: pkt,
+		Src:    ip,
+		Dst:    header.IPv6AllNodesMulticastAddress,
+	}))
 	payloadLength := hdr.UsedLength()
 	iph := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	iph.Encode(&header.IPv6Fields{

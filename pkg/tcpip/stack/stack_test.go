@@ -137,11 +137,11 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 	// Handle control packets.
 	if netHdr[protocolNumberOffset] == uint8(fakeControlProtocol) {
-		nb, ok := pkt.Data.PullUp(fakeNetHeaderLen)
+		nb, ok := pkt.Data().PullUp(fakeNetHeaderLen)
 		if !ok {
 			return
 		}
-		pkt.Data.TrimFront(fakeNetHeaderLen)
+		pkt.Data().TrimFront(fakeNetHeaderLen)
 		f.dispatcher.DeliverTransportError(
 			tcpip.Address(nb[srcAddrOffset:srcAddrOffset+1]),
 			tcpip.Address(nb[dstAddrOffset:dstAddrOffset+1]),
@@ -4294,7 +4294,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			if pkt.Route.RemoteLinkAddress != linkAddr2 {
 				t.Fatalf("pkt.Route.RemoteAddress = %s, want %s", pkt.Route.RemoteLinkAddress, linkAddr2)
 			}
-			if diff := cmp.Diff(pkt.Pkt.Data.ToView(), buffer.View(test.payload)); diff != "" {
+			if diff := cmp.Diff(pkt.Pkt.Data().AsRange().ToOwnedView(), buffer.View(test.payload)); diff != "" {
 				t.Errorf("pkt.Pkt.Data mismatch (-want +got):\n%s", diff)
 			}
 		})

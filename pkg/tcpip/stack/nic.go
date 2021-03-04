@@ -725,12 +725,12 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 		n.mu.RUnlock()
 
 		n.stats.DisabledRx.Packets.Increment()
-		n.stats.DisabledRx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
+		n.stats.DisabledRx.Bytes.IncrementBy(uint64(pkt.Data().Size()))
 		return
 	}
 
 	n.stats.Rx.Packets.Increment()
-	n.stats.Rx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
+	n.stats.Rx.Bytes.IncrementBy(uint64(pkt.Data().Size()))
 
 	networkEndpoint, ok := n.networkEndpoints[protocol]
 	if !ok {
@@ -881,7 +881,7 @@ func (n *nic) DeliverTransportError(local, remote tcpip.Address, net tcpip.Netwo
 	// ICMPv4 only guarantees that 8 bytes of the transport protocol will
 	// be present in the payload. We know that the ports are within the
 	// first 8 bytes for all known transport protocols.
-	transHeader, ok := pkt.Data.PullUp(8)
+	transHeader, ok := pkt.Data().PullUp(8)
 	if !ok {
 		return
 	}

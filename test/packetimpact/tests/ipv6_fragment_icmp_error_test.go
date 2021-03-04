@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -45,12 +44,13 @@ func fragmentedICMPEchoRequest(t *testing.T, n *testbench.DUTTestNet, conn *test
 	icmpv6Header.SetCode(header.ICMPv6UnusedCode)
 	icmpv6Header.SetIdent(0)
 	icmpv6Header.SetSequence(0)
-	cksum := header.ICMPv6Checksum(
-		icmpv6Header,
-		tcpip.Address(n.LocalIPv6),
-		tcpip.Address(n.RemoteIPv6),
-		buffer.NewVectorisedView(len(payload), []buffer.View{payload}),
-	)
+	cksum := header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header:      icmpv6Header,
+		Src:         tcpip.Address(n.LocalIPv6),
+		Dst:         tcpip.Address(n.RemoteIPv6),
+		PayloadCsum: header.Checksum(payload, 0 /* initial */),
+		PayloadLen:  len(payload),
+	})
 	icmpv6Header.SetChecksum(cksum)
 	icmpv6Bytes := append([]byte(icmpv6Header), payload...)
 
