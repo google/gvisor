@@ -90,7 +90,7 @@ type testNDPDispatcher struct {
 	addr tcpip.Address
 }
 
-func (*testNDPDispatcher) OnDuplicateAddressDetectionStatus(tcpip.NICID, tcpip.Address, bool, tcpip.Error) {
+func (*testNDPDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult) {
 }
 
 func (t *testNDPDispatcher) OnDefaultRouterDiscovered(_ tcpip.NICID, addr tcpip.Address) bool {
@@ -1314,10 +1314,10 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, ProtocolNumber, lladdr0, res, stack.DADAlreadyRunning)
 	}
 
-	// Wait for DAD to resolve.
+	// Wait for DAD to complete.
 	clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer)
 	for i := 0; i < dadRequestsMade; i++ {
-		if diff := cmp.Diff(stack.DADResult{Resolved: true}, <-ch); diff != "" {
+		if diff := cmp.Diff(&stack.DADSucceeded{}, <-ch); diff != "" {
 			t.Errorf("(i=%d) DAD result mismatch (-want +got):\n%s", i, diff)
 		}
 	}

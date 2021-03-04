@@ -126,9 +126,12 @@ func (d *DAD) CheckDuplicateAddressLocked(addr tcpip.Address, h stack.DADComplet
 				s.timer.Stop()
 				delete(d.addresses, addr)
 
-				r := stack.DADResult{Resolved: dadDone, Err: err}
+				var res stack.DADResult = &stack.DADSucceeded{}
+				if err != nil {
+					res = &stack.DADError{Err: err}
+				}
 				for _, h := range s.completionHandlers {
-					h(r)
+					h(res)
 				}
 			}),
 		}
@@ -142,7 +145,7 @@ func (d *DAD) CheckDuplicateAddressLocked(addr tcpip.Address, h stack.DADComplet
 // StopLocked stops a currently running DAD process.
 //
 // Precondition: d.protocolMU must be locked.
-func (d *DAD) StopLocked(addr tcpip.Address, aborted bool) {
+func (d *DAD) StopLocked(addr tcpip.Address, reason stack.DADResult) {
 	s, ok := d.addresses[addr]
 	if !ok {
 		return
@@ -152,14 +155,8 @@ func (d *DAD) StopLocked(addr tcpip.Address, aborted bool) {
 	s.timer.Stop()
 	delete(d.addresses, addr)
 
-	var err tcpip.Error
-	if aborted {
-		err = &tcpip.ErrAborted{}
-	}
-
-	r := stack.DADResult{Resolved: false, Err: err}
 	for _, h := range s.completionHandlers {
-		h(r)
+		h(reason)
 	}
 }
 

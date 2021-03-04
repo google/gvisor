@@ -99,12 +99,11 @@ func prefixSubnetAddr(offset uint8, linkAddr tcpip.LinkAddress) (tcpip.AddressWi
 }
 
 // ndpDADEvent is a set of parameters that was passed to
-// ndpDispatcher.OnDuplicateAddressDetectionStatus.
+// ndpDispatcher.OnDuplicateAddressDetectionResult.
 type ndpDADEvent struct {
-	nicID    tcpip.NICID
-	addr     tcpip.Address
-	resolved bool
-	err      tcpip.Error
+	nicID tcpip.NICID
+	addr  tcpip.Address
+	res   stack.DADResult
 }
 
 type ndpRouterEvent struct {
@@ -173,14 +172,13 @@ type ndpDispatcher struct {
 	dhcpv6ConfigurationC chan ndpDHCPv6Event
 }
 
-// Implements ipv6.NDPDispatcher.OnDuplicateAddressDetectionStatus.
-func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err tcpip.Error) {
+// Implements ipv6.NDPDispatcher.OnDuplicateAddressDetectionResult.
+func (n *ndpDispatcher) OnDuplicateAddressDetectionResult(nicID tcpip.NICID, addr tcpip.Address, res stack.DADResult) {
 	if n.dadC != nil {
 		n.dadC <- ndpDADEvent{
 			nicID,
 			addr,
-			resolved,
-			err,
+			res,
 		}
 	}
 }
@@ -311,8 +309,8 @@ func (l *channelLinkWithHeaderLength) MaxHeaderLength() uint16 {
 
 // Check e to make sure that the event is for addr on nic with ID 1, and the
 // resolved flag set to resolved with the specified err.
-func checkDADEvent(e ndpDADEvent, nicID tcpip.NICID, addr tcpip.Address, resolved bool, err tcpip.Error) string {
-	return cmp.Diff(ndpDADEvent{nicID: nicID, addr: addr, resolved: resolved, err: err}, e, cmp.AllowUnexported(e))
+func checkDADEvent(e ndpDADEvent, nicID tcpip.NICID, addr tcpip.Address, res stack.DADResult) string {
+	return cmp.Diff(ndpDADEvent{nicID: nicID, addr: addr, res: res}, e, cmp.AllowUnexported(e))
 }
 
 // TestDADDisabled tests that an address successfully resolves immediately
@@ -344,7 +342,7 @@ func TestDADDisabled(t *testing.T) {
 	// DAD on it.
 	select {
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, addr1, true, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, addr1, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	default:
@@ -491,7 +489,7 @@ func TestDADResolve(t *testing.T) {
 			case <-time.After(defaultAsyncPositiveEventTimeout):
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr1, true, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr1, &stack.DADSucceeded{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -691,7 +689,7 @@ func TestDADFail(t *testing.T) {
 				// something is wrong.
 				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr1, false, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr1, &stack.DADDupAddrDetected{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -790,7 +788,7 @@ func TestDADStop(t *testing.T) {
 				// time + extra 1s buffer, something is wrong.
 				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr1, false, &tcpip.ErrAborted{}); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr1, &stack.DADAborted{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -852,7 +850,7 @@ func TestSetNDPConfigurations(t *testing.T) {
 			expectDADEvent := func(nicID tcpip.NICID, addr tcpip.Address) {
 				select {
 				case e := <-ndpDisp.dadC:
-					if diff := checkDADEvent(e, nicID, addr, true, nil); diff != "" {
+					if diff := checkDADEvent(e, nicID, addr, &stack.DADSucceeded{}); diff != "" {
 						t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 					}
 				default:
@@ -944,7 +942,7 @@ func TestSetNDPConfigurations(t *testing.T) {
 				// means something is wrong.
 				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID1, addr1, true, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID1, addr1, &stack.DADSucceeded{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -1963,7 +1961,7 @@ func TestAutoGenTempAddr(t *testing.T) {
 
 					select {
 					case e := <-ndpDisp.dadC:
-						if diff := checkDADEvent(e, nicID, addr, true, nil); diff != "" {
+						if diff := checkDADEvent(e, nicID, addr, &stack.DADSucceeded{}); diff != "" {
 							t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 						}
 					case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncPositiveEventTimeout):
@@ -2169,7 +2167,7 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 				}
 				select {
 				case e := <-ndpDisp.dadC:
-					if diff := checkDADEvent(e, nicID, llAddr1, true, nil); diff != "" {
+					if diff := checkDADEvent(e, nicID, llAddr1, &stack.DADSucceeded{}); diff != "" {
 						t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 					}
 				case <-time.After(time.Duration(test.dupAddrTransmits)*test.retransmitTimer + defaultAsyncPositiveEventTimeout):
@@ -2257,7 +2255,7 @@ func TestNoAutoGenTempAddrWithoutStableAddr(t *testing.T) {
 	// address to be generated.
 	select {
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, addr.Address, true, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
@@ -2723,7 +2721,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 				t.Helper()
 
 				clock.Advance(dupAddrTransmits * retransmitTimer)
-				if diff := checkDADEvent(<-ndpDisp.dadC, nicID, addr, true, nil); diff != "" {
+				if diff := checkDADEvent(<-ndpDisp.dadC, nicID, addr, &stack.DADSucceeded{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			}
@@ -2754,7 +2752,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 			rxNDPSolicit(e, addr.Address)
 			select {
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr.Address, false, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADDupAddrDetected{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			default:
@@ -3853,12 +3851,12 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		}
 	}
 
-	expectDADEvent := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, resolved bool, err tcpip.Error) {
+	expectDADEvent := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, res stack.DADResult) {
 		t.Helper()
 
 		select {
 		case e := <-ndpDisp.dadC:
-			if diff := checkDADEvent(e, nicID, addr, resolved, err); diff != "" {
+			if diff := checkDADEvent(e, nicID, addr, res); diff != "" {
 				t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 			}
 		default:
@@ -3866,12 +3864,12 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 		}
 	}
 
-	expectDADEventAsync := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, resolved bool) {
+	expectDADEventAsync := func(t *testing.T, ndpDisp *ndpDispatcher, addr tcpip.Address, res stack.DADResult) {
 		t.Helper()
 
 		select {
 		case e := <-ndpDisp.dadC:
-			if diff := checkDADEvent(e, nicID, addr, resolved, nil); diff != "" {
+			if diff := checkDADEvent(e, nicID, addr, res); diff != "" {
 				t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 			}
 		case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
@@ -3929,7 +3927,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 				// generated.
 				e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, 100, 100))
 				expectAutoGenAddrEvent(t, ndpDisp, stableAddrForTempAddrTest, newAddr)
-				expectDADEventAsync(t, ndpDisp, stableAddrForTempAddrTest.Address, true)
+				expectDADEventAsync(t, ndpDisp, stableAddrForTempAddrTest.Address, &stack.DADSucceeded{})
 
 				// The stable address will be assigned throughout the test.
 				return []tcpip.AddressWithPrefix{stableAddrForTempAddrTest}
@@ -4004,7 +4002,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 							// Simulate a DAD conflict.
 							rxNDPSolicit(e, addr.Address)
 							expectAutoGenAddrEvent(t, &ndpDisp, addr, invalidatedAddr)
-							expectDADEvent(t, &ndpDisp, addr.Address, false, nil)
+							expectDADEvent(t, &ndpDisp, addr.Address, &stack.DADDupAddrDetected{})
 
 							// Attempting to add the address manually should not fail if the
 							// address's state was cleaned up when DAD failed.
@@ -4014,7 +4012,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 							if err := s.RemoveAddress(nicID, addr.Address); err != nil {
 								t.Fatalf("RemoveAddress(%d, %s) = %s", nicID, addr.Address, err)
 							}
-							expectDADEvent(t, &ndpDisp, addr.Address, false, &tcpip.ErrAborted{})
+							expectDADEvent(t, &ndpDisp, addr.Address, &stack.DADAborted{})
 						}
 
 						// Should not have any new addresses assigned to the NIC.
@@ -4027,7 +4025,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 						if maxRetries+1 > numFailures {
 							addr := addrType.addrGenFn(numFailures, tempIIDHistory[:])
 							expectAutoGenAddrEventAsync(t, &ndpDisp, addr, newAddr)
-							expectDADEventAsync(t, &ndpDisp, addr.Address, true)
+							expectDADEventAsync(t, &ndpDisp, addr.Address, &stack.DADSucceeded{})
 							if mismatch := addressCheck(s.NICInfo()[nicID].ProtocolAddresses, append(stableAddrs, addr), nil); mismatch != "" {
 								t.Fatal(mismatch)
 							}
@@ -4144,7 +4142,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			expectAutoGenAddrEvent(addr, invalidatedAddr)
 			select {
 			case e := <-ndpDisp.dadC:
-				if diff := checkDADEvent(e, nicID, addr.Address, false, nil); diff != "" {
+				if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADDupAddrDetected{}); diff != "" {
 					t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 				}
 			default:
@@ -4243,7 +4241,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	expectAutoGenAddrEvent(addr, invalidatedAddr)
 	select {
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, addr.Address, false, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADDupAddrDetected{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	default:
@@ -4255,7 +4253,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	expectAutoGenAddrEvent(addr, newAddr)
 	select {
 	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, addr.Address, true, nil); diff != "" {
+		if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
 	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):

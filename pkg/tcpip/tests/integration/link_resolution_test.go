@@ -1167,53 +1167,53 @@ func TestDAD(t *testing.T) {
 	}
 
 	tests := []struct {
-		name             string
-		netProto         tcpip.NetworkProtocolNumber
-		dadNetProto      tcpip.NetworkProtocolNumber
-		remoteAddr       tcpip.Address
-		expectedResolved bool
+		name           string
+		netProto       tcpip.NetworkProtocolNumber
+		dadNetProto    tcpip.NetworkProtocolNumber
+		remoteAddr     tcpip.Address
+		expectedResult stack.DADResult
 	}{
 		{
-			name:             "IPv4 own address",
-			netProto:         ipv4.ProtocolNumber,
-			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       utils.Ipv4Addr1.AddressWithPrefix.Address,
-			expectedResolved: true,
+			name:           "IPv4 own address",
+			netProto:       ipv4.ProtocolNumber,
+			dadNetProto:    arp.ProtocolNumber,
+			remoteAddr:     utils.Ipv4Addr1.AddressWithPrefix.Address,
+			expectedResult: &stack.DADSucceeded{},
 		},
 		{
-			name:             "IPv6 own address",
-			netProto:         ipv6.ProtocolNumber,
-			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       utils.Ipv6Addr1.AddressWithPrefix.Address,
-			expectedResolved: true,
+			name:           "IPv6 own address",
+			netProto:       ipv6.ProtocolNumber,
+			dadNetProto:    ipv6.ProtocolNumber,
+			remoteAddr:     utils.Ipv6Addr1.AddressWithPrefix.Address,
+			expectedResult: &stack.DADSucceeded{},
 		},
 		{
-			name:             "IPv4 duplicate address",
-			netProto:         ipv4.ProtocolNumber,
-			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
-			expectedResolved: false,
+			name:           "IPv4 duplicate address",
+			netProto:       ipv4.ProtocolNumber,
+			dadNetProto:    arp.ProtocolNumber,
+			remoteAddr:     utils.Ipv4Addr2.AddressWithPrefix.Address,
+			expectedResult: &stack.DADDupAddrDetected{},
 		},
 		{
-			name:             "IPv6 duplicate address",
-			netProto:         ipv6.ProtocolNumber,
-			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
-			expectedResolved: false,
+			name:           "IPv6 duplicate address",
+			netProto:       ipv6.ProtocolNumber,
+			dadNetProto:    ipv6.ProtocolNumber,
+			remoteAddr:     utils.Ipv6Addr2.AddressWithPrefix.Address,
+			expectedResult: &stack.DADDupAddrDetected{},
 		},
 		{
-			name:             "IPv4 no duplicate address",
-			netProto:         ipv4.ProtocolNumber,
-			dadNetProto:      arp.ProtocolNumber,
-			remoteAddr:       utils.Ipv4Addr3.AddressWithPrefix.Address,
-			expectedResolved: true,
+			name:           "IPv4 no duplicate address",
+			netProto:       ipv4.ProtocolNumber,
+			dadNetProto:    arp.ProtocolNumber,
+			remoteAddr:     utils.Ipv4Addr3.AddressWithPrefix.Address,
+			expectedResult: &stack.DADSucceeded{},
 		},
 		{
-			name:             "IPv6 no duplicate address",
-			netProto:         ipv6.ProtocolNumber,
-			dadNetProto:      ipv6.ProtocolNumber,
-			remoteAddr:       utils.Ipv6Addr3.AddressWithPrefix.Address,
-			expectedResolved: true,
+			name:           "IPv6 no duplicate address",
+			netProto:       ipv6.ProtocolNumber,
+			dadNetProto:    ipv6.ProtocolNumber,
+			remoteAddr:     utils.Ipv6Addr3.AddressWithPrefix.Address,
+			expectedResult: &stack.DADSucceeded{},
 		},
 	}
 
@@ -1260,7 +1260,7 @@ func TestDAD(t *testing.T) {
 			}
 
 			expectResults := 1
-			if test.expectedResolved {
+			if _, ok := test.expectedResult.(*stack.DADSucceeded); ok {
 				const delta = time.Nanosecond
 				clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer - delta)
 				select {
@@ -1285,7 +1285,7 @@ func TestDAD(t *testing.T) {
 			}
 
 			for i := 0; i < expectResults; i++ {
-				if diff := cmp.Diff(stack.DADResult{Resolved: test.expectedResolved}, <-ch); diff != "" {
+				if diff := cmp.Diff(test.expectedResult, <-ch); diff != "" {
 					t.Errorf("(i=%d) DAD result mismatch (-want +got):\n%s", i, diff)
 				}
 			}
