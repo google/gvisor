@@ -153,7 +153,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, gs
 			if r.RequiresTXTransportChecksum() {
 				length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
 				xsum := header.PseudoHeaderChecksum(protocol, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
-				xsum = header.ChecksumVV(pkt.Data, xsum)
+				xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
 				udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
 			}
 		}

@@ -80,7 +80,7 @@ func (q *queueBuffers) cleanup() {
 type packetInfo struct {
 	addr       tcpip.LinkAddress
 	proto      tcpip.NetworkProtocolNumber
-	vv         buffer.VectorisedView
+	data       buffer.View
 	linkHeader buffer.View
 }
 
@@ -136,7 +136,7 @@ func (c *testContext) DeliverNetworkPacket(remoteLinkAddr, localLinkAddr tcpip.L
 	c.packets = append(c.packets, packetInfo{
 		addr:  remoteLinkAddr,
 		proto: proto,
-		vv:    pkt.Data.Clone(nil),
+		data:  pkt.Data().AsRange().ToOwnedView(),
 	})
 	c.mu.Unlock()
 
@@ -676,7 +676,7 @@ func TestSimpleReceive(t *testing.T) {
 		// Wait for packet to be received, then check it.
 		c.waitForPackets(1, time.After(5*time.Second), "Timeout waiting for packet")
 		c.mu.Lock()
-		rcvd := []byte(c.packets[0].vv.ToView())
+		rcvd := []byte(c.packets[0].data)
 		c.packets = c.packets[:0]
 		c.mu.Unlock()
 

@@ -106,9 +106,9 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, ma
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
-	e.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 }
 
 // TestIGMPV1Present tests the node's ability to fallback to V1 when a V1

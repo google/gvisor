@@ -67,7 +67,7 @@ func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
 				LinkHeader:      pk.LinkHeader().View(),
 				NetworkHeader:   pk.NetworkHeader().View(),
 				TransportHeader: pk.TransportHeader().View(),
-				Data:            pk.Data.ToView(),
+				Data:            pk.Data().AsRange().ToOwnedView(),
 			}
 		}),
 	); diff != "" {
@@ -616,8 +616,8 @@ func TestDispatchPacketFormat(t *testing.T) {
 			if got, want := pkt.LinkHeader().View().Size(), header.EthernetMinimumSize; got != want {
 				t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
 			}
-			if got, want := pkt.Data.Size(), 4; got != want {
-				t.Errorf("pkt.Data.Size() = %d, want %d", got, want)
+			if got, want := pkt.Data().Size(), 4; got != want {
+				t.Errorf("pkt.Data().Size() = %d, want %d", got, want)
 			}
 		})
 	}

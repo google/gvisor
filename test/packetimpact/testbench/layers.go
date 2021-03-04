@@ -852,7 +852,13 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 				if err != nil {
 					return nil, err
 				}
-				h.SetChecksum(header.ICMPv6Checksum(h, *ipv6.SrcAddr, *ipv6.DstAddr, payload))
+				h.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header:      h,
+					Src:         *ipv6.SrcAddr,
+					Dst:         *ipv6.DstAddr,
+					PayloadCsum: header.ChecksumVV(payload, 0 /* initial */),
+					PayloadLen:  payload.Size(),
+				}))
 				break
 			}
 		}
@@ -974,7 +980,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 		var vv buffer.VectorisedView
 		vv.AppendView(buffer.View(l.Payload))
 		vv.Append(payload)
-		h.SetChecksum(header.ICMPv4Checksum(h, vv))
+		h.SetChecksum(header.ICMPv4Checksum(h, header.ChecksumVV(vv, 0 /* initial */)))
 	}
 
 	return h, nil

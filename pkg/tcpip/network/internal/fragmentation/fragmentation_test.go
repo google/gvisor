@@ -121,7 +121,7 @@ func TestFragmentationProcess(t *testing.T) {
 						in.id, in.first, in.last, in.more, in.proto, done, c.out[i].done)
 				}
 				if c.out[i].done {
-					if diff := cmp.Diff(c.out[i].vv.ToOwnedView(), resPkt.Data.ToOwnedView()); diff != "" {
+					if diff := cmp.Diff(c.out[i].vv.ToOwnedView(), resPkt.Data().AsRange().ToOwnedView()); diff != "" {
 						t.Errorf("got Process(%+v, %d, %d, %t, %d, %#v) result mismatch (-want, +got):\n%s",
 							in.id, in.first, in.last, in.more, in.proto, in.pkt, diff)
 					}
@@ -470,9 +470,7 @@ func TestPacketFragmenter(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			pkt := testutil.MakeRandPkt(test.transportHeaderLen, reserve, []int{test.payloadSize}, proto)
-			var originalPayload buffer.VectorisedView
-			originalPayload.AppendView(pkt.TransportHeader().View())
-			originalPayload.Append(pkt.Data)
+			originalPayload := stack.PayloadSince(pkt.TransportHeader())
 			var reassembledPayload buffer.VectorisedView
 			pf := MakePacketFragmenter(pkt, test.fragmentPayloadLen, reserve)
 			for i := 0; ; i++ {
@@ -499,7 +497,7 @@ func TestPacketFragmenter(t *testing.T) {
 				if got := fragPkt.TransportHeader().View().Size(); got != 0 {
 					t.Errorf("(fragment #%d) got fragPkt.TransportHeader().View().Size() = %d, want = 0", i, got)
 				}
-				reassembledPayload.Append(fragPkt.Data)
+				reassembledPayload.AppendViews(fragPkt.Data().Views())
 				if !more {
 					if i != len(test.wantFragments)-1 {
 						t.Errorf("got fragment count = %d, want = %d", i, len(test.wantFragments)-1)
@@ -507,7 +505,7 @@ func TestPacketFragmenter(t *testing.T) {
 					break
 				}
 			}
-			if diff := cmp.Diff(reassembledPayload.ToView(), originalPayload.ToView()); diff != "" {
+			if diff := cmp.Diff(reassembledPayload.ToView(), originalPayload); diff != "" {
 				t.Errorf("reassembledPayload mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -625,11 +623,11 @@ func TestTimeoutHandler(t *testing.T) {
 			}
 			switch {
 			case handler.pkt != nil && test.wantPkt == nil:
-				t.Errorf("got handler.pkt = not nil (pkt.Data = %x), want = nil", handler.pkt.Data.ToView())
+				t.Errorf("got handler.pkt = not nil (pkt.Data = %x), want = nil", handler.pkt.Data().AsRange().ToOwnedView())
 			case handler.pkt == nil && test.wantPkt != nil:
-				t.Errorf("got handler.pkt = nil, want = not nil (pkt.Data = %x)", test.wantPkt.Data.ToView())
+				t.Errorf("got handler.pkt = nil, want = not nil (pkt.Data = %x)", test.wantPkt.Data().AsRange().ToOwnedView())
 			case handler.pkt != nil && test.wantPkt != nil:
-				if diff := cmp.Diff(test.wantPkt.Data.ToView(), handler.pkt.Data.ToView()); diff != "" {
+				if diff := cmp.Diff(test.wantPkt.Data().AsRange().ToOwnedView(), handler.pkt.Data().AsRange().ToOwnedView()); diff != "" {
 					t.Errorf("pkt.Data mismatch (-want, +got):\n%s", diff)
 				}
 			}

@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -118,10 +117,7 @@ func TestIPv4FragmentReassembly(t *testing.T) {
 			if _, err := rand.Read(originalPayload); err != nil {
 				t.Fatalf("rand.Read: %s", err)
 			}
-			cksum := header.ICMPv4Checksum(
-				icmp,
-				buffer.NewVectorisedView(len(originalPayload), []buffer.View{originalPayload}),
-			)
+			cksum := header.ICMPv4Checksum(icmp, header.Checksum(originalPayload, 0 /* initial */))
 			icmp.SetChecksum(cksum)
 
 			for _, fragment := range test.fragments {

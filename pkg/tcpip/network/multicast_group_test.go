@@ -230,9 +230,9 @@ func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType byte, maxRespTime b
 	igmp.SetGroupAddress(groupAddress)
 	igmp.SetChecksum(header.IGMPCalculateChecksum(igmp))
 
-	e.InjectInbound(ipv4.ProtocolNumber, &stack.PacketBuffer{
+	e.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 }
 
 // createAndInjectMLDPacket creates and injects an MLD packet with the
@@ -263,11 +263,15 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType uint8, maxRespDelay b
 	mld := header.MLD(icmp.MessageBody())
 	mld.SetMaximumResponseDelay(uint16(maxRespDelay))
 	mld.SetMulticastAddress(groupAddress)
-	icmp.SetChecksum(header.ICMPv6Checksum(icmp, linkLocalIPv6Addr2, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmp,
+		Src:    linkLocalIPv6Addr2,
+		Dst:    header.IPv6AllNodesMulticastAddress,
+	}))
 
-	e.InjectInbound(ipv6.ProtocolNumber, &stack.PacketBuffer{
+	e.InjectInbound(ipv6.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: buf.ToVectorisedView(),
-	})
+	}))
 }
 
 // TestMGPDisabled tests that the multicast group protocol is not enabled by

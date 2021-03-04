@@ -236,7 +236,11 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		localAddress = header.IPv6Any
 	}
 
-	icmp.SetChecksum(header.ICMPv6Checksum(icmp, localAddress, destAddress, buffer.VectorisedView{}))
+	icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmp,
+		Src:    localAddress,
+		Dst:    destAddress,
+	}))
 
 	extensionHeaders := header.IPv6ExtHdrSerializer{
 		header.IPv6SerializableHopByHopExtHdr{

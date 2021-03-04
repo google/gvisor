@@ -215,7 +215,11 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			ns.SetTargetAddress(lladdr0)
 			opts := ns.Options()
 			copy(opts, test.optsBuf)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+			pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: pkt,
+				Src:    lladdr1,
+				Dst:    lladdr0,
+			}))
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
@@ -478,7 +482,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			ns.SetTargetAddress(nicAddr)
 			opts := ns.Options()
 			opts.Serialize(test.nsOpts)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.nsSrc, test.nsDst, buffer.VectorisedView{}))
+			pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: pkt,
+				Src:    test.nsSrc,
+				Dst:    test.nsDst,
+			}))
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
@@ -554,7 +562,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				na.SetOverrideFlag(true)
 				na.SetTargetAddress(test.nsSrc)
 				na.Options().Serialize(ser)
-				pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.nsSrc, nicAddr, buffer.VectorisedView{}))
+				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header: pkt,
+					Src:    test.nsSrc,
+					Dst:    nicAddr,
+				}))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
@@ -657,7 +669,11 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			ns.SetTargetAddress(lladdr1)
 			opts := ns.Options()
 			copy(opts, test.optsBuf)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+			pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: pkt,
+				Src:    lladdr1,
+				Dst:    lladdr0,
+			}))
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
@@ -874,7 +890,13 @@ func TestNDPValidation(t *testing.T) {
 						copy(icmp[typ.size:], typ.extraData)
 						icmp.SetType(typ.typ)
 						icmp.SetCode(test.code)
-						icmp.SetChecksum(header.ICMPv6Checksum(icmp[:typ.size], lladdr0, lladdr1, buffer.View(typ.extraData).ToVectorisedView()))
+						icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+							Header:      icmp[:typ.size],
+							Src:         lladdr0,
+							Dst:         lladdr1,
+							PayloadCsum: header.Checksum(typ.extraData /* initial */, 0),
+							PayloadLen:  len(typ.extraData),
+						}))
 
 						// Rx count of the NDP message should initially be 0.
 						if got := typStat.Value(); got != 0 {
@@ -987,7 +1009,11 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			na := header.NDPNeighborAdvert(pkt.MessageBody())
 			na.SetTargetAddress(lladdr1)
 			na.SetSolicitedFlag(test.solicitedFlag)
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, test.ipDstAddr, buffer.VectorisedView{}))
+			pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: pkt,
+				Src:    lladdr1,
+				Dst:    test.ipDstAddr,
+			}))
 			payloadLength := hdr.UsedLength()
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
@@ -1182,7 +1208,11 @@ func TestRouterAdvertValidation(t *testing.T) {
 			pkt.SetCode(test.code)
 			copy(pkt.MessageBody(), test.ndpPayload)
 			payloadLength := hdr.UsedLength()
-			pkt.SetChecksum(header.ICMPv6Checksum(pkt, test.src, header.IPv6AllNodesMulticastAddress, buffer.VectorisedView{}))
+			pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: pkt,
+				Src:    test.src,
+				Dst:    header.IPv6AllNodesMulticastAddress,
+			}))
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength:     uint16(payloadLength),

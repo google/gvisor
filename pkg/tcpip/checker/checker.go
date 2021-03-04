@@ -985,7 +985,11 @@ func ICMPv6(checkers ...TransportChecker) NetworkChecker {
 		}
 
 		icmp := header.ICMPv6(last.Payload())
-		if got, want := icmp.Checksum(), header.ICMPv6Checksum(icmp, last.SourceAddress(), last.DestinationAddress(), buffer.VectorisedView{}); got != want {
+		if got, want := icmp.Checksum(), header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+			Header: icmp,
+			Src:    last.SourceAddress(),
+			Dst:    last.DestinationAddress(),
+		}); got != want {
 			t.Fatalf("Bad ICMPv6 checksum; got %d, want %d", got, want)
 		}
 

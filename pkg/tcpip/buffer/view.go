@@ -196,7 +196,7 @@ func (vv *VectorisedView) CapLength(length int) {
 // If the buffer argument is large enough to contain all the Views of this
 // VectorisedView, the method will avoid allocations and use the buffer to
 // store the Views of the clone.
-func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
+func (vv VectorisedView) Clone(buffer []View) VectorisedView {
 	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
 }
 
@@ -288,6 +288,14 @@ func (vv *VectorisedView) AppendView(v View) {
 	}
 	vv.views = append(vv.views, v)
 	vv.size += len(v)
+}
+
+// AppendViews appends views to vv.
+func (vv *VectorisedView) AppendViews(views []View) {
+	vv.views = append(vv.views, views...)
+	for _, v := range views {
+		vv.size += len(v)
+	}
 }
 
 // Readers returns a bytes.Reader for each of vv's views.

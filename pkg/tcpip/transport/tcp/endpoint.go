@@ -2701,7 +2701,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 			Cause: transErr,
 			// Linux passes the payload with the TCP header. We don't know if the TCP
 			// header even exists, it may not for fragmented packets.
-			Payload: pkt.Data.ToView(),
+			Payload: pkt.Data().AsRange().ToOwnedView(),
 			Dst: tcpip.FullAddress{
 				NIC:  pkt.NICID,
 				Addr: e.ID.RemoteAddress,

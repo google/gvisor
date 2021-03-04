@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -121,12 +120,13 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 				t.Fatalf("rand.Read: %s", err)
 			}
 
-			cksum := header.ICMPv6Checksum(
-				icmp,
-				lIP,
-				rIP,
-				buffer.NewVectorisedView(len(originalPayload), []buffer.View{originalPayload}),
-			)
+			cksum := header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header:      icmp,
+				Src:         lIP,
+				Dst:         rIP,
+				PayloadCsum: header.Checksum(originalPayload, 0 /* initial */),
+				PayloadLen:  len(originalPayload),
+			})
 			icmp.SetChecksum(cksum)
 
 			for _, fragment := range test.fragments {

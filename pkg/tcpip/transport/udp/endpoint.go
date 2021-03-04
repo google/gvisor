@@ -1227,7 +1227,7 @@ func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
 		(hdr.Checksum() != 0 || pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber) {
 		netHdr := pkt.Network()
 		xsum := header.PseudoHeaderChecksum(ProtocolNumber, netHdr.DestinationAddress(), netHdr.SourceAddress(), hdr.Length())
-		for _, v := range pkt.Data.Views() {
+		for _, v := range pkt.Data().Views() {
 			xsum = header.Checksum(v, xsum)
 		}
 		return hdr.CalculateChecksum(xsum) == 0xffff
@@ -1240,7 +1240,7 @@ func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
 func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().View())
-	if int(hdr.Length()) > pkt.Data.Size()+header.UDPMinimumSize {
+	if int(hdr.Length()) > pkt.Data().Size()+header.UDPMinimumSize {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -1287,10 +1287,10 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 			Addr: id.LocalAddress,
 			Port: header.UDP(hdr).DestinationPort(),
 		},
+		data: pkt.Data().ExtractVV(),
 	}
-	packet.data = pkt.Data
 	e.rcvList.PushBack(packet)
-	e.rcvBufSize += pkt.Data.Size()
+	e.rcvBufSize += packet.data.Size()
 
 	// Save any useful information from the network header to the packet.
 	switch pkt.NetworkProtocolNumber {
@@ -1327,7 +1327,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 	if e.SocketOptions().GetRecvError() {
 		// Linux passes the payload without the UDP header.
 		var payload []byte
-		udp := header.UDP(pkt.Data.ToView())
+		udp := header.UDP(pkt.Data().AsRange().ToOwnedView())
 		if len(udp) >= header.UDPMinimumSize {
 			payload = udp.Payload()
 		}

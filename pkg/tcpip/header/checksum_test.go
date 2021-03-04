@@ -17,6 +17,7 @@
 package header_test
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -26,86 +27,72 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func TestChecksumVVWithOffset(t *testing.T) {
+func TestChecksumer(t *testing.T) {
 	testCases := []struct {
-		name      string
-		vv        buffer.VectorisedView
-		off, size int
-		initial   uint16
-		want      uint16
+		name string
+		data [][]byte
+		want uint16
 	}{
 		{
 			name: "empty",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{1, 9, 0, 5, 4}),
-			}),
-			off:  0,
-			size: 0,
 			want: 0,
 		},
 		{
-			name: "OneView",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{1, 9, 0, 5, 4}),
-			}),
-			off:  0,
-			size: 5,
+			name: "OneOddView",
+			data: [][]byte{
+				[]byte{1, 9, 0, 5, 4},
+			},
 			want: 1294,
 		},
 		{
-			name: "TwoViews",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{1, 9, 0, 5, 4}),
-				buffer.NewViewFromBytes([]byte{4, 3, 7, 1, 2, 123}),
-			}),
-			off:  0,
-			size: 11,
+			name: "TwoOddViews",
+			data: [][]byte{
+				[]byte{1, 9, 0, 5, 4},
+				[]byte{4, 3, 7, 1, 2, 123},
+			},
 			want: 33819,
 		},
 		{
-			name: "TwoViewsWithOffset",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{98, 1, 9, 0, 5, 4}),
-				buffer.NewViewFromBytes([]byte{4, 3, 7, 1, 2, 123}),
-			}),
-			off:  1,
-			size: 11,
-			want: 33819,
+			name: "OneEvenView",
+			data: [][]byte{
+				[]byte{1, 9, 0, 5},
+			},
+			want: 270,
 		},
 		{
-			name: "ThreeViewsWithOffset",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{98, 1, 9, 0, 5, 4}),
-				buffer.NewViewFromBytes([]byte{98, 1, 9, 0, 5, 4}),
-				buffer.NewViewFromBytes([]byte{4, 3, 7, 1, 2, 123}),
-			}),
-			off:  7,
-			size: 11,
-			want: 33819,
+			name: "TwoEvenViews",
+			data: [][]byte{
+				buffer.NewViewFromBytes([]byte{98, 1, 9, 0}),
+				buffer.NewViewFromBytes([]byte{9, 0, 5, 4}),
+			},
+			want: 30981,
 		},
 		{
-			name: "ThreeViewsWithInitial",
-			vv: buffer.NewVectorisedView(0, []buffer.View{
-				buffer.NewViewFromBytes([]byte{77, 11, 33, 0, 55, 44}),
-				buffer.NewViewFromBytes([]byte{98, 1, 9, 0, 5, 4}),
-				buffer.NewViewFromBytes([]byte{4, 3, 7, 1, 2, 123, 99}),
-			}),
-			initial: 77,
-			off:     7,
-			size:    11,
-			want:    33896,
+			name: "ThreeViews",
+			data: [][]byte{
+				[]byte{77, 11, 33, 0, 55, 44},
+				[]byte{98, 1, 9, 0, 5, 4},
+				[]byte{4, 3, 7, 1, 2, 123, 99},
+			},
+			want: 34236,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got, want := header.ChecksumVVWithOffset(tc.vv, tc.initial, tc.off, tc.size), tc.want; got != want {
-				t.Errorf("header.ChecksumVVWithOffset(%v) = %v, want: %v", tc, got, tc.want)
+			var all bytes.Buffer
+			var c header.Checksumer
+			for _, b := range tc.data {
+				c.Add(b)
+				// Append to the buffer. We will check the checksum as a whole later.
+				if _, err := all.Write(b); err != nil {
+					t.Fatalf("all.Write(b) = _, %s; want _, nil", err)
+				}
 			}
-			v := tc.vv.ToView()
-			v.TrimFront(tc.off)
-			v.CapLength(tc.size)
-			if got, want := header.Checksum(v, tc.initial), tc.want; got != want {
-				t.Errorf("header.Checksum(%v) = %v, want: %v", tc, got, tc.want)
+			if got, want := c.Checksum(), tc.want; got != want {
+				t.Errorf("c.Checksum() = %d, want %d", got, want)
+			}
+			if got, want := header.Checksum(all.Bytes(), 0 /* initial */), tc.want; got != want {
+				t.Errorf("Checksum(flatten tc.data) = %d, want %d", got, want)
 			}
 		})
 	}
@@ -228,7 +215,7 @@ func TestICMPv4Checksum(t *testing.T) {
 	h.SetChecksum(want)
 
 	testICMPChecksum(t, h.Checksum, func() uint16 {
-		return header.ICMPv4Checksum(h, vv)
+		return header.ICMPv4Checksum(h, header.ChecksumVV(vv, 0))
 	}, want, fmt.Sprintf("header: {% x} data {% x}", h, vv.ToView()))
 }
 
@@ -260,6 +247,12 @@ func TestICMPv6Checksum(t *testing.T) {
 	h.SetChecksum(want)
 
 	testICMPChecksum(t, h.Checksum, func() uint16 {
-		return header.ICMPv6Checksum(h, src, dst, vv)
+		return header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+			Header:      h,
+			Src:         src,
+			Dst:         dst,
+			PayloadCsum: header.ChecksumVV(vv, 0),
+			PayloadLen:  vv.Size(),
+		})
 	}, want, fmt.Sprintf("header: {% x} data {% x}", h, vv.ToView()))
 }
