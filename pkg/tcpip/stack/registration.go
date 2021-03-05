@@ -852,17 +852,41 @@ type InjectableLinkEndpoint interface {
 	InjectOutbound(dest tcpip.Address, packet []byte) tcpip.Error
 }
 
-// DADResult is the result of a duplicate address detection process.
-type DADResult struct {
-	// Resolved is true when DAD completed without detecting a duplicate address
-	// on the link.
-	//
-	// Ignored when Err is non-nil.
-	Resolved bool
+// DADResult is a marker interface for the result of a duplicate address
+// detection process.
+type DADResult interface {
+	isDADResult()
+}
 
-	// Err is an error encountered while performing DAD.
+var _ DADResult = (*DADSucceeded)(nil)
+
+// DADSucceeded indicates DAD completed without finding any duplicate addresses.
+type DADSucceeded struct{}
+
+func (*DADSucceeded) isDADResult() {}
+
+var _ DADResult = (*DADError)(nil)
+
+// DADError indicates DAD hit an error.
+type DADError struct {
 	Err tcpip.Error
 }
+
+func (*DADError) isDADResult() {}
+
+var _ DADResult = (*DADAborted)(nil)
+
+// DADAborted indicates DAD was aborted.
+type DADAborted struct{}
+
+func (*DADAborted) isDADResult() {}
+
+var _ DADResult = (*DADDupAddrDetected)(nil)
+
+// DADDupAddrDetected indicates DAD detected a duplicate address.
+type DADDupAddrDetected struct{}
+
+func (*DADDupAddrDetected) isDADResult() {}
 
 // DADCompletionHandler is a handler for DAD completion.
 type DADCompletionHandler func(DADResult)
