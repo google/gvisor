@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -748,6 +749,50 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	// Verity files are read-only.
 	return syserror.EPERM
+}
+
+// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
+func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
+	if !fd.d.isDir() {
+		return syserror.ENOTDIR
+	}
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+
+	var ds []vfs.Dirent
+	err := fd.lowerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+		// Do not include the Merkle tree files.
+		if strings.Contains(dirent.Name, merklePrefix) || strings.Contains(dirent.Name, merkleRootPrefix) {
+			return nil
+		}
+		if fd.d.verityEnabled() {
+			// Verify that the child is expected.
+			if dirent.Name != "." && dirent.Name != ".." {
+				if _, ok := fd.d.childrenNames[dirent.Name]; !ok {
+					return alertIntegrityViolation(fmt.Sprintf("Unexpected children %s", dirent.Name))
+				}
+			}
+		}
+		ds = append(ds, dirent)
+		return nil
+	}))
+
+	if err != nil {
+		return err
+	}
+
+	// The result should contain all children plus "." and "..".
+	if fd.d.verityEnabled() && len(ds) != len(fd.d.childrenNames)+2 {
+		return alertIntegrityViolation(fmt.Sprintf("Unexpected children number %d", len(ds)))
+	}
+
+	for fd.off < int64(len(ds)) {
+		if err := cb.Handle(ds[fd.off]); err != nil {
+			return err
+		}
+		fd.off++
+	}
+	return nil
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
