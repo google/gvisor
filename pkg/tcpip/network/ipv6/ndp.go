@@ -208,16 +208,12 @@ const (
 // NDPDispatcher is the interface integrators of netstack must implement to
 // receive and handle NDP related events.
 type NDPDispatcher interface {
-	// OnDuplicateAddressDetectionStatus is called when the DAD process for an
-	// address (addr) on a NIC (with ID nicID) completes. resolved is set to true
-	// if DAD completed successfully (no duplicate addr detected); false otherwise
-	// (addr was detected to be a duplicate on the link the NIC is a part of, or
-	// it was stopped for some other reason, such as the address being removed).
-	// If an error occured during DAD, err is set and resolved must be ignored.
+	// OnDuplicateAddressDetectionResult is called when the DAD process for an
+	// address on a NIC completes.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDuplicateAddressDetectionStatus(nicID tcpip.NICID, addr tcpip.Address, resolved bool, err tcpip.Error)
+	OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult)
 
 	// OnDefaultRouterDiscovered is called when a new default router is
 	// discovered. Implementations must return true if the newly discovered
@@ -225,14 +221,14 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterDiscovered(nicID tcpip.NICID, addr tcpip.Address) bool
+	OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address) bool
 
 	// OnDefaultRouterInvalidated is called when a discovered default router that
 	// was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterInvalidated(nicID tcpip.NICID, addr tcpip.Address)
+	OnDefaultRouterInvalidated(tcpip.NICID, tcpip.Address)
 
 	// OnOnLinkPrefixDiscovered is called when a new on-link prefix is discovered.
 	// Implementations must return true if the newly discovered on-link prefix
@@ -240,14 +236,14 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixDiscovered(nicID tcpip.NICID, prefix tcpip.Subnet) bool
+	OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) bool
 
 	// OnOnLinkPrefixInvalidated is called when a discovered on-link prefix that
 	// was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixInvalidated(nicID tcpip.NICID, prefix tcpip.Subnet)
+	OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet)
 
 	// OnAutoGenAddress is called when a new prefix with its autonomous address-
 	// configuration flag set is received and SLAAC was performed. Implementations
@@ -280,12 +276,12 @@ type NDPDispatcher interface {
 	// It is up to the caller to use the DNS Servers only for their valid
 	// lifetime. OnRecursiveDNSServerOption may be called for new or
 	// already known DNS servers. If called with known DNS servers, their
-	// valid lifetimes must be refreshed to lifetime (it may be increased,
-	// decreased, or completely invalidated when lifetime = 0).
+	// valid lifetimes must be refreshed to the lifetime (it may be increased,
+	// decreased, or completely invalidated when the lifetime = 0).
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnRecursiveDNSServerOption(nicID tcpip.NICID, addrs []tcpip.Address, lifetime time.Duration)
+	OnRecursiveDNSServerOption(tcpip.NICID, []tcpip.Address, time.Duration)
 
 	// OnDNSSearchListOption is called when the stack learns of DNS search lists
 	// through NDP.
@@ -293,9 +289,9 @@ type NDPDispatcher interface {
 	// It is up to the caller to use the domain names in the search list
 	// for only their valid lifetime. OnDNSSearchListOption may be called
 	// with new or already known domain names. If called with known domain
-	// names, their valid lifetimes must be refreshed to lifetime (it may
-	// be increased, decreased or completely invalidated when lifetime = 0.
-	OnDNSSearchListOption(nicID tcpip.NICID, domainNames []string, lifetime time.Duration)
+	// names, their valid lifetimes must be refreshed to the lifetime (it may
+	// be increased, decreased or completely invalidated when the lifetime = 0.
+	OnDNSSearchListOption(tcpip.NICID, []string, time.Duration)
 
 	// OnDHCPv6Configuration is called with an updated configuration that is
 	// available via DHCPv6 for the passed NIC.
@@ -587,15 +583,25 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 			panic(fmt.Sprintf("ndpdad: addr %s is no longer tentative on NIC(%d)", addr, ndp.ep.nic.ID()))
 		}
 
-		if r.Resolved {
+		var dadSucceeded bool
+		switch r.(type) {
+		case *stack.DADAborted, *stack.DADError, *stack.DADDupAddrDetected:
+			dadSucceeded = false
+		case *stack.DADSucceeded:
+			dadSucceeded = true
+		default:
+			panic(fmt.Sprintf("unrecognized DAD result = %T", r))
+		}
+
+		if dadSucceeded {
 			addressEndpoint.SetKind(stack.Permanent)
 		}
 
 		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
-			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, r.Resolved, r.Err)
+			ndpDisp.OnDuplicateAddressDetectionResult(ndp.ep.nic.ID(), addr, r)
 		}
 
-		if r.Resolved {
+		if dadSucceeded {
 			if addressEndpoint.ConfigType() == stack.AddressConfigSlaac {
 				// Reset the generation attempts counter as we are starting the
 				// generation of a new address for the SLAAC prefix.
@@ -616,7 +622,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 		// Consider DAD to have resolved even if no DAD messages were actually
 		// transmitted.
 		if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
-			ndpDisp.OnDuplicateAddressDetectionStatus(ndp.ep.nic.ID(), addr, true, nil)
+			ndpDisp.OnDuplicateAddressDetectionResult(ndp.ep.nic.ID(), addr, &stack.DADSucceeded{})
 		}
 
 		ndp.ep.onAddressAssignedLocked(addr)
@@ -633,8 +639,8 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 // of this function to handle such a scenario.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, failed bool) {
-	ndp.dad.StopLocked(addr, !failed)
+func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, reason stack.DADResult) {
+	ndp.dad.StopLocked(addr, reason)
 }
 
 // handleRA handles a Router Advertisement message that arrived on the NIC
@@ -1501,7 +1507,7 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 			ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addressEndpoint.AddressWithPrefix())
 		}
 
-		if err := ndp.ep.removePermanentEndpointInnerLocked(addressEndpoint, false /* dadFailure */); err != nil {
+		if err := ndp.ep.removePermanentEndpointInnerLocked(addressEndpoint, &stack.DADAborted{}); err != nil {
 			panic(fmt.Sprintf("ndp: error removing stable SLAAC address %s: %s", addressEndpoint.AddressWithPrefix(), err))
 		}
 	}
@@ -1560,7 +1566,7 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
 	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs, tempAddr, tempAddrState)
 
-	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, false /* dadFailure */); err != nil {
+	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, &stack.DADAborted{}); err != nil {
 		panic(fmt.Sprintf("error removing temporary SLAAC address %s: %s", tempAddrState.addressEndpoint.AddressWithPrefix(), err))
 	}
 }
