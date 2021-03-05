@@ -109,6 +109,7 @@ type dutInfo struct {
 	dut              DUT
 	ctrlNet, testNet *dockerutil.Network
 	netInfo          *testbench.DUTTestNet
+	uname            *testbench.DUTUname
 }
 
 // setUpDUT will set up one DUT and return information for setting up the
@@ -182,6 +183,10 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 		POSIXServerIP:    AddressInSubnet(DUTAddr, *ctrlNet.Subnet),
 		POSIXServerPort:  CtrlPort,
 	}
+	info.uname, err = dut.Uname(ctx)
+	if err != nil {
+		return dutInfo{}, fmt.Errorf("failed to get uname information on DUT: %w", err)
+	}
 	return info, nil
 }
 
@@ -195,7 +200,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	dutInfoChan := make(chan dutInfo, numDUTs)
 	errChan := make(chan error, numDUTs)
 	var dockerNetworks []*dockerutil.Network
-	var dutTestNets []*testbench.DUTTestNet
+	var dutInfos []*testbench.DUTInfo
 	var duts []DUT
 
 	setUpCtx, cancelSetup := context.WithCancel(ctx)
@@ -214,7 +219,10 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		select {
 		case info := <-dutInfoChan:
 			dockerNetworks = append(dockerNetworks, info.ctrlNet, info.testNet)
-			dutTestNets = append(dutTestNets, info.netInfo)
+			dutInfos = append(dutInfos, &testbench.DUTInfo{
+				Net:   info.netInfo,
+				Uname: info.uname,
+			})
 			duts = append(duts, info.dut)
 		case err := <-errChan:
 			t.Fatal(err)
@@ -246,23 +254,23 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		t.Fatalf("cannot start testbench container: %s", err)
 	}
 
-	for i := range dutTestNets {
-		name, info, err := deviceByIP(ctx, testbenchContainer, dutTestNets[i].LocalIPv4)
+	for i := range dutInfos {
+		name, info, err := deviceByIP(ctx, testbenchContainer, dutInfos[i].Net.LocalIPv4)
 		if err != nil {
-			t.Fatalf("failed to get the device name associated with %s: %s", dutTestNets[i].LocalIPv4, err)
+			t.Fatalf("failed to get the device name associated with %s: %s", dutInfos[i].Net.LocalIPv4, err)
 		}
-		dutTestNets[i].LocalDevName = name
-		dutTestNets[i].LocalDevID = info.ID
-		dutTestNets[i].LocalMAC = info.MAC
+		dutInfos[i].Net.LocalDevName = name
+		dutInfos[i].Net.LocalDevID = info.ID
+		dutInfos[i].Net.LocalMAC = info.MAC
 		localIPv6, err := getOrAssignIPv6Addr(ctx, testbenchContainer, name)
 		if err != nil {
 			t.Fatalf("failed to get IPV6 address on %s: %s", testbenchContainer.Name, err)
 		}
-		dutTestNets[i].LocalIPv6 = localIPv6
+		dutInfos[i].Net.LocalIPv6 = localIPv6
 	}
-	dutTestNetsBytes, err := json.Marshal(dutTestNets)
+	dutInfosBytes, err := json.Marshal(dutInfos)
 	if err != nil {
-		t.Fatalf("failed to marshal %v into json: %s", dutTestNets, err)
+		t.Fatalf("failed to marshal %v into json: %s", dutInfos, err)
 	}
 
 	baseSnifferArgs := []string{
@@ -296,7 +304,8 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 			"-n",
 		}
 	}
-	for _, n := range dutTestNets {
+	for _, info := range dutInfos {
+		n := info.Net
 		snifferArgs := append(baseSnifferArgs, "-i", n.LocalDevName)
 		if !tshark {
 			snifferArgs = append(
@@ -351,7 +360,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	testArgs = append(testArgs, extraTestArgs...)
 	testArgs = append(testArgs,
 		fmt.Sprintf("--native=%t", native),
-		"--dut_test_nets_json", string(dutTestNetsBytes),
+		"--dut_infos_json", string(dutInfosBytes),
 	)
 	testbenchLogs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
 	if (err != nil) != expectFailure {
@@ -388,6 +397,10 @@ type DUT interface {
 	// The t parameter is supposed to be used for t.Cleanup. Don't use it for
 	// t.Fatal/FailNow functions.
 	Prepare(ctx context.Context, t *testing.T, runOpts dockerutil.RunOpts, ctrlNet, testNet *dockerutil.Network) (net.IP, net.HardwareAddr, uint32, string, error)
+
+	// Uname gathers information of DUT using command uname.
+	Uname(ctx context.Context) (*testbench.DUTUname, error)
+
 	// Logs retrieves the logs from the dut.
 	Logs(ctx context.Context) (string, error)
 }
@@ -438,6 +451,38 @@ func (dut *DockerDUT) Prepare(ctx context.Context, _ *testing.T, runOpts dockeru
 	const testNetDev = "eth2"
 
 	return remoteIPv6, dutDeviceInfo.MAC, dutDeviceInfo.ID, testNetDev, nil
+}
+
+// Uname implements DUT.Uname.
+func (dut *DockerDUT) Uname(ctx context.Context) (*testbench.DUTUname, error) {
+	machine, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "uname", "-m")
+	if err != nil {
+		return nil, err
+	}
+	kernelRelease, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "uname", "-r")
+	if err != nil {
+		return nil, err
+	}
+	kernelVersion, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "uname", "-v")
+	if err != nil {
+		return nil, err
+	}
+	kernelName, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "uname", "-s")
+	if err != nil {
+		return nil, err
+	}
+	// TODO(gvisor.dev/issues/5586): -o is not supported on macOS.
+	operatingSystem, err := dut.c.Exec(ctx, dockerutil.ExecOpts{}, "uname", "-o")
+	if err != nil {
+		return nil, err
+	}
+	return &testbench.DUTUname{
+		Machine:         strings.TrimRight(machine, "\n"),
+		KernelName:      strings.TrimRight(kernelName, "\n"),
+		KernelRelease:   strings.TrimRight(kernelRelease, "\n"),
+		KernelVersion:   strings.TrimRight(kernelVersion, "\n"),
+		OperatingSystem: strings.TrimRight(operatingSystem, "\n"),
+	}, nil
 }
 
 // Logs implements DUT.Logs.

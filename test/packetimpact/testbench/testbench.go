@@ -34,13 +34,28 @@ var (
 	// RPCTimeout is the gRPC timeout.
 	RPCTimeout = 100 * time.Millisecond
 
-	// dutTestNetsJSON is the json string that describes all the test networks to
+	// dutInfosJSON is the json string that describes information about all the
 	// duts available to use.
-	dutTestNetsJSON string
-	// dutTestNets is the pool among which the testbench can choose a DUT to work
+	dutInfosJSON string
+	// dutInfo is the pool among which the testbench can choose a DUT to work
 	// with.
-	dutTestNets chan *DUTTestNet
+	dutInfo chan *DUTInfo
 )
+
+// DUTInfo has both network and uname information about the DUT.
+type DUTInfo struct {
+	Uname *DUTUname
+	Net   *DUTTestNet
+}
+
+// DUTUname contains information about the DUT from uname.
+type DUTUname struct {
+	Machine         string
+	KernelName      string
+	KernelRelease   string
+	KernelVersion   string
+	OperatingSystem string
+}
 
 // DUTTestNet describes the test network setup on dut and how the testbench
 // should connect with an existing DUT.
@@ -86,7 +101,7 @@ func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
 	fs.DurationVar(&RPCTimeout, "rpc_timeout", RPCTimeout, "gRPC timeout")
 	fs.DurationVar(&RPCKeepalive, "rpc_keepalive", RPCKeepalive, "gRPC keepalive")
-	fs.StringVar(&dutTestNetsJSON, "dut_test_nets_json", dutTestNetsJSON, "path to the dut test nets json file")
+	fs.StringVar(&dutInfosJSON, "dut_infos_json", dutInfosJSON, "json that describes the DUTs")
 }
 
 // Initialize initializes the testbench, it parse the flags and sets up the
@@ -94,27 +109,27 @@ func registerFlags(fs *flag.FlagSet) {
 func Initialize(fs *flag.FlagSet) {
 	registerFlags(fs)
 	flag.Parse()
-	if err := loadDUTTestNets(); err != nil {
+	if err := loadDUTInfos(); err != nil {
 		panic(err)
 	}
 }
 
-// loadDUTTestNets loads available DUT test networks from the json file, it
+// loadDUTInfos loads available DUT test infos from the json file, it
 // must be called after flag.Parse().
-func loadDUTTestNets() error {
-	var parsedTestNets []DUTTestNet
-	if err := json.Unmarshal([]byte(dutTestNetsJSON), &parsedTestNets); err != nil {
+func loadDUTInfos() error {
+	var dutInfos []DUTInfo
+	if err := json.Unmarshal([]byte(dutInfosJSON), &dutInfos); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
-	if got, want := len(parsedTestNets), 1; got < want {
+	if got, want := len(dutInfos), 1; got < want {
 		return fmt.Errorf("got %d DUTs, the test requires at least %d DUTs", got, want)
 	}
 	// Using a buffered channel as semaphore
-	dutTestNets = make(chan *DUTTestNet, len(parsedTestNets))
-	for i := range parsedTestNets {
-		parsedTestNets[i].LocalIPv4 = parsedTestNets[i].LocalIPv4.To4()
-		parsedTestNets[i].RemoteIPv4 = parsedTestNets[i].RemoteIPv4.To4()
-		dutTestNets <- &parsedTestNets[i]
+	dutInfo = make(chan *DUTInfo, len(dutInfos))
+	for i := range dutInfos {
+		dutInfos[i].Net.LocalIPv4 = dutInfos[i].Net.LocalIPv4.To4()
+		dutInfos[i].Net.RemoteIPv4 = dutInfos[i].Net.RemoteIPv4.To4()
+		dutInfo <- &dutInfos[i]
 	}
 	return nil
 }
@@ -130,14 +145,13 @@ func GenerateRandomPayload(t *testing.T, n int) []byte {
 	return buf
 }
 
-// GetDUTTestNet gets a usable DUTTestNet, the function will block until any
-// becomes available.
-func GetDUTTestNet() *DUTTestNet {
-	return <-dutTestNets
+// getDUTInfo returns information about an available DUT from the pool. If no
+// DUT is readily available, getDUTInfo blocks until one becomes available.
+func getDUTInfo() *DUTInfo {
+	return <-dutInfo
 }
 
-// Release releases the DUTTestNet back to the pool so that some other test
-// can use.
-func (n *DUTTestNet) Release() {
-	dutTestNets <- n
+// release returns the DUTInfo back to the pool.
+func (info *DUTInfo) release() {
+	dutInfo <- info
 }
