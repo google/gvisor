@@ -1,7 +1,6 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
-    default_visibility = ["//test/packetimpact:__subpackages__"],
     licenses = ["notice"],
 )
 
@@ -15,6 +14,7 @@ go_library(
         "rawsockets.go",
         "testbench.go",
     ],
+    visibility = ["//test/packetimpact:__subpackages__"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

@@ -35,24 +35,26 @@ type DUT struct {
 	conn        *grpc.ClientConn
 	posixServer POSIXClient
 	Net         *DUTTestNet
+	Uname       *DUTUname
 }
 
 // NewDUT creates a new connection with the DUT over gRPC.
 func NewDUT(t *testing.T) DUT {
 	t.Helper()
-	n := GetDUTTestNet()
-	dut := n.ConnectToDUT(t)
+	info := getDUTInfo()
+	dut := info.ConnectToDUT(t)
 	t.Cleanup(func() {
 		dut.TearDownConnection()
-		dut.Net.Release()
+		info.release()
 	})
 	return dut
 }
 
 // ConnectToDUT connects to DUT through gRPC.
-func (n *DUTTestNet) ConnectToDUT(t *testing.T) DUT {
+func (info *DUTInfo) ConnectToDUT(t *testing.T) DUT {
 	t.Helper()
 
+	n := info.Net
 	posixServerAddress := net.JoinHostPort(n.POSIXServerIP.String(), fmt.Sprintf("%d", n.POSIXServerPort))
 	conn, err := grpc.Dial(posixServerAddress, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{Timeout: RPCKeepalive}))
 	if err != nil {
@@ -63,6 +65,7 @@ func (n *DUTTestNet) ConnectToDUT(t *testing.T) DUT {
 		conn:        conn,
 		posixServer: posixServer,
 		Net:         n,
+		Uname:       info.Uname,
 	}
 }
 
