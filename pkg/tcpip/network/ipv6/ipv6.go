@@ -348,7 +348,7 @@ func (e *endpoint) hasTentativeAddr(addr tcpip.Address) bool {
 // dupTentativeAddrDetected removes the tentative address if it exists. If the
 // address was generated via SLAAC, an attempt is made to generate a new
 // address.
-func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) tcpip.Error {
+func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr tcpip.LinkAddress) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -363,7 +363,7 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address) tcpip.Error {
 
 	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as an
 	// attempt will be made to generate a new address for it.
-	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, &stack.DADDupAddrDetected{}); err != nil {
+	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, &stack.DADDupAddrDetected{HolderLinkAddress: holderLinkAddr}); err != nil {
 		return err
 	}
 
