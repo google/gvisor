@@ -1192,14 +1192,14 @@ func TestDAD(t *testing.T) {
 			netProto:       ipv4.ProtocolNumber,
 			dadNetProto:    arp.ProtocolNumber,
 			remoteAddr:     utils.Ipv4Addr2.AddressWithPrefix.Address,
-			expectedResult: &stack.DADDupAddrDetected{},
+			expectedResult: &stack.DADDupAddrDetected{HolderLinkAddress: utils.LinkAddr2},
 		},
 		{
 			name:           "IPv6 duplicate address",
 			netProto:       ipv6.ProtocolNumber,
 			dadNetProto:    ipv6.ProtocolNumber,
 			remoteAddr:     utils.Ipv6Addr2.AddressWithPrefix.Address,
-			expectedResult: &stack.DADDupAddrDetected{},
+			expectedResult: &stack.DADDupAddrDetected{HolderLinkAddress: utils.LinkAddr2},
 		},
 		{
 			name:           "IPv4 no duplicate address",
