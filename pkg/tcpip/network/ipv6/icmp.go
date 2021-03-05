@@ -382,6 +382,10 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			// stack know so it can handle such a scenario and do nothing further with
 			// the NS.
 			if srcAddr == header.IPv6Any {
+				// Since this is a DAD message we know the sender does not actually hold
+				// the target address so there is no "holder".
+				var holderLinkAddress tcpip.LinkAddress
+
 				// We would get an error if the address no longer exists or the address
 				// is no longer tentative (DAD resolved between the call to
 				// hasTentativeAddr and this point). Both of these are valid scenarios:
@@ -393,7 +397,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 				//
 				// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 				// address is detected for an assigned address.
-				switch err := e.dupTentativeAddrDetected(targetAddr); err.(type) {
+				switch err := e.dupTentativeAddrDetected(targetAddr, holderLinkAddress); err.(type) {
 				case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
 				default:
 					panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
@@ -561,10 +565,24 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		// 5, NDP messages cannot be fragmented. Also note that in the common case
 		// NDP datagrams are very small and AsView() will not incur allocations.
 		na := header.NDPNeighborAdvert(payload.AsView())
+
+		it, err := na.Options().Iter(false /* check */)
+		if err != nil {
+			// If we have a malformed NDP NA option, drop the packet.
+			received.invalid.Increment()
+			return
+		}
+
+		targetLinkAddr, ok := getTargetLinkAddr(it)
+		if !ok {
+			received.invalid.Increment()
+			return
+		}
+
 		targetAddr := na.TargetAddress()
 
 		e.dad.mu.Lock()
-		e.dad.mu.dad.StopLocked(targetAddr, &stack.DADDupAddrDetected{})
+		e.dad.mu.dad.StopLocked(targetAddr, &stack.DADDupAddrDetected{HolderLinkAddress: targetLinkAddr})
 		e.dad.mu.Unlock()
 
 		if e.hasTentativeAddr(targetAddr) {
@@ -584,19 +602,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			//
 			// TODO(gvisor.dev/issue/4046): Handle the scenario when a duplicate
 			// address is detected for an assigned address.
-			switch err := e.dupTentativeAddrDetected(targetAddr); err.(type) {
+			switch err := e.dupTentativeAddrDetected(targetAddr, targetLinkAddr); err.(type) {
 			case nil, *tcpip.ErrBadAddress, *tcpip.ErrInvalidEndpointState:
 				return
 			default:
 				panic(fmt.Sprintf("unexpected error handling duplicate tentative address: %s", err))
 			}
-		}
-
-		it, err := na.Options().Iter(false /* check */)
-		if err != nil {
-			// If we have a malformed NDP NA option, drop the packet.
-			received.invalid.Increment()
-			return
 		}
 
 		// At this point we know that the target address is not tentative on the
@@ -608,11 +619,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		// TODO(b/143147598): Handle the scenario described above. Also inform the
 		// netstack integration that a duplicate address was detected outside of
 		// DAD.
-		targetLinkAddr, ok := getTargetLinkAddr(it)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
 
 		// As per RFC 4861 section 7.1.2:
 		//   A node MUST silently discard any received Neighbor Advertisement

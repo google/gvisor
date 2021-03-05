@@ -232,7 +232,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
 
 		e.mu.Lock()
-		e.mu.dad.StopLocked(addr, &stack.DADDupAddrDetected{})
+		e.mu.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
 		e.mu.Unlock()
 
 		// The solicited, override, and isRouter flags are not available for ARP;
