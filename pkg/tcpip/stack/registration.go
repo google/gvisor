@@ -884,7 +884,11 @@ func (*DADAborted) isDADResult() {}
 var _ DADResult = (*DADDupAddrDetected)(nil)
 
 // DADDupAddrDetected indicates DAD detected a duplicate address.
-type DADDupAddrDetected struct{}
+type DADDupAddrDetected struct {
+	// HolderLinkAddress is the link address of the node that holds the duplicate
+	// address.
+	HolderLinkAddress tcpip.LinkAddress
+}
 
 func (*DADDupAddrDetected) isDADResult() {}
 
