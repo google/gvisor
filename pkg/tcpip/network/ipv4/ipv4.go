@@ -899,10 +899,9 @@ func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
 // Close cleans up resources associated with the endpoint.
 func (e *endpoint) Close() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	e.disableLocked()
 	e.mu.addressableEndpointState.Cleanup()
+	e.mu.Unlock()
 
 	e.protocol.forgetEndpoint(e.nic.ID())
 }
