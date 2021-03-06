@@ -17,7 +17,6 @@ package tcp_unacc_seq_ack_test
 import (
 	"flag"
 	"fmt"
-	"syscall"
 	"testing"
 	"time"
 
@@ -171,7 +170,7 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 			acceptFD, _ := dut.Accept(t, listenFD)
 
 			// Trigger active close.
-			dut.Shutdown(t, acceptFD, syscall.SHUT_WR)
+			dut.Shutdown(t, acceptFD, unix.SHUT_WR)
 
 			// Get to FIN_WAIT2
 			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second)

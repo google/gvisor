@@ -18,6 +18,7 @@ go_library(
         "//pkg/binary",
         "//pkg/test/testutil",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

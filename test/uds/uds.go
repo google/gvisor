@@ -21,8 +21,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 )
@@ -31,16 +31,16 @@ import (
 //
 // Only works for stream, seqpacket sockets.
 func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, protocol, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating echo(%d) socket: %v", protocol, err)
 	}
 
-	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: path}); err != nil {
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
 		return nil, fmt.Errorf("error binding echo(%d) socket: %v", protocol, err)
 	}
 
-	if err := syscall.Listen(fd, 0); err != nil {
+	if err := unix.Listen(fd, 0); err != nil {
 		return nil, fmt.Errorf("error listening echo(%d) socket: %v", protocol, err)
 	}
 
@@ -97,17 +97,17 @@ func createEchoSocket(path string, protocol int) (cleanup func(), err error) {
 //
 // Only relevant for stream, seqpacket sockets.
 func createNonListeningSocket(path string, protocol int) (cleanup func(), err error) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, protocol, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating nonlistening(%d) socket: %v", protocol, err)
 	}
 
-	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: path}); err != nil {
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
 		return nil, fmt.Errorf("error binding nonlistening(%d) socket: %v", protocol, err)
 	}
 
 	cleanup = func() {
-		if err := syscall.Close(fd); err != nil {
+		if err := unix.Close(fd); err != nil {
 			log.Warningf("Failed to close nonlistening(%d) socket: %v", protocol, err)
 		}
 	}
@@ -119,12 +119,12 @@ func createNonListeningSocket(path string, protocol int) (cleanup func(), err er
 //
 // Only works for dgram sockets.
 func createNullSocket(path string, protocol int) (cleanup func(), err error) {
-	fd, err := syscall.Socket(syscall.AF_UNIX, protocol, 0)
+	fd, err := unix.Socket(unix.AF_UNIX, protocol, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating null(%d) socket: %v", protocol, err)
 	}
 
-	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: path}); err != nil {
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
 		return nil, fmt.Errorf("error binding null(%d) socket: %v", protocol, err)
 	}
 
@@ -174,7 +174,7 @@ func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 		sockets  map[string]socketCreator
 	}{
 		{
-			protocol: syscall.SOCK_STREAM,
+			protocol: unix.SOCK_STREAM,
 			name:     "stream",
 			sockets: map[string]socketCreator{
 				"echo":         createEchoSocket,
@@ -182,7 +182,7 @@ func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 			},
 		},
 		{
-			protocol: syscall.SOCK_SEQPACKET,
+			protocol: unix.SOCK_SEQPACKET,
 			name:     "seqpacket",
 			sockets: map[string]socketCreator{
 				"echo":         createEchoSocket,
@@ -190,7 +190,7 @@ func CreateSocketTree(baseDir string) (dir string, cleanup func(), err error) {
 			},
 		},
 		{
-			protocol: syscall.SOCK_DGRAM,
+			protocol: unix.SOCK_DGRAM,
 			name:     "dgram",
 			sockets: map[string]socketCreator{
 				"null": createNullSocket,

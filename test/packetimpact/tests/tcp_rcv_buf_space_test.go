@@ -17,7 +17,6 @@ package tcp_rcv_buf_space_test
 import (
 	"context"
 	"flag"
-	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -73,7 +72,7 @@ func TestReduceRecvBuf(t *testing.T) {
 	// Second read should return EAGAIN as the last segment should have been
 	// dropped due to it exceeding the receive buffer space available in the
 	// socket.
-	if ret, got, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)), syscall.MSG_DONTWAIT); got != nil || ret != -1 || err != syscall.EAGAIN {
+	if ret, got, err := dut.RecvWithErrno(context.Background(), t, acceptFd, int32(len(sampleData)), unix.MSG_DONTWAIT); got != nil || ret != -1 || err != unix.EAGAIN {
 		t.Fatalf("expected no packets but got: %s", got)
 	}
 }

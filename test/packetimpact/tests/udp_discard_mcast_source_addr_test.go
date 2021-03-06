@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -56,7 +55,7 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 			)
 
 			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
-			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
+			if errno != unix.EAGAIN || errno != unix.EWOULDBLOCK {
 				t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, payload, errno)
 			}
 		})
@@ -86,7 +85,7 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 				&testbench.Payload{Bytes: []byte("test payload")},
 			)
 			ret, payload, errno := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
-			if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
+			if errno != unix.EAGAIN || errno != unix.EWOULDBLOCK {
 				t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, payload, errno)
 			}
 		})

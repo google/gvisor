@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"syscall"
 	"testing"
 	"time"
 
@@ -241,7 +240,7 @@ func TestUDP(t *testing.T) {
 								},
 							)
 							ret, recvPayload, errno := dut.RecvWithErrno(context.Background(), t, socketFD, 100, 0)
-							if errno != syscall.EAGAIN || errno != syscall.EWOULDBLOCK {
+							if errno != unix.EAGAIN || errno != unix.EWOULDBLOCK {
 								t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, recvPayload, errno)
 							}
 						}

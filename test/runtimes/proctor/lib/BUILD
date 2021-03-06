@@ -13,6 +13,7 @@ go_library(
         "python.go",
     ],
     visibility = ["//test/runtimes/proctor:__pkg__"],
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 
 go_test(

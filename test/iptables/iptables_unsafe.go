@@ -16,12 +16,13 @@ package iptables
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 type originalDstError struct {
-	errno syscall.Errno
+	errno unix.Errno
 }
 
 func (e originalDstError) Error() string {
@@ -32,27 +33,27 @@ func (e originalDstError) Error() string {
 // getsockopt.
 const SO_ORIGINAL_DST = 80
 
-func originalDestination4(connfd int) (syscall.RawSockaddrInet4, error) {
-	var addr syscall.RawSockaddrInet4
-	var addrLen uint32 = syscall.SizeofSockaddrInet4
-	if errno := originalDestination(connfd, syscall.SOL_IP, unsafe.Pointer(&addr), &addrLen); errno != 0 {
-		return syscall.RawSockaddrInet4{}, originalDstError{errno}
+func originalDestination4(connfd int) (unix.RawSockaddrInet4, error) {
+	var addr unix.RawSockaddrInet4
+	var addrLen uint32 = unix.SizeofSockaddrInet4
+	if errno := originalDestination(connfd, unix.SOL_IP, unsafe.Pointer(&addr), &addrLen); errno != 0 {
+		return unix.RawSockaddrInet4{}, originalDstError{errno}
 	}
 	return addr, nil
 }
 
-func originalDestination6(connfd int) (syscall.RawSockaddrInet6, error) {
-	var addr syscall.RawSockaddrInet6
-	var addrLen uint32 = syscall.SizeofSockaddrInet6
-	if errno := originalDestination(connfd, syscall.SOL_IPV6, unsafe.Pointer(&addr), &addrLen); errno != 0 {
-		return syscall.RawSockaddrInet6{}, originalDstError{errno}
+func originalDestination6(connfd int) (unix.RawSockaddrInet6, error) {
+	var addr unix.RawSockaddrInet6
+	var addrLen uint32 = unix.SizeofSockaddrInet6
+	if errno := originalDestination(connfd, unix.SOL_IPV6, unsafe.Pointer(&addr), &addrLen); errno != 0 {
+		return unix.RawSockaddrInet6{}, originalDstError{errno}
 	}
 	return addr, nil
 }
 
-func originalDestination(connfd int, level uintptr, optval unsafe.Pointer, optlen *uint32) syscall.Errno {
-	_, _, errno := syscall.Syscall6(
-		syscall.SYS_GETSOCKOPT,
+func originalDestination(connfd int, level uintptr, optval unsafe.Pointer, optlen *uint32) unix.Errno {
+	_, _, errno := unix.Syscall6(
+		unix.SYS_GETSOCKOPT,
 		uintptr(connfd),
 		level,
 		SO_ORIGINAL_DST,

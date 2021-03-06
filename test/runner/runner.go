@@ -103,18 +103,18 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.SysProcAttr = &unix.SysProcAttr{}
 
 	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
-		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
+		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUTS
 	}
 
 	if specutils.HasCapabilities(capability.CAP_NET_ADMIN) {
-		cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
+		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWNET
 	}
 
 	if err := cmd.Run(); err != nil {
-		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
+		ws := err.(*exec.ExitError).Sys().(unix.WaitStatus)
 		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
 	}
 }
@@ -148,7 +148,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
 		"-net-raw=true",
-		fmt.Sprintf("-panic-signal=%d", syscall.SIGTERM),
+		fmt.Sprintf("-panic-signal=%d", unix.SIGTERM),
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
@@ -176,7 +176,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 
 	testLogDir := ""
-	if undeclaredOutputsDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+	if undeclaredOutputsDir, ok := unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		// Create log directory dedicated for this test.
 		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
@@ -200,8 +200,8 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	// as root inside that namespace to get it.
 	rArgs := append(args, "run", "--bundle", bundleDir, id)
 	cmd := exec.Command(*runscPath, rArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+	cmd.SysProcAttr = &unix.SysProcAttr{
+		Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
 		// Set current user/group as root inside the namespace.
 		UidMappings: []syscall.SysProcIDMap{
 			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
@@ -219,7 +219,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	cmd.Stderr = os.Stderr
 	sig := make(chan os.Signal, 1)
 	defer close(sig)
-	signal.Notify(sig, syscall.SIGTERM)
+	signal.Notify(sig, unix.SIGTERM)
 	defer signal.Stop(sig)
 	go func() {
 		s, ok := <-sig
@@ -247,7 +247,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 
 		log.Warningf("Send SIGTERM to the sandbox process")
 		dArgs = append(args, "debug",
-			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
+			fmt.Sprintf("--signal=%d", unix.SIGTERM),
 			id)
 		signal := exec.Command(*runscPath, dArgs...)
 		signal.Stdout = os.Stdout

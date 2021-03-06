@@ -21,7 +21,6 @@ import (
 	"errors"
 	"flag"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -45,7 +44,7 @@ func TestQueueSendInSynSentHandshake(t *testing.T) {
 	sampleData := []byte("Sample Data")
 
 	dut.SetNonBlocking(t, socket, true)
-	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, syscall.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
@@ -113,15 +112,15 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 	sampleData := []byte("Sample Data")
 
 	dut.SetNonBlocking(t, socket, true)
-	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, syscall.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
-	if _, _, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0); err != syscall.Errno(unix.EWOULDBLOCK) {
-		t.Fatalf("expected error %s, got %s", syscall.Errno(unix.EWOULDBLOCK), err)
+	if _, _, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0); err != unix.EWOULDBLOCK {
+		t.Fatalf("expected error %s, got %s", unix.EWOULDBLOCK, err)
 	}
 
 	// Test blocking read.
@@ -183,7 +182,7 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 	sampleData := []byte("Sample Data")
 
 	dut.SetNonBlocking(t, socket, true)
-	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, syscall.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
@@ -207,8 +206,8 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 		// Issue SEND call in SYN-SENT, this should be queued for
 		// process until the connection is established.
 		n, err := dut.SendWithErrno(ctx, t, socket, sampleData, 0)
-		if err != syscall.Errno(unix.ECONNREFUSED) {
-			t.Errorf("expected error %s, got %s", syscall.Errno(unix.ECONNREFUSED), err)
+		if err != unix.ECONNREFUSED {
+			t.Errorf("expected error %s, got %s", unix.ECONNREFUSED, err)
 		}
 		if n != -1 {
 			t.Errorf("expected return value %d, got %d", -1, n)
@@ -238,15 +237,15 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 	sampleData := []byte("Sample Data")
 
 	dut.SetNonBlocking(t, socket, true)
-	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, syscall.EINPROGRESS) {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
-	if _, _, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0); err != syscall.Errno(unix.EWOULDBLOCK) {
-		t.Fatalf("expected error %s, got %s", syscall.Errno(unix.EWOULDBLOCK), err)
+	if _, _, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0); err != unix.EWOULDBLOCK {
+		t.Fatalf("expected error %s, got %s", unix.EWOULDBLOCK, err)
 	}
 
 	// Test blocking read.
@@ -266,8 +265,8 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 		// Issue RECEIVE call in SYN-SENT, this should be queued for
 		// process until the connection is established.
 		n, _, err := dut.RecvWithErrno(ctx, t, socket, int32(len(sampleData)), 0)
-		if err != syscall.Errno(unix.ECONNREFUSED) {
-			t.Errorf("expected error %s, got %s", syscall.Errno(unix.ECONNREFUSED), err)
+		if err != unix.ECONNREFUSED {
+			t.Errorf("expected error %s, got %s", unix.ECONNREFUSED, err)
 		}
 		if n != -1 {
 			t.Errorf("expected return value %d, got %d", -1, n)

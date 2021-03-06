@@ -12,5 +12,6 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/unet",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

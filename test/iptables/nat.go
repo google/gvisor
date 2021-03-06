@@ -19,8 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -584,33 +584,33 @@ func listenForRedirectedConn(ctx context.Context, ipv6 bool, originalDsts []net.
 	// traditional syscalls.
 
 	// Create the listening socket, bind, listen, and accept.
-	family := syscall.AF_INET
+	family := unix.AF_INET
 	if ipv6 {
-		family = syscall.AF_INET6
+		family = unix.AF_INET6
 	}
-	sockfd, err := syscall.Socket(family, syscall.SOCK_STREAM, 0)
+	sockfd, err := unix.Socket(family, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(sockfd)
+	defer unix.Close(sockfd)
 
-	var bindAddr syscall.Sockaddr
+	var bindAddr unix.Sockaddr
 	if ipv6 {
-		bindAddr = &syscall.SockaddrInet6{
+		bindAddr = &unix.SockaddrInet6{
 			Port: acceptPort,
 			Addr: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // in6addr_any
 		}
 	} else {
-		bindAddr = &syscall.SockaddrInet4{
+		bindAddr = &unix.SockaddrInet4{
 			Port: acceptPort,
 			Addr: [4]byte{0, 0, 0, 0}, // INADDR_ANY
 		}
 	}
-	if err := syscall.Bind(sockfd, bindAddr); err != nil {
+	if err := unix.Bind(sockfd, bindAddr); err != nil {
 		return err
 	}
 
-	if err := syscall.Listen(sockfd, 1); err != nil {
+	if err := unix.Listen(sockfd, 1); err != nil {
 		return err
 	}
 
@@ -619,8 +619,8 @@ func listenForRedirectedConn(ctx context.Context, ipv6 bool, originalDsts []net.
 	errCh := make(chan error)
 	go func() {
 		for {
-			connFD, _, err := syscall.Accept(sockfd)
-			if errors.Is(err, syscall.EINTR) {
+			connFD, _, err := unix.Accept(sockfd)
+			if errors.Is(err, unix.EINTR) {
 				continue
 			}
 			if err != nil {
@@ -641,7 +641,7 @@ func listenForRedirectedConn(ctx context.Context, ipv6 bool, originalDsts []net.
 		return err
 	case connFD = <-connCh:
 	}
-	defer syscall.Close(connFD)
+	defer unix.Close(connFD)
 
 	// Verify that, despite listening on acceptPort, SO_ORIGINAL_DST
 	// indicates the packet was sent to originalDst:dropPort.
@@ -764,35 +764,35 @@ func recvWithRECVORIGDSTADDR(ctx context.Context, ipv6 bool, expectedDst *net.IP
 
 	// Create the listening socket.
 	var (
-		family                    = syscall.AF_INET
-		level                     = syscall.SOL_IP
-		option                    = syscall.IP_RECVORIGDSTADDR
-		bindAddr syscall.Sockaddr = &syscall.SockaddrInet4{
+		family                 = unix.AF_INET
+		level                  = unix.SOL_IP
+		option                 = unix.IP_RECVORIGDSTADDR
+		bindAddr unix.Sockaddr = &unix.SockaddrInet4{
 			Port: int(port),
 			Addr: [4]byte{0, 0, 0, 0}, // INADDR_ANY
 		}
 	)
 	if ipv6 {
-		family = syscall.AF_INET6
-		level = syscall.SOL_IPV6
+		family = unix.AF_INET6
+		level = unix.SOL_IPV6
 		option = 74 // IPV6_RECVORIGDSTADDR, which is missing from the syscall package.
-		bindAddr = &syscall.SockaddrInet6{
+		bindAddr = &unix.SockaddrInet6{
 			Port: int(port),
 			Addr: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // in6addr_any
 		}
 	}
-	sockfd, err := syscall.Socket(family, syscall.SOCK_DGRAM, 0)
+	sockfd, err := unix.Socket(family, unix.SOCK_DGRAM, 0)
 	if err != nil {
-		return fmt.Errorf("failed Socket(%d, %d, 0): %w", family, syscall.SOCK_DGRAM, err)
+		return fmt.Errorf("failed Socket(%d, %d, 0): %w", family, unix.SOCK_DGRAM, err)
 	}
-	defer syscall.Close(sockfd)
+	defer unix.Close(sockfd)
 
-	if err := syscall.Bind(sockfd, bindAddr); err != nil {
+	if err := unix.Bind(sockfd, bindAddr); err != nil {
 		return fmt.Errorf("failed Bind(%d, %+v): %v", sockfd, bindAddr, err)
 	}
 
 	// Enable IP_RECVORIGDSTADDR.
-	if err := syscall.SetsockoptInt(sockfd, level, option, 1); err != nil {
+	if err := unix.SetsockoptInt(sockfd, level, option, 1); err != nil {
 		return fmt.Errorf("failed SetsockoptByte(%d, %d, %d, 1): %v", sockfd, level, option, err)
 	}
 
@@ -837,41 +837,41 @@ func recvWithRECVORIGDSTADDR(ctx context.Context, ipv6 bool, expectedDst *net.IP
 
 	// Verify that the address has the post-NAT port and address.
 	if ipv6 {
-		return addrMatches6(addr.(syscall.RawSockaddrInet6), localAddrs, redirectPort)
+		return addrMatches6(addr.(unix.RawSockaddrInet6), localAddrs, redirectPort)
 	}
-	return addrMatches4(addr.(syscall.RawSockaddrInet4), localAddrs, redirectPort)
+	return addrMatches4(addr.(unix.RawSockaddrInet4), localAddrs, redirectPort)
 }
 
-func recvOrigDstAddr4(sockfd int) (syscall.RawSockaddrInet4, error) {
-	buf, err := recvOrigDstAddr(sockfd, syscall.SOL_IP, syscall.SizeofSockaddrInet4)
+func recvOrigDstAddr4(sockfd int) (unix.RawSockaddrInet4, error) {
+	buf, err := recvOrigDstAddr(sockfd, unix.SOL_IP, unix.SizeofSockaddrInet4)
 	if err != nil {
-		return syscall.RawSockaddrInet4{}, err
+		return unix.RawSockaddrInet4{}, err
 	}
-	var addr syscall.RawSockaddrInet4
+	var addr unix.RawSockaddrInet4
 	binary.Unmarshal(buf, usermem.ByteOrder, &addr)
 	return addr, nil
 }
 
-func recvOrigDstAddr6(sockfd int) (syscall.RawSockaddrInet6, error) {
-	buf, err := recvOrigDstAddr(sockfd, syscall.SOL_IP, syscall.SizeofSockaddrInet6)
+func recvOrigDstAddr6(sockfd int) (unix.RawSockaddrInet6, error) {
+	buf, err := recvOrigDstAddr(sockfd, unix.SOL_IP, unix.SizeofSockaddrInet6)
 	if err != nil {
-		return syscall.RawSockaddrInet6{}, err
+		return unix.RawSockaddrInet6{}, err
 	}
-	var addr syscall.RawSockaddrInet6
+	var addr unix.RawSockaddrInet6
 	binary.Unmarshal(buf, usermem.ByteOrder, &addr)
 	return addr, nil
 }
 
 func recvOrigDstAddr(sockfd int, level uintptr, addrSize int) ([]byte, error) {
 	buf := make([]byte, 64)
-	oob := make([]byte, syscall.CmsgSpace(addrSize))
+	oob := make([]byte, unix.CmsgSpace(addrSize))
 	for {
-		_, oobn, _, _, err := syscall.Recvmsg(
+		_, oobn, _, _, err := unix.Recvmsg(
 			sockfd,
 			buf, // Message buffer.
 			oob, // Out-of-band buffer.
 			0)   // Flags.
-		if errors.Is(err, syscall.EINTR) {
+		if errors.Is(err, unix.EINTR) {
 			continue
 		}
 		if err != nil {
@@ -880,7 +880,7 @@ func recvOrigDstAddr(sockfd int, level uintptr, addrSize int) ([]byte, error) {
 		oob = oob[:oobn]
 
 		// Parse out the control message.
-		msgs, err := syscall.ParseSocketControlMessage(oob)
+		msgs, err := unix.ParseSocketControlMessage(oob)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse control message: %w", err)
 		}
@@ -888,10 +888,10 @@ func recvOrigDstAddr(sockfd int, level uintptr, addrSize int) ([]byte, error) {
 	}
 }
 
-func addrMatches4(got syscall.RawSockaddrInet4, wantAddrs []net.IP, port uint16) error {
+func addrMatches4(got unix.RawSockaddrInet4, wantAddrs []net.IP, port uint16) error {
 	for _, wantAddr := range wantAddrs {
-		want := syscall.RawSockaddrInet4{
-			Family: syscall.AF_INET,
+		want := unix.RawSockaddrInet4{
+			Family: unix.AF_INET,
 			Port:   htons(port),
 		}
 		copy(want.Addr[:], wantAddr.To4())
@@ -902,10 +902,10 @@ func addrMatches4(got syscall.RawSockaddrInet4, wantAddrs []net.IP, port uint16)
 	return fmt.Errorf("got %+v, but wanted one of %+v (note: port numbers are in network byte order)", got, wantAddrs)
 }
 
-func addrMatches6(got syscall.RawSockaddrInet6, wantAddrs []net.IP, port uint16) error {
+func addrMatches6(got unix.RawSockaddrInet6, wantAddrs []net.IP, port uint16) error {
 	for _, wantAddr := range wantAddrs {
-		want := syscall.RawSockaddrInet6{
-			Family: syscall.AF_INET6,
+		want := unix.RawSockaddrInet6{
+			Family: unix.AF_INET6,
 			Port:   htons(port),
 		}
 		copy(want.Addr[:], wantAddr.To16())
