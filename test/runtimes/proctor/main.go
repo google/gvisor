@@ -22,8 +22,8 @@ import (
 	"log"
 	"os"
 	"strings"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/runtimes/proctor/lib"
 )
 
@@ -42,14 +42,14 @@ func setNumFilesLimit() error {
 	// timeout if the NOFILE limit is too high. On gVisor, syscalls are
 	// slower so these tests will need even more time to pass.
 	const nofile = 32768
-	rLimit := syscall.Rlimit{}
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	rLimit := unix.Rlimit{}
+	err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rLimit)
 	if err != nil {
 		return fmt.Errorf("failed to get RLIMIT_NOFILE: %v", err)
 	}
 	if rLimit.Cur > nofile {
 		rLimit.Cur = nofile
-		err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+		err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rLimit)
 		if err != nil {
 			return fmt.Errorf("failed to set RLIMIT_NOFILE: %v", err)
 		}

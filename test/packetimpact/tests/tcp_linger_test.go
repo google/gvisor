@@ -17,7 +17,6 @@ package tcp_linger_test
 import (
 	"context"
 	"flag"
-	"syscall"
 	"testing"
 	"time"
 
@@ -183,7 +182,7 @@ func TestTCPLingerShutdownZeroTimeout(t *testing.T) {
 	defer closeAll(t, dut, listenFD, conn)
 
 	dut.SetSockLingerOption(t, acceptFD, 0, true)
-	dut.Shutdown(t, acceptFD, syscall.SHUT_RDWR)
+	dut.Shutdown(t, acceptFD, unix.SHUT_RDWR)
 	dut.Close(t, acceptFD)
 
 	// Shutdown will send FIN-ACK with read/write option.
@@ -220,7 +219,7 @@ func TestTCPLingerShutdownSendNonZeroTimeout(t *testing.T) {
 			sampleData := []byte("Sample Data")
 			dut.Send(t, acceptFD, sampleData, 0)
 
-			dut.Shutdown(t, acceptFD, syscall.SHUT_RDWR)
+			dut.Shutdown(t, acceptFD, unix.SHUT_RDWR)
 
 			// Increase timeout as Close will take longer time to
 			// return when SO_LINGER is set with non-zero timeout.

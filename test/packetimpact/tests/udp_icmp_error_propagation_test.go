@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -86,16 +85,16 @@ type testData struct {
 	remotePort uint16
 	cleanFD    int32
 	cleanPort  uint16
-	wantErrno  syscall.Errno
+	wantErrno  unix.Errno
 }
 
 // wantErrno computes the errno to expect given the connection mode of a UDP
 // socket and the ICMP error it will receive.
-func wantErrno(c connectionMode, icmpErr icmpError) syscall.Errno {
+func wantErrno(c connectionMode, icmpErr icmpError) unix.Errno {
 	if c && icmpErr == portUnreachable {
-		return syscall.Errno(unix.ECONNREFUSED)
+		return unix.ECONNREFUSED
 	}
-	return syscall.Errno(0)
+	return unix.Errno(0)
 }
 
 // sendICMPError sends an ICMP error message in response to a UDP datagram.
@@ -123,7 +122,7 @@ func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp
 	conn.SendFrameStateless(t, layers)
 }
 
-// testRecv tests observing the ICMP error through the recv syscall. A packet
+// testRecv tests observing the ICMP error through the recv unix. A packet
 // is sent to the DUT, and if wantErrno is non-zero, then the first recv should
 // fail and the second should succeed. Otherwise if wantErrno is zero then the
 // first recv should succeed immediately.
@@ -136,7 +135,7 @@ func testRecv(ctx context.Context, t *testing.T, d testData) {
 
 	d.conn.Send(t, testbench.UDP{})
 
-	if d.wantErrno != syscall.Errno(0) {
+	if d.wantErrno != unix.Errno(0) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		ret, _, err := d.dut.RecvWithErrno(ctx, t, d.remoteFD, 100, 0)
@@ -162,7 +161,7 @@ func testSendTo(ctx context.Context, t *testing.T, d testData) {
 		t.Fatalf("did not receive UDP packet from clean socket on DUT: %s", err)
 	}
 
-	if d.wantErrno != syscall.Errno(0) {
+	if d.wantErrno != unix.Errno(0) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		ret, err := d.dut.SendToWithErrno(ctx, t, d.remoteFD, nil, 0, d.conn.LocalAddr(t))
@@ -183,11 +182,11 @@ func testSendTo(ctx context.Context, t *testing.T, d testData) {
 
 func testSockOpt(_ context.Context, t *testing.T, d testData) {
 	// Check that there's no pending error on the clean socket.
-	if errno := syscall.Errno(d.dut.GetSockOptInt(t, d.cleanFD, unix.SOL_SOCKET, unix.SO_ERROR)); errno != syscall.Errno(0) {
+	if errno := unix.Errno(d.dut.GetSockOptInt(t, d.cleanFD, unix.SOL_SOCKET, unix.SO_ERROR)); errno != unix.Errno(0) {
 		t.Fatalf("unexpected error (%[1]d) %[1]v on clean socket", errno)
 	}
 
-	if errno := syscall.Errno(d.dut.GetSockOptInt(t, d.remoteFD, unix.SOL_SOCKET, unix.SO_ERROR)); errno != d.wantErrno {
+	if errno := unix.Errno(d.dut.GetSockOptInt(t, d.remoteFD, unix.SOL_SOCKET, unix.SO_ERROR)); errno != d.wantErrno {
 		t.Fatalf("SO_ERROR sockopt after ICMP error is (%[1]d) %[1]v, expected (%[2]d) %[2]v", errno, d.wantErrno)
 	}
 
@@ -310,7 +309,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				go func() {
 					defer wg.Done()
 
-					if wantErrno != syscall.Errno(0) {
+					if wantErrno != unix.Errno(0) {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 						defer cancel()
 

@@ -22,7 +22,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestRunner is an interface that must be implemented for each runtime
@@ -59,7 +60,7 @@ func TestRunnerForRuntime(runtime string) (TestRunner, error) {
 func PauseAndReap() {
 	// Get notified of any new children.
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGCHLD)
+	signal.Notify(ch, unix.SIGCHLD)
 
 	for {
 		if _, ok := <-ch; !ok {
@@ -69,7 +70,7 @@ func PauseAndReap() {
 
 		// Reap the child.
 		for {
-			if cpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil); cpid < 1 {
+			if cpid, _ := unix.Wait4(-1, nil, unix.WNOHANG, nil); cpid < 1 {
 				break
 			}
 		}

@@ -29,7 +29,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strconv"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -112,33 +111,33 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 		const protocol = 0x0300 // htons(ETH_P_ALL)
 		fds := make([]int, numChannels)
 		for i := range fds {
-			fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
+			fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)
 			if err != nil {
 				return nil, fmt.Errorf("unable to create raw socket: %v", err)
 			}
 
 			// Bind to the appropriate device.
-			ll := syscall.SockaddrLinklayer{
+			ll := unix.SockaddrLinklayer{
 				Protocol: protocol,
 				Ifindex:  iface.Index,
-				Pkttype:  syscall.PACKET_HOST,
+				Pkttype:  unix.PACKET_HOST,
 			}
-			if err := syscall.Bind(fd, &ll); err != nil {
+			if err := unix.Bind(fd, &ll); err != nil {
 				return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
 			}
 
 			// RAW Sockets by default have a very small SO_RCVBUF of 256KB,
 			// up it to at least 4MB to reduce packet drops.
-			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, bufSize); err != nil {
+			if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize); err != nil {
 				return nil, fmt.Errorf("setsockopt(..., SO_RCVBUF, %v,..) = %v", bufSize, err)
 			}
 
-			if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, bufSize); err != nil {
+			if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize); err != nil {
 				return nil, fmt.Errorf("setsockopt(..., SO_SNDBUF, %v,..) = %v", bufSize, err)
 			}
 
 			if !*swgso && *gso != 0 {
-				if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
+				if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
 					return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
 				}
 			}
@@ -403,7 +402,7 @@ func main() {
 	log.Printf("client=%v, server=%v, ready.", *client, *server)
 
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGTERM)
+	signal.Notify(sigs, unix.SIGTERM)
 	go func() {
 		<-sigs
 		if *cpuprofile != "" {
