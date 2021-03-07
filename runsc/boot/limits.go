@@ -16,9 +16,9 @@ package boot
 
 import (
 	"fmt"
-	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -104,9 +104,9 @@ func (d *defs) initDefaults() error {
 
 	// Read host limits that directly affect the sandbox and adjust the defaults
 	// based on them.
-	for _, res := range []int{syscall.RLIMIT_FSIZE, syscall.RLIMIT_NOFILE} {
-		var hl syscall.Rlimit
-		if err := syscall.Getrlimit(res, &hl); err != nil {
+	for _, res := range []int{unix.RLIMIT_FSIZE, unix.RLIMIT_NOFILE} {
+		var hl unix.Rlimit
+		if err := unix.Getrlimit(res, &hl); err != nil {
 			return err
 		}
 

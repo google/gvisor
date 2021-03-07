@@ -30,6 +30,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -83,7 +84,7 @@ type Sandbox struct {
 	// child==true and the sandbox was waited on. This field allows for multiple
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
-	status syscall.WaitStatus
+	status unix.WaitStatus
 }
 
 // Args is used to configure a new sandbox.
@@ -383,7 +384,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, conf.ToFlags()...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.SysProcAttr = &unix.SysProcAttr{}
 
 	// Open the log files to pass to the sandbox as FDs.
 	//
@@ -739,7 +740,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	if args.Attached {
 		// Kill sandbox if parent process exits in attached mode.
-		cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
+		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
 		// Tells boot that any process it creates must have pdeathsig set.
 		cmd.Args = append(cmd.Args, "--attached")
 	}
@@ -762,7 +763,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		//
 		// NOTE: The error message is checked because error types are lost over
 		// rpc calls.
-		if strings.Contains(err.Error(), syscall.EACCES.Error()) {
+		if strings.Contains(err.Error(), unix.EACCES.Error()) {
 			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
 				return fmt.Errorf("%v: %v", err, permsErr)
 			}
@@ -782,7 +783,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 }
 
 // Wait waits for the containerized process to exit, and returns its WaitStatus.
-func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
+func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 	log.Debugf("Waiting for container %q in sandbox %q", cid, s.ID)
 
 	if conn, err := s.sandboxConnect(); err != nil {
@@ -790,14 +791,14 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 		// There is nothing we can do for subcontainers. For the init container, we
 		// can try to get the sandbox exit code.
 		if !s.IsRootContainer(cid) {
-			return syscall.WaitStatus(0), err
+			return unix.WaitStatus(0), err
 		}
 		log.Warningf("Wait on container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
 	} else {
 		defer conn.Close()
 
 		// Try the Wait RPC to the sandbox.
-		var ws syscall.WaitStatus
+		var ws unix.WaitStatus
 		err = conn.Call(boot.ContainerWait, &cid, &ws)
 		if err == nil {
 			// It worked!
@@ -805,7 +806,7 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 		}
 		// See comment above.
 		if !s.IsRootContainer(cid) {
-			return syscall.WaitStatus(0), err
+			return unix.WaitStatus(0), err
 		}
 
 		// The sandbox may have exited after we connected, but before
@@ -817,10 +818,10 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	// The best we can do is ask Linux what the sandbox exit status was, since in
 	// most cases that will be the same as the container exit status.
 	if err := s.waitForStopped(); err != nil {
-		return syscall.WaitStatus(0), err
+		return unix.WaitStatus(0), err
 	}
 	if !s.child {
-		return syscall.WaitStatus(0), fmt.Errorf("sandbox no longer running and its exit status is unavailable")
+		return unix.WaitStatus(0), fmt.Errorf("sandbox no longer running and its exit status is unavailable")
 	}
 
 	s.statusMu.Lock()
@@ -830,9 +831,9 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 
 // WaitPID waits for process 'pid' in the container's sandbox and returns its
 // WaitStatus.
-func (s *Sandbox) WaitPID(cid string, pid int32) (syscall.WaitStatus, error) {
+func (s *Sandbox) WaitPID(cid string, pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Waiting for PID %d in sandbox %q", pid, s.ID)
-	var ws syscall.WaitStatus
+	var ws unix.WaitStatus
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return ws, err
@@ -861,7 +862,7 @@ func (s *Sandbox) destroy() error {
 	log.Debugf("Destroy sandbox %q", s.ID)
 	if s.Pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
-		if err := syscall.Kill(s.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := unix.Kill(s.Pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
 			return fmt.Errorf("killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
 		}
 		if err := s.waitForStopped(); err != nil {
@@ -875,7 +876,7 @@ func (s *Sandbox) destroy() error {
 // SignalContainer sends the signal to a container in the sandbox. If all is
 // true and signal is SIGKILL, then waits for all processes to exit before
 // returning.
-func (s *Sandbox) SignalContainer(cid string, sig syscall.Signal, all bool) error {
+func (s *Sandbox) SignalContainer(cid string, sig unix.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -903,7 +904,7 @@ func (s *Sandbox) SignalContainer(cid string, sig syscall.Signal, all bool) erro
 // fgProcess is true, then the signal is sent to the foreground process group
 // in the same session that PID belongs to. This is only valid if the process
 // is attached to a host TTY.
-func (s *Sandbox) SignalProcess(cid string, pid int32, sig syscall.Signal, fgProcess bool) error {
+func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProcess bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -984,7 +985,7 @@ func (s *Sandbox) Resume(cid string) error {
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {
 		// Send a signal 0 to the sandbox process.
-		if err := syscall.Kill(s.Pid, 0); err == nil {
+		if err := unix.Kill(s.Pid, 0); err == nil {
 			// Succeeded, process is running.
 			return true
 		}
@@ -1147,7 +1148,7 @@ func (s *Sandbox) waitForStopped() error {
 			}
 			// The sandbox process is a child of the current process,
 			// so we can wait it and collect its zombie.
-			wpid, err := syscall.Wait4(int(s.Pid), &s.status, syscall.WNOHANG, nil)
+			wpid, err := unix.Wait4(int(s.Pid), &s.status, unix.WNOHANG, nil)
 			if err != nil {
 				return fmt.Errorf("error waiting the sandbox process: %v", err)
 			}

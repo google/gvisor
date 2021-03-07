@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -49,11 +49,11 @@ func pivotRoot(root string) error {
 	// will be moved to "/" too. The parent mount of the old_root will be
 	// new_root, so after umounting the old_root, we will see only
 	// the new_root in "/".
-	if err := syscall.PivotRoot(".", "."); err != nil {
+	if err := unix.PivotRoot(".", "."); err != nil {
 		return fmt.Errorf("pivot_root failed, make sure that the root mount has a parent: %v", err)
 	}
 
-	if err := syscall.Unmount(".", syscall.MNT_DETACH); err != nil {
+	if err := unix.Unmount(".", unix.MNT_DETACH); err != nil {
 		return fmt.Errorf("error umounting the old root file system: %v", err)
 	}
 	return nil
@@ -70,26 +70,26 @@ func setUpChroot(pidns bool) error {
 
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
-	if err := syscall.Mount("", "/", "", syscall.MS_SLAVE|syscall.MS_REC, ""); err != nil {
+	if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
 		return fmt.Errorf("error converting mounts: %v", err)
 	}
 
-	if err := syscall.Mount("runsc-root", chroot, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, ""); err != nil {
+	if err := unix.Mount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, ""); err != nil {
 		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
 	}
 
 	if pidns {
-		flags := uint32(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_RDONLY)
+		flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
 		if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
 			return fmt.Errorf("error mounting proc in chroot: %v", err)
 		}
 	} else {
-		if err := mountInChroot(chroot, "/proc", "/proc", "bind", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_REC); err != nil {
+		if err := mountInChroot(chroot, "/proc", "/proc", "bind", unix.MS_BIND|unix.MS_RDONLY|unix.MS_REC); err != nil {
 			return fmt.Errorf("error mounting proc in chroot: %v", err)
 		}
 	}
 
-	if err := syscall.Mount("", chroot, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
+	if err := unix.Mount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, ""); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 

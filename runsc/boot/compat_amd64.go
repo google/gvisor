@@ -16,8 +16,8 @@ package boot
 
 import (
 	"fmt"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
@@ -92,7 +92,7 @@ func syscallNum(regs *rpb.Registers) uint64 {
 
 func newArchArgsTracker(sysnr uint64) syscallTracker {
 	switch sysnr {
-	case syscall.SYS_ARCH_PRCTL:
+	case unix.SYS_ARCH_PRCTL:
 		// args: cmd, ...
 		return newArgsTracker(0)
 	}

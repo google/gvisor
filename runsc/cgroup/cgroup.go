@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -111,7 +110,7 @@ func setValue(path, name, data string) error {
 		err := ioutil.WriteFile(fullpath, []byte(data), 0700)
 		if err == nil {
 			return nil
-		} else if !errors.Is(err, syscall.EINTR) {
+		} else if !errors.Is(err, unix.EINTR) {
 			return err
 		}
 	}
@@ -161,7 +160,7 @@ func fillFromAncestor(path string) (string, error) {
 		err := ioutil.WriteFile(path, []byte(val), 0700)
 		if err == nil {
 			break
-		} else if !errors.Is(err, syscall.EINTR) {
+		} else if !errors.Is(err, unix.EINTR) {
 			return "", err
 		}
 	}
@@ -337,7 +336,7 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 		c.Own[key] = true
 
 		if err := os.MkdirAll(path, 0755); err != nil {
-			if cfg.optional && errors.Is(err, syscall.EROFS) {
+			if cfg.optional && errors.Is(err, unix.EROFS) {
 				log.Infof("Skipping cgroup %q", key)
 				continue
 			}
@@ -370,7 +369,7 @@ func (c *Cgroup) Uninstall() error {
 		defer cancel()
 		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 		fn := func() error {
-			err := syscall.Rmdir(path)
+			err := unix.Rmdir(path)
 			if os.IsNotExist(err) {
 				return nil
 			}

@@ -109,7 +109,7 @@ func FilterNS(filter []specs.LinuxNamespaceType, s *specs.Spec) []specs.LinuxNam
 // setNS sets the namespace of the given type.  It must be called with
 // OSThreadLocked.
 func setNS(fd, nsType uintptr) error {
-	if _, _, err := syscall.RawSyscall(unix.SYS_SETNS, fd, nsType, 0); err != 0 {
+	if _, _, err := unix.RawSyscall(unix.SYS_SETNS, fd, nsType, 0); err != 0 {
 		return err
 	}
 	return nil
@@ -158,7 +158,7 @@ func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 	defer runtime.UnlockOSThread()
 
 	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		cmd.SysProcAttr = &unix.SysProcAttr{}
 	}
 
 	for _, ns := range nss {
@@ -185,7 +185,7 @@ func SetUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
 		return
 	}
 	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		cmd.SysProcAttr = &unix.SysProcAttr{}
 	}
 	for _, idMap := range s.Linux.UIDMappings {
 		log.Infof("Mapping host uid %d to container uid %d (size=%d)", idMap.HostID, idMap.ContainerID, idMap.Size)
@@ -241,8 +241,8 @@ func MaybeRunAsRoot() error {
 
 	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+	cmd.SysProcAttr = &unix.SysProcAttr{
+		Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
 		// Set current user/group as root inside the namespace. Since we may not
 		// have CAP_SETUID/CAP_SETGID, just map root to the current user/group.
 		UidMappings: []syscall.SysProcIDMap{
@@ -255,7 +255,7 @@ func MaybeRunAsRoot() error {
 		GidMappingsEnableSetgroups: false,
 
 		// Make sure child is killed when the parent terminates.
-		Pdeathsig: syscall.SIGKILL,
+		Pdeathsig: unix.SIGKILL,
 	}
 
 	cmd.Env = os.Environ()
@@ -275,7 +275,7 @@ func MaybeRunAsRoot() error {
 	}()
 	if err := cmd.Wait(); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
-			if ws, ok := exit.Sys().(syscall.WaitStatus); ok {
+			if ws, ok := exit.Sys().(unix.WaitStatus); ok {
 				os.Exit(ws.ExitStatus())
 			}
 			log.Warningf("No wait status provided, exiting with -1: %v", err)

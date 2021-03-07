@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -149,16 +148,16 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// fsgofer should run with a umask of 0, because we want to preserve file
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
-	syscall.Umask(0)
+	unix.Umask(0)
 
 	if err := fsgofer.OpenProcSelfFD(); err != nil {
 		Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
-	if err := syscall.Chroot(root); err != nil {
+	if err := unix.Chroot(root); err != nil {
 		Fatalf("failed to chroot to %q: %v", root, err)
 	}
-	if err := syscall.Chdir("/"); err != nil {
+	if err := unix.Chdir("/"); err != nil {
 		Fatalf("changing working dir: %v", err)
 	}
 	log.Infof("Process chroot'd to %q", root)
@@ -262,7 +261,7 @@ func isReadonlyMount(opts []string) bool {
 func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
-	if err := syscall.Mount("", "/", "", syscall.MS_SLAVE|syscall.MS_REC, ""); err != nil {
+	if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
 		Fatalf("error converting mounts: %v", err)
 	}
 
@@ -274,30 +273,30 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		//
 		// We need a directory to construct a new root and we know that
 		// runsc can't start without /proc, so we can use it for this.
-		flags := uintptr(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC)
-		if err := syscall.Mount("runsc-root", "/proc", "tmpfs", flags, ""); err != nil {
+		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
+		if err := unix.Mount("runsc-root", "/proc", "tmpfs", flags, ""); err != nil {
 			Fatalf("error mounting tmpfs: %v", err)
 		}
 
 		// Prepare tree structure for pivot_root(2).
 		os.Mkdir("/proc/proc", 0755)
 		os.Mkdir("/proc/root", 0755)
-		if err := syscall.Mount("runsc-proc", "/proc/proc", "proc", flags|syscall.MS_RDONLY, ""); err != nil {
+		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
 			Fatalf("error mounting proc: %v", err)
 		}
 		root = "/proc/root"
 	}
 
 	// Mount root path followed by submounts.
-	if err := syscall.Mount(spec.Root.Path, root, "bind", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
+	if err := unix.Mount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, ""); err != nil {
 		return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
 	}
 
-	flags := uint32(syscall.MS_SLAVE | syscall.MS_REC)
+	flags := uint32(unix.MS_SLAVE | unix.MS_REC)
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
 	}
-	if err := syscall.Mount("", root, "", uintptr(flags), ""); err != nil {
+	if err := unix.Mount("", root, "", uintptr(flags), ""); err != nil {
 		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
 	}
 
@@ -323,8 +322,8 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", root)
-		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
-		if err := syscall.Mount(root, root, "bind", flags, ""); err != nil {
+		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC)
+		if err := unix.Mount(root, root, "bind", flags, ""); err != nil {
 			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
 		}
 	}
@@ -354,10 +353,10 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 			return fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
 
-		flags := specutils.OptionsToFlags(m.Options) | syscall.MS_BIND
+		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
 		if conf.Overlay {
 			// Force mount read-only if writes are not going to be sent to it.
-			flags |= syscall.MS_RDONLY
+			flags |= unix.MS_RDONLY
 		}
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
@@ -368,7 +367,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 		// Set propagation options that cannot be set together with other options.
 		flags = specutils.PropOptionsToFlags(m.Options)
 		if flags != 0 {
-			if err := syscall.Mount("", dst, "", uintptr(flags), ""); err != nil {
+			if err := unix.Mount("", dst, "", uintptr(flags), ""); err != nil {
 				return fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
 			}
 		}
@@ -469,8 +468,8 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	copy(rv, opts)
 
 	if conf.OverlayfsStaleRead {
-		statfs := syscall.Statfs_t{}
-		if err := syscall.Statfs(path, &statfs); err != nil {
+		statfs := unix.Statfs_t{}
+		if err := unix.Statfs(path, &statfs); err != nil {
 			return nil, err
 		}
 		if statfs.Type == unix.OVERLAYFS_SUPER_MAGIC {

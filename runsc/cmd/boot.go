@@ -19,7 +19,6 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
-	"syscall"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -259,8 +258,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	ws := l.WaitExit()
 	log.Infof("application exiting with %+v", ws)
-	waitStatus := args[1].(*syscall.WaitStatus)
-	*waitStatus = syscall.WaitStatus(ws.Status())
+	waitStatus := args[1].(*unix.WaitStatus)
+	*waitStatus = unix.WaitStatus(ws.Status())
 	l.Destroy()
 	return subcommands.ExitSuccess
 }
