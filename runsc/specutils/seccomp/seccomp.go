@@ -18,9 +18,9 @@ package seccomp
 
 import (
 	"fmt"
-	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
@@ -33,9 +33,9 @@ var (
 	killThreadAction = linux.SECCOMP_RET_KILL_THREAD
 	trapAction       = linux.SECCOMP_RET_TRAP
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_ERRNO
-	errnoAction = linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(syscall.EPERM))
+	errnoAction = linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
-	traceAction = linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(syscall.EPERM))
+	traceAction = linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EPERM))
 	allowAction = linux.SECCOMP_RET_ALLOW
 )
 

@@ -26,10 +26,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -86,7 +86,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	}
 
 	conf := args[0].(*config.Config)
-	waitStatus := args[1].(*syscall.WaitStatus)
+	waitStatus := args[1].(*unix.WaitStatus)
 
 	if conf.Rootless {
 		if err := specutils.MaybeRunAsRoot(); err != nil {
@@ -225,7 +225,7 @@ func resolvePath(path string) (string, error) {
 		return "", fmt.Errorf("resolving %q: %v", path, err)
 	}
 	path = filepath.Clean(path)
-	if err := syscall.Access(path, 0); err != nil {
+	if err := unix.Access(path, 0); err != nil {
 		return "", fmt.Errorf("unable to access %q: %v", path, err)
 	}
 	return path, nil

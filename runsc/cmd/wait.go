@@ -18,9 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"syscall"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -77,7 +77,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("loading container: %v", err)
 	}
 
-	var waitStatus syscall.WaitStatus
+	var waitStatus unix.WaitStatus
 	switch {
 	// Wait on the whole container.
 	case wt.rootPID == unsetPID && wt.pid == unsetPID:
@@ -119,7 +119,7 @@ type waitResult struct {
 
 // exitStatus returns the correct exit status for a process based on if it
 // was signaled or exited cleanly.
-func exitStatus(status syscall.WaitStatus) int {
+func exitStatus(status unix.WaitStatus) int {
 	if status.Signaled() {
 		return 128 + int(status.Signal())
 	}

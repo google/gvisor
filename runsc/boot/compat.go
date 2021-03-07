@@ -17,8 +17,8 @@ package boot
 import (
 	"fmt"
 	"os"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
@@ -93,19 +93,19 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 	tr := c.trackers[sysnr]
 	if tr == nil {
 		switch sysnr {
-		case syscall.SYS_PRCTL:
+		case unix.SYS_PRCTL:
 			// args: cmd, ...
 			tr = newArgsTracker(0)
 
-		case syscall.SYS_IOCTL, syscall.SYS_EPOLL_CTL, syscall.SYS_SHMCTL, syscall.SYS_FUTEX, syscall.SYS_FALLOCATE:
+		case unix.SYS_IOCTL, unix.SYS_EPOLL_CTL, unix.SYS_SHMCTL, unix.SYS_FUTEX, unix.SYS_FALLOCATE:
 			// args: fd/addr, cmd, ...
 			tr = newArgsTracker(1)
 
-		case syscall.SYS_GETSOCKOPT, syscall.SYS_SETSOCKOPT:
+		case unix.SYS_GETSOCKOPT, unix.SYS_SETSOCKOPT:
 			// args: fd, level, name, ...
 			tr = newArgsTracker(1, 2)
 
-		case syscall.SYS_SEMCTL:
+		case unix.SYS_SEMCTL:
 			// args: semid, semnum, cmd, ...
 			tr = newArgsTracker(2)
 
@@ -131,7 +131,7 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 }
 
 func (c *compatEmitter) emitUncaughtSignal(msg *ucspb.UncaughtSignal) {
-	sig := syscall.Signal(msg.SignalNumber)
+	sig := unix.Signal(msg.SignalNumber)
 	c.sink.Infof(
 		"Uncaught signal: %q (%d), PID: %d, TID: %d, fault addr: %#x",
 		sig, msg.SignalNumber, msg.Pid, msg.Tid, msg.FaultAddr)

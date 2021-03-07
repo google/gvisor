@@ -16,7 +16,6 @@ package filter
 
 import (
 	"os"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -25,12 +24,12 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the gofer.
 var allowedSyscalls = seccomp.SyscallRules{
-	syscall.SYS_ACCEPT:        {},
-	syscall.SYS_CLOCK_GETTIME: {},
-	syscall.SYS_CLOSE:         {},
-	syscall.SYS_DUP:           {},
-	syscall.SYS_EPOLL_CTL:     {},
-	syscall.SYS_EPOLL_PWAIT: []seccomp.Rule{
+	unix.SYS_ACCEPT:        {},
+	unix.SYS_CLOCK_GETTIME: {},
+	unix.SYS_CLOSE:         {},
+	unix.SYS_DUP:           {},
+	unix.SYS_EPOLL_CTL:     {},
+	unix.SYS_EPOLL_PWAIT: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
@@ -39,34 +38,34 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_EVENTFD2: []seccomp.Rule{
+	unix.SYS_EVENTFD2: []seccomp.Rule{
 		{
 			seccomp.EqualTo(0),
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_EXIT:       {},
-	syscall.SYS_EXIT_GROUP: {},
-	syscall.SYS_FALLOCATE: []seccomp.Rule{
+	unix.SYS_EXIT:       {},
+	unix.SYS_EXIT_GROUP: {},
+	unix.SYS_FALLOCATE: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_FCHMOD:   {},
-	syscall.SYS_FCHOWNAT: {},
-	syscall.SYS_FCNTL: []seccomp.Rule{
+	unix.SYS_FCHMOD:   {},
+	unix.SYS_FCHOWNAT: {},
+	unix.SYS_FCNTL: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.F_GETFL),
+			seccomp.EqualTo(unix.F_GETFL),
 		},
 		{
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.F_SETFL),
+			seccomp.EqualTo(unix.F_SETFL),
 		},
 		{
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.F_GETFD),
+			seccomp.EqualTo(unix.F_GETFD),
 		},
 		// Used by flipcall.PacketWindowAllocator.Init().
 		{
@@ -74,11 +73,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.F_ADD_SEALS),
 		},
 	},
-	syscall.SYS_FSTAT:     {},
-	syscall.SYS_FSTATFS:   {},
-	syscall.SYS_FSYNC:     {},
-	syscall.SYS_FTRUNCATE: {},
-	syscall.SYS_FUTEX: {
+	unix.SYS_FSTAT:     {},
+	unix.SYS_FSTATFS:   {},
+	unix.SYS_FSYNC:     {},
+	unix.SYS_FTRUNCATE: {},
+	unix.SYS_FUTEX: {
 		seccomp.Rule{
 			seccomp.MatchAny{},
 			seccomp.EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
@@ -116,78 +115,78 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_GETDENTS64:   {},
-	syscall.SYS_GETPID:       {},
-	unix.SYS_GETRANDOM:       {},
-	syscall.SYS_GETTID:       {},
-	syscall.SYS_GETTIMEOFDAY: {},
-	syscall.SYS_LINKAT:       {},
-	syscall.SYS_LSEEK:        {},
-	syscall.SYS_MADVISE:      {},
-	unix.SYS_MEMFD_CREATE:    {}, /// Used by flipcall.PacketWindowAllocator.Init().
-	syscall.SYS_MKDIRAT:      {},
-	syscall.SYS_MKNODAT:      {},
+	unix.SYS_GETDENTS64:   {},
+	unix.SYS_GETPID:       {},
+	unix.SYS_GETRANDOM:    {},
+	unix.SYS_GETTID:       {},
+	unix.SYS_GETTIMEOFDAY: {},
+	unix.SYS_LINKAT:       {},
+	unix.SYS_LSEEK:        {},
+	unix.SYS_MADVISE:      {},
+	unix.SYS_MEMFD_CREATE: {}, /// Used by flipcall.PacketWindowAllocator.Init().
+	unix.SYS_MKDIRAT:      {},
+	unix.SYS_MKNODAT:      {},
 	// Used by the Go runtime as a temporarily workaround for a Linux
 	// 5.2-5.4 bug.
 	//
 	// See src/runtime/os_linux_x86.go.
 	//
 	// TODO(b/148688965): Remove once this is gone from Go.
-	syscall.SYS_MLOCK: []seccomp.Rule{
+	unix.SYS_MLOCK: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 			seccomp.EqualTo(4096),
 		},
 	},
-	syscall.SYS_MMAP: []seccomp.Rule{
+	unix.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MAP_SHARED),
+			seccomp.EqualTo(unix.MAP_SHARED),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS),
+			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS),
 		},
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS | syscall.MAP_FIXED),
-		},
-	},
-	syscall.SYS_MPROTECT:   {},
-	syscall.SYS_MUNMAP:     {},
-	syscall.SYS_NANOSLEEP:  {},
-	syscall.SYS_OPENAT:     {},
-	syscall.SYS_PPOLL:      {},
-	syscall.SYS_PREAD64:    {},
-	syscall.SYS_PWRITE64:   {},
-	syscall.SYS_READ:       {},
-	syscall.SYS_READLINKAT: {},
-	syscall.SYS_RECVMSG: []seccomp.Rule{
-		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC),
-		},
-		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC | syscall.MSG_PEEK),
+			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED),
 		},
 	},
-	syscall.SYS_RENAMEAT:        {},
-	syscall.SYS_RESTART_SYSCALL: {},
+	unix.SYS_MPROTECT:   {},
+	unix.SYS_MUNMAP:     {},
+	unix.SYS_NANOSLEEP:  {},
+	unix.SYS_OPENAT:     {},
+	unix.SYS_PPOLL:      {},
+	unix.SYS_PREAD64:    {},
+	unix.SYS_PWRITE64:   {},
+	unix.SYS_READ:       {},
+	unix.SYS_READLINKAT: {},
+	unix.SYS_RECVMSG: []seccomp.Rule{
+		{
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_TRUNC),
+		},
+		{
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_TRUNC | unix.MSG_PEEK),
+		},
+	},
+	unix.SYS_RENAMEAT:        {},
+	unix.SYS_RESTART_SYSCALL: {},
 	// May be used by the runtime during panic().
-	syscall.SYS_RT_SIGACTION:   {},
-	syscall.SYS_RT_SIGPROCMASK: {},
-	syscall.SYS_RT_SIGRETURN:   {},
-	syscall.SYS_SCHED_YIELD:    {},
-	syscall.SYS_SENDMSG: []seccomp.Rule{
+	unix.SYS_RT_SIGACTION:   {},
+	unix.SYS_RT_SIGPROCMASK: {},
+	unix.SYS_RT_SIGRETURN:   {},
+	unix.SYS_SCHED_YIELD:    {},
+	unix.SYS_SENDMSG: []seccomp.Rule{
 		// Used by fdchannel.Endpoint.SendFD().
 		{
 			seccomp.MatchAny{},
@@ -198,51 +197,51 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
-			seccomp.EqualTo(syscall.MSG_DONTWAIT | syscall.MSG_NOSIGNAL),
+			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_NOSIGNAL),
 		},
 	},
-	syscall.SYS_SHUTDOWN: []seccomp.Rule{
-		{seccomp.MatchAny{}, seccomp.EqualTo(syscall.SHUT_RDWR)},
+	unix.SYS_SHUTDOWN: []seccomp.Rule{
+		{seccomp.MatchAny{}, seccomp.EqualTo(unix.SHUT_RDWR)},
 	},
-	syscall.SYS_SIGALTSTACK: {},
+	unix.SYS_SIGALTSTACK: {},
 	// Used by fdchannel.NewConnectedSockets().
-	syscall.SYS_SOCKETPAIR: {
+	unix.SYS_SOCKETPAIR: {
 		{
-			seccomp.EqualTo(syscall.AF_UNIX),
-			seccomp.EqualTo(syscall.SOCK_SEQPACKET | syscall.SOCK_CLOEXEC),
+			seccomp.EqualTo(unix.AF_UNIX),
+			seccomp.EqualTo(unix.SOCK_SEQPACKET | unix.SOCK_CLOEXEC),
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_SYMLINKAT: {},
-	syscall.SYS_TGKILL: []seccomp.Rule{
+	unix.SYS_SYMLINKAT: {},
+	unix.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.EqualTo(uint64(os.Getpid())),
 		},
 	},
-	syscall.SYS_UNLINKAT:  {},
-	syscall.SYS_UTIMENSAT: {},
-	syscall.SYS_WRITE:     {},
+	unix.SYS_UNLINKAT:  {},
+	unix.SYS_UTIMENSAT: {},
+	unix.SYS_WRITE:     {},
 }
 
 var udsSyscalls = seccomp.SyscallRules{
-	syscall.SYS_SOCKET: []seccomp.Rule{
+	unix.SYS_SOCKET: []seccomp.Rule{
 		{
-			seccomp.EqualTo(syscall.AF_UNIX),
-			seccomp.EqualTo(syscall.SOCK_STREAM),
+			seccomp.EqualTo(unix.AF_UNIX),
+			seccomp.EqualTo(unix.SOCK_STREAM),
 			seccomp.EqualTo(0),
 		},
 		{
-			seccomp.EqualTo(syscall.AF_UNIX),
-			seccomp.EqualTo(syscall.SOCK_DGRAM),
+			seccomp.EqualTo(unix.AF_UNIX),
+			seccomp.EqualTo(unix.SOCK_DGRAM),
 			seccomp.EqualTo(0),
 		},
 		{
-			seccomp.EqualTo(syscall.AF_UNIX),
-			seccomp.EqualTo(syscall.SOCK_SEQPACKET),
+			seccomp.EqualTo(unix.AF_UNIX),
+			seccomp.EqualTo(unix.SOCK_SEQPACKET),
 			seccomp.EqualTo(0),
 		},
 	},
-	syscall.SYS_CONNECT: []seccomp.Rule{
+	unix.SYS_CONNECT: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 		},

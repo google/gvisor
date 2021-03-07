@@ -20,9 +20,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -312,11 +312,11 @@ func setupContainerFS(ctx context.Context, conf *config.Config, mntr *containerM
 }
 
 func adjustDirentCache(k *kernel.Kernel) error {
-	var hl syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &hl); err != nil {
+	var hl unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &hl); err != nil {
 		return fmt.Errorf("getting RLIMIT_NOFILE: %v", err)
 	}
-	if int64(hl.Cur) != syscall.RLIM_INFINITY {
+	if hl.Cur != unix.RLIM_INFINITY {
 		newSize := hl.Cur / 2
 		if newSize < gofer.DefaultDirentCacheSize {
 			log.Infof("Setting gofer dirent cache size to %d", newSize)
@@ -844,10 +844,10 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 		// than simply printed to the logs for the 'runsc boot' command.
 		//
 		// We check the error message string rather than type because the
-		// actual error types (syscall.EIO, syscall.EPIPE) are lost by file system
+		// actual error types (unix.EIO, unix.EPIPE) are lost by file system
 		// implementation (e.g. p9).
 		// TODO(gvisor.dev/issue/1765): Remove message when bug is resolved.
-		if strings.Contains(err.Error(), syscall.EIO.Error()) || strings.Contains(err.Error(), syscall.EPIPE.Error()) {
+		if strings.Contains(err.Error(), unix.EIO.Error()) || strings.Contains(err.Error(), unix.EPIPE.Error()) {
 			return fmt.Errorf("%v: %s", err, specutils.FaqErrorMsg("memlock", "you may be encountering a Linux kernel bug"))
 		}
 		return err

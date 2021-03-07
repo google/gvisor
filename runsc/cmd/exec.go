@@ -24,11 +24,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -110,7 +110,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if err != nil {
 		Fatalf("parsing process spec: %v", err)
 	}
-	waitStatus := args[1].(*syscall.WaitStatus)
+	waitStatus := args[1].(*unix.WaitStatus)
 
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
@@ -149,7 +149,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	return ex.exec(c, e, waitStatus)
 }
 
-func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
+func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	// Start the new process and get its pid.
 	pid, err := c.Execute(e)
 	if err != nil {
@@ -189,7 +189,7 @@ func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *sy
 	return subcommands.ExitSuccess
 }
 
-func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
+func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	var args []string
 	for _, a := range os.Args[1:] {
 		if !strings.Contains(a, "detach") {
@@ -233,7 +233,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
-		cmd.SysProcAttr = &syscall.SysProcAttr{
+		cmd.SysProcAttr = &unix.SysProcAttr{
 			Setsid:  true,
 			Setctty: true,
 			// The Ctty FD must be the FD in the child process's FD
@@ -263,7 +263,7 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 			}
 			return pid == cmd.Process.Pid, nil
 		}
-		if pe, ok := err.(*os.PathError); !ok || pe.Err != syscall.ENOENT {
+		if pe, ok := err.(*os.PathError); !ok || pe.Err != unix.ENOENT {
 			return false, err
 		}
 		// No file yet, continue to wait...

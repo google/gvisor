@@ -15,7 +15,6 @@
 package sandbox
 
 import (
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -48,7 +47,7 @@ func isGSOEnabled(fd int, intf string) (bool, error) {
 		ifrData: &val,
 	}
 
-	if _, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), unix.SIOCETHTOOL, uintptr(unsafe.Pointer(&ifr))); err != 0 {
+	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.SIOCETHTOOL, uintptr(unsafe.Pointer(&ifr))); err != 0 {
 		return false, err
 	}
 

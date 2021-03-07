@@ -19,8 +19,8 @@ import (
 	"net"
 	"runtime"
 	"strings"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -195,7 +195,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		for j := 0; j < link.NumChannels; j++ {
 			// Copy the underlying FD.
 			oldFD := args.FilePayload.Files[fdOffset].Fd()
-			newFD, err := syscall.Dup(int(oldFD))
+			newFD, err := unix.Dup(int(oldFD))
 			if err != nil {
 				return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
 			}

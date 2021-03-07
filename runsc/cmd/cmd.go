@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
-	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -71,7 +71,7 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := syscall.Exec(binPath, args, []string{})
+	err := unix.Exec(binPath, args, []string{})
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
@@ -83,16 +83,16 @@ func callSelfAsNobody(args []string) error {
 
 	const nobody = 65534
 
-	if _, _, err := syscall.RawSyscall(syscall.SYS_SETGID, uintptr(nobody), 0, 0); err != 0 {
+	if _, _, err := unix.RawSyscall(unix.SYS_SETGID, uintptr(nobody), 0, 0); err != 0 {
 		return fmt.Errorf("error setting uid: %v", err)
 	}
-	if _, _, err := syscall.RawSyscall(syscall.SYS_SETUID, uintptr(nobody), 0, 0); err != 0 {
+	if _, _, err := unix.RawSyscall(unix.SYS_SETUID, uintptr(nobody), 0, 0); err != 0 {
 		return fmt.Errorf("error setting gid: %v", err)
 	}
 
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := syscall.Exec(binPath, args, []string{})
+	err := unix.Exec(binPath, args, []string{})
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }

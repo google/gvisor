@@ -17,8 +17,7 @@
 package filter
 
 import (
-	"syscall"
-
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
@@ -27,18 +26,18 @@ import (
 func instrumentationFilters() seccomp.SyscallRules {
 	log.Warningf("*** SECCOMP WARNING: TSAN is enabled: syscall filters less restrictive!")
 	return seccomp.SyscallRules{
-		syscall.SYS_BRK:             {},
-		syscall.SYS_CLOCK_NANOSLEEP: {},
-		syscall.SYS_CLONE:           {},
-		syscall.SYS_FUTEX:           {},
-		syscall.SYS_MADVISE:         {},
-		syscall.SYS_MMAP:            {},
-		syscall.SYS_MUNLOCK:         {},
-		syscall.SYS_NANOSLEEP:       {},
-		syscall.SYS_OPEN:            {},
-		syscall.SYS_OPENAT:          {},
-		syscall.SYS_SET_ROBUST_LIST: {},
+		unix.SYS_BRK:             {},
+		unix.SYS_CLOCK_NANOSLEEP: {},
+		unix.SYS_CLONE:           {},
+		unix.SYS_FUTEX:           {},
+		unix.SYS_MADVISE:         {},
+		unix.SYS_MMAP:            {},
+		unix.SYS_MUNLOCK:         {},
+		unix.SYS_NANOSLEEP:       {},
+		unix.SYS_OPEN:            {},
+		unix.SYS_OPENAT:          {},
+		unix.SYS_SET_ROBUST_LIST: {},
 		// Used within glibc's malloc.
-		syscall.SYS_TIME: {},
+		unix.SYS_TIME: {},
 	}
 }
