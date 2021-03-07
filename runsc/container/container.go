@@ -30,6 +30,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -244,7 +245,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			// If there is cgroup config, install it before creating sandbox process.
 			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
 				switch {
-				case errors.Is(err, syscall.EACCES) && conf.Rootless:
+				case errors.Is(err, unix.EACCES) && conf.Rootless:
 					log.Warningf("Skipping cgroup configuration in rootless mode: %v", err)
 					cg = nil
 				default:
@@ -447,7 +448,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 }
 
 // Run is a helper that calls Create + Start + Wait.
-func Run(conf *config.Config, args Args) (syscall.WaitStatus, error) {
+func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 	log.Debugf("Run container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 	c, err := New(conf, args)
 	if err != nil {
@@ -517,7 +518,7 @@ func (c *Container) SandboxPid() int {
 // Wait waits for the container to exit, and returns its WaitStatus.
 // Call to wait on a stopped container is needed to retrieve the exit status
 // and wait returns immediately.
-func (c *Container) Wait() (syscall.WaitStatus, error) {
+func (c *Container) Wait() (unix.WaitStatus, error) {
 	log.Debugf("Wait on container, cid: %s", c.ID)
 	ws, err := c.Sandbox.Wait(c.ID)
 	if err == nil {
@@ -529,7 +530,7 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 
 // WaitRootPID waits for process 'pid' in the sandbox's PID namespace and
 // returns its WaitStatus.
-func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
+func (c *Container) WaitRootPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in sandbox, cid: %s", pid, c.Sandbox.ID)
 	if !c.IsSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
@@ -539,7 +540,7 @@ func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 
 // WaitPID waits for process 'pid' in the container's PID namespace and returns
 // its WaitStatus.
-func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
+func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in container, cid: %s", pid, c.ID)
 	if !c.IsSandboxRunning() {
 		return 0, fmt.Errorf("sandbox is not running")
@@ -551,7 +552,7 @@ func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 // is SIGKILL, then waits for all processes to exit before returning.
 // SignalContainer returns an error if the container is already stopped.
 // TODO(b/113680494): Distinguish different error types.
-func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
+func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	log.Debugf("Signal container, cid: %s, signal: %v (%d)", c.ID, sig, sig)
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
@@ -568,7 +569,7 @@ func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
 }
 
 // SignalProcess sends sig to a specific process in the container.
-func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
+func (c *Container) SignalProcess(sig unix.Signal, pid int32) error {
 	log.Debugf("Signal process %d in container, cid: %s, signal: %v (%d)", pid, c.ID, sig, sig)
 	if err := c.requireStatus("signal a process inside", Running); err != nil {
 		return err
@@ -586,7 +587,7 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 	log.Debugf("Forwarding all signals to container, cid: %s, PIDPID: %d, fgProcess: %t", c.ID, pid, fgProcess)
 	stop := sighandling.StartSignalForwarding(func(sig linux.Signal) {
 		log.Debugf("Forwarding signal %d to container, cid: %s, PID: %d, fgProcess: %t", sig, c.ID, pid, fgProcess)
-		if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.Signal(sig), fgProcess); err != nil {
+		if err := c.Sandbox.SignalProcess(c.ID, pid, unix.Signal(sig), fgProcess); err != nil {
 			log.Warningf("error forwarding signal %d to container %q: %v", sig, c.ID, err)
 		}
 	})
@@ -768,9 +769,9 @@ func (c *Container) stop() error {
 	// Try killing gofer if it does not exit with container.
 	if c.GoferPid != 0 {
 		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, c.GoferPid)
-		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+		if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
 			// The gofer may already be stopped, log the error.
-			log.Warningf("Error sending signal %d to gofer %d: %v", syscall.SIGKILL, c.GoferPid, err)
+			log.Warningf("Error sending signal %d to gofer %d: %v", unix.SIGKILL, c.GoferPid, err)
 		}
 	}
 
@@ -793,7 +794,7 @@ func (c *Container) waitForStopped() error {
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
 		if c.IsSandboxRunning() {
-			if err := c.SignalContainer(syscall.Signal(0), false); err == nil {
+			if err := c.SignalContainer(unix.Signal(0), false); err == nil {
 				return fmt.Errorf("container is still running")
 			}
 		}
@@ -803,7 +804,7 @@ func (c *Container) waitForStopped() error {
 		if c.goferIsChild {
 			// The gofer process is a child of the current process,
 			// so we can wait it and collect its zombie.
-			wpid, err := syscall.Wait4(int(c.GoferPid), nil, syscall.WNOHANG, nil)
+			wpid, err := unix.Wait4(int(c.GoferPid), nil, unix.WNOHANG, nil)
 			if err != nil {
 				return fmt.Errorf("error waiting the gofer process: %v", err)
 			}
@@ -811,7 +812,7 @@ func (c *Container) waitForStopped() error {
 				return fmt.Errorf("gofer is still running")
 			}
 
-		} else if err := syscall.Kill(c.GoferPid, 0); err == nil {
+		} else if err := unix.Kill(c.GoferPid, 0); err == nil {
 			return fmt.Errorf("gofer is still running")
 		}
 		c.GoferPid = 0
@@ -892,7 +893,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 
 	sandEnds := make([]*os.File, 0, mountCount)
 	for i := 0; i < mountCount; i++ {
-		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -914,8 +915,8 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	if attached {
 		// The gofer is attached to the lifetime of this process, so it
 		// should synchronously die when this process dies.
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Pdeathsig: syscall.SIGKILL,
+		cmd.SysProcAttr = &unix.SysProcAttr{
+			Pdeathsig: unix.SIGKILL,
 		}
 	}
 
@@ -1113,7 +1114,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 	}
 	defer f.Close()
 	if _, err := f.WriteString(strconv.Itoa(scoreAdj)); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+		if errors.Is(err, unix.ESRCH) {
 			log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
 			return nil
 		}

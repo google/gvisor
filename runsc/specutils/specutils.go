@@ -26,12 +26,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
@@ -375,9 +375,9 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 		// Check if the process is still running.
 		// If the process is alive, child is 0 because of the NOHANG option.
 		// If the process has terminated, child equals the process id.
-		var ws syscall.WaitStatus
-		var ru syscall.Rusage
-		child, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, &ru)
+		var ws unix.WaitStatus
+		var ru unix.Rusage
+		child, err := unix.Wait4(pid, &ws, unix.WNOHANG, &ru)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("error waiting for process: %v", err))
 		} else if child == pid {
@@ -437,7 +437,7 @@ func Mount(src, dst, typ string, flags uint32) error {
 			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
 		}
 		// Create the destination file if it does not exist.
-		f, err := os.OpenFile(dst, syscall.O_CREAT, 0777)
+		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
 		if err != nil {
 			return fmt.Errorf("open(%q) failed: %v", dst, err)
 		}
@@ -445,7 +445,7 @@ func Mount(src, dst, typ string, flags uint32) error {
 	}
 
 	// Do the mount.
-	if err := syscall.Mount(src, dst, typ, uintptr(flags), ""); err != nil {
+	if err := unix.Mount(src, dst, typ, uintptr(flags), ""); err != nil {
 		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
 	}
 	return nil
@@ -466,7 +466,7 @@ func ContainsStr(strs []string, str string) bool {
 func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
 	for {
 		r1, r2, err := f()
-		if err != syscall.EINTR {
+		if err != unix.EINTR {
 			return r1, r2, err
 		}
 	}

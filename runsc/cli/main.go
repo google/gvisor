@@ -23,10 +23,10 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"syscall"
 	"time"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -198,7 +198,7 @@ func Main(version string) {
 		// want with them. Since Docker and Containerd both eat boot's stderr, we
 		// dup our stderr to the provided log FD so that panics will appear in the
 		// logs, rather than just disappear.
-		if err := syscall.Dup3(fd, int(os.Stderr.Fd()), 0); err != nil {
+		if err := unix.Dup3(fd, int(os.Stderr.Fd()), 0); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", fd, err)
 		}
 	} else if conf.AlsoLogToStderr {
@@ -227,11 +227,11 @@ func Main(version string) {
 		// SIGTERM is sent to all processes if a test exceeds its
 		// timeout and this case is handled by syscall_test_runner.
 		log.Warningf("Block the TERM signal. This is only safe in tests!")
-		signal.Ignore(syscall.SIGTERM)
+		signal.Ignore(unix.SIGTERM)
 	}
 
 	// Call the subcommand and pass in the configuration.
-	var ws syscall.WaitStatus
+	var ws unix.WaitStatus
 	subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
 	if subcmdCode == subcommands.ExitSuccess {
 		log.Infof("Exiting with status: %v", ws)
