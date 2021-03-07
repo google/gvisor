@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
-	"syscall"
 	"testing"
 	"time"
 
@@ -78,7 +77,7 @@ func testSpec() *specs.Spec {
 // sandbox side of the connection, and a function that when called will stop the
 // gofer.
 func startGofer(root string) (int, func(), error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -86,8 +85,8 @@ func startGofer(root string) (int, func(), error) {
 
 	socket, err := unet.NewSocket(goferEnd)
 	if err != nil {
-		syscall.Close(sandboxEnd)
-		syscall.Close(goferEnd)
+		unix.Close(sandboxEnd)
+		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
 	at, err := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})

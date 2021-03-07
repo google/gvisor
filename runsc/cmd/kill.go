@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
@@ -99,10 +98,10 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	return subcommands.ExitSuccess
 }
 
-func parseSignal(s string) (syscall.Signal, error) {
+func parseSignal(s string) (unix.Signal, error) {
 	n, err := strconv.Atoi(s)
 	if err == nil {
-		sig := syscall.Signal(n)
+		sig := unix.Signal(n)
 		for _, msig := range signalMap {
 			if sig == msig {
 				return sig, nil
@@ -116,7 +115,7 @@ func parseSignal(s string) (syscall.Signal, error) {
 	return -1, fmt.Errorf("unknown signal %q", s)
 }
 
-var signalMap = map[string]syscall.Signal{
+var signalMap = map[string]unix.Signal{
 	"ABRT":   unix.SIGABRT,
 	"ALRM":   unix.SIGALRM,
 	"BUS":    unix.SIGBUS,

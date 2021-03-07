@@ -16,10 +16,10 @@ package seccomp
 
 import (
 	"fmt"
-	"syscall"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/bpf"
 )
@@ -184,7 +184,7 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index: 0,
-								Value: syscall.CLONE_FS,
+								Value: unix.CLONE_FS,
 								Op:    specs.OpEqualTo,
 							},
 						},
@@ -192,7 +192,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{syscall.CLONE_FS}),
+			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
 			expected: uint32(errnoAction),
 		},
 		{
@@ -207,12 +207,12 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index: 0,
-								Value: syscall.CLONE_FS,
+								Value: unix.CLONE_FS,
 								Op:    specs.OpEqualTo,
 							},
 							{
 								Index: 0,
-								Value: syscall.CLONE_VM,
+								Value: unix.CLONE_VM,
 								Op:    specs.OpEqualTo,
 							},
 						},
@@ -220,7 +220,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{syscall.CLONE_FS}),
+			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
 			expected: uint32(errnoAction),
 		},
 		{
@@ -235,12 +235,12 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index: 1,
-								Value: syscall.SOL_SOCKET,
+								Value: unix.SOL_SOCKET,
 								Op:    specs.OpEqualTo,
 							},
 							{
 								Index: 2,
-								Value: syscall.SO_PEERCRED,
+								Value: unix.SO_PEERCRED,
 								Op:    specs.OpEqualTo,
 							},
 						},
@@ -248,7 +248,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, syscall.SOL_SOCKET, syscall.SO_PEERCRED}),
+			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, unix.SOL_SOCKET, unix.SO_PEERCRED}),
 			expected: uint32(errnoAction),
 		},
 		{
@@ -263,12 +263,12 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index: 1,
-								Value: syscall.SOL_SOCKET,
+								Value: unix.SOL_SOCKET,
 								Op:    specs.OpEqualTo,
 							},
 							{
 								Index: 2,
-								Value: syscall.SO_PEERCRED,
+								Value: unix.SO_PEERCRED,
 								Op:    specs.OpEqualTo,
 							},
 						},
@@ -276,7 +276,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, syscall.SOL_SOCKET}),
+			input:    testInput(nativeArchAuditNo, "getsockopt", &[6]uint64{0, unix.SOL_SOCKET}),
 			expected: uint32(allowAction),
 		},
 		{
@@ -291,7 +291,7 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index: 0,
-								Value: syscall.CLONE_FS,
+								Value: unix.CLONE_FS,
 								Op:    specs.OpEqualTo,
 							},
 						},
@@ -299,7 +299,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{syscall.CLONE_VM}),
+			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_VM}),
 			expected: uint32(allowAction),
 		},
 		{
@@ -314,8 +314,8 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index:    0,
-								Value:    syscall.CLONE_FS,
-								ValueTwo: syscall.CLONE_FS,
+								Value:    unix.CLONE_FS,
+								ValueTwo: unix.CLONE_FS,
 								Op:       specs.OpMaskedEqual,
 							},
 						},
@@ -323,7 +323,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{syscall.CLONE_FS | syscall.CLONE_VM}),
+			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS | unix.CLONE_VM}),
 			expected: uint32(errnoAction),
 		},
 		{
@@ -338,8 +338,8 @@ var (
 						Args: []specs.LinuxSeccompArg{
 							{
 								Index:    0,
-								Value:    syscall.CLONE_FS | syscall.CLONE_VM,
-								ValueTwo: syscall.CLONE_FS | syscall.CLONE_VM,
+								Value:    unix.CLONE_FS | unix.CLONE_VM,
+								ValueTwo: unix.CLONE_FS | unix.CLONE_VM,
 								Op:       specs.OpMaskedEqual,
 							},
 						},
@@ -347,7 +347,7 @@ var (
 					},
 				},
 			},
-			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{syscall.CLONE_FS}),
+			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{unix.CLONE_FS}),
 			expected: uint32(allowAction),
 		},
 		{

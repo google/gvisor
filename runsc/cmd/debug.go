@@ -21,10 +21,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/config"
@@ -135,7 +135,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Perform synchronous actions.
 	if d.signal > 0 {
 		log.Infof("Sending signal %d to process: %d", d.signal, c.Sandbox.Pid)
-		if err := syscall.Kill(c.Sandbox.Pid, syscall.Signal(d.signal)); err != nil {
+		if err := unix.Kill(c.Sandbox.Pid, unix.Signal(d.signal)); err != nil {
 			return Errorf("failed to send signal %d to processs %d", d.signal, c.Sandbox.Pid)
 		}
 	}
@@ -317,7 +317,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		wg.Wait()
 	}()
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(signals, unix.SIGTERM, unix.SIGINT)
 	select {
 	case <-readyChan:
 		break // Safe to proceed.

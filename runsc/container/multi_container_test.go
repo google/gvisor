@@ -22,11 +22,11 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -403,7 +403,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 				t.Logf("Container %q procs: %s", c.ID, procListToString(procs))
 				pidToKill := procs[processes-1].PID
 				t.Logf("PID to kill: %d", pidToKill)
-				if err := c.SignalProcess(syscall.SIGKILL, int32(pidToKill)); err != nil {
+				if err := c.SignalProcess(unix.SIGKILL, int32(pidToKill)); err != nil {
 					t.Errorf("container.SignalProcess: %v", err)
 				}
 				// Wait for the process to get killed.
@@ -432,7 +432,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 
 				pidToKill = procs[len(procs)-1].PID
 				t.Logf("PID that should not be killed: %d", pidToKill)
-				err = c.SignalProcess(syscall.SIGKILL, int32(pidToKill))
+				err = c.SignalProcess(unix.SIGKILL, int32(pidToKill))
 				if err == nil {
 					t.Fatalf("killing another container's process should fail")
 				}
@@ -640,7 +640,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			}
 
 			// Kill process 2.
-			if err := containers[1].SignalContainer(syscall.SIGKILL, false); err != nil {
+			if err := containers[1].SignalContainer(unix.SIGKILL, false); err != nil {
 				t.Errorf("failed to kill process 2: %v", err)
 			}
 
@@ -660,10 +660,10 @@ func TestMultiContainerSignal(t *testing.T) {
 				t.Errorf("failed to destroy container: %v", err)
 			}
 			_, _, err = specutils.RetryEintr(func() (uintptr, uintptr, error) {
-				cpid, err := syscall.Wait4(goferPid, nil, 0, nil)
+				cpid, err := unix.Wait4(goferPid, nil, 0, nil)
 				return uintptr(cpid), 0, err
 			})
-			if err != syscall.ECHILD {
+			if err != unix.ECHILD {
 				t.Errorf("error waiting for gofer to exit: %v", err)
 			}
 			// Make sure process 1 is still running.
@@ -673,28 +673,28 @@ func TestMultiContainerSignal(t *testing.T) {
 
 			// Now that process 2 is gone, ensure we get an error trying to
 			// signal it again.
-			if err := containers[1].SignalContainer(syscall.SIGKILL, false); err == nil {
+			if err := containers[1].SignalContainer(unix.SIGKILL, false); err == nil {
 				t.Errorf("container %q shouldn't exist, but we were able to signal it", containers[1].ID)
 			}
 
 			// Kill process 1.
-			if err := containers[0].SignalContainer(syscall.SIGKILL, false); err != nil {
+			if err := containers[0].SignalContainer(unix.SIGKILL, false); err != nil {
 				t.Errorf("failed to kill process 1: %v", err)
 			}
 
 			// Ensure that container's gofer and sandbox process are no more.
 			err = blockUntilWaitable(containers[0].GoferPid)
-			if err != nil && err != syscall.ECHILD {
+			if err != nil && err != unix.ECHILD {
 				t.Errorf("error waiting for gofer to exit: %v", err)
 			}
 
 			err = blockUntilWaitable(containers[0].Sandbox.Pid)
-			if err != nil && err != syscall.ECHILD {
+			if err != nil && err != unix.ECHILD {
 				t.Errorf("error waiting for sandbox to exit: %v", err)
 			}
 
 			// The sentry should be gone, so signaling should yield an error.
-			if err := containers[0].SignalContainer(syscall.SIGKILL, false); err == nil {
+			if err := containers[0].SignalContainer(unix.SIGKILL, false); err == nil {
 				t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
 			}
 
@@ -893,7 +893,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 		if tc.killContainer {
 			// First kill the init process to make the container be stopped with
 			// processes still running inside.
-			containers[1].SignalContainer(syscall.SIGKILL, false)
+			containers[1].SignalContainer(unix.SIGKILL, false)
 			op := func() error {
 				c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 				if err != nil {
@@ -914,7 +914,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			t.Fatalf("failed to load child container %q: %v", c.ID, err)
 		}
 		// Kill'Em All
-		if err := c.SignalContainer(syscall.SIGKILL, true); err != nil {
+		if err := c.SignalContainer(unix.SIGKILL, true); err != nil {
 			t.Fatalf("failed to send SIGKILL to container %q: %v", c.ID, err)
 		}
 
@@ -1640,8 +1640,8 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Kill container's gofer.
-	if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
-		t.Fatalf("syscall.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
+		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
 	}
 
 	// Wait until container stops.
@@ -1672,8 +1672,8 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Kill root container's gofer to bring entire sandbox down.
 	c = containers[0]
-	if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
-		t.Fatalf("syscall.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	if err := unix.Kill(c.GoferPid, unix.SIGKILL); err != nil {
+		t.Fatalf("unix.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
 	}
 
 	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits

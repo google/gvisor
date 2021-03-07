@@ -17,9 +17,9 @@ package cmd
 import (
 	"context"
 	"path/filepath"
-	"syscall"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -78,7 +78,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
-	waitStatus := args[1].(*syscall.WaitStatus)
+	waitStatus := args[1].(*unix.WaitStatus)
 
 	if conf.Rootless {
 		return Errorf("Rootless mode not supported with %q", r.Name())

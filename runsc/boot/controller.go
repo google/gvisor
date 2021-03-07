@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -366,7 +366,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	case 2:
 		// The device file is donated to the platform.
 		// Can't take ownership away from os.File. dup them to get a new FD.
-		fd, err := syscall.Dup(int(o.Files[1].Fd()))
+		fd, err := unix.Dup(int(o.Files[1].Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}

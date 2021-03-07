@@ -21,7 +21,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -320,7 +319,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	// Send a SIGTERM to the foreground process for the exec PID. Note that
 	// although we pass in the PID of "bash", it should actually terminate
 	// "sleep", since that is the foreground process.
-	if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.SIGTERM, true /* fgProcess */); err != nil {
+	if err := c.Sandbox.SignalProcess(c.ID, pid, unix.SIGTERM, true /* fgProcess */); err != nil {
 		t.Fatalf("error signaling container: %v", err)
 	}
 
@@ -340,7 +339,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	// Send a SIGKILL to the foreground process again. This time "bash"
 	// should be killed. We use SIGKILL instead of SIGTERM or SIGINT
 	// because bash ignores those.
-	if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.SIGKILL, true /* fgProcess */); err != nil {
+	if err := c.Sandbox.SignalProcess(c.ID, pid, unix.SIGKILL, true /* fgProcess */); err != nil {
 		t.Fatalf("error signaling container: %v", err)
 	}
 	expectedPL = expectedPL[:1]
@@ -356,7 +355,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	if !ws.Signaled() {
 		t.Error("ws.Signaled() got false, want true")
 	}
-	if got, want := ws.Signal(), syscall.SIGKILL; got != want {
+	if got, want := ws.Signal(), unix.SIGKILL; got != want {
 		t.Errorf("ws.Signal() got %v, want %v", got, want)
 	}
 }
@@ -423,7 +422,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// very early, otherwise it might exit before we have a chance to call
 	// Wait.
 	var (
-		ws syscall.WaitStatus
+		ws unix.WaitStatus
 		wg sync.WaitGroup
 	)
 	wg.Add(1)
@@ -459,7 +458,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// Send a SIGTERM to the foreground process. We pass PID=0, indicating
 	// that the root process should be killed. However, by setting
 	// fgProcess=true, the signal should actually be sent to sleep.
-	if err := c.Sandbox.SignalProcess(c.ID, 0 /* PID */, syscall.SIGTERM, true /* fgProcess */); err != nil {
+	if err := c.Sandbox.SignalProcess(c.ID, 0 /* PID */, unix.SIGTERM, true /* fgProcess */); err != nil {
 		t.Fatalf("error signaling container: %v", err)
 	}
 
@@ -479,7 +478,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// Send a SIGKILL to the foreground process again. This time "bash"
 	// should be killed. We use SIGKILL instead of SIGTERM or SIGINT
 	// because bash ignores those.
-	if err := c.Sandbox.SignalProcess(c.ID, 0 /* PID */, syscall.SIGKILL, true /* fgProcess */); err != nil {
+	if err := c.Sandbox.SignalProcess(c.ID, 0 /* PID */, unix.SIGKILL, true /* fgProcess */); err != nil {
 		t.Fatalf("error signaling container: %v", err)
 	}
 
@@ -488,7 +487,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	if !ws.Signaled() {
 		t.Error("ws.Signaled() got false, want true")
 	}
-	if got, want := ws.Signal(), syscall.SIGKILL; got != want {
+	if got, want := ws.Signal(), unix.SIGKILL; got != want {
 		t.Errorf("ws.Signal() got %v, want %v", got, want)
 	}
 }

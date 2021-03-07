@@ -18,9 +18,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -73,7 +73,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
-	waitStatus := args[1].(*syscall.WaitStatus)
+	waitStatus := args[1].(*unix.WaitStatus)
 
 	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {

@@ -27,12 +27,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
@@ -103,7 +103,7 @@ func waitForProcessCount(cont *Container, want int) error {
 func blockUntilWaitable(pid int) error {
 	_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 		var err error
-		_, _, err1 := syscall.Syscall6(syscall.SYS_WAITID, 1, uintptr(pid), 0, syscall.WEXITED|syscall.WNOWAIT, 0, 0)
+		_, _, err1 := unix.Syscall6(unix.SYS_WAITID, 1, uintptr(pid), 0, unix.WEXITED|unix.WNOWAIT, 0, 0)
 		if err1 != 0 {
 			err = err1
 		}
@@ -468,7 +468,7 @@ func TestLifecycle(t *testing.T) {
 				if err != nil {
 					ch <- err
 				}
-				if got, want := ws.Signal(), syscall.SIGTERM; got != want {
+				if got, want := ws.Signal(), unix.SIGTERM; got != want {
 					ch <- fmt.Errorf("got signal %v, want %v", got, want)
 				}
 				ch <- nil
@@ -479,8 +479,8 @@ func TestLifecycle(t *testing.T) {
 			time.Sleep(time.Second)
 
 			// Send the container a SIGTERM which will cause it to stop.
-			if err := c.SignalContainer(syscall.SIGTERM, false); err != nil {
-				t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
+			if err := c.SignalContainer(unix.SIGTERM, false); err != nil {
+				t.Fatalf("error sending signal %v to container: %v", unix.SIGTERM, err)
 			}
 
 			// Wait for it to die.
@@ -815,11 +815,11 @@ func TestExec(t *testing.T) {
 			t.Run("nonexist", func(t *testing.T) {
 				// b/179114837 found by Syzkaller that causes nil pointer panic when
 				// trying to dec-ref an unix socket FD.
-				fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+				fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer syscall.Close(fds[0])
+				defer unix.Close(fds[0])
 
 				_, err = cont.executeSync(&control.ExecArgs{
 					Argv: []string{"/nonexist"},
@@ -956,7 +956,7 @@ func TestKillPid(t *testing.T) {
 					pid = int32(p.PID)
 				}
 			}
-			if err := cont.SignalProcess(syscall.SIGKILL, pid); err != nil {
+			if err := cont.SignalProcess(unix.SIGKILL, pid); err != nil {
 				t.Fatalf("failed to signal process %d: %v", pid, err)
 			}
 
@@ -1615,7 +1615,7 @@ func TestReadonlyRoot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
-			if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
+			if !ws.Exited() || unix.Errno(ws.ExitStatus()) != unix.EPERM {
 				t.Fatalf("wrong waitStatus: %v", ws)
 			}
 		})
@@ -1674,7 +1674,7 @@ func TestReadonlyMount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
-			if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
+			if !ws.Exited() || unix.Errno(ws.ExitStatus()) != unix.EPERM {
 				t.Fatalf("wrong WaitStatus: %v", ws)
 			}
 		})
@@ -1750,8 +1750,8 @@ func TestUIDMap(t *testing.T) {
 			if !ws.Exited() || ws.ExitStatus() != 0 {
 				t.Fatalf("container failed, waitStatus: %v", ws)
 			}
-			st := syscall.Stat_t{}
-			if err := syscall.Stat(testFile, &st); err != nil {
+			st := unix.Stat_t{}
+			if err := unix.Stat(testFile, &st); err != nil {
 				t.Fatalf("error stat /testfile: %v", err)
 			}
 
@@ -1880,7 +1880,7 @@ func doGoferExitTest(t *testing.T, vfs2 bool) {
 	}
 
 	err = blockUntilWaitable(c.GoferPid)
-	if err != nil && err != syscall.ECHILD {
+	if err != nil && err != unix.ECHILD {
 		t.Errorf("error waiting for gofer to exit: %v", err)
 	}
 }
@@ -1929,7 +1929,7 @@ func TestUserLog(t *testing.T) {
 	}
 
 	// sched_rr_get_interval - not implemented in gvisor.
-	num := strconv.Itoa(syscall.SYS_SCHED_RR_GET_INTERVAL)
+	num := strconv.Itoa(unix.SYS_SCHED_RR_GET_INTERVAL)
 	spec := testutil.NewSpecWithArgs(app, "syscall", "--syscall="+num)
 	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -2159,10 +2159,10 @@ func TestMountPropagation(t *testing.T) {
 	f.Close()
 
 	// Setup src as a shared mount.
-	if err := syscall.Mount(src, src, "bind", syscall.MS_BIND, ""); err != nil {
+	if err := unix.Mount(src, src, "bind", unix.MS_BIND, ""); err != nil {
 		t.Fatalf("mount(%q, %q, MS_BIND): %v", dir, srcMnt, err)
 	}
-	if err := syscall.Mount("", src, "", syscall.MS_SHARED, ""); err != nil {
+	if err := unix.Mount("", src, "", unix.MS_SHARED, ""); err != nil {
 		t.Fatalf("mount(%q, MS_SHARED): %v", srcMnt, err)
 	}
 
@@ -2209,7 +2209,7 @@ func TestMountPropagation(t *testing.T) {
 
 	// After the container is started, mount dir inside source and check what
 	// happens to both destinations.
-	if err := syscall.Mount(dir, srcMnt, "bind", syscall.MS_BIND, ""); err != nil {
+	if err := unix.Mount(dir, srcMnt, "bind", unix.MS_BIND, ""); err != nil {
 		t.Fatalf("mount(%q, %q, MS_BIND): %v", dir, srcMnt, err)
 	}
 
@@ -2449,7 +2449,7 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 	}
 }
 
-func execute(cont *Container, name string, arg ...string) (syscall.WaitStatus, error) {
+func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
 	args := &control.ExecArgs{
 		Filename: name,
 		Argv:     append([]string{name}, arg...),
@@ -2483,7 +2483,7 @@ func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte,
 }
 
 // executeSync synchronously executes a new process.
-func (c *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
+func (c *Container) executeSync(args *control.ExecArgs) (unix.WaitStatus, error) {
 	pid, err := c.Execute(args)
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
