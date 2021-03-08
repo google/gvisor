@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -57,13 +56,82 @@ var (
 	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
 )
 
+func main() {
+	flag.Parse()
+	if flag.NArg() != 1 {
+		fatalf("test must be provided")
+	}
+
+	log.SetLevel(log.Info)
+	if *debug {
+		log.SetLevel(log.Debug)
+	}
+
+	if *platform != "native" && *runscPath == "" {
+		if err := testutil.ConfigureExePath(); err != nil {
+			panic(err.Error())
+		}
+		*runscPath = specutils.ExePath
+	}
+
+	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
+	// from outside the sandbox can (and will) stomp on logs from inside
+	// the sandbox.
+	for _, f := range []*os.File{os.Stdout, os.Stderr} {
+		flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFL, 0)
+		if err != nil {
+			fatalf("error getting file flags for %v: %v", f, err)
+		}
+		if flags&unix.O_APPEND == 0 {
+			flags |= unix.O_APPEND
+			if _, err := unix.FcntlInt(f.Fd(), unix.F_SETFL, flags); err != nil {
+				fatalf("error setting file flags for %v: %v", f, err)
+			}
+		}
+	}
+
+	// Resolve the absolute path for the binary.
+	testBin, err := filepath.Abs(flag.Args()[0])
+	if err != nil {
+		fatalf("Abs(%q) failed: %v", flag.Args()[0], err)
+	}
+
+	// Get all test cases in each binary.
+	testCases, err := gtest.ParseTestCases(testBin, true)
+	if err != nil {
+		fatalf("ParseTestCases(%q) failed: %v", testBin, err)
+	}
+
+	// Get subset of tests corresponding to shard.
+	indices, err := testutil.TestIndicesForShard(len(testCases))
+	if err != nil {
+		fatalf("TestsForShard() failed: %v", err)
+	}
+	if len(indices) == 0 {
+		log.Warningf("No tests to run in this shard")
+		return
+	}
+	args := gtest.BuildTestArgs(indices, testCases)
+
+	switch *platform {
+	case "native":
+		if err := runTestCaseNative(testBin, args); err != nil {
+			fatalf(err.Error())
+		}
+	default:
+		if err := runTestCaseRunsc(testBin, args); err != nil {
+			fatalf(err.Error())
+		}
+	}
+}
+
 // runTestCaseNative runs the test case directly on the host machine.
-func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
+func runTestCaseNative(testBin string, args []string) error {
 	// These tests might be running in parallel, so make sure they have a
 	// unique test temp dir.
 	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
 	if err != nil {
-		t.Fatalf("could not create temp dir: %v", err)
+		return fmt.Errorf("could not create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -84,12 +152,12 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 	// Remove shard env variables so that the gunit binary does not try to
 	// interpret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
+	env = filterEnv(env, "TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS")
 
 	if *addUDSTree {
 		socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
 		if err != nil {
-			t.Fatalf("failed to create socket tree: %v", err)
+			return fmt.Errorf("failed to create socket tree: %v", err)
 		}
 		defer cleanup()
 
@@ -99,7 +167,7 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
 	}
 
-	cmd := exec.Command(testBin, tc.Args()...)
+	cmd := exec.Command(testBin, args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -115,8 +183,9 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	if err := cmd.Run(); err != nil {
 		ws := err.(*exec.ExitError).Sys().(unix.WaitStatus)
-		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
+		return fmt.Errorf("test exited with status %d, want 0", ws.ExitStatus())
 	}
+	return nil
 }
 
 // runRunsc runs spec in runsc in a standard test configuration.
@@ -124,7 +193,7 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 // runsc logs will be saved to a path in TEST_UNDECLARED_OUTPUTS_DIR.
 //
 // Returns an error if the sandboxed application exits non-zero.
-func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
+func runRunsc(spec *specs.Spec) error {
 	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		return fmt.Errorf("SetupBundleDir failed: %v", err)
@@ -137,9 +206,8 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	}
 	defer cleanup()
 
-	name := tc.FullName()
 	id := testutil.RandomContainerID()
-	log.Infof("Running test %q in container %q", name, id)
+	log.Infof("Running test in container %q", id)
 	specutils.LogSpec(spec)
 
 	args := []string{
@@ -175,13 +243,8 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-ref-leak-mode=log-names")
 	}
 
-	testLogDir := ""
-	if undeclaredOutputsDir, ok := unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		// Create log directory dedicated for this test.
-		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
-		if err := os.MkdirAll(testLogDir, 0755); err != nil {
-			return fmt.Errorf("could not create test dir: %v", err)
-		}
+	testLogDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if len(testLogDir) > 0 {
 		debugLogDir, err := ioutil.TempDir(testLogDir, "runsc")
 		if err != nil {
 			return fmt.Errorf("could not create temp dir: %v", err)
@@ -226,7 +289,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		if !ok {
 			return
 		}
-		log.Warningf("%s: Got signal: %v", name, s)
+		log.Warningf("Got signal: %v", s)
 		done := make(chan bool, 1)
 		dArgs := append([]string{}, args...)
 		dArgs = append(dArgs, "-alsologtostderr=true", "debug", "--stacks", id)
@@ -259,7 +322,7 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 	if err == nil && len(testLogDir) > 0 {
 		// If the test passed, then we erase the log directory. This speeds up
 		// uploading logs in continuous integration & saves on disk space.
-		os.RemoveAll(testLogDir)
+		_ = os.RemoveAll(testLogDir)
 	}
 
 	return err
@@ -314,10 +377,10 @@ func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
 }
 
 // runsTestCaseRunsc runs the test case in runsc.
-func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
+func runTestCaseRunsc(testBin string, args []string) error {
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
-	spec := testutil.NewSpecWithArgs(append([]string{testBin}, tc.Args()...)...)
+	spec := testutil.NewSpecWithArgs(append([]string{testBin}, args...)...)
 
 	// Mark the root as writeable, as some tests attempt to
 	// write to the rootfs, and expect EACCES, not EROFS.
@@ -343,12 +406,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		// users, so make sure it is world-accessible.
 		tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "")
 		if err != nil {
-			t.Fatalf("could not create temp dir: %v", err)
+			return fmt.Errorf("could not create temp dir: %v", err)
 		}
 		defer os.RemoveAll(tmpDir)
 
 		if err := os.Chmod(tmpDir, 0777); err != nil {
-			t.Fatalf("could not chmod temp dir: %v", err)
+			return fmt.Errorf("could not chmod temp dir: %v", err)
 		}
 
 		// "/tmp" is not replaced with a tmpfs mount inside the sandbox
@@ -368,13 +431,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Set environment variables that indicate we are running in gVisor with
 	// the given platform, network, and filesystem stack.
-	platformVar := "TEST_ON_GVISOR"
-	networkVar := "GVISOR_NETWORK"
-	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
-	vfsVar := "GVISOR_VFS"
+	env := []string{"TEST_ON_GVISOR=" + *platform, "GVISOR_NETWORK=" + *network}
+	env = append(env, os.Environ()...)
+	const vfsVar = "GVISOR_VFS"
 	if *vfs2 {
 		env = append(env, vfsVar+"=VFS2")
-		fuseVar := "FUSE_ENABLED"
+		const fuseVar = "FUSE_ENABLED"
 		if *fuse {
 			env = append(env, fuseVar+"=TRUE")
 		} else {
@@ -386,11 +448,11 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Remove shard env variables so that the gunit binary does not try to
 	// interpret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
+	env = filterEnv(env, "TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS")
 
 	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
 	// be backed by tmpfs.
-	env = filterEnv(env, []string{"TEST_TMPDIR"})
+	env = filterEnv(env, "TEST_TMPDIR")
 	env = append(env, fmt.Sprintf("TEST_TMPDIR=%s", testTmpDir))
 
 	spec.Process.Env = env
@@ -398,18 +460,19 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	if *addUDSTree {
 		cleanup, err := setupUDSTree(spec)
 		if err != nil {
-			t.Fatalf("error creating UDS tree: %v", err)
+			return fmt.Errorf("error creating UDS tree: %v", err)
 		}
 		defer cleanup()
 	}
 
-	if err := runRunsc(tc, spec); err != nil {
-		t.Errorf("test %q failed with error %v, want nil", tc.FullName(), err)
+	if err := runRunsc(spec); err != nil {
+		return fmt.Errorf("test failed with error %v, want nil", err)
 	}
+	return nil
 }
 
 // filterEnv returns an environment with the excluded variables removed.
-func filterEnv(env, exclude []string) []string {
+func filterEnv(env []string, exclude ...string) []string {
 	var out []string
 	for _, kv := range env {
 		ok := true
@@ -429,83 +492,4 @@ func filterEnv(env, exclude []string) []string {
 func fatalf(s string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, s+"\n", args...)
 	os.Exit(1)
-}
-
-func matchString(a, b string) (bool, error) {
-	return a == b, nil
-}
-
-func main() {
-	flag.Parse()
-	if flag.NArg() != 1 {
-		fatalf("test must be provided")
-	}
-	testBin := flag.Args()[0] // Only argument.
-
-	log.SetLevel(log.Info)
-	if *debug {
-		log.SetLevel(log.Debug)
-	}
-
-	if *platform != "native" && *runscPath == "" {
-		if err := testutil.ConfigureExePath(); err != nil {
-			panic(err.Error())
-		}
-		*runscPath = specutils.ExePath
-	}
-
-	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
-	// from outside the sandbox can (and will) stomp on logs from inside
-	// the sandbox.
-	for _, f := range []*os.File{os.Stdout, os.Stderr} {
-		flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFL, 0)
-		if err != nil {
-			fatalf("error getting file flags for %v: %v", f, err)
-		}
-		if flags&unix.O_APPEND == 0 {
-			flags |= unix.O_APPEND
-			if _, err := unix.FcntlInt(f.Fd(), unix.F_SETFL, flags); err != nil {
-				fatalf("error setting file flags for %v: %v", f, err)
-			}
-		}
-	}
-
-	// Get all test cases in each binary.
-	testCases, err := gtest.ParseTestCases(testBin, true)
-	if err != nil {
-		fatalf("ParseTestCases(%q) failed: %v", testBin, err)
-	}
-
-	// Get subset of tests corresponding to shard.
-	indices, err := testutil.TestIndicesForShard(len(testCases))
-	if err != nil {
-		fatalf("TestsForShard() failed: %v", err)
-	}
-
-	// Resolve the absolute path for the binary.
-	testBin, err = filepath.Abs(testBin)
-	if err != nil {
-		fatalf("Abs() failed: %v", err)
-	}
-
-	// Run the tests.
-	var tests []testing.InternalTest
-	for _, tci := range indices {
-		// Capture tc.
-		tc := testCases[tci]
-		tests = append(tests, testing.InternalTest{
-			Name: fmt.Sprintf("%s_%s", tc.Suite, tc.Name),
-			F: func(t *testing.T) {
-				if *platform == "native" {
-					// Run the test case on host.
-					runTestCaseNative(testBin, tc, t)
-				} else {
-					// Run the test case in runsc.
-					runTestCaseRunsc(testBin, tc, t)
-				}
-			},
-		})
-	}
-
-	testing.Main(matchString, tests, nil, nil)
 }
