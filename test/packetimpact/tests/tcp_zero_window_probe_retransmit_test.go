@@ -15,6 +15,7 @@
 package tcp_zero_window_probe_retransmit_test
 
 import (
+	"bytes"
 	"flag"
 	"testing"
 	"time"
@@ -51,18 +52,23 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
-		t.Fatalf("expected packet was not received: %s", err)
-	}
 
 	// Check for the dut to keep the connection alive as long as the zero window
 	// probes are acknowledged. Check if the zero window probes are sent at
 	// exponentially increasing intervals. The timeout intervals are function
 	// of the recorded first zero probe transmission duration.
 	//
-	// Advertize zero receive window again.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	// Advertize zero receive window along with a payload.
+	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(0)}, samplePayload)
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
+		t.Fatalf("expected packet was not received: %s", err)
+	}
+	// Wait for the payload to be received by the DUT, which is also an
+	// indication of receive of the peer window advertisement.
+	if got := dut.Recv(t, acceptFd, int32(len(sampleData)), 0); !bytes.Equal(got, sampleData) {
+		t.Fatalf("got dut.Recv(t, %d, %d, 0) = %s, want %s", acceptFd, len(sampleData), got, sampleData)
+	}
+
 	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1))
 	ackProbe := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))
 
