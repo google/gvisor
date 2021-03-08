@@ -705,12 +705,6 @@ TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
 
   ds.reset();
 
-  if (!IsRunningOnGvisor()) {
-    ASSERT_THAT(
-        bind(conn_fd2.get(), reinterpret_cast<sockaddr*>(&conn_bound_addr),
-             conn_addrlen),
-        SyscallSucceeds());
-  }
   ASSERT_THAT(RetryEINTR(connect)(conn_fd2.get(),
                                   reinterpret_cast<sockaddr*>(&conn_addr),
                                   conn_addrlen),
