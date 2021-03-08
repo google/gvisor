@@ -427,7 +427,7 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 // implementations type t.
 func (g *Generator) generateOneTestSuite(t *marshallableType) *testGenerator {
 	i := newTestGenerator(t.spec, t.recv)
-	i.emitTests(t.slice, t.dynamic)
+	i.emitTests(t.slice)
 	return i
 }
 
@@ -488,7 +488,11 @@ func (g *Generator) Run() error {
 					panic(fmt.Sprintf("Generated code for '%s' referenced a non-existent import with local name '%s'. Either go-marshal needs to add an import to the generated file, or a package in an input source file has a package name differ from the final component of its path, which go-marshal doesn't know how to detect; use an import alias to work around this limitation.", impl.typeName(), name))
 				}
 			}
-			ts = append(ts, g.generateOneTestSuite(t))
+			// Do not generate tests for dynamic types because they inherently
+			// violate some go_marshal requirements.
+			if !t.dynamic {
+				ts = append(ts, g.generateOneTestSuite(t))
+			}
 		}
 	}
 
