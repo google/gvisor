@@ -66,6 +66,9 @@ type Config struct {
 
 	// HostUDS signals whether the gofer can mount a host's UDS.
 	HostUDS bool
+
+	// enableXattr allows Get/SetXattr for the mounted file systems.
+	EnableXattr bool
 }
 
 type attachPoint struct {
@@ -795,12 +798,22 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
-func (*localFile) GetXattr(string, uint64) (string, error) {
-	return "", unix.EOPNOTSUPP
+func (l *localFile) GetXattr(name string, size uint64) (string, error) {
+	if !l.attachPoint.conf.EnableXattr {
+		return "", unix.EOPNOTSUPP
+	}
+	buffer := make([]byte, size)
+	if _, err := unix.Fgetxattr(l.file.FD(), name, buffer); err != nil {
+		return "", err
+	}
+	return string(buffer), nil
 }
 
-func (*localFile) SetXattr(string, string, uint32) error {
-	return unix.EOPNOTSUPP
+func (l *localFile) SetXattr(name string, value string, flags uint32) error {
+	if !l.attachPoint.conf.EnableXattr {
+		return unix.EOPNOTSUPP
+	}
+	return unix.Fsetxattr(l.file.FD(), name, []byte(value), int(flags))
 }
 
 func (*localFile) ListXattr(uint64) (map[string]struct{}, error) {

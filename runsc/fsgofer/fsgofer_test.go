@@ -565,6 +565,38 @@ func TestSetAttrOwner(t *testing.T) {
 	})
 }
 
+func SetGetXattr(l *localFile, name string, value string) error {
+	if err := l.SetXattr(name, value, 0 /* flags */); err != nil {
+		return err
+	}
+	ret, err := l.GetXattr(name, uint64(len(value)))
+	if err != nil {
+		return err
+	}
+	if ret != value {
+		return fmt.Errorf("Got value %s, want %s", ret, value)
+	}
+	return nil
+}
+
+func TestSetGetXattr(t *testing.T) {
+	xattrConfs := []Config{{ROMount: false, EnableXattr: false}, {ROMount: false, EnableXattr: true}}
+	runCustom(t, []uint32{unix.S_IFREG}, xattrConfs, func(t *testing.T, s state) {
+		name := "user.test"
+		value := "tmp"
+		err := SetGetXattr(s.file, name, value)
+		if s.conf.EnableXattr {
+			if err != nil {
+				t.Fatalf("%v: SetGetXattr failed, err: %v", s, err)
+			}
+		} else {
+			if err == nil {
+				t.Fatalf("%v: SetGetXattr should have failed", s)
+			}
+		}
+	})
+}
+
 func TestLink(t *testing.T) {
 	if !specutils.HasCapabilities(capability.CAP_DAC_READ_SEARCH) {
 		t.Skipf("Link test requires CAP_DAC_READ_SEARCH, running as %d", os.Getuid())
