@@ -16,7 +16,6 @@
 package ports
 
 import (
-	"math"
 	"math/rand"
 	"sync/atomic"
 
@@ -24,16 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-const (
-	// FirstEphemeral is the first ephemeral port.
-	FirstEphemeral = 16000
-
-	// numEphemeralPorts it the mnumber of available ephemeral ports to
-	// Netstack.
-	numEphemeralPorts = math.MaxUint16 - FirstEphemeral + 1
-
-	anyIPAddress tcpip.Address = ""
-)
+const anyIPAddress tcpip.Address = ""
 
 type portDescriptor struct {
 	network   tcpip.NetworkProtocolNumber
@@ -83,8 +73,15 @@ func (f Flags) Effective() Flags {
 
 // PortManager manages allocating, reserving and releasing ports.
 type PortManager struct {
+	// mu protects allocatedPorts.
+	// LOCK ORDERING: mu > ephemeralMu.
 	mu             sync.RWMutex
 	allocatedPorts map[portDescriptor]bindAddresses
+
+	// ephemeralMu protects firstEphemeral and numEphemeral.
+	ephemeralMu    sync.RWMutex
+	firstEphemeral uint16
+	numEphemeral   uint16
 
 	// hint is used to pick ports ephemeral ports in a stable order for
 	// a given port offset.
@@ -322,7 +319,13 @@ func (b bindAddresses) isAvailable(addr tcpip.Address, flags Flags, bindToDevice
 
 // NewPortManager creates new PortManager.
 func NewPortManager() *PortManager {
-	return &PortManager{allocatedPorts: make(map[portDescriptor]bindAddresses)}
+	return &PortManager{
+		allocatedPorts: make(map[portDescriptor]bindAddresses),
+		// Match Linux's default ephemeral range. See:
+		// https://github.com/torvalds/linux/blob/e54937963fa249595824439dc839c948188dea83/net/ipv4/af_inet.c#L1842
+		firstEphemeral: 32768,
+		numEphemeral:   28232,
+	}
 }
 
 // PickEphemeralPort randomly chooses a starting point and iterates over all
@@ -330,13 +333,18 @@ func NewPortManager() *PortManager {
 // is suitable for its needs, and stopping when a port is found or an error
 // occurs.
 func (s *PortManager) PickEphemeralPort(testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
-	offset := uint32(rand.Int31n(numEphemeralPorts))
-	return s.pickEphemeralPort(offset, numEphemeralPorts, testPort)
+	s.ephemeralMu.RLock()
+	firstEphemeral := s.firstEphemeral
+	numEphemeral := s.numEphemeral
+	s.ephemeralMu.RUnlock()
+
+	offset := uint16(rand.Int31n(int32(numEphemeral)))
+	return pickEphemeralPort(offset, firstEphemeral, numEphemeral, testPort)
 }
 
 // portHint atomically reads and returns the s.hint value.
-func (s *PortManager) portHint() uint32 {
-	return atomic.LoadUint32(&s.hint)
+func (s *PortManager) portHint() uint16 {
+	return uint16(atomic.LoadUint32(&s.hint))
 }
 
 // incPortHint atomically increments s.hint by 1.
@@ -348,8 +356,13 @@ func (s *PortManager) incPortHint() {
 // iterates over all ephemeral ports, allowing the caller to decide whether a
 // given port is suitable for its needs and stopping when a port is found or an
 // error occurs.
-func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
-	p, err := s.pickEphemeralPort(s.portHint()+offset, numEphemeralPorts, testPort)
+func (s *PortManager) PickEphemeralPortStable(offset uint16, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
+	s.ephemeralMu.RLock()
+	firstEphemeral := s.firstEphemeral
+	numEphemeral := s.numEphemeral
+	s.ephemeralMu.RUnlock()
+
+	p, err := pickEphemeralPort(s.portHint()+offset, firstEphemeral, numEphemeral, testPort)
 	if err == nil {
 		s.incPortHint()
 	}
@@ -361,9 +374,9 @@ func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uin
 // and iterates over the number of ports specified by count and allows the
 // caller to decide whether a given port is suitable for its needs, and stopping
 // when a port is found or an error occurs.
-func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
-	for i := uint32(0); i < count; i++ {
-		port = uint16(FirstEphemeral + (offset+i)%count)
+func pickEphemeralPort(offset, first, count uint16, testPort func(p uint16) (bool, tcpip.Error)) (port uint16, err tcpip.Error) {
+	for i := uint16(0); i < count; i++ {
+		port = first + (offset+i)%count
 		ok, err := testPort(port)
 		if err != nil {
 			return 0, err
@@ -566,4 +579,25 @@ func (s *PortManager) releasePortLocked(networks []tcpip.NetworkProtocolNumber, 
 			delete(s.allocatedPorts, desc)
 		}
 	}
+}
+
+// PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
+// both IPv4 and IPv6.
+func (s *PortManager) PortRange() (uint16, uint16) {
+	s.ephemeralMu.RLock()
+	defer s.ephemeralMu.RUnlock()
+	return s.firstEphemeral, s.firstEphemeral + s.numEphemeral - 1
+}
+
+// SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
+// (inclusive).
+func (s *PortManager) SetPortRange(start uint16, end uint16) tcpip.Error {
+	if start > end {
+		return &tcpip.ErrInvalidPortRange{}
+	}
+	s.ephemeralMu.Lock()
+	defer s.ephemeralMu.Unlock()
+	s.firstEphemeral = start
+	s.numEphemeral = end - start + 1
+	return nil
 }

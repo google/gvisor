@@ -386,6 +386,25 @@ func (e *ErrInvalidOptionValue) afterLoad() {}
 func (e *ErrInvalidOptionValue) StateLoad(stateSourceObject state.Source) {
 }
 
+func (e *ErrInvalidPortRange) StateTypeName() string {
+	return "pkg/tcpip.ErrInvalidPortRange"
+}
+
+func (e *ErrInvalidPortRange) StateFields() []string {
+	return []string{}
+}
+
+func (e *ErrInvalidPortRange) beforeSave() {}
+
+func (e *ErrInvalidPortRange) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+}
+
+func (e *ErrInvalidPortRange) afterLoad() {}
+
+func (e *ErrInvalidPortRange) StateLoad(stateSourceObject state.Source) {
+}
+
 func (e *ErrMalformedHeader) StateTypeName() string {
 	return "pkg/tcpip.ErrMalformedHeader"
 }
@@ -1120,6 +1139,7 @@ func init() {
 	state.Register((*ErrDuplicateNICID)(nil))
 	state.Register((*ErrInvalidEndpointState)(nil))
 	state.Register((*ErrInvalidOptionValue)(nil))
+	state.Register((*ErrInvalidPortRange)(nil))
 	state.Register((*ErrMalformedHeader)(nil))
 	state.Register((*ErrMessageTooLong)(nil))
 	state.Register((*ErrNetworkUnreachable)(nil))

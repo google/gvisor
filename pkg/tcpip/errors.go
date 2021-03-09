@@ -300,6 +300,19 @@ func (*ErrInvalidOptionValue) IgnoreStats() bool {
 }
 func (*ErrInvalidOptionValue) String() string { return "invalid option value specified" }
 
+// ErrInvalidPortRange indicates an attempt to set an invalid port range.
+//
+// +stateify savable
+type ErrInvalidPortRange struct{}
+
+func (*ErrInvalidPortRange) isError() {}
+
+// IgnoreStats implements Error.
+func (*ErrInvalidPortRange) IgnoreStats() bool {
+	return true
+}
+func (*ErrInvalidPortRange) String() string { return "invalid port range" }
+
 // ErrMalformedHeader indicates the operation encountered a malformed header.
 //
 // +stateify savable
