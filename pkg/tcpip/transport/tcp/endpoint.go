@@ -2220,7 +2220,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		portBuf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(portBuf, e.ID.RemotePort)
 		h.Write(portBuf)
-		portOffset := h.Sum32()
+		portOffset := uint16(h.Sum32())
 
 		var twReuse tcpip.TCPTimeWaitReuseOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &twReuse); err != nil {

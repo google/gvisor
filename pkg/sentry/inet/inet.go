@@ -93,6 +93,14 @@ type Stack interface {
 
 	// SetForwarding enables or disables packet forwarding between NICs.
 	SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error
+
+	// PortRange returns the UDP and TCP inclusive range of ephemeral ports
+	// used in both IPv4 and IPv6.
+	PortRange() (uint16, uint16)
+
+	// SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
+	// (inclusive).
+	SetPortRange(start uint16, end uint16) error
 }
 
 // Interface contains information about a network interface.

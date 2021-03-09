@@ -17,29 +17,72 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include <array>
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
 
+constexpr char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
+
+PosixErrorOr<int> NumPorts() {
+  int min = 0;
+  int max = 1 << 16;
+
+  // Read the ephemeral range from /proc.
+  ASSIGN_OR_RETURN_ERRNO(std::string rangefile, GetContents(kRangeFile));
+  const std::string err_msg =
+      absl::StrFormat("%s has invalid content: %s", kRangeFile, rangefile);
+  if (rangefile.back() != '\n') {
+    return PosixError(EINVAL, err_msg);
+  }
+  rangefile.pop_back();
+  std::vector<std::string> range =
+      absl::StrSplit(rangefile, absl::ByAnyChar("\t "));
+  if (range.size() < 2 || !absl::SimpleAtoi(range.front(), &min) ||
+      !absl::SimpleAtoi(range.back(), &max)) {
+    return PosixError(EINVAL, err_msg);
+  }
+
+  // If we can open as writable, limit the range.
+  if (!access(kRangeFile, W_OK)) {
+    ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd,
+                           Open(kRangeFile, O_WRONLY | O_TRUNC, 0));
+    max = min + 50;
+    const std::string small_range = absl::StrFormat("%d %d", min, max);
+    int n = write(fd.get(), small_range.c_str(), small_range.size());
+    if (n < 0) {
+      return PosixError(
+          errno,
+          absl::StrFormat("write(%d [%s], \"%s\", %d)", fd.get(), kRangeFile,
+                          small_range.c_str(), small_range.size()));
+    }
+  }
+  return max - min;
+}
+
 // Test fixture for tests that apply to pairs of connected sockets.
 using ConnectStressTest = SocketPairTest;
 
-TEST_P(ConnectStressTest, Reset65kTimes) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
-  for (int i = 0; i < 1 << 16; ++i) {
-    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+TEST_P(ConnectStressTest, Reset) {
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  for (int i = 0; i < nports * 2; i++) {
+    const std::unique_ptr<SocketPair> sockets =
+        ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
     // Send some data to ensure that the connection gets reset and the port gets
     // released immediately. This avoids either end entering TIME-WAIT.
@@ -55,6 +98,24 @@ TEST_P(ConnectStressTest, Reset65kTimes) {
     };
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
   }
+}
+
+// Tests that opening too many connections -- without closing them -- does lead
+// to port exhaustion.
+TEST_P(ConnectStressTest, TooManyOpen) {
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  int err_num = 0;
+  std::vector<std::unique_ptr<SocketPair>> sockets =
+      std::vector<std::unique_ptr<SocketPair>>(nports);
+  for (int i = 0; i < nports * 2; i++) {
+    PosixErrorOr<std::unique_ptr<SocketPair>> socks = NewSocketPair();
+    if (!socks.ok()) {
+      err_num = socks.error().errno_value();
+      break;
+    }
+    sockets.push_back(std::move(socks).ValueOrDie());
+  }
+  ASSERT_EQ(err_num, EADDRINUSE);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -73,14 +134,40 @@ INSTANTIATE_TEST_SUITE_P(
 
 // Test fixture for tests that apply to pairs of connected sockets created with
 // a persistent listener (if applicable).
-using PersistentListenerConnectStressTest = SocketPairTest;
+class PersistentListenerConnectStressTest : public SocketPairTest {
+ protected:
+  PersistentListenerConnectStressTest() : slept_{false} {}
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+  // NewSocketSleep is the same as NewSocketPair, but will sleep once (over the
+  // lifetime of the fixture) and retry if creation fails due to EADDRNOTAVAIL.
+  PosixErrorOr<std::unique_ptr<SocketPair>> NewSocketSleep() {
+    // We can't reuse a connection too close in time to its last use, as TCP
+    // uses the timestamp difference to disambiguate connections. With a
+    // sufficiently small port range, we'll cycle through too quickly, and TCP
+    // won't allow for connection reuse. Thus, we sleep the first time
+    // encountering EADDRINUSE to allow for that difference (1 second in
+    // gVisor).
+    PosixErrorOr<std::unique_ptr<SocketPair>> socks = NewSocketPair();
+    if (socks.ok()) {
+      return socks;
+    }
+    if (!slept_ && socks.error().errno_value() == EADDRNOTAVAIL) {
+      absl::SleepFor(absl::Milliseconds(1500));
+      slept_ = true;
+      return NewSocketPair();
+    }
+    return socks;
+  }
 
-  for (int i = 0; i < 1 << 16; ++i) {
-    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+ private:
+  bool slept_;
+};
+
+TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  for (int i = 0; i < nports * 2; i++) {
+    std::unique_ptr<SocketPair> sockets =
+        ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
     ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
     if (GetParam().type == SOCK_STREAM) {
       // Poll the other FD to make sure that we see the FIN from the other
@@ -97,12 +184,11 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseFirst) {
   }
 }
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
-  for (int i = 0; i < 1 << 16; ++i) {
-    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  for (int i = 0; i < nports * 2; i++) {
+    const std::unique_ptr<SocketPair> sockets =
+        ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RDWR), SyscallSucceeds());
     if (GetParam().type == SOCK_STREAM) {
       // Poll the other FD to make sure that we see the FIN from the other
@@ -119,12 +205,11 @@ TEST_P(PersistentListenerConnectStressTest, 65kTimesShutdownCloseSecond) {
   }
 }
 
-TEST_P(PersistentListenerConnectStressTest, 65kTimesClose) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
-  for (int i = 0; i < 1 << 16; ++i) {
-    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+TEST_P(PersistentListenerConnectStressTest, Close) {
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  for (int i = 0; i < nports * 2; i++) {
+    std::unique_ptr<SocketPair> sockets =
+        ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
   }
 }
 
@@ -149,7 +234,8 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
   // TODO(b/165912341): These are too slow on KVM platform with nested virt.
   SKIP_IF(GvisorPlatform() == Platform::kKVM);
 
-  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const std::unique_ptr<SocketPair> sockets =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int client_fd = sockets->first_fd();
   int server_fd = sockets->second_fd();
 

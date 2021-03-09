@@ -40,6 +40,7 @@ namespace {
 
 constexpr const char kProcNet[] = "/proc/net";
 constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
+constexpr const char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
 
 TEST(ProcNetSymlinkTarget, FileMode) {
   struct stat s;
@@ -560,6 +561,42 @@ TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
   EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
   EXPECT_EQ(buf, to_write);
+}
+
+TEST(ProcSysNetPortRange, CanReadAndWrite) {
+  int min;
+  int max;
+  std::string rangefile = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kRangeFile));
+  ASSERT_EQ(rangefile.back(), '\n');
+  rangefile.pop_back();
+  std::vector<std::string> range =
+      absl::StrSplit(rangefile, absl::ByAnyChar("\t "));
+  ASSERT_GT(range.size(), 1);
+  ASSERT_TRUE(absl::SimpleAtoi(range.front(), &min));
+  ASSERT_TRUE(absl::SimpleAtoi(range.back(), &max));
+  EXPECT_LE(min, max);
+
+  // If the file isn't writable, there's nothing else to do here.
+  if (access(kRangeFile, W_OK)) {
+    return;
+  }
+
+  constexpr int kSize = 77;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kRangeFile, O_WRONLY | O_TRUNC, 0));
+  max = min + kSize;
+  const std::string small_range = absl::StrFormat("%d %d", min, max);
+  ASSERT_THAT(write(fd.get(), small_range.c_str(), small_range.size()),
+              SyscallSucceedsWithValue(small_range.size()));
+
+  rangefile = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kRangeFile));
+  ASSERT_EQ(rangefile.back(), '\n');
+  rangefile.pop_back();
+  range = absl::StrSplit(rangefile, absl::ByAnyChar("\t "));
+  ASSERT_GT(range.size(), 1);
+  ASSERT_TRUE(absl::SimpleAtoi(range.front(), &min));
+  ASSERT_TRUE(absl::SimpleAtoi(range.back(), &max));
+  EXPECT_EQ(min + kSize, max);
 }
 
 }  // namespace

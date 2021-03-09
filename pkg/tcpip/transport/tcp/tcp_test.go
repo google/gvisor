@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -4783,7 +4782,8 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												t.Fatalf("unknown address type: '%s'", candidateAddressType)
 											}
 
-											for i := ports.FirstEphemeral; i <= math.MaxUint16; i++ {
+											start, end := s.PortRange()
+											for i := start; i <= end; i++ {
 												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}); err != nil {
 													t.Fatalf("Bind(%d) failed: %s", i, err)
 												}

@@ -329,6 +329,7 @@ func TestPortReservation(t *testing.T) {
 			net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
 
 			for _, test := range test.actions {
+				first, _ := pm.PortRange()
 				if test.release {
 					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device, test.dest)
 					continue
@@ -337,8 +338,8 @@ func TestPortReservation(t *testing.T) {
 				if diff := cmp.Diff(test.want, err); diff != "" {
 					t.Fatalf("unexpected error from ReservePort(.., .., %s, %d, %+v, %d, %v), (-want, +got):\n%s", test.ip, test.port, test.flags, test.device, test.dest, diff)
 				}
-				if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
-					t.Fatalf("ReservePort(.., .., .., 0, ..) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
+				if test.port == 0 && (gotPort == 0 || gotPort < first) {
+					t.Fatalf("ReservePort(.., .., .., 0, ..) = %d, want port number >= %d to be picked", gotPort, first)
 				}
 			}
 		})
@@ -346,6 +347,11 @@ func TestPortReservation(t *testing.T) {
 }
 
 func TestPickEphemeralPort(t *testing.T) {
+	const (
+		firstEphemeral    = 32000
+		numEphemeralPorts = 1000
+	)
+
 	for _, test := range []struct {
 		name     string
 		f        func(port uint16) (bool, tcpip.Error)
@@ -369,17 +375,17 @@ func TestPickEphemeralPort(t *testing.T) {
 		{
 			name: "only-port-16042-available",
 			f: func(port uint16) (bool, tcpip.Error) {
-				if port == FirstEphemeral+42 {
+				if port == firstEphemeral+42 {
 					return true, nil
 				}
 				return false, nil
 			},
-			wantPort: FirstEphemeral + 42,
+			wantPort: firstEphemeral + 42,
 		},
 		{
 			name: "only-port-under-16000-available",
 			f: func(port uint16) (bool, tcpip.Error) {
-				if port < FirstEphemeral {
+				if port < firstEphemeral {
 					return true, nil
 				}
 				return false, nil
@@ -389,6 +395,9 @@ func TestPickEphemeralPort(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pm := NewPortManager()
+			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
+				t.Fatalf("failed to set ephemeral port range: %s", err)
+			}
 			port, err := pm.PickEphemeralPort(test.f)
 			if diff := cmp.Diff(test.wantErr, err); diff != "" {
 				t.Fatalf("unexpected error from PickEphemeralPort(..), (-want, +got):\n%s", diff)
@@ -401,6 +410,11 @@ func TestPickEphemeralPort(t *testing.T) {
 }
 
 func TestPickEphemeralPortStable(t *testing.T) {
+	const (
+		firstEphemeral    = 32000
+		numEphemeralPorts = 1000
+	)
+
 	for _, test := range []struct {
 		name     string
 		f        func(port uint16) (bool, tcpip.Error)
@@ -424,17 +438,17 @@ func TestPickEphemeralPortStable(t *testing.T) {
 		{
 			name: "only-port-16042-available",
 			f: func(port uint16) (bool, tcpip.Error) {
-				if port == FirstEphemeral+42 {
+				if port == firstEphemeral+42 {
 					return true, nil
 				}
 				return false, nil
 			},
-			wantPort: FirstEphemeral + 42,
+			wantPort: firstEphemeral + 42,
 		},
 		{
 			name: "only-port-under-16000-available",
 			f: func(port uint16) (bool, tcpip.Error) {
-				if port < FirstEphemeral {
+				if port < firstEphemeral {
 					return true, nil
 				}
 				return false, nil
@@ -444,7 +458,10 @@ func TestPickEphemeralPortStable(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pm := NewPortManager()
-			portOffset := uint32(rand.Int31n(int32(numEphemeralPorts)))
+			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
+				t.Fatalf("failed to set ephemeral port range: %s", err)
+			}
+			portOffset := uint16(rand.Int31n(int32(numEphemeralPorts)))
 			port, err := pm.PickEphemeralPortStable(portOffset, test.f)
 			if diff := cmp.Diff(test.wantErr, err); diff != "" {
 				t.Fatalf("unexpected error from PickEphemeralPort(..), (-want, +got):\n%s", diff)
