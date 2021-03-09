@@ -17,6 +17,7 @@ package proc
 import (
 	"fmt"
 	"io"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -26,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -498,6 +500,120 @@ func (f *ipForwardingFile) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	return n, f.stack.SetForwarding(ipv4.ProtocolNumber, *f.ipf.enabled)
 }
 
+// portRangeInode implements fs.InodeOperations. It provides and allows
+// modification of the range of ephemeral ports that IPv4 and IPv6 sockets
+// choose from.
+//
+// +stateify savable
+type portRangeInode struct {
+	fsutil.SimpleFileInode
+
+	stack inet.Stack `state:"wait"`
+
+	// start and end store the port range. We must save/restore this here,
+	// since a netstack instance is created on restore.
+	start *uint16
+	end   *uint16
+}
+
+func newPortRangeInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
+	ipf := &portRangeInode{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		stack:           s,
+	}
+	sattr := fs.StableAttr{
+		DeviceID:  device.ProcDevice.DeviceID(),
+		InodeID:   device.ProcDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+		Type:      fs.SpecialFile,
+	}
+	return fs.NewInode(ctx, ipf, msrc, sattr)
+}
+
+// Truncate implements fs.InodeOperations.Truncate. Truncate is called when
+// O_TRUNC is specified for any kind of existing Dirent but is not called via
+// (f)truncate for proc files.
+func (*portRangeInode) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
+// +stateify savable
+type portRangeFile struct {
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+
+	inode *portRangeInode
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (in *portRangeInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
+	return fs.NewFile(ctx, dirent, flags, &portRangeFile{
+		inode: in,
+	}), nil
+}
+
+// Read implements fs.FileOperations.Read.
+func (pf *portRangeFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, io.EOF
+	}
+
+	if pf.inode.start == nil {
+		start, end := pf.inode.stack.PortRange()
+		pf.inode.start = &start
+		pf.inode.end = &end
+	}
+
+	contents := fmt.Sprintf("%d %d\n", *pf.inode.start, *pf.inode.end)
+	n, err := dst.CopyOut(ctx, []byte(contents))
+	return int64(n), err
+}
+
+// Write implements fs.FileOperations.Write.
+//
+// Offset is ignored, multiple writes are not supported.
+func (pf *portRangeFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Only consider size of one memory page for input for performance
+	// reasons.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	ports := make([]int32, 2)
+	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, ports, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+
+	// Port numbers must be uint16s.
+	if ports[0] < 0 || ports[1] < 0 || ports[0] > math.MaxUint16 || ports[1] > math.MaxUint16 {
+		return 0, syserror.EINVAL
+	}
+
+	if err := pf.inode.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {
+		return 0, err
+	}
+	if pf.inode.start == nil {
+		pf.inode.start = new(uint16)
+		pf.inode.end = new(uint16)
+	}
+	*pf.inode.start = uint16(ports[0])
+	*pf.inode.end = uint16(ports[1])
+	return n, nil
+}
+
 func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	contents := map[string]*fs.Inode{
 		// Add tcp_sack.
@@ -506,12 +622,15 @@ func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s ine
 		// Add ip_forward.
 		"ip_forward": newIPForwardingInode(ctx, msrc, s),
 
+		// Allow for configurable ephemeral port ranges. Note that this
+		// controls ports for both IPv4 and IPv6 sockets.
+		"ip_local_port_range": newPortRangeInode(ctx, msrc, s),
+
 		// The following files are simple stubs until they are
 		// implemented in netstack, most of these files are
 		// configuration related. We use the value closest to the
 		// actual netstack behavior or any empty file, all of these
 		// files will have mode 0444 (read-only for all users).
-		"ip_local_port_range":     newStaticProcInode(ctx, msrc, []byte("16000   65535")),
 		"ip_local_reserved_ports": newStaticProcInode(ctx, msrc, []byte("")),
 		"ipfrag_time":             newStaticProcInode(ctx, msrc, []byte("30")),
 		"ip_nonlocal_bind":        newStaticProcInode(ctx, msrc, []byte("0")),

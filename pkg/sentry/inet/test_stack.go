@@ -164,3 +164,15 @@ func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable b
 	s.IPForwarding = enable
 	return nil
 }
+
+// PortRange implements inet.Stack.PortRange.
+func (*TestStack) PortRange() (uint16, uint16) {
+	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
+	return 32768, 28232
+}
+
+// SetPortRange implements inet.Stack.SetPortRange.
+func (*TestStack) SetPortRange(start uint16, end uint16) error {
+	// No-op.
+	return nil
+}

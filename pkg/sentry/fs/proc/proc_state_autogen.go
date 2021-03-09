@@ -930,6 +930,61 @@ func (f *ipForwardingFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(1, &f.stack)
 }
 
+func (in *portRangeInode) StateTypeName() string {
+	return "pkg/sentry/fs/proc.portRangeInode"
+}
+
+func (in *portRangeInode) StateFields() []string {
+	return []string{
+		"SimpleFileInode",
+		"stack",
+		"start",
+		"end",
+	}
+}
+
+func (in *portRangeInode) beforeSave() {}
+
+func (in *portRangeInode) StateSave(stateSinkObject state.Sink) {
+	in.beforeSave()
+	stateSinkObject.Save(0, &in.SimpleFileInode)
+	stateSinkObject.Save(1, &in.stack)
+	stateSinkObject.Save(2, &in.start)
+	stateSinkObject.Save(3, &in.end)
+}
+
+func (in *portRangeInode) afterLoad() {}
+
+func (in *portRangeInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &in.SimpleFileInode)
+	stateSourceObject.LoadWait(1, &in.stack)
+	stateSourceObject.Load(2, &in.start)
+	stateSourceObject.Load(3, &in.end)
+}
+
+func (pf *portRangeFile) StateTypeName() string {
+	return "pkg/sentry/fs/proc.portRangeFile"
+}
+
+func (pf *portRangeFile) StateFields() []string {
+	return []string{
+		"inode",
+	}
+}
+
+func (pf *portRangeFile) beforeSave() {}
+
+func (pf *portRangeFile) StateSave(stateSinkObject state.Sink) {
+	pf.beforeSave()
+	stateSinkObject.Save(0, &pf.inode)
+}
+
+func (pf *portRangeFile) afterLoad() {}
+
+func (pf *portRangeFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &pf.inode)
+}
+
 func (t *taskDir) StateTypeName() string {
 	return "pkg/sentry/fs/proc.taskDir"
 }
@@ -1598,6 +1653,8 @@ func init() {
 	state.Register((*tcpRecoveryFile)(nil))
 	state.Register((*ipForwarding)(nil))
 	state.Register((*ipForwardingFile)(nil))
+	state.Register((*portRangeInode)(nil))
+	state.Register((*portRangeFile)(nil))
 	state.Register((*taskDir)(nil))
 	state.Register((*subtasks)(nil))
 	state.Register((*subtasksFile)(nil))

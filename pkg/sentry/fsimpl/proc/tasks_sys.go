@@ -17,6 +17,7 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -69,17 +70,17 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]kernfs.Inode{
 			"ipv4": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-				"tcp_recovery": fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
-				"tcp_rmem":     fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
-				"tcp_sack":     fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
-				"tcp_wmem":     fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
-				"ip_forward":   fs.newInode(ctx, root, 0444, &ipForwarding{stack: stack}),
+				"ip_forward":          fs.newInode(ctx, root, 0444, &ipForwarding{stack: stack}),
+				"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
+				"tcp_recovery":        fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
+				"tcp_rmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
+				"tcp_sack":            fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
+				"tcp_wmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
 
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
 				// value closest to the actual netstack behavior or any empty file, all
 				// of these files will have mode 0444 (read-only for all users).
-				"ip_local_port_range":     fs.newInode(ctx, root, 0444, newStaticFile("16000   65535")),
 				"ip_local_reserved_ports": fs.newInode(ctx, root, 0444, newStaticFile("")),
 				"ipfrag_time":             fs.newInode(ctx, root, 0444, newStaticFile("30")),
 				"ip_nonlocal_bind":        fs.newInode(ctx, root, 0444, newStaticFile("0")),
@@ -419,5 +420,70 @@ func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offs
 	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
 		return 0, err
 	}
+	return n, nil
+}
+
+// portRange implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/ip_local_port_range.
+//
+// +stateify savable
+type portRange struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+
+	// start and end store the port range. We must save/restore this here,
+	// since a netstack instance is created on restore.
+	start *uint16
+	end   *uint16
+}
+
+var _ vfs.WritableDynamicBytesSource = (*portRange)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (pr *portRange) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if pr.start == nil {
+		start, end := pr.stack.PortRange()
+		pr.start = &start
+		pr.end = &end
+	}
+	_, err := fmt.Fprintf(buf, "%d %d\n", *pr.start, *pr.end)
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, syserror.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit input size so as not to impact performance if input size is
+	// large.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	ports := make([]int32, 2)
+	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, ports, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+
+	// Port numbers must be uint16s.
+	if ports[0] < 0 || ports[1] < 0 || ports[0] > math.MaxUint16 || ports[1] > math.MaxUint16 {
+		return 0, syserror.EINVAL
+	}
+
+	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {
+		return 0, err
+	}
+	if pr.start == nil {
+		pr.start = new(uint16)
+		pr.end = new(uint16)
+	}
+	*pr.start = uint16(ports[0])
+	*pr.end = uint16(ports[1])
 	return n, nil
 }
