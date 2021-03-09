@@ -69,6 +69,7 @@ func RegisterFlags() {
 		// Flags that control sandbox runtime behavior: FS related.
 		flag.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
 		flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
+		flag.Bool("verity", false, "specifies whether a verity file system will be mounted.")
 		flag.Bool("overlayfs-stale-read", true, "assume root mount is an overlay filesystem")
 		flag.Bool("fsgofer-host-uds", false, "allow the gofer to mount Unix Domain Sockets.")
 		flag.Bool("vfs2", false, "enables VFSv2. This uses the new VFS layer that is faster than the previous one.")
