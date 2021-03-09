@@ -107,6 +107,8 @@ func registerFlags(fs *flag.FlagSet) {
 // Initialize initializes the testbench, it parse the flags and sets up the
 // pool of test networks for testbench's later use.
 func Initialize(fs *flag.FlagSet) {
+	// Required to get access to the -test.run flag.
+	testing.Init()
 	registerFlags(fs)
 	flag.Parse()
 	if err := loadDUTInfos(); err != nil {

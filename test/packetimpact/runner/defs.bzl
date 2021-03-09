@@ -5,6 +5,7 @@ load("//tools:defs.bzl", "go_test")
 def _packetimpact_test_impl(ctx):
     test_runner = ctx.executable._test_runner
     bench = ctx.actions.declare_file("%s-bench" % ctx.label.name)
+    flags = ctx.attr.flags + ["--extra_test_arg=--test.run='%s'" % ctx.attr.test_regex]
     bench_content = "\n".join([
         "#!/bin/bash",
         # This test will run part in a distinct user namespace. This can cause
@@ -14,7 +15,7 @@ def _packetimpact_test_impl(ctx):
         "find . -type f -or -type d -exec chmod a+rx {} \\;",
         "%s %s --testbench_binary %s --num_duts %d $@\n" % (
             test_runner.short_path,
-            " ".join(ctx.attr.flags),
+            " ".join(flags),
             ctx.files.testbench_binary[0].short_path,
             ctx.attr.num_duts,
         ),
@@ -47,6 +48,10 @@ _packetimpact_test = rule(
         "testbench_binary": attr.label(
             cfg = "target",
             mandatory = True,
+        ),
+        "test_regex": attr.string(
+            mandatory = False,
+            default = "",
         ),
         "flags": attr.string_list(
             mandatory = False,
@@ -115,13 +120,21 @@ def packetimpact_netstack_test(
         **kwargs
     )
 
-def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1):
+def packetimpact_go_test(
+        name,
+        expect_native_failure = False,
+        expect_netstack_failure = False,
+        netstack_fail_tests = [],
+        netstack_pass_tests = [],
+        num_duts = 1):
     """Add packetimpact tests written in go.
 
     Args:
         name: name of the test
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
+        netstack_fail_tests: tests that should fail for Netstack
+        netstack_pass_tests: tests that should pass for Netstack
         num_duts: how many DUTs are needed for the test
     """
     testbench_binary = name + "_test"
@@ -131,12 +144,31 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         num_duts = num_duts,
         testbench_binary = testbench_binary,
     )
-    packetimpact_netstack_test(
-        name = name,
-        expect_failure = expect_netstack_failure,
-        num_duts = num_duts,
-        testbench_binary = testbench_binary,
-    )
+    if not expect_netstack_failure or netstack_fail_tests == []:
+        packetimpact_netstack_test(
+            name = name,
+            expect_failure = expect_netstack_failure,
+            num_duts = num_duts,
+            testbench_binary = testbench_binary,
+        )
+    else:
+        if netstack_pass_tests == []:
+            fail("netstack_pass_tests must not be empty if netstack_fail_tests are present")
+        netstack_pass_tests_regex = "|".join(netstack_pass_tests)
+        packetimpact_netstack_test(
+            name = name,
+            expect_failure = False,
+            num_duts = num_duts,
+            testbench_binary = testbench_binary,
+            test_regex = netstack_pass_tests_regex,
+        )
+        for t in netstack_fail_tests:
+            packetimpact_netstack_test(
+                name = name + "_" + t,
+                expect_failure = True,
+                testbench_binary = testbench_binary,
+                test_regex = t,
+            )
 
 def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
     """Build packetimpact testbench written in go.
@@ -164,6 +196,8 @@ PacketimpactTestInfo = provider(
     fields = [
         "name",
         "expect_netstack_failure",
+        "netstack_fail_tests",
+        "netstack_pass_tests",
         "num_duts",
     ],
 )
