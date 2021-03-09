@@ -2162,7 +2162,13 @@ class BlockingChild {
     return tid_;
   }
 
-  void Join() { Stop(); }
+  void Join() {
+    {
+      absl::MutexLock ml(&mu_);
+      stop_ = true;
+    }
+    thread_.Join();
+  }
 
  private:
   void Start() {
@@ -2170,11 +2176,6 @@ class BlockingChild {
     tid_ = syscall(__NR_gettid);
     tid_ready_ = true;
     mu_.Await(absl::Condition(&stop_));
-  }
-
-  void Stop() {
-    absl::MutexLock ml(&mu_);
-    stop_ = true;
   }
 
   mutable absl::Mutex mu_;
@@ -2190,16 +2191,18 @@ class BlockingChild {
 TEST(ProcTask, NewThreadAppears) {
   auto initial = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/proc/self/task", false));
   BlockingChild child1;
-  EXPECT_NO_ERRNO(DirContainsExactly("/proc/self/task",
-                                     TaskFiles(initial, {child1.Tid()})));
+  // Use Eventually* in case a proc from ealier test is still tearing down.
+  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
+      "/proc/self/task", TaskFiles(initial, {child1.Tid()})));
 }
 
 TEST(ProcTask, KilledThreadsDisappear) {
   auto initial = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/proc/self/task/", false));
 
   BlockingChild child1;
-  EXPECT_NO_ERRNO(DirContainsExactly("/proc/self/task",
-                                     TaskFiles(initial, {child1.Tid()})));
+  // Use Eventually* in case a proc from ealier test is still tearing down.
+  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
+      "/proc/self/task", TaskFiles(initial, {child1.Tid()})));
 
   // Stat child1's task file. Regression test for b/32097707.
   struct stat statbuf;
