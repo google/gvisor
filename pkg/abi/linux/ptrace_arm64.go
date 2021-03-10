@@ -27,3 +27,14 @@ type PtraceRegs struct {
 	Pc     uint64
 	Pstate uint64
 }
+
+// InstructionPointer returns the address of the next instruction to be
+// executed.
+func (p *PtraceRegs) InstructionPointer() uint64 {
+	return p.Pc
+}
+
+// StackPointer returns the address of the Stack pointer.
+func (p *PtraceRegs) StackPointer() uint64 {
+	return p.Sp
+}
