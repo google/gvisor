@@ -11,6 +11,7 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
     ],
 )
 

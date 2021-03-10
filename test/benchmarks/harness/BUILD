@@ -14,5 +14,6 @@ go_library(
     deps = [
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
     ],
 )

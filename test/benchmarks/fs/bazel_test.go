@@ -25,6 +25,13 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
+// Dimensions here are clean/dirty cache (do or don't drop caches)
+// and if the mount on which we are compiling is a tmpfs/bind mount.
+type benchmark struct {
+	clearCache bool   // clearCache drops caches before running.
+	fstype     string // type of filesystem to use.
+}
+
 // Note: CleanCache versions of this test require running with root permissions.
 func BenchmarkBuildABSL(b *testing.B) {
 	runBuildBenchmark(b, "benchmarks/absl", "/abseil-cpp", "absl/base/...")
@@ -45,17 +52,18 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 	}
 	defer machine.CleanUp()
 
-	// Dimensions here are clean/dirty cache (do or don't drop caches)
-	// and if the mount on which we are compiling is a tmpfs/bind mount.
-	benchmarks := []struct {
-		clearCache bool // clearCache drops caches before running.
-		tmpfs      bool // tmpfs will run compilation on a tmpfs.
-	}{
-		{clearCache: true, tmpfs: false},
-		{clearCache: false, tmpfs: false},
-		{clearCache: true, tmpfs: true},
-		{clearCache: false, tmpfs: true},
+	benchmarks := make([]benchmark, 0, 6)
+	for _, filesys := range []string{harness.BindFS, harness.TmpFS, harness.RootFS} {
+		benchmarks = append(benchmarks, benchmark{
+			clearCache: true,
+			fstype:     filesys,
+		})
+		benchmarks = append(benchmarks, benchmark{
+			clearCache: false,
+			fstype:     filesys,
+		})
 	}
+
 	for _, bm := range benchmarks {
 		pageCache := tools.Parameter{
 			Name:  "page_cache",
@@ -67,10 +75,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 
 		filesystem := tools.Parameter{
 			Name:  "filesystem",
-			Value: "bind",
-		}
-		if bm.tmpfs {
-			filesystem.Value = "tmpfs"
+			Value: bm.fstype,
 		}
 		name, err := tools.ParametersToName(pageCache, filesystem)
 		if err != nil {
@@ -83,21 +88,25 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			container := machine.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
+			mts, prefix, cleanup, err := harness.MakeMount(machine, bm.fstype)
+			if err != nil {
+				b.Fatalf("Failed to make mount: %v", err)
+			}
+			defer cleanup()
+
+			runOpts := dockerutil.RunOpts{
+				Image:  image,
+				Mounts: mts,
+			}
+
 			// Start a container and sleep.
-			if err := container.Spawn(ctx, dockerutil.RunOpts{
-				Image: image,
-			}, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
+			if err := container.Spawn(ctx, runOpts, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
 				b.Fatalf("run failed with: %v", err)
 			}
 
-			// If we are running on a tmpfs, copy to /tmp which is a tmpfs.
-			prefix := ""
-			if bm.tmpfs {
-				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
-					"cp", "-r", workdir, "/tmp/."); err != nil {
-					b.Fatalf("failed to copy directory: %v (%s)", err, out)
-				}
-				prefix = "/tmp"
+			if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
+				"cp", "-rf", workdir, prefix+"/."); err != nil {
+				b.Fatalf("failed to copy directory: %v (%s)", err, out)
 			}
 
 			b.ResetTimer()
@@ -118,7 +127,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 					WorkDir: prefix + workdir,
 				}, "bazel", "build", "-c", "opt", target)
 				if err != nil {
-					b.Fatalf("build failed with: %v", err)
+					b.Fatalf("build failed with: %v logs: %s", err, got)
 				}
 				b.StopTimer()
 

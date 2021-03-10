@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 
+	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -53,5 +55,55 @@ func DebugLog(b *testing.B, msg string, args ...interface{}) {
 	b.Helper()
 	if *debug {
 		b.Logf(msg, args...)
+	}
+}
+
+const (
+	// BindFS indicates a bind mount should be created.
+	BindFS = "bindfs"
+	// TmpFS indicates a tmpfs mount should be created.
+	TmpFS = "tmpfs"
+	// RootFS indicates no mount should be created and the root mount should be used.
+	RootFS = "rootfs"
+)
+
+// MakeMount makes a mount and cleanup based on the requested type. Bind
+// and volume mounts are backed by a temp directory made with mktemp.
+// tmpfs mounts require no such backing and are just made.
+// rootfs mounts do not make a mount, but instead return a target direectory at root.
+// It is up to the caller to call the returned cleanup.
+func MakeMount(machine Machine, fsType string) ([]mount.Mount, string, func(), error) {
+	mounts := make([]mount.Mount, 0, 1)
+	switch fsType {
+	case BindFS:
+		dir, err := machine.RunCommand("mktemp", "-d")
+		if err != nil {
+			return mounts, "", func() {}, fmt.Errorf("failed to create tempdir: %v", err)
+		}
+		dir = strings.TrimSuffix(dir, "\n")
+
+		out, err := machine.RunCommand("chmod", "777", dir)
+		if err != nil {
+			machine.RunCommand("rm", "-rf", dir)
+			return mounts, "", func() {}, fmt.Errorf("failed modify directory: %v %s", err, out)
+		}
+		target := "/data"
+		mounts = append(mounts, mount.Mount{
+			Target: target,
+			Source: dir,
+			Type:   mount.TypeBind,
+		})
+		return mounts, target, func() { machine.RunCommand("rm", "-rf", dir) }, nil
+	case RootFS:
+		return mounts, "/", func() {}, nil
+	case TmpFS:
+		target := "/data"
+		mounts = append(mounts, mount.Mount{
+			Target: target,
+			Type:   mount.TypeTmpfs,
+		})
+		return mounts, target, func() {}, nil
+	default:
+		return mounts, "", func() {}, fmt.Errorf("illegal mount type not supported: %v", fsType)
 	}
 }

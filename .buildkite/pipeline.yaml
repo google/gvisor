@@ -183,9 +183,13 @@ steps:
   - <<: *benchmarks
     label: ":metal: FFMPEG benchmarks"
     command: make benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchmarks/media:ffmpeg_test
+  # For fio, running with --test.benchtime=Xs scales the written/read
+  # bytes to several GB. This is not a problem for root/bind/volume mounts,
+  # but for tmpfs mounts, the size can grow to more memory than the machine
+  # has availabe. Fix the runs to 10GB written/read for the benchmark.
   - <<: *benchmarks
     label: ":floppy_disk: FIO benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test
+    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_OPTIONS=--test.benchtime=10000x
   - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
     command: make benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
