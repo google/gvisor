@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
@@ -70,7 +69,7 @@ func BenchmarkFio(b *testing.B) {
 	}
 	defer machine.CleanUp()
 
-	for _, fsType := range []mount.Type{mount.TypeBind, mount.TypeTmpfs} {
+	for _, fsType := range []string{harness.BindFS, harness.TmpFS, harness.RootFS} {
 		for _, tc := range testCases {
 			operation := tools.Parameter{
 				Name:  "operation",
@@ -82,7 +81,7 @@ func BenchmarkFio(b *testing.B) {
 			}
 			filesystem := tools.Parameter{
 				Name:  "filesystem",
-				Value: string(fsType),
+				Value: fsType,
 			}
 			name, err := tools.ParametersToName(operation, blockSize, filesystem)
 			if err != nil {
@@ -95,13 +94,7 @@ func BenchmarkFio(b *testing.B) {
 				container := machine.GetContainer(ctx, b)
 				defer container.CleanUp(ctx)
 
-				// Directory and filename inside container where fio will read/write.
-				outdir := "/data"
-				outfile := filepath.Join(outdir, "test.txt")
-
-				// Make the required mount and grab a cleanup for bind mounts
-				// as they are backed by a temp directory (mktemp).
-				mnt, mountCleanup, err := makeMount(machine, fsType, outdir)
+				mnts, outdir, mountCleanup, err := harness.MakeMount(machine, fsType)
 				if err != nil {
 					b.Fatalf("failed to make mount: %v", err)
 				}
@@ -109,18 +102,18 @@ func BenchmarkFio(b *testing.B) {
 
 				// Start the container with the mount.
 				if err := container.Spawn(
-					ctx,
-					dockerutil.RunOpts{
-						Image: "benchmarks/fio",
-						Mounts: []mount.Mount{
-							mnt,
-						},
+					ctx, dockerutil.RunOpts{
+						Image:  "benchmarks/fio",
+						Mounts: mnts,
 					},
 					// Sleep on the order of b.N.
 					"sleep", fmt.Sprintf("%d", 1000*b.N),
 				); err != nil {
 					b.Fatalf("failed to start fio container with: %v", err)
 				}
+
+				// Directory and filename inside container where fio will read/write.
+				outfile := filepath.Join(outdir, "test.txt")
 
 				// For reads, we need a file to read so make one inside the container.
 				if strings.Contains(tc.Test, "read") {
@@ -135,6 +128,7 @@ func BenchmarkFio(b *testing.B) {
 				if err := harness.DropCaches(machine); err != nil {
 					b.Skipf("failed to drop caches with %v. You probably need root.", err)
 				}
+
 				cmd := tc.MakeCmd(outfile)
 
 				if err := harness.DropCaches(machine); err != nil {
@@ -151,39 +145,6 @@ func BenchmarkFio(b *testing.B) {
 				tc.Report(b, data)
 			})
 		}
-	}
-}
-
-// makeMount makes a mount and cleanup based on the requested type. Bind
-// and volume mounts are backed by a temp directory made with mktemp.
-// tmpfs mounts require no such backing and are just made.
-// It is up to the caller to call the returned cleanup.
-func makeMount(machine harness.Machine, mountType mount.Type, target string) (mount.Mount, func(), error) {
-	switch mountType {
-	case mount.TypeVolume, mount.TypeBind:
-		dir, err := machine.RunCommand("mktemp", "-d")
-		if err != nil {
-			return mount.Mount{}, func() {}, fmt.Errorf("failed to create tempdir: %v", err)
-		}
-		dir = strings.TrimSuffix(dir, "\n")
-
-		out, err := machine.RunCommand("chmod", "777", dir)
-		if err != nil {
-			machine.RunCommand("rm", "-rf", dir)
-			return mount.Mount{}, func() {}, fmt.Errorf("failed modify directory: %v %s", err, out)
-		}
-		return mount.Mount{
-			Target: target,
-			Source: dir,
-			Type:   mount.TypeBind,
-		}, func() { machine.RunCommand("rm", "-rf", dir) }, nil
-	case mount.TypeTmpfs:
-		return mount.Mount{
-			Target: target,
-			Type:   mount.TypeTmpfs,
-		}, func() {}, nil
-	default:
-		return mount.Mount{}, func() {}, fmt.Errorf("illegal mount time not supported: %v", mountType)
 	}
 }
 
