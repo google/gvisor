@@ -93,6 +93,18 @@ func (p *PCIDs) Assign(pt *PageTables) (uint16, bool) {
 	return 0, false
 }
 
+// GetPCID returns the cached PCID.
+func (p *PCIDs) GetPCID(pt *PageTables) uint16 {
+	p.mu.Lock()
+	value, ok := p.cache[pt]
+	p.mu.Unlock()
+
+	if !ok {
+		value = 0
+	}
+	return value
+}
+
 // Drop drops references to a set of page tables.
 func (p *PCIDs) Drop(pt *PageTables) {
 	p.mu.Lock()
