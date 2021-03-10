@@ -16,6 +16,10 @@ jobs:
   default:
     runs-on: ubuntu-latest
     steps:
+    - name: Cancel previous
+      uses: styfle/cancel-workflow-action@0.7.0
+      with:
+        access_token: ${{ github.token }}
     - uses: actions/checkout@v2
     - run: make
     - run: make build OPTIONS="--build_tag_filters nogo" TARGETS="//..."
