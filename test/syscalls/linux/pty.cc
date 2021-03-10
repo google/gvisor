@@ -1255,8 +1255,11 @@ TEST_F(PtyTest, PartialBadBuffer) {
 
   // Read from the replica into bad_buffer.
   ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), size));
-  EXPECT_THAT(ReadFd(replica_.get(), bad_buffer, size),
-              SyscallFailsWithErrno(EFAULT));
+  // Before Linux 3b830a9c this returned EFAULT, but after that commit it
+  // returns EAGAIN.
+  EXPECT_THAT(
+      ReadFd(replica_.get(), bad_buffer, size),
+      AnyOf(SyscallFailsWithErrno(EFAULT), SyscallFailsWithErrno(EAGAIN)));
 
   EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr;
 }
