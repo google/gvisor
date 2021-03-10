@@ -275,7 +275,7 @@ func MaybeRunAsRoot() error {
 	}()
 	if err := cmd.Wait(); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
-			if ws, ok := exit.Sys().(unix.WaitStatus); ok {
+			if ws, ok := exit.Sys().(syscall.WaitStatus); ok {
 				os.Exit(ws.ExitStatus())
 			}
 			log.Warningf("No wait status provided, exiting with -1: %v", err)

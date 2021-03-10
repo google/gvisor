@@ -182,7 +182,7 @@ func runTestCaseNative(testBin string, args []string) error {
 	}
 
 	if err := cmd.Run(); err != nil {
-		ws := err.(*exec.ExitError).Sys().(unix.WaitStatus)
+		ws := err.(*exec.ExitError).Sys().(syscall.WaitStatus)
 		return fmt.Errorf("test exited with status %d, want 0", ws.ExitStatus())
 	}
 	return nil
