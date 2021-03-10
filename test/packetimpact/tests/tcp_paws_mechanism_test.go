@@ -38,8 +38,8 @@ func TestPAWSMechanism(t *testing.T) {
 
 	options := make([]byte, header.TCPOptionTSLength)
 	header.EncodeTSOption(currentTS(), 0, options)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn), Options: options})
-	synAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), Options: options})
+	synAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("didn't get synack during handshake: %s", err)
 	}
@@ -49,7 +49,7 @@ func TestPAWSMechanism(t *testing.T) {
 	}
 	tsecr := parsedSynOpts.TSVal
 	header.EncodeTSOption(currentTS(), tsecr, options)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options})
 	acceptFD, _ := dut.Accept(t, listenFD)
 	defer dut.Close(t, acceptFD)
 
@@ -60,9 +60,9 @@ func TestPAWSMechanism(t *testing.T) {
 	// every time we send one, it should not cause any flakiness because timestamps
 	// only need to be non-decreasing.
 	time.Sleep(3 * time.Millisecond)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
-	gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+	gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("expected an ACK but got none: %s", err)
 	}
@@ -85,9 +85,9 @@ func TestPAWSMechanism(t *testing.T) {
 	// 3ms here is chosen arbitrarily and this time.Sleep() should not cause flakiness
 	// due to the exact same reasoning discussed above.
 	time.Sleep(3 * time.Millisecond)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), Options: options}, &testbench.Payload{Bytes: sampleData})
 
-	gotTCP, err = conn.Expect(t, testbench.TCP{AckNum: lastAckNum, Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+	gotTCP, err = conn.Expect(t, testbench.TCP{AckNum: lastAckNum, Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("expected segment with AckNum %d but got none: %s", lastAckNum, err)
 	}

@@ -35,7 +35,7 @@ func sendPayload(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, fd i
 	}
 	conn.Drain(t)
 	dut.Send(t, fd, sampleData, 0)
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, &testbench.Payload{Bytes: sampleData}, time.Second); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, &testbench.Payload{Bytes: sampleData}, time.Second); err != nil {
 		t.Fatalf("expected data but got none: %w", err)
 	}
 }
@@ -79,14 +79,14 @@ func TestTCPUserTimeout(t *testing.T) {
 
 				time.Sleep(tt.sendDelay)
 				conn.Drain(t)
-				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
 				// If TCP_USER_TIMEOUT was set and the above delay was longer than the
 				// TCP_USER_TIMEOUT then the DUT should send a RST in response to the
 				// testbench's packet.
 				expectRST := tt.userTimeout != 0 && tt.sendDelay > tt.userTimeout
 				expectTimeout := 5 * time.Second
-				got, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, expectTimeout)
+				got, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, expectTimeout)
 				if expectRST && err != nil {
 					t.Errorf("expected RST packet within %s but got none: %s", expectTimeout, err)
 				}

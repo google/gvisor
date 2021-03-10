@@ -47,7 +47,7 @@ func TestQueueSendInSynSentHandshake(t *testing.T) {
 	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
@@ -84,19 +84,19 @@ func TestQueueSendInSynSentHandshake(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Bring the connection to Established.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)})
 	// Expect the data from the DUT's enqueued send request.
 	//
 	// On Linux, this can be piggybacked with the ACK completing the
 	// handshake. On gVisor, getting such a piggyback is a bit more
 	// complicated because the actual data enqueuing occurs in the
 	// callers of endpoint Write.
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData}, time.Second); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData}, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData})
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK from DUT, but got none: %s", err)
 	}
 }
@@ -115,7 +115,7 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
@@ -159,14 +159,14 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Bring the connection to Established.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)})
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK from DUT, but got none: %s", err)
 	}
 
 	// Send sample payload so that DUT can recv.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData})
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: sampleData})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK from DUT, but got none: %s", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
@@ -223,7 +223,7 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 	// request and the system actually being blocked.
 	time.Sleep(100 * time.Millisecond)
 
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
 }
 
 // TestQueueRecvInSynSentRST tests recv behavior when the TCP state
@@ -240,7 +240,7 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 	if _, err := dut.ConnectWithErrno(context.Background(), t, socket, conn.LocalAddr(t)); !errors.Is(err, unix.EINPROGRESS) {
 		t.Fatalf("failed to bring DUT to SYN-SENT, got: %s, want EINPROGRESS", err)
 	}
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, time.Second); err != nil {
 		t.Fatalf("expected a SYN from DUT, but got none: %s", err)
 	}
 
@@ -282,5 +282,5 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 	// request and the system actually being blocked.
 	time.Sleep(100 * time.Millisecond)
 
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
 }

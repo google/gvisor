@@ -170,7 +170,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(wndSize),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			checker.TCPTimestampChecker(true, 0, tsVal+1),
 		),
 	)
@@ -231,7 +231,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(wndSize),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			checker.TCPTimestampChecker(false, 0, 0),
 		),
 	)

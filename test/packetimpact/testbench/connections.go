@@ -677,17 +677,17 @@ func (conn *TCPIPv4) Connect(t *testing.T) {
 	t.Helper()
 
 	// Send the SYN.
-	conn.Send(t, TCP{Flags: Uint8(header.TCPFlagSyn)})
+	conn.Send(t, TCP{Flags: TCPFlags(header.TCPFlagSyn)})
 
 	// Wait for the SYN-ACK.
-	synAck, err := conn.Expect(t, TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	synAck, err := conn.Expect(t, TCP{Flags: TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("didn't get synack during handshake: %s", err)
 	}
 	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck
 
 	// Send an ACK.
-	conn.Send(t, TCP{Flags: Uint8(header.TCPFlagAck)})
+	conn.Send(t, TCP{Flags: TCPFlags(header.TCPFlagAck)})
 }
 
 // ConnectWithOptions performs a TCP 3-way handshake with given TCP options.
@@ -696,17 +696,17 @@ func (conn *TCPIPv4) ConnectWithOptions(t *testing.T, options []byte) {
 	t.Helper()
 
 	// Send the SYN.
-	conn.Send(t, TCP{Flags: Uint8(header.TCPFlagSyn), Options: options})
+	conn.Send(t, TCP{Flags: TCPFlags(header.TCPFlagSyn), Options: options})
 
 	// Wait for the SYN-ACK.
-	synAck, err := conn.Expect(t, TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	synAck, err := conn.Expect(t, TCP{Flags: TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("didn't get synack during handshake: %s", err)
 	}
 	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck
 
 	// Send an ACK.
-	conn.Send(t, TCP{Flags: Uint8(header.TCPFlagAck)})
+	conn.Send(t, TCP{Flags: TCPFlags(header.TCPFlagAck)})
 }
 
 // ExpectData is a convenient method that expects a Layer and the Layer after

@@ -42,26 +42,26 @@ func TestTimeWaitReset(t *testing.T) {
 	// Trigger active close.
 	dut.Close(t, acceptFD)
 
-	_, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second)
+	_, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second)
 	if err != nil {
 		t.Fatalf("expected a FIN: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// Send a FIN, DUT should transition to TIME_WAIT from FIN_WAIT2.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)})
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)})
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK for our FIN: %s", err)
 	}
 
 	// Send a RST, the DUT should transition to CLOSED from TIME_WAIT.
 	// This is the default Linux behavior, it can be changed to ignore RSTs via
 	// sysctl net.ipv4.tcp_rfc1337.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)})
 
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// The DUT should reply with RST to our ACK as the state should have
 	// transitioned to CLOSED.
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, time.Second); err != nil {
 		t.Fatalf("expected a RST: %s", err)
 	}
 }

@@ -567,7 +567,7 @@ func TCPWindowLessThanEq(window uint16) TransportChecker {
 }
 
 // TCPFlags creates a checker that checks the tcp flags.
-func TCPFlags(flags uint8) TransportChecker {
+func TCPFlags(flags header.TCPFlags) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
@@ -576,15 +576,15 @@ func TCPFlags(flags uint8) TransportChecker {
 			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
-		if f := tcp.Flags(); f != flags {
-			t.Errorf("Bad flags, got 0x%x, want 0x%x", f, flags)
+		if got := tcp.Flags(); got != flags {
+			t.Errorf("got tcp.Flags() = %s, want %s", got, flags)
 		}
 	}
 }
 
 // TCPFlagsMatch creates a checker that checks that the tcp flags, masked by the
 // given mask, match the supplied flags.
-func TCPFlagsMatch(flags, mask uint8) TransportChecker {
+func TCPFlagsMatch(flags, mask header.TCPFlags) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
@@ -593,8 +593,8 @@ func TCPFlagsMatch(flags, mask uint8) TransportChecker {
 			t.Fatalf("TCP header not found in h: %T", h)
 		}
 
-		if f := tcp.Flags(); (f & mask) != (flags & mask) {
-			t.Errorf("Bad masked flags, got 0x%x, want 0x%x, mask 0x%x", f, flags, mask)
+		if got := tcp.Flags(); (got & mask) != (flags & mask) {
+			t.Errorf("got tcp.Flags() = %s, want %s, mask %s", got, flags, mask)
 		}
 	}
 }

@@ -101,7 +101,7 @@ type Headers struct {
 	AckNum seqnum.Value
 
 	// Flags are the TCP flags in the TCP header.
-	Flags int
+	Flags header.TCPFlags
 
 	// RcvWnd is the window to be advertised in the ReceiveWindow field of
 	// the TCP header.
@@ -452,7 +452,7 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 		SeqNum:     uint32(h.SeqNum),
 		AckNum:     uint32(h.AckNum),
 		DataOffset: uint8(header.TCPMinimumSize + len(h.TCPOpts)),
-		Flags:      uint8(h.Flags),
+		Flags:      h.Flags,
 		WindowSize: uint16(h.RcvWnd),
 	})
 
@@ -544,7 +544,7 @@ func (c *Context) ReceiveAndCheckPacketWithOptions(data []byte, offset, size, op
 			checker.DstPort(TestPort),
 			checker.TCPSeqNum(uint32(c.IRS.Add(seqnum.Size(1+offset)))),
 			checker.TCPAckNum(uint32(seqnum.Value(TestInitialSequenceNumber).Add(1))),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -571,7 +571,7 @@ func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int
 			checker.DstPort(TestPort),
 			checker.TCPSeqNum(uint32(c.IRS.Add(seqnum.Size(1+offset)))),
 			checker.TCPAckNum(uint32(seqnum.Value(TestInitialSequenceNumber).Add(1))),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -650,7 +650,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 		SeqNum:     uint32(h.SeqNum),
 		AckNum:     uint32(h.AckNum),
 		DataOffset: header.TCPMinimumSize,
-		Flags:      uint8(h.Flags),
+		Flags:      h.Flags,
 		WindowSize: uint16(h.RcvWnd),
 	})
 
@@ -780,7 +780,7 @@ type RawEndpoint struct {
 	C          *Context
 	SrcPort    uint16
 	DstPort    uint16
-	Flags      int
+	Flags      header.TCPFlags
 	NextSeqNum seqnum.Value
 	AckNum     seqnum.Value
 	WndSize    seqnum.Size

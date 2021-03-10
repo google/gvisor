@@ -178,7 +178,7 @@ func TestLayerStringFormat(t *testing.T) {
 				SeqNum:     Uint32(3452155723),
 				AckNum:     Uint32(2596996163),
 				DataOffset: Uint8(5),
-				Flags:      Uint8(20),
+				Flags:      TCPFlags(header.TCPFlagRst | header.TCPFlagAck),
 				WindowSize: Uint16(64240),
 				Checksum:   Uint16(0x2e2b),
 			},
@@ -188,7 +188,7 @@ func TestLayerStringFormat(t *testing.T) {
 				"SeqNum:3452155723 " +
 				"AckNum:2596996163 " +
 				"DataOffset:5 " +
-				"Flags:20 " +
+				"Flags:  R A  " +
 				"WindowSize:64240 " +
 				"Checksum:11819" +
 				"}",
@@ -436,7 +436,7 @@ func TestTCPOptions(t *testing.T) {
 					DstPort:       Uint16(54321),
 					SeqNum:        Uint32(0),
 					AckNum:        Uint32(0),
-					Flags:         Uint8(header.TCPFlagSyn),
+					Flags:         TCPFlags(header.TCPFlagSyn),
 					WindowSize:    Uint16(8192),
 					Checksum:      Uint16(0xf51c),
 					UrgentPointer: Uint16(0),
@@ -480,7 +480,7 @@ func TestTCPOptions(t *testing.T) {
 					DstPort:       Uint16(54321),
 					SeqNum:        Uint32(0),
 					AckNum:        Uint32(0),
-					Flags:         Uint8(header.TCPFlagSyn),
+					Flags:         TCPFlags(header.TCPFlagSyn),
 					WindowSize:    Uint16(8192),
 					Checksum:      Uint16(0xe521),
 					UrgentPointer: Uint16(0),

@@ -50,7 +50,7 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	}
 
 	// Get the SYN.
-	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
+	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, nil, time.Second)
 	if err != nil {
 		t.Fatalf("expected SYN: %s", err)
 	}
@@ -104,7 +104,7 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	}
 
 	// Get the SYN.
-	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second)
+	tcpLayers, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, nil, time.Second)
 	if err != nil {
 		t.Fatalf("expected SYN: %s", err)
 	}

@@ -146,3 +146,23 @@ func TestTCPParseOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestTCPFlags(t *testing.T) {
+	for _, tt := range []struct {
+		flags header.TCPFlags
+		want  string
+	}{
+		{header.TCPFlagFin, "F     "},
+		{header.TCPFlagSyn, " S    "},
+		{header.TCPFlagRst, "  R   "},
+		{header.TCPFlagPsh, "   P  "},
+		{header.TCPFlagAck, "    A "},
+		{header.TCPFlagUrg, "     U"},
+		{header.TCPFlagSyn | header.TCPFlagAck, " S  A "},
+		{header.TCPFlagFin | header.TCPFlagAck, "F   A "},
+	} {
+		if got := tt.flags.String(); got != tt.want {
+			t.Errorf("got TCPFlags(%#b).String() = %s, want = %s", tt.flags, got, tt.want)
+		}
+	}
+}
