@@ -303,8 +303,8 @@ go_repository(
 go_repository(
     name = "com_github_gofrs_flock",
     importpath = "github.com/gofrs/flock",
-    sum = "h1:JFTFz3HZTGmgMz4E1TabNBNJljROSYgja1b4l50FNVs=",
-    version = "v0.6.1-0.20180915234121-886344bea079",
+    sum = "h1:MSdYClljsF3PbENUUEx85nkWfJSGfzYI9yEBZOJz6CY=",
+    version = "v0.8.0",
 )
 
 go_repository(
