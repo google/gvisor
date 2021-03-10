@@ -60,7 +60,7 @@ func TestReduceRecvBuf(t *testing.T) {
 			payloadBytes = l
 		}
 
-		conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, []testbench.Layer{&testbench.Payload{Bytes: payload[:payloadBytes]}}...)
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, []testbench.Layer{&testbench.Payload{Bytes: payload[:payloadBytes]}}...)
 		payload = payload[payloadBytes:]
 	}
 

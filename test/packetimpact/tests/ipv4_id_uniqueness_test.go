@@ -100,7 +100,7 @@ func TestIPv4RetransmitIdentificationUniqueness(t *testing.T) {
 			// Let the DUT estimate RTO with RTT from the DATA-ACK.
 			// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
 			// we can skip sending this ACK.
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
 			dut.Send(t, remoteFD, tc.payload, 0)
 			expectTCP := &testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))}

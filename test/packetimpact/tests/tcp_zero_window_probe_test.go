@@ -53,8 +53,8 @@ func TestZeroWindowProbe(t *testing.T) {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 	sendTime := time.Now().Sub(start)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected packet was not received: %s", err)
 	}
 
@@ -62,7 +62,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         probe to be sent.
 	//
 	// Advertize zero window to the dut.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	// Expected sequence number of the zero window probe.
 	probeSeq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t) - 1))
@@ -93,7 +93,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         and sends out the sample payload after the send window opens.
 	//
 	// Advertize non-zero window to the dut and ack the zero window probe.
-	conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
 	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
@@ -104,8 +104,8 @@ func TestZeroWindowProbe(t *testing.T) {
 	//         Basically with sequence number to one byte behind the unacknowledged
 	//         sequence number.
 	p := testbench.Uint32(uint32(*conn.LocalSeqNum(t)))
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), SeqNum: testbench.Uint32(uint32(*conn.LocalSeqNum(t) - 1))})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: p}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), SeqNum: testbench.Uint32(uint32(*conn.LocalSeqNum(t) - 1))})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: p}, nil, time.Second); err != nil {
 		t.Fatalf("expected a packet with ack number: %d: %s", p, err)
 	}
 }

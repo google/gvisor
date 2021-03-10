@@ -58,8 +58,8 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 			sampleData := []byte("Sample Data")
 			samplePayload := &testbench.Payload{Bytes: sampleData}
 
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 			if err != nil {
 				t.Fatalf("expected ack %s", err)
 			}
@@ -73,7 +73,7 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 				// ACK matches the TCP layer state.
 				*conn.LocalSeqNum(t) = origSeq
 			}
-			gotAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+			gotAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 			if tt.expectAck && err != nil {
 				t.Fatalf("expected an ack but got none: %s", err)
 			}
@@ -109,8 +109,8 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 			acceptFD, _ := dut.Accept(t, listenFD)
 
 			// Send a FIN to DUT to intiate the passive close.
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagFin)})
-			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagFin)})
+			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 			if err != nil {
 				t.Fatalf("expected an ACK for our fin and DUT should enter CLOSE_WAIT: %s", err)
 			}
@@ -121,7 +121,7 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 
 			// Send a segment with OTW Seq / unacc ACK.
 			conn.Send(t, tt.makeTestingTCP(t, &conn, tt.seqNumOffset, windowSize), samplePayload)
-			gotAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+			gotAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 			if tt.expectAck && err != nil {
 				t.Errorf("expected an ack but got none: %s", err)
 			}
@@ -131,14 +131,14 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 
 			// Now let's verify DUT is indeed in CLOSE_WAIT
 			dut.Close(t, acceptFD)
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagFin)}, time.Second); err != nil {
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagFin)}, time.Second); err != nil {
 				t.Fatalf("expected DUT to send a FIN: %s", err)
 			}
 			// Ack the FIN from DUT
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 			// Send some extra data to DUT
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, samplePayload)
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, time.Second); err != nil {
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, samplePayload)
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, time.Second); err != nil {
 				t.Fatalf("expected DUT to send an RST: %s", err)
 			}
 		})
@@ -173,11 +173,11 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 			dut.Shutdown(t, acceptFD, unix.SHUT_WR)
 
 			// Get to FIN_WAIT2
-			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second)
+			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second)
 			if err != nil {
 				t.Fatalf("expected a FIN: %s", err)
 			}
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
 			sendUnaccSeqAck := func(state string) {
 				t.Helper()
@@ -192,7 +192,7 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 					// incoming ACK matches the TCP layer state.
 					*conn.LocalSeqNum(t) = origSeq
 				}
-				if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+				if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 					t.Errorf("expected an ack in %s state, but got none: %s", state, err)
 				}
 			}
@@ -200,8 +200,8 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 			sendUnaccSeqAck("FIN_WAIT2")
 
 			// Send a FIN to DUT to get to TIME_WAIT
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)})
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second); err != nil {
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)})
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 				t.Fatalf("expected an ACK for our fin and DUT should enter TIME_WAIT: %s", err)
 			}
 
@@ -217,7 +217,7 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 func generateOTWSeqSegment(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) testbench.TCP {
 	lastAcceptable := conn.LocalSeqNum(t).Add(windowSize)
 	otwSeq := uint32(lastAcceptable.Add(seqNumOffset))
-	return testbench.TCP{SeqNum: testbench.Uint32(otwSeq), Flags: testbench.Uint8(header.TCPFlagAck)}
+	return testbench.TCP{SeqNum: testbench.Uint32(otwSeq), Flags: testbench.TCPFlags(header.TCPFlagAck)}
 }
 
 // generateUnaccACKSegment generates an segment with
@@ -226,5 +226,5 @@ func generateOTWSeqSegment(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset s
 func generateUnaccACKSegment(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) testbench.TCP {
 	lastAcceptable := conn.RemoteSeqNum(t)
 	unaccAck := uint32(lastAcceptable.Add(seqNumOffset))
-	return testbench.TCP{AckNum: testbench.Uint32(unaccAck), Flags: testbench.Uint8(header.TCPFlagAck)}
+	return testbench.TCP{AckNum: testbench.Uint32(unaccAck), Flags: testbench.TCPFlags(header.TCPFlagAck)}
 }

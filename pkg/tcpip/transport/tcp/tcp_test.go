@@ -1372,7 +1372,7 @@ func TestTOSV4(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790), // Acknum is initial sequence number + 1
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 		checker.TOS(tos, 0),
 	)
@@ -1420,7 +1420,7 @@ func TestTrafficClassV6(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 		checker.TOS(tos, 0),
 	)
@@ -2201,7 +2201,7 @@ func TestSimpleSend(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -2241,7 +2241,7 @@ func TestZeroWindowSend(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -2263,7 +2263,7 @@ func TestZeroWindowSend(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -2310,7 +2310,7 @@ func TestScaledWindowConnect(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(0x5fff),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 }
@@ -2341,7 +2341,7 @@ func TestNonScaledWindowConnect(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(0xffff),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 }
@@ -2414,7 +2414,7 @@ func TestScaledWindowAccept(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(0x5fff),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 }
@@ -2487,7 +2487,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
 			checker.TCPWindow(0xffff),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 }
@@ -2665,7 +2665,7 @@ func TestSegmentMerging(t *testing.T) {
 						checker.DstPort(context.TestPort),
 						checker.TCPSeqNum(uint32(c.IRS)+uint32(i)+1),
 						checker.TCPAckNum(790),
-						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 					),
 				)
 			}
@@ -2688,7 +2688,7 @@ func TestSegmentMerging(t *testing.T) {
 					checker.DstPort(context.TestPort),
 					checker.TCPSeqNum(uint32(c.IRS)+11),
 					checker.TCPAckNum(790),
-					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 				),
 			)
 
@@ -2737,7 +2737,7 @@ func TestDelay(t *testing.T) {
 				checker.DstPort(context.TestPort),
 				checker.TCPSeqNum(uint32(seq)),
 				checker.TCPAckNum(790),
-				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			),
 		)
 
@@ -2785,7 +2785,7 @@ func TestUndelay(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(seq)),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -2808,7 +2808,7 @@ func TestUndelay(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(seq)),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -2871,7 +2871,7 @@ func TestMSSNotDelayed(t *testing.T) {
 						checker.DstPort(context.TestPort),
 						checker.TCPSeqNum(uint32(seq)),
 						checker.TCPAckNum(790),
-						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 					),
 				)
 
@@ -2922,7 +2922,7 @@ func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 				checker.DstPort(context.TestPort),
 				checker.TCPSeqNum(uint32(c.IRS)+1+uint32(bytesReceived)),
 				checker.TCPAckNum(790),
-				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			),
 		)
 
@@ -3437,7 +3437,7 @@ func TestMaxRTO(t *testing.T) {
 	checker.IPv4(t, c.GetPacket(),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	const numRetransmits = 2
@@ -3446,7 +3446,7 @@ func TestMaxRTO(t *testing.T) {
 		checker.IPv4(t, c.GetPacket(),
 			checker.TCP(
 				checker.DstPort(context.TestPort),
-				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			),
 		)
 		if time.Since(start).Round(time.Second).Seconds() != rto.Seconds() {
@@ -3489,7 +3489,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 				checker.FragmentFlags(0),
 				checker.TCP(
 					checker.DstPort(context.TestPort),
-					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 				),
 			)
 			idSet := map[uint16]struct{}{header.IPv4(pkt).ID(): {}}
@@ -3501,7 +3501,7 @@ func TestRetransmitIPv4IDUniqueness(t *testing.T) {
 					checker.FragmentFlags(0),
 					checker.TCP(
 						checker.DstPort(context.TestPort),
-						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 					),
 				)
 				id := header.IPv4(pkt).ID()
@@ -3632,7 +3632,7 @@ func TestFinWithNoPendingData(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	next += uint32(len(view))
@@ -3709,7 +3709,7 @@ func TestFinWithPendingDataCwndFull(t *testing.T) {
 				checker.DstPort(context.TestPort),
 				checker.TCPSeqNum(next),
 				checker.TCPAckNum(790),
-				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 			),
 		)
 		next += uint32(len(view))
@@ -3728,7 +3728,7 @@ func TestFinWithPendingDataCwndFull(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -3795,7 +3795,7 @@ func TestFinWithPendingData(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	next += uint32(len(view))
@@ -3821,7 +3821,7 @@ func TestFinWithPendingData(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	next += uint32(len(view))
@@ -3885,7 +3885,7 @@ func TestFinWithPartialAck(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	next += uint32(len(view))
@@ -3906,7 +3906,7 @@ func TestFinWithPartialAck(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(791),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -3922,7 +3922,7 @@ func TestFinWithPartialAck(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(791),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 	next += uint32(len(view))
@@ -4032,7 +4032,7 @@ func scaledSendWindow(t *testing.T, scale uint8) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -4844,7 +4844,7 @@ func TestPathMTUDiscovery(t *testing.T) {
 					checker.DstPort(context.TestPort),
 					checker.TCPSeqNum(seqNum),
 					checker.TCPAckNum(790),
-					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 				),
 			)
 			seqNum += uint32(size)
@@ -5129,7 +5129,7 @@ func TestKeepalive(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -7174,7 +7174,7 @@ func TestTCPCloseWithData(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)+1),
 			checker.TCPAckNum(uint32(iss)+2), // Acknum is initial sequence number + 1
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 
@@ -7274,7 +7274,7 @@ func TestTCPUserTimeout(t *testing.T) {
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(next),
 			checker.TCPAckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		),
 	)
 

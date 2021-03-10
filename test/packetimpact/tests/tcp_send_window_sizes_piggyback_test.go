@@ -71,7 +71,7 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 
 			dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-			expectedTCP := testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}
+			expectedTCP := testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}
 
 			dut.Send(t, acceptFd, sampleData, 0)
 			expectedPayload := testbench.Payload{Bytes: tt.expectedPayload1}
@@ -90,7 +90,7 @@ func TestSendWindowSizesPiggyback(t *testing.T) {
 			// Send ACK for the previous segment along with data for the dut to
 			// receive and ACK back. Sending this ACK would make room for the dut
 			// to transmit any enqueued segment.
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(tt.windowSize)}, &testbench.Payload{Bytes: sampleData})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(tt.windowSize)}, &testbench.Payload{Bytes: sampleData})
 
 			// Expect the dut to piggyback the ACK for received data along with
 			// the segment enqueued for transmit.

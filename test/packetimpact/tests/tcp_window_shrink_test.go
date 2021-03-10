@@ -48,7 +48,7 @@ func TestWindowShrink(t *testing.T) {
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
 	dut.Send(t, acceptFd, sampleData, 0)
 	dut.Send(t, acceptFd, sampleData, 0)
@@ -59,7 +59,7 @@ func TestWindowShrink(t *testing.T) {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 	// We close our receiving window here
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	dut.Send(t, acceptFd, []byte("Sample Data"), 0)
 	// Note: There is another kind of zero-window probing which Windows uses (by sending one

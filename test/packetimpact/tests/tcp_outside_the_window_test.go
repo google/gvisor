@@ -37,7 +37,7 @@ func init() {
 func TestTCPOutsideTheWindow(t *testing.T) {
 	for _, tt := range []struct {
 		description  string
-		tcpFlags     uint8
+		tcpFlags     header.TCPFlags
 		payload      []testbench.Layer
 		seqNumOffset seqnum.Size
 		expectACK    bool
@@ -76,11 +76,11 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 			// to the AckNum.
 			localSeqNum := testbench.Uint32(uint32(*conn.LocalSeqNum(t)))
 			conn.Send(t, testbench.TCP{
-				Flags:  testbench.Uint8(tt.tcpFlags),
+				Flags:  testbench.TCPFlags(tt.tcpFlags),
 				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
 			}, tt.payload...)
 			timeout := 3 * time.Second
-			gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
+			gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
 			if tt.expectACK && err != nil {
 				t.Fatalf("expected an ACK packet within %s but got none: %s", timeout, err)
 			}
@@ -93,11 +93,11 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 				// has passed since the last ACK was sent.
 				t.Logf("sending another segment")
 				conn.Send(t, testbench.TCP{
-					Flags:  testbench.Uint8(tt.tcpFlags),
+					Flags:  testbench.TCPFlags(tt.tcpFlags),
 					SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
 				}, tt.payload...)
 				timeout := 3 * time.Second
-				gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
+				gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
 				if err == nil {
 					t.Fatalf("expected no ACK packet but got one: %s", gotACK)
 				}

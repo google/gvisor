@@ -97,7 +97,7 @@ func sendAndReceive(t *testing.T, dut testbench.DUT, conn testbench.TCPIPv4, num
 
 		if sendACK {
 			time.Sleep(simulatedRTT)
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(sn))})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(sn))})
 		}
 	}
 	return lastSent
@@ -149,7 +149,7 @@ func TestRACKTLPLost(t *testing.T) {
 
 	// Cumulative ACK for #[1-5] packets.
 	ackNum := seqNum1.Add(seqnum.Size(6 * payloadSize))
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(ackNum))})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(ackNum))})
 
 	// Probe Timeout (PTO) should be two times RTT. Check that the last
 	// packet is retransmitted after probe timeout.
@@ -194,7 +194,7 @@ func TestRACKWithSACK(t *testing.T) {
 	sbOff += header.EncodeSACKBlocks([]header.SACKBlock{{
 		start, end,
 	}}, sackBlock[sbOff:])
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
 	rtt, _ := getRTTAndRTO(t, dut, acceptFd)
 	timeout := 2 * rtt
@@ -206,7 +206,7 @@ func TestRACKWithSACK(t *testing.T) {
 
 	time.Sleep(simulatedRTT)
 	// ACK for #1 packet.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(end))})
 
 	// RACK considers transmission times of the packets to mark them lost.
 	// As the 3rd packet was sent before the retransmitted 1st packet, RACK
@@ -243,7 +243,7 @@ func TestRACKWithoutReorder(t *testing.T) {
 		start, end,
 	}}, sackBlock[sbOff:])
 	time.Sleep(simulatedRTT)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
 	// RACK marks #1 and #2 packets as lost and retransmits both after
 	// RTT + reorderWindow. The reorderWindow initially will be a small
@@ -289,7 +289,7 @@ func TestRACKWithReorder(t *testing.T) {
 		sbOff += header.EncodeSACKBlocks([]header.SACKBlock{{
 			start, end,
 		}}, sackBlock[sbOff:])
-		conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 	}
 
 	// Send a DSACK block indicating both original and retransmitted
@@ -304,7 +304,7 @@ func TestRACKWithReorder(t *testing.T) {
 	dbOff += header.EncodeSACKBlocks([]header.SACKBlock{{
 		start, end,
 	}}, dsackBlock[dbOff:])
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1 + numPkts*payloadSize)), Options: dsackBlock[:dbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1 + numPkts*payloadSize)), Options: dsackBlock[:dbOff]})
 
 	seqNum1.UpdateForward(seqnum.Size(numPkts * payloadSize))
 	sendTime := time.Now()
@@ -321,7 +321,7 @@ func TestRACKWithReorder(t *testing.T) {
 	sbOff += header.EncodeSACKBlocks([]header.SACKBlock{{
 		start, end,
 	}}, sackBlock[sbOff:])
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
 	// Expect the retransmission of #1 packet after RTT+ReorderWindow.
 	if _, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(seqNum1))}, time.Second); err != nil {
@@ -361,7 +361,7 @@ func TestRACKWithLostRetransmission(t *testing.T) {
 		start, end,
 	}}, sackBlock[sbOff:])
 	time.Sleep(simulatedRTT)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock[:sbOff]})
 
 	// RACK marks #1 packet as lost and retransmits it after
 	// RTT + reorderWindow. The reorderWindow is bounded between a small
@@ -394,7 +394,7 @@ func TestRACKWithLostRetransmission(t *testing.T) {
 		start, end,
 	}}, sackBlock1[sbOff1:])
 	time.Sleep(simulatedRTT)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock1[:sbOff1]})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: testbench.Uint32(uint32(seqNum1)), Options: sackBlock1[:sbOff1]})
 
 	// Expect re-retransmission of #1 packet without entering an RTO.
 	if _, err := conn.Expect(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(seqNum1))}, timeout); err != nil {

@@ -57,10 +57,10 @@ func TestTCPLingerZeroTimeout(t *testing.T) {
 	dut.Close(t, acceptFD)
 
 	// If the linger timeout is set to zero, the DUT should send a RST.
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)}, time.Second); err != nil {
 		t.Errorf("expected RST-ACK packet within a second but got none: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 }
 
 // TestTCPLingerOff tests when SO_LINGER is not set. DUT should send FIN-ACK
@@ -74,10 +74,10 @@ func TestTCPLingerOff(t *testing.T) {
 	dut.Close(t, acceptFD)
 
 	// If SO_LINGER is not set, DUT should send a FIN-ACK.
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 		t.Errorf("expected FIN-ACK packet within a second but got none: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 }
 
 // TestTCPLingerNonZeroTimeout tests when SO_LINGER is set with non-zero timeout.
@@ -114,10 +114,10 @@ func TestTCPLingerNonZeroTimeout(t *testing.T) {
 				t.Errorf("expected close to return within a second, but returned later")
 			}
 
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 				t.Errorf("expected FIN-ACK packet within a second but got none: %s", err)
 			}
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 		})
 	}
 }
@@ -165,10 +165,10 @@ func TestTCPLingerSendNonZeroTimeout(t *testing.T) {
 				t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 			}
 
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 				t.Errorf("expected FIN-ACK packet within a second but got none: %s", err)
 			}
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 		})
 	}
 }
@@ -186,15 +186,15 @@ func TestTCPLingerShutdownZeroTimeout(t *testing.T) {
 	dut.Close(t, acceptFD)
 
 	// Shutdown will send FIN-ACK with read/write option.
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 		t.Errorf("expected FIN-ACK packet within a second but got none: %s", err)
 	}
 
 	// If the linger timeout is set to zero, the DUT should send a RST.
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)}, time.Second); err != nil {
 		t.Errorf("expected RST-ACK packet within a second but got none: %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 }
 
 // TestTCPLingerShutdownSendNonZeroTimeout tests SO_LINGER with shutdown() and
@@ -242,10 +242,10 @@ func TestTCPLingerShutdownSendNonZeroTimeout(t *testing.T) {
 				t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 			}
 
-			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
 				t.Errorf("expected FIN-ACK packet within a second but got none: %s", err)
 			}
-			conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
+			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 		})
 	}
 }

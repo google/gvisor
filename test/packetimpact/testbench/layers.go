@@ -407,6 +407,12 @@ func Uint8(v uint8) *uint8 {
 	return &v
 }
 
+// TCPFlags is a helper routine that allocates a new
+// header.TCPFlags value to store v and returns a pointer to it.
+func TCPFlags(v header.TCPFlags) *header.TCPFlags {
+	return &v
+}
+
 // Address is a helper routine that allocates a new tcpip.Address value to
 // store v and returns a pointer to it.
 func Address(v tcpip.Address) *tcpip.Address {
@@ -1030,7 +1036,7 @@ type TCP struct {
 	SeqNum        *uint32
 	AckNum        *uint32
 	DataOffset    *uint8
-	Flags         *uint8
+	Flags         *header.TCPFlags
 	WindowSize    *uint16
 	Checksum      *uint16
 	UrgentPointer *uint16
@@ -1063,7 +1069,7 @@ func (l *TCP) ToBytes() ([]byte, error) {
 		h.SetDataOffset(uint8(l.length()))
 	}
 	if l.Flags != nil {
-		h.SetFlags(*l.Flags)
+		h.SetFlags(uint8(*l.Flags))
 	}
 	if l.WindowSize != nil {
 		h.SetWindowSize(*l.WindowSize)
@@ -1157,7 +1163,7 @@ func parseTCP(b []byte) (Layer, layerParser) {
 		SeqNum:        Uint32(h.SequenceNumber()),
 		AckNum:        Uint32(h.AckNumber()),
 		DataOffset:    Uint8(h.DataOffset()),
-		Flags:         Uint8(h.Flags()),
+		Flags:         TCPFlags(h.Flags()),
 		WindowSize:    Uint16(h.WindowSize()),
 		Checksum:      Uint16(h.Checksum()),
 		UrgentPointer: Uint16(h.UrgentPointer()),

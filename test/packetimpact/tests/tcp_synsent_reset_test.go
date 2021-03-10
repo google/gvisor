@@ -42,7 +42,7 @@ func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, uint16, 
 	copy(sa.Addr[:], dut.Net.LocalIPv4)
 	// Bring the dut to SYN-SENT state with a non-blocking connect.
 	dut.Connect(t, clientFD, &sa)
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)}, nil, time.Second); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN\n")
 	}
 
@@ -53,11 +53,11 @@ func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, uint16, 
 func TestTCPSynSentReset(t *testing.T) {
 	_, conn, _, _ := dutSynSentState(t)
 	defer conn.Close(t)
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
 	// Expect the connection to have closed.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }
@@ -73,15 +73,15 @@ func TestTCPSynSentRcvdReset(t *testing.T) {
 	// Initiate new SYN connection with the same port pair
 	// (simultaneous open case), expect the dut connection to move to
 	// SYN-RCVD state
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s\n", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
 	}
 }

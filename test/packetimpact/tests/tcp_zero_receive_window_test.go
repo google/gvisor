@@ -49,8 +49,8 @@ func TestZeroReceiveWindow(t *testing.T) {
 			// Expect the DUT to eventually advertise zero receive window.
 			// The test would timeout otherwise.
 			for readOnce := false; ; {
-				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 				if err != nil {
 					t.Fatalf("expected packet was not received: %s", err)
 				}
@@ -100,8 +100,8 @@ func TestNonZeroReceiveWindow(t *testing.T) {
 			// we sent. Once we have received ACKs with non-zero receive windows, we break
 			// the loop.
 			for {
-				conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)}, time.Second)
+				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 				if err != nil {
 					t.Fatalf("expected packet was not received: %s", err)
 				}

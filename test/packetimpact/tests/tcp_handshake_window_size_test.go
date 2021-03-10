@@ -38,8 +38,8 @@ func TestTCPHandshakeWindowSize(t *testing.T) {
 	defer conn.Close(t)
 
 	// Start handshake with zero window size.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn), WindowSize: testbench.Uint16(uint16(0))})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn), WindowSize: testbench.Uint16(uint16(0))})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK: %s", err)
 	}
 	// Update the advertised window size to a non-zero value with the ACK that
@@ -47,7 +47,7 @@ func TestTCPHandshakeWindowSize(t *testing.T) {
 	//
 	// Set the window size with MSB set and expect the dut to treat it as
 	// an unsigned value.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck), WindowSize: testbench.Uint16(uint16(1 << 15))})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(uint16(1 << 15))})
 
 	acceptFd, _ := dut.Accept(t, listenFD)
 	defer dut.Close(t, acceptFd)
@@ -59,7 +59,7 @@ func TestTCPHandshakeWindowSize(t *testing.T) {
 	// expect the dut to honor the recently advertised non-zero window
 	// and actually send out the data instead of probing for zero window.
 	dut.Send(t, acceptFd, sampleData, 0)
-	if _, err := conn.ExpectNextData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload, time.Second); err != nil {
+	if _, err := conn.ExpectNextData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 }

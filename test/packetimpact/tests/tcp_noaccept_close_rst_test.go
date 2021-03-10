@@ -40,7 +40,7 @@ func TestTcpNoAcceptCloseReset(t *testing.T) {
 	// it will only respond RST instead of RST+ACK.
 	dut.PollOne(t, listenFd, unix.POLLIN, time.Second)
 	dut.Close(t, listenFd)
-	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {
+	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {
 		t.Fatalf("expected a RST-ACK packet but got none: %s", err)
 	}
 }

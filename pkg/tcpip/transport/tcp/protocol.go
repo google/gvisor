@@ -226,7 +226,7 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error 
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
 	ack := seqnum.Value(0)
-	flags := byte(header.TCPFlagRst)
+	flags := header.TCPFlagRst
 	// As per RFC 793 page 35 (Reset Generation)
 	//   1.  If the connection does not exist (CLOSED) then a reset is sent
 	//   in response to any incoming segment except another reset.  In

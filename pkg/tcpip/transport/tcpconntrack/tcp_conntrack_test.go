@@ -465,7 +465,7 @@ func TestIgnoreBadResetOnSynSent(t *testing.T) {
 	// Receive a RST with a bad ACK, it should not cause the connection to
 	// be reset.
 	acks := []uint32{1234, 1236, 1000, 5000}
-	flags := []uint8{header.TCPFlagRst, header.TCPFlagRst | header.TCPFlagAck}
+	flags := []header.TCPFlags{header.TCPFlagRst, header.TCPFlagRst | header.TCPFlagAck}
 	for _, a := range acks {
 		for _, f := range flags {
 			tcp.Encode(&header.TCPFields{

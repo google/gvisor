@@ -37,11 +37,11 @@ func TestTCPSynRcvdReset(t *testing.T) {
 	defer conn.Close(t)
 
 	// Expect dut connection to have transitioned to SYN-RCVD state.
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn)})
-	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected SYN-ACK %s", err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)})
 
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
 	//
@@ -49,8 +49,8 @@ func TestTCPSynRcvdReset(t *testing.T) {
 	// CLOSED. We cannot use TCP_INFO to lookup the state as this is a passive
 	// DUT connection.
 	for i := 0; i < 5; i++ {
-		conn.Send(t, testbench.TCP{Flags: testbench.Uint8(header.TCPFlagAck)})
-		if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.Uint8(header.TCPFlagRst)}, nil, time.Second); err != nil {
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+		if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, nil, time.Second); err != nil {
 			t.Logf("retransmit%d ACK as we did not get the expected RST, %s", i, err)
 			continue
 		}
