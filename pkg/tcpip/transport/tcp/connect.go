@@ -68,7 +68,7 @@ type handshake struct {
 	ep     *endpoint
 	state  handshakeState
 	active bool
-	flags  uint8
+	flags  header.TCPFlags
 	ackNum seqnum.Value
 
 	// iss is the initial send sequence number, as defined in RFC 793.
@@ -700,7 +700,7 @@ type tcpFields struct {
 	id     stack.TransportEndpointID
 	ttl    uint8
 	tos    uint8
-	flags  byte
+	flags  header.TCPFlags
 	seq    seqnum.Value
 	ack    seqnum.Value
 	rcvWnd seqnum.Size
@@ -877,7 +877,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 }
 
 // sendRaw sends a TCP segment to the endpoint's peer.
-func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
+func (e *endpoint) sendRaw(data buffer.VectorisedView, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]

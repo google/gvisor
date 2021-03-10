@@ -398,13 +398,7 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 
 			// Initialize the TCP flags.
 			flags := tcp.Flags()
-			flagsStr := []byte("FSRPAU")
-			for i := range flagsStr {
-				if flags&(1<<uint(i)) == 0 {
-					flagsStr[i] = ' '
-				}
-			}
-			details = fmt.Sprintf("flags:0x%02x (%s) seqnum: %d ack: %d win: %d xsum:0x%x", flags, string(flagsStr), tcp.SequenceNumber(), tcp.AckNumber(), tcp.WindowSize(), tcp.Checksum())
+			details = fmt.Sprintf("flags: %s seqnum: %d ack: %d win: %d xsum:0x%x", flags, tcp.SequenceNumber(), tcp.AckNumber(), tcp.WindowSize(), tcp.Checksum())
 			if flags&header.TCPFlagSyn != 0 {
 				details += fmt.Sprintf(" options: %+v", header.ParseSynOptions(tcp.Options(), flags&header.TCPFlagAck != 0))
 			} else {
