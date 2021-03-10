@@ -245,7 +245,7 @@ type StateFile struct {
 // lock globally locks all locking operations for the container.
 func (s *StateFile) lock() error {
 	s.once.Do(func() {
-		s.flock = flock.NewFlock(s.lockPath())
+		s.flock = flock.New(s.lockPath())
 	})
 
 	if err := s.flock.Lock(); err != nil {
