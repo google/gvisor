@@ -16,6 +16,11 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
+    - name: Cancel previous
+      uses: styfle/cancel-workflow-action@0.7.0
+      with:
+        access_token: ${{ github.token }}
+      if: ${{github.ref != 'refs/head/main'}}
     - id: setup
       run: |
         if ! [[ -z "${{ secrets.GO_TOKEN }}" ]]; then
