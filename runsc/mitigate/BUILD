@@ -4,28 +4,20 @@ package(licenses = ["notice"])
 
 go_library(
     name = "mitigate",
-    srcs = [
-        "cpu.go",
-        "mitigate.go",
-        "mitigate_conf.go",
-    ],
+    srcs = ["mitigate.go"],
     visibility = [
         "//runsc:__subpackages__",
     ],
-    deps = [
-        "//pkg/log",
-        "//runsc/flag",
-        "@in_gopkg_yaml_v2//:go_default_library",
-    ],
+    deps = ["@in_gopkg_yaml_v2//:go_default_library"],
 )
 
 go_test(
     name = "mitigate_test",
     size = "small",
-    srcs = [
-        "cpu_test.go",
-        "mitigate_test.go",
-    ],
+    srcs = ["mitigate_test.go"],
     library = ":mitigate",
-    deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
+    deps = [
+        "//runsc/mitigate/mock",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
 )

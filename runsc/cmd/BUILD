@@ -77,6 +77,7 @@ go_test(
         "delete_test.go",
         "exec_test.go",
         "gofer_test.go",
+        "mitigate_test.go",
     ],
     data = [
         "//runsc",
@@ -91,6 +92,8 @@ go_test(
         "//pkg/urpc",
         "//runsc/config",
         "//runsc/container",
+        "//runsc/mitigate",
+        "//runsc/mitigate/mock",
         "//runsc/specutils",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
