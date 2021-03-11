@@ -50,3 +50,14 @@ type PtraceRegs struct {
 	Fs       uint64
 	Gs       uint64
 }
+
+// InstructionPointer returns the address of the next instruction to
+// be executed.
+func (p *PtraceRegs) InstructionPointer() uint64 {
+	return p.Rip
+}
+
+// StackPointer returns the address of the Stack pointer.
+func (p *PtraceRegs) StackPointer() uint64 {
+	return p.Rsp
+}
