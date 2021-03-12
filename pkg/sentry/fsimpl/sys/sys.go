@@ -143,6 +143,11 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.Release(ctx)
 }
 
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return fmt.Sprintf("dentry_cache_limit=%d", fs.MaxCachedDentries)
+}
+
 // dir implements kernfs.Inode.
 //
 // +stateify savable

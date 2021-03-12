@@ -291,6 +291,11 @@ func (fs *anonFilesystem) PrependPath(ctx context.Context, vfsroot, vd VirtualDe
 	return PrependPathSyntheticError{}
 }
 
+// MountOptions implements FilesystemImpl.MountOptions.
+func (fs *anonFilesystem) MountOptions() string {
+	return ""
+}
+
 // IncRef implements DentryImpl.IncRef.
 func (d *anonDentry) IncRef() {
 	// no-op

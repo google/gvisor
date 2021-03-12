@@ -352,6 +352,7 @@ func (fs *filesystem) StateFields() []string {
 		"mfp",
 		"clock",
 		"devMinor",
+		"mopts",
 		"nextInoMinusOne",
 		"root",
 	}
@@ -365,8 +366,9 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.mfp)
 	stateSinkObject.Save(2, &fs.clock)
 	stateSinkObject.Save(3, &fs.devMinor)
-	stateSinkObject.Save(4, &fs.nextInoMinusOne)
-	stateSinkObject.Save(5, &fs.root)
+	stateSinkObject.Save(4, &fs.mopts)
+	stateSinkObject.Save(5, &fs.nextInoMinusOne)
+	stateSinkObject.Save(6, &fs.root)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -376,8 +378,9 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &fs.mfp)
 	stateSourceObject.Load(2, &fs.clock)
 	stateSourceObject.Load(3, &fs.devMinor)
-	stateSourceObject.Load(4, &fs.nextInoMinusOne)
-	stateSourceObject.Load(5, &fs.root)
+	stateSourceObject.Load(4, &fs.mopts)
+	stateSourceObject.Load(5, &fs.nextInoMinusOne)
+	stateSourceObject.Load(6, &fs.root)
 }
 
 func (f *FilesystemOpts) StateTypeName() string {

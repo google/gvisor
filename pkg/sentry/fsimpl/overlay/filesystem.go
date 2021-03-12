@@ -1764,3 +1764,15 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 	defer fs.renameMu.RUnlock()
 	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
 }
+
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	// Return the mount options from the topmost layer.
+	var vd vfs.VirtualDentry
+	if fs.opts.UpperRoot.Ok() {
+		vd = fs.opts.UpperRoot
+	} else {
+		vd = fs.opts.LowerRoots[0]
+	}
+	return vd.Mount().Filesystem().Impl().MountOptions()
+}

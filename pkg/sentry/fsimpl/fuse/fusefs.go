@@ -47,6 +47,9 @@ type FilesystemType struct{}
 
 // +stateify savable
 type filesystemOptions struct {
+	// mopts contains the raw, unparsed mount options passed to this filesystem.
+	mopts string
+
 	// userID specifies the numeric uid of the mount owner.
 	// This option should not be specified by the filesystem owner.
 	// It is set by libfuse (or, if libfuse is not used, must be set
@@ -108,7 +111,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	var fsopts filesystemOptions
+	fsopts := filesystemOptions{mopts: opts.Data}
 	mopts := vfs.GenericParseMountOptions(opts.Data)
 	deviceDescriptorStr, ok := mopts["fd"]
 	if !ok {
@@ -258,6 +261,11 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
+}
+
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return fs.opts.mopts
 }
 
 // inode implements kernfs.Inode.
