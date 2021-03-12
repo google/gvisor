@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -432,15 +433,16 @@ func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 // * e.mu is held.
 func (e *endpoint) reserveTupleLocked() bool {
 	dest := tcpip.FullAddress{Addr: e.ID.RemoteAddress, Port: e.ID.RemotePort}
-	if !e.stack.ReserveTuple(
-		e.effectiveNetProtos,
-		ProtocolNumber,
-		e.ID.LocalAddress,
-		e.ID.LocalPort,
-		e.boundPortFlags,
-		e.boundBindToDevice,
-		dest,
-	) {
+	portRes := ports.Reservation{
+		Networks:     e.effectiveNetProtos,
+		Transport:    ProtocolNumber,
+		Addr:         e.ID.LocalAddress,
+		Port:         e.ID.LocalPort,
+		Flags:        e.boundPortFlags,
+		BindToDevice: e.boundBindToDevice,
+		Dest:         dest,
+	}
+	if !e.stack.ReserveTuple(portRes) {
 		return false
 	}
 

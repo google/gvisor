@@ -359,7 +359,7 @@ func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32
 		return mpep.endpoints[0]
 	}
 
-	if mpep.flags.IntersectionRefs().ToFlags().Effective().MostRecent {
+	if mpep.flags.SharedFlags().ToFlags().Effective().MostRecent {
 		return mpep.endpoints[len(mpep.endpoints)-1]
 	}
 
@@ -410,7 +410,7 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, flags p
 
 	if len(ep.endpoints) != 0 {
 		// If it was previously bound, we need to check if we can bind again.
-		if ep.flags.TotalRefs() > 0 && bits&ep.flags.IntersectionRefs() == 0 {
+		if ep.flags.TotalRefs() > 0 && bits&ep.flags.SharedFlags() == 0 {
 			return &tcpip.ErrPortInUse{}
 		}
 	}
@@ -429,7 +429,7 @@ func (ep *multiPortEndpoint) singleCheckEndpoint(flags ports.Flags) tcpip.Error 
 
 	if len(ep.endpoints) != 0 {
 		// If it was previously bound, we need to check if we can bind again.
-		if ep.flags.TotalRefs() > 0 && bits&ep.flags.IntersectionRefs() == 0 {
+		if ep.flags.TotalRefs() > 0 && bits&ep.flags.SharedFlags() == 0 {
 			return &tcpip.ErrPortInUse{}
 		}
 	}
