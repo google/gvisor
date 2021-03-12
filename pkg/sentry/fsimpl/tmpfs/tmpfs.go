@@ -70,6 +70,10 @@ type filesystem struct {
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
 
+	// mopts contains the tmpfs-specific mount options passed to this
+	// filesystem. Immutable.
+	mopts string
+
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex `state:"nosave"`
 
@@ -184,6 +188,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		mfp:      mfp,
 		clock:    clock,
 		devMinor: devMinor,
+		mopts:    opts.Data,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 

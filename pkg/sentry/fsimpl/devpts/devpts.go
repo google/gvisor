@@ -137,6 +137,11 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.Release(ctx)
 }
 
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return ""
+}
+
 // rootInode is the root directory inode for the devpts mounts.
 //
 // +stateify savable
