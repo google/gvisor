@@ -67,6 +67,11 @@ type filesystem struct {
 	kernfs.Filesystem
 }
 
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return ""
+}
+
 type file struct {
 	kernfs.DynamicBytesFile
 	content string

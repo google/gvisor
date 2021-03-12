@@ -419,6 +419,11 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.lowerMount.DecRef(ctx)
 }
 
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	return ""
+}
+
 // dentry implements vfs.DentryImpl.
 //
 // +stateify savable

@@ -66,6 +66,34 @@ import (
 // Name is the default filesystem name.
 const Name = "9p"
 
+// Mount option names for goferfs.
+const (
+	moptTransport              = "trans"
+	moptReadFD                 = "rfdno"
+	moptWriteFD                = "wfdno"
+	moptAname                  = "aname"
+	moptDfltUID                = "dfltuid"
+	moptDfltGID                = "dfltgid"
+	moptMsize                  = "msize"
+	moptVersion                = "version"
+	moptDentryCacheLimit       = "dentry_cache_limit"
+	moptCache                  = "cache"
+	moptForcePageCache         = "force_page_cache"
+	moptLimitHostFDTranslation = "limit_host_fd_translation"
+	moptOverlayfsStaleRead     = "overlayfs_stale_read"
+)
+
+// Valid values for the "cache" mount option.
+const (
+	cacheNone                = "none"
+	cacheFSCache             = "fscache"
+	cacheFSCacheWritethrough = "fscache_writethrough"
+	cacheRemoteRevalidating  = "remote_revalidating"
+)
+
+// Valid values for "trans" mount option.
+const transportModeFD = "fd"
+
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -301,39 +329,39 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Get the attach name.
 	fsopts.aname = "/"
-	if aname, ok := mopts["aname"]; ok {
-		delete(mopts, "aname")
+	if aname, ok := mopts[moptAname]; ok {
+		delete(mopts, moptAname)
 		fsopts.aname = aname
 	}
 
 	// Parse the cache policy. For historical reasons, this defaults to the
 	// least generally-applicable option, InteropModeExclusive.
 	fsopts.interop = InteropModeExclusive
-	if cache, ok := mopts["cache"]; ok {
-		delete(mopts, "cache")
+	if cache, ok := mopts[moptCache]; ok {
+		delete(mopts, moptCache)
 		switch cache {
-		case "fscache":
+		case cacheFSCache:
 			fsopts.interop = InteropModeExclusive
-		case "fscache_writethrough":
+		case cacheFSCacheWritethrough:
 			fsopts.interop = InteropModeWritethrough
-		case "none":
+		case cacheNone:
 			fsopts.regularFilesUseSpecialFileFD = true
 			fallthrough
-		case "remote_revalidating":
+		case cacheRemoteRevalidating:
 			fsopts.interop = InteropModeShared
 		default:
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid cache policy: cache=%s", cache)
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid cache policy: %s=%s", moptCache, cache)
 			return nil, nil, syserror.EINVAL
 		}
 	}
 
 	// Parse the default UID and GID.
 	fsopts.dfltuid = _V9FS_DEFUID
-	if dfltuidstr, ok := mopts["dfltuid"]; ok {
-		delete(mopts, "dfltuid")
+	if dfltuidstr, ok := mopts[moptDfltUID]; ok {
+		delete(mopts, moptDfltUID)
 		dfltuid, err := strconv.ParseUint(dfltuidstr, 10, 32)
 		if err != nil {
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: dfltuid=%s", dfltuidstr)
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: %s=%s", moptDfltUID, dfltuidstr)
 			return nil, nil, syserror.EINVAL
 		}
 		// In Linux, dfltuid is interpreted as a UID and is converted to a KUID
@@ -342,11 +370,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fsopts.dfltuid = auth.KUID(dfltuid)
 	}
 	fsopts.dfltgid = _V9FS_DEFGID
-	if dfltgidstr, ok := mopts["dfltgid"]; ok {
-		delete(mopts, "dfltgid")
+	if dfltgidstr, ok := mopts[moptDfltGID]; ok {
+		delete(mopts, moptDfltGID)
 		dfltgid, err := strconv.ParseUint(dfltgidstr, 10, 32)
 		if err != nil {
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: dfltgid=%s", dfltgidstr)
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: %s=%s", moptDfltGID, dfltgidstr)
 			return nil, nil, syserror.EINVAL
 		}
 		fsopts.dfltgid = auth.KGID(dfltgid)
@@ -354,11 +382,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Parse the 9P message size.
 	fsopts.msize = 1024 * 1024 // 1M, tested to give good enough performance up to 64M
-	if msizestr, ok := mopts["msize"]; ok {
-		delete(mopts, "msize")
+	if msizestr, ok := mopts[moptMsize]; ok {
+		delete(mopts, moptMsize)
 		msize, err := strconv.ParseUint(msizestr, 10, 32)
 		if err != nil {
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid message size: msize=%s", msizestr)
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid message size: %s=%s", moptMsize, msizestr)
 			return nil, nil, syserror.EINVAL
 		}
 		fsopts.msize = uint32(msize)
@@ -366,34 +394,34 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Parse the 9P protocol version.
 	fsopts.version = p9.HighestVersionString()
-	if version, ok := mopts["version"]; ok {
-		delete(mopts, "version")
+	if version, ok := mopts[moptVersion]; ok {
+		delete(mopts, moptVersion)
 		fsopts.version = version
 	}
 
 	// Parse the dentry cache limit.
 	fsopts.maxCachedDentries = 1000
-	if str, ok := mopts["dentry_cache_limit"]; ok {
-		delete(mopts, "dentry_cache_limit")
+	if str, ok := mopts[moptDentryCacheLimit]; ok {
+		delete(mopts, moptDentryCacheLimit)
 		maxCachedDentries, err := strconv.ParseUint(str, 10, 64)
 		if err != nil {
-			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid dentry cache limit: %s=%s", moptDentryCacheLimit, str)
 			return nil, nil, syserror.EINVAL
 		}
 		fsopts.maxCachedDentries = maxCachedDentries
 	}
 
 	// Handle simple flags.
-	if _, ok := mopts["force_page_cache"]; ok {
-		delete(mopts, "force_page_cache")
+	if _, ok := mopts[moptForcePageCache]; ok {
+		delete(mopts, moptForcePageCache)
 		fsopts.forcePageCache = true
 	}
-	if _, ok := mopts["limit_host_fd_translation"]; ok {
-		delete(mopts, "limit_host_fd_translation")
+	if _, ok := mopts[moptLimitHostFDTranslation]; ok {
+		delete(mopts, moptLimitHostFDTranslation)
 		fsopts.limitHostFDTranslation = true
 	}
-	if _, ok := mopts["overlayfs_stale_read"]; ok {
-		delete(mopts, "overlayfs_stale_read")
+	if _, ok := mopts[moptOverlayfsStaleRead]; ok {
+		delete(mopts, moptOverlayfsStaleRead)
 		fsopts.overlayfsStaleRead = true
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
@@ -469,34 +497,34 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int, error) {
 	// Check that the transport is "fd".
-	trans, ok := mopts["trans"]
-	if !ok || trans != "fd" {
-		ctx.Warningf("gofer.getFDFromMountOptionsMap: transport must be specified as 'trans=fd'")
+	trans, ok := mopts[moptTransport]
+	if !ok || trans != transportModeFD {
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: transport must be specified as '%s=%s'", moptTransport, transportModeFD)
 		return -1, syserror.EINVAL
 	}
-	delete(mopts, "trans")
+	delete(mopts, moptTransport)
 
 	// Check that read and write FDs are provided and identical.
-	rfdstr, ok := mopts["rfdno"]
+	rfdstr, ok := mopts[moptReadFD]
 	if !ok {
-		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD must be specified as 'rfdno=<file descriptor>'")
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD must be specified as '%s=<file descriptor>'", moptReadFD)
 		return -1, syserror.EINVAL
 	}
-	delete(mopts, "rfdno")
+	delete(mopts, moptReadFD)
 	rfd, err := strconv.Atoi(rfdstr)
 	if err != nil {
-		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid read FD: rfdno=%s", rfdstr)
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid read FD: %s=%s", moptReadFD, rfdstr)
 		return -1, syserror.EINVAL
 	}
-	wfdstr, ok := mopts["wfdno"]
+	wfdstr, ok := mopts[moptWriteFD]
 	if !ok {
-		ctx.Warningf("gofer.getFDFromMountOptionsMap: write FD must be specified as 'wfdno=<file descriptor>'")
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: write FD must be specified as '%s=<file descriptor>'", moptWriteFD)
 		return -1, syserror.EINVAL
 	}
-	delete(mopts, "wfdno")
+	delete(mopts, moptWriteFD)
 	wfd, err := strconv.Atoi(wfdstr)
 	if err != nil {
-		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid write FD: wfdno=%s", wfdstr)
+		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid write FD: %s=%s", moptWriteFD, wfdstr)
 		return -1, syserror.EINVAL
 	}
 	if rfd != wfd {

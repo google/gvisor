@@ -1601,12 +1601,12 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Read mounts to check that root is readonly.
-			out, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / '")
+			out, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
 			if err != nil {
 				t.Fatalf("exec failed: %v", err)
 			}
-			t.Logf("root mount: %q", out)
-			if !strings.Contains(string(out), "(ro)") {
+			t.Logf("root mount options: %q", out)
+			if !strings.Contains(string(out), "ro") {
 				t.Errorf("root not mounted readonly: %q", out)
 			}
 
@@ -1659,13 +1659,13 @@ func TestReadonlyMount(t *testing.T) {
 			}
 
 			// Read mounts to check that volume is readonly.
-			cmd := fmt.Sprintf("mount | grep ' %s '", dir)
+			cmd := fmt.Sprintf("mount | grep ' %s ' | grep -o -e '(.*)'", dir)
 			out, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
 			if err != nil {
 				t.Fatalf("exec failed, err: %v", err)
 			}
-			t.Logf("mount: %q", out)
-			if !strings.Contains(string(out), "(ro)") {
+			t.Logf("mount options: %q", out)
+			if !strings.Contains(string(out), "ro") {
 				t.Errorf("volume not mounted readonly: %q", out)
 			}
 

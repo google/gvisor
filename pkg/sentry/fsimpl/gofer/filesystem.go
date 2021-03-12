@@ -15,7 +15,9 @@
 package gofer
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -1607,4 +1609,59 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 	fs.renameMu.RLock()
 	defer fs.renameMu.RUnlock()
 	return genericPrependPath(vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+}
+
+type mopt struct {
+	key   string
+	value interface{}
+}
+
+func (m mopt) String() string {
+	if m.value == nil {
+		return fmt.Sprintf("%s", m.key)
+	}
+	return fmt.Sprintf("%s=%v", m.key, m.value)
+}
+
+// MountOptions implements vfs.FilesystemImpl.MountOptions.
+func (fs *filesystem) MountOptions() string {
+	optsKV := []mopt{
+		{moptTransport, transportModeFD}, // Only valid value, currently.
+		{moptReadFD, fs.opts.fd},         // Currently, read and write FD are the same.
+		{moptWriteFD, fs.opts.fd},        // Currently, read and write FD are the same.
+		{moptAname, fs.opts.aname},
+		{moptDfltUID, fs.opts.dfltuid},
+		{moptDfltGID, fs.opts.dfltgid},
+		{moptMsize, fs.opts.msize},
+		{moptVersion, fs.opts.version},
+		{moptDentryCacheLimit, fs.opts.maxCachedDentries},
+	}
+
+	switch fs.opts.interop {
+	case InteropModeExclusive:
+		optsKV = append(optsKV, mopt{moptCache, cacheFSCache})
+	case InteropModeWritethrough:
+		optsKV = append(optsKV, mopt{moptCache, cacheFSCacheWritethrough})
+	case InteropModeShared:
+		if fs.opts.regularFilesUseSpecialFileFD {
+			optsKV = append(optsKV, mopt{moptCache, cacheNone})
+		} else {
+			optsKV = append(optsKV, mopt{moptCache, cacheRemoteRevalidating})
+		}
+	}
+	if fs.opts.forcePageCache {
+		optsKV = append(optsKV, mopt{moptForcePageCache, nil})
+	}
+	if fs.opts.limitHostFDTranslation {
+		optsKV = append(optsKV, mopt{moptLimitHostFDTranslation, nil})
+	}
+	if fs.opts.overlayfsStaleRead {
+		optsKV = append(optsKV, mopt{moptOverlayfsStaleRead, nil})
+	}
+
+	opts := make([]string, 0, len(optsKV))
+	for _, opt := range optsKV {
+		opts = append(opts, opt.String())
+	}
+	return strings.Join(opts, ",")
 }
