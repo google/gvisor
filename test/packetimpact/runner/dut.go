@@ -249,6 +249,7 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		testbenchContainer,
 		testbenchAddr,
 		dockerNetworks,
+		nil, /* sysctls */
 		"tail", "-f", "/dev/null",
 	); err != nil {
 		t.Fatalf("cannot start testbench container: %s", err)
@@ -428,6 +429,10 @@ func (dut *DockerDUT) Prepare(ctx context.Context, _ *testing.T, runOpts dockeru
 		dut.c,
 		DUTAddr,
 		[]*dockerutil.Network{ctrlNet, testNet},
+		map[string]string{
+			// This enables creating ICMP sockets on Linux.
+			"net.ipv4.ping_group_range": "0 0",
+		},
 		containerPosixServerBinary,
 		"--ip=0.0.0.0",
 		fmt.Sprintf("--port=%d", CtrlPort),
@@ -590,11 +595,14 @@ func createDockerNetwork(ctx context.Context, n *dockerutil.Network) error {
 
 // StartContainer will create a container instance from runOpts, connect it
 // with the specified docker networks and start executing the specified cmd.
-func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerutil.Container, containerAddr net.IP, ns []*dockerutil.Network, cmd ...string) error {
+func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerutil.Container, containerAddr net.IP, ns []*dockerutil.Network, sysctls map[string]string, cmd ...string) error {
 	conf, hostconf, netconf := c.ConfigsFrom(runOpts, cmd...)
 	_ = netconf
 	hostconf.AutoRemove = true
 	hostconf.Sysctls = map[string]string{"net.ipv6.conf.all.disable_ipv6": "0"}
+	for k, v := range sysctls {
+		hostconf.Sysctls[k] = v
+	}
 
 	if err := c.CreateFrom(ctx, runOpts.Image, conf, hostconf, nil); err != nil {
 		return fmt.Errorf("unable to create container %s: %w", c.Name, err)
