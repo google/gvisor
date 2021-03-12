@@ -590,6 +590,23 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 		return nil, err
 	}
 
+	// Clear the Merkle tree file if they are to be generated at runtime.
+	// TODO(b/182315468): Optimize the Merkle tree generate process to
+	// allow only updating certain files/directories.
+	if fs.allowRuntimeEnable {
+		childMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+			Root:  childMerkleVD,
+			Start: childMerkleVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_RDWR | linux.O_TRUNC,
+			Mode:  0644,
+		})
+		if err != nil {
+			return nil, err
+		}
+		childMerkleFD.DecRef(ctx)
+	}
+
 	// The dentry needs to be cleaned up if any error occurs. IncRef will be
 	// called if a verity child dentry is successfully created.
 	defer childMerkleVD.DecRef(ctx)
