@@ -107,7 +107,9 @@ for pkg in "$@"; do
   cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
   cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
   chmod 0644 "${destdir}"/"${name}".*
+  # Sign a package only if it isn't signed yet.
   # We use [*] here to expand the gpg_opts array into a single shell-word.
+  dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
   dpkg-sig -g "${gpg_opts[*]}" --sign builder "${destdir}/${name}.deb"
 done
 
