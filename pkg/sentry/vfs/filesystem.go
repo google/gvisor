@@ -502,6 +502,15 @@ type FilesystemImpl interface {
 	//
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
+
+	// MountOptions returns mount options for the current filesystem. This
+	// should only return options specific to the filesystem (i.e. don't return
+	// "ro", "rw", etc). Options should be returned as a comma-separated string,
+	// similar to the input to the 5th argument to mount.
+	//
+	// If the implementation has no filesystem-specific options, it should
+	// return the empty string.
+	MountOptions() string
 }
 
 // PrependPathAtVFSRootError is returned by implementations of
