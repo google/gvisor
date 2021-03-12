@@ -65,14 +65,8 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    # Produce too many logs in the debug mode.
-    debug = False,
     shard_count = most_shards,
-    # Takes too long for TSAN. Since this is kind of a stress test that doesn't
-    # involve much concurrency, TSAN's usefulness here is limited anyway.
-    tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_stress_test",
-    vfs2 = False,
 )
 
 syscall_test(
