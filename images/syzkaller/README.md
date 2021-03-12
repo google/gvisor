@@ -51,8 +51,8 @@ syzkaller repro in /tmp/syzkaller/repro.
 Now we can run syz-repro to reproduce a crash:
 
 ```bash
-docker run --privileged -it --rm -v
-    /tmp/syzkaller:/tmp/syzkaller --entrypoint=""
-    gvisor.dev/images/syzkaller:latest ./bin/syz-repro -config
+docker run --privileged -it --rm -v \
+    /tmp/syzkaller:/tmp/syzkaller --entrypoint="" \
+    gvisor.dev/images/syzkaller:latest ./bin/syz-repro -config \
     /tmp/syzkaller/syzkaller.cfg /tmp/syzkaller/repro
 ```
