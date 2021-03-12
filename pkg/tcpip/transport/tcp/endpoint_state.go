@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -208,7 +209,16 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		if err != nil {
 			panic("unable to parse BindAddr: " + err.String())
 		}
-		if ok := e.stack.ReserveTuple(e.effectiveNetProtos, ProtocolNumber, addr.Addr, addr.Port, e.boundPortFlags, e.boundBindToDevice, e.boundDest); !ok {
+		portRes := ports.Reservation{
+			Networks:     e.effectiveNetProtos,
+			Transport:    ProtocolNumber,
+			Addr:         addr.Addr,
+			Port:         addr.Port,
+			Flags:        e.boundPortFlags,
+			BindToDevice: e.boundBindToDevice,
+			Dest:         e.boundDest,
+		}
+		if ok := e.stack.ReserveTuple(portRes); !ok {
 			panic(fmt.Sprintf("unable to re-reserve tuple (%v, %q, %d, %+v, %d, %v)", e.effectiveNetProtos, addr.Addr, addr.Port, e.boundPortFlags, e.boundBindToDevice, e.boundDest))
 		}
 		e.isPortReserved = true

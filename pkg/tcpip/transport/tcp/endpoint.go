@@ -1097,7 +1097,16 @@ func (e *endpoint) closeNoShutdownLocked() {
 			e.isRegistered = false
 		}
 
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.boundPortFlags, e.boundBindToDevice, e.boundDest)
+		portRes := ports.Reservation{
+			Networks:     e.effectiveNetProtos,
+			Transport:    ProtocolNumber,
+			Addr:         e.ID.LocalAddress,
+			Port:         e.ID.LocalPort,
+			Flags:        e.boundPortFlags,
+			BindToDevice: e.boundBindToDevice,
+			Dest:         e.boundDest,
+		}
+		e.stack.ReleasePort(portRes)
 		e.isPortReserved = false
 		e.boundBindToDevice = 0
 		e.boundPortFlags = ports.Flags{}
@@ -1172,7 +1181,16 @@ func (e *endpoint) cleanupLocked() {
 	}
 
 	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.boundPortFlags, e.boundBindToDevice, e.boundDest)
+		portRes := ports.Reservation{
+			Networks:     e.effectiveNetProtos,
+			Transport:    ProtocolNumber,
+			Addr:         e.ID.LocalAddress,
+			Port:         e.ID.LocalPort,
+			Flags:        e.boundPortFlags,
+			BindToDevice: e.boundBindToDevice,
+			Dest:         e.boundDest,
+		}
+		e.stack.ReleasePort(portRes)
 		e.isPortReserved = false
 	}
 	e.boundBindToDevice = 0
@@ -2242,7 +2260,16 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 			if sameAddr && p == e.ID.RemotePort {
 				return false, nil
 			}
-			if _, err := e.stack.ReservePort(netProtos, ProtocolNumber, e.ID.LocalAddress, p, e.portFlags, bindToDevice, addr, nil /* testPort */); err != nil {
+			portRes := ports.Reservation{
+				Networks:     netProtos,
+				Transport:    ProtocolNumber,
+				Addr:         e.ID.LocalAddress,
+				Port:         p,
+				Flags:        e.portFlags,
+				BindToDevice: bindToDevice,
+				Dest:         addr,
+			}
+			if _, err := e.stack.ReservePort(portRes, nil /* testPort */); err != nil {
 				if _, ok := err.(*tcpip.ErrPortInUse); !ok || !reuse {
 					return false, nil
 				}
@@ -2280,7 +2307,16 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 				tcpEP.notifyProtocolGoroutine(notifyAbort)
 				tcpEP.UnlockUser()
 				// Now try and Reserve again if it fails then we skip.
-				if _, err := e.stack.ReservePort(netProtos, ProtocolNumber, e.ID.LocalAddress, p, e.portFlags, bindToDevice, addr, nil /* testPort */); err != nil {
+				portRes := ports.Reservation{
+					Networks:     netProtos,
+					Transport:    ProtocolNumber,
+					Addr:         e.ID.LocalAddress,
+					Port:         p,
+					Flags:        e.portFlags,
+					BindToDevice: bindToDevice,
+					Dest:         addr,
+				}
+				if _, err := e.stack.ReservePort(portRes, nil /* testPort */); err != nil {
 					return false, nil
 				}
 			}
@@ -2288,7 +2324,16 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 			id := e.ID
 			id.LocalPort = p
 			if err := e.stack.RegisterTransportEndpoint(netProtos, ProtocolNumber, id, e, e.portFlags, bindToDevice); err != nil {
-				e.stack.ReleasePort(netProtos, ProtocolNumber, e.ID.LocalAddress, p, e.portFlags, bindToDevice, addr)
+				portRes := ports.Reservation{
+					Networks:     netProtos,
+					Transport:    ProtocolNumber,
+					Addr:         e.ID.LocalAddress,
+					Port:         p,
+					Flags:        e.portFlags,
+					BindToDevice: bindToDevice,
+					Dest:         addr,
+				}
+				e.stack.ReleasePort(portRes)
 				if _, ok := err.(*tcpip.ErrPortInUse); ok {
 					return false, nil
 				}
@@ -2604,7 +2649,16 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	}
 
 	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
-	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.portFlags, bindToDevice, tcpip.FullAddress{}, func(p uint16) bool {
+	portRes := ports.Reservation{
+		Networks:     netProtos,
+		Transport:    ProtocolNumber,
+		Addr:         addr.Addr,
+		Port:         addr.Port,
+		Flags:        e.portFlags,
+		BindToDevice: bindToDevice,
+		Dest:         tcpip.FullAddress{},
+	}
+	port, err := e.stack.ReservePort(portRes, func(p uint16) (bool, tcpip.Error) {
 		id := e.ID
 		id.LocalPort = p
 		// CheckRegisterTransportEndpoint should only return an error if there is a
@@ -2616,9 +2670,9 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 		// address/port. Hence this will only return an error if there is a matching
 		// listening endpoint.
 		if err := e.stack.CheckRegisterTransportEndpoint(netProtos, ProtocolNumber, id, e.portFlags, bindToDevice); err != nil {
-			return false
+			return false, nil
 		}
-		return true
+		return true, nil
 	})
 	if err != nil {
 		return err

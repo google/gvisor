@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "ports",
-    srcs = ["ports.go"],
+    srcs = [
+        "flags.go",
+        "ports.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",

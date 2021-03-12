@@ -331,15 +331,33 @@ func TestPortReservation(t *testing.T) {
 			for _, test := range test.actions {
 				first, _ := pm.PortRange()
 				if test.release {
-					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device, test.dest)
+					portRes := Reservation{
+						Networks:     net,
+						Transport:    fakeTransNumber,
+						Addr:         test.ip,
+						Port:         test.port,
+						Flags:        test.flags,
+						BindToDevice: test.device,
+						Dest:         test.dest,
+					}
+					pm.ReleasePort(portRes)
 					continue
 				}
-				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.flags, test.device, test.dest, nil /* testPort */)
+				portRes := Reservation{
+					Networks:     net,
+					Transport:    fakeTransNumber,
+					Addr:         test.ip,
+					Port:         test.port,
+					Flags:        test.flags,
+					BindToDevice: test.device,
+					Dest:         test.dest,
+				}
+				gotPort, err := pm.ReservePort(portRes, nil /* testPort */)
 				if diff := cmp.Diff(test.want, err); diff != "" {
-					t.Fatalf("unexpected error from ReservePort(.., .., %s, %d, %+v, %d, %v), (-want, +got):\n%s", test.ip, test.port, test.flags, test.device, test.dest, diff)
+					t.Fatalf("unexpected error from ReservePort(%+v, _), (-want, +got):\n%s", portRes, diff)
 				}
 				if test.port == 0 && (gotPort == 0 || gotPort < first) {
-					t.Fatalf("ReservePort(.., .., .., 0, ..) = %d, want port number >= %d to be picked", gotPort, first)
+					t.Fatalf("ReservePort(%+v, _) = %d, want port number >= %d to be picked", portRes, gotPort, first)
 				}
 			}
 		})
