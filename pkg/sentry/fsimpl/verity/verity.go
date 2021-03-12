@@ -311,6 +311,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		d.DecRef(ctx)
 		return nil, nil, alertIntegrityViolation("Failed to find root Merkle file")
 	}
+
+	// Clear the Merkle tree file if they are to be generated at runtime.
+	// TODO(b/182315468): Optimize the Merkle tree generate process to
+	// allow only updating certain files/directories.
+	if fs.allowRuntimeEnable {
+		lowerMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+			Root:  lowerMerkleVD,
+			Start: lowerMerkleVD,
+		}, &vfs.OpenOptions{
+			Flags: linux.O_RDWR | linux.O_TRUNC,
+			Mode:  0644,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		lowerMerkleFD.DecRef(ctx)
+	}
+
 	d.lowerMerkleVD = lowerMerkleVD
 
 	// Get metadata from the underlying file system.
