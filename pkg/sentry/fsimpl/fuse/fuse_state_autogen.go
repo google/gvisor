@@ -201,11 +201,13 @@ func (f *filesystemOptions) StateTypeName() string {
 func (f *filesystemOptions) StateFields() []string {
 	return []string{
 		"mopts",
-		"userID",
-		"groupID",
+		"uid",
+		"gid",
 		"rootMode",
 		"maxActiveRequests",
 		"maxRead",
+		"defaultPermissions",
+		"allowOther",
 	}
 }
 
@@ -214,22 +216,26 @@ func (f *filesystemOptions) beforeSave() {}
 func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.mopts)
-	stateSinkObject.Save(1, &f.userID)
-	stateSinkObject.Save(2, &f.groupID)
+	stateSinkObject.Save(1, &f.uid)
+	stateSinkObject.Save(2, &f.gid)
 	stateSinkObject.Save(3, &f.rootMode)
 	stateSinkObject.Save(4, &f.maxActiveRequests)
 	stateSinkObject.Save(5, &f.maxRead)
+	stateSinkObject.Save(6, &f.defaultPermissions)
+	stateSinkObject.Save(7, &f.allowOther)
 }
 
 func (f *filesystemOptions) afterLoad() {}
 
 func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.mopts)
-	stateSourceObject.Load(1, &f.userID)
-	stateSourceObject.Load(2, &f.groupID)
+	stateSourceObject.Load(1, &f.uid)
+	stateSourceObject.Load(2, &f.gid)
 	stateSourceObject.Load(3, &f.rootMode)
 	stateSourceObject.Load(4, &f.maxActiveRequests)
 	stateSourceObject.Load(5, &f.maxRead)
+	stateSourceObject.Load(6, &f.defaultPermissions)
+	stateSourceObject.Load(7, &f.allowOther)
 }
 
 func (fs *filesystem) StateTypeName() string {
