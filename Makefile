@@ -326,6 +326,7 @@ containerd-tests: containerd-test-1.4.3
 ##     BENCHMARKS_FILTER    - filter to be applied to the test suite.
 ##     BENCHMARKS_OPTIONS   - options to be passed to the test.
 ##     BENCHMARKS_PROFILE   - profile options to be passed to the test.
+##     BENCH_RUNTIME_ARGS   - args to configure the runtime which runs the benchmarks.
 ##
 BENCHMARKS_PROJECT   ?= gvisor-benchmarks
 BENCHMARKS_DATASET   ?= kokoro
@@ -339,6 +340,7 @@ BENCHMARKS_FILTER    := .
 BENCHMARKS_OPTIONS   := -test.benchtime=30s
 BENCHMARKS_ARGS      := -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
 BENCHMARKS_PROFILE   := -pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex
+BENCH_RUNTIME_ARGS   ?= --vfs2
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -359,13 +361,13 @@ run_benchmark = \
 
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all given platforms in BENCHMARK_PLATFORMS.
 	@$(foreach PLATFORM,$(BENCHMARKS_PLATFORMS), \
-	  $(call run_benchmark,$(PLATFORM),--platform=$(PLATFORM) --vfs2) && \
+	  $(call run_benchmark,$(PLATFORM),--platform=$(PLATFORM) $(BENCH_RUNTIME_ARGS)) && \
 	) true
 	@$(call run_benchmark,runc)
 .PHONY: benchmark-platforms
 
 run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
-	@$(call run_benchmark,$(RUNTIME),)
+	@$(call run_benchmark,$(RUNTIME),$(BENCH_RUNTIME_ARGS))
 .PHONY: run-benchmark
 
 ##
