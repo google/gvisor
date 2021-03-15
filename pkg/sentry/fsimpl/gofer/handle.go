@@ -124,8 +124,9 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return 0, cperr
 	}
 	n, err := h.file.writeAt(ctx, buf[:cp], offset)
+	// err takes precedence over cperr.
 	if err != nil {
 		return uint64(n), err
 	}
-	return cp, cperr
+	return uint64(n), cperr
 }
