@@ -823,6 +823,27 @@ func (conn *TCPIPv4) LocalAddr(t *testing.T) *unix.SockaddrInet4 {
 	return sa
 }
 
+// GenerateOTWSeqSegment generates a segment with
+// seqnum = RCV.NXT + RCV.WND + seqNumOffset, the generated segment is only
+// acceptable when seqNumOffset is 0, otherwise an ACK is expected from the
+// receiver.
+func GenerateOTWSeqSegment(t *testing.T, conn *TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) TCP {
+	t.Helper()
+	lastAcceptable := conn.LocalSeqNum(t).Add(windowSize)
+	otwSeq := uint32(lastAcceptable.Add(seqNumOffset))
+	return TCP{SeqNum: Uint32(otwSeq), Flags: TCPFlags(header.TCPFlagAck)}
+}
+
+// GenerateUnaccACKSegment generates a segment with
+// acknum = SND.NXT + seqNumOffset, the generated segment is only acceptable
+// when seqNumOffset is 0, otherwise an ACK is expected from the receiver.
+func GenerateUnaccACKSegment(t *testing.T, conn *TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) TCP {
+	t.Helper()
+	lastAcceptable := conn.RemoteSeqNum(t)
+	unaccAck := uint32(lastAcceptable.Add(seqNumOffset))
+	return TCP{AckNum: Uint32(unaccAck), Flags: TCPFlags(header.TCPFlagAck)}
+}
+
 // IPv4Conn maintains the state for all the layers in a IPv4 connection.
 type IPv4Conn struct {
 	Connection

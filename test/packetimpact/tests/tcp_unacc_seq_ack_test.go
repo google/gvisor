@@ -38,12 +38,12 @@ func TestEstablishedUnaccSeqAck(t *testing.T) {
 		expectAck      bool
 		restoreSeq     bool
 	}{
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 0, expectAck: true, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 1, expectAck: true, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 2, expectAck: true, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 0, expectAck: true, restoreSeq: false},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 1, expectAck: false, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 2, expectAck: false, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 0, expectAck: true, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 1, expectAck: true, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 2, expectAck: true, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 0, expectAck: true, restoreSeq: false},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 1, expectAck: false, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 2, expectAck: false, restoreSeq: true},
 	} {
 		t.Run(fmt.Sprintf("%s:offset=%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
@@ -91,12 +91,12 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 		seqNumOffset   seqnum.Size
 		expectAck      bool
 	}{
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 0, expectAck: false},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 1, expectAck: true},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 2, expectAck: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 0, expectAck: false},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 1, expectAck: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 2, expectAck: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 0, expectAck: false},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 1, expectAck: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 2, expectAck: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 0, expectAck: false},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 1, expectAck: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 2, expectAck: true},
 	} {
 		t.Run(fmt.Sprintf("%s:offset=%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
@@ -152,12 +152,12 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 		seqNumOffset   seqnum.Size
 		restoreSeq     bool
 	}{
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 0, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 1, restoreSeq: true},
-		{description: "OTWSeq", makeTestingTCP: generateOTWSeqSegment, seqNumOffset: 2, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 0, restoreSeq: false},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 1, restoreSeq: true},
-		{description: "UnaccAck", makeTestingTCP: generateUnaccACKSegment, seqNumOffset: 2, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 0, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 1, restoreSeq: true},
+		{description: "OTWSeq", makeTestingTCP: testbench.GenerateOTWSeqSegment, seqNumOffset: 2, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 0, restoreSeq: false},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 1, restoreSeq: true},
+		{description: "UnaccAck", makeTestingTCP: testbench.GenerateUnaccACKSegment, seqNumOffset: 2, restoreSeq: true},
 	} {
 		t.Run(fmt.Sprintf("%s:offset=%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
 			dut := testbench.NewDUT(t)
@@ -208,23 +208,4 @@ func TestActiveCloseUnaccpSeqAck(t *testing.T) {
 			sendUnaccSeqAck("TIME_WAIT")
 		})
 	}
-}
-
-// generateOTWSeqSegment generates an segment with
-// seqnum = RCV.NXT + RCV.WND + seqNumOffset, the generated segment is only
-// acceptable when seqNumOffset is 0, otherwise an ACK is expected from the
-// receiver.
-func generateOTWSeqSegment(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) testbench.TCP {
-	lastAcceptable := conn.LocalSeqNum(t).Add(windowSize)
-	otwSeq := uint32(lastAcceptable.Add(seqNumOffset))
-	return testbench.TCP{SeqNum: testbench.Uint32(otwSeq), Flags: testbench.TCPFlags(header.TCPFlagAck)}
-}
-
-// generateUnaccACKSegment generates an segment with
-// acknum = SND.NXT + seqNumOffset, the generated segment is only acceptable
-// when seqNumOffset is 0, otherwise an ACK is expected from the receiver.
-func generateUnaccACKSegment(t *testing.T, conn *testbench.TCPIPv4, seqNumOffset seqnum.Size, windowSize seqnum.Size) testbench.TCP {
-	lastAcceptable := conn.RemoteSeqNum(t)
-	unaccAck := uint32(lastAcceptable.Add(seqNumOffset))
-	return testbench.TCP{AckNum: testbench.Uint32(unaccAck), Flags: testbench.TCPFlags(header.TCPFlagAck)}
 }
