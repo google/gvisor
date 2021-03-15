@@ -214,7 +214,8 @@ message ShutdownRequest {
 }
 
 message ShutdownResponse {
-  int32 errno_ = 1;  // "errno" may fail to compile in c++.
+  int32 ret = 1;
+  int32 errno_ = 2;  // "errno" may fail to compile in c++.
 }
 
 message RecvRequest {

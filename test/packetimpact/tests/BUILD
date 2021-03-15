@@ -124,6 +124,17 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
+    name = "tcp_outside_the_window_closing",
+    srcs = ["tcp_outside_the_window_closing_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
     name = "tcp_noaccept_close_rst",
     srcs = ["tcp_noaccept_close_rst_test.go"],
     deps = [
@@ -146,6 +157,17 @@ packetimpact_testbench(
 packetimpact_testbench(
     name = "tcp_unacc_seq_ack",
     srcs = ["tcp_unacc_seq_ack_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/seqnum",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "tcp_unacc_seq_ack_closing",
+    srcs = ["tcp_unacc_seq_ack_closing_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
@@ -370,6 +392,16 @@ packetimpact_testbench(
         "//pkg/binary",
         "//pkg/tcpip/header",
         "//pkg/usermem",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "tcp_fin_retransmission",
+    srcs = ["tcp_fin_retransmission_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],

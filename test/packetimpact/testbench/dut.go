@@ -773,16 +773,19 @@ func (dut *DUT) SetSockLingerOption(t *testing.T, sockfd int32, timeout time.Dur
 // Shutdown calls shutdown on the DUT and causes a fatal test failure if it
 // doesn't succeed. If more control over the timeout or error handling is
 // needed, use ShutdownWithErrno.
-func (dut *DUT) Shutdown(t *testing.T, fd, how int32) error {
+func (dut *DUT) Shutdown(t *testing.T, fd, how int32) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
 	defer cancel()
-	return dut.ShutdownWithErrno(ctx, t, fd, how)
+	ret, err := dut.ShutdownWithErrno(ctx, t, fd, how)
+	if ret != 0 {
+		t.Fatalf("failed to shutdown(%d, %d): %s", fd, how, err)
+	}
 }
 
 // ShutdownWithErrno calls shutdown on the DUT.
-func (dut *DUT) ShutdownWithErrno(ctx context.Context, t *testing.T, fd, how int32) error {
+func (dut *DUT) ShutdownWithErrno(ctx context.Context, t *testing.T, fd, how int32) (int32, error) {
 	t.Helper()
 
 	req := &pb.ShutdownRequest{
@@ -793,5 +796,8 @@ func (dut *DUT) ShutdownWithErrno(ctx context.Context, t *testing.T, fd, how int
 	if err != nil {
 		t.Fatalf("failed to call Shutdown: %s", err)
 	}
-	return unix.Errno(resp.GetErrno_())
+	if resp.GetErrno_() == 0 {
+		return resp.GetRet(), nil
+	}
+	return resp.GetRet(), unix.Errno(resp.GetErrno_())
 }

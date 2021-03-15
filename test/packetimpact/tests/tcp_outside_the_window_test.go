@@ -79,7 +79,7 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 				Flags:  testbench.TCPFlags(tt.tcpFlags),
 				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
 			}, tt.payload...)
-			timeout := 3 * time.Second
+			timeout := time.Second
 			gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), AckNum: localSeqNum}, timeout)
 			if tt.expectACK && err != nil {
 				t.Fatalf("expected an ACK packet within %s but got none: %s", timeout, err)
