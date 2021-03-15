@@ -15,6 +15,7 @@
 package tcp_retransmits_test
 
 import (
+	"bytes"
 	"flag"
 	"testing"
 	"time"
@@ -59,38 +60,43 @@ func TestRetransmits(t *testing.T) {
 	sampleData := []byte("Sample Data")
 	samplePayload := &testbench.Payload{Bytes: sampleData}
 
+	// Give a chance for the dut to estimate RTO with RTT from the DATA-ACK.
+	// This is to reduce the test run-time from the default initial RTO of 1s.
+	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
+	// we can skip this data send/recv which is solely to estimate RTO.
 	dut.Send(t, acceptFd, sampleData, 0)
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
-	// Give a chance for the dut to estimate RTO with RTT from the DATA-ACK.
-	// TODO(gvisor.dev/issue/2685) Estimate RTO during handshake, after which
-	// we can skip sending this ACK.
-	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, nil, time.Second); err != nil {
+		t.Fatalf("expected packet was not received: %s", err)
+	}
+	// Wait for the DUT to receive the data, thus ensuring that the stack has
+	// estimated RTO before we query RTO via TCP_INFO.
+	if got := dut.Recv(t, acceptFd, int32(len(sampleData)), 0); !bytes.Equal(got, sampleData) {
+		t.Fatalf("got dut.Recv(t, %d, %d, 0) = %s, want %s", acceptFd, len(sampleData), got, sampleData)
+	}
 
 	const timeoutCorrection = time.Second
-	const diffCorrection = time.Millisecond
+	const diffCorrection = 200 * time.Millisecond
 	rto := getRTO(t, dut, acceptFd)
-	timeout := rto + timeoutCorrection
 
-	startTime := time.Now()
 	dut.Send(t, acceptFd, sampleData, 0)
 	seq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))
-	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, timeout); err != nil {
+	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, rto+timeoutCorrection); err != nil {
 		t.Fatalf("expected payload was not received: %s", err)
 	}
 
 	// Expect retransmits of the same segment.
 	for i := 0; i < 5; i++ {
-		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, timeout); err != nil {
-			t.Fatalf("expected payload was not received within %d loop %d err %s", timeout, i, err)
-		}
-
-		if diff := time.Since(startTime); diff+diffCorrection < rto {
-			t.Fatalf("retransmit came sooner got: %d want: >= %d probe %d", diff, rto, i)
-		}
-		startTime = time.Now()
+		startTime := time.Now()
 		rto = getRTO(t, dut, acceptFd)
-		timeout = rto + timeoutCorrection
+		if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, rto+timeoutCorrection); err != nil {
+			t.Fatalf("expected payload was not received within %s loop %d err %s", rto+timeoutCorrection, i, err)
+		}
+		if diff := time.Since(startTime); diff+diffCorrection < rto {
+			t.Fatalf("retransmit came sooner got: %s want: >= %s probe %d", diff+diffCorrection, rto, i)
+		}
 	}
 }
