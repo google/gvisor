@@ -15,6 +15,7 @@
 package ipv6
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -1264,8 +1265,21 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		DupAddrDetectTransmits: 1,
 		RetransmitTimer:        time.Second,
 	}
+
+	nonces := [...][]byte{
+		{1, 2, 3, 4, 5, 6},
+		{7, 8, 9, 10, 11, 12},
+	}
+
+	var secureRNGBytes []byte
+	for _, n := range nonces {
+		secureRNGBytes = append(secureRNGBytes, n...)
+	}
+	var secureRNG bytes.Reader
+	secureRNG.Reset(secureRNGBytes[:])
 	s := stack.New(stack.Options{
-		Clock: clock,
+		SecureRNG: &secureRNG,
+		Clock:     clock,
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
 			DADConfigs: dadConfigs,
 		})},
@@ -1278,10 +1292,36 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
-	dadPacketsSent := 1
+	dadPacketsSent := 0
+	snmc := header.SolicitedNodeAddr(lladdr0)
+	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
+	checkDADMsg := func() {
+		p, ok := e.ReadContext(context.Background())
+		if !ok {
+			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
+		}
+
+		if p.Proto != header.IPv6ProtocolNumber {
+			t.Errorf("(i=%d) got p.Proto = %d, want = %d", dadPacketsSent, p.Proto, header.IPv6ProtocolNumber)
+		}
+
+		if p.Route.RemoteLinkAddress != remoteLinkAddr {
+			t.Errorf("(i=%d) got p.Route.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.Route.RemoteLinkAddress, remoteLinkAddr)
+		}
+
+		checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+			checker.SrcAddr(header.IPv6Any),
+			checker.DstAddr(snmc),
+			checker.TTL(header.NDPHopLimit),
+			checker.NDPNS(
+				checker.NDPNSTargetAddress(lladdr0),
+				checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[dadPacketsSent])}),
+			))
+	}
 	if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
 		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
 	}
+	checkDADMsg()
 
 	// Start DAD for the address we just added.
 	//
@@ -1297,6 +1337,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	} else if res != stack.DADStarting {
 		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, ProtocolNumber, lladdr0, res, stack.DADStarting)
 	}
+	checkDADMsg()
 
 	// Remove the address and make sure our DAD request was not stopped.
 	if err := s.RemoveAddress(nicID, lladdr0); err != nil {
@@ -1326,33 +1367,6 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	case r := <-ch:
 		t.Errorf("unexpectedly got an extra DAD result; r = %#v", r)
 	default:
-	}
-
-	snmc := header.SolicitedNodeAddr(lladdr0)
-	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
-
-	for i := 0; i < dadPacketsSent; i++ {
-		p, ok := e.Read()
-		if !ok {
-			t.Fatalf("expected %d-th DAD message", i)
-		}
-
-		if p.Proto != header.IPv6ProtocolNumber {
-			t.Errorf("(i=%d) got p.Proto = %d, want = %d", i, p.Proto, header.IPv6ProtocolNumber)
-		}
-
-		if p.Route.RemoteLinkAddress != remoteLinkAddr {
-			t.Errorf("(i=%d) got p.Route.RemoteLinkAddress = %s, want = %s", i, p.Route.RemoteLinkAddress, remoteLinkAddr)
-		}
-
-		checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
-			checker.SrcAddr(header.IPv6Any),
-			checker.DstAddr(snmc),
-			checker.TTL(header.NDPHopLimit),
-			checker.NDPNS(
-				checker.NDPNSTargetAddress(lladdr0),
-				checker.NDPNSOptions(nil),
-			))
 	}
 
 	// Should have no more packets.

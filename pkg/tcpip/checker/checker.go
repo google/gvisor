@@ -1287,6 +1287,13 @@ func ndpOptions(t *testing.T, optsBuf header.NDPOptions, opts []header.NDPOption
 			} else if got, want := gotOpt.EthernetAddress(), wantOpt.EthernetAddress(); got != want {
 				t.Errorf("got EthernetAddress() = %s at index %d, want = %s", got, i, want)
 			}
+		case header.NDPNonceOption:
+			gotOpt, ok := opt.(header.NDPNonceOption)
+			if !ok {
+				t.Errorf("got type = %T at index = %d; want = %T", opt, i, wantOpt)
+			} else if diff := cmp.Diff(wantOpt.Nonce(), gotOpt.Nonce()); diff != "" {
+				t.Errorf("nonce mismatch (-want +got):\n%s", diff)
+			}
 		default:
 			t.Fatalf("checker not implemented for expected NDP option: %T", wantOpt)
 		}

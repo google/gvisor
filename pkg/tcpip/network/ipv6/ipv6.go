@@ -348,7 +348,7 @@ func (e *endpoint) hasTentativeAddr(addr tcpip.Address) bool {
 // dupTentativeAddrDetected removes the tentative address if it exists. If the
 // address was generated via SLAAC, an attempt is made to generate a new
 // address.
-func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr tcpip.LinkAddress) tcpip.Error {
+func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr tcpip.LinkAddress, nonce []byte) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -361,27 +361,48 @@ func (e *endpoint) dupTentativeAddrDetected(addr tcpip.Address, holderLinkAddr t
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	// If the address is a SLAAC address, do not invalidate its SLAAC prefix as an
-	// attempt will be made to generate a new address for it.
-	if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, &stack.DADDupAddrDetected{HolderLinkAddress: holderLinkAddr}); err != nil {
-		return err
-	}
+	switch result := e.mu.ndp.dad.ExtendIfNonceEqualLocked(addr, nonce); result {
+	case ip.Extended:
+		// The nonce we got back was the same we sent so we know the message
+		// indicating a duplicate address was likely ours so do not consider
+		// the address duplicate here.
+		return nil
+	case ip.AlreadyExtended:
+		// See Extended.
+		//
+		// Our DAD message was looped back already.
+		return nil
+	case ip.NoDADStateFound:
+		panic(fmt.Sprintf("expected DAD state for tentative address %s", addr))
+	case ip.NonceDisabled:
+		// If nonce is disabled then we have no way to know if the packet was
+		// looped-back so we have to assume it indicates a duplicate address.
+		fallthrough
+	case ip.NonceNotEqual:
+		// If the address is a SLAAC address, do not invalidate its SLAAC prefix as an
+		// attempt will be made to generate a new address for it.
+		if err := e.removePermanentEndpointLocked(addressEndpoint, false /* allowSLAACInvalidation */, &stack.DADDupAddrDetected{HolderLinkAddress: holderLinkAddr}); err != nil {
+			return err
+		}
 
-	prefix := addressEndpoint.Subnet()
+		prefix := addressEndpoint.Subnet()
 
-	switch t := addressEndpoint.ConfigType(); t {
-	case stack.AddressConfigStatic:
-	case stack.AddressConfigSlaac:
-		e.mu.ndp.regenerateSLAACAddr(prefix)
-	case stack.AddressConfigSlaacTemp:
-		// Do not reset the generation attempts counter for the prefix as the
-		// temporary address is being regenerated in response to a DAD conflict.
-		e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+		switch t := addressEndpoint.ConfigType(); t {
+		case stack.AddressConfigStatic:
+		case stack.AddressConfigSlaac:
+			e.mu.ndp.regenerateSLAACAddr(prefix)
+		case stack.AddressConfigSlaacTemp:
+			// Do not reset the generation attempts counter for the prefix as the
+			// temporary address is being regenerated in response to a DAD conflict.
+			e.mu.ndp.regenerateTempSLAACAddr(prefix, false /* resetGenAttempts */)
+		default:
+			panic(fmt.Sprintf("unrecognized address config type = %d", t))
+		}
+
+		return nil
 	default:
-		panic(fmt.Sprintf("unrecognized address config type = %d", t))
+		panic(fmt.Sprintf("unhandled result = %d", result))
 	}
-
-	return nil
 }
 
 // transitionForwarding transitions the endpoint's forwarding status to
@@ -1797,16 +1818,36 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 		dispatcher: dispatcher,
 		protocol:   p,
 	}
+
+	// NDP options must be 8 octet aligned and the first 2 bytes are used for
+	// the type and length fields leaving 6 octets as the minimum size for a
+	// nonce option without padding.
+	const nonceSize = 6
+
+	// As per RFC 7527 section 4.1,
+	//
+	//   If any probe is looped back within RetransTimer milliseconds after
+	//   having sent DupAddrDetectTransmits NS(DAD) messages, the interface
+	//   continues with another MAX_MULTICAST_SOLICIT number of NS(DAD)
+	//   messages transmitted RetransTimer milliseconds apart.
+	//
+	// Value taken from RFC 4861 section 10.
+	const maxMulticastSolicit = 3
+	dadOptions := ip.DADOptions{
+		Clock:              p.stack.Clock(),
+		SecureRNG:          p.stack.SecureRNG(),
+		NonceSize:          nonceSize,
+		ExtendDADTransmits: maxMulticastSolicit,
+		Protocol:           &e.mu.ndp,
+		NICID:              nic.ID(),
+	}
+
 	e.mu.Lock()
 	e.mu.addressableEndpointState.Init(e)
-	e.mu.ndp.init(e)
+	e.mu.ndp.init(e, dadOptions)
 	e.mu.mld.init(e)
 	e.dad.mu.Lock()
-	e.dad.mu.dad.Init(&e.dad.mu, p.options.DADConfigs, ip.DADOptions{
-		Clock:    p.stack.Clock(),
-		Protocol: &e.mu.ndp,
-		NICID:    nic.ID(),
-	})
+	e.dad.mu.dad.Init(&e.dad.mu, p.options.DADConfigs, dadOptions)
 	e.dad.mu.Unlock()
 	e.mu.Unlock()
 
