@@ -115,7 +115,7 @@ var (
 type x86FPState []byte
 
 // initX86FPState (defined in asm files) sets up initial state.
-func initX86FPState(data *FloatingPointData, useXsave bool)
+func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() []byte {
 	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
@@ -139,7 +139,7 @@ func newX86FPStateSlice() []byte {
 // CPUID we must ensure it does not contain any sentry state.
 func newX86FPState() x86FPState {
 	f := x86FPState(newX86FPStateSlice())
-	initX86FPState(f.FloatingPointData(), cpuid.HostFeatureSet().UseXsave())
+	initX86FPState(&f.FloatingPointData()[0], cpuid.HostFeatureSet().UseXsave())
 	return f
 }
 
@@ -151,15 +151,15 @@ func (f x86FPState) fork() x86FPState {
 }
 
 // FloatingPointData returns the raw data pointer.
-func (f x86FPState) FloatingPointData() *FloatingPointData {
-	return (*FloatingPointData)(&f[0])
+func (f x86FPState) FloatingPointData() FloatingPointData {
+	return []byte(f)
 }
 
 // NewFloatingPointData returns a new floating point data blob.
 //
 // This is primarily for use in tests.
-func NewFloatingPointData() *FloatingPointData {
-	return (*FloatingPointData)(&(newX86FPState()[0]))
+func NewFloatingPointData() FloatingPointData {
+	return (FloatingPointData)(newX86FPState())
 }
 
 // Proto returns a protobuf representation of the system registers in State.
@@ -442,7 +442,7 @@ func sanitizeMXCSR(f x86FPState) {
 	mxcsr := usermem.ByteOrder.Uint32(f[mxcsrOffset:])
 	initMXCSRMask.Do(func() {
 		temp := x86FPState(alignedBytes(uint(ptraceFPRegsSize), 16))
-		initX86FPState(temp.FloatingPointData(), false /* useXsave */)
+		initX86FPState(&temp.FloatingPointData()[0], false /* useXsave */)
 		mxcsrMask = usermem.ByteOrder.Uint32(temp[mxcsrMaskOffset:])
 		if mxcsrMask == 0 {
 			// "If the value of the MXCSR_MASK field is 00000000H, then the
