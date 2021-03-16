@@ -689,13 +689,9 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			}
 			return err
 		}
-		creds := rp.Credentials()
+
 		if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  uint32(creds.EffectiveKUID),
-				GID:  uint32(creds.EffectiveKGID),
-			},
+			Stat: parent.newChildOwnerStat(opts.Mode, rp.Credentials()),
 		}); err != nil {
 			if cleanupErr := vfsObj.RmdirAt(ctx, fs.creds, &pop); cleanupErr != nil {
 				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer directory after MkdirAt metadata update failure: %v", cleanupErr))
@@ -750,11 +746,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		}
 		creds := rp.Credentials()
 		if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-			Stat: linux.Statx{
-				Mask: linux.STATX_UID | linux.STATX_GID,
-				UID:  uint32(creds.EffectiveKUID),
-				GID:  uint32(creds.EffectiveKGID),
-			},
+			Stat: parent.newChildOwnerStat(opts.Mode, creds),
 		}); err != nil {
 			if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &pop); cleanupErr != nil {
 				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after MknodAt metadata update failure: %v", cleanupErr))
@@ -963,14 +955,11 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		return nil, err
 	}
+
 	// Change the file's owner to the caller. We can't use upperFD.SetStat()
 	// because it will pick up creds from ctx.
 	if err := vfsObj.SetStatAt(ctx, fs.creds, &pop, &vfs.SetStatOptions{
-		Stat: linux.Statx{
-			Mask: linux.STATX_UID | linux.STATX_GID,
-			UID:  uint32(creds.EffectiveKUID),
-			GID:  uint32(creds.EffectiveKGID),
-		},
+		Stat: parent.newChildOwnerStat(opts.Mode, creds),
 	}); err != nil {
 		if cleanupErr := vfsObj.UnlinkAt(ctx, fs.creds, &pop); cleanupErr != nil {
 			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to delete upper layer file after OpenAt(O_CREAT) metadata update failure: %v", cleanupErr))
