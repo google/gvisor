@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/rand"
@@ -390,7 +391,7 @@ func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
 // deliverAccepted delivers the newly-accepted endpoint to the listener. If the
 // endpoint has transitioned out of the listen state (acceptedChan is nil),
 // the new endpoint is closed instead.
-func (e *endpoint) deliverAccepted(n *endpoint) {
+func (e *endpoint) deliverAccepted(n *endpoint, withSynCookie bool) {
 	e.mu.Lock()
 	e.pendingAccepted.Add(1)
 	e.mu.Unlock()
@@ -405,6 +406,9 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 		}
 		select {
 		case e.acceptedChan <- n:
+			if !withSynCookie {
+				atomic.AddInt32(&e.synRcvdCount, -1)
+			}
 			e.acceptMu.Unlock()
 			e.waiterQueue.Notify(waiter.EventIn)
 			return
@@ -476,7 +480,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		e.stats.FailedConnectionAttempts.Increment()
-		e.synRcvdCount--
+		atomic.AddInt32(&e.synRcvdCount, -1)
 		return err
 	}
 
@@ -486,18 +490,13 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 			ctx.cleanupFailedHandshake(h)
-			e.mu.Lock()
-			e.synRcvdCount--
-			e.mu.Unlock()
+			atomic.AddInt32(&e.synRcvdCount, -1)
 			return
 		}
 		ctx.cleanupCompletedHandshake(h)
-		e.mu.Lock()
-		e.synRcvdCount--
-		e.mu.Unlock()
 		h.ep.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-		e.deliverAccepted(h.ep)
+		e.deliverAccepted(h.ep, false /*withSynCookie*/)
 	}() // S/R-SAFE: synRcvdCount is the barrier.
 
 	return nil
@@ -505,17 +504,17 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 
 func (e *endpoint) incSynRcvdCount() bool {
 	e.acceptMu.Lock()
-	canInc := e.synRcvdCount < cap(e.acceptedChan)
+	canInc := int(atomic.LoadInt32(&e.synRcvdCount)) < cap(e.acceptedChan)
 	e.acceptMu.Unlock()
 	if canInc {
-		e.synRcvdCount++
+		atomic.AddInt32(&e.synRcvdCount, 1)
 	}
 	return canInc
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := len(e.acceptedChan)+e.synRcvdCount >= cap(e.acceptedChan)
+	full := len(e.acceptedChan)+int(atomic.LoadInt32(&e.synRcvdCount)) >= cap(e.acceptedChan)
 	e.acceptMu.Unlock()
 	return full
 }
@@ -737,7 +736,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// Start the protocol goroutine.
 		n.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
-		go e.deliverAccepted(n)
+		go e.deliverAccepted(n, true /*withSynCookie*/)
 		return nil
 
 	default:
