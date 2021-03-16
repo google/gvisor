@@ -525,6 +525,14 @@ type NetworkInterface interface {
 	// assigned to it.
 	Spoofing() bool
 
+	// PrimaryAddress returns the primary address associated with the interface.
+	//
+	// PrimaryAddress will return the first non-deprecated address if such an
+	// address exists. If no non-deprecated addresses exist, the first deprecated
+	// address will be returned. If no deprecated addresses exist, the zero value
+	// will be returned.
+	PrimaryAddress(tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error)
+
 	// CheckLocalAddress returns true if the address exists on the interface.
 	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
 

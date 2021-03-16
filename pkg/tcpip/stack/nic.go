@@ -568,23 +568,19 @@ func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 	return addrs
 }
 
-// primaryAddress returns the primary address associated with this NIC.
-//
-// primaryAddress will return the first non-deprecated address if such an
-// address exists. If no non-deprecated address exists, the first deprecated
-// address will be returned.
-func (n *nic) primaryAddress(proto tcpip.NetworkProtocolNumber) tcpip.AddressWithPrefix {
+// PrimaryAddress implements NetworkInterface.
+func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error) {
 	ep, ok := n.networkEndpoints[proto]
 	if !ok {
-		return tcpip.AddressWithPrefix{}
+		return tcpip.AddressWithPrefix{}, &tcpip.ErrUnknownProtocol{}
 	}
 
 	addressableEndpoint, ok := ep.(AddressableEndpoint)
 	if !ok {
-		return tcpip.AddressWithPrefix{}
+		return tcpip.AddressWithPrefix{}, &tcpip.ErrNotSupported{}
 	}
 
-	return addressableEndpoint.MainAddress()
+	return addressableEndpoint.MainAddress(), nil
 }
 
 // removeAddress removes an address from n.

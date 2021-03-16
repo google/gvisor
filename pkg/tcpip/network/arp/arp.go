@@ -305,8 +305,6 @@ func (*endpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.LinkAddressRequest.
 func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
-	nicID := e.nic.ID()
-
 	stats := e.stats.arp
 
 	if len(remoteLinkAddr) == 0 {
@@ -314,9 +312,9 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	}
 
 	if len(localAddr) == 0 {
-		addr, ok := e.protocol.stack.GetMainNICAddress(nicID, header.IPv4ProtocolNumber)
-		if !ok {
-			return &tcpip.ErrUnknownNICID{}
+		addr, err := e.nic.PrimaryAddress(header.IPv4ProtocolNumber)
+		if err != nil {
+			return err
 		}
 
 		if len(addr.Address) == 0 {

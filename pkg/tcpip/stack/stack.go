@@ -1224,7 +1224,8 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 		return tcpip.AddressWithPrefix{}, false
 	}
 
-	return nic.primaryAddress(protocol), true
+	addr, err := nic.PrimaryAddress(protocol)
+	return addr, err == nil
 }
 
 func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {
