@@ -88,15 +88,15 @@ func (f aarch64FPState) fork() aarch64FPState {
 }
 
 // FloatingPointData returns the raw data pointer.
-func (f aarch64FPState) FloatingPointData() *FloatingPointData {
-	return (*FloatingPointData)(&f[0])
+func (f aarch64FPState) FloatingPointData() FloatingPointData {
+	return ([]byte)(f)
 }
 
 // NewFloatingPointData returns a new floating point data blob.
 //
 // This is primarily for use in tests.
-func NewFloatingPointData() *FloatingPointData {
-	return (*FloatingPointData)(&(newAarch64FPState()[0]))
+func NewFloatingPointData() FloatingPointData {
+	return ([]byte)(newAarch64FPState())
 }
 
 // State contains the common architecture bits for aarch64 (the build tag of this

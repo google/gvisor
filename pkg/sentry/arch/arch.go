@@ -54,7 +54,7 @@ func (a Arch) String() string {
 // We rely on the individual arch implementations to meet all the necessary
 // requirements. For example, on x86 the region must be 16-byte aligned and 512
 // bytes in size.
-type FloatingPointData byte
+type FloatingPointData []byte
 
 // Context provides architecture-dependent information for a specific thread.
 //
@@ -187,7 +187,7 @@ type Context interface {
 	ClearSingleStep()
 
 	// FloatingPointData will be passed to underlying save routines.
-	FloatingPointData() *FloatingPointData
+	FloatingPointData() FloatingPointData
 
 	// NewMmapLayout returns a layout for a new MM, where MinAddr for the
 	// returned layout must be no lower than min, and MaxAddr for the returned
