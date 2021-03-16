@@ -15,6 +15,7 @@
 package ip_test
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -32,8 +33,8 @@ type mockDADProtocol struct {
 	mu struct {
 		sync.Mutex
 
-		dad       ip.DAD
-		sendCount map[tcpip.Address]int
+		dad        ip.DAD
+		sentNonces map[tcpip.Address][][]byte
 	}
 }
 
@@ -48,26 +49,30 @@ func (m *mockDADProtocol) init(t *testing.T, c stack.DADConfigurations, opts ip.
 }
 
 func (m *mockDADProtocol) initLocked() {
-	m.mu.sendCount = make(map[tcpip.Address]int)
+	m.mu.sentNonces = make(map[tcpip.Address][][]byte)
 }
 
-func (m *mockDADProtocol) SendDADMessage(addr tcpip.Address) tcpip.Error {
+func (m *mockDADProtocol) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.sendCount[addr]++
+	m.mu.sentNonces[addr] = append(m.mu.sentNonces[addr], nonce)
 	return nil
 }
 
 func (m *mockDADProtocol) check(addrs []tcpip.Address) string {
+	sentNonces := make(map[tcpip.Address][][]byte)
+	for _, a := range addrs {
+		sentNonces[a] = append(sentNonces[a], nil)
+	}
+
+	return m.checkWithNonce(sentNonces)
+}
+
+func (m *mockDADProtocol) checkWithNonce(expectedSentNonces map[tcpip.Address][][]byte) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	sendCount := make(map[tcpip.Address]int)
-	for _, a := range addrs {
-		sendCount[a]++
-	}
-
-	diff := cmp.Diff(sendCount, m.mu.sendCount)
+	diff := cmp.Diff(expectedSentNonces, m.mu.sentNonces)
 	m.initLocked()
 	return diff
 }
@@ -82,6 +87,12 @@ func (m *mockDADProtocol) stop(addr tcpip.Address, reason stack.DADResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.dad.StopLocked(addr, reason)
+}
+
+func (m *mockDADProtocol) extendIfNonceEqual(addr tcpip.Address, nonce []byte) ip.ExtendIfNonceEqualLockedDisposition {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mu.dad.ExtendIfNonceEqualLocked(addr, nonce)
 }
 
 func (m *mockDADProtocol) setConfigs(c stack.DADConfigurations) {
@@ -275,5 +286,96 @@ func TestDADStop(t *testing.T) {
 	case r := <-ch:
 		t.Fatalf("unexpectedly got an extra DAD result; r = %#v", r)
 	default:
+	}
+}
+
+func TestNonce(t *testing.T) {
+	const (
+		nonceSize = 2
+
+		extendRequestAttempts = 2
+
+		dupAddrDetectTransmits = 2
+		extendTransmits        = 5
+	)
+
+	var secureRNGBytes [nonceSize * (dupAddrDetectTransmits + extendTransmits)]byte
+	for i := range secureRNGBytes {
+		secureRNGBytes[i] = byte(i)
+	}
+
+	tests := []struct {
+		name                string
+		mockedReceivedNonce []byte
+		expectedResults     [extendRequestAttempts]ip.ExtendIfNonceEqualLockedDisposition
+		expectedTransmits   int
+	}{
+		{
+			name:                "not matching",
+			mockedReceivedNonce: []byte{0, 0},
+			expectedResults:     [extendRequestAttempts]ip.ExtendIfNonceEqualLockedDisposition{ip.NonceNotEqual, ip.NonceNotEqual},
+			expectedTransmits:   dupAddrDetectTransmits,
+		},
+		{
+			name:                "matching nonce",
+			mockedReceivedNonce: secureRNGBytes[:nonceSize],
+			expectedResults:     [extendRequestAttempts]ip.ExtendIfNonceEqualLockedDisposition{ip.Extended, ip.AlreadyExtended},
+			expectedTransmits:   dupAddrDetectTransmits + extendTransmits,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var dad mockDADProtocol
+			clock := faketime.NewManualClock()
+			dadConfigs := stack.DADConfigurations{
+				DupAddrDetectTransmits: dupAddrDetectTransmits,
+				RetransmitTimer:        time.Second,
+			}
+
+			var secureRNG bytes.Reader
+			secureRNG.Reset(secureRNGBytes[:])
+			dad.init(t, dadConfigs, ip.DADOptions{
+				Clock:              clock,
+				SecureRNG:          &secureRNG,
+				NonceSize:          nonceSize,
+				ExtendDADTransmits: extendTransmits,
+			})
+
+			ch := make(chan dadResult, 1)
+			if res := dad.checkDuplicateAddress(addr1, handler(ch, addr1)); res != stack.DADStarting {
+				t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
+			}
+
+			clock.Advance(0)
+			for i, want := range test.expectedResults {
+				if got := dad.extendIfNonceEqual(addr1, test.mockedReceivedNonce); got != want {
+					t.Errorf("(i=%d) got dad.extendIfNonceEqual(%s, _) = %d, want = %d", i, addr1, got, want)
+				}
+			}
+
+			for i := 0; i < test.expectedTransmits; i++ {
+				if diff := dad.checkWithNonce(map[tcpip.Address][][]byte{
+					addr1: {
+						secureRNGBytes[nonceSize*i:][:nonceSize],
+					},
+				}); diff != "" {
+					t.Errorf("(i=%d) dad check mismatch (-want +got):\n%s", i, diff)
+				}
+
+				clock.Advance(dadConfigs.RetransmitTimer)
+			}
+
+			if diff := cmp.Diff(dadResult{Addr: addr1, R: &stack.DADSucceeded{}}, <-ch); diff != "" {
+				t.Errorf("dad result mismatch (-want +got):\n%s", diff)
+			}
+
+			// Should not have anymore updates.
+			select {
+			case r := <-ch:
+				t.Fatalf("unexpectedly got an extra DAD result; r = %#v", r)
+			default:
+			}
+		})
 	}
 }

@@ -16,14 +16,27 @@
 package ip
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+type extendRequest int
+
+const (
+	notRequested extendRequest = iota
+	requested
+	extended
+)
+
 type dadState struct {
+	nonce         []byte
+	extendRequest extendRequest
+
 	done  *bool
 	timer tcpip.Timer
 
@@ -33,14 +46,17 @@ type dadState struct {
 // DADProtocol is a protocol whose core state machine can be represented by DAD.
 type DADProtocol interface {
 	// SendDADMessage attempts to send a DAD probe message.
-	SendDADMessage(tcpip.Address) tcpip.Error
+	SendDADMessage(tcpip.Address, []byte) tcpip.Error
 }
 
 // DADOptions holds options for DAD.
 type DADOptions struct {
-	Clock    tcpip.Clock
-	Protocol DADProtocol
-	NICID    tcpip.NICID
+	Clock              tcpip.Clock
+	SecureRNG          io.Reader
+	NonceSize          uint8
+	ExtendDADTransmits uint8
+	Protocol           DADProtocol
+	NICID              tcpip.NICID
 }
 
 // DAD performs duplicate address detection for addresses.
@@ -61,6 +77,10 @@ type DAD struct {
 func (d *DAD) Init(protocolMU sync.Locker, configs stack.DADConfigurations, opts DADOptions) {
 	if d.addresses != nil {
 		panic("attempted to initialize DAD state twice")
+	}
+
+	if opts.NonceSize != 0 && opts.ExtendDADTransmits == 0 {
+		panic(fmt.Sprintf("given a non-zero value for NonceSize (%d) but zero for ExtendDADTransmits", opts.NonceSize))
 	}
 
 	*d = DAD{
@@ -96,10 +116,55 @@ func (d *DAD) CheckDuplicateAddressLocked(addr tcpip.Address, h stack.DADComplet
 		s = dadState{
 			done: &done,
 			timer: d.opts.Clock.AfterFunc(0, func() {
-				var err tcpip.Error
 				dadDone := remaining == 0
+
+				nonce, earlyReturn := func() ([]byte, bool) {
+					d.protocolMU.Lock()
+					defer d.protocolMU.Unlock()
+
+					if done {
+						return nil, true
+					}
+
+					s, ok := d.addresses[addr]
+					if !ok {
+						panic(fmt.Sprintf("dad: timer fired but missing state for %s on NIC(%d)", addr, d.opts.NICID))
+					}
+
+					// As per RFC 7527 section 4
+					//
+					//   If any probe is looped back within RetransTimer milliseconds
+					//   after having sent DupAddrDetectTransmits NS(DAD) messages, the
+					//   interface continues with another MAX_MULTICAST_SOLICIT number of
+					//   NS(DAD) messages transmitted RetransTimer milliseconds apart.
+					if dadDone && s.extendRequest == requested {
+						dadDone = false
+						remaining = d.opts.ExtendDADTransmits
+						s.extendRequest = extended
+					}
+
+					if !dadDone && d.opts.NonceSize != 0 {
+						if s.nonce == nil {
+							s.nonce = make([]byte, d.opts.NonceSize)
+						}
+
+						if n, err := io.ReadFull(d.opts.SecureRNG, s.nonce); err != nil {
+							panic(fmt.Sprintf("SecureRNG.Read(...): %s", err))
+						} else if n != len(s.nonce) {
+							panic(fmt.Sprintf("expected to read %d bytes from secure RNG, only read %d bytes", len(s.nonce), n))
+						}
+					}
+
+					d.addresses[addr] = s
+					return s.nonce, false
+				}()
+				if earlyReturn {
+					return
+				}
+
+				var err tcpip.Error
 				if !dadDone {
-					err = d.opts.Protocol.SendDADMessage(addr)
+					err = d.opts.Protocol.SendDADMessage(addr, nonce)
 				}
 
 				d.protocolMU.Lock()
@@ -140,6 +205,68 @@ func (d *DAD) CheckDuplicateAddressLocked(addr tcpip.Address, h stack.DADComplet
 	s.completionHandlers = append(s.completionHandlers, h)
 	d.addresses[addr] = s
 	return ret
+}
+
+// ExtendIfNonceEqualLockedDisposition enumerates the possible results from
+// ExtendIfNonceEqualLocked.
+type ExtendIfNonceEqualLockedDisposition int
+
+const (
+	// Extended indicates that the DAD process was extended.
+	Extended ExtendIfNonceEqualLockedDisposition = iota
+
+	// AlreadyExtended indicates that the DAD process was already extended.
+	AlreadyExtended
+
+	// NoDADStateFound indicates that DAD state was not found for the address.
+	NoDADStateFound
+
+	// NonceDisabled indicates that nonce values are not sent with DAD messages.
+	NonceDisabled
+
+	// NonceNotEqual indicates that the nonce value passed and the nonce in the
+	// last send DAD message are not equal.
+	NonceNotEqual
+)
+
+// ExtendIfNonceEqualLocked extends the DAD process if the provided nonce is the
+// same as the nonce sent in the last DAD message.
+//
+// Precondition: d.protocolMU must be locked.
+func (d *DAD) ExtendIfNonceEqualLocked(addr tcpip.Address, nonce []byte) ExtendIfNonceEqualLockedDisposition {
+	s, ok := d.addresses[addr]
+	if !ok {
+		return NoDADStateFound
+	}
+
+	if d.opts.NonceSize == 0 {
+		return NonceDisabled
+	}
+
+	if s.extendRequest != notRequested {
+		return AlreadyExtended
+	}
+
+	// As per RFC 7527 section 4
+	//
+	//   If any probe is looped back within RetransTimer milliseconds after having
+	//   sent DupAddrDetectTransmits NS(DAD) messages, the interface continues
+	//   with another MAX_MULTICAST_SOLICIT number of NS(DAD) messages transmitted
+	//   RetransTimer milliseconds apart.
+	//
+	// If a DAD message has already been sent and the nonce value we observed is
+	// the same as the nonce value we last sent, then we assume our probe was
+	// looped back and request an extension to the DAD process.
+	//
+	// Note, the first DAD message is sent asynchronously so we need to make sure
+	// that we sent a DAD message by checking if we have a nonce value set.
+	if s.nonce != nil && bytes.Equal(s.nonce, nonce) {
+		s.extendRequest = requested
+		d.addresses[addr] = s
+		return Extended
+	}
+
+	return NonceNotEqual
 }
 
 // StopLocked stops a currently running DAD process.
