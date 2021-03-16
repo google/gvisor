@@ -233,8 +233,8 @@ func TestOpts(t *testing.T) {
 
 	checkNonce := func(expectedNonce []byte) func(*testing.T, NDPOption) {
 		return func(t *testing.T, opt NDPOption) {
-			if got := opt.Type(); got != NDPNonceOptionType {
-				t.Errorf("got Type() = %d, want = %d", got, NDPNonceOptionType)
+			if got := opt.kind(); got != ndpNonceOptionType {
+				t.Errorf("got kind() = %d, want = %d", got, ndpNonceOptionType)
 			}
 			nonce, ok := opt.(NDPNonceOption)
 			if !ok {
@@ -248,8 +248,8 @@ func TestOpts(t *testing.T) {
 
 	checkTLL := func(expectedAddr tcpip.LinkAddress) func(*testing.T, NDPOption) {
 		return func(t *testing.T, opt NDPOption) {
-			if got := opt.Type(); got != NDPTargetLinkLayerAddressOptionType {
-				t.Errorf("got Type() = %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
+			if got := opt.kind(); got != ndpTargetLinkLayerAddressOptionType {
+				t.Errorf("got kind() = %d, want = %d", got, ndpTargetLinkLayerAddressOptionType)
 			}
 			tll, ok := opt.(NDPTargetLinkLayerAddressOption)
 			if !ok {
@@ -263,8 +263,8 @@ func TestOpts(t *testing.T) {
 
 	checkSLL := func(expectedAddr tcpip.LinkAddress) func(*testing.T, NDPOption) {
 		return func(t *testing.T, opt NDPOption) {
-			if got := opt.Type(); got != NDPSourceLinkLayerAddressOptionType {
-				t.Errorf("got Type() = %d, want = %d", got, NDPSourceLinkLayerAddressOptionType)
+			if got := opt.kind(); got != ndpSourceLinkLayerAddressOptionType {
+				t.Errorf("got kind() = %d, want = %d", got, ndpSourceLinkLayerAddressOptionType)
 			}
 			sll, ok := opt.(NDPSourceLinkLayerAddressOption)
 			if !ok {
@@ -443,15 +443,15 @@ func TestOpts(t *testing.T) {
 			opt:         NDPRecursiveDNSServer(rdnssBytes[optionHeaderLen:]),
 			expectedBuf: expectedRDNSSBytes[:],
 			check: func(t *testing.T, opt NDPOption) {
-				if got := opt.Type(); got != NDPRecursiveDNSServerOptionType {
-					t.Errorf("got Type() = %d, want = %d", got, NDPRecursiveDNSServerOptionType)
+				if got := opt.kind(); got != ndpRecursiveDNSServerOptionType {
+					t.Errorf("got kind() = %d, want = %d", got, ndpRecursiveDNSServerOptionType)
 				}
 				rdnss, ok := opt.(NDPRecursiveDNSServer)
 				if !ok {
 					t.Fatalf("got opt = %T, want = NDPRecursiveDNSServer", opt)
 				}
-				if got, want := rdnss.Length(), len(expectedRDNSSBytes[optionHeaderLen:]); got != want {
-					t.Errorf("got Length() = %d, want = %d", got, want)
+				if got, want := rdnss.length(), len(expectedRDNSSBytes[optionHeaderLen:]); got != want {
+					t.Errorf("got length() = %d, want = %d", got, want)
 				}
 				if got, want := rdnss.Lifetime(), validLifetimeSeconds*time.Second; got != want {
 					t.Errorf("got Lifetime() = %s, want = %s", got, want)
@@ -470,16 +470,16 @@ func TestOpts(t *testing.T) {
 			opt:         NDPDNSSearchList(searchListBytes[optionHeaderLen:]),
 			expectedBuf: expectedSearchListBytes[:],
 			check: func(t *testing.T, opt NDPOption) {
-				if got := opt.Type(); got != NDPDNSSearchListOptionType {
-					t.Errorf("got Type() = %d, want = %d", got, NDPDNSSearchListOptionType)
+				if got := opt.kind(); got != ndpDNSSearchListOptionType {
+					t.Errorf("got kind() = %d, want = %d", got, ndpDNSSearchListOptionType)
 				}
 
 				dnssl, ok := opt.(NDPDNSSearchList)
 				if !ok {
 					t.Fatalf("got opt = %T, want = NDPDNSSearchList", opt)
 				}
-				if got, want := dnssl.Length(), len(expectedRDNSSBytes[optionHeaderLen:]); got != want {
-					t.Errorf("got Length() = %d, want = %d", got, want)
+				if got, want := dnssl.length(), len(expectedRDNSSBytes[optionHeaderLen:]); got != want {
+					t.Errorf("got length() = %d, want = %d", got, want)
 				}
 				if got, want := dnssl.Lifetime(), validLifetimeSeconds*time.Second; got != want {
 					t.Errorf("got Lifetime() = %s, want = %s", got, want)
@@ -500,8 +500,8 @@ func TestOpts(t *testing.T) {
 			opt:         NDPPrefixInformation(prefixInformationBytes[optionHeaderLen:]),
 			expectedBuf: expectedPrefixInformationBytes[:],
 			check: func(t *testing.T, opt NDPOption) {
-				if got := opt.Type(); got != NDPPrefixInformationType {
-					t.Errorf("got Type() = %d, want = %d", got, NDPPrefixInformationType)
+				if got := opt.kind(); got != ndpPrefixInformationType {
+					t.Errorf("got kind() = %d, want = %d", got, ndpPrefixInformationType)
 				}
 
 				pi, ok := opt.(NDPPrefixInformation)
@@ -509,8 +509,8 @@ func TestOpts(t *testing.T) {
 					t.Fatalf("got opt = %T, want = NDPPrefixInformation", opt)
 				}
 
-				if got, want := pi.Length(), len(expectedPrefixInformationBytes[optionHeaderLen:]); got != want {
-					t.Errorf("got Length() = %d, want = %d", got, want)
+				if got, want := pi.length(), len(expectedPrefixInformationBytes[optionHeaderLen:]); got != want {
+					t.Errorf("got length() = %d, want = %d", got, want)
 				}
 				if got := pi.PrefixLength(); got != prefixLength {
 					t.Errorf("got PrefixLength() = %d, want = %d", got, prefixLength)
@@ -646,8 +646,8 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			if done {
 				t.Fatal("got Next = (_, true, _), want = (_, false, _)")
 			}
-			if got := next.Type(); got != NDPRecursiveDNSServerOptionType {
-				t.Fatalf("got Type = %d, want = %d", got, NDPRecursiveDNSServerOptionType)
+			if got := next.kind(); got != ndpRecursiveDNSServerOptionType {
+				t.Fatalf("got Type = %d, want = %d", got, ndpRecursiveDNSServerOptionType)
 			}
 
 			opt, ok := next.(NDPRecursiveDNSServer)
@@ -1403,8 +1403,8 @@ func TestNDPOptionsIter(t *testing.T) {
 	if got, want := []byte(next.(NDPSourceLinkLayerAddressOption)), buf[2:][:6]; !bytes.Equal(got, want) {
 		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
 	}
-	if got := next.Type(); got != NDPSourceLinkLayerAddressOptionType {
-		t.Errorf("got Type = %d, want = %d", got, NDPSourceLinkLayerAddressOptionType)
+	if got := next.kind(); got != ndpSourceLinkLayerAddressOptionType {
+		t.Errorf("got Type = %d, want = %d", got, ndpSourceLinkLayerAddressOptionType)
 	}
 
 	// Test the next (Target Link-Layer) option.
@@ -1418,8 +1418,8 @@ func TestNDPOptionsIter(t *testing.T) {
 	if got, want := []byte(next.(NDPTargetLinkLayerAddressOption)), buf[10:][:6]; !bytes.Equal(got, want) {
 		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
 	}
-	if got := next.Type(); got != NDPTargetLinkLayerAddressOptionType {
-		t.Errorf("got Type = %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
+	if got := next.kind(); got != ndpTargetLinkLayerAddressOptionType {
+		t.Errorf("got Type = %d, want = %d", got, ndpTargetLinkLayerAddressOptionType)
 	}
 
 	// Test the next (Prefix Information) option.
@@ -1434,8 +1434,8 @@ func TestNDPOptionsIter(t *testing.T) {
 	if got, want := next.(NDPPrefixInformation), buf[34:][:30]; !bytes.Equal(got, want) {
 		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
 	}
-	if got := next.Type(); got != NDPPrefixInformationType {
-		t.Errorf("got Type = %d, want = %d", got, NDPPrefixInformationType)
+	if got := next.kind(); got != ndpPrefixInformationType {
+		t.Errorf("got Type = %d, want = %d", got, ndpPrefixInformationType)
 	}
 
 	// Iterator should not return anything else.
