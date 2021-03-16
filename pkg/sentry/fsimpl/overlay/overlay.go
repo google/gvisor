@@ -749,6 +749,27 @@ func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 	)
 }
 
+// newChildOwnerStat returns a Statx for configuring the UID, GID, and mode of
+// children.
+func (d *dentry) newChildOwnerStat(mode linux.FileMode, creds *auth.Credentials) linux.Statx {
+	stat := linux.Statx{
+		Mask: uint32(linux.STATX_UID | linux.STATX_GID),
+		UID:  uint32(creds.EffectiveKUID),
+		GID:  uint32(creds.EffectiveKGID),
+	}
+	// Set GID and possibly the SGID bit if the parent is an SGID directory.
+	d.copyMu.RLock()
+	defer d.copyMu.RUnlock()
+	if atomic.LoadUint32(&d.mode)&linux.ModeSetGID == linux.ModeSetGID {
+		stat.GID = atomic.LoadUint32(&d.gid)
+		if stat.Mode&linux.ModeDirectory == linux.ModeDirectory {
+			stat.Mode = uint16(mode) | linux.ModeSetGID
+			stat.Mask |= linux.STATX_MODE
+		}
+	}
+	return stat
+}
+
 // fileDescription is embedded by overlay implementations of
 // vfs.FileDescriptionImpl.
 //
