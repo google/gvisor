@@ -62,9 +62,9 @@ func (t *thread) setRegs(regs *arch.Registers) error {
 }
 
 // getFPRegs gets the floating-point data via the GETREGSET ptrace unix.
-func (t *thread) getFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsave bool) error {
+func (t *thread) getFPRegs(fpState arch.FloatingPointData, fpLen uint64, useXsave bool) error {
 	iovec := unix.Iovec{
-		Base: (*byte)(fpState),
+		Base: (*byte)(&fpState[0]),
 		Len:  fpLen,
 	}
 	_, _, errno := unix.RawSyscall6(
@@ -81,9 +81,9 @@ func (t *thread) getFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsa
 }
 
 // setFPRegs sets the floating-point data via the SETREGSET ptrace unix.
-func (t *thread) setFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsave bool) error {
+func (t *thread) setFPRegs(fpState arch.FloatingPointData, fpLen uint64, useXsave bool) error {
 	iovec := unix.Iovec{
-		Base: (*byte)(fpState),
+		Base: (*byte)(&fpState[0]),
 		Len:  fpLen,
 	}
 	_, _, errno := unix.RawSyscall6(

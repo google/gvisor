@@ -32,7 +32,7 @@ type vCPUArchState struct {
 
 	// floatingPointState is the floating point state buffer used in guest
 	// to host transitions. See usage in bluepill_arm64.go.
-	floatingPointState *arch.FloatingPointData
+	floatingPointState arch.FloatingPointData
 }
 
 const (

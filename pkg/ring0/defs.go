@@ -96,7 +96,7 @@ type SwitchOpts struct {
 
 	// FloatingPointState is a byte pointer where floating point state is
 	// saved and restored.
-	FloatingPointState *byte
+	FloatingPointState arch.FloatingPointData
 
 	// PageTables are the application page tables.
 	PageTables *pagetables.PageTables
