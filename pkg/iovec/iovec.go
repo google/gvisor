@@ -22,6 +22,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// MaxIovs is the maximum number of iovecs host platform can accept.
+var MaxIovs = 1024
+
 // Builder is a builder for slice of unix.Iovec.
 type Builder struct {
 	iovec   []unix.Iovec
