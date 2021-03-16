@@ -20,11 +20,7 @@ package iovec
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
-
-// MaxIovs is the maximum number of iovecs host platform can accept.
-var MaxIovs = linux.UIO_MAXIOV
 
 // Builder is a builder for slice of unix.Iovec.
 type Builder struct {
@@ -47,10 +43,10 @@ func (b *Builder) Add(buf []byte) {
 		b.addByAppend(buf)
 		return
 	}
-	b.iovec = append(b.iovec, unix.Iovec{
-		Base: &buf[0],
-		Len:  uint64(len(buf)),
-	})
+
+	b.iovec = append(b.iovec, unix.Iovec{Base: &buf[0]})
+	b.iovec[len(b.iovec)-1].SetLen(len(buf))
+
 	// Keep the last buf if iovec is at max capacity. We will need to append to it
 	// for later bufs.
 	if len(b.iovec) == MaxIovs {
@@ -61,10 +57,8 @@ func (b *Builder) Add(buf []byte) {
 
 func (b *Builder) addByAppend(buf []byte) {
 	b.overflow = append(b.overflow, buf...)
-	b.iovec[len(b.iovec)-1] = unix.Iovec{
-		Base: &b.overflow[0],
-		Len:  uint64(len(b.overflow)),
-	}
+	b.iovec[len(b.iovec)-1] = unix.Iovec{Base: &b.overflow[0]}
+	b.iovec[len(b.iovec)-1].SetLen(len(b.overflow))
 }
 
 // Build returns the final Iovec slice. The length of returned iovec will not
