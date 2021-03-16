@@ -31,6 +31,11 @@ import (
 )
 
 const (
+	// exitSignalMask is the signal mask to be sent at exit. Same as CSIGNAL in linux.
+	exitSignalMask = 0xff
+)
+
+var (
 	// ExecMaxTotalSize is the maximum length of all argv and envv entries.
 	//
 	// N.B. The behavior here is different than Linux. Linux provides a limit on
@@ -42,9 +47,6 @@ const (
 
 	// ExecMaxElemSize is the maximum length of a single argv or envv entry.
 	ExecMaxElemSize = 32 * usermem.PageSize
-
-	// exitSignalMask is the signal mask to be sent at exit. Same as CSIGNAL in linux.
-	exitSignalMask = 0xff
 )
 
 // Getppid implements linux syscall getppid(2).
