@@ -4,10 +4,7 @@ package(licenses = ["notice"])
 
 go_library(
     name = "iovec",
-    srcs = [
-        "iovec.go",
-        "iovec_max.go",
-    ],
+    srcs = ["iovec.go"],
     visibility = ["//:sandbox"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
