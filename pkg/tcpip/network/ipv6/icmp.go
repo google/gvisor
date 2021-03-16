@@ -899,13 +899,16 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 	}
 
 	if len(localAddr) == 0 {
+		// Find an address that we can use as our source address.
 		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
 		if addressEndpoint == nil {
 			return &tcpip.ErrNetworkUnreachable{}
 		}
 
 		localAddr = addressEndpoint.AddressWithPrefix().Address
-	} else if e.protocol.stack.CheckLocalAddress(e.nic.ID(), ProtocolNumber, localAddr) == 0 {
+		addressEndpoint.DecRef()
+	} else if !e.checkLocalAddress(localAddr) {
+		// The provided local address is not assigned to us.
 		return &tcpip.ErrBadLocalAddress{}
 	}
 
