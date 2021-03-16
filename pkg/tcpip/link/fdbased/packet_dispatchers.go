@@ -68,10 +68,8 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 		// The kernel adds virtioNetHdr before each packet, but
 		// we don't use it, so so we allocate a buffer for it,
 		// add it in iovecs but don't add it in a view.
-		b.iovecs[0] = unix.Iovec{
-			Base: &vnetHdr[0],
-			Len:  uint64(virtioNetHdrSize),
-		}
+		b.iovecs[0] = unix.Iovec{Base: &vnetHdr[0]}
+		b.iovecs[0].SetLen(virtioNetHdrSize)
 		vnetHdrOff++
 	}
 	for i := range b.views {
@@ -80,10 +78,8 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 		}
 		v := buffer.NewView(b.sizes[i])
 		b.views[i] = v
-		b.iovecs[i+vnetHdrOff] = unix.Iovec{
-			Base: &v[0],
-			Len:  uint64(len(v)),
-		}
+		b.iovecs[i+vnetHdrOff] = unix.Iovec{Base: &v[0]}
+		b.iovecs[i+vnetHdrOff].SetLen(len(v))
 	}
 	return b.iovecs
 }
@@ -235,7 +231,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		iovLen := len(iovecs)
 		d.msgHdrs[k].Len = 0
 		d.msgHdrs[k].Msg.Iov = &iovecs[0]
-		d.msgHdrs[k].Msg.Iovlen = uint64(iovLen)
+		d.msgHdrs[k].Msg.SetIovlen(iovLen)
 	}
 
 	nMsgs, err := rawfile.BlockingRecvMMsg(d.fd, d.msgHdrs)

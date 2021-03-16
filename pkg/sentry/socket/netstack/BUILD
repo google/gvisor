@@ -12,6 +12,7 @@ go_library(
         "provider_vfs2.go",
         "save_restore.go",
         "stack.go",
+        "tun.go",
     ],
     visibility = [
         "//pkg/sentry:internal",
@@ -42,6 +43,7 @@ go_library(
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/tun",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
