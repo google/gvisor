@@ -26,33 +26,33 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// NDPOptionIdentifier is an NDP option type identifier.
-type NDPOptionIdentifier uint8
+// ndpOptionIdentifier is an NDP option type identifier.
+type ndpOptionIdentifier uint8
 
 const (
-	// NDPSourceLinkLayerAddressOptionType is the type of the Source Link Layer
+	// ndpSourceLinkLayerAddressOptionType is the type of the Source Link Layer
 	// Address option, as per RFC 4861 section 4.6.1.
-	NDPSourceLinkLayerAddressOptionType NDPOptionIdentifier = 1
+	ndpSourceLinkLayerAddressOptionType ndpOptionIdentifier = 1
 
-	// NDPTargetLinkLayerAddressOptionType is the type of the Target Link Layer
+	// ndpTargetLinkLayerAddressOptionType is the type of the Target Link Layer
 	// Address option, as per RFC 4861 section 4.6.1.
-	NDPTargetLinkLayerAddressOptionType NDPOptionIdentifier = 2
+	ndpTargetLinkLayerAddressOptionType ndpOptionIdentifier = 2
 
-	// NDPPrefixInformationType is the type of the Prefix Information
+	// ndpPrefixInformationType is the type of the Prefix Information
 	// option, as per RFC 4861 section 4.6.2.
-	NDPPrefixInformationType NDPOptionIdentifier = 3
+	ndpPrefixInformationType ndpOptionIdentifier = 3
 
-	// NDPNonceOptionType is the type of the Nonce option, as per
+	// ndpNonceOptionType is the type of the Nonce option, as per
 	// RFC 3971 section 5.3.2.
-	NDPNonceOptionType NDPOptionIdentifier = 14
+	ndpNonceOptionType ndpOptionIdentifier = 14
 
-	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
+	// ndpRecursiveDNSServerOptionType is the type of the Recursive DNS
 	// Server option, as per RFC 8106 section 5.1.
-	NDPRecursiveDNSServerOptionType NDPOptionIdentifier = 25
+	ndpRecursiveDNSServerOptionType ndpOptionIdentifier = 25
 
-	// NDPDNSSearchListOptionType is the type of the DNS Search List option,
+	// ndpDNSSearchListOptionType is the type of the DNS Search List option,
 	// as per RFC 8106 section 5.2.
-	NDPDNSSearchListOptionType NDPOptionIdentifier = 31
+	ndpDNSSearchListOptionType ndpOptionIdentifier = 31
 )
 
 const (
@@ -202,7 +202,7 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 			// bytes for the whole option.
 			return nil, true, fmt.Errorf("unexpectedly exhausted buffer when reading the option's Type field: %w", io.ErrUnexpectedEOF)
 		}
-		kind := NDPOptionIdentifier(temp)
+		kind := ndpOptionIdentifier(temp)
 
 		// Get the Length field.
 		length, err := i.opts.ReadByte()
@@ -229,16 +229,16 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 		}
 
 		switch kind {
-		case NDPSourceLinkLayerAddressOptionType:
+		case ndpSourceLinkLayerAddressOptionType:
 			return NDPSourceLinkLayerAddressOption(body), false, nil
 
-		case NDPTargetLinkLayerAddressOptionType:
+		case ndpTargetLinkLayerAddressOptionType:
 			return NDPTargetLinkLayerAddressOption(body), false, nil
 
-		case NDPNonceOptionType:
+		case ndpNonceOptionType:
 			return NDPNonceOption(body), false, nil
 
-		case NDPPrefixInformationType:
+		case ndpPrefixInformationType:
 			// Make sure the length of a Prefix Information option
 			// body is ndpPrefixInformationLength, as per RFC 4861
 			// section 4.6.2.
@@ -248,7 +248,7 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 
 			return NDPPrefixInformation(body), false, nil
 
-		case NDPRecursiveDNSServerOptionType:
+		case ndpRecursiveDNSServerOptionType:
 			opt := NDPRecursiveDNSServer(body)
 			if err := opt.checkAddresses(); err != nil {
 				return nil, true, err
@@ -256,7 +256,7 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 
 			return opt, false, nil
 
-		case NDPDNSSearchListOptionType:
+		case ndpDNSSearchListOptionType:
 			opt := NDPDNSSearchList(body)
 			if err := opt.checkDomainNames(); err != nil {
 				return nil, true, err
@@ -323,7 +323,7 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 			continue
 		}
 
-		b[0] = byte(o.Type())
+		b[0] = byte(o.kind())
 
 		// We know this safe because paddedLength would have returned
 		// 0 if o had an invalid length (> 255 * lengthByteUnits).
@@ -348,11 +348,11 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 type NDPOption interface {
 	fmt.Stringer
 
-	// Type returns the type of the receiver.
-	Type() NDPOptionIdentifier
+	// kind returns the type of the receiver.
+	kind() ndpOptionIdentifier
 
-	// Length returns the length of the body of the receiver, in bytes.
-	Length() int
+	// length returns the length of the body of the receiver, in bytes.
+	length() int
 
 	// serializeInto serializes the receiver into the provided byte
 	// buffer.
@@ -372,7 +372,7 @@ type NDPOption interface {
 // paddedLength returns the length of o, in bytes, with any padding bytes, if
 // required.
 func paddedLength(o NDPOption) int {
-	l := o.Length()
+	l := o.length()
 
 	if l == 0 {
 		return 0
@@ -429,13 +429,13 @@ func (b NDPOptionsSerializer) Length() int {
 // where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
 type NDPNonceOption []byte
 
-// Type implements NDPOption.
-func (o NDPNonceOption) Type() NDPOptionIdentifier {
-	return NDPNonceOptionType
+// kind implements NDPOption.
+func (o NDPNonceOption) kind() ndpOptionIdentifier {
+	return ndpNonceOptionType
 }
 
-// Length implements NDPOption.
-func (o NDPNonceOption) Length() int {
+// length implements NDPOption.
+func (o NDPNonceOption) length() int {
 	return len(o)
 }
 
@@ -461,22 +461,22 @@ func (o NDPNonceOption) Nonce() []byte {
 // where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
 type NDPSourceLinkLayerAddressOption tcpip.LinkAddress
 
-// Type implements NDPOption.Type.
-func (o NDPSourceLinkLayerAddressOption) Type() NDPOptionIdentifier {
-	return NDPSourceLinkLayerAddressOptionType
+// kind implements NDPOption.
+func (o NDPSourceLinkLayerAddressOption) kind() ndpOptionIdentifier {
+	return ndpSourceLinkLayerAddressOptionType
 }
 
-// Length implements NDPOption.Length.
-func (o NDPSourceLinkLayerAddressOption) Length() int {
+// length implements NDPOption.
+func (o NDPSourceLinkLayerAddressOption) length() int {
 	return len(o)
 }
 
-// serializeInto implements NDPOption.serializeInto.
+// serializeInto implements NDPOption.
 func (o NDPSourceLinkLayerAddressOption) serializeInto(b []byte) int {
 	return copy(b, o)
 }
 
-// String implements fmt.Stringer.String.
+// String implements fmt.Stringer.
 func (o NDPSourceLinkLayerAddressOption) String() string {
 	return fmt.Sprintf("%T(%s)", o, tcpip.LinkAddress(o))
 }
@@ -501,22 +501,22 @@ func (o NDPSourceLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
 // where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
 type NDPTargetLinkLayerAddressOption tcpip.LinkAddress
 
-// Type implements NDPOption.Type.
-func (o NDPTargetLinkLayerAddressOption) Type() NDPOptionIdentifier {
-	return NDPTargetLinkLayerAddressOptionType
+// kind implements NDPOption.
+func (o NDPTargetLinkLayerAddressOption) kind() ndpOptionIdentifier {
+	return ndpTargetLinkLayerAddressOptionType
 }
 
-// Length implements NDPOption.Length.
-func (o NDPTargetLinkLayerAddressOption) Length() int {
+// length implements NDPOption.
+func (o NDPTargetLinkLayerAddressOption) length() int {
 	return len(o)
 }
 
-// serializeInto implements NDPOption.serializeInto.
+// serializeInto implements NDPOption.
 func (o NDPTargetLinkLayerAddressOption) serializeInto(b []byte) int {
 	return copy(b, o)
 }
 
-// String implements fmt.Stringer.String.
+// String implements fmt.Stringer.
 func (o NDPTargetLinkLayerAddressOption) String() string {
 	return fmt.Sprintf("%T(%s)", o, tcpip.LinkAddress(o))
 }
@@ -541,17 +541,17 @@ func (o NDPTargetLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
 // ndpPrefixInformationLength bytes.
 type NDPPrefixInformation []byte
 
-// Type implements NDPOption.Type.
-func (o NDPPrefixInformation) Type() NDPOptionIdentifier {
-	return NDPPrefixInformationType
+// kind implements NDPOption.
+func (o NDPPrefixInformation) kind() ndpOptionIdentifier {
+	return ndpPrefixInformationType
 }
 
-// Length implements NDPOption.Length.
-func (o NDPPrefixInformation) Length() int {
+// length implements NDPOption.
+func (o NDPPrefixInformation) length() int {
 	return ndpPrefixInformationLength
 }
 
-// serializeInto implements NDPOption.serializeInto.
+// serializeInto implements NDPOption.
 func (o NDPPrefixInformation) serializeInto(b []byte) int {
 	used := copy(b, o)
 
@@ -567,7 +567,7 @@ func (o NDPPrefixInformation) serializeInto(b []byte) int {
 	return used
 }
 
-// String implements fmt.Stringer.String.
+// String implements fmt.Stringer.
 func (o NDPPrefixInformation) String() string {
 	return fmt.Sprintf("%T(O=%t, A=%t, PL=%s, VL=%s, Prefix=%s)",
 		o,
@@ -665,17 +665,17 @@ type NDPRecursiveDNSServer []byte
 
 // Type returns the type of an NDP Recursive DNS Server option.
 //
-// Type implements NDPOption.Type.
-func (NDPRecursiveDNSServer) Type() NDPOptionIdentifier {
-	return NDPRecursiveDNSServerOptionType
+// kind implements NDPOption.
+func (NDPRecursiveDNSServer) kind() ndpOptionIdentifier {
+	return ndpRecursiveDNSServerOptionType
 }
 
-// Length implements NDPOption.Length.
-func (o NDPRecursiveDNSServer) Length() int {
+// length implements NDPOption.
+func (o NDPRecursiveDNSServer) length() int {
 	return len(o)
 }
 
-// serializeInto implements NDPOption.serializeInto.
+// serializeInto implements NDPOption.
 func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
 	used := copy(b, o)
 
@@ -687,7 +687,7 @@ func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
 	return used
 }
 
-// String implements fmt.Stringer.String.
+// String implements fmt.Stringer.
 func (o NDPRecursiveDNSServer) String() string {
 	lt := o.Lifetime()
 	addrs, err := o.Addresses()
@@ -760,17 +760,17 @@ func (o NDPRecursiveDNSServer) iterAddresses(fn func(tcpip.Address)) error {
 // RFC 8106 section 5.2.
 type NDPDNSSearchList []byte
 
-// Type implements NDPOption.Type.
-func (o NDPDNSSearchList) Type() NDPOptionIdentifier {
-	return NDPDNSSearchListOptionType
+// kind implements NDPOption.
+func (o NDPDNSSearchList) kind() ndpOptionIdentifier {
+	return ndpDNSSearchListOptionType
 }
 
-// Length implements NDPOption.Length.
-func (o NDPDNSSearchList) Length() int {
+// length implements NDPOption.
+func (o NDPDNSSearchList) length() int {
 	return len(o)
 }
 
-// serializeInto implements NDPOption.serializeInto.
+// serializeInto implements NDPOption.
 func (o NDPDNSSearchList) serializeInto(b []byte) int {
 	used := copy(b, o)
 
@@ -782,7 +782,7 @@ func (o NDPDNSSearchList) serializeInto(b []byte) int {
 	return used
 }
 
-// String implements fmt.Stringer.String.
+// String implements fmt.Stringer.
 func (o NDPDNSSearchList) String() string {
 	lt := o.Lifetime()
 	domainNames, err := o.DomainNames()
