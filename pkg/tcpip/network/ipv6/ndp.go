@@ -1789,18 +1789,14 @@ func (ndp *ndpState) stopSolicitingRouters() {
 	ndp.rtrSolicitTimer = timer{}
 }
 
-func (ndp *ndpState) init(ep *endpoint) {
+func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 	if ndp.defaultRouters != nil {
 		panic("attempted to initialize NDP state twice")
 	}
 
 	ndp.ep = ep
 	ndp.configs = ep.protocol.options.NDPConfigs
-	ndp.dad.Init(&ndp.ep.mu, ep.protocol.options.DADConfigs, ip.DADOptions{
-		Clock:    ep.protocol.stack.Clock(),
-		Protocol: ndp,
-		NICID:    ep.nic.ID(),
-	})
+	ndp.dad.Init(&ndp.ep.mu, ep.protocol.options.DADConfigs, dadOptions)
 	ndp.defaultRouters = make(map[tcpip.Address]defaultRouterState)
 	ndp.onLinkPrefixes = make(map[tcpip.Subnet]onLinkPrefixState)
 	ndp.slaacPrefixes = make(map[tcpip.Subnet]slaacPrefixState)
@@ -1811,9 +1807,11 @@ func (ndp *ndpState) init(ep *endpoint) {
 	}
 }
 
-func (ndp *ndpState) SendDADMessage(addr tcpip.Address) tcpip.Error {
+func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
-	return ndp.ep.sendNDPNS(header.IPv6Any, snmc, addr, header.EthernetAddressFromMulticastIPv6Address(snmc), nil /* opts */)
+	return ndp.ep.sendNDPNS(header.IPv6Any, snmc, addr, header.EthernetAddressFromMulticastIPv6Address(snmc), header.NDPOptionsSerializer{
+		header.NDPNonceOption(nonce),
+	})
 }
 
 func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, opts header.NDPOptionsSerializer) tcpip.Error {

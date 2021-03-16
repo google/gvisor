@@ -42,13 +42,17 @@ const (
 	// option, as per RFC 4861 section 4.6.2.
 	NDPPrefixInformationType NDPOptionIdentifier = 3
 
+	// NDPNonceOptionType is the type of the Nonce option, as per
+	// RFC 3971 section 5.3.2.
+	NDPNonceOptionType NDPOptionIdentifier = 14
+
 	// NDPRecursiveDNSServerOptionType is the type of the Recursive DNS
 	// Server option, as per RFC 8106 section 5.1.
 	NDPRecursiveDNSServerOptionType NDPOptionIdentifier = 25
 
 	// NDPDNSSearchListOptionType is the type of the DNS Search List option,
 	// as per RFC 8106 section 5.2.
-	NDPDNSSearchListOptionType = 31
+	NDPDNSSearchListOptionType NDPOptionIdentifier = 31
 )
 
 const (
@@ -230,6 +234,9 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 
 		case NDPTargetLinkLayerAddressOptionType:
 			return NDPTargetLinkLayerAddressOption(body), false, nil
+
+		case NDPNonceOptionType:
+			return NDPNonceOption(body), false, nil
 
 		case NDPPrefixInformationType:
 			// Make sure the length of a Prefix Information option
@@ -414,6 +421,37 @@ func (b NDPOptionsSerializer) Length() int {
 	}
 
 	return l
+}
+
+// NDPNonceOption is the NDP Nonce Option as defined by RFC 3971 section 5.3.2.
+//
+// It is the first X bytes following the NDP option's Type and Length field
+// where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
+type NDPNonceOption []byte
+
+// Type implements NDPOption.
+func (o NDPNonceOption) Type() NDPOptionIdentifier {
+	return NDPNonceOptionType
+}
+
+// Length implements NDPOption.
+func (o NDPNonceOption) Length() int {
+	return len(o)
+}
+
+// serializeInto implements NDPOption.
+func (o NDPNonceOption) serializeInto(b []byte) int {
+	return copy(b, o)
+}
+
+// String implements fmt.Stringer.
+func (o NDPNonceOption) String() string {
+	return fmt.Sprintf("%T(%x)", o, []byte(o))
+}
+
+// Nonce returns the nonce value this option holds.
+func (o NDPNonceOption) Nonce() []byte {
+	return []byte(o)
 }
 
 // NDPSourceLinkLayerAddressOption is the NDP Source Link Layer Option
