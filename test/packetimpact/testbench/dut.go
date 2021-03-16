@@ -59,7 +59,7 @@ func (info *DUTInfo) ConnectToDUT(t *testing.T) DUT {
 	posixServerAddress := net.JoinHostPort(n.POSIXServerIP.String(), fmt.Sprintf("%d", n.POSIXServerPort))
 	conn, err := grpc.Dial(posixServerAddress, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{Timeout: RPCKeepalive}))
 	if err != nil {
-		t.Fatalf("failed to grpc.Dial(%s): %s", posixServerAddress, err)
+		t.Fatalf("grpc.Dial(%s) = %s", posixServerAddress, err)
 	}
 	posixServer := NewPOSIXClient(conn)
 	return DUT{
@@ -594,7 +594,7 @@ func (dut *DUT) SendTo(t *testing.T, sockfd int32, buf []byte, flags int32, dest
 	defer cancel()
 	ret, err := dut.SendToWithErrno(ctx, t, sockfd, buf, flags, destAddr)
 	if ret == -1 {
-		t.Fatalf("failed to sendto: %s", err)
+		t.Fatalf("SendToWithErrno(_, _, %d, _, %d, %v) = -1, %s", sockfd, flags, destAddr, err)
 	}
 	return ret
 }
@@ -630,10 +630,10 @@ func (dut *DUT) SetNonBlocking(t *testing.T, fd int32, nonblocking bool) {
 
 	resp, err := dut.posixServer.SetNonblocking(ctx, req)
 	if err != nil {
-		t.Fatalf("failed to call SetNonblocking: %s", err)
+		t.Fatalf("SetNonblocking(_, _) = %s", err)
 	}
 	if resp.GetRet() == -1 {
-		t.Fatalf("fcntl(%d, %s) failed: %s", fd, resp.GetCmd(), unix.Errno(resp.GetErrno_()))
+		t.Fatalf("fcntl(%d, %s) = %s", fd, resp.GetCmd(), unix.Errno(resp.GetErrno_()))
 	}
 }
 
@@ -665,7 +665,7 @@ func (dut *DUT) SetSockOpt(t *testing.T, sockfd, level, optname int32, optval []
 	defer cancel()
 	ret, err := dut.SetSockOptWithErrno(ctx, t, sockfd, level, optname, optval)
 	if ret != 0 {
-		t.Fatalf("failed to SetSockOpt: %s", err)
+		t.Fatalf("SetSockOpt(_, %d, %d, %d, %v) = %d, %s", sockfd, level, optname, optval, ret, err)
 	}
 }
 

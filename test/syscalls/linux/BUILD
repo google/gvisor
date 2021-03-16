@@ -1572,6 +1572,7 @@ cc_binary(
     srcs = ["ping_socket.cc"],
     linkstatic = 1,
     deps = [
+        ":ip_socket_test_util",
         ":socket_test_util",
         "//test/util:file_descriptor",
         gtest,
