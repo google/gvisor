@@ -1926,6 +1926,39 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 	}
 }
 
+func TestGetMainNICAddressErrors(t *testing.T) {
+	const nicID = 1
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+	})
+	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+
+	// Sanity check with a successful call.
+	if addr, ok := s.GetMainNICAddress(nicID, ipv4.ProtocolNumber); !ok {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, false), want = (_, true)", nicID, ipv4.ProtocolNumber, addr)
+	} else if want := (tcpip.AddressWithPrefix{}); addr != want {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, _), want = (%s, _)", nicID, ipv4.ProtocolNumber, addr, want)
+	}
+
+	const unknownNICID = nicID + 1
+	if addr, ok := s.GetMainNICAddress(unknownNICID, ipv4.ProtocolNumber); ok {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", unknownNICID, ipv4.ProtocolNumber, addr)
+	}
+
+	// ARP is not an addressable network endpoint.
+	if addr, ok := s.GetMainNICAddress(nicID, arp.ProtocolNumber); ok {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", nicID, arp.ProtocolNumber, addr)
+	}
+
+	const unknownProtocolNumber = 1234
+	if addr, ok := s.GetMainNICAddress(nicID, unknownProtocolNumber); ok {
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", nicID, unknownProtocolNumber, addr)
+	}
+}
+
 func TestGetMainNICAddressAddRemove(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
@@ -2507,11 +2540,15 @@ func TestNICAutoGenLinkLocalAddr(t *testing.T) {
 				}
 			}
 
-			// Check that we get no address after removal.
-			if err := checkGetMainNICAddress(s, 1, fakeNetNumber, tcpip.AddressWithPrefix{}); err != nil {
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, expectedMainAddr); err != nil {
 				t.Fatal(err)
 			}
-			if err := checkGetMainNICAddress(s, 1, header.IPv6ProtocolNumber, expectedMainAddr); err != nil {
+
+			// Disabling the NIC should remove the auto-generated address.
+			if err := s.DisableNIC(nicID); err != nil {
+				t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+			}
+			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
 				t.Fatal(err)
 			}
 		})
