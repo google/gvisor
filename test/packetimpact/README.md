@@ -20,6 +20,8 @@ Packetimpact aims to provide:
 
 ## How to run packetimpact tests?
 
+Install [Bazel](https://docs.bazel.build/versions/master/install.html).
+
 Build the test container image by running the following at the root of the
 repository:
 
