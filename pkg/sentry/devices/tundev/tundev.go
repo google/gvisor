@@ -87,19 +87,18 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 		if _, err := req.CopyIn(t, data); err != nil {
 			return 0, err
 		}
-		flags := usermem.ByteOrder.Uint16(req.Data[:])
+
+		// Validate flags.
+		flags, err := netstack.LinuxToTUNFlags(usermem.ByteOrder.Uint16(req.Data[:]))
+		if err != nil {
+			return 0, err
+		}
 		return 0, fd.device.SetIff(stack.Stack, req.Name(), flags)
 
 	case linux.TUNGETIFF:
 		var req linux.IFReq
-
 		copy(req.IFName[:], fd.device.Name())
-
-		// Linux adds IFF_NOFILTER (the same value as IFF_NO_PI unfortunately) when
-		// there is no sk_filter. See __tun_chr_ioctl() in net/drivers/tun.c.
-		flags := fd.device.Flags() | linux.IFF_NOFILTER
-		usermem.ByteOrder.PutUint16(req.Data[:], flags)
-
+		usermem.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(fd.device.Flags()))
 		_, err := req.CopyOut(t, data)
 		return 0, err
 

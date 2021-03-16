@@ -4,12 +4,12 @@ package(licenses = ["notice"])
 
 go_library(
     name = "iovec",
-    srcs = ["iovec.go"],
-    visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/abi/linux",
-        "@org_golang_x_sys//unix:go_default_library",
+    srcs = [
+        "iovec.go",
+        "iovec_max.go",
     ],
+    visibility = ["//:sandbox"],
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 
 go_test(

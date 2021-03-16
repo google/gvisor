@@ -17,7 +17,6 @@ package tun
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -49,7 +48,14 @@ type Device struct {
 	mu           sync.RWMutex `state:"nosave"`
 	endpoint     *tunEndpoint
 	notifyHandle *channel.NotificationHandle
-	flags        uint16
+	flags        Flags
+}
+
+// Flags set properties of a Device
+type Flags struct {
+	TUN          bool
+	TAP          bool
+	NoPacketInfo bool
 }
 
 // beforeSave is invoked by stateify.
@@ -77,7 +83,7 @@ func (d *Device) Release(ctx context.Context) {
 }
 
 // SetIff services TUNSETIFF ioctl(2) request.
-func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
+func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -85,21 +91,18 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags uint16) error {
 		return syserror.EINVAL
 	}
 
-	// Input validations.
-	isTun := flags&linux.IFF_TUN != 0
-	isTap := flags&linux.IFF_TAP != 0
-	supportedFlags := uint16(linux.IFF_TUN | linux.IFF_TAP | linux.IFF_NO_PI)
-	if isTap && isTun || !isTap && !isTun || flags&^supportedFlags != 0 {
+	// Input validation.
+	if flags.TAP && flags.TUN || !flags.TAP && !flags.TUN {
 		return syserror.EINVAL
 	}
 
 	prefix := "tun"
-	if isTap {
+	if flags.TAP {
 		prefix = "tap"
 	}
 
 	linkCaps := stack.CapabilityNone
-	if isTap {
+	if flags.TAP {
 		linkCaps |= stack.CapabilityResolutionRequired
 	}
 
@@ -177,7 +180,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 
 	// Packet information.
 	var pktInfoHdr PacketInfoHeader
-	if !d.hasFlags(linux.IFF_NO_PI) {
+	if !d.flags.NoPacketInfo {
 		if len(data) < PacketInfoHeaderSize {
 			// Ignore bad packet.
 			return dataLen, nil
@@ -188,7 +191,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 
 	// Ethernet header (TAP only).
 	var ethHdr header.Ethernet
-	if d.hasFlags(linux.IFF_TAP) {
+	if d.flags.TAP {
 		if len(data) < header.EthernetMinimumSize {
 			// Ignore bad packet.
 			return dataLen, nil
@@ -253,7 +256,7 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	var vv buffer.VectorisedView
 
 	// Packet information.
-	if !d.hasFlags(linux.IFF_NO_PI) {
+	if !d.flags.NoPacketInfo {
 		hdr := make(PacketInfoHeader, PacketInfoHeaderSize)
 		hdr.Encode(&PacketInfoFields{
 			Protocol: info.Proto,
@@ -269,7 +272,7 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 	}
 
 	// Ethernet header (TAP only).
-	if d.hasFlags(linux.IFF_TAP) {
+	if d.flags.TAP {
 		// Add ethernet header if not provided.
 		if info.Pkt.LinkHeader().View().IsEmpty() {
 			d.endpoint.AddHeader(info.Route.LocalLinkAddress, info.Route.RemoteLinkAddress, info.Proto, info.Pkt)
@@ -298,14 +301,10 @@ func (d *Device) Name() string {
 }
 
 // Flags returns the flags set for d. Zero value if unset.
-func (d *Device) Flags() uint16 {
+func (d *Device) Flags() Flags {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.flags
-}
-
-func (d *Device) hasFlags(flags uint16) bool {
-	return d.flags&flags == flags
 }
 
 // Readiness implements watier.Waitable.Readiness.

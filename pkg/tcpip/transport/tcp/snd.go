@@ -323,7 +323,9 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // their initial values.
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
 	s.sndCwnd = InitialCwnd
-	s.sndSsthresh = math.MaxInt64
+	// Set sndSsthresh to the maximum int value, which depends on the
+	// platform.
+	s.sndSsthresh = int(^uint(0) >> 1)
 
 	switch congestionControlName {
 	case ccCubic:

@@ -492,7 +492,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcp
 
 		var mmsgHdr rawfile.MMsgHdr
 		mmsgHdr.Msg.Iov = &iovecs[0]
-		mmsgHdr.Msg.Iovlen = uint64(len(iovecs))
+		mmsgHdr.Msg.SetIovlen((len(iovecs)))
 		mmsgHdrs = append(mmsgHdrs, mmsgHdr)
 	}
 
