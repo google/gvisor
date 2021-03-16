@@ -65,6 +65,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/temp_path.h"
@@ -2073,54 +2074,37 @@ TEST(ProcPidFile, SubprocessExited) {
               SyscallFailsWithErrno(ESRCH));
 }
 
-PosixError DirContainsImpl(absl::string_view path,
-                           const std::vector<std::string>& targets,
-                           bool strict) {
+PosixError DirContains(absl::string_view path,
+                       const std::vector<std::string>& expect,
+                       const std::vector<std::string>& exclude) {
   ASSIGN_OR_RETURN_ERRNO(auto listing, ListDir(path, false));
-  bool success = true;
 
-  for (auto& expected_entry : targets) {
+  for (auto& expected_entry : expect) {
     auto cursor = std::find(listing.begin(), listing.end(), expected_entry);
     if (cursor == listing.end()) {
-      success = false;
-    }
-  }
-
-  if (!success) {
-    return PosixError(
-        ENOENT,
-        absl::StrCat("Failed to find one or more paths in '", path, "'"));
-  }
-
-  if (strict) {
-    if (targets.size() != listing.size()) {
       return PosixError(
-          EINVAL,
-          absl::StrCat("Expected to find ", targets.size(), " elements in '",
-                       path, "', but found ", listing.size()));
+          ENOENT,
+          absl::StrCat("Failed to find one or more paths in '", path, "'"));
     }
   }
-
+  for (auto& excluded_entry : exclude) {
+    auto cursor = std::find(listing.begin(), listing.end(), excluded_entry);
+    if (cursor != listing.end()) {
+      return PosixError(ENOENT, absl::StrCat("File '", excluded_entry,
+                                             "' found in path '", path, "'"));
+    }
+  }
   return NoError();
 }
 
-PosixError DirContains(absl::string_view path,
-                       const std::vector<std::string>& targets) {
-  return DirContainsImpl(path, targets, false);
-}
-
-PosixError DirContainsExactly(absl::string_view path,
-                              const std::vector<std::string>& targets) {
-  return DirContainsImpl(path, targets, true);
-}
-
-PosixError EventuallyDirContainsExactly(
-    absl::string_view path, const std::vector<std::string>& targets) {
+PosixError EventuallyDirContains(absl::string_view path,
+                                 const std::vector<std::string>& expect,
+                                 const std::vector<std::string>& exclude) {
   constexpr int kRetryCount = 100;
   const absl::Duration kRetryDelay = absl::Milliseconds(100);
 
   for (int i = 0; i < kRetryCount; ++i) {
-    auto res = DirContainsExactly(path, targets);
+    auto res = DirContains(path, expect, exclude);
     if (res.ok()) {
       return res;
     } else if (i < kRetryCount - 1) {
@@ -2132,22 +2116,14 @@ PosixError EventuallyDirContainsExactly(
                     "Timed out while waiting for directory to contain files ");
 }
 
+std::vector<std::string> TaskFiles(const std::vector<pid_t>& pids) {
+  return ApplyVec<std::string>([](const pid_t p) { return absl::StrCat(p); },
+                               pids);
+}
+
 TEST(ProcTask, Basic) {
   EXPECT_NO_ERRNO(
-      DirContains("/proc/self/task", {".", "..", absl::StrCat(getpid())}));
-}
-
-std::vector<std::string> TaskFiles(
-    const std::vector<std::string>& initial_contents,
-    const std::vector<pid_t>& pids) {
-  return VecCat<std::string>(
-      initial_contents,
-      ApplyVec<std::string>([](const pid_t p) { return absl::StrCat(p); },
-                            pids));
-}
-
-std::vector<std::string> TaskFiles(const std::vector<pid_t>& pids) {
-  return TaskFiles({".", "..", absl::StrCat(getpid())}, pids);
+      DirContains("/proc/self/task", {".", "..", absl::StrCat(getpid())}, {}));
 }
 
 // Helper class for creating a new task in the current thread group.
@@ -2189,20 +2165,15 @@ class BlockingChild {
 };
 
 TEST(ProcTask, NewThreadAppears) {
-  auto initial = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/proc/self/task", false));
   BlockingChild child1;
-  // Use Eventually* in case a proc from ealier test is still tearing down.
-  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
-      "/proc/self/task", TaskFiles(initial, {child1.Tid()})));
+  EXPECT_NO_ERRNO(
+      DirContains("/proc/self/task", TaskFiles({child1.Tid()}), {}));
 }
 
 TEST(ProcTask, KilledThreadsDisappear) {
-  auto initial = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/proc/self/task/", false));
-
   BlockingChild child1;
-  // Use Eventually* in case a proc from ealier test is still tearing down.
-  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
-      "/proc/self/task", TaskFiles(initial, {child1.Tid()})));
+  EXPECT_NO_ERRNO(
+      DirContains("/proc/self/task", TaskFiles({child1.Tid()}), {}));
 
   // Stat child1's task file. Regression test for b/32097707.
   struct stat statbuf;
@@ -2211,26 +2182,29 @@ TEST(ProcTask, KilledThreadsDisappear) {
   EXPECT_THAT(stat(child1_task_file.c_str(), &statbuf), SyscallSucceeds());
 
   BlockingChild child2;
-  EXPECT_NO_ERRNO(DirContainsExactly(
-      "/proc/self/task", TaskFiles(initial, {child1.Tid(), child2.Tid()})));
+  EXPECT_NO_ERRNO(DirContains("/proc/self/task",
+                              TaskFiles({child1.Tid(), child2.Tid()}), {}));
 
   BlockingChild child3;
   BlockingChild child4;
   BlockingChild child5;
-  EXPECT_NO_ERRNO(DirContainsExactly(
-      "/proc/self/task",
-      TaskFiles(initial, {child1.Tid(), child2.Tid(), child3.Tid(),
-                          child4.Tid(), child5.Tid()})));
+  EXPECT_NO_ERRNO(
+      DirContains("/proc/self/task",
+                  TaskFiles({child1.Tid(), child2.Tid(), child3.Tid(),
+                             child4.Tid(), child5.Tid()}),
+                  {}));
 
   child2.Join();
-  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
-      "/proc/self/task", TaskFiles(initial, {child1.Tid(), child3.Tid(),
-                                             child4.Tid(), child5.Tid()})));
+  EXPECT_NO_ERRNO(EventuallyDirContains(
+      "/proc/self/task",
+      TaskFiles({child1.Tid(), child3.Tid(), child4.Tid(), child5.Tid()}),
+      TaskFiles({child2.Tid()})));
 
   child1.Join();
   child4.Join();
-  EXPECT_NO_ERRNO(EventuallyDirContainsExactly(
-      "/proc/self/task", TaskFiles(initial, {child3.Tid(), child5.Tid()})));
+  EXPECT_NO_ERRNO(EventuallyDirContains(
+      "/proc/self/task", TaskFiles({child3.Tid(), child5.Tid()}),
+      TaskFiles({child2.Tid(), child1.Tid(), child4.Tid()})));
 
   // Stat child1's task file again.  This time it should fail. See b/32097707.
   EXPECT_THAT(stat(child1_task_file.c_str(), &statbuf),
@@ -2238,18 +2212,23 @@ TEST(ProcTask, KilledThreadsDisappear) {
 
   child3.Join();
   child5.Join();
-  EXPECT_NO_ERRNO(EventuallyDirContainsExactly("/proc/self/task", initial));
+  EXPECT_NO_ERRNO(
+      EventuallyDirContains("/proc/self/task", {},
+                            TaskFiles({child2.Tid(), child1.Tid(), child4.Tid(),
+                                       child3.Tid(), child5.Tid()})));
 }
 
 TEST(ProcTask, ChildTaskDir) {
   BlockingChild child1;
-  EXPECT_NO_ERRNO(DirContains("/proc/self/task", TaskFiles({child1.Tid()})));
+  EXPECT_NO_ERRNO(
+      DirContains("/proc/self/task", TaskFiles({child1.Tid()}), {}));
   EXPECT_NO_ERRNO(DirContains(absl::StrCat("/proc/", child1.Tid(), "/task"),
-                              TaskFiles({child1.Tid()})));
+                              TaskFiles({child1.Tid()}), {}));
 }
 
 PosixError VerifyPidDir(std::string path) {
-  return DirContains(path, {"exe", "fd", "io", "maps", "ns", "stat", "status"});
+  return DirContains(path, {"exe", "fd", "io", "maps", "ns", "stat", "status"},
+                     {});
 }
 
 TEST(ProcTask, VerifyTaskDir) {
@@ -2266,9 +2245,8 @@ TEST(ProcTask, VerifyTaskDir) {
   // /proc/1234/task/1234/task <- should not exist
   // /proc/1234/task/1235/task <- should not exist (where 1235 is in the same
   //                                                thread group as 1234).
-  EXPECT_FALSE(
-      DirContains(absl::StrCat("/proc/self/task/", getpid()), {"task"}).ok())
-      << "Found 'task' directory in an inner directory.";
+  EXPECT_NO_ERRNO(
+      DirContains(absl::StrCat("/proc/self/task/", getpid()), {}, {"task"}));
 }
 
 TEST(ProcTask, TaskDirCannotBeDeleted) {
@@ -2299,34 +2277,42 @@ TEST(ProcTask, TaskDirCanSeekToEnd) {
 }
 
 TEST(ProcTask, VerifyTaskDirNlinks) {
-  // A task directory will have 3 links if the taskgroup has a single
-  // thread. For example, the following shows where the links to
-  // '/proc/12345/task comes' from for a single threaded process with pid 12345:
-  //
-  //   /proc/12345/task  <-- 1 link for the directory itself
-  //     .               <-- link from "."
-  //     ..
-  //     12345
-  //       .
-  //       ..            <-- link from ".." to parent.
-  //       <other contents of a task dir>
-  //
-  // We can't assert an absolute number of links since we don't control how many
-  // threads the test framework spawns. Instead, we'll ensure creating a new
-  // thread increases the number of links as expected.
+  const auto fn = [] {
+    // A task directory will have 3 links if the taskgroup has a single
+    // thread. For example, the following shows where the links to
+    // '/proc/12345/task' comes from for a single threaded process with pid
+    // 12345:
+    //
+    //   /proc/12345/task  <-- 1 link for the directory itself
+    //     .               <-- link from "."
+    //     ..
+    //     12345
+    //       .
+    //       ..            <-- link from ".." to parent.
+    //       <other contents of a task dir>
+    //
+    // We can't assert an absolute number of links since we don't control how
+    // many threads the test framework spawns. Instead, we'll ensure creating a
+    // new thread increases the number of links as expected.
 
-  // Once we reach the test body, we can count on the thread count being stable
-  // unless we spawn a new one.
-  uint64_t initial_links = ASSERT_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
-  ASSERT_GE(initial_links, 3);
+    // Once we reach the test body, we can count on the thread count being
+    // stable unless we spawn a new one.
+    const uint64_t initial_links =
+        TEST_CHECK_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
+    TEST_CHECK(initial_links >= 3);
 
-  // For each new subtask, we should gain a new link.
-  BlockingChild child1;
-  EXPECT_THAT(Links("/proc/self/task"),
-              IsPosixErrorOkAndHolds(initial_links + 1));
-  BlockingChild child2;
-  EXPECT_THAT(Links("/proc/self/task"),
-              IsPosixErrorOkAndHolds(initial_links + 2));
+    // For each new subtask, we should gain a new link.
+    BlockingChild child1;
+    uint64_t links = TEST_CHECK_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
+    TEST_CHECK(links == initial_links + 1);
+
+    BlockingChild child2;
+    links = TEST_CHECK_NO_ERRNO_AND_VALUE(Links("/proc/self/task"));
+    TEST_CHECK(links == initial_links + 2);
+  };
+  // Run as a forked process to prevent terminating tasks from other tests to
+  // show up here and race with the count.
+  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
 }
 
 TEST(ProcTask, CommContainsThreadNameAndTrailingNewline) {
@@ -2340,7 +2326,7 @@ TEST(ProcTask, CommContainsThreadNameAndTrailingNewline) {
 }
 
 TEST(ProcTaskNs, NsDirExistsAndHasCorrectMetadata) {
-  EXPECT_NO_ERRNO(DirContains("/proc/self/ns", {"net", "pid", "user"}));
+  EXPECT_NO_ERRNO(DirContains("/proc/self/ns", {"net", "pid", "user"}, {}));
 
   // Let's just test the 'pid' entry, all of them are very similar.
   struct stat st;

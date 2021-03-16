@@ -1705,6 +1705,7 @@ cc_binary(
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:memory_util",
+        "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:proc_util",
         "//test/util:temp_path",
