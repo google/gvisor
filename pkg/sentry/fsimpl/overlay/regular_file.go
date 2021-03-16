@@ -205,6 +205,20 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 	if err := wrappedFD.SetStat(ctx, opts); err != nil {
 		return err
 	}
+
+	// Changing owners may clear one or both of the setuid and setgid bits,
+	// so we may have to update opts before setting d.mode.
+	if opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID) != 0 {
+		stat, err := wrappedFD.Stat(ctx, vfs.StatOptions{
+			Mask: linux.STATX_MODE,
+		})
+		if err != nil {
+			return err
+		}
+		opts.Stat.Mode = stat.Mode
+		opts.Stat.Mask |= linux.STATX_MODE
+	}
+
 	d.updateAfterSetStatLocked(&opts)
 	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
 		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
@@ -295,7 +309,11 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, err
 	}
 	defer wrappedFD.DecRef(ctx)
-	return wrappedFD.PWrite(ctx, src, offset, opts)
+	n, err := wrappedFD.PWrite(ctx, src, offset, opts)
+	if err != nil {
+		return n, err
+	}
+	return fd.updateSetUserGroupIDs(ctx, wrappedFD, n)
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
@@ -307,7 +325,28 @@ func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 	if err != nil {
 		return 0, err
 	}
-	return wrappedFD.Write(ctx, src, opts)
+	n, err := wrappedFD.Write(ctx, src, opts)
+	if err != nil {
+		return n, err
+	}
+	return fd.updateSetUserGroupIDs(ctx, wrappedFD, n)
+}
+
+func (fd *regularFileFD) updateSetUserGroupIDs(ctx context.Context, wrappedFD *vfs.FileDescription, written int64) (int64, error) {
+	// Writing can clear the setuid and/or setgid bits. We only have to
+	// check this if something was written and one of those bits was set.
+	dentry := fd.dentry()
+	if written == 0 || atomic.LoadUint32(&dentry.mode)&(linux.S_ISUID|linux.S_ISGID) == 0 {
+		return written, nil
+	}
+	stat, err := wrappedFD.Stat(ctx, vfs.StatOptions{Mask: linux.STATX_MODE})
+	if err != nil {
+		return written, err
+	}
+	dentry.copyMu.Lock()
+	defer dentry.copyMu.Unlock()
+	atomic.StoreUint32(&dentry.mode, uint32(stat.Mode))
+	return written, nil
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.

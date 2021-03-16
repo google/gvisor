@@ -17,12 +17,18 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+
+ABSL_FLAG(std::vector<std::string>, groups, std::vector<std::string>({}),
+          "groups the test can use");
+
+constexpr gid_t kNobody = 65534;
 
 namespace gvisor {
 namespace testing {
@@ -46,6 +52,18 @@ PosixErrorOr<Cleanup> Setegid(gid_t egid) {
 
 // Returns a pair of groups that the user is a member of.
 PosixErrorOr<std::pair<gid_t, gid_t>> Groups() {
+  // Were we explicitly passed GIDs?
+  std::vector<std::string> flagged_groups = absl::GetFlag(FLAGS_groups);
+  if (flagged_groups.size() >= 2) {
+    int group1;
+    int group2;
+    if (!absl::SimpleAtoi(flagged_groups[0], &group1) ||
+        !absl::SimpleAtoi(flagged_groups[1], &group2)) {
+      return PosixError(EINVAL, "failed converting group flags to ints");
+    }
+    return std::pair<gid_t, gid_t>(group1, group2);
+  }
+
   // See whether the user is a member of at least 2 groups.
   std::vector<gid_t> groups(64);
   for (; groups.size() <= NGROUPS_MAX; groups.resize(groups.size() * 2)) {
@@ -58,26 +76,47 @@ PosixErrorOr<std::pair<gid_t, gid_t>> Groups() {
       return PosixError(errno, absl::StrFormat("getgroups(%d, %p)",
                                                groups.size(), groups.data()));
     }
-    if (ngroups >= 2) {
-      return std::pair<gid_t, gid_t>(groups[0], groups[1]);
+
+    if (ngroups < 2) {
+      // There aren't enough groups.
+      break;
     }
-    // There aren't enough groups.
-    break;
+
+    // TODO(b/181878080): Read /proc/sys/fs/overflowgid once it is supported in
+    // gVisor.
+    if (groups[0] == kNobody || groups[1] == kNobody) {
+      // These groups aren't mapped into our user namespace, so we can't use
+      // them.
+      break;
+    }
+    return std::pair<gid_t, gid_t>(groups[0], groups[1]);
   }
 
-  // If we're root in the root user namespace, we can set our GID to whatever we
-  // want. Try that before giving up.
-  constexpr gid_t kGID1 = 1111;
-  constexpr gid_t kGID2 = 2222;
-  auto cleanup1 = Setegid(kGID1);
+  // If we're running in gVisor and are root in the root user namespace, we can
+  // set our GID to whatever we want. Try that before giving up.
+  //
+  // This won't work in native tests, as despite having CAP_SETGID, the gofer
+  // process will be sandboxed and unable to change file GIDs.
+  if (!IsRunningOnGvisor()) {
+    return PosixError(EPERM, "no valid groups for native testing");
+  }
+  PosixErrorOr<bool> capable = HaveCapability(CAP_SETGID);
+  if (!capable.ok()) {
+    return capable.error();
+  }
+  if (!capable.ValueOrDie()) {
+    return PosixError(EPERM, "missing CAP_SETGID");
+  }
+  gid_t gid = getegid();
+  auto cleanup1 = Setegid(gid);
   if (!cleanup1.ok()) {
     return cleanup1.error();
   }
-  auto cleanup2 = Setegid(kGID2);
+  auto cleanup2 = Setegid(kNobody);
   if (!cleanup2.ok()) {
     return cleanup2.error();
   }
-  return std::pair<gid_t, gid_t>(kGID1, kGID2);
+  return std::pair<gid_t, gid_t>(gid, kNobody);
 }
 
 class SetgidDirTest : public ::testing::Test {
@@ -85,17 +124,20 @@ class SetgidDirTest : public ::testing::Test {
   void SetUp() override {
     original_gid_ = getegid();
 
-    // TODO(b/175325250): Enable when setgid directories are supported.
     SKIP_IF(IsRunningWithVFS1());
-    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
 
     temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
         TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
-    groups_ = ASSERT_NO_ERRNO_AND_VALUE(Groups());
+
+    // If we can't find two usable groups, we're in an unsupporting environment.
+    // Skip the test.
+    PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
+    SKIP_IF(!groups.ok());
+    groups_ = groups.ValueOrDie();
   }
 
   void TearDown() override {
-    ASSERT_THAT(setegid(original_gid_), SyscallSucceeds());
+    EXPECT_THAT(setegid(original_gid_), SyscallSucceeds());
   }
 
   void MkdirAsGid(gid_t gid, const std::string& path, mode_t mode) {
@@ -131,7 +173,7 @@ TEST_F(SetgidDirTest, Control) {
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, 0777));
 
   // Set group to G2, create a file in g1owned, and confirm that G2 owns it.
-  ASSERT_THAT(setegid(groups_.second), SyscallSucceeds());
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(Setegid(groups_.second));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(g1owned, "g2owned").c_str(), O_CREAT | O_RDWR, 0777));
   struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(fd));
@@ -146,7 +188,7 @@ TEST_F(SetgidDirTest, CreateFile) {
   ASSERT_THAT(chmod(g1owned.c_str(), kDirmodeSgid), SyscallSucceeds());
 
   // Set group to G2, create a file, and confirm that G1 owns it.
-  ASSERT_THAT(setegid(groups_.second), SyscallSucceeds());
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(Setegid(groups_.second));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(g1owned, "g2created").c_str(), O_CREAT | O_RDWR, 0666));
   struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(fd));
@@ -194,7 +236,7 @@ TEST_F(SetgidDirTest, OldFile) {
   ASSERT_THAT(chmod(g1owned.c_str(), kDirmodeNoSgid), SyscallSucceeds());
 
   // Set group to G2, create a file, confirm that G2 owns it.
-  ASSERT_THAT(setegid(groups_.second), SyscallSucceeds());
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(Setegid(groups_.second));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(g1owned, "g2created").c_str(), O_CREAT | O_RDWR, 0666));
   struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(fd));
@@ -217,7 +259,7 @@ TEST_F(SetgidDirTest, OldDir) {
   ASSERT_THAT(chmod(g1owned.c_str(), kDirmodeNoSgid), SyscallSucceeds());
 
   // Set group to G2, create a directory, confirm that G2 owns it.
-  ASSERT_THAT(setegid(groups_.second), SyscallSucceeds());
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(Setegid(groups_.second));
   auto g2created = JoinPath(g1owned, "g2created");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.second, g2created, 0666));
   struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(g2created));
