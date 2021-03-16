@@ -260,7 +260,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateEstablished:
 			r.ep.setEndpointState(StateCloseWait)
 		case StateFinWait1:
-			if s.flagIsSet(header.TCPFlagAck) {
+			if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == r.ep.snd.sndNxt {
 				// FIN-ACK, transition to TIME-WAIT.
 				r.ep.setEndpointState(StateTimeWait)
 			} else {

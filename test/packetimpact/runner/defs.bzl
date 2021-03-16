@@ -289,8 +289,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_fin_retransmission",
-        # TODO(b/181625316): Fix netstack then remove the line below.
-        expect_netstack_failure = True,
     ),
 ]
 
