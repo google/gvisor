@@ -884,9 +884,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
-
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
-		ep.handlePacket(pkt)
+		ep.handleValidatedPacket(h, pkt)
 		return nil
 	}
 
@@ -925,12 +924,25 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	if !e.protocol.parse(pkt) {
+	h, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
 
 	if !e.nic.IsLoopback() {
+		if e.protocol.options.DropExternalLoopbackTraffic {
+			if header.IsV6LoopbackAddress(h.SourceAddress()) {
+				stats.InvalidSourceAddressesReceived.Increment()
+				return
+			}
+
+			if header.IsV6LoopbackAddress(h.DestinationAddress()) {
+				stats.InvalidDestinationAddressesReceived.Increment()
+				return
+			}
+		}
+
 		if e.protocol.stack.HandleLocal() {
 			addressEndpoint := e.AcquireAssignedAddress(header.IPv6(pkt.NetworkHeader().View()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
 			if addressEndpoint != nil {
@@ -953,35 +965,31 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 	}
 
-	e.handlePacket(pkt)
+	e.handleValidatedPacket(h, pkt)
 }
 
+// handleLocalPacket is like HandlePacket except it does not perform the
+// prerouting iptables hook or check for loopback traffic that originated from
+// outside of the netstack (i.e. martian loopback packets).
 func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum bool) {
 	stats := e.stats.ip
-
 	stats.PacketsReceived.Increment()
 
 	pkt = pkt.CloneToInbound()
-	if e.protocol.parse(pkt) {
-		pkt.RXTransportChecksumValidated = canSkipRXChecksum
-		e.handlePacket(pkt)
-		return
-	}
+	pkt.RXTransportChecksumValidated = canSkipRXChecksum
 
-	stats.MalformedPacketsReceived.Increment()
-}
-
-// handlePacket is like HandlePacket except it does not perform the prerouting
-// iptables hook.
-func (e *endpoint) handlePacket(pkt *stack.PacketBuffer) {
-	pkt.NICID = e.nic.ID()
-	stats := e.stats.ip
-
-	h := header.IPv6(pkt.NetworkHeader().View())
-	if !h.IsValid(pkt.Data().Size() + pkt.NetworkHeader().View().Size() + pkt.TransportHeader().View().Size()) {
+	h, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
+
+	e.handleValidatedPacket(h, pkt)
+}
+
+func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer) {
+	pkt.NICID = e.nic.ID()
+	stats := e.stats.ip
 	srcAddr := h.SourceAddress()
 	dstAddr := h.DestinationAddress()
 
@@ -1920,13 +1928,21 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
-// parse is like Parse but also attempts to parse the transport layer.
+// parseAndValidate parses the packet (including its transport layer header) and
+// returns the parsed IP header.
 //
-// Returns true if the network header was successfully parsed.
-func (p *protocol) parse(pkt *stack.PacketBuffer) bool {
+// Returns true if the IP header was successfully parsed.
+func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv6, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
-		return false
+		return nil, false
+	}
+
+	h := header.IPv6(pkt.NetworkHeader().View())
+	// Do not include the link header's size when calculating the size of the IP
+	// packet.
+	if !h.IsValid(pkt.Size() - pkt.LinkHeader().View().Size()) {
+		return nil, false
 	}
 
 	if hasTransportHdr {
@@ -1940,7 +1956,7 @@ func (p *protocol) parse(pkt *stack.PacketBuffer) bool {
 		}
 	}
 
-	return true
+	return h, true
 }
 
 // Parse implements stack.NetworkProtocol.Parse.
@@ -2054,6 +2070,10 @@ type Options struct {
 
 	// DADConfigs holds the default DAD configurations used by IPv6 endpoints.
 	DADConfigs stack.DADConfigurations
+
+	// DropExternalLoopbackTraffic indicates that inbound loopback packets (i.e.
+	// martian loopback packets) should be dropped.
+	DropExternalLoopbackTraffic bool
 }
 
 // NewProtocolWithOptions returns an IPv6 network protocol.
