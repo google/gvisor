@@ -127,9 +127,21 @@ func TestUserspaceInit(t *testing.T) {
 		}
 	}
 
-	dirs := []string{"shm", "pts"}
+	dirs := []struct {
+		path string
+		mode uint16
+	}{
+		{
+			path: "shm",
+			mode: 01777,
+		},
+		{
+			path: "pts",
+			mode: 0755,
+		},
+	}
 	for _, dir := range dirs {
-		abspath := path.Join(devPath, dir)
+		abspath := path.Join(devPath, dir.path)
 		statx, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
 			Root:  root,
 			Start: root,
@@ -141,7 +153,7 @@ func TestUserspaceInit(t *testing.T) {
 			t.Errorf("stat(%q): got error %v ", abspath, err)
 			continue
 		}
-		if want := uint16(0755) | linux.S_IFDIR; statx.Mode != want {
+		if want := dir.mode | linux.S_IFDIR; statx.Mode != want {
 			t.Errorf("stat(%q): got mode %x, want %x", abspath, statx.Mode, want)
 		}
 	}

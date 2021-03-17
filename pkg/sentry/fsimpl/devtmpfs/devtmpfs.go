@@ -215,16 +215,25 @@ func (a *Accessor) UserspaceInit(ctx context.Context) error {
 		}
 	}
 
-	// systemd: src/core/mount-setup.c:mount_table
-	for _, dir := range []string{
-		"shm",
-		"pts",
+	// systemd: src/shared/mount-setup.c:mount_table
+	for _, dir := range []struct {
+		path string
+		mode linux.FileMode
+	}{
+		{
+			path: "shm",
+			mode: 01777,
+		},
+		{
+			path: "pts",
+			mode: 0755,
+		},
 	} {
-		if err := a.vfsObj.MkdirAt(actx, a.creds, a.pathOperationAt(dir), &vfs.MkdirOptions{
-			// systemd: src/core/mount-setup.c:mount_one()
-			Mode: 0755,
+		if err := a.vfsObj.MkdirAt(actx, a.creds, a.pathOperationAt(dir.path), &vfs.MkdirOptions{
+			// systemd: src/shared/mount-setup.c:mount_one()
+			Mode: dir.mode,
 		}); err != nil {
-			return fmt.Errorf("failed to create directory %q: %v", dir, err)
+			return fmt.Errorf("failed to create directory %q: %v", dir.path, err)
 		}
 	}
 
