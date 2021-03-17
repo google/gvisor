@@ -24,11 +24,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -498,6 +500,265 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			}
 			if addr.Addr != test.addAddress.AddressWithPrefix.Address {
 				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Address)
+			}
+		})
+	}
+}
+
+func TestExternalLoopbackTraffic(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+
+		ipv4Loopback = tcpip.Address("\x7f\x00\x00\x01")
+
+		numPackets = 1
+	)
+
+	loopbackSourcedICMPv4 := func(e *channel.Endpoint) {
+		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address)
+	}
+
+	loopbackSourcedICMPv6 := func(e *channel.Endpoint) {
+		utils.RxICMPv6EchoRequest(e, header.IPv6Loopback, utils.Ipv6Addr.Address)
+	}
+
+	loopbackDestinedICMPv4 := func(e *channel.Endpoint) {
+		utils.RxICMPv4EchoRequest(e, utils.RemoteIPv4Addr, ipv4Loopback)
+	}
+
+	loopbackDestinedICMPv6 := func(e *channel.Endpoint) {
+		utils.RxICMPv6EchoRequest(e, utils.RemoteIPv6Addr, header.IPv6Loopback)
+	}
+
+	invalidSrcAddrStat := func(s tcpip.IPStats) *tcpip.StatCounter {
+		return s.InvalidSourceAddressesReceived
+	}
+
+	invalidDestAddrStat := func(s tcpip.IPStats) *tcpip.StatCounter {
+		return s.InvalidDestinationAddressesReceived
+	}
+
+	tests := []struct {
+		name                 string
+		dropExternalLoopback bool
+		forwarding           bool
+		rxICMP               func(*channel.Endpoint)
+		invalidAddressStat   func(tcpip.IPStats) *tcpip.StatCounter
+		shouldAccept         bool
+	}{
+		{
+			name:                 "IPv4 external loopback sourced traffic without forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           false,
+			rxICMP:               loopbackSourcedICMPv4,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv4 external loopback sourced traffic without forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           false,
+			rxICMP:               loopbackSourcedICMPv4,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv4 external loopback sourced traffic with forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           true,
+			rxICMP:               loopbackSourcedICMPv4,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv4 external loopback sourced traffic with forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           true,
+			rxICMP:               loopbackSourcedICMPv4,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv4 external loopback destined traffic without forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           false,
+			rxICMP:               loopbackDestinedICMPv4,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv4 external loopback destined traffic without forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           false,
+			rxICMP:               loopbackDestinedICMPv4,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv4 external loopback destined traffic with forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           true,
+			rxICMP:               loopbackDestinedICMPv4,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv4 external loopback destined traffic with forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           true,
+			rxICMP:               loopbackDestinedICMPv4,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+
+		{
+			name:                 "IPv6 external loopback sourced traffic without forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           false,
+			rxICMP:               loopbackSourcedICMPv6,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv6 external loopback sourced traffic without forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           false,
+			rxICMP:               loopbackSourcedICMPv6,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv6 external loopback sourced traffic with forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           true,
+			rxICMP:               loopbackSourcedICMPv6,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv6 external loopback sourced traffic with forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           true,
+			rxICMP:               loopbackSourcedICMPv6,
+			invalidAddressStat:   invalidSrcAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv6 external loopback destined traffic without forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           false,
+			rxICMP:               loopbackDestinedICMPv6,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv6 external loopback destined traffic without forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           false,
+			rxICMP:               loopbackDestinedICMPv6,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+		{
+			name:                 "IPv6 external loopback destined traffic with forwarding and drop external loopback disabled",
+			dropExternalLoopback: false,
+			forwarding:           true,
+			rxICMP:               loopbackDestinedICMPv6,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         true,
+		},
+		{
+			name:                 "IPv6 external loopback destined traffic with forwarding and drop external loopback enabled",
+			dropExternalLoopback: true,
+			forwarding:           true,
+			rxICMP:               loopbackDestinedICMPv6,
+			invalidAddressStat:   invalidDestAddrStat,
+			shouldAccept:         false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					ipv4.NewProtocolWithOptions(ipv4.Options{
+						DropExternalLoopbackTraffic: test.dropExternalLoopback,
+					}),
+					ipv6.NewProtocolWithOptions(ipv6.Options{
+						DropExternalLoopbackTraffic: test.dropExternalLoopback,
+					}),
+				},
+				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
+			})
+			e := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID1, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			}
+			if err := s.AddAddressWithPrefix(nicID1, ipv4.ProtocolNumber, utils.Ipv4Addr); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID1, ipv4.ProtocolNumber, utils.Ipv4Addr, err)
+			}
+			if err := s.AddAddressWithPrefix(nicID1, ipv6.ProtocolNumber, utils.Ipv6Addr); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID1, ipv6.ProtocolNumber, utils.Ipv6Addr, err)
+			}
+
+			if err := s.CreateNIC(nicID2, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+			}
+			if err := s.AddAddress(nicID2, ipv4.ProtocolNumber, ipv4Loopback); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, ipv4.ProtocolNumber, ipv4Loopback, err)
+			}
+			if err := s.AddAddress(nicID2, ipv6.ProtocolNumber, header.IPv6Loopback); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, header.IPv6Loopback, err)
+			}
+
+			if test.forwarding {
+				if err := s.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwarding(%d, true): %s", ipv4.ProtocolNumber, err)
+				}
+				if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+				}
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				tcpip.Route{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         nicID1,
+				},
+				tcpip.Route{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID1,
+				},
+				tcpip.Route{
+					Destination: ipv4Loopback.WithPrefix().Subnet(),
+					NIC:         nicID2,
+				},
+				tcpip.Route{
+					Destination: header.IPv6Loopback.WithPrefix().Subnet(),
+					NIC:         nicID2,
+				},
+			})
+
+			stats := s.Stats().IP
+			invalidAddressStat := test.invalidAddressStat(stats)
+			deliveredPacketsStat := stats.PacketsDelivered
+			if got := invalidAddressStat.Value(); got != 0 {
+				t.Fatalf("got invalidAddressStat.Value() = %d, want = 0", got)
+			}
+			if got := deliveredPacketsStat.Value(); got != 0 {
+				t.Fatalf("got deliveredPacketsStat.Value() = %d, want = 0", got)
+			}
+			test.rxICMP(e)
+			var expectedInvalidPackets uint64
+			if !test.shouldAccept {
+				expectedInvalidPackets = numPackets
+			}
+			if got := invalidAddressStat.Value(); got != expectedInvalidPackets {
+				t.Fatalf("got invalidAddressStat.Value() = %d, want = %d", got, expectedInvalidPackets)
+			}
+			if got, want := deliveredPacketsStat.Value(), numPackets-expectedInvalidPackets; got != want {
+				t.Fatalf("got deliveredPacketsStat.Value() = %d, want = %d", got, want)
 			}
 		})
 	}

@@ -16,6 +16,7 @@ package route_test
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -161,78 +162,79 @@ func TestLocalPing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
-				HandleLocal:        true,
-			})
-			e := test.linkEndpoint()
-			if err := s.CreateNIC(nicID, e); err != nil {
-				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
-			}
+			for _, dropExternalLoopback := range []bool{true, false} {
+				t.Run(fmt.Sprintf("DropExternalLoopback=%t", dropExternalLoopback), func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols: []stack.NetworkProtocolFactory{
+							ipv4.NewProtocolWithOptions(ipv4.Options{
+								DropExternalLoopbackTraffic: dropExternalLoopback,
+							}),
+							ipv6.NewProtocolWithOptions(ipv6.Options{
+								DropExternalLoopbackTraffic: dropExternalLoopback,
+							}),
+						},
+						TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
+						HandleLocal:        true,
+					})
+					e := test.linkEndpoint()
+					if err := s.CreateNIC(nicID, e); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					}
 
-			if len(test.localAddr) != 0 {
-				if err := s.AddAddress(nicID, test.netProto, test.localAddr); err != nil {
-					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, test.netProto, test.localAddr, err)
-				}
-			}
+					if len(test.localAddr) != 0 {
+						if err := s.AddAddress(nicID, test.netProto, test.localAddr); err != nil {
+							t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, test.netProto, test.localAddr, err)
+						}
+					}
 
-			var wq waiter.Queue
-			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.EventIn)
-			ep, err := s.NewEndpoint(test.transProto, test.netProto, &wq)
-			if err != nil {
-				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", test.transProto, test.netProto, err)
-			}
-			defer ep.Close()
+					var wq waiter.Queue
+					we, ch := waiter.NewChannelEntry(nil)
+					wq.EventRegister(&we, waiter.EventIn)
+					ep, err := s.NewEndpoint(test.transProto, test.netProto, &wq)
+					if err != nil {
+						t.Fatalf("s.NewEndpoint(%d, %d, _): %s", test.transProto, test.netProto, err)
+					}
+					defer ep.Close()
 
-			connAddr := tcpip.FullAddress{Addr: test.localAddr}
-			{
-				err := ep.Connect(connAddr)
-				if diff := cmp.Diff(test.expectedConnectErr, err); diff != "" {
-					t.Fatalf("unexpected error from ep.Connect(%#v), (-want, +got):\n%s", connAddr, diff)
-				}
-			}
+					connAddr := tcpip.FullAddress{Addr: test.localAddr}
+					if err := ep.Connect(connAddr); err != test.expectedConnectErr {
+						t.Fatalf("got ep.Connect(%#v) = %s, want = %s", connAddr, err, test.expectedConnectErr)
+					}
 
-			if test.expectedConnectErr != nil {
-				return
-			}
+					if test.expectedConnectErr != nil {
+						return
+					}
 
-			payload := test.icmpBuf(t)
-			var r bytes.Reader
-			r.Reset(payload)
-			var wOpts tcpip.WriteOptions
-			if n, err := ep.Write(&r, wOpts); err != nil {
-				t.Fatalf("ep.Write(%#v, %#v): %s", payload, wOpts, err)
-			} else if n != int64(len(payload)) {
-				t.Fatalf("got ep.Write(%#v, %#v) = (%d, nil), want = (%d, nil)", payload, wOpts, n, len(payload))
-			}
+					var r bytes.Reader
+					payload := test.icmpBuf(t)
+					r.Reset(payload)
+					var wOpts tcpip.WriteOptions
+					if n, err := ep.Write(&r, wOpts); err != nil {
+						t.Fatalf("ep.Write(%#v, %#v): %s", payload, wOpts, err)
+					} else if n != int64(len(payload)) {
+						t.Fatalf("got ep.Write(%#v, %#v) = (%d, _, nil), want = (%d, _, nil)", payload, wOpts, n, len(payload))
+					}
 
-			// Wait for the endpoint to become readable.
-			<-ch
+					// Wait for the endpoint to become readable.
+					<-ch
 
-			var buf bytes.Buffer
-			opts := tcpip.ReadOptions{NeedRemoteAddr: true}
-			res, err := ep.Read(&buf, opts)
-			if err != nil {
-				t.Fatalf("ep.Read(_, %#v): %s", opts, err)
-			}
-			if diff := cmp.Diff(tcpip.ReadResult{
-				Count:      buf.Len(),
-				Total:      buf.Len(),
-				RemoteAddr: tcpip.FullAddress{Addr: test.localAddr},
-			}, res, checker.IgnoreCmpPath(
-				"ControlMessages",
-				"RemoteAddr.NIC",
-				"RemoteAddr.Port",
-			)); diff != "" {
-				t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
-			}
-			if diff := cmp.Diff(buf.Bytes()[icmpDataOffset:], []byte(payload[icmpDataOffset:])); diff != "" {
-				t.Errorf("received data mismatch (-want +got):\n%s", diff)
-			}
+					var w bytes.Buffer
+					rr, err := ep.Read(&w, tcpip.ReadOptions{
+						NeedRemoteAddr: true,
+					})
+					if err != nil {
+						t.Fatalf("ep.Read(...): %s", err)
+					}
+					if diff := cmp.Diff(buffer.View(w.Bytes()[icmpDataOffset:]), payload[icmpDataOffset:]); diff != "" {
+						t.Errorf("received data mismatch (-want +got):\n%s", diff)
+					}
+					if rr.RemoteAddr.Addr != test.localAddr {
+						t.Errorf("got addr.Addr = %s, want = %s", rr.RemoteAddr.Addr, test.localAddr)
+					}
 
-			test.checkLinkEndpoint(t, e)
+					test.checkLinkEndpoint(t, e)
+				})
+			}
 		})
 	}
 }
