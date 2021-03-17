@@ -20,13 +20,16 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/nested"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
 // Common NIC IDs used by tests.
@@ -43,6 +46,10 @@ const (
 	LinkAddr2 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x07")
 	LinkAddr3 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x08")
 	LinkAddr4 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
+)
+
+const (
+	ttl = 255
 )
 
 // Common IP addresses used by tests.
@@ -311,4 +318,57 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 			NIC:         Host2NICID,
 		},
 	})
+}
+
+// RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
+// the provided endpoint.
+func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+	totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
+	hdr := buffer.NewPrependable(totalLen)
+	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+	pkt.SetType(header.ICMPv4Echo)
+	pkt.SetCode(header.ICMPv4UnusedCode)
+	pkt.SetChecksum(0)
+	pkt.SetChecksum(^header.Checksum(pkt, 0))
+	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ip.Encode(&header.IPv4Fields{
+		TotalLength: uint16(totalLen),
+		Protocol:    uint8(icmp.ProtocolNumber4),
+		TTL:         ttl,
+		SrcAddr:     src,
+		DstAddr:     dst,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: hdr.View().ToVectorisedView(),
+	}))
+}
+
+// RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on
+// the provided endpoint.
+func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+	hdr := buffer.NewPrependable(totalLen)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+	pkt.SetType(header.ICMPv6EchoRequest)
+	pkt.SetCode(header.ICMPv6UnusedCode)
+	pkt.SetChecksum(0)
+	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: pkt,
+		Src:    src,
+		Dst:    dst,
+	}))
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.ICMPv6MinimumSize,
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          ttl,
+		SrcAddr:           src,
+		DstAddr:           dst,
+	})
+
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: hdr.View().ToVectorisedView(),
+	}))
 }

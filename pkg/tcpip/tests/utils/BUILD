@@ -8,12 +8,15 @@ go_library(
     visibility = ["//pkg/tcpip/tests:__subpackages__"],
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/nested",
         "//pkg/tcpip/link/pipe",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/icmp",
     ],
 )
