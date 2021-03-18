@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -23,6 +24,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/base/macros.h"
 #include "test/util/cleanup.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -254,6 +256,82 @@ TEST_F(WriteTest, PwriteWithOpath) {
 
   EXPECT_THAT(pwrite(fd, data.data(), data.size(), 0),
               SyscallFailsWithErrno(EBADF));
+}
+
+// Test that partial writes that hit SIGSEGV are correctly handled and return
+// partial write.
+TEST_F(WriteTest, PartialWriteSIGSEGV) {
+  // Allocate 2 pages and remove permission from the second.
+  const size_t size = 2 * kPageSize;
+  void* addr = mmap(0, size, PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  auto cleanup = Cleanup(
+      [addr, size] { EXPECT_THAT(munmap(addr, size), SyscallSucceeds()); });
+
+  void* badAddr = reinterpret_cast<char*>(addr) + kPageSize;
+  ASSERT_THAT(mprotect(badAddr, kPageSize, PROT_NONE), SyscallSucceeds());
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_WRONLY));
+
+  // Attempt to write both pages to the file. Create a non-contiguous iovec pair
+  // to ensure operation is done in 2 steps.
+  struct iovec iov[] = {
+      {
+          .iov_base = addr,
+          .iov_len = kPageSize,
+      },
+      {
+          .iov_base = addr,
+          .iov_len = size,
+      },
+  };
+  // Write should succeed for the first iovec and half of the second (=2 pages).
+  EXPECT_THAT(pwritev(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+              SyscallSucceedsWithValue(2 * kPageSize));
+}
+
+// Test that partial writes that hit SIGBUS are correctly handled and return
+// partial write.
+TEST_F(WriteTest, PartialWriteSIGBUS) {
+  SKIP_IF(getenv("GVISOR_GOFER_UNCACHED"));  // Can't mmap from uncached files.
+
+  TempPath mapfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd_map =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(mapfile.path().c_str(), O_RDWR));
+
+  // Let the first page be read to force a partial write.
+  ASSERT_THAT(ftruncate(fd_map.get(), kPageSize), SyscallSucceeds());
+
+  // Map 2 pages, one of which is not allocated in the backing file. Reading
+  // from it will trigger a SIGBUS.
+  const size_t size = 2 * kPageSize;
+  void* addr =
+      mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, fd_map.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  auto cleanup = Cleanup(
+      [addr, size] { EXPECT_THAT(munmap(addr, size), SyscallSucceeds()); });
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path().c_str(), O_WRONLY));
+
+  // Attempt to write both pages to the file. Create a non-contiguous iovec pair
+  // to ensure operation is done in 2 steps.
+  struct iovec iov[] = {
+      {
+          .iov_base = addr,
+          .iov_len = kPageSize,
+      },
+      {
+          .iov_base = addr,
+          .iov_len = size,
+      },
+  };
+  // Write should succeed for the first iovec and half of the second (=2 pages).
+  ASSERT_THAT(pwritev(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+              SyscallSucceedsWithValue(2 * kPageSize));
 }
 
 }  // namespace

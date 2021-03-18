@@ -75,17 +75,25 @@ func handleIOError(ctx context.Context, partialResult bool, ioerr, intr error, o
 // errors, we may consume the error and return only the partial read/write.
 //
 // Returns false if error is unknown.
-func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error, op string) (bool, error) {
-	switch err {
-	case nil:
+func handleIOErrorImpl(ctx context.Context, partialResult bool, errOrig, intr error, op string) (bool, error) {
+	if errOrig == nil {
 		// Typical successful syscall.
 		return true, nil
+	}
+
+	// Translate error, if possible, to consolidate errors from other packages
+	// into a smaller set of errors from syserror package.
+	translatedErr := errOrig
+	if errno, ok := syserror.TranslateError(errOrig); ok {
+		translatedErr = errno
+	}
+	switch translatedErr {
 	case io.EOF:
 		// EOF is always consumed. If this is a partial read/write
 		// (result != 0), the application will see that, otherwise
 		// they will see 0.
 		return true, nil
-	case syserror.ErrExceedsFileSizeLimit:
+	case syserror.EFBIG:
 		t := kernel.TaskFromContext(ctx)
 		if t == nil {
 			panic("I/O error should only occur from a context associated with a Task")
@@ -98,7 +106,7 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error,
 		// Simultaneously send a SIGXFSZ per setrlimit(2).
 		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
 		return true, syserror.EFBIG
-	case syserror.ErrInterrupted:
+	case syserror.EINTR:
 		// The syscall was interrupted. Return nil if it completed
 		// partially, otherwise return the error code that the syscall
 		// needs (to indicate to the kernel what it should do).
@@ -110,10 +118,10 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error,
 
 	if !partialResult {
 		// Typical syscall error.
-		return true, err
+		return true, errOrig
 	}
 
-	switch err {
+	switch translatedErr {
 	case syserror.EINTR:
 		// Syscall interrupted, but completed a partial
 		// read/write.  Like ErrWouldBlock, since we have a
@@ -143,7 +151,7 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error,
 		// For TCP sendfile connections, we may have a reset or timeout. But we
 		// should just return n as the result.
 		return true, nil
-	case syserror.ErrWouldBlock:
+	case syserror.EWOULDBLOCK:
 		// Syscall would block, but completed a partial read/write.
 		// This case should only be returned by IssueIO for nonblocking
 		// files. Since we have a partial read/write, we consume
@@ -151,7 +159,7 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, err, intr error,
 		return true, nil
 	}
 
-	switch err.(type) {
+	switch errOrig.(type) {
 	case syserror.SyscallRestartErrno:
 		// Identical to the EINTR case.
 		return true, nil
