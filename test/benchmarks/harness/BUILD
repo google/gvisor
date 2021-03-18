@@ -12,6 +12,7 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "@com_github_docker_docker//api/types/mount:go_default_library",
