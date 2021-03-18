@@ -130,17 +130,15 @@ func AddErrorUnwrapper(unwrap func(e error) (unix.Errno, bool)) {
 // TranslateError translates errors to errnos, it will return false if
 // the error was not registered.
 func TranslateError(from error) (unix.Errno, bool) {
-	err, ok := errorMap[from]
-	if ok {
-		return err, ok
+	if err, ok := errorMap[from]; ok {
+		return err, true
 	}
 	// Try to unwrap the error if we couldn't match an error
 	// exactly.  This might mean that a package has its own
 	// error type.
 	for _, unwrap := range errorUnwrappers {
-		err, ok := unwrap(from)
-		if ok {
-			return err, ok
+		if err, ok := unwrap(from); ok {
+			return err, true
 		}
 	}
 	return 0, false

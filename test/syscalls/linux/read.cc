@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/base/macros.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -119,6 +122,43 @@ TEST_F(ReadTest, ReadWithOpath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
   std::vector<char> buf(1);
   EXPECT_THAT(ReadFd(fd.get(), buf.data(), 1), SyscallFailsWithErrno(EBADF));
+}
+
+// Test that partial writes that hit SIGSEGV are correctly handled and return
+// partial write.
+TEST_F(ReadTest, PartialReadSIGSEGV) {
+  // Allocate 2 pages and remove permission from the second.
+  const size_t size = 2 * kPageSize;
+  void* addr =
+      mmap(0, size, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  auto cleanup = Cleanup(
+      [addr, size] { EXPECT_THAT(munmap(addr, size), SyscallSucceeds()); });
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(name_.c_str(), O_RDWR, 0666));
+  for (size_t i = 0; i < 2; i++) {
+    EXPECT_THAT(pwrite(fd.get(), addr, size, 0),
+                SyscallSucceedsWithValue(size));
+  }
+
+  void* badAddr = reinterpret_cast<char*>(addr) + kPageSize;
+  ASSERT_THAT(mprotect(badAddr, kPageSize, PROT_NONE), SyscallSucceeds());
+
+  // Attempt to read to both pages. Create a non-contiguous iovec pair to
+  // ensure operation is done in 2 steps.
+  struct iovec iov[] = {
+      {
+          .iov_base = addr,
+          .iov_len = kPageSize,
+      },
+      {
+          .iov_base = addr,
+          .iov_len = size,
+      },
+  };
+  EXPECT_THAT(preadv(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+              SyscallSucceedsWithValue(size));
 }
 
 }  // namespace

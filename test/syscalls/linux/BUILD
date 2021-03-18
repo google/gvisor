@@ -1922,7 +1922,9 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
+        "@com_google_absl//absl/base:core_headers",
         gtest,
+        "//test/util:cleanup",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3991,6 +3993,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
+        "@com_google_absl//absl/base:core_headers",
         gtest,
         "//test/util:temp_path",
         "//test/util:test_main",
