@@ -346,7 +346,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // creates directories as needed.
 func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 	for _, m := range mounts {
-		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
+		if m.Type != "bind" || !specutils.IsVFS1SupportedDevMount(m) {
 			continue
 		}
 
@@ -386,7 +386,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
+		if m.Type != "bind" || !specutils.IsVFS1SupportedDevMount(m) {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}
