@@ -334,14 +334,13 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 
 // Is9PMount returns true if the given mount can be mounted as an external gofer.
 func Is9PMount(m specs.Mount) bool {
-	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m)
+	return m.Type == "bind" && m.Source != "" && IsVFS1SupportedDevMount(m)
 }
 
-// IsSupportedDevMount returns true if the mount is a supported /dev mount.
-// Only mount that does not conflict with runsc default /dev mount is
-// supported.
-func IsSupportedDevMount(m specs.Mount) bool {
-	// These are devices exist inside sentry. See pkg/sentry/fs/dev/dev.go
+// IsVFS1SupportedDevMount returns true if m.Destination does not specify a
+// path that is hardcoded by VFS1's implementation of /dev.
+func IsVFS1SupportedDevMount(m specs.Mount) bool {
+	// See pkg/sentry/fs/dev/dev.go.
 	var existingDevices = []string{
 		"/dev/fd", "/dev/stdin", "/dev/stdout", "/dev/stderr",
 		"/dev/null", "/dev/zero", "/dev/full", "/dev/random",
