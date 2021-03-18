@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
@@ -28,8 +29,8 @@ import (
 // Dimensions here are clean/dirty cache (do or don't drop caches)
 // and if the mount on which we are compiling is a tmpfs/bind mount.
 type benchmark struct {
-	clearCache bool   // clearCache drops caches before running.
-	fstype     string // type of filesystem to use.
+	clearCache bool                   // clearCache drops caches before running.
+	fstype     harness.FileSystemType // type of filesystem to use.
 }
 
 // Note: CleanCache versions of this test require running with root permissions.
@@ -48,12 +49,12 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 	// Get a machine from the Harness on which to run.
 	machine, err := harness.GetMachine()
 	if err != nil {
-		b.Fatalf("failed to get machine: %v", err)
+		b.Fatalf("Failed to get machine: %v", err)
 	}
 	defer machine.CleanUp()
 
 	benchmarks := make([]benchmark, 0, 6)
-	for _, filesys := range []string{harness.BindFS, harness.TmpFS, harness.RootFS} {
+	for _, filesys := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS} {
 		benchmarks = append(benchmarks, benchmark{
 			clearCache: true,
 			fstype:     filesys,
@@ -75,7 +76,7 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 
 		filesystem := tools.Parameter{
 			Name:  "filesystem",
-			Value: bm.fstype,
+			Value: string(bm.fstype),
 		}
 		name, err := tools.ParametersToName(pageCache, filesystem)
 		if err != nil {
@@ -86,13 +87,14 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 			// Grab a container.
 			ctx := context.Background()
 			container := machine.GetContainer(ctx, b)
-			defer container.CleanUp(ctx)
-
-			mts, prefix, cleanup, err := harness.MakeMount(machine, bm.fstype)
+			cu := cleanup.Make(func() {
+				container.CleanUp(ctx)
+			})
+			defer cu.Clean()
+			mts, prefix, err := harness.MakeMount(machine, bm.fstype, &cu)
 			if err != nil {
 				b.Fatalf("Failed to make mount: %v", err)
 			}
-			defer cleanup()
 
 			runOpts := dockerutil.RunOpts{
 				Image:  image,
@@ -104,8 +106,9 @@ func runBuildBenchmark(b *testing.B, image, workdir, target string) {
 				b.Fatalf("run failed with: %v", err)
 			}
 
+			cpCmd := fmt.Sprintf("mkdir -p %s && cp -r %s %s/.", prefix, workdir, prefix)
 			if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
-				"cp", "-rf", workdir, prefix+"/."); err != nil {
+				"/bin/sh", "-c", cpCmd); err != nil {
 				b.Fatalf("failed to copy directory: %v (%s)", err, out)
 			}
 

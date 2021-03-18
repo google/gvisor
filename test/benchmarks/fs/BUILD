@@ -8,6 +8,7 @@ benchmark_test(
     srcs = ["bazel_test.go"],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",
@@ -21,6 +22,7 @@ benchmark_test(
     srcs = ["fio_test.go"],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/test/dockerutil",
         "//test/benchmarks/harness",
         "//test/benchmarks/tools",

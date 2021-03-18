@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 	"gvisor.dev/gvisor/test/benchmarks/tools"
@@ -69,7 +70,7 @@ func BenchmarkFio(b *testing.B) {
 	}
 	defer machine.CleanUp()
 
-	for _, fsType := range []string{harness.BindFS, harness.TmpFS, harness.RootFS} {
+	for _, fsType := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS} {
 		for _, tc := range testCases {
 			operation := tools.Parameter{
 				Name:  "operation",
@@ -81,7 +82,7 @@ func BenchmarkFio(b *testing.B) {
 			}
 			filesystem := tools.Parameter{
 				Name:  "filesystem",
-				Value: fsType,
+				Value: string(fsType),
 			}
 			name, err := tools.ParametersToName(operation, blockSize, filesystem)
 			if err != nil {
@@ -90,15 +91,18 @@ func BenchmarkFio(b *testing.B) {
 			b.Run(name, func(b *testing.B) {
 				b.StopTimer()
 				tc.Size = b.N
+
 				ctx := context.Background()
 				container := machine.GetContainer(ctx, b)
-				defer container.CleanUp(ctx)
+				cu := cleanup.Make(func() {
+					container.CleanUp(ctx)
+				})
+				defer cu.Clean()
 
-				mnts, outdir, mountCleanup, err := harness.MakeMount(machine, fsType)
+				mnts, outdir, err := harness.MakeMount(machine, fsType, &cu)
 				if err != nil {
 					b.Fatalf("failed to make mount: %v", err)
 				}
-				defer mountCleanup()
 
 				// Start the container with the mount.
 				if err := container.Spawn(
@@ -110,6 +114,11 @@ func BenchmarkFio(b *testing.B) {
 					"sleep", fmt.Sprintf("%d", 1000*b.N),
 				); err != nil {
 					b.Fatalf("failed to start fio container with: %v", err)
+				}
+
+				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
+					"mkdir", "-p", outdir); err != nil {
+					b.Fatalf("failed to copy directory: %v (%s)", err, out)
 				}
 
 				// Directory and filename inside container where fio will read/write.
@@ -130,7 +139,6 @@ func BenchmarkFio(b *testing.B) {
 				}
 
 				cmd := tc.MakeCmd(outfile)
-
 				if err := harness.DropCaches(machine); err != nil {
 					b.Fatalf("failed to drop caches: %v", err)
 				}
