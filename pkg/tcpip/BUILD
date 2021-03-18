@@ -19,6 +19,8 @@ go_template_instance(
 go_library(
     name = "tcpip",
     srcs = [
+        "aligned.go",
+        "aligned_unsafe.go",
         "errors.go",
         "sock_err_list.go",
         "socketops.go",

@@ -1220,7 +1220,7 @@ type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
 type StatCounter struct {
-	count uint64
+	count AlignedAtomicUint64
 }
 
 // Increment adds one to the counter.
@@ -1240,7 +1240,7 @@ func (s *StatCounter) Value(name ...string) uint64 {
 
 // IncrementBy increments the counter by v.
 func (s *StatCounter) IncrementBy(v uint64) {
-	atomic.AddUint64(&s.count, v)
+	s.count.Add(v)
 }
 
 func (s *StatCounter) String() string {
