@@ -14,7 +14,7 @@
 
 // +build arm 386
 
-package tcpip
+package atomicbitops
 
 import (
 	"sync/atomic"
