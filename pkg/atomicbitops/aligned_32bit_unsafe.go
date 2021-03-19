@@ -38,14 +38,17 @@ func (aa *AlignedAtomicInt64) ptr() *int64 {
 	return (*int64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 7) &^ 7))
 }
 
+// Load is analagous to atomic.LoadInt64.
 func (aa *AlignedAtomicInt64) Load() int64 {
 	return atomic.LoadInt64(aa.ptr())
 }
 
+// Store is analagous to atomic.StoreInt64.
 func (aa *AlignedAtomicInt64) Store(v int64) {
 	atomic.StoreInt64(aa.ptr(), v)
 }
 
+// Add is analagous to atomic.AddInt64.
 func (aa *AlignedAtomicInt64) Add(v int64) int64 {
 	return atomic.AddInt64(aa.ptr(), v)
 }
@@ -67,14 +70,17 @@ func (aa *AlignedAtomicUint64) ptr() *uint64 {
 	return (*uint64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 7) &^ 7))
 }
 
+// Load is analagous to atomic.LoadUint64.
 func (aa *AlignedAtomicUint64) Load() uint64 {
 	return atomic.LoadUint64(aa.ptr())
 }
 
+// Store is analagous to atomic.StoreUint64.
 func (aa *AlignedAtomicUint64) Store(v uint64) {
 	atomic.StoreUint64(aa.ptr(), v)
 }
 
+// Add is analagous to atomic.AddUint64.
 func (aa *AlignedAtomicUint64) Add(v uint64) uint64 {
 	return atomic.AddUint64(aa.ptr(), v)
 }
