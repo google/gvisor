@@ -40,6 +40,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -1220,7 +1221,7 @@ type NetworkProtocolNumber uint32
 
 // A StatCounter keeps track of a statistic.
 type StatCounter struct {
-	count AlignedAtomicUint64
+	count atomicbitops.AlignedAtomicUint64
 }
 
 // Increment adds one to the counter.

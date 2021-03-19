@@ -19,8 +19,6 @@ go_template_instance(
 go_library(
     name = "tcpip",
     srcs = [
-        "aligned.go",
-        "aligned_unsafe.go",
         "errors.go",
         "sock_err_list.go",
         "socketops.go",
@@ -31,6 +29,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip/buffer",
         "//pkg/waiter",
