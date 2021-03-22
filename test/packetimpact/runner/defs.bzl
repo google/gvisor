@@ -203,11 +203,6 @@ ALL_TESTS = [
         name = "tcp_outside_the_window",
     ),
     PacketimpactTestInfo(
-        name = "tcp_outside_the_window_closing",
-        # TODO(b/181625316): Fix netstack then merge into tcp_outside_the_window.
-        expect_netstack_failure = True,
-    ),
-    PacketimpactTestInfo(
         name = "tcp_noaccept_close_rst",
     ),
     PacketimpactTestInfo(
@@ -215,11 +210,6 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_unacc_seq_ack",
-    ),
-    PacketimpactTestInfo(
-        name = "tcp_unacc_seq_ack_closing",
-        # TODO(b/181625316): Fix netstack then merge into tcp_unacc_seq_ack.
-        expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
         name = "tcp_paws_mechanism",
