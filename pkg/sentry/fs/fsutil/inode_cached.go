@@ -380,16 +380,17 @@ func (c *CachingInodeOperations) Allocate(ctx context.Context, offset, length in
 	return nil
 }
 
-// WriteOut implements fs.InodeOperations.WriteOut.
-func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
+// WriteDirtyPagesAndAttrs will write the dirty pages and attributes to the
+// gofer without calling Fsync on the remote file.
+func (c *CachingInodeOperations) WriteDirtyPagesAndAttrs(ctx context.Context, inode *fs.Inode) error {
 	c.attrMu.Lock()
+	defer c.attrMu.Unlock()
+	c.dataMu.Lock()
+	defer c.dataMu.Unlock()
 
 	// Write dirty pages back.
-	c.dataMu.Lock()
 	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.mfp.MemoryFile(), c.backingFile.WriteFromBlocksAt)
-	c.dataMu.Unlock()
 	if err != nil {
-		c.attrMu.Unlock()
 		return err
 	}
 
@@ -399,12 +400,18 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 
 	// Write out cached attributes.
 	if err := c.backingFile.SetMaskedAttributes(ctx, c.dirtyAttr, c.attr, false); err != nil {
-		c.attrMu.Unlock()
 		return err
 	}
 	c.dirtyAttr = fs.AttrMask{}
 
-	c.attrMu.Unlock()
+	return nil
+}
+
+// WriteOut implements fs.InodeOperations.WriteOut.
+func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
+	if err := c.WriteDirtyPagesAndAttrs(ctx, inode); err != nil {
+		return err
+	}
 
 	// Fsync the remote file.
 	return c.backingFile.Sync(ctx)
