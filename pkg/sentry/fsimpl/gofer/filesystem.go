@@ -754,6 +754,11 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
+		if !d.cachedMetadataAuthoritative() {
+			if err := d.updateFromGetattr(ctx); err != nil {
+				return err
+			}
+		}
 		if d.isDir() {
 			return syserror.EPERM
 		}
@@ -763,10 +768,10 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
 			return err
 		}
-		if d.nlink == 0 {
+		if atomic.LoadUint32(&d.nlink) == 0 {
 			return syserror.ENOENT
 		}
-		if d.nlink == math.MaxUint32 {
+		if atomic.LoadUint32(&d.nlink) == math.MaxUint32 {
 			return syserror.EMLINK
 		}
 		if err := parent.file.link(ctx, d.file, childName); err != nil {
