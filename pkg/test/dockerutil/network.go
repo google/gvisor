@@ -102,11 +102,8 @@ func (n *Network) Inspect(ctx context.Context) (types.NetworkResource, error) {
 	return n.client.NetworkInspect(ctx, n.id, types.NetworkInspectOptions{Verbose: true})
 }
 
-// Cleanup cleans up the docker network and all the containers attached to it.
+// Cleanup cleans up the docker network.
 func (n *Network) Cleanup(ctx context.Context) error {
-	for _, c := range n.containers {
-		c.CleanUp(ctx)
-	}
 	n.containers = nil
 
 	return n.client.NetworkRemove(ctx, n.id)

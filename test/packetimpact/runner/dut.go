@@ -137,7 +137,7 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 		dn := dn
 		t.Cleanup(func() {
 			if err := dn.Cleanup(ctx); err != nil {
-				t.Errorf("unable to cleanup container %s: %s", dn.Name, err)
+				t.Errorf("failed to cleanup network %s: %s", dn.Name, err)
 			}
 		})
 		// Sanity check.
@@ -151,13 +151,15 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 	info.testNet = testNet
 
 	// Create the Docker container for the DUT.
-	var dut DUT
+	makeContainer := dockerutil.MakeContainer
 	if native {
-		dut = mkDevice(dockerutil.MakeNativeContainer(ctx, logger(fmt.Sprintf("dut-%d", id))))
-	} else {
-		dut = mkDevice(dockerutil.MakeContainer(ctx, logger(fmt.Sprintf("dut-%d", id))))
+		makeContainer = dockerutil.MakeNativeContainer
 	}
-	info.dut = dut
+	dutContainer := makeContainer(ctx, logger(fmt.Sprintf("dut-%d", id)))
+	t.Cleanup(func() {
+		dutContainer.CleanUp(ctx)
+	})
+	info.dut = mkDevice(dutContainer)
 
 	runOpts := dockerutil.RunOpts{
 		Image:  "packetimpact",
@@ -168,7 +170,7 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 	}
 
 	ipv4PrefixLength, _ := testNet.Subnet.Mask.Size()
-	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev, err := dut.Prepare(ctx, t, runOpts, ctrlNet, testNet)
+	remoteIPv6, remoteMAC, dutDeviceID, dutTestNetDev, err := info.dut.Prepare(ctx, t, runOpts, ctrlNet, testNet)
 	if err != nil {
 		return dutInfo{}, err
 	}
@@ -183,7 +185,7 @@ func setUpDUT(ctx context.Context, t *testing.T, id int, mkDevice func(*dockerut
 		POSIXServerIP:    AddressInSubnet(DUTAddr, *ctrlNet.Subnet),
 		POSIXServerPort:  CtrlPort,
 	}
-	info.uname, err = dut.Uname(ctx)
+	info.uname, err = info.dut.Uname(ctx)
 	if err != nil {
 		return dutInfo{}, fmt.Errorf("failed to get uname information on DUT: %w", err)
 	}
@@ -231,6 +233,9 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 
 	// Create the Docker container for the testbench.
 	testbenchContainer := dockerutil.MakeNativeContainer(ctx, logger("testbench"))
+	t.Cleanup(func() {
+		testbenchContainer.CleanUp(ctx)
+	})
 
 	runOpts := dockerutil.RunOpts{
 		Image:  "packetimpact",
@@ -598,7 +603,6 @@ func createDockerNetwork(ctx context.Context, n *dockerutil.Network) error {
 func StartContainer(ctx context.Context, runOpts dockerutil.RunOpts, c *dockerutil.Container, containerAddr net.IP, ns []*dockerutil.Network, sysctls map[string]string, cmd ...string) error {
 	conf, hostconf, netconf := c.ConfigsFrom(runOpts, cmd...)
 	_ = netconf
-	hostconf.AutoRemove = true
 	hostconf.Sysctls = map[string]string{"net.ipv6.conf.all.disable_ipv6": "0"}
 	for k, v := range sysctls {
 		hostconf.Sysctls[k] = v
