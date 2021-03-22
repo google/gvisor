@@ -108,3 +108,75 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 		})
 	}
 }
+
+// TestAckOTWSeqInClosing tests that the DUT should send an ACK with
+// the right ACK number when receiving a packet with OTW Seq number
+// in CLOSING state. https://tools.ietf.org/html/rfc793#page-69
+func TestAckOTWSeqInClosing(t *testing.T) {
+	for _, tt := range []struct {
+		description  string
+		flags        header.TCPFlags
+		payloads     testbench.Layers
+		seqNumOffset seqnum.Size
+		expectACK    bool
+	}{
+		{"SYN", header.TCPFlagSyn, nil, 0, true},
+		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 0, true},
+		{"ACK", header.TCPFlagAck, nil, 0, false},
+		{"FINACK", header.TCPFlagFin | header.TCPFlagAck, nil, 0, false},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("Sample Data")}}, 0, false},
+
+		{"SYN", header.TCPFlagSyn, nil, 1, true},
+		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 1, true},
+		{"ACK", header.TCPFlagAck, nil, 1, true},
+		{"FINACK", header.TCPFlagFin | header.TCPFlagAck, nil, 1, true},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("Sample Data")}}, 1, true},
+
+		{"SYN", header.TCPFlagSyn, nil, 2, true},
+		{"SYNACK", header.TCPFlagSyn | header.TCPFlagAck, nil, 2, true},
+		{"ACK", header.TCPFlagAck, nil, 2, true},
+		{"FINACK", header.TCPFlagFin | header.TCPFlagAck, nil, 2, true},
+		{"Data", header.TCPFlagAck, []testbench.Layer{&testbench.Payload{Bytes: []byte("Sample Data")}}, 2, true},
+	} {
+		t.Run(fmt.Sprintf("%s%d", tt.description, tt.seqNumOffset), func(t *testing.T) {
+			dut := testbench.NewDUT(t)
+			listenFD, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+			defer dut.Close(t, listenFD)
+			conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+			defer conn.Close(t)
+			conn.Connect(t)
+			acceptFD, _ := dut.Accept(t, listenFD)
+			defer dut.Close(t, acceptFD)
+
+			dut.Shutdown(t, acceptFD, unix.SHUT_WR)
+
+			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
+				t.Fatalf("expected FINACK from DUT, but got none: %s", err)
+			}
+
+			// Do not ack the FIN from DUT so that the TCP state on DUT is CLOSING instead of CLOSED.
+			seqNumForTheirFIN := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)) - 1)
+			conn.Send(t, testbench.TCP{AckNum: seqNumForTheirFIN, Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)})
+
+			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
+			if err != nil {
+				t.Fatalf("expected an ACK to our FIN, but got none: %s", err)
+			}
+
+			windowSize := seqnum.Size(*gotTCP.WindowSize) + tt.seqNumOffset
+			conn.SendFrameStateless(t, conn.CreateFrame(t, testbench.Layers{&testbench.TCP{
+				SeqNum: testbench.Uint32(uint32(conn.LocalSeqNum(t).Add(windowSize))),
+				AckNum: seqNumForTheirFIN,
+				Flags:  testbench.TCPFlags(tt.flags),
+			}}, tt.payloads...))
+
+			gotACK, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
+			if tt.expectACK && err != nil {
+				t.Errorf("expected an ACK but got none: %s", err)
+			}
+			if !tt.expectACK && gotACK != nil {
+				t.Errorf("expected no ACK but got one: %s", gotACK)
+			}
+		})
+	}
+}
