@@ -204,20 +204,8 @@ func (f *fileOperations) readdirAll(ctx context.Context) (map[string]fs.DentAttr
 	return entries, nil
 }
 
-// maybeSync will call FSync on the file if either the cache policy or file
-// flags require it.
+// maybeSync will call FSync on the file if the file flags require it.
 func (f *fileOperations) maybeSync(ctx context.Context, file *fs.File, offset, n int64) error {
-	if n == 0 {
-		// Nothing to sync.
-		return nil
-	}
-
-	if f.inodeOperations.session().cachePolicy.writeThrough(file.Dirent.Inode) {
-		// Call WriteOut directly, as some "writethrough" filesystems
-		// do not support sync.
-		return f.inodeOperations.cachingInodeOps.WriteOut(ctx, file.Dirent.Inode)
-	}
-
 	flags := file.Flags()
 	var syncType fs.SyncType
 	switch {
@@ -252,6 +240,19 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		n, err = f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
 	} else {
 		n, err = src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
+	}
+
+	if n == 0 {
+		// Nothing written. We are done.
+		return 0, err
+	}
+
+	// Write the dirty pages and attributes if cache policy tells us to.
+	if f.inodeOperations.session().cachePolicy.writeThrough(file.Dirent.Inode) {
+		if werr := f.inodeOperations.cachingInodeOps.WriteDirtyPagesAndAttrs(ctx, file.Dirent.Inode); werr != nil {
+			// Report no bytes written since the write faild.
+			return 0, werr
+		}
 	}
 
 	// We may need to sync the written bytes.
