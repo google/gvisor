@@ -343,6 +343,8 @@ func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 
 // TestAddIpv6Address tests adding IPv6 addresses.
 func TestAddIpv6Address(t *testing.T) {
+	const nicID = 1
+
 	tests := []struct {
 		name string
 		addr tcpip.Address
@@ -367,18 +369,18 @@ func TestAddIpv6Address(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 			})
-			if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
-				t.Fatalf("CreateNIC(_) = %s", err)
+			if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
-			if err := s.AddAddress(1, ProtocolNumber, test.addr); err != nil {
-				t.Fatalf("AddAddress(_, %d, nil) = %s", ProtocolNumber, err)
+			if err := s.AddAddress(nicID, ProtocolNumber, test.addr); err != nil {
+				t.Fatalf("AddAddress(%d, %d, nil) = %s", nicID, ProtocolNumber, err)
 			}
 
-			if addr, ok := s.GetMainNICAddress(1, header.IPv6ProtocolNumber); !ok {
-				t.Fatalf("got stack.GetMainNICAddress(1, %d) = (_, false), want = (_, true)", header.IPv6ProtocolNumber)
+			if addr, err := s.GetMainNICAddress(nicID, ProtocolNumber); err != nil {
+				t.Fatalf("stack.GetMainNICAddress(%d, %d): %s", nicID, ProtocolNumber, err)
 			} else if addr.Address != test.addr {
-				t.Fatalf("got stack.GetMainNICAddress(1_, %d) = (%s, true), want = (%s, true)", header.IPv6ProtocolNumber, addr.Address, test.addr)
+				t.Fatalf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, ProtocolNumber, addr.Address, test.addr)
 			}
 		})
 	}

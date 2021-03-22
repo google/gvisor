@@ -62,10 +62,10 @@ const (
 )
 
 func checkGetMainNICAddress(s *stack.Stack, nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, want tcpip.AddressWithPrefix) error {
-	if addr, ok := s.GetMainNICAddress(nicID, proto); !ok {
-		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = (_, false), want = (_, true)", nicID, proto)
+	if addr, err := s.GetMainNICAddress(nicID, proto); err != nil {
+		return fmt.Errorf("stack.GetMainNICAddress(%d, %d): %s", nicID, proto, err)
 	} else if addr != want {
-		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = (%s, true), want = (%s, true)", nicID, proto, addr, want)
+		return fmt.Errorf("got stack.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, proto, addr, want)
 	}
 	return nil
 }
@@ -1854,6 +1854,8 @@ func TestNetworkOption(t *testing.T) {
 }
 
 func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
+	const nicID = 1
+
 	for _, addrLen := range []int{4, 16} {
 		t.Run(fmt.Sprintf("addrLen=%d", addrLen), func(t *testing.T) {
 			for canBe := 0; canBe < 3; canBe++ {
@@ -1864,8 +1866,8 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 								NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 							})
 							ep := channel.New(10, defaultMTU, "")
-							if err := s.CreateNIC(1, ep); err != nil {
-								t.Fatal("CreateNIC failed:", err)
+							if err := s.CreateNIC(nicID, ep); err != nil {
+								t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 							}
 							// Insert <canBe> primary and <never> never-primary addresses.
 							// Each one will add a network endpoint to the NIC.
@@ -1888,34 +1890,34 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 											PrefixLen: addrLen * 8,
 										},
 									}
-									if err := s.AddProtocolAddressWithOptions(1, protocolAddress, behavior); err != nil {
-										t.Fatal("AddProtocolAddressWithOptions failed:", err)
+									if err := s.AddProtocolAddressWithOptions(nicID, protocolAddress, behavior); err != nil {
+										t.Fatalf("AddProtocolAddressWithOptions(%d, %#v, %d): %s", nicID, protocolAddress, behavior, err)
 									}
 									// Remember the address/prefix.
 									primaryAddrAdded[protocolAddress.AddressWithPrefix] = struct{}{}
 								} else {
-									if err := s.AddAddressWithOptions(1, fakeNetNumber, address, behavior); err != nil {
-										t.Fatal("AddAddressWithOptions failed:", err)
+									if err := s.AddAddressWithOptions(nicID, fakeNetNumber, address, behavior); err != nil {
+										t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s:", nicID, fakeNetNumber, address, behavior, err)
 									}
 								}
 							}
 							// Check that GetMainNICAddress returns an address if at least
 							// one primary address was added. In that case make sure the
 							// address/prefixLen matches what we added.
-							gotAddr, ok := s.GetMainNICAddress(1, fakeNetNumber)
-							if !ok {
-								t.Fatalf("got GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
+							gotAddr, err := s.GetMainNICAddress(nicID, fakeNetNumber)
+							if err != nil {
+								t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
 							}
 							if len(primaryAddrAdded) == 0 {
 								// No primary addresses present.
 								if wantAddr := (tcpip.AddressWithPrefix{}); gotAddr != wantAddr {
-									t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, gotAddr, wantAddr)
+									t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, wantAddr)
 								}
 							} else {
 								// At least one primary address was added, verify the returned
 								// address is in the list of primary addresses we added.
 								if _, ok := primaryAddrAdded[gotAddr]; !ok {
-									t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, gotAddr, primaryAddrAdded)
+									t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, gotAddr, primaryAddrAdded)
 								}
 							}
 						})
@@ -1937,25 +1939,31 @@ func TestGetMainNICAddressErrors(t *testing.T) {
 	}
 
 	// Sanity check with a successful call.
-	if addr, ok := s.GetMainNICAddress(nicID, ipv4.ProtocolNumber); !ok {
-		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, false), want = (_, true)", nicID, ipv4.ProtocolNumber, addr)
+	if addr, err := s.GetMainNICAddress(nicID, ipv4.ProtocolNumber); err != nil {
+		t.Errorf("s.GetMainNICAddress(%d, %d): %s", nicID, ipv4.ProtocolNumber, err)
 	} else if want := (tcpip.AddressWithPrefix{}); addr != want {
-		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, _), want = (%s, _)", nicID, ipv4.ProtocolNumber, addr, want)
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = %s, want = %s", nicID, ipv4.ProtocolNumber, addr, want)
 	}
 
 	const unknownNICID = nicID + 1
-	if addr, ok := s.GetMainNICAddress(unknownNICID, ipv4.ProtocolNumber); ok {
-		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", unknownNICID, ipv4.ProtocolNumber, addr)
+	switch addr, err := s.GetMainNICAddress(unknownNICID, ipv4.ProtocolNumber); err.(type) {
+	case *tcpip.ErrUnknownNICID:
+	default:
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrUnknownNICID)", unknownNICID, ipv4.ProtocolNumber, addr, err)
 	}
 
 	// ARP is not an addressable network endpoint.
-	if addr, ok := s.GetMainNICAddress(nicID, arp.ProtocolNumber); ok {
-		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", nicID, arp.ProtocolNumber, addr)
+	switch addr, err := s.GetMainNICAddress(nicID, arp.ProtocolNumber); err.(type) {
+	case *tcpip.ErrNotSupported:
+	default:
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrNotSupported)", nicID, arp.ProtocolNumber, addr, err)
 	}
 
 	const unknownProtocolNumber = 1234
-	if addr, ok := s.GetMainNICAddress(nicID, unknownProtocolNumber); ok {
-		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, true), want = (_, false)", nicID, unknownProtocolNumber, addr)
+	switch addr, err := s.GetMainNICAddress(nicID, unknownProtocolNumber); err.(type) {
+	case *tcpip.ErrUnknownProtocol:
+	default:
+		t.Errorf("got s.GetMainNICAddress(%d, %d) = (%s, %T), want = (_, tcpip.ErrUnknownProtocol)", nicID, unknownProtocolNumber, addr, err)
 	}
 }
 
@@ -2654,6 +2662,8 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 // TestNewPEB tests that a new PrimaryEndpointBehavior value (peb) is respected
 // when an address's kind gets "promoted" to permanent from permanentExpired.
 func TestNewPEBOnPromotionToPermanent(t *testing.T) {
+	const nicID = 1
+
 	pebs := []stack.PrimaryEndpointBehavior{
 		stack.NeverPrimaryEndpoint,
 		stack.CanBePrimaryEndpoint,
@@ -2667,8 +2677,8 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 					NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 				})
 				ep1 := channel.New(10, defaultMTU, "")
-				if err := s.CreateNIC(1, ep1); err != nil {
-					t.Fatal("CreateNIC failed:", err)
+				if err := s.CreateNIC(nicID, ep1); err != nil {
+					t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 				}
 
 				// Add a permanent address with initial
@@ -2676,20 +2686,21 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// NeverPrimaryEndpoint, the address should not
 				// be returned by a call to GetMainNICAddress;
 				// else, it should.
-				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", pi); err != nil {
-					t.Fatal("AddAddressWithOptions failed:", err)
+				const address1 = tcpip.Address("\x01")
+				if err := s.AddAddressWithOptions(nicID, fakeNetNumber, address1, pi); err != nil {
+					t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s", nicID, fakeNetNumber, address1, pi, err)
 				}
-				addr, ok := s.GetMainNICAddress(1, fakeNetNumber)
-				if !ok {
-					t.Fatalf("GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
+				addr, err := s.GetMainNICAddress(nicID, fakeNetNumber)
+				if err != nil {
+					t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
 				}
 				if pi == stack.NeverPrimaryEndpoint {
 					if want := (tcpip.AddressWithPrefix{}); addr != want {
-						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, addr, want)
+						t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, addr, want)
 
 					}
-				} else if addr.Address != "\x01" {
-					t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (1, true)", fakeNetNumber, addr.Address)
+				} else if addr.Address != address1 {
+					t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, addr.Address, address1)
 				}
 
 				{
@@ -2707,13 +2718,14 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// new peb is respected when an address gets
 				// "promoted" to permanent from a
 				// permanentExpired kind.
-				r, err := s.FindRoute(1, "\x01", "\x02", fakeNetNumber, false)
+				const address2 = tcpip.Address("\x02")
+				r, err := s.FindRoute(nicID, address1, address2, fakeNetNumber, false)
 				if err != nil {
-					t.Fatalf("FindRoute failed: %v", err)
+					t.Fatalf("FindRoute(%d, %s, %s, %d, false): %s", nicID, address1, address2, fakeNetNumber, err)
 				}
 				defer r.Release()
-				if err := s.RemoveAddress(1, "\x01"); err != nil {
-					t.Fatalf("RemoveAddress failed: %v", err)
+				if err := s.RemoveAddress(nicID, address1); err != nil {
+					t.Fatalf("RemoveAddress(%d, %s): %s", nicID, address1, err)
 				}
 
 				//
@@ -2724,19 +2736,20 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 
 				// Add some other address with peb set to
 				// FirstPrimaryEndpoint.
-				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x03", stack.FirstPrimaryEndpoint); err != nil {
-					t.Fatalf("AddAddressWithOptions failed: %v", err)
+				const address3 = tcpip.Address("\x03")
+				if err := s.AddAddressWithOptions(nicID, fakeNetNumber, address3, stack.FirstPrimaryEndpoint); err != nil {
+					t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s", nicID, fakeNetNumber, address3, stack.FirstPrimaryEndpoint, err)
 
 				}
 
 				// Add back the address we removed earlier and
 				// make sure the new peb was respected.
 				// (The address should just be promoted now).
-				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", ps); err != nil {
-					t.Fatalf("AddAddressWithOptions failed: %v", err)
+				if err := s.AddAddressWithOptions(nicID, fakeNetNumber, address1, ps); err != nil {
+					t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s", nicID, fakeNetNumber, address1, pi, err)
 				}
 				var primaryAddrs []tcpip.Address
-				for _, pa := range s.NICInfo()[1].ProtocolAddresses {
+				for _, pa := range s.NICInfo()[nicID].ProtocolAddresses {
 					primaryAddrs = append(primaryAddrs, pa.AddressWithPrefix.Address)
 				}
 				var expectedList []tcpip.Address
@@ -2765,20 +2778,20 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 				// should be returned by a call to
 				// GetMainNICAddress; else, our original address
 				// should be returned.
-				if err := s.RemoveAddress(1, "\x03"); err != nil {
-					t.Fatalf("RemoveAddress failed: %v", err)
+				if err := s.RemoveAddress(nicID, address3); err != nil {
+					t.Fatalf("RemoveAddress(%d, %s): %s", nicID, address3, err)
 				}
-				addr, ok = s.GetMainNICAddress(1, fakeNetNumber)
-				if !ok {
-					t.Fatalf("got GetMainNICAddress(1, %d) = (_, false), want = (_, true)", fakeNetNumber)
+				addr, err = s.GetMainNICAddress(nicID, fakeNetNumber)
+				if err != nil {
+					t.Fatalf("GetMainNICAddress(%d, %d): %s", nicID, fakeNetNumber, err)
 				}
 				if ps == stack.NeverPrimaryEndpoint {
 					if want := (tcpip.AddressWithPrefix{}); addr != want {
-						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (%s, true)", fakeNetNumber, addr, want)
+						t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, addr, want)
 					}
 				} else {
-					if addr.Address != "\x01" {
-						t.Fatalf("got GetMainNICAddress(1, %d) = (%s, true), want = (1, true)", fakeNetNumber, addr.Address)
+					if addr.Address != address1 {
+						t.Fatalf("got GetMainNICAddress(%d, %d) = %s, want = %s", nicID, fakeNetNumber, addr.Address, address1)
 					}
 				}
 			})
