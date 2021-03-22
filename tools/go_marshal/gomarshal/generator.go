@@ -126,6 +126,12 @@ func (g *Generator) writeHeader() error {
 	b.emit("// Automatically generated marshal implementation. See tools/go_marshal.\n\n")
 
 	// Emit build tags.
+	b.emit("// If there are issues with build tag aggregation, see\n")
+	b.emit("// tools/go_marshal/gomarshal/generator.go:writeHeader(). The build tags here\n")
+	b.emit("// come from the input set of files used to generate this file. This input set\n")
+	b.emit("// is filtered based on pre-defined file suffixes related to build tags, see \n")
+	b.emit("// tools/defs.bzl:calculate_sets().\n\n")
+
 	if t := tags.Aggregate(g.inputs); len(t) > 0 {
 		b.emit(strings.Join(t.Lines(), "\n"))
 		b.emit("\n\n")
