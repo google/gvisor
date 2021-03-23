@@ -126,14 +126,15 @@ class SetgidDirTest : public ::testing::Test {
 
     SKIP_IF(IsRunningWithVFS1());
 
-    temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
-        TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
-
     // If we can't find two usable groups, we're in an unsupporting environment.
     // Skip the test.
     PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
     SKIP_IF(!groups.ok());
     groups_ = groups.ValueOrDie();
+
+    auto cleanup = Setegid(groups_.first);
+    temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
+        TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   }
 
   void TearDown() override {
@@ -348,6 +349,10 @@ class FileModeTest : public ::testing::TestWithParam<FileModeTestcase> {};
 
 TEST_P(FileModeTest, WriteToFile) {
   SKIP_IF(IsRunningWithVFS1());
+  PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
+  SKIP_IF(!groups.ok());
+
+  auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
@@ -371,6 +376,10 @@ TEST_P(FileModeTest, WriteToFile) {
 
 TEST_P(FileModeTest, TruncateFile) {
   SKIP_IF(IsRunningWithVFS1());
+  PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
+  SKIP_IF(!groups.ok());
+
+  auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
