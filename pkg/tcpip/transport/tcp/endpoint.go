@@ -664,7 +664,7 @@ type endpoint struct {
 	// applied while sending packets. Defaults to 0 as on Linux.
 	sendTOS uint8
 
-	gso *stack.GSO
+	gso stack.GSO
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
 	stats Stats `state:"nosave"`
@@ -3100,34 +3100,23 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	return s
 }
 
-func (e *endpoint) initHardwareGSO() {
-	gso := &stack.GSO{}
+func (e *endpoint) initGSO() {
+	if !e.route.HasGSOCapability() {
+		return
+	}
+
 	switch e.route.NetProto() {
 	case header.IPv4ProtocolNumber:
-		gso.Type = stack.GSOTCPv4
-		gso.L3HdrLen = header.IPv4MinimumSize
+		e.gso.Type = stack.GSOTCPv4
+		e.gso.L3HdrLen = header.IPv4MinimumSize
 	case header.IPv6ProtocolNumber:
-		gso.Type = stack.GSOTCPv6
-		gso.L3HdrLen = header.IPv6MinimumSize
+		e.gso.Type = stack.GSOTCPv6
+		e.gso.L3HdrLen = header.IPv6MinimumSize
 	default:
 		panic(fmt.Sprintf("Unknown netProto: %v", e.NetProto))
 	}
-	gso.NeedsCsum = true
-	gso.CsumOffset = header.TCPChecksumOffset
-	gso.MaxSize = e.route.GSOMaxSize()
-	e.gso = gso
-}
-
-func (e *endpoint) initGSO() {
-	if e.route.HasHardwareGSOCapability() {
-		e.initHardwareGSO()
-	} else if e.route.HasSoftwareGSOCapability() {
-		e.gso = &stack.GSO{
-			MaxSize:   e.route.GSOMaxSize(),
-			Type:      stack.GSOSW,
-			NeedsCsum: false,
-		}
-	}
+	e.gso.NeedsCsum = e.route.HasHardwareGSOCapability()
+	e.gso.CsumOffset = header.TCPChecksumOffset
 }
 
 // State implements tcpip.Endpoint.State. It exports the endpoint's protocol

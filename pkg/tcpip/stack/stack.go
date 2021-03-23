@@ -1874,7 +1874,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Data:               payload,
 	})
-	return nic.WritePacketToRemote(remote, nil, netProto, pkt)
+	return nic.WritePacketToRemote(remote, netProto, pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the
