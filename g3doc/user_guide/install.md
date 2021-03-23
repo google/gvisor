@@ -59,7 +59,7 @@ Next, the configure the key used to sign archives and the repository:
 
 ```bash
 curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
-sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases release main"
 ```
 
 Now the runsc package can be installed:
@@ -96,7 +96,7 @@ You can use this link with the steps described in
 For `apt` installation, use the `master` to configure the repository:
 
 ```bash
-sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases master main"
+sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases master main"
 ```
 
 ### Nightly
@@ -118,7 +118,7 @@ Note that a release may not be available for every day.
 For `apt` installation, use the `nightly` to configure the repository:
 
 ```bash
-sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases nightly main"
+sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases nightly main"
 ```
 
 ### Latest release
@@ -133,7 +133,7 @@ You can use this link with the steps described in
 For `apt` installation, use the `release` to configure the repository:
 
 ```bash
-sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases release main"
+sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases release main"
 ```
 
 ### Specific release
@@ -152,7 +152,7 @@ For `apt` installation of a specific release, which may include point updates,
 use the date of the release for repository, e.g. `${yyyymmdd}`.
 
 ```bash
-sudo add-apt-repository "deb https://storage.googleapis.com/gvisor/releases yyyymmdd main"
+sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/gvisor/releases yyyymmdd main"
 ```
 
 > Note: only newer releases may be available as `apt` repositories.
