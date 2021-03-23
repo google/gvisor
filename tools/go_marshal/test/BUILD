@@ -23,7 +23,10 @@ go_test(
 go_library(
     name = "test",
     testonly = 1,
-    srcs = ["test.go"],
+    srcs = [
+        "dynamic.go",
+        "test.go",
+    ],
     marshal = True,
     visibility = ["//tools/go_marshal/test:__subpackages__"],
     deps = [

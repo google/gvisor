@@ -16,8 +16,6 @@
 package test
 
 import (
-	"gvisor.dev/gvisor/pkg/marshal/primitive"
-
 	// We're intentionally using a package name alias here even though it's not
 	// necessary to test the code generator's ability to handle package aliases.
 	ex "gvisor.dev/gvisor/tools/go_marshal/test/external"
@@ -199,37 +197,4 @@ type Type10 struct {
 type Type11 struct {
 	ex.External
 	y int64
-}
-
-// Type12Dynamic is a dynamically sized struct which depends on the autogenerator
-// to generate some Marshallable methods for it.
-//
-// +marshal dynamic
-type Type12Dynamic struct {
-	X primitive.Int64
-	Y []primitive.Int64
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (t *Type12Dynamic) SizeBytes() int {
-	return (len(t.Y) * 8) + t.X.SizeBytes()
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (t *Type12Dynamic) MarshalBytes(dst []byte) {
-	t.X.MarshalBytes(dst)
-	dst = dst[t.X.SizeBytes():]
-	for i, x := range t.Y {
-		x.MarshalBytes(dst[i*8 : (i+1)*8])
-	}
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (t *Type12Dynamic) UnmarshalBytes(src []byte) {
-	t.X.UnmarshalBytes(src)
-	for i := t.X.SizeBytes(); i < len(src); i += 8 {
-		var x primitive.Int64
-		x.UnmarshalBytes(src[i:])
-		t.Y = append(t.Y, x)
-	}
 }

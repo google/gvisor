@@ -387,36 +387,29 @@ func (g *Generator) collectImports(a *ast.File, f *token.FileSet) map[string]imp
 
 func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *interfaceGenerator {
 	i := newInterfaceGenerator(t.spec, t.recv, fset)
+	if t.dynamic {
+		if t.slice != nil {
+			abortAt(fset.Position(t.slice.comment.Slash), "Slice API is not supported for dynamic types because it assumes that each slice element is statically sized.")
+		}
+		// No validation needed, assume the user knows what they are doing.
+		i.emitMarshallableForDynamicType()
+		return i
+	}
 	switch ty := t.spec.Type.(type) {
 	case *ast.StructType:
-		if t.dynamic {
-			// Don't validate because this type is dynamically sized and probably
-			// contains some funky slices which the validation does not allow.
-			i.emitMarshallableForStruct(ty, t.dynamic)
-			if t.slice != nil {
-				abortAt(fset.Position(t.slice.comment.Slash), "Slice API is not supported for dynamic types because it assumes that each slice element is statically sized.")
-			}
-			break
-		}
 		i.validateStruct(t.spec, ty)
-		i.emitMarshallableForStruct(ty, t.dynamic)
+		i.emitMarshallableForStruct(ty)
 		if t.slice != nil {
 			i.emitMarshallableSliceForStruct(ty, t.slice)
 		}
 	case *ast.Ident:
 		i.validatePrimitiveNewtype(ty)
-		if t.dynamic {
-			abortAt(fset.Position(t.slice.comment.Slash), "Primitive type marked as '+marshal dynamic', but primitive types can not be dynamic.")
-		}
 		i.emitMarshallableForPrimitiveNewtype(ty)
 		if t.slice != nil {
 			i.emitMarshallableSliceForPrimitiveNewtype(ty, t.slice)
 		}
 	case *ast.ArrayType:
 		i.validateArrayNewtype(t.spec.Name, ty)
-		if t.dynamic {
-			abortAt(fset.Position(t.slice.comment.Slash), "Marking array types as `dynamic` is currently not supported.")
-		}
 		// After validate, we can safely call arrayLen.
 		i.emitMarshallableForArrayNewtype(t.spec.Name, ty, ty.Elt.(*ast.Ident))
 		if t.slice != nil {

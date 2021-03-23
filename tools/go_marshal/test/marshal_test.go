@@ -515,20 +515,39 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 	}
 }
 
-func TestDynamicType(t *testing.T) {
+func TestDynamicTypeStruct(t *testing.T) {
 	t12 := test.Type12Dynamic{
 		X: 32,
 		Y: []primitive.Int64{5, 6, 7},
 	}
+	var cc mockCopyContext
+	cc.setLimit(t12.SizeBytes())
 
-	var m marshal.Marshallable
-	m = &t12 // Ensure that all methods were generated.
-	b := make([]byte, m.SizeBytes())
-	m.MarshalBytes(b)
+	if _, err := t12.CopyOut(&cc, usermem.Addr(0)); err != nil {
+		t.Fatalf("cc.CopyOut faile: %v", err)
+	}
 
-	var res test.Type12Dynamic
-	res.UnmarshalBytes(b)
+	res := test.Type12Dynamic{
+		Y: make([]primitive.Int64, len(t12.Y)),
+	}
+	res.CopyIn(&cc, usermem.Addr(0))
 	if !reflect.DeepEqual(t12, res) {
 		t.Errorf("dynamic type is not same after marshalling and unmarshalling: before = %+v, after = %+v", t12, res)
+	}
+}
+
+func TestDynamicTypeIdentifier(t *testing.T) {
+	s := test.Type13Dynamic("go_marshal")
+	var cc mockCopyContext
+	cc.setLimit(s.SizeBytes())
+
+	if _, err := s.CopyOut(&cc, usermem.Addr(0)); err != nil {
+		t.Fatalf("cc.CopyOut faile: %v", err)
+	}
+
+	res := test.Type13Dynamic(make([]byte, len(s)))
+	res.CopyIn(&cc, usermem.Addr(0))
+	if res != s {
+		t.Errorf("dynamic type is not same after marshalling and unmarshalling: before = %s, after = %s", s, res)
 	}
 }
