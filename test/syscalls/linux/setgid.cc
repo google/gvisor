@@ -126,14 +126,15 @@ class SetgidDirTest : public ::testing::Test {
 
     SKIP_IF(IsRunningWithVFS1());
 
-    temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
-        TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
-
     // If we can't find two usable groups, we're in an unsupporting environment.
     // Skip the test.
     PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
     SKIP_IF(!groups.ok());
     groups_ = groups.ValueOrDie();
+
+    auto cleanup = Setegid(groups_.first);
+    temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
+        TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   }
 
   void TearDown() override {
@@ -348,6 +349,10 @@ class FileModeTest : public ::testing::TestWithParam<FileModeTestcase> {};
 
 TEST_P(FileModeTest, WriteToFile) {
   SKIP_IF(IsRunningWithVFS1());
+  PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
+  SKIP_IF(!groups.ok());
+
+  auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
@@ -371,26 +376,28 @@ TEST_P(FileModeTest, WriteToFile) {
 
 TEST_P(FileModeTest, TruncateFile) {
   SKIP_IF(IsRunningWithVFS1());
+  PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
+  SKIP_IF(!groups.ok());
+
+  auto cleanup = Setegid(groups.ValueOrDie().first);
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0777 /* mode */));
   auto path = JoinPath(temp_dir.path(), GetParam().name);
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(path.c_str(), O_CREAT | O_RDWR, 0666));
-  ASSERT_THAT(fchmod(fd.get(), GetParam().mode), SyscallSucceeds());
-  struct stat stats;
-  ASSERT_THAT(fstat(fd.get(), &stats), SyscallSucceeds());
-  EXPECT_EQ(stats.st_mode & kDirmodeMask, GetParam().mode);
 
   // Write something to the file, as truncating an empty file is a no-op.
   constexpr char c = 'M';
   ASSERT_THAT(write(fd.get(), &c, sizeof(c)),
               SyscallSucceedsWithValue(sizeof(c)));
+  ASSERT_THAT(fchmod(fd.get(), GetParam().mode), SyscallSucceeds());
 
   // For security reasons, truncating the file clears the SUID bit, and clears
   // the SGID bit when the group executable bit is unset (which is not a true
   // SGID binary).
   ASSERT_THAT(ftruncate(fd.get(), 0), SyscallSucceeds());
 
+  struct stat stats;
   ASSERT_THAT(fstat(fd.get(), &stats), SyscallSucceeds());
   EXPECT_EQ(stats.st_mode & kDirmodeMask, GetParam().result_mode);
 }
