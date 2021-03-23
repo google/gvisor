@@ -266,6 +266,20 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			return 0, offset, err
 		}
 	}
+
+	// As with Linux, writing clears the setuid and setgid bits.
+	if n > 0 {
+		oldMode := atomic.LoadUint32(&d.mode)
+		// If setuid or setgid were set, update d.mode and propagate
+		// changes to the host.
+		if newMode := vfs.ClearSUIDAndSGID(oldMode); newMode != oldMode {
+			atomic.StoreUint32(&d.mode, newMode)
+			if err := d.file.setAttr(ctx, p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(newMode)}); err != nil {
+				return 0, offset, err
+			}
+		}
+	}
+
 	return n, offset + n, nil
 }
 
