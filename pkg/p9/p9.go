@@ -151,9 +151,16 @@ const (
 	// Sticky is a mode bit indicating sticky directories.
 	Sticky FileMode = 01000
 
+	// SetGID is the set group ID bit.
+	SetGID FileMode = 02000
+
+	// SetUID is the set user ID bit.
+	SetUID FileMode = 04000
+
 	// permissionsMask is the mask to apply to FileModes for permissions. It
-	// includes rwx bits for user, group and others, and sticky bit.
-	permissionsMask FileMode = 01777
+	// includes rwx bits for user, group, and others, as well as the sticky
+	// bit, setuid bit, and setgid bit.
+	permissionsMask FileMode = 07777
 )
 
 // QIDType is the most significant byte of the FileMode word, to be used as the

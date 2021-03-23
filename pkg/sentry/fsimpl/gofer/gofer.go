@@ -1102,10 +1102,26 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
+
+	// As with Linux, if the UID, GID, or file size is changing, we have to
+	// clear permission bits. Note that when set, clearSGID causes
+	// permissions to be updated, but does not modify stat.Mask, as
+	// modification would cause an extra inotify flag to be set.
+	clearSGID := stat.Mask&linux.STATX_UID != 0 && stat.UID != atomic.LoadUint32(&d.uid) ||
+		stat.Mask&linux.STATX_GID != 0 && stat.GID != atomic.LoadUint32(&d.gid) ||
+		stat.Mask&linux.STATX_SIZE != 0
+	if clearSGID {
+		if stat.Mask&linux.STATX_MODE != 0 {
+			stat.Mode = uint16(vfs.ClearSUIDAndSGID(uint32(stat.Mode)))
+		} else {
+			stat.Mode = uint16(vfs.ClearSUIDAndSGID(atomic.LoadUint32(&d.mode)))
+		}
+	}
+
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
 			if err := d.file.setAttr(ctx, p9.SetAttrMask{
-				Permissions:        stat.Mask&linux.STATX_MODE != 0,
+				Permissions:        stat.Mask&linux.STATX_MODE != 0 || clearSGID,
 				UID:                stat.Mask&linux.STATX_UID != 0,
 				GID:                stat.Mask&linux.STATX_GID != 0,
 				Size:               stat.Mask&linux.STATX_SIZE != 0,
@@ -1140,7 +1156,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 			return nil
 		}
 	}
-	if stat.Mask&linux.STATX_MODE != 0 {
+	if stat.Mask&linux.STATX_MODE != 0 || clearSGID {
 		atomic.StoreUint32(&d.mode, d.fileType()|uint32(stat.Mode))
 	}
 	if stat.Mask&linux.STATX_UID != 0 {

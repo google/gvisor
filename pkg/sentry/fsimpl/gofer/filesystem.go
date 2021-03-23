@@ -783,7 +783,15 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
 	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, _ **[]*dentry) error {
-		if _, err := parent.file.mkdir(ctx, name, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID)); err != nil {
+		// If the parent is a setgid directory, use the parent's GID
+		// rather than the caller's and enable setgid.
+		kgid := creds.EffectiveKGID
+		mode := opts.Mode
+		if atomic.LoadUint32(&parent.mode)&linux.S_ISGID != 0 {
+			kgid = auth.KGID(atomic.LoadUint32(&parent.gid))
+			mode |= linux.S_ISGID
+		}
+		if _, err := parent.file.mkdir(ctx, name, p9.FileMode(mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid)); err != nil {
 			if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
 				return err
 			}
@@ -1145,7 +1153,15 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	name := rp.Component()
 	// We only want the access mode for creating the file.
 	createFlags := p9.OpenFlags(opts.Flags) & p9.OpenFlagsModeMask
-	fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, (p9.FileMode)(opts.Mode), (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
+
+	// If the parent is a setgid directory, use the parent's GID rather
+	// than the caller's.
+	kgid := creds.EffectiveKGID
+	if atomic.LoadUint32(&d.mode)&linux.S_ISGID != 0 {
+		kgid = auth.KGID(atomic.LoadUint32(&d.gid))
+	}
+
+	fdobj, openFile, createQID, _, err := dirfile.create(ctx, name, createFlags, p9.FileMode(opts.Mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid))
 	if err != nil {
 		dirfile.close(ctx)
 		return nil, err
