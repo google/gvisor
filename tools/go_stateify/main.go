@@ -403,6 +403,7 @@ func main() {
 					// on this specific behavior, but the ability to specify slots
 					// allows a manual implementation to be order-dependent.
 					if generateSaverLoader {
+						fmt.Fprintf(outputFile, "// +checklocksignore\n")
 						fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
 						fmt.Fprintf(outputFile, "	%s.beforeSave()\n", recv)
 						scanFields(x, "", scanFunctions{zerovalue: emitZeroCheck})
@@ -425,6 +426,7 @@ func main() {
 					//
 					// N.B. See the comment above for the save method.
 					if generateSaverLoader {
+						fmt.Fprintf(outputFile, "// +checklocksignore\n")
 						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
 						scanFields(x, "", scanFunctions{normal: emitLoad, wait: emitLoadWait})
 						scanFields(x, "", scanFunctions{value: emitLoadValue})
