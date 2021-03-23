@@ -5578,6 +5578,7 @@ func (i *IPTIP) WriteTo(writer io.Writer) (int64, error) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (ke *KernelIPTEntry) Packed() bool {
+    // Type KernelIPTEntry is dynamic so it might have slice/string headers. Hence, it is not packed.
     return false
 }
 
@@ -5632,6 +5633,7 @@ func (ke *KernelIPTEntry) WriteTo(writer io.Writer) (int64, error) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (ke *KernelIPTGetEntries) Packed() bool {
+    // Type KernelIPTGetEntries is dynamic so it might have slice/string headers. Hence, it is not packed.
     return false
 }
 
@@ -6514,6 +6516,7 @@ func (i *IP6TReplace) WriteTo(writer io.Writer) (int64, error) {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (ke *KernelIP6TGetEntries) Packed() bool {
+    // Type KernelIP6TGetEntries is dynamic so it might have slice/string headers. Hence, it is not packed.
     return false
 }
 
