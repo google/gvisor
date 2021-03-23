@@ -872,7 +872,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	if useDefaultTTL {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+	if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{
 		Protocol: ProtocolNumber,
 		TTL:      ttl,
 		TOS:      tos,

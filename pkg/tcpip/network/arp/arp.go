@@ -136,18 +136,13 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 func (*endpoint) Close() {}
 
-func (*endpoint) WritePacket(*stack.Route, *stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) tcpip.Error {
+func (*endpoint) WritePacket(*stack.Route, stack.GSO, stack.NetworkHeaderParams, *stack.PacketBuffer) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 // NetworkProtocolNumber implements stack.NetworkEndpoint.NetworkProtocolNumber.
 func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
-}
-
-// WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (*endpoint) WritePackets(*stack.Route, *stack.GSO, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
-	return 0, &tcpip.ErrNotSupported{}
 }
 
 func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
@@ -222,7 +217,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		//
 		//   Send the packet to the (new) target hardware address on the same
 		//   hardware on which the request was received.
-		if err := e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), nil /* gso */, ProtocolNumber, respPkt); err != nil {
+		if err := e.nic.WritePacketToRemote(tcpip.LinkAddress(origSender), stack.GSO{}, ProtocolNumber, respPkt); err != nil {
 			stats.outgoingRepliesDropped.Increment()
 		} else {
 			stats.outgoingRepliesSent.Increment()
@@ -355,7 +350,7 @@ func (e *endpoint) sendARPRequest(localAddr, targetAddr tcpip.Address, remoteLin
 	}
 
 	stats := e.stats.arp
-	if err := e.nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt); err != nil {
+	if err := e.nic.WritePacketToRemote(remoteLinkAddr, stack.GSO{}, ProtocolNumber, pkt); err != nil {
 		stats.outgoingRequestsDropped.Increment()
 		return err
 	}

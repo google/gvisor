@@ -564,7 +564,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, pkt); err != nil {
+		if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, pkt); err != nil {
 			sent.dropped.Increment()
 			return
 		}
@@ -704,7 +704,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			PayloadCsum: dataRange.Checksum(),
 			PayloadLen:  dataRange.Size(),
 		}))
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      r.DefaultTTL(),
 			TOS:      stack.DefaultTOS,
@@ -1167,7 +1167,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		PayloadLen:  dataRange.Size(),
 	}))
 	if err := route.WritePacket(
-		nil, /* gso */
+		stack.GSO{},
 		stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      route.DefaultTTL(),

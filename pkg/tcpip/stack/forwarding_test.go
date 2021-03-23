@@ -117,7 +117,7 @@ func (f *fwdTestNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNu
 	return f.proto.Number()
 }
 
-func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error {
+func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error {
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
@@ -128,18 +128,13 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkH
 	return f.nic.WritePacket(r, gso, fwdTestNetNumber, pkt)
 }
 
-// WritePackets implements LinkEndpoint.WritePackets.
-func (*fwdTestNetworkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error) {
-	panic("not implemented")
-}
-
 func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error {
 	// The network header should not already be populated.
 	if _, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen); !ok {
 		return &tcpip.ErrMalformedHeader{}
 	}
 
-	return f.nic.WritePacket(r, nil /* gso */, fwdTestNetNumber, pkt)
+	return f.nic.WritePacket(r, GSO{}, fwdTestNetNumber, pkt)
 }
 
 func (f *fwdTestNetworkEndpoint) Close() {
@@ -322,7 +317,7 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e fwdTestLinkEndpoint) WritePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (e fwdTestLinkEndpoint) WritePacket(r RouteInfo, _ GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	p := fwdTestPacketInfo{
 		RemoteLinkAddress: r.RemoteLinkAddress,
 		LocalLinkAddress:  r.LocalLinkAddress,
@@ -338,7 +333,7 @@ func (e fwdTestLinkEndpoint) WritePacket(r RouteInfo, gso *GSO, protocol tcpip.N
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *fwdTestLinkEndpoint) WritePackets(r RouteInfo, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *fwdTestLinkEndpoint) WritePackets(r RouteInfo, gso GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.WritePacket(r, gso, protocol, pkt)

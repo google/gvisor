@@ -314,7 +314,7 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		TOS:      stack.DefaultTOS,
 	}
 	data := buffer.View([]byte{1, 2, 3, 4})
-	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	if err := r.WritePacket(stack.GSO{}, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               data.ToVectorisedView(),
 	})); err != nil {
@@ -326,7 +326,7 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
 	}
 	{
-		err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		err := r.WritePacket(stack.GSO{}, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               data.ToVectorisedView(),
 		}))

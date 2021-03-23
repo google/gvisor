@@ -106,7 +106,7 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 		Data:               buffer.View(v).ToVectorisedView(),
 	})
 	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
-	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
+	if err := f.route.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
 		return 0, err
 	}
 

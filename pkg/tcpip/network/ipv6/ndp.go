@@ -1746,7 +1746,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 				panic(fmt.Sprintf("failed to add IP header: %s", err))
 			}
 
-			if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
+			if err := ndp.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress), stack.GSO{}, ProtocolNumber, pkt); err != nil {
 				sent.dropped.Increment()
 				// Don't send any more messages if we had an error.
 				remaining = 0
@@ -1839,7 +1839,7 @@ func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteL
 	}
 
 	sent := e.stats.icmp.packetsSent
-	err := e.nic.WritePacketToRemote(remoteLinkAddr, nil /* gso */, ProtocolNumber, pkt)
+	err := e.nic.WritePacketToRemote(remoteLinkAddr, stack.GSO{}, ProtocolNumber, pkt)
 	if err != nil {
 		sent.dropped.Increment()
 	} else {

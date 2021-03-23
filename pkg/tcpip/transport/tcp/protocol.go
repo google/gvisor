@@ -16,6 +16,7 @@
 package tcp
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
@@ -216,8 +217,8 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 // replyWithReset replies to the given segment with a reset segment.
 //
 // If the passed TTL is 0, then the route's default TTL will be used.
-func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
-	route, err := stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
+	route, err := st.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -257,7 +258,7 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error 
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: 0,
-	}, buffer.VectorisedView{}, nil /* gso */, nil /* PacketOwner */)
+	}, buffer.VectorisedView{}, stack.GSO{}, nil /* PacketOwner */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
@@ -516,6 +517,66 @@ func (p *protocol) SynRcvdCounter() *synRcvdCounter {
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)
+}
+
+func (*protocol) Segment(pkt *stack.PacketBuffer, opts stack.SegmentOptions) (stack.PacketBufferList, tcpip.Error) {
+	netHdr := pkt.NetworkHeader().View()
+	transportHdr := pkt.TransportHeader().View()
+	net := pkt.Network()
+	srcAddr := net.SourceAddress()
+	dstAddr := net.DestinationAddress()
+
+	hdrLen := uint32(netHdr.Size() + transportHdr.Size())
+	if hdrLen > opts.MTU {
+		return stack.PacketBufferList{}, &tcpip.ErrMessageTooLong{}
+	}
+
+	data := pkt.Data().ExtractVV().Clone(nil)
+
+	resvSize := netHdr.Size() + transportHdr.Size() + pkt.AvailableHeaderBytes()
+	dataSize := opts.MTU - hdrLen
+	var pkts stack.PacketBufferList
+	done := 0
+	for data.Size() > 0 {
+		var segData buffer.VectorisedView
+		data.ReadToVV(&segData, int(dataSize))
+
+		pb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: resvSize,
+			Data:               segData,
+		})
+
+		newTransportHdr := pb.TransportHeader().Push(int(transportHdr.Size()))
+		if n := copy(newTransportHdr, transportHdr); n != len(transportHdr) {
+			panic(fmt.Sprintf("got copy(newTransportHdr, transportHdr) = %d, want = %d", n, len(transportHdr)))
+		}
+		pb.TransportProtocolNumber = pkt.TransportProtocolNumber
+		newNetHdr := pb.NetworkHeader().Push(int(netHdr.Size()))
+		if n := copy(newNetHdr, netHdr); n != len(netHdr) {
+			panic(fmt.Sprintf("got copy(newNetHdr, netHdr) = %d, want = %d", n, len(netHdr)))
+		}
+		pb.NetworkProtocolNumber = pkt.NetworkProtocolNumber
+		pb.Network().UpdatePacketSize(uint16(pb.Size()))
+
+		t := header.TCP(newTransportHdr)
+		t.SetSequenceNumber(t.SequenceNumber() + uint32(done))
+		t.SetChecksum(0)
+		xsum := header.PseudoHeaderChecksum(ProtocolNumber, srcAddr, dstAddr, uint16(segData.Size()+transportHdr.Size()))
+		if opts.TransportChecksumOffloaded {
+			t.SetChecksum(xsum)
+		} else {
+			xsum = header.ChecksumVV(segData, xsum)
+			t.SetChecksum(^t.CalculateChecksum(xsum))
+		}
+
+		pb.Owner = pkt.Owner
+		pb.Hash = pkt.Hash
+
+		pkts.PushBack(pb)
+		done += segData.Size()
+	}
+
+	return pkts, nil
 }
 
 // NewProtocol returns a TCP transport protocol.

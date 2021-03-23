@@ -1241,7 +1241,7 @@ type fragmentInfo struct {
 var fragmentationTests = []struct {
 	description           string
 	mtu                   uint32
-	gso                   *stack.GSO
+	gso                   stack.GSO
 	transportHeaderLength int
 	payloadSize           int
 	wantFragments         []fragmentInfo
@@ -1249,7 +1249,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "No fragmentation",
 		mtu:                   1280,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 0,
 		payloadSize:           1000,
 		wantFragments: []fragmentInfo{
@@ -1259,7 +1259,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented",
 		mtu:                   1280,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 0,
 		payloadSize:           2000,
 		wantFragments: []fragmentInfo{
@@ -1270,7 +1270,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with the minimum mtu",
 		mtu:                   header.IPv4MinimumMTU,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 0,
 		payloadSize:           100,
 		wantFragments: []fragmentInfo{
@@ -1282,7 +1282,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with mtu not a multiple of 8",
 		mtu:                   header.IPv4MinimumMTU + 1,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 0,
 		payloadSize:           100,
 		wantFragments: []fragmentInfo{
@@ -1294,7 +1294,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "No fragmentation with big header",
 		mtu:                   2000,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 100,
 		payloadSize:           1000,
 		wantFragments: []fragmentInfo{
@@ -1304,7 +1304,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with gso none",
 		mtu:                   1280,
-		gso:                   &stack.GSO{Type: stack.GSONone},
+		gso:                   stack.GSO{Type: stack.GSONone},
 		transportHeaderLength: 0,
 		payloadSize:           1400,
 		wantFragments: []fragmentInfo{
@@ -1315,7 +1315,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with big header",
 		mtu:                   1280,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 100,
 		payloadSize:           1200,
 		wantFragments: []fragmentInfo{
@@ -1326,7 +1326,7 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with MTU smaller than header",
 		mtu:                   300,
-		gso:                   nil,
+		gso:                   stack.GSO{},
 		transportHeaderLength: 1000,
 		payloadSize:           500,
 		wantFragments: []fragmentInfo{
@@ -1360,97 +1360,14 @@ func TestFragmentationWritePacket(t *testing.T) {
 			if got := len(ep.WrittenPackets); got != len(ft.wantFragments) {
 				t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, len(ft.wantFragments))
 			}
-			if got := int(r.Stats().IP.PacketsSent.Value()); got != len(ft.wantFragments) {
-				t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = %d", got, len(ft.wantFragments))
+			if got := int(r.Stats().IP.PacketsSent.Value()); got != 1 {
+				t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = 1", got)
 			}
 			if got := r.Stats().IP.OutgoingPacketErrors.Value(); got != 0 {
 				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
 			}
 			if err := compareFragments(ep.WrittenPackets, source, ft.mtu, ft.wantFragments, tcp.ProtocolNumber); err != nil {
 				t.Error(err)
-			}
-		})
-	}
-}
-
-func TestFragmentationWritePackets(t *testing.T) {
-	const ttl = 42
-	writePacketsTests := []struct {
-		description  string
-		insertBefore int
-		insertAfter  int
-	}{
-		{
-			description:  "Single packet",
-			insertBefore: 0,
-			insertAfter:  0,
-		},
-		{
-			description:  "With packet before",
-			insertBefore: 1,
-			insertAfter:  0,
-		},
-		{
-			description:  "With packet after",
-			insertBefore: 0,
-			insertAfter:  1,
-		},
-		{
-			description:  "With packet before and after",
-			insertBefore: 1,
-			insertAfter:  1,
-		},
-	}
-	tinyPacket := testutil.MakeRandPkt(header.TCPMinimumSize, extraHeaderReserve+header.IPv4MinimumSize, []int{1}, header.IPv4ProtocolNumber)
-
-	for _, test := range writePacketsTests {
-		t.Run(test.description, func(t *testing.T) {
-			for _, ft := range fragmentationTests {
-				t.Run(ft.description, func(t *testing.T) {
-					var pkts stack.PacketBufferList
-					for i := 0; i < test.insertBefore; i++ {
-						pkts.PushBack(tinyPacket.Clone())
-					}
-					pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
-					pkts.PushBack(pkt.Clone())
-					for i := 0; i < test.insertAfter; i++ {
-						pkts.PushBack(tinyPacket.Clone())
-					}
-
-					ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
-					r := buildRoute(t, ep)
-
-					wantTotalPackets := len(ft.wantFragments) + test.insertBefore + test.insertAfter
-					n, err := r.WritePackets(ft.gso, pkts, stack.NetworkHeaderParams{
-						Protocol: tcp.ProtocolNumber,
-						TTL:      ttl,
-						TOS:      stack.DefaultTOS,
-					})
-					if err != nil {
-						t.Errorf("got WritePackets(_, _, _) = (_, %s), want = (_, nil)", err)
-					}
-					if n != wantTotalPackets {
-						t.Errorf("got WritePackets(_, _, _) = (%d, _), want = (%d, _)", n, wantTotalPackets)
-					}
-					if got := len(ep.WrittenPackets); got != wantTotalPackets {
-						t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, wantTotalPackets)
-					}
-					if got := int(r.Stats().IP.PacketsSent.Value()); got != wantTotalPackets {
-						t.Errorf("got c.Route.Stats().IP.PacketsSent.Value() = %d, want = %d", got, wantTotalPackets)
-					}
-					if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != 0 {
-						t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 0", got)
-					}
-
-					if wantTotalPackets == 0 {
-						return
-					}
-
-					fragments := ep.WrittenPackets[test.insertBefore : len(ft.wantFragments)+test.insertBefore]
-					if err := compareFragments(fragments, pkt, ft.mtu, ft.wantFragments, tcp.ProtocolNumber); err != nil {
-						t.Error(err)
-					}
-				})
 			}
 		})
 	}
@@ -1528,7 +1445,7 @@ func TestFragmentationErrors(t *testing.T) {
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			r := buildRoute(t, ep)
-			err := r.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
+			err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
 				TOS:      stack.DefaultTOS,
@@ -1536,11 +1453,11 @@ func TestFragmentationErrors(t *testing.T) {
 			if diff := cmp.Diff(ft.wantError, err); diff != "" {
 				t.Fatalf("unexpected error from r.WritePacket(_, _, _), (-want, +got):\n%s", diff)
 			}
-			if got := int(r.Stats().IP.PacketsSent.Value()); got != ft.allowPackets {
-				t.Errorf("got r.Stats().IP.PacketsSent.Value() = %d, want = %d", got, ft.allowPackets)
+			if got := int(r.Stats().IP.PacketsSent.Value()); got != 0 {
+				t.Errorf("got r.Stats().IP.PacketsSent.Value() = %d, want = 0", got)
 			}
-			if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != ft.outgoingErrors {
-				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = %d", got, ft.outgoingErrors)
+			if got := int(r.Stats().IP.OutgoingPacketErrors.Value()); got != 1 {
+				t.Errorf("got r.Stats().IP.OutgoingPacketErrors.Value() = %d, want = 1", got)
 			}
 		})
 	}
@@ -2687,17 +2604,12 @@ func TestWriteStats(t *testing.T) {
 			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
 				nWritten := 0
 				for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-					if err := rt.WritePacket(nil, stack.NetworkHeaderParams{}, pkt); err != nil {
+					if err := rt.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{}, pkt); err != nil {
 						return nWritten, err
 					}
 					nWritten++
 				}
 				return nWritten, nil
-			},
-		}, {
-			name: "WritePackets",
-			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
-				return rt.WritePackets(nil, pkts, stack.NetworkHeaderParams{})
 			},
 		},
 	}
