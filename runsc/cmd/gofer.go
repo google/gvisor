@@ -165,8 +165,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
-		ROMount:     spec.Root.Readonly || conf.Overlay,
-		EnableXattr: conf.Verity,
+		ROMount:           spec.Root.Readonly || conf.Overlay,
+		EnableVerityXattr: conf.Verity,
 	})
 	if err != nil {
 		Fatalf("creating attach point: %v", err)
@@ -178,9 +178,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:     isReadonlyMount(m.Options) || conf.Overlay,
-				HostUDS:     conf.FSGoferHostUDS,
-				EnableXattr: conf.Verity,
+				ROMount:           isReadonlyMount(m.Options) || conf.Overlay,
+				HostUDS:           conf.FSGoferHostUDS,
+				EnableVerityXattr: conf.Verity,
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
@@ -201,6 +201,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	if conf.FSGoferHostUDS {
 		filter.InstallUDSFilters()
+	}
+
+	if conf.Verity {
+		filter.InstallXattrFilters()
 	}
 
 	if err := filter.Install(); err != nil {
