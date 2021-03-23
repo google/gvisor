@@ -20,6 +20,7 @@ func (t *TCPBufferSize) StateFields() []string {
 
 func (t *TCPBufferSize) beforeSave() {}
 
+// +checklocksignore
 func (t *TCPBufferSize) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.Min)
@@ -29,6 +30,7 @@ func (t *TCPBufferSize) StateSave(stateSinkObject state.Sink) {
 
 func (t *TCPBufferSize) afterLoad() {}
 
+// +checklocksignore
 func (t *TCPBufferSize) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.Min)
 	stateSourceObject.Load(1, &t.Default)
@@ -48,12 +50,14 @@ func (n *Namespace) StateFields() []string {
 
 func (n *Namespace) beforeSave() {}
 
+// +checklocksignore
 func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.creator)
 	stateSinkObject.Save(1, &n.isRoot)
 }
 
+// +checklocksignore
 func (n *Namespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &n.creator)
 	stateSourceObject.Load(1, &n.isRoot)

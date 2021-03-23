@@ -16,12 +16,14 @@ func (f *filesystem) StateFields() []string {
 
 func (f *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (f *filesystem) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
 func (f *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -37,6 +39,7 @@ func (f *fullDevice) StateFields() []string {
 
 func (f *fullDevice) beforeSave() {}
 
+// +checklocksignore
 func (f *fullDevice) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.InodeSimpleAttributes)
@@ -44,6 +47,7 @@ func (f *fullDevice) StateSave(stateSinkObject state.Sink) {
 
 func (f *fullDevice) afterLoad() {}
 
+// +checklocksignore
 func (f *fullDevice) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.InodeSimpleAttributes)
 }
@@ -58,12 +62,14 @@ func (f *fullFileOperations) StateFields() []string {
 
 func (f *fullFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (f *fullFileOperations) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
 func (f *fullFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (f *fullFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -79,6 +85,7 @@ func (n *netTunInodeOperations) StateFields() []string {
 
 func (n *netTunInodeOperations) beforeSave() {}
 
+// +checklocksignore
 func (n *netTunInodeOperations) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.InodeSimpleAttributes)
@@ -86,6 +93,7 @@ func (n *netTunInodeOperations) StateSave(stateSinkObject state.Sink) {
 
 func (n *netTunInodeOperations) afterLoad() {}
 
+// +checklocksignore
 func (n *netTunInodeOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.InodeSimpleAttributes)
 }
@@ -102,6 +110,7 @@ func (n *netTunFileOperations) StateFields() []string {
 
 func (n *netTunFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (n *netTunFileOperations) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.device)
@@ -109,6 +118,7 @@ func (n *netTunFileOperations) StateSave(stateSinkObject state.Sink) {
 
 func (n *netTunFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (n *netTunFileOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.device)
 }
@@ -125,6 +135,7 @@ func (n *nullDevice) StateFields() []string {
 
 func (n *nullDevice) beforeSave() {}
 
+// +checklocksignore
 func (n *nullDevice) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.InodeSimpleAttributes)
@@ -132,6 +143,7 @@ func (n *nullDevice) StateSave(stateSinkObject state.Sink) {
 
 func (n *nullDevice) afterLoad() {}
 
+// +checklocksignore
 func (n *nullDevice) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.InodeSimpleAttributes)
 }
@@ -146,12 +158,14 @@ func (n *nullFileOperations) StateFields() []string {
 
 func (n *nullFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (n *nullFileOperations) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 }
 
 func (n *nullFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (n *nullFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -167,6 +181,7 @@ func (zd *zeroDevice) StateFields() []string {
 
 func (zd *zeroDevice) beforeSave() {}
 
+// +checklocksignore
 func (zd *zeroDevice) StateSave(stateSinkObject state.Sink) {
 	zd.beforeSave()
 	stateSinkObject.Save(0, &zd.nullDevice)
@@ -174,6 +189,7 @@ func (zd *zeroDevice) StateSave(stateSinkObject state.Sink) {
 
 func (zd *zeroDevice) afterLoad() {}
 
+// +checklocksignore
 func (zd *zeroDevice) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &zd.nullDevice)
 }
@@ -188,12 +204,14 @@ func (z *zeroFileOperations) StateFields() []string {
 
 func (z *zeroFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (z *zeroFileOperations) StateSave(stateSinkObject state.Sink) {
 	z.beforeSave()
 }
 
 func (z *zeroFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (z *zeroFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -209,6 +227,7 @@ func (r *randomDevice) StateFields() []string {
 
 func (r *randomDevice) beforeSave() {}
 
+// +checklocksignore
 func (r *randomDevice) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.InodeSimpleAttributes)
@@ -216,6 +235,7 @@ func (r *randomDevice) StateSave(stateSinkObject state.Sink) {
 
 func (r *randomDevice) afterLoad() {}
 
+// +checklocksignore
 func (r *randomDevice) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.InodeSimpleAttributes)
 }
@@ -230,12 +250,14 @@ func (r *randomFileOperations) StateFields() []string {
 
 func (r *randomFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (r *randomFileOperations) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 }
 
 func (r *randomFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (r *randomFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -251,6 +273,7 @@ func (t *ttyInodeOperations) StateFields() []string {
 
 func (t *ttyInodeOperations) beforeSave() {}
 
+// +checklocksignore
 func (t *ttyInodeOperations) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.InodeSimpleAttributes)
@@ -258,6 +281,7 @@ func (t *ttyInodeOperations) StateSave(stateSinkObject state.Sink) {
 
 func (t *ttyInodeOperations) afterLoad() {}
 
+// +checklocksignore
 func (t *ttyInodeOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.InodeSimpleAttributes)
 }
@@ -272,12 +296,14 @@ func (t *ttyFileOperations) StateFields() []string {
 
 func (t *ttyFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (t *ttyFileOperations) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 }
 
 func (t *ttyFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (t *ttyFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 

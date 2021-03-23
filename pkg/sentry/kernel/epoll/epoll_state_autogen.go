@@ -19,6 +19,7 @@ func (f *FileIdentifier) StateFields() []string {
 
 func (f *FileIdentifier) beforeSave() {}
 
+// +checklocksignore
 func (f *FileIdentifier) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.File)
@@ -27,6 +28,7 @@ func (f *FileIdentifier) StateSave(stateSinkObject state.Sink) {
 
 func (f *FileIdentifier) afterLoad() {}
 
+// +checklocksignore
 func (f *FileIdentifier) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &f.File)
 	stateSourceObject.Load(1, &f.Fd)
@@ -49,6 +51,7 @@ func (p *pollEntry) StateFields() []string {
 
 func (p *pollEntry) beforeSave() {}
 
+// +checklocksignore
 func (p *pollEntry) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.pollEntryEntry)
@@ -59,6 +62,7 @@ func (p *pollEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &p.epoll)
 }
 
+// +checklocksignore
 func (p *pollEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.pollEntryEntry)
 	stateSourceObject.LoadWait(1, &p.id)
@@ -84,6 +88,7 @@ func (e *EventPoll) StateFields() []string {
 
 func (e *EventPoll) beforeSave() {}
 
+// +checklocksignore
 func (e *EventPoll) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	if !state.IsZeroValue(&e.FilePipeSeek) {
@@ -113,6 +118,7 @@ func (e *EventPoll) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &e.disabledList)
 }
 
+// +checklocksignore
 func (e *EventPoll) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.files)
 	stateSourceObject.Load(1, &e.readyList)
@@ -134,6 +140,7 @@ func (l *pollEntryList) StateFields() []string {
 
 func (l *pollEntryList) beforeSave() {}
 
+// +checklocksignore
 func (l *pollEntryList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -142,6 +149,7 @@ func (l *pollEntryList) StateSave(stateSinkObject state.Sink) {
 
 func (l *pollEntryList) afterLoad() {}
 
+// +checklocksignore
 func (l *pollEntryList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -160,6 +168,7 @@ func (e *pollEntryEntry) StateFields() []string {
 
 func (e *pollEntryEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *pollEntryEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -168,6 +177,7 @@ func (e *pollEntryEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *pollEntryEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *pollEntryEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

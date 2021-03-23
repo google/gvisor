@@ -21,6 +21,7 @@ func (r *Registers) StateFields() []string {
 
 func (r *Registers) beforeSave() {}
 
+// +checklocksignore
 func (r *Registers) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.PtraceRegs)
@@ -29,6 +30,7 @@ func (r *Registers) StateSave(stateSinkObject state.Sink) {
 
 func (r *Registers) afterLoad() {}
 
+// +checklocksignore
 func (r *Registers) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.PtraceRegs)
 	stateSourceObject.Load(1, &r.TPIDR_EL0)
@@ -49,6 +51,7 @@ func (s *State) StateFields() []string {
 
 func (s *State) beforeSave() {}
 
+// +checklocksignore
 func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Regs)
@@ -59,6 +62,7 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 
 func (s *State) afterLoad() {}
 
+// +checklocksignore
 func (s *State) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.aarch64FPState)

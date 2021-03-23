@@ -19,6 +19,7 @@ func (l *dentryList) StateFields() []string {
 
 func (l *dentryList) beforeSave() {}
 
+// +checklocksignore
 func (l *dentryList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -27,6 +28,7 @@ func (l *dentryList) StateSave(stateSinkObject state.Sink) {
 
 func (l *dentryList) afterLoad() {}
 
+// +checklocksignore
 func (l *dentryList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -45,6 +47,7 @@ func (e *dentryEntry) StateFields() []string {
 
 func (e *dentryEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -53,6 +56,7 @@ func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *dentryEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *dentryEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -73,6 +77,7 @@ func (fd *directoryFD) StateFields() []string {
 
 func (fd *directoryFD) beforeSave() {}
 
+// +checklocksignore
 func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
@@ -83,6 +88,7 @@ func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
 
 func (fd *directoryFD) afterLoad() {}
 
+// +checklocksignore
 func (fd *directoryFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
@@ -100,12 +106,14 @@ func (fstype *FilesystemType) StateFields() []string {
 
 func (fstype *FilesystemType) beforeSave() {}
 
+// +checklocksignore
 func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fstype.beforeSave()
 }
 
 func (fstype *FilesystemType) afterLoad() {}
 
+// +checklocksignore
 func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -134,6 +142,7 @@ func (fs *filesystem) StateFields() []string {
 
 func (fs *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
@@ -154,6 +163,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 
 func (fs *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.mfp)
@@ -194,6 +204,7 @@ func (f *filesystemOptions) StateFields() []string {
 
 func (f *filesystemOptions) beforeSave() {}
 
+// +checklocksignore
 func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.fd)
@@ -212,6 +223,7 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 
 func (f *filesystemOptions) afterLoad() {}
 
+// +checklocksignore
 func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.fd)
 	stateSourceObject.Load(1, &f.aname)
@@ -249,6 +261,7 @@ func (i *InternalFilesystemOptions) StateFields() []string {
 
 func (i *InternalFilesystemOptions) beforeSave() {}
 
+// +checklocksignore
 func (i *InternalFilesystemOptions) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.UniqueID)
@@ -258,6 +271,7 @@ func (i *InternalFilesystemOptions) StateSave(stateSinkObject state.Sink) {
 
 func (i *InternalFilesystemOptions) afterLoad() {}
 
+// +checklocksignore
 func (i *InternalFilesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.UniqueID)
 	stateSourceObject.Load(1, &i.LeakConnection)
@@ -308,6 +322,7 @@ func (d *dentry) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.vfsd)
@@ -347,6 +362,7 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(34, &d.watches)
 }
 
+// +checklocksignore
 func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(1, &d.refs)
@@ -400,6 +416,7 @@ func (fd *fileDescription) StateFields() []string {
 
 func (fd *fileDescription) beforeSave() {}
 
+// +checklocksignore
 func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.vfsfd)
@@ -409,6 +426,7 @@ func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (fd *fileDescription) afterLoad() {}
 
+// +checklocksignore
 func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
@@ -428,6 +446,7 @@ func (fd *regularFileFD) StateFields() []string {
 
 func (fd *regularFileFD) beforeSave() {}
 
+// +checklocksignore
 func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
@@ -436,6 +455,7 @@ func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 
 func (fd *regularFileFD) afterLoad() {}
 
+// +checklocksignore
 func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.off)
@@ -455,6 +475,7 @@ func (d *dentryPlatformFile) StateFields() []string {
 
 func (d *dentryPlatformFile) beforeSave() {}
 
+// +checklocksignore
 func (d *dentryPlatformFile) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.dentry)
@@ -462,6 +483,7 @@ func (d *dentryPlatformFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &d.hostFileMapper)
 }
 
+// +checklocksignore
 func (d *dentryPlatformFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.dentry)
 	stateSourceObject.Load(1, &d.fdRefs)
@@ -482,6 +504,7 @@ func (s *savedDentryRW) StateFields() []string {
 
 func (s *savedDentryRW) beforeSave() {}
 
+// +checklocksignore
 func (s *savedDentryRW) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.read)
@@ -490,6 +513,7 @@ func (s *savedDentryRW) StateSave(stateSinkObject state.Sink) {
 
 func (s *savedDentryRW) afterLoad() {}
 
+// +checklocksignore
 func (s *savedDentryRW) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.read)
 	stateSourceObject.Load(1, &s.write)
@@ -508,6 +532,7 @@ func (e *endpoint) StateFields() []string {
 
 func (e *endpoint) beforeSave() {}
 
+// +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.dentry)
@@ -516,6 +541,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 
 func (e *endpoint) afterLoad() {}
 
+// +checklocksignore
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.dentry)
 	stateSourceObject.Load(1, &e.path)
@@ -539,6 +565,7 @@ func (fd *specialFileFD) StateFields() []string {
 
 func (fd *specialFileFD) beforeSave() {}
 
+// +checklocksignore
 func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.fileDescription)
@@ -550,6 +577,7 @@ func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &fd.buf)
 }
 
+// +checklocksignore
 func (fd *specialFileFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.isRegularFile)

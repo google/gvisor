@@ -22,6 +22,7 @@ func (r *Registry) StateFields() []string {
 
 func (r *Registry) beforeSave() {}
 
+// +checklocksignore
 func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.userNS)
@@ -33,6 +34,7 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 
 func (r *Registry) afterLoad() {}
 
+// +checklocksignore
 func (r *Registry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.userNS)
 	stateSourceObject.Load(1, &r.shms)
@@ -69,6 +71,7 @@ func (s *Shm) StateFields() []string {
 
 func (s *Shm) beforeSave() {}
 
+// +checklocksignore
 func (s *Shm) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.ShmRefs)
@@ -92,6 +95,7 @@ func (s *Shm) StateSave(stateSinkObject state.Sink) {
 
 func (s *Shm) afterLoad() {}
 
+// +checklocksignore
 func (s *Shm) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.ShmRefs)
 	stateSourceObject.Load(1, &s.mfp)
@@ -124,11 +128,13 @@ func (r *ShmRefs) StateFields() []string {
 
 func (r *ShmRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *ShmRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *ShmRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)

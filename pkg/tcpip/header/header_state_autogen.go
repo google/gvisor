@@ -19,6 +19,7 @@ func (r *SACKBlock) StateFields() []string {
 
 func (r *SACKBlock) beforeSave() {}
 
+// +checklocksignore
 func (r *SACKBlock) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -27,6 +28,7 @@ func (r *SACKBlock) StateSave(stateSinkObject state.Sink) {
 
 func (r *SACKBlock) afterLoad() {}
 
+// +checklocksignore
 func (r *SACKBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
@@ -47,6 +49,7 @@ func (t *TCPOptions) StateFields() []string {
 
 func (t *TCPOptions) beforeSave() {}
 
+// +checklocksignore
 func (t *TCPOptions) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.TS)
@@ -57,6 +60,7 @@ func (t *TCPOptions) StateSave(stateSinkObject state.Sink) {
 
 func (t *TCPOptions) afterLoad() {}
 
+// +checklocksignore
 func (t *TCPOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.TS)
 	stateSourceObject.Load(1, &t.TSVal)

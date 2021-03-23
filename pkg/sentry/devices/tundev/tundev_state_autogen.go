@@ -16,12 +16,14 @@ func (t *tunDevice) StateFields() []string {
 
 func (t *tunDevice) beforeSave() {}
 
+// +checklocksignore
 func (t *tunDevice) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 }
 
 func (t *tunDevice) afterLoad() {}
 
+// +checklocksignore
 func (t *tunDevice) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -41,6 +43,7 @@ func (fd *tunFD) StateFields() []string {
 
 func (fd *tunFD) beforeSave() {}
 
+// +checklocksignore
 func (fd *tunFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.vfsfd)
@@ -52,6 +55,7 @@ func (fd *tunFD) StateSave(stateSinkObject state.Sink) {
 
 func (fd *tunFD) afterLoad() {}
 
+// +checklocksignore
 func (fd *tunFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)

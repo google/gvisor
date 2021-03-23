@@ -19,6 +19,7 @@ func (w *WeakRef) StateFields() []string {
 
 func (w *WeakRef) beforeSave() {}
 
+// +checklocksignore
 func (w *WeakRef) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	var objValue savedReference = w.saveObj()
@@ -28,6 +29,7 @@ func (w *WeakRef) StateSave(stateSinkObject state.Sink) {
 
 func (w *WeakRef) afterLoad() {}
 
+// +checklocksignore
 func (w *WeakRef) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &w.user)
 	stateSourceObject.LoadValue(0, new(savedReference), func(y interface{}) { w.loadObj(y.(savedReference)) })
@@ -47,6 +49,7 @@ func (r *AtomicRefCount) StateFields() []string {
 
 func (r *AtomicRefCount) beforeSave() {}
 
+// +checklocksignore
 func (r *AtomicRefCount) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
@@ -56,6 +59,7 @@ func (r *AtomicRefCount) StateSave(stateSinkObject state.Sink) {
 
 func (r *AtomicRefCount) afterLoad() {}
 
+// +checklocksignore
 func (r *AtomicRefCount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.Load(1, &r.name)
@@ -74,6 +78,7 @@ func (s *savedReference) StateFields() []string {
 
 func (s *savedReference) beforeSave() {}
 
+// +checklocksignore
 func (s *savedReference) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.obj)
@@ -81,6 +86,7 @@ func (s *savedReference) StateSave(stateSinkObject state.Sink) {
 
 func (s *savedReference) afterLoad() {}
 
+// +checklocksignore
 func (s *savedReference) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.obj)
 }
@@ -98,6 +104,7 @@ func (l *weakRefList) StateFields() []string {
 
 func (l *weakRefList) beforeSave() {}
 
+// +checklocksignore
 func (l *weakRefList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -106,6 +113,7 @@ func (l *weakRefList) StateSave(stateSinkObject state.Sink) {
 
 func (l *weakRefList) afterLoad() {}
 
+// +checklocksignore
 func (l *weakRefList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -124,6 +132,7 @@ func (e *weakRefEntry) StateFields() []string {
 
 func (e *weakRefEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *weakRefEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -132,6 +141,7 @@ func (e *weakRefEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *weakRefEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *weakRefEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

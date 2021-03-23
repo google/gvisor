@@ -23,6 +23,7 @@ func (s *StableAttr) StateFields() []string {
 
 func (s *StableAttr) beforeSave() {}
 
+// +checklocksignore
 func (s *StableAttr) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Type)
@@ -35,6 +36,7 @@ func (s *StableAttr) StateSave(stateSinkObject state.Sink) {
 
 func (s *StableAttr) afterLoad() {}
 
+// +checklocksignore
 func (s *StableAttr) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Type)
 	stateSourceObject.Load(1, &s.DeviceID)
@@ -63,6 +65,7 @@ func (ua *UnstableAttr) StateFields() []string {
 
 func (ua *UnstableAttr) beforeSave() {}
 
+// +checklocksignore
 func (ua *UnstableAttr) StateSave(stateSinkObject state.Sink) {
 	ua.beforeSave()
 	stateSinkObject.Save(0, &ua.Size)
@@ -77,6 +80,7 @@ func (ua *UnstableAttr) StateSave(stateSinkObject state.Sink) {
 
 func (ua *UnstableAttr) afterLoad() {}
 
+// +checklocksignore
 func (ua *UnstableAttr) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ua.Size)
 	stateSourceObject.Load(1, &ua.Usage)
@@ -112,6 +116,7 @@ func (a *AttrMask) StateFields() []string {
 
 func (a *AttrMask) beforeSave() {}
 
+// +checklocksignore
 func (a *AttrMask) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.Type)
@@ -131,6 +136,7 @@ func (a *AttrMask) StateSave(stateSinkObject state.Sink) {
 
 func (a *AttrMask) afterLoad() {}
 
+// +checklocksignore
 func (a *AttrMask) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.Type)
 	stateSourceObject.Load(1, &a.DeviceID)
@@ -161,6 +167,7 @@ func (p *PermMask) StateFields() []string {
 
 func (p *PermMask) beforeSave() {}
 
+// +checklocksignore
 func (p *PermMask) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.Read)
@@ -170,6 +177,7 @@ func (p *PermMask) StateSave(stateSinkObject state.Sink) {
 
 func (p *PermMask) afterLoad() {}
 
+// +checklocksignore
 func (p *PermMask) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.Read)
 	stateSourceObject.Load(1, &p.Write)
@@ -193,6 +201,7 @@ func (f *FilePermissions) StateFields() []string {
 
 func (f *FilePermissions) beforeSave() {}
 
+// +checklocksignore
 func (f *FilePermissions) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.User)
@@ -205,6 +214,7 @@ func (f *FilePermissions) StateSave(stateSinkObject state.Sink) {
 
 func (f *FilePermissions) afterLoad() {}
 
+// +checklocksignore
 func (f *FilePermissions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.User)
 	stateSourceObject.Load(1, &f.Group)
@@ -227,6 +237,7 @@ func (f *FileOwner) StateFields() []string {
 
 func (f *FileOwner) beforeSave() {}
 
+// +checklocksignore
 func (f *FileOwner) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.UID)
@@ -235,6 +246,7 @@ func (f *FileOwner) StateSave(stateSinkObject state.Sink) {
 
 func (f *FileOwner) afterLoad() {}
 
+// +checklocksignore
 func (f *FileOwner) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.UID)
 	stateSourceObject.Load(1, &f.GID)
@@ -253,6 +265,7 @@ func (d *DentAttr) StateFields() []string {
 
 func (d *DentAttr) beforeSave() {}
 
+// +checklocksignore
 func (d *DentAttr) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.Type)
@@ -261,6 +274,7 @@ func (d *DentAttr) StateSave(stateSinkObject state.Sink) {
 
 func (d *DentAttr) afterLoad() {}
 
+// +checklocksignore
 func (d *DentAttr) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Type)
 	stateSourceObject.Load(1, &d.InodeID)
@@ -279,6 +293,7 @@ func (s *SortedDentryMap) StateFields() []string {
 
 func (s *SortedDentryMap) beforeSave() {}
 
+// +checklocksignore
 func (s *SortedDentryMap) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.names)
@@ -287,6 +302,7 @@ func (s *SortedDentryMap) StateSave(stateSinkObject state.Sink) {
 
 func (s *SortedDentryMap) afterLoad() {}
 
+// +checklocksignore
 func (s *SortedDentryMap) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.names)
 	stateSourceObject.Load(1, &s.entries)
@@ -309,6 +325,7 @@ func (d *Dirent) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (d *Dirent) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	var childrenValue map[string]*Dirent = d.saveChildren()
@@ -322,6 +339,7 @@ func (d *Dirent) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &d.mounted)
 }
 
+// +checklocksignore
 func (d *Dirent) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.AtomicRefCount)
 	stateSourceObject.Load(1, &d.userVisible)
@@ -347,6 +365,7 @@ func (c *DirentCache) StateFields() []string {
 
 func (c *DirentCache) beforeSave() {}
 
+// +checklocksignore
 func (c *DirentCache) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	if !state.IsZeroValue(&c.currentSize) {
@@ -361,6 +380,7 @@ func (c *DirentCache) StateSave(stateSinkObject state.Sink) {
 
 func (c *DirentCache) afterLoad() {}
 
+// +checklocksignore
 func (c *DirentCache) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.maxSize)
 	stateSourceObject.Load(1, &c.limit)
@@ -378,6 +398,7 @@ func (d *DirentCacheLimiter) StateFields() []string {
 
 func (d *DirentCacheLimiter) beforeSave() {}
 
+// +checklocksignore
 func (d *DirentCacheLimiter) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	if !state.IsZeroValue(&d.count) {
@@ -388,6 +409,7 @@ func (d *DirentCacheLimiter) StateSave(stateSinkObject state.Sink) {
 
 func (d *DirentCacheLimiter) afterLoad() {}
 
+// +checklocksignore
 func (d *DirentCacheLimiter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.max)
 }
@@ -405,6 +427,7 @@ func (l *direntList) StateFields() []string {
 
 func (l *direntList) beforeSave() {}
 
+// +checklocksignore
 func (l *direntList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -413,6 +436,7 @@ func (l *direntList) StateSave(stateSinkObject state.Sink) {
 
 func (l *direntList) afterLoad() {}
 
+// +checklocksignore
 func (l *direntList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -431,6 +455,7 @@ func (e *direntEntry) StateFields() []string {
 
 func (e *direntEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *direntEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -439,6 +464,7 @@ func (e *direntEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *direntEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *direntEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -457,6 +483,7 @@ func (l *eventList) StateFields() []string {
 
 func (l *eventList) beforeSave() {}
 
+// +checklocksignore
 func (l *eventList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -465,6 +492,7 @@ func (l *eventList) StateSave(stateSinkObject state.Sink) {
 
 func (l *eventList) afterLoad() {}
 
+// +checklocksignore
 func (l *eventList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -483,6 +511,7 @@ func (e *eventEntry) StateFields() []string {
 
 func (e *eventEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *eventEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -491,6 +520,7 @@ func (e *eventEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *eventEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *eventEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -512,6 +542,7 @@ func (f *File) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (f *File) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.AtomicRefCount)
@@ -523,6 +554,7 @@ func (f *File) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &f.offset)
 }
 
+// +checklocksignore
 func (f *File) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.AtomicRefCount)
 	stateSourceObject.Load(1, &f.UniqueID)
@@ -548,6 +580,7 @@ func (f *overlayFileOperations) StateFields() []string {
 
 func (f *overlayFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (f *overlayFileOperations) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.upper)
@@ -557,6 +590,7 @@ func (f *overlayFileOperations) StateSave(stateSinkObject state.Sink) {
 
 func (f *overlayFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (f *overlayFileOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.upper)
 	stateSourceObject.Load(1, &f.lower)
@@ -577,6 +611,7 @@ func (omi *overlayMappingIdentity) StateFields() []string {
 
 func (omi *overlayMappingIdentity) beforeSave() {}
 
+// +checklocksignore
 func (omi *overlayMappingIdentity) StateSave(stateSinkObject state.Sink) {
 	omi.beforeSave()
 	stateSinkObject.Save(0, &omi.AtomicRefCount)
@@ -586,6 +621,7 @@ func (omi *overlayMappingIdentity) StateSave(stateSinkObject state.Sink) {
 
 func (omi *overlayMappingIdentity) afterLoad() {}
 
+// +checklocksignore
 func (omi *overlayMappingIdentity) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &omi.AtomicRefCount)
 	stateSourceObject.Load(1, &omi.id)
@@ -607,6 +643,7 @@ func (m *MountSourceFlags) StateFields() []string {
 
 func (m *MountSourceFlags) beforeSave() {}
 
+// +checklocksignore
 func (m *MountSourceFlags) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.ReadOnly)
@@ -617,6 +654,7 @@ func (m *MountSourceFlags) StateSave(stateSinkObject state.Sink) {
 
 func (m *MountSourceFlags) afterLoad() {}
 
+// +checklocksignore
 func (m *MountSourceFlags) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.ReadOnly)
 	stateSourceObject.Load(1, &m.NoAtime)
@@ -649,6 +687,7 @@ func (f *FileFlags) StateFields() []string {
 
 func (f *FileFlags) beforeSave() {}
 
+// +checklocksignore
 func (f *FileFlags) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.Direct)
@@ -669,6 +708,7 @@ func (f *FileFlags) StateSave(stateSinkObject state.Sink) {
 
 func (f *FileFlags) afterLoad() {}
 
+// +checklocksignore
 func (f *FileFlags) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.Direct)
 	stateSourceObject.Load(1, &f.NonBlocking)
@@ -704,6 +744,7 @@ func (i *Inode) StateFields() []string {
 
 func (i *Inode) beforeSave() {}
 
+// +checklocksignore
 func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.AtomicRefCount)
@@ -717,6 +758,7 @@ func (i *Inode) StateSave(stateSinkObject state.Sink) {
 
 func (i *Inode) afterLoad() {}
 
+// +checklocksignore
 func (i *Inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.AtomicRefCount)
 	stateSourceObject.Load(1, &i.InodeOperations)
@@ -740,6 +782,7 @@ func (l *LockCtx) StateFields() []string {
 
 func (l *LockCtx) beforeSave() {}
 
+// +checklocksignore
 func (l *LockCtx) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Posix)
@@ -748,6 +791,7 @@ func (l *LockCtx) StateSave(stateSinkObject state.Sink) {
 
 func (l *LockCtx) afterLoad() {}
 
+// +checklocksignore
 func (l *LockCtx) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Posix)
 	stateSourceObject.Load(1, &l.BSD)
@@ -766,6 +810,7 @@ func (w *Watches) StateFields() []string {
 
 func (w *Watches) beforeSave() {}
 
+// +checklocksignore
 func (w *Watches) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	stateSinkObject.Save(0, &w.ws)
@@ -774,6 +819,7 @@ func (w *Watches) StateSave(stateSinkObject state.Sink) {
 
 func (w *Watches) afterLoad() {}
 
+// +checklocksignore
 func (w *Watches) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.ws)
 	stateSourceObject.Load(1, &w.unlinked)
@@ -795,6 +841,7 @@ func (i *Inotify) StateFields() []string {
 
 func (i *Inotify) beforeSave() {}
 
+// +checklocksignore
 func (i *Inotify) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.id)
@@ -806,6 +853,7 @@ func (i *Inotify) StateSave(stateSinkObject state.Sink) {
 
 func (i *Inotify) afterLoad() {}
 
+// +checklocksignore
 func (i *Inotify) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.id)
 	stateSourceObject.Load(1, &i.events)
@@ -831,6 +879,7 @@ func (e *Event) StateFields() []string {
 
 func (e *Event) beforeSave() {}
 
+// +checklocksignore
 func (e *Event) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.eventEntry)
@@ -843,6 +892,7 @@ func (e *Event) StateSave(stateSinkObject state.Sink) {
 
 func (e *Event) afterLoad() {}
 
+// +checklocksignore
 func (e *Event) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.eventEntry)
 	stateSourceObject.Load(1, &e.wd)
@@ -869,6 +919,7 @@ func (w *Watch) StateFields() []string {
 
 func (w *Watch) beforeSave() {}
 
+// +checklocksignore
 func (w *Watch) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
 	stateSinkObject.Save(0, &w.owner)
@@ -881,6 +932,7 @@ func (w *Watch) StateSave(stateSinkObject state.Sink) {
 
 func (w *Watch) afterLoad() {}
 
+// +checklocksignore
 func (w *Watch) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.owner)
 	stateSourceObject.Load(1, &w.wd)
@@ -907,6 +959,7 @@ func (msrc *MountSource) StateFields() []string {
 
 func (msrc *MountSource) beforeSave() {}
 
+// +checklocksignore
 func (msrc *MountSource) StateSave(stateSinkObject state.Sink) {
 	msrc.beforeSave()
 	stateSinkObject.Save(0, &msrc.AtomicRefCount)
@@ -919,6 +972,7 @@ func (msrc *MountSource) StateSave(stateSinkObject state.Sink) {
 
 func (msrc *MountSource) afterLoad() {}
 
+// +checklocksignore
 func (msrc *MountSource) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &msrc.AtomicRefCount)
 	stateSourceObject.Load(1, &msrc.MountSourceOperations)
@@ -942,6 +996,7 @@ func (smo *SimpleMountSourceOperations) StateFields() []string {
 
 func (smo *SimpleMountSourceOperations) beforeSave() {}
 
+// +checklocksignore
 func (smo *SimpleMountSourceOperations) StateSave(stateSinkObject state.Sink) {
 	smo.beforeSave()
 	stateSinkObject.Save(0, &smo.keep)
@@ -951,6 +1006,7 @@ func (smo *SimpleMountSourceOperations) StateSave(stateSinkObject state.Sink) {
 
 func (smo *SimpleMountSourceOperations) afterLoad() {}
 
+// +checklocksignore
 func (smo *SimpleMountSourceOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &smo.keep)
 	stateSourceObject.Load(1, &smo.revalidate)
@@ -970,6 +1026,7 @@ func (o *overlayMountSourceOperations) StateFields() []string {
 
 func (o *overlayMountSourceOperations) beforeSave() {}
 
+// +checklocksignore
 func (o *overlayMountSourceOperations) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 	stateSinkObject.Save(0, &o.upper)
@@ -978,6 +1035,7 @@ func (o *overlayMountSourceOperations) StateSave(stateSinkObject state.Sink) {
 
 func (o *overlayMountSourceOperations) afterLoad() {}
 
+// +checklocksignore
 func (o *overlayMountSourceOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &o.upper)
 	stateSourceObject.Load(1, &o.lower)
@@ -993,12 +1051,14 @@ func (ofs *overlayFilesystem) StateFields() []string {
 
 func (ofs *overlayFilesystem) beforeSave() {}
 
+// +checklocksignore
 func (ofs *overlayFilesystem) StateSave(stateSinkObject state.Sink) {
 	ofs.beforeSave()
 }
 
 func (ofs *overlayFilesystem) afterLoad() {}
 
+// +checklocksignore
 func (ofs *overlayFilesystem) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -1017,6 +1077,7 @@ func (m *Mount) StateFields() []string {
 
 func (m *Mount) beforeSave() {}
 
+// +checklocksignore
 func (m *Mount) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.ID)
@@ -1027,6 +1088,7 @@ func (m *Mount) StateSave(stateSinkObject state.Sink) {
 
 func (m *Mount) afterLoad() {}
 
+// +checklocksignore
 func (m *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.ID)
 	stateSourceObject.Load(1, &m.ParentID)
@@ -1050,6 +1112,7 @@ func (mns *MountNamespace) StateFields() []string {
 
 func (mns *MountNamespace) beforeSave() {}
 
+// +checklocksignore
 func (mns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	mns.beforeSave()
 	stateSinkObject.Save(0, &mns.AtomicRefCount)
@@ -1061,6 +1124,7 @@ func (mns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 
 func (mns *MountNamespace) afterLoad() {}
 
+// +checklocksignore
 func (mns *MountNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mns.AtomicRefCount)
 	stateSourceObject.Load(1, &mns.userns)
@@ -1085,6 +1149,7 @@ func (o *overlayEntry) StateFields() []string {
 
 func (o *overlayEntry) beforeSave() {}
 
+// +checklocksignore
 func (o *overlayEntry) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 	stateSinkObject.Save(0, &o.lowerExists)
@@ -1096,6 +1161,7 @@ func (o *overlayEntry) StateSave(stateSinkObject state.Sink) {
 
 func (o *overlayEntry) afterLoad() {}
 
+// +checklocksignore
 func (o *overlayEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &o.lowerExists)
 	stateSourceObject.Load(1, &o.lower)

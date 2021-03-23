@@ -19,6 +19,7 @@ func (r *EvictableRange) StateFields() []string {
 
 func (r *EvictableRange) beforeSave() {}
 
+// +checklocksignore
 func (r *EvictableRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -27,6 +28,7 @@ func (r *EvictableRange) StateSave(stateSinkObject state.Sink) {
 
 func (r *EvictableRange) afterLoad() {}
 
+// +checklocksignore
 func (r *EvictableRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
@@ -44,6 +46,7 @@ func (s *evictableRangeSet) StateFields() []string {
 
 func (s *evictableRangeSet) beforeSave() {}
 
+// +checklocksignore
 func (s *evictableRangeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *evictableRangeSegmentDataSlices = s.saveRoot()
@@ -52,6 +55,7 @@ func (s *evictableRangeSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *evictableRangeSet) afterLoad() {}
 
+// +checklocksignore
 func (s *evictableRangeSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*evictableRangeSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*evictableRangeSegmentDataSlices)) })
 }
@@ -75,6 +79,7 @@ func (n *evictableRangenode) StateFields() []string {
 
 func (n *evictableRangenode) beforeSave() {}
 
+// +checklocksignore
 func (n *evictableRangenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -89,6 +94,7 @@ func (n *evictableRangenode) StateSave(stateSinkObject state.Sink) {
 
 func (n *evictableRangenode) afterLoad() {}
 
+// +checklocksignore
 func (n *evictableRangenode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -114,6 +120,7 @@ func (e *evictableRangeSegmentDataSlices) StateFields() []string {
 
 func (e *evictableRangeSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (e *evictableRangeSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Start)
@@ -123,6 +130,7 @@ func (e *evictableRangeSegmentDataSlices) StateSave(stateSinkObject state.Sink) 
 
 func (e *evictableRangeSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (e *evictableRangeSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Start)
 	stateSourceObject.Load(1, &e.End)
@@ -143,6 +151,7 @@ func (u *usageInfo) StateFields() []string {
 
 func (u *usageInfo) beforeSave() {}
 
+// +checklocksignore
 func (u *usageInfo) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.kind)
@@ -152,6 +161,7 @@ func (u *usageInfo) StateSave(stateSinkObject state.Sink) {
 
 func (u *usageInfo) afterLoad() {}
 
+// +checklocksignore
 func (u *usageInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.kind)
 	stateSourceObject.Load(1, &u.knownCommitted)
@@ -170,6 +180,7 @@ func (s *reclaimSet) StateFields() []string {
 
 func (s *reclaimSet) beforeSave() {}
 
+// +checklocksignore
 func (s *reclaimSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *reclaimSegmentDataSlices = s.saveRoot()
@@ -178,6 +189,7 @@ func (s *reclaimSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *reclaimSet) afterLoad() {}
 
+// +checklocksignore
 func (s *reclaimSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*reclaimSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*reclaimSegmentDataSlices)) })
 }
@@ -201,6 +213,7 @@ func (n *reclaimnode) StateFields() []string {
 
 func (n *reclaimnode) beforeSave() {}
 
+// +checklocksignore
 func (n *reclaimnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -215,6 +228,7 @@ func (n *reclaimnode) StateSave(stateSinkObject state.Sink) {
 
 func (n *reclaimnode) afterLoad() {}
 
+// +checklocksignore
 func (n *reclaimnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -240,6 +254,7 @@ func (r *reclaimSegmentDataSlices) StateFields() []string {
 
 func (r *reclaimSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (r *reclaimSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -249,6 +264,7 @@ func (r *reclaimSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (r *reclaimSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (r *reclaimSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
@@ -267,6 +283,7 @@ func (s *usageSet) StateFields() []string {
 
 func (s *usageSet) beforeSave() {}
 
+// +checklocksignore
 func (s *usageSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *usageSegmentDataSlices = s.saveRoot()
@@ -275,6 +292,7 @@ func (s *usageSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *usageSet) afterLoad() {}
 
+// +checklocksignore
 func (s *usageSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*usageSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*usageSegmentDataSlices)) })
 }
@@ -298,6 +316,7 @@ func (n *usagenode) StateFields() []string {
 
 func (n *usagenode) beforeSave() {}
 
+// +checklocksignore
 func (n *usagenode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -312,6 +331,7 @@ func (n *usagenode) StateSave(stateSinkObject state.Sink) {
 
 func (n *usagenode) afterLoad() {}
 
+// +checklocksignore
 func (n *usagenode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -337,6 +357,7 @@ func (u *usageSegmentDataSlices) StateFields() []string {
 
 func (u *usageSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (u *usageSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.Start)
@@ -346,6 +367,7 @@ func (u *usageSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (u *usageSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (u *usageSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.Start)
 	stateSourceObject.Load(1, &u.End)

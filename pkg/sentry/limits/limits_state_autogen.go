@@ -19,6 +19,7 @@ func (l *Limit) StateFields() []string {
 
 func (l *Limit) beforeSave() {}
 
+// +checklocksignore
 func (l *Limit) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Cur)
@@ -27,6 +28,7 @@ func (l *Limit) StateSave(stateSinkObject state.Sink) {
 
 func (l *Limit) afterLoad() {}
 
+// +checklocksignore
 func (l *Limit) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Cur)
 	stateSourceObject.Load(1, &l.Max)
@@ -44,6 +46,7 @@ func (l *LimitSet) StateFields() []string {
 
 func (l *LimitSet) beforeSave() {}
 
+// +checklocksignore
 func (l *LimitSet) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.data)
@@ -51,6 +54,7 @@ func (l *LimitSet) StateSave(stateSinkObject state.Sink) {
 
 func (l *LimitSet) afterLoad() {}
 
+// +checklocksignore
 func (l *LimitSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.data)
 }

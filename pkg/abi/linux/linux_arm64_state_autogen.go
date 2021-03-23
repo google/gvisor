@@ -26,6 +26,7 @@ func (p *PtraceRegs) StateFields() []string {
 
 func (p *PtraceRegs) beforeSave() {}
 
+// +checklocksignore
 func (p *PtraceRegs) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.Regs)
@@ -36,6 +37,7 @@ func (p *PtraceRegs) StateSave(stateSinkObject state.Sink) {
 
 func (p *PtraceRegs) afterLoad() {}
 
+// +checklocksignore
 func (p *PtraceRegs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.Regs)
 	stateSourceObject.Load(1, &p.Sp)

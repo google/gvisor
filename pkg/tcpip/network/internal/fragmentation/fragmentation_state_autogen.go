@@ -19,6 +19,7 @@ func (l *reassemblerList) StateFields() []string {
 
 func (l *reassemblerList) beforeSave() {}
 
+// +checklocksignore
 func (l *reassemblerList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -27,6 +28,7 @@ func (l *reassemblerList) StateSave(stateSinkObject state.Sink) {
 
 func (l *reassemblerList) afterLoad() {}
 
+// +checklocksignore
 func (l *reassemblerList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -45,6 +47,7 @@ func (e *reassemblerEntry) StateFields() []string {
 
 func (e *reassemblerEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *reassemblerEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -53,6 +56,7 @@ func (e *reassemblerEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *reassemblerEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *reassemblerEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

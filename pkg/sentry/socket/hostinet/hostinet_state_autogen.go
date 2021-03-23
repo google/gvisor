@@ -23,6 +23,7 @@ func (s *socketOpsCommon) StateFields() []string {
 
 func (s *socketOpsCommon) beforeSave() {}
 
+// +checklocksignore
 func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.SendReceiveTimeout)
@@ -35,6 +36,7 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 
 func (s *socketOpsCommon) afterLoad() {}
 
+// +checklocksignore
 func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.SendReceiveTimeout)
 	stateSourceObject.Load(1, &s.family)
@@ -60,6 +62,7 @@ func (s *socketVFS2) StateFields() []string {
 
 func (s *socketVFS2) beforeSave() {}
 
+// +checklocksignore
 func (s *socketVFS2) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.vfsfd)
@@ -71,6 +74,7 @@ func (s *socketVFS2) StateSave(stateSinkObject state.Sink) {
 
 func (s *socketVFS2) afterLoad() {}
 
+// +checklocksignore
 func (s *socketVFS2) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)

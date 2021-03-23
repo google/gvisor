@@ -18,6 +18,7 @@ func (n *NotificationHandle) StateFields() []string {
 
 func (n *NotificationHandle) beforeSave() {}
 
+// +checklocksignore
 func (n *NotificationHandle) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.n)
@@ -25,6 +26,7 @@ func (n *NotificationHandle) StateSave(stateSinkObject state.Sink) {
 
 func (n *NotificationHandle) afterLoad() {}
 
+// +checklocksignore
 func (n *NotificationHandle) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.n)
 }

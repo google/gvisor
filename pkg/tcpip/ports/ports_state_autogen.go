@@ -20,6 +20,7 @@ func (f *Flags) StateFields() []string {
 
 func (f *Flags) beforeSave() {}
 
+// +checklocksignore
 func (f *Flags) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.MostRecent)
@@ -29,6 +30,7 @@ func (f *Flags) StateSave(stateSinkObject state.Sink) {
 
 func (f *Flags) afterLoad() {}
 
+// +checklocksignore
 func (f *Flags) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.MostRecent)
 	stateSourceObject.Load(1, &f.LoadBalanced)

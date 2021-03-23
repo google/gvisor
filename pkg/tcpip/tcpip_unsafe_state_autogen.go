@@ -19,12 +19,14 @@ func (s *StdClock) StateFields() []string {
 
 func (s *StdClock) beforeSave() {}
 
+// +checklocksignore
 func (s *StdClock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
 func (s *StdClock) afterLoad() {}
 
+// +checklocksignore
 func (s *StdClock) StateLoad(stateSourceObject state.Source) {
 }
 

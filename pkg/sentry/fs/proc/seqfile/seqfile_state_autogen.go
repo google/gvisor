@@ -19,6 +19,7 @@ func (s *SeqData) StateFields() []string {
 
 func (s *SeqData) beforeSave() {}
 
+// +checklocksignore
 func (s *SeqData) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Buf)
@@ -27,6 +28,7 @@ func (s *SeqData) StateSave(stateSinkObject state.Sink) {
 
 func (s *SeqData) afterLoad() {}
 
+// +checklocksignore
 func (s *SeqData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Buf)
 	stateSourceObject.Load(1, &s.Handle)
@@ -49,6 +51,7 @@ func (s *SeqFile) StateFields() []string {
 
 func (s *SeqFile) beforeSave() {}
 
+// +checklocksignore
 func (s *SeqFile) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.InodeSimpleExtendedAttributes)
@@ -61,6 +64,7 @@ func (s *SeqFile) StateSave(stateSinkObject state.Sink) {
 
 func (s *SeqFile) afterLoad() {}
 
+// +checklocksignore
 func (s *SeqFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.InodeSimpleExtendedAttributes)
 	stateSourceObject.Load(1, &s.InodeSimpleAttributes)
@@ -82,6 +86,7 @@ func (sfo *seqFileOperations) StateFields() []string {
 
 func (sfo *seqFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (sfo *seqFileOperations) StateSave(stateSinkObject state.Sink) {
 	sfo.beforeSave()
 	stateSinkObject.Save(0, &sfo.seqFile)
@@ -89,6 +94,7 @@ func (sfo *seqFileOperations) StateSave(stateSinkObject state.Sink) {
 
 func (sfo *seqFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (sfo *seqFileOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sfo.seqFile)
 }

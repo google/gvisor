@@ -16,12 +16,14 @@ func (e *ErrAborted) StateFields() []string {
 
 func (e *ErrAborted) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrAborted) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrAborted) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrAborted) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -35,12 +37,14 @@ func (e *ErrAddressFamilyNotSupported) StateFields() []string {
 
 func (e *ErrAddressFamilyNotSupported) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrAddressFamilyNotSupported) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrAddressFamilyNotSupported) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrAddressFamilyNotSupported) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -54,12 +58,14 @@ func (e *ErrAlreadyBound) StateFields() []string {
 
 func (e *ErrAlreadyBound) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrAlreadyBound) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrAlreadyBound) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrAlreadyBound) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -73,12 +79,14 @@ func (e *ErrAlreadyConnected) StateFields() []string {
 
 func (e *ErrAlreadyConnected) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrAlreadyConnected) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrAlreadyConnected) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrAlreadyConnected) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -92,12 +100,14 @@ func (e *ErrAlreadyConnecting) StateFields() []string {
 
 func (e *ErrAlreadyConnecting) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrAlreadyConnecting) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrAlreadyConnecting) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrAlreadyConnecting) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -111,12 +121,14 @@ func (e *ErrBadAddress) StateFields() []string {
 
 func (e *ErrBadAddress) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrBadAddress) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrBadAddress) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrBadAddress) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -130,12 +142,14 @@ func (e *ErrBadBuffer) StateFields() []string {
 
 func (e *ErrBadBuffer) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrBadBuffer) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrBadBuffer) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrBadBuffer) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -149,12 +163,14 @@ func (e *ErrBadLocalAddress) StateFields() []string {
 
 func (e *ErrBadLocalAddress) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrBadLocalAddress) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrBadLocalAddress) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrBadLocalAddress) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -168,12 +184,14 @@ func (e *ErrBroadcastDisabled) StateFields() []string {
 
 func (e *ErrBroadcastDisabled) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrBroadcastDisabled) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrBroadcastDisabled) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrBroadcastDisabled) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -187,12 +205,14 @@ func (e *ErrClosedForReceive) StateFields() []string {
 
 func (e *ErrClosedForReceive) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrClosedForReceive) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrClosedForReceive) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrClosedForReceive) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -206,12 +226,14 @@ func (e *ErrClosedForSend) StateFields() []string {
 
 func (e *ErrClosedForSend) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrClosedForSend) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrClosedForSend) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrClosedForSend) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -225,12 +247,14 @@ func (e *ErrConnectStarted) StateFields() []string {
 
 func (e *ErrConnectStarted) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrConnectStarted) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrConnectStarted) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrConnectStarted) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -244,12 +268,14 @@ func (e *ErrConnectionAborted) StateFields() []string {
 
 func (e *ErrConnectionAborted) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrConnectionAborted) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrConnectionAborted) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrConnectionAborted) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -263,12 +289,14 @@ func (e *ErrConnectionRefused) StateFields() []string {
 
 func (e *ErrConnectionRefused) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrConnectionRefused) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrConnectionRefused) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrConnectionRefused) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -282,12 +310,14 @@ func (e *ErrConnectionReset) StateFields() []string {
 
 func (e *ErrConnectionReset) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrConnectionReset) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrConnectionReset) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrConnectionReset) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -301,12 +331,14 @@ func (e *ErrDestinationRequired) StateFields() []string {
 
 func (e *ErrDestinationRequired) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrDestinationRequired) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrDestinationRequired) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrDestinationRequired) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -320,12 +352,14 @@ func (e *ErrDuplicateAddress) StateFields() []string {
 
 func (e *ErrDuplicateAddress) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrDuplicateAddress) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrDuplicateAddress) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrDuplicateAddress) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -339,12 +373,14 @@ func (e *ErrDuplicateNICID) StateFields() []string {
 
 func (e *ErrDuplicateNICID) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrDuplicateNICID) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrDuplicateNICID) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrDuplicateNICID) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -358,12 +394,14 @@ func (e *ErrInvalidEndpointState) StateFields() []string {
 
 func (e *ErrInvalidEndpointState) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrInvalidEndpointState) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrInvalidEndpointState) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrInvalidEndpointState) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -377,12 +415,14 @@ func (e *ErrInvalidOptionValue) StateFields() []string {
 
 func (e *ErrInvalidOptionValue) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrInvalidOptionValue) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrInvalidOptionValue) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrInvalidOptionValue) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -396,12 +436,14 @@ func (e *ErrInvalidPortRange) StateFields() []string {
 
 func (e *ErrInvalidPortRange) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrInvalidPortRange) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrInvalidPortRange) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrInvalidPortRange) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -415,12 +457,14 @@ func (e *ErrMalformedHeader) StateFields() []string {
 
 func (e *ErrMalformedHeader) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrMalformedHeader) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrMalformedHeader) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrMalformedHeader) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -434,12 +478,14 @@ func (e *ErrMessageTooLong) StateFields() []string {
 
 func (e *ErrMessageTooLong) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrMessageTooLong) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrMessageTooLong) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrMessageTooLong) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -453,12 +499,14 @@ func (e *ErrNetworkUnreachable) StateFields() []string {
 
 func (e *ErrNetworkUnreachable) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNetworkUnreachable) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNetworkUnreachable) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNetworkUnreachable) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -472,12 +520,14 @@ func (e *ErrNoBufferSpace) StateFields() []string {
 
 func (e *ErrNoBufferSpace) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNoBufferSpace) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNoBufferSpace) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNoBufferSpace) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -491,12 +541,14 @@ func (e *ErrNoPortAvailable) StateFields() []string {
 
 func (e *ErrNoPortAvailable) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNoPortAvailable) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNoPortAvailable) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNoPortAvailable) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -510,12 +562,14 @@ func (e *ErrNoRoute) StateFields() []string {
 
 func (e *ErrNoRoute) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNoRoute) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNoRoute) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNoRoute) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -529,12 +583,14 @@ func (e *ErrNoSuchFile) StateFields() []string {
 
 func (e *ErrNoSuchFile) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNoSuchFile) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNoSuchFile) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNoSuchFile) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -548,12 +604,14 @@ func (e *ErrNotConnected) StateFields() []string {
 
 func (e *ErrNotConnected) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNotConnected) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNotConnected) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNotConnected) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -567,12 +625,14 @@ func (e *ErrNotPermitted) StateFields() []string {
 
 func (e *ErrNotPermitted) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNotPermitted) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNotPermitted) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNotPermitted) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -586,12 +646,14 @@ func (e *ErrNotSupported) StateFields() []string {
 
 func (e *ErrNotSupported) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrNotSupported) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrNotSupported) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrNotSupported) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -605,12 +667,14 @@ func (e *ErrPortInUse) StateFields() []string {
 
 func (e *ErrPortInUse) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrPortInUse) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrPortInUse) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrPortInUse) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -624,12 +688,14 @@ func (e *ErrQueueSizeNotSupported) StateFields() []string {
 
 func (e *ErrQueueSizeNotSupported) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrQueueSizeNotSupported) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrQueueSizeNotSupported) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrQueueSizeNotSupported) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -643,12 +709,14 @@ func (e *ErrTimeout) StateFields() []string {
 
 func (e *ErrTimeout) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrTimeout) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrTimeout) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrTimeout) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -662,12 +730,14 @@ func (e *ErrUnknownDevice) StateFields() []string {
 
 func (e *ErrUnknownDevice) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrUnknownDevice) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrUnknownDevice) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrUnknownDevice) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -681,12 +751,14 @@ func (e *ErrUnknownNICID) StateFields() []string {
 
 func (e *ErrUnknownNICID) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrUnknownNICID) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrUnknownNICID) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrUnknownNICID) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -700,12 +772,14 @@ func (e *ErrUnknownProtocol) StateFields() []string {
 
 func (e *ErrUnknownProtocol) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrUnknownProtocol) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrUnknownProtocol) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrUnknownProtocol) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -719,12 +793,14 @@ func (e *ErrUnknownProtocolOption) StateFields() []string {
 
 func (e *ErrUnknownProtocolOption) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrUnknownProtocolOption) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrUnknownProtocolOption) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrUnknownProtocolOption) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -738,12 +814,14 @@ func (e *ErrWouldBlock) StateFields() []string {
 
 func (e *ErrWouldBlock) beforeSave() {}
 
+// +checklocksignore
 func (e *ErrWouldBlock) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 }
 
 func (e *ErrWouldBlock) afterLoad() {}
 
+// +checklocksignore
 func (e *ErrWouldBlock) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -760,6 +838,7 @@ func (l *sockErrorList) StateFields() []string {
 
 func (l *sockErrorList) beforeSave() {}
 
+// +checklocksignore
 func (l *sockErrorList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -768,6 +847,7 @@ func (l *sockErrorList) StateSave(stateSinkObject state.Sink) {
 
 func (l *sockErrorList) afterLoad() {}
 
+// +checklocksignore
 func (l *sockErrorList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -786,6 +866,7 @@ func (e *sockErrorEntry) StateFields() []string {
 
 func (e *sockErrorEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *sockErrorEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -794,6 +875,7 @@ func (e *sockErrorEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *sockErrorEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *sockErrorEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -832,6 +914,7 @@ func (so *SocketOptions) StateFields() []string {
 
 func (so *SocketOptions) beforeSave() {}
 
+// +checklocksignore
 func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	so.beforeSave()
 	stateSinkObject.Save(0, &so.handler)
@@ -860,6 +943,7 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 
 func (so *SocketOptions) afterLoad() {}
 
+// +checklocksignore
 func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &so.handler)
 	stateSourceObject.Load(1, &so.broadcastEnabled)
@@ -897,6 +981,7 @@ func (l *LocalSockError) StateFields() []string {
 
 func (l *LocalSockError) beforeSave() {}
 
+// +checklocksignore
 func (l *LocalSockError) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.info)
@@ -904,6 +989,7 @@ func (l *LocalSockError) StateSave(stateSinkObject state.Sink) {
 
 func (l *LocalSockError) afterLoad() {}
 
+// +checklocksignore
 func (l *LocalSockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.info)
 }
@@ -926,6 +1012,7 @@ func (s *SockError) StateFields() []string {
 
 func (s *SockError) beforeSave() {}
 
+// +checklocksignore
 func (s *SockError) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.sockErrorEntry)
@@ -939,6 +1026,7 @@ func (s *SockError) StateSave(stateSinkObject state.Sink) {
 
 func (s *SockError) afterLoad() {}
 
+// +checklocksignore
 func (s *SockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.sockErrorEntry)
 	stateSourceObject.Load(1, &s.Err)
@@ -963,6 +1051,7 @@ func (f *FullAddress) StateFields() []string {
 
 func (f *FullAddress) beforeSave() {}
 
+// +checklocksignore
 func (f *FullAddress) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.NIC)
@@ -972,6 +1061,7 @@ func (f *FullAddress) StateSave(stateSinkObject state.Sink) {
 
 func (f *FullAddress) afterLoad() {}
 
+// +checklocksignore
 func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.NIC)
 	stateSourceObject.Load(1, &f.Addr)
@@ -1002,6 +1092,7 @@ func (c *ControlMessages) StateFields() []string {
 
 func (c *ControlMessages) beforeSave() {}
 
+// +checklocksignore
 func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.HasTimestamp)
@@ -1021,6 +1112,7 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 
 func (c *ControlMessages) afterLoad() {}
 
+// +checklocksignore
 func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.HasTimestamp)
 	stateSourceObject.Load(1, &c.Timestamp)
@@ -1050,6 +1142,7 @@ func (l *LinkPacketInfo) StateFields() []string {
 
 func (l *LinkPacketInfo) beforeSave() {}
 
+// +checklocksignore
 func (l *LinkPacketInfo) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Protocol)
@@ -1058,6 +1151,7 @@ func (l *LinkPacketInfo) StateSave(stateSinkObject state.Sink) {
 
 func (l *LinkPacketInfo) afterLoad() {}
 
+// +checklocksignore
 func (l *LinkPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Protocol)
 	stateSourceObject.Load(1, &l.PktType)
@@ -1076,6 +1170,7 @@ func (l *LingerOption) StateFields() []string {
 
 func (l *LingerOption) beforeSave() {}
 
+// +checklocksignore
 func (l *LingerOption) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Enabled)
@@ -1084,6 +1179,7 @@ func (l *LingerOption) StateSave(stateSinkObject state.Sink) {
 
 func (l *LingerOption) afterLoad() {}
 
+// +checklocksignore
 func (l *LingerOption) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Enabled)
 	stateSourceObject.Load(1, &l.Timeout)
@@ -1103,6 +1199,7 @@ func (i *IPPacketInfo) StateFields() []string {
 
 func (i *IPPacketInfo) beforeSave() {}
 
+// +checklocksignore
 func (i *IPPacketInfo) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.NIC)
@@ -1112,6 +1209,7 @@ func (i *IPPacketInfo) StateSave(stateSinkObject state.Sink) {
 
 func (i *IPPacketInfo) afterLoad() {}
 
+// +checklocksignore
 func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.NIC)
 	stateSourceObject.Load(1, &i.LocalAddr)

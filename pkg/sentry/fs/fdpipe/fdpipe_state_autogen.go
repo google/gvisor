@@ -19,6 +19,7 @@ func (p *pipeOperations) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (p *pipeOperations) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var flagsValue fs.FileFlags = p.saveFlags()
@@ -27,6 +28,7 @@ func (p *pipeOperations) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &p.readAheadBuffer)
 }
 
+// +checklocksignore
 func (p *pipeOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(1, &p.opener)
 	stateSourceObject.Load(2, &p.readAheadBuffer)

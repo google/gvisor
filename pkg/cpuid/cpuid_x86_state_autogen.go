@@ -28,6 +28,7 @@ func (c *Cache) StateFields() []string {
 
 func (c *Cache) beforeSave() {}
 
+// +checklocksignore
 func (c *Cache) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.Level)
@@ -43,6 +44,7 @@ func (c *Cache) StateSave(stateSinkObject state.Sink) {
 
 func (c *Cache) afterLoad() {}
 
+// +checklocksignore
 func (c *Cache) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.Level)
 	stateSourceObject.Load(1, &c.Type)
@@ -76,6 +78,7 @@ func (fs *FeatureSet) StateFields() []string {
 
 func (fs *FeatureSet) beforeSave() {}
 
+// +checklocksignore
 func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Set)
@@ -92,6 +95,7 @@ func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 
 func (fs *FeatureSet) afterLoad() {}
 
+// +checklocksignore
 func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Set)
 	stateSourceObject.Load(1, &fs.VendorID)

@@ -19,6 +19,7 @@ func (d *Device) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (d *Device) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.Queue)
@@ -29,6 +30,7 @@ func (d *Device) StateSave(stateSinkObject state.Sink) {
 
 func (d *Device) afterLoad() {}
 
+// +checklocksignore
 func (d *Device) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Queue)
 	stateSourceObject.Load(1, &d.endpoint)
@@ -48,11 +50,13 @@ func (r *tunEndpointRefs) StateFields() []string {
 
 func (r *tunEndpointRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *tunEndpointRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *tunEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)

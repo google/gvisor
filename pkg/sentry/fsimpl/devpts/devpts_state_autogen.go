@@ -20,6 +20,7 @@ func (fstype *FilesystemType) StateFields() []string {
 
 func (fstype *FilesystemType) beforeSave() {}
 
+// +checklocksignore
 func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fstype.beforeSave()
 	stateSinkObject.Save(0, &fstype.initErr)
@@ -29,6 +30,7 @@ func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 
 func (fstype *FilesystemType) afterLoad() {}
 
+// +checklocksignore
 func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fstype.initErr)
 	stateSourceObject.Load(1, &fstype.fs)
@@ -48,6 +50,7 @@ func (fs *filesystem) StateFields() []string {
 
 func (fs *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
@@ -56,6 +59,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 
 func (fs *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
@@ -84,6 +88,7 @@ func (i *rootInode) StateFields() []string {
 
 func (i *rootInode) beforeSave() {}
 
+// +checklocksignore
 func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.implStatFS)
@@ -102,6 +107,7 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 
 func (i *rootInode) afterLoad() {}
 
+// +checklocksignore
 func (i *rootInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.implStatFS)
 	stateSourceObject.Load(1, &i.InodeAlwaysValid)
@@ -127,12 +133,14 @@ func (i *implStatFS) StateFields() []string {
 
 func (i *implStatFS) beforeSave() {}
 
+// +checklocksignore
 func (i *implStatFS) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
 func (i *implStatFS) afterLoad() {}
 
+// +checklocksignore
 func (i *implStatFS) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -154,6 +162,7 @@ func (l *lineDiscipline) StateFields() []string {
 
 func (l *lineDiscipline) beforeSave() {}
 
+// +checklocksignore
 func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.size)
@@ -167,6 +176,7 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 
 func (l *lineDiscipline) afterLoad() {}
 
+// +checklocksignore
 func (l *lineDiscipline) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.size)
 	stateSourceObject.Load(1, &l.inQueue)
@@ -187,12 +197,14 @@ func (o *outputQueueTransformer) StateFields() []string {
 
 func (o *outputQueueTransformer) beforeSave() {}
 
+// +checklocksignore
 func (o *outputQueueTransformer) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 }
 
 func (o *outputQueueTransformer) afterLoad() {}
 
+// +checklocksignore
 func (o *outputQueueTransformer) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -206,12 +218,14 @@ func (i *inputQueueTransformer) StateFields() []string {
 
 func (i *inputQueueTransformer) beforeSave() {}
 
+// +checklocksignore
 func (i *inputQueueTransformer) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
 func (i *inputQueueTransformer) afterLoad() {}
 
+// +checklocksignore
 func (i *inputQueueTransformer) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -233,6 +247,7 @@ func (mi *masterInode) StateFields() []string {
 
 func (mi *masterInode) beforeSave() {}
 
+// +checklocksignore
 func (mi *masterInode) StateSave(stateSinkObject state.Sink) {
 	mi.beforeSave()
 	stateSinkObject.Save(0, &mi.implStatFS)
@@ -246,6 +261,7 @@ func (mi *masterInode) StateSave(stateSinkObject state.Sink) {
 
 func (mi *masterInode) afterLoad() {}
 
+// +checklocksignore
 func (mi *masterInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mi.implStatFS)
 	stateSourceObject.Load(1, &mi.InodeAttrs)
@@ -272,6 +288,7 @@ func (mfd *masterFileDescription) StateFields() []string {
 
 func (mfd *masterFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (mfd *masterFileDescription) StateSave(stateSinkObject state.Sink) {
 	mfd.beforeSave()
 	stateSinkObject.Save(0, &mfd.vfsfd)
@@ -283,6 +300,7 @@ func (mfd *masterFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (mfd *masterFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (mfd *masterFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mfd.vfsfd)
 	stateSourceObject.Load(1, &mfd.FileDescriptionDefaultImpl)
@@ -307,6 +325,7 @@ func (q *queue) StateFields() []string {
 
 func (q *queue) beforeSave() {}
 
+// +checklocksignore
 func (q *queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.readBuf)
@@ -318,6 +337,7 @@ func (q *queue) StateSave(stateSinkObject state.Sink) {
 
 func (q *queue) afterLoad() {}
 
+// +checklocksignore
 func (q *queue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.readBuf)
 	stateSourceObject.Load(1, &q.waitBuf)
@@ -345,6 +365,7 @@ func (ri *replicaInode) StateFields() []string {
 
 func (ri *replicaInode) beforeSave() {}
 
+// +checklocksignore
 func (ri *replicaInode) StateSave(stateSinkObject state.Sink) {
 	ri.beforeSave()
 	stateSinkObject.Save(0, &ri.implStatFS)
@@ -359,6 +380,7 @@ func (ri *replicaInode) StateSave(stateSinkObject state.Sink) {
 
 func (ri *replicaInode) afterLoad() {}
 
+// +checklocksignore
 func (ri *replicaInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ri.implStatFS)
 	stateSourceObject.Load(1, &ri.InodeAttrs)
@@ -385,6 +407,7 @@ func (rfd *replicaFileDescription) StateFields() []string {
 
 func (rfd *replicaFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (rfd *replicaFileDescription) StateSave(stateSinkObject state.Sink) {
 	rfd.beforeSave()
 	stateSinkObject.Save(0, &rfd.vfsfd)
@@ -395,6 +418,7 @@ func (rfd *replicaFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (rfd *replicaFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (rfd *replicaFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rfd.vfsfd)
 	stateSourceObject.Load(1, &rfd.FileDescriptionDefaultImpl)
@@ -414,11 +438,13 @@ func (r *rootInodeRefs) StateFields() []string {
 
 func (r *rootInodeRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *rootInodeRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *rootInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -439,6 +465,7 @@ func (tm *Terminal) StateFields() []string {
 
 func (tm *Terminal) beforeSave() {}
 
+// +checklocksignore
 func (tm *Terminal) StateSave(stateSinkObject state.Sink) {
 	tm.beforeSave()
 	stateSinkObject.Save(0, &tm.n)
@@ -449,6 +476,7 @@ func (tm *Terminal) StateSave(stateSinkObject state.Sink) {
 
 func (tm *Terminal) afterLoad() {}
 
+// +checklocksignore
 func (tm *Terminal) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &tm.n)
 	stateSourceObject.Load(1, &tm.ld)

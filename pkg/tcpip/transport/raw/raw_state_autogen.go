@@ -22,6 +22,7 @@ func (p *rawPacket) StateFields() []string {
 
 func (p *rawPacket) beforeSave() {}
 
+// +checklocksignore
 func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var dataValue buffer.VectorisedView = p.saveData()
@@ -33,6 +34,7 @@ func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
 
 func (p *rawPacket) afterLoad() {}
 
+// +checklocksignore
 func (p *rawPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.rawPacketEntry)
 	stateSourceObject.Load(2, &p.timestampNS)
@@ -62,6 +64,7 @@ func (e *endpoint) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
@@ -80,6 +83,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &e.ops)
 }
 
+// +checklocksignore
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.TransportEndpointInfo)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
@@ -110,6 +114,7 @@ func (l *rawPacketList) StateFields() []string {
 
 func (l *rawPacketList) beforeSave() {}
 
+// +checklocksignore
 func (l *rawPacketList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -118,6 +123,7 @@ func (l *rawPacketList) StateSave(stateSinkObject state.Sink) {
 
 func (l *rawPacketList) afterLoad() {}
 
+// +checklocksignore
 func (l *rawPacketList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -136,6 +142,7 @@ func (e *rawPacketEntry) StateFields() []string {
 
 func (e *rawPacketEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *rawPacketEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -144,6 +151,7 @@ func (e *rawPacketEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *rawPacketEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *rawPacketEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

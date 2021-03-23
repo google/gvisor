@@ -22,6 +22,7 @@ func (s *State) StateFields() []string {
 
 func (s *State) beforeSave() {}
 
+// +checklocksignore
 func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Regs)
@@ -29,6 +30,7 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.FeatureSet)
 }
 
+// +checklocksignore
 func (s *State) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.x86FPState)

@@ -21,6 +21,7 @@ func (d *Dir) StateFields() []string {
 
 func (d *Dir) beforeSave() {}
 
+// +checklocksignore
 func (d *Dir) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.InodeSimpleAttributes)
@@ -31,6 +32,7 @@ func (d *Dir) StateSave(stateSinkObject state.Sink) {
 
 func (d *Dir) afterLoad() {}
 
+// +checklocksignore
 func (d *Dir) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.InodeSimpleAttributes)
 	stateSourceObject.Load(1, &d.InodeSimpleExtendedAttributes)
@@ -51,6 +53,7 @@ func (dfo *dirFileOperations) StateFields() []string {
 
 func (dfo *dirFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (dfo *dirFileOperations) StateSave(stateSinkObject state.Sink) {
 	dfo.beforeSave()
 	stateSinkObject.Save(0, &dfo.dirCursor)
@@ -59,6 +62,7 @@ func (dfo *dirFileOperations) StateSave(stateSinkObject state.Sink) {
 
 func (dfo *dirFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (dfo *dirFileOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dfo.dirCursor)
 	stateSourceObject.Load(1, &dfo.dir)
@@ -78,6 +82,7 @@ func (s *Socket) StateFields() []string {
 
 func (s *Socket) beforeSave() {}
 
+// +checklocksignore
 func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.InodeSimpleAttributes)
@@ -87,6 +92,7 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 
 func (s *Socket) afterLoad() {}
 
+// +checklocksignore
 func (s *Socket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.InodeSimpleAttributes)
 	stateSourceObject.Load(1, &s.InodeSimpleExtendedAttributes)
@@ -103,12 +109,14 @@ func (s *socketFileOperations) StateFields() []string {
 
 func (s *socketFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (s *socketFileOperations) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
 func (s *socketFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (s *socketFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -126,6 +134,7 @@ func (s *Symlink) StateFields() []string {
 
 func (s *Symlink) beforeSave() {}
 
+// +checklocksignore
 func (s *Symlink) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.InodeSimpleAttributes)
@@ -135,6 +144,7 @@ func (s *Symlink) StateSave(stateSinkObject state.Sink) {
 
 func (s *Symlink) afterLoad() {}
 
+// +checklocksignore
 func (s *Symlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.InodeSimpleAttributes)
 	stateSourceObject.Load(1, &s.InodeSimpleExtendedAttributes)
@@ -151,12 +161,14 @@ func (s *symlinkFileOperations) StateFields() []string {
 
 func (s *symlinkFileOperations) beforeSave() {}
 
+// +checklocksignore
 func (s *symlinkFileOperations) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
 func (s *symlinkFileOperations) afterLoad() {}
 
+// +checklocksignore
 func (s *symlinkFileOperations) StateLoad(stateSourceObject state.Source) {
 }
 

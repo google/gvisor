@@ -19,6 +19,7 @@ func (i *fifo) StateFields() []string {
 
 func (i *fifo) beforeSave() {}
 
+// +checklocksignore
 func (i *fifo) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.InodeOperations)
@@ -27,6 +28,7 @@ func (i *fifo) StateSave(stateSinkObject state.Sink) {
 
 func (i *fifo) afterLoad() {}
 
+// +checklocksignore
 func (i *fifo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeOperations)
 	stateSourceObject.Load(1, &i.fileIops)
@@ -46,6 +48,7 @@ func (f *fileOperations) StateFields() []string {
 
 func (f *fileOperations) beforeSave() {}
 
+// +checklocksignore
 func (f *fileOperations) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.inodeOperations)
@@ -53,6 +56,7 @@ func (f *fileOperations) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.flags)
 }
 
+// +checklocksignore
 func (f *fileOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &f.inodeOperations)
 	stateSourceObject.Load(1, &f.dirCursor)
@@ -70,12 +74,14 @@ func (f *filesystem) StateFields() []string {
 
 func (f *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (f *filesystem) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
 func (f *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -92,6 +98,7 @@ func (i *inodeOperations) StateFields() []string {
 
 func (i *inodeOperations) beforeSave() {}
 
+// +checklocksignore
 func (i *inodeOperations) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.fileState)
@@ -100,6 +107,7 @@ func (i *inodeOperations) StateSave(stateSinkObject state.Sink) {
 
 func (i *inodeOperations) afterLoad() {}
 
+// +checklocksignore
 func (i *inodeOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &i.fileState)
 	stateSourceObject.Load(1, &i.cachingInodeOps)
@@ -119,6 +127,7 @@ func (i *inodeFileState) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (i *inodeFileState) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	var loadingValue struct{} = i.saveLoading()
@@ -129,6 +138,7 @@ func (i *inodeFileState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &i.hostMappable)
 }
 
+// +checklocksignore
 func (i *inodeFileState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &i.s)
 	stateSourceObject.LoadWait(1, &i.sattr)
@@ -152,6 +162,7 @@ func (l *overrideInfo) StateFields() []string {
 
 func (l *overrideInfo) beforeSave() {}
 
+// +checklocksignore
 func (l *overrideInfo) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.dirent)
@@ -161,6 +172,7 @@ func (l *overrideInfo) StateSave(stateSinkObject state.Sink) {
 
 func (l *overrideInfo) afterLoad() {}
 
+// +checklocksignore
 func (l *overrideInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.dirent)
 	stateSourceObject.Load(1, &l.endpoint)
@@ -179,6 +191,7 @@ func (e *overrideMaps) StateFields() []string {
 
 func (e *overrideMaps) beforeSave() {}
 
+// +checklocksignore
 func (e *overrideMaps) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.pathMap)
@@ -186,6 +199,7 @@ func (e *overrideMaps) StateSave(stateSinkObject state.Sink) {
 
 func (e *overrideMaps) afterLoad() {}
 
+// +checklocksignore
 func (e *overrideMaps) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.pathMap)
 }
@@ -211,6 +225,7 @@ func (s *session) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (s *session) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.AtomicRefCount)
@@ -227,6 +242,7 @@ func (s *session) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &s.overrides)
 }
 
+// +checklocksignore
 func (s *session) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.AtomicRefCount)
 	stateSourceObject.LoadWait(1, &s.msize)

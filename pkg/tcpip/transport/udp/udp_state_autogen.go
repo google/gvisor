@@ -25,6 +25,7 @@ func (u *udpPacket) StateFields() []string {
 
 func (u *udpPacket) beforeSave() {}
 
+// +checklocksignore
 func (u *udpPacket) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	var dataValue buffer.VectorisedView = u.saveData()
@@ -39,6 +40,7 @@ func (u *udpPacket) StateSave(stateSinkObject state.Sink) {
 
 func (u *udpPacket) afterLoad() {}
 
+// +checklocksignore
 func (u *udpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.udpPacketEntry)
 	stateSourceObject.Load(1, &u.senderAddress)
@@ -83,6 +85,7 @@ func (e *endpoint) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
@@ -113,6 +116,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &e.ops)
 }
 
+// +checklocksignore
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.TransportEndpointInfo)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
@@ -155,6 +159,7 @@ func (m *multicastMembership) StateFields() []string {
 
 func (m *multicastMembership) beforeSave() {}
 
+// +checklocksignore
 func (m *multicastMembership) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.nicID)
@@ -163,6 +168,7 @@ func (m *multicastMembership) StateSave(stateSinkObject state.Sink) {
 
 func (m *multicastMembership) afterLoad() {}
 
+// +checklocksignore
 func (m *multicastMembership) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.nicID)
 	stateSourceObject.Load(1, &m.multicastAddr)
@@ -181,6 +187,7 @@ func (l *udpPacketList) StateFields() []string {
 
 func (l *udpPacketList) beforeSave() {}
 
+// +checklocksignore
 func (l *udpPacketList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -189,6 +196,7 @@ func (l *udpPacketList) StateSave(stateSinkObject state.Sink) {
 
 func (l *udpPacketList) afterLoad() {}
 
+// +checklocksignore
 func (l *udpPacketList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -207,6 +215,7 @@ func (e *udpPacketEntry) StateFields() []string {
 
 func (e *udpPacketEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *udpPacketEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -215,6 +224,7 @@ func (e *udpPacketEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *udpPacketEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *udpPacketEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

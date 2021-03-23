@@ -16,6 +16,7 @@ func (b *bucket) StateFields() []string {
 
 func (b *bucket) beforeSave() {}
 
+// +checklocksignore
 func (b *bucket) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
 	if !state.IsZeroValue(&b.waiters) {
@@ -25,6 +26,7 @@ func (b *bucket) StateSave(stateSinkObject state.Sink) {
 
 func (b *bucket) afterLoad() {}
 
+// +checklocksignore
 func (b *bucket) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -40,6 +42,7 @@ func (m *Manager) StateFields() []string {
 
 func (m *Manager) beforeSave() {}
 
+// +checklocksignore
 func (m *Manager) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	if !state.IsZeroValue(&m.privateBuckets) {
@@ -50,6 +53,7 @@ func (m *Manager) StateSave(stateSinkObject state.Sink) {
 
 func (m *Manager) afterLoad() {}
 
+// +checklocksignore
 func (m *Manager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.sharedBucket)
 }
@@ -67,6 +71,7 @@ func (l *waiterList) StateFields() []string {
 
 func (l *waiterList) beforeSave() {}
 
+// +checklocksignore
 func (l *waiterList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -75,6 +80,7 @@ func (l *waiterList) StateSave(stateSinkObject state.Sink) {
 
 func (l *waiterList) afterLoad() {}
 
+// +checklocksignore
 func (l *waiterList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -93,6 +99,7 @@ func (e *waiterEntry) StateFields() []string {
 
 func (e *waiterEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *waiterEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -101,6 +108,7 @@ func (e *waiterEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *waiterEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *waiterEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

@@ -19,6 +19,7 @@ func (t *TimerOperations) StateFields() []string {
 
 func (t *TimerOperations) beforeSave() {}
 
+// +checklocksignore
 func (t *TimerOperations) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	if !state.IsZeroValue(&t.events) {
@@ -30,6 +31,7 @@ func (t *TimerOperations) StateSave(stateSinkObject state.Sink) {
 
 func (t *TimerOperations) afterLoad() {}
 
+// +checklocksignore
 func (t *TimerOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.timer)
 	stateSourceObject.Load(1, &t.val)

@@ -18,6 +18,7 @@ func (p *AtomicPtrBucket) StateFields() []string {
 
 func (p *AtomicPtrBucket) beforeSave() {}
 
+// +checklocksignore
 func (p *AtomicPtrBucket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var ptrValue *bucket = p.savePtr()
@@ -26,6 +27,7 @@ func (p *AtomicPtrBucket) StateSave(stateSinkObject state.Sink) {
 
 func (p *AtomicPtrBucket) afterLoad() {}
 
+// +checklocksignore
 func (p *AtomicPtrBucket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*bucket), func(y interface{}) { p.loadPtr(y.(*bucket)) })
 }

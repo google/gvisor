@@ -25,6 +25,7 @@ func (m *MmapLayout) StateFields() []string {
 
 func (m *MmapLayout) beforeSave() {}
 
+// +checklocksignore
 func (m *MmapLayout) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.MinAddr)
@@ -37,6 +38,7 @@ func (m *MmapLayout) StateSave(stateSinkObject state.Sink) {
 
 func (m *MmapLayout) afterLoad() {}
 
+// +checklocksignore
 func (m *MmapLayout) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.MinAddr)
 	stateSourceObject.Load(1, &m.MaxAddr)
@@ -59,6 +61,7 @@ func (a *AuxEntry) StateFields() []string {
 
 func (a *AuxEntry) beforeSave() {}
 
+// +checklocksignore
 func (a *AuxEntry) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.Key)
@@ -67,6 +70,7 @@ func (a *AuxEntry) StateSave(stateSinkObject state.Sink) {
 
 func (a *AuxEntry) afterLoad() {}
 
+// +checklocksignore
 func (a *AuxEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.Key)
 	stateSourceObject.Load(1, &a.Value)
@@ -87,6 +91,7 @@ func (s *SignalAct) StateFields() []string {
 
 func (s *SignalAct) beforeSave() {}
 
+// +checklocksignore
 func (s *SignalAct) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Handler)
@@ -97,6 +102,7 @@ func (s *SignalAct) StateSave(stateSinkObject state.Sink) {
 
 func (s *SignalAct) afterLoad() {}
 
+// +checklocksignore
 func (s *SignalAct) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Handler)
 	stateSourceObject.Load(1, &s.Flags)
@@ -118,6 +124,7 @@ func (s *SignalStack) StateFields() []string {
 
 func (s *SignalStack) beforeSave() {}
 
+// +checklocksignore
 func (s *SignalStack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Addr)
@@ -127,6 +134,7 @@ func (s *SignalStack) StateSave(stateSinkObject state.Sink) {
 
 func (s *SignalStack) afterLoad() {}
 
+// +checklocksignore
 func (s *SignalStack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Addr)
 	stateSourceObject.Load(1, &s.Flags)
@@ -148,6 +156,7 @@ func (s *SignalInfo) StateFields() []string {
 
 func (s *SignalInfo) beforeSave() {}
 
+// +checklocksignore
 func (s *SignalInfo) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Signo)
@@ -158,6 +167,7 @@ func (s *SignalInfo) StateSave(stateSinkObject state.Sink) {
 
 func (s *SignalInfo) afterLoad() {}
 
+// +checklocksignore
 func (s *SignalInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Signo)
 	stateSourceObject.Load(1, &s.Errno)

@@ -22,6 +22,7 @@ func (p *icmpPacket) StateFields() []string {
 
 func (p *icmpPacket) beforeSave() {}
 
+// +checklocksignore
 func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var dataValue buffer.VectorisedView = p.saveData()
@@ -33,6 +34,7 @@ func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 
 func (p *icmpPacket) afterLoad() {}
 
+// +checklocksignore
 func (p *icmpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.icmpPacketEntry)
 	stateSourceObject.Load(1, &p.senderAddress)
@@ -63,6 +65,7 @@ func (e *endpoint) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
@@ -82,6 +85,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &e.ops)
 }
 
+// +checklocksignore
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.TransportEndpointInfo)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
@@ -113,6 +117,7 @@ func (l *icmpPacketList) StateFields() []string {
 
 func (l *icmpPacketList) beforeSave() {}
 
+// +checklocksignore
 func (l *icmpPacketList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -121,6 +126,7 @@ func (l *icmpPacketList) StateSave(stateSinkObject state.Sink) {
 
 func (l *icmpPacketList) afterLoad() {}
 
+// +checklocksignore
 func (l *icmpPacketList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -139,6 +145,7 @@ func (e *icmpPacketEntry) StateFields() []string {
 
 func (e *icmpPacketEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *icmpPacketEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -147,6 +154,7 @@ func (e *icmpPacketEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *icmpPacketEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *icmpPacketEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

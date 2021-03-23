@@ -19,6 +19,7 @@ func (fr *FileRange) StateFields() []string {
 
 func (fr *FileRange) beforeSave() {}
 
+// +checklocksignore
 func (fr *FileRange) StateSave(stateSinkObject state.Sink) {
 	fr.beforeSave()
 	stateSinkObject.Save(0, &fr.Start)
@@ -27,6 +28,7 @@ func (fr *FileRange) StateSave(stateSinkObject state.Sink) {
 
 func (fr *FileRange) afterLoad() {}
 
+// +checklocksignore
 func (fr *FileRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fr.Start)
 	stateSourceObject.Load(1, &fr.End)
@@ -45,6 +47,7 @@ func (mr *MappableRange) StateFields() []string {
 
 func (mr *MappableRange) beforeSave() {}
 
+// +checklocksignore
 func (mr *MappableRange) StateSave(stateSinkObject state.Sink) {
 	mr.beforeSave()
 	stateSinkObject.Save(0, &mr.Start)
@@ -53,6 +56,7 @@ func (mr *MappableRange) StateSave(stateSinkObject state.Sink) {
 
 func (mr *MappableRange) afterLoad() {}
 
+// +checklocksignore
 func (mr *MappableRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mr.Start)
 	stateSourceObject.Load(1, &mr.End)
@@ -72,6 +76,7 @@ func (r *MappingOfRange) StateFields() []string {
 
 func (r *MappingOfRange) beforeSave() {}
 
+// +checklocksignore
 func (r *MappingOfRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.MappingSpace)
@@ -81,6 +86,7 @@ func (r *MappingOfRange) StateSave(stateSinkObject state.Sink) {
 
 func (r *MappingOfRange) afterLoad() {}
 
+// +checklocksignore
 func (r *MappingOfRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.MappingSpace)
 	stateSourceObject.Load(1, &r.AddrRange)

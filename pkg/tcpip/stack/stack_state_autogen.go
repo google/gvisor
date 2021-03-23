@@ -21,6 +21,7 @@ func (t *tuple) StateFields() []string {
 
 func (t *tuple) beforeSave() {}
 
+// +checklocksignore
 func (t *tuple) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.tupleEntry)
@@ -31,6 +32,7 @@ func (t *tuple) StateSave(stateSinkObject state.Sink) {
 
 func (t *tuple) afterLoad() {}
 
+// +checklocksignore
 func (t *tuple) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.tupleEntry)
 	stateSourceObject.Load(1, &t.tupleID)
@@ -55,6 +57,7 @@ func (ti *tupleID) StateFields() []string {
 
 func (ti *tupleID) beforeSave() {}
 
+// +checklocksignore
 func (ti *tupleID) StateSave(stateSinkObject state.Sink) {
 	ti.beforeSave()
 	stateSinkObject.Save(0, &ti.srcAddr)
@@ -67,6 +70,7 @@ func (ti *tupleID) StateSave(stateSinkObject state.Sink) {
 
 func (ti *tupleID) afterLoad() {}
 
+// +checklocksignore
 func (ti *tupleID) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ti.srcAddr)
 	stateSourceObject.Load(1, &ti.srcPort)
@@ -93,6 +97,7 @@ func (cn *conn) StateFields() []string {
 
 func (cn *conn) beforeSave() {}
 
+// +checklocksignore
 func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	cn.beforeSave()
 	var lastUsedValue unixTime = cn.saveLastUsed()
@@ -106,6 +111,7 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 
 func (cn *conn) afterLoad() {}
 
+// +checklocksignore
 func (cn *conn) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &cn.original)
 	stateSourceObject.Load(1, &cn.reply)
@@ -126,6 +132,7 @@ func (ct *ConnTrack) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
 	ct.beforeSave()
 	stateSinkObject.Save(0, &ct.seed)
@@ -134,6 +141,7 @@ func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
 
 func (ct *ConnTrack) afterLoad() {}
 
+// +checklocksignore
 func (ct *ConnTrack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ct.seed)
 	stateSourceObject.Load(1, &ct.buckets)
@@ -151,6 +159,7 @@ func (b *bucket) StateFields() []string {
 
 func (b *bucket) beforeSave() {}
 
+// +checklocksignore
 func (b *bucket) StateSave(stateSinkObject state.Sink) {
 	b.beforeSave()
 	stateSinkObject.Save(0, &b.tuples)
@@ -158,6 +167,7 @@ func (b *bucket) StateSave(stateSinkObject state.Sink) {
 
 func (b *bucket) afterLoad() {}
 
+// +checklocksignore
 func (b *bucket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &b.tuples)
 }
@@ -175,6 +185,7 @@ func (u *unixTime) StateFields() []string {
 
 func (u *unixTime) beforeSave() {}
 
+// +checklocksignore
 func (u *unixTime) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.second)
@@ -183,6 +194,7 @@ func (u *unixTime) StateSave(stateSinkObject state.Sink) {
 
 func (u *unixTime) afterLoad() {}
 
+// +checklocksignore
 func (u *unixTime) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.second)
 	stateSourceObject.Load(1, &u.nano)
@@ -204,6 +216,7 @@ func (it *IPTables) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 	it.beforeSave()
 	stateSinkObject.Save(0, &it.mu)
@@ -215,6 +228,7 @@ func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &it.reaperDone)
 }
 
+// +checklocksignore
 func (it *IPTables) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &it.mu)
 	stateSourceObject.Load(1, &it.v4Tables)
@@ -240,6 +254,7 @@ func (table *Table) StateFields() []string {
 
 func (table *Table) beforeSave() {}
 
+// +checklocksignore
 func (table *Table) StateSave(stateSinkObject state.Sink) {
 	table.beforeSave()
 	stateSinkObject.Save(0, &table.Rules)
@@ -249,6 +264,7 @@ func (table *Table) StateSave(stateSinkObject state.Sink) {
 
 func (table *Table) afterLoad() {}
 
+// +checklocksignore
 func (table *Table) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &table.Rules)
 	stateSourceObject.Load(1, &table.BuiltinChains)
@@ -269,6 +285,7 @@ func (r *Rule) StateFields() []string {
 
 func (r *Rule) beforeSave() {}
 
+// +checklocksignore
 func (r *Rule) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Filter)
@@ -278,6 +295,7 @@ func (r *Rule) StateSave(stateSinkObject state.Sink) {
 
 func (r *Rule) afterLoad() {}
 
+// +checklocksignore
 func (r *Rule) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Filter)
 	stateSourceObject.Load(1, &r.Matchers)
@@ -309,6 +327,7 @@ func (fl *IPHeaderFilter) StateFields() []string {
 
 func (fl *IPHeaderFilter) beforeSave() {}
 
+// +checklocksignore
 func (fl *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
 	fl.beforeSave()
 	stateSinkObject.Save(0, &fl.Protocol)
@@ -329,6 +348,7 @@ func (fl *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
 
 func (fl *IPHeaderFilter) afterLoad() {}
 
+// +checklocksignore
 func (fl *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fl.Protocol)
 	stateSourceObject.Load(1, &fl.CheckProtocol)
@@ -359,6 +379,7 @@ func (l *neighborEntryList) StateFields() []string {
 
 func (l *neighborEntryList) beforeSave() {}
 
+// +checklocksignore
 func (l *neighborEntryList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -367,6 +388,7 @@ func (l *neighborEntryList) StateSave(stateSinkObject state.Sink) {
 
 func (l *neighborEntryList) afterLoad() {}
 
+// +checklocksignore
 func (l *neighborEntryList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -385,6 +407,7 @@ func (e *neighborEntryEntry) StateFields() []string {
 
 func (e *neighborEntryEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *neighborEntryEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -393,6 +416,7 @@ func (e *neighborEntryEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *neighborEntryEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *neighborEntryEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -411,6 +435,7 @@ func (p *PacketBufferList) StateFields() []string {
 
 func (p *PacketBufferList) beforeSave() {}
 
+// +checklocksignore
 func (p *PacketBufferList) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.head)
@@ -419,6 +444,7 @@ func (p *PacketBufferList) StateSave(stateSinkObject state.Sink) {
 
 func (p *PacketBufferList) afterLoad() {}
 
+// +checklocksignore
 func (p *PacketBufferList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.head)
 	stateSourceObject.Load(1, &p.tail)
@@ -437,6 +463,7 @@ func (e *PacketBufferEntry) StateFields() []string {
 
 func (e *PacketBufferEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *PacketBufferEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -445,6 +472,7 @@ func (e *PacketBufferEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *PacketBufferEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *PacketBufferEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -465,6 +493,7 @@ func (t *TransportEndpointID) StateFields() []string {
 
 func (t *TransportEndpointID) beforeSave() {}
 
+// +checklocksignore
 func (t *TransportEndpointID) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.LocalPort)
@@ -475,6 +504,7 @@ func (t *TransportEndpointID) StateSave(stateSinkObject state.Sink) {
 
 func (t *TransportEndpointID) afterLoad() {}
 
+// +checklocksignore
 func (t *TransportEndpointID) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.LocalPort)
 	stateSourceObject.Load(1, &t.LocalAddress)
@@ -507,6 +537,7 @@ func (g *GSO) StateFields() []string {
 
 func (g *GSO) beforeSave() {}
 
+// +checklocksignore
 func (g *GSO) StateSave(stateSinkObject state.Sink) {
 	g.beforeSave()
 	stateSinkObject.Save(0, &g.Type)
@@ -519,6 +550,7 @@ func (g *GSO) StateSave(stateSinkObject state.Sink) {
 
 func (g *GSO) afterLoad() {}
 
+// +checklocksignore
 func (g *GSO) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &g.Type)
 	stateSourceObject.Load(1, &g.NeedsCsum)
@@ -545,6 +577,7 @@ func (t *TransportEndpointInfo) StateFields() []string {
 
 func (t *TransportEndpointInfo) beforeSave() {}
 
+// +checklocksignore
 func (t *TransportEndpointInfo) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.NetProto)
@@ -557,6 +590,7 @@ func (t *TransportEndpointInfo) StateSave(stateSinkObject state.Sink) {
 
 func (t *TransportEndpointInfo) afterLoad() {}
 
+// +checklocksignore
 func (t *TransportEndpointInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.NetProto)
 	stateSourceObject.Load(1, &t.TransProto)
@@ -582,6 +616,7 @@ func (ep *multiPortEndpoint) StateFields() []string {
 
 func (ep *multiPortEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (ep *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
 	stateSinkObject.Save(0, &ep.demux)
@@ -593,6 +628,7 @@ func (ep *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
 
 func (ep *multiPortEndpoint) afterLoad() {}
 
+// +checklocksignore
 func (ep *multiPortEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.demux)
 	stateSourceObject.Load(1, &ep.netProto)
@@ -614,6 +650,7 @@ func (l *tupleList) StateFields() []string {
 
 func (l *tupleList) beforeSave() {}
 
+// +checklocksignore
 func (l *tupleList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -622,6 +659,7 @@ func (l *tupleList) StateSave(stateSinkObject state.Sink) {
 
 func (l *tupleList) afterLoad() {}
 
+// +checklocksignore
 func (l *tupleList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -640,6 +678,7 @@ func (e *tupleEntry) StateFields() []string {
 
 func (e *tupleEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *tupleEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -648,6 +687,7 @@ func (e *tupleEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *tupleEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *tupleEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

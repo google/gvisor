@@ -21,6 +21,7 @@ func (r *Registers) StateFields() []string {
 
 func (r *Registers) beforeSave() {}
 
+// +checklocksignore
 func (r *Registers) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.PtraceRegs)
@@ -28,6 +29,7 @@ func (r *Registers) StateSave(stateSinkObject state.Sink) {
 
 func (r *Registers) afterLoad() {}
 
+// +checklocksignore
 func (r *Registers) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.PtraceRegs)
 }
