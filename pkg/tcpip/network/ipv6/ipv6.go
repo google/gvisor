@@ -931,7 +931,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	}
 
 	if !e.nic.IsLoopback() {
-		if e.protocol.options.DropExternalLoopbackTraffic {
+		if !e.protocol.options.AllowExternalLoopbackTraffic {
 			if header.IsV6LoopbackAddress(h.SourceAddress()) {
 				stats.InvalidSourceAddressesReceived.Increment()
 				return
@@ -2071,9 +2071,9 @@ type Options struct {
 	// DADConfigs holds the default DAD configurations used by IPv6 endpoints.
 	DADConfigs stack.DADConfigurations
 
-	// DropExternalLoopbackTraffic indicates that inbound loopback packets (i.e.
-	// martian loopback packets) should be dropped.
-	DropExternalLoopbackTraffic bool
+	// AllowExternalLoopbackTraffic indicates that inbound loopback packets (i.e.
+	// martian loopback packets) should be accepted.
+	AllowExternalLoopbackTraffic bool
 }
 
 // NewProtocolWithOptions returns an IPv6 network protocol.
