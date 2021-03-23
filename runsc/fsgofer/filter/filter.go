@@ -36,3 +36,9 @@ func InstallUDSFilters() {
 	// Add additional filters required for connecting to the host's sockets.
 	allowedSyscalls.Merge(udsSyscalls)
 }
+
+// InstallXattrFilters extends the allowed syscalls to include xattr calls that
+// are necessary for Verity enabled file systems.
+func InstallXattrFilters() {
+	allowedSyscalls.Merge(xattrSyscalls)
+}

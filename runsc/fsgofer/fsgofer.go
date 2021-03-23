@@ -48,6 +48,14 @@ const (
 	allowedOpenFlags = unix.O_TRUNC
 )
 
+// verityXattrs are the extended attributes used by verity file system.
+var verityXattrs = map[string]struct{}{
+	"user.merkle.offset":         struct{}{},
+	"user.merkle.size":           struct{}{},
+	"user.merkle.childrenOffset": struct{}{},
+	"user.merkle.childrenSize":   struct{}{},
+}
+
 // join is equivalent to path.Join() but skips path.Clean() which is expensive.
 func join(parent, child string) string {
 	if child == "." || child == ".." {
@@ -67,8 +75,9 @@ type Config struct {
 	// HostUDS signals whether the gofer can mount a host's UDS.
 	HostUDS bool
 
-	// enableXattr allows Get/SetXattr for the mounted file systems.
-	EnableXattr bool
+	// EnableVerityXattr allows access to extended attributes used by the
+	// verity file system.
+	EnableVerityXattr bool
 }
 
 type attachPoint struct {
@@ -799,7 +808,10 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 }
 
 func (l *localFile) GetXattr(name string, size uint64) (string, error) {
-	if !l.attachPoint.conf.EnableXattr {
+	if !l.attachPoint.conf.EnableVerityXattr {
+		return "", unix.EOPNOTSUPP
+	}
+	if _, ok := verityXattrs[name]; !ok {
 		return "", unix.EOPNOTSUPP
 	}
 	buffer := make([]byte, size)
@@ -810,7 +822,10 @@ func (l *localFile) GetXattr(name string, size uint64) (string, error) {
 }
 
 func (l *localFile) SetXattr(name string, value string, flags uint32) error {
-	if !l.attachPoint.conf.EnableXattr {
+	if !l.attachPoint.conf.EnableVerityXattr {
+		return unix.EOPNOTSUPP
+	}
+	if _, ok := verityXattrs[name]; !ok {
 		return unix.EOPNOTSUPP
 	}
 	return unix.Fsetxattr(l.file.FD(), name, []byte(value), int(flags))

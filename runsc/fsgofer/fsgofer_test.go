@@ -579,20 +579,24 @@ func SetGetXattr(l *localFile, name string, value string) error {
 	return nil
 }
 
-func TestSetGetXattr(t *testing.T) {
-	xattrConfs := []Config{{ROMount: false, EnableXattr: false}, {ROMount: false, EnableXattr: true}}
-	runCustom(t, []uint32{unix.S_IFREG}, xattrConfs, func(t *testing.T, s state) {
-		name := "user.test"
+func TestSetGetDisabledXattr(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s state) {
+		name := "user.merkle.offset"
 		value := "tmp"
 		err := SetGetXattr(s.file, name, value)
-		if s.conf.EnableXattr {
-			if err != nil {
-				t.Fatalf("%v: SetGetXattr failed, err: %v", s, err)
-			}
-		} else {
-			if err == nil {
-				t.Fatalf("%v: SetGetXattr should have failed", s)
-			}
+		if err == nil {
+			t.Fatalf("%v: SetGetXattr should have failed", s)
+		}
+	})
+}
+
+func TestSetGetXattr(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFREG}, []Config{{ROMount: false, EnableVerityXattr: true}}, func(t *testing.T, s state) {
+		name := "user.merkle.offset"
+		value := "tmp"
+		err := SetGetXattr(s.file, name, value)
+		if err != nil {
+			t.Fatalf("%v: SetGetXattr failed, err: %v", s, err)
 		}
 	})
 }
