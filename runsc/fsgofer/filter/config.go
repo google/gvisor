@@ -247,3 +247,8 @@ var udsSyscalls = seccomp.SyscallRules{
 		},
 	},
 }
+
+var xattrSyscalls = seccomp.SyscallRules{
+	unix.SYS_FGETXATTR: {},
+	unix.SYS_FSETXATTR: {},
+}
