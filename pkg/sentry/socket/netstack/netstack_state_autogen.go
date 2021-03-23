@@ -18,6 +18,7 @@ func (s *SocketOperations) StateFields() []string {
 
 func (s *SocketOperations) beforeSave() {}
 
+// +checklocksignore
 func (s *SocketOperations) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.socketOpsCommon)
@@ -25,6 +26,7 @@ func (s *SocketOperations) StateSave(stateSinkObject state.Sink) {
 
 func (s *SocketOperations) afterLoad() {}
 
+// +checklocksignore
 func (s *SocketOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.socketOpsCommon)
 }
@@ -50,6 +52,7 @@ func (s *socketOpsCommon) StateFields() []string {
 
 func (s *socketOpsCommon) beforeSave() {}
 
+// +checklocksignore
 func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.SendReceiveTimeout)
@@ -66,6 +69,7 @@ func (s *socketOpsCommon) StateSave(stateSinkObject state.Sink) {
 
 func (s *socketOpsCommon) afterLoad() {}
 
+// +checklocksignore
 func (s *socketOpsCommon) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.SendReceiveTimeout)
 	stateSourceObject.Load(1, &s.Queue)
@@ -95,6 +99,7 @@ func (s *SocketVFS2) StateFields() []string {
 
 func (s *SocketVFS2) beforeSave() {}
 
+// +checklocksignore
 func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.vfsfd)
@@ -106,6 +111,7 @@ func (s *SocketVFS2) StateSave(stateSinkObject state.Sink) {
 
 func (s *SocketVFS2) afterLoad() {}
 
+// +checklocksignore
 func (s *SocketVFS2) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
@@ -124,10 +130,12 @@ func (s *Stack) StateFields() []string {
 
 func (s *Stack) beforeSave() {}
 
+// +checklocksignore
 func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
+// +checklocksignore
 func (s *Stack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(s.afterLoad)
 }

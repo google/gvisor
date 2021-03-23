@@ -18,6 +18,7 @@ func (p *Program) StateFields() []string {
 
 func (p *Program) beforeSave() {}
 
+// +checklocksignore
 func (p *Program) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.instructions)
@@ -25,6 +26,7 @@ func (p *Program) StateSave(stateSinkObject state.Sink) {
 
 func (p *Program) afterLoad() {}
 
+// +checklocksignore
 func (p *Program) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.instructions)
 }

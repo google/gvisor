@@ -29,6 +29,7 @@ func (i *IPControlMessages) StateFields() []string {
 
 func (i *IPControlMessages) beforeSave() {}
 
+// +checklocksignore
 func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.HasTimestamp)
@@ -47,6 +48,7 @@ func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 
 func (i *IPControlMessages) afterLoad() {}
 
+// +checklocksignore
 func (i *IPControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.HasTimestamp)
 	stateSourceObject.Load(1, &i.Timestamp)
@@ -75,6 +77,7 @@ func (to *SendReceiveTimeout) StateFields() []string {
 
 func (to *SendReceiveTimeout) beforeSave() {}
 
+// +checklocksignore
 func (to *SendReceiveTimeout) StateSave(stateSinkObject state.Sink) {
 	to.beforeSave()
 	stateSinkObject.Save(0, &to.send)
@@ -83,6 +86,7 @@ func (to *SendReceiveTimeout) StateSave(stateSinkObject state.Sink) {
 
 func (to *SendReceiveTimeout) afterLoad() {}
 
+// +checklocksignore
 func (to *SendReceiveTimeout) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &to.send)
 	stateSourceObject.Load(1, &to.recv)

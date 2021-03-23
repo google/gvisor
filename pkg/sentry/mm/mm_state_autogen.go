@@ -18,6 +18,7 @@ func (a *aioManager) StateFields() []string {
 
 func (a *aioManager) beforeSave() {}
 
+// +checklocksignore
 func (a *aioManager) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.contexts)
@@ -25,6 +26,7 @@ func (a *aioManager) StateSave(stateSinkObject state.Sink) {
 
 func (a *aioManager) afterLoad() {}
 
+// +checklocksignore
 func (a *aioManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.contexts)
 }
@@ -42,6 +44,7 @@ func (i *ioResult) StateFields() []string {
 
 func (i *ioResult) beforeSave() {}
 
+// +checklocksignore
 func (i *ioResult) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.data)
@@ -50,6 +53,7 @@ func (i *ioResult) StateSave(stateSinkObject state.Sink) {
 
 func (i *ioResult) afterLoad() {}
 
+// +checklocksignore
 func (i *ioResult) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.data)
 	stateSourceObject.Load(1, &i.ioEntry)
@@ -69,6 +73,7 @@ func (ctx *AIOContext) StateFields() []string {
 
 func (ctx *AIOContext) beforeSave() {}
 
+// +checklocksignore
 func (ctx *AIOContext) StateSave(stateSinkObject state.Sink) {
 	ctx.beforeSave()
 	if !state.IsZeroValue(&ctx.dead) {
@@ -79,6 +84,7 @@ func (ctx *AIOContext) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &ctx.outstanding)
 }
 
+// +checklocksignore
 func (ctx *AIOContext) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ctx.results)
 	stateSourceObject.Load(1, &ctx.maxOutstanding)
@@ -100,6 +106,7 @@ func (m *aioMappable) StateFields() []string {
 
 func (m *aioMappable) beforeSave() {}
 
+// +checklocksignore
 func (m *aioMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.aioMappableRefs)
@@ -109,6 +116,7 @@ func (m *aioMappable) StateSave(stateSinkObject state.Sink) {
 
 func (m *aioMappable) afterLoad() {}
 
+// +checklocksignore
 func (m *aioMappable) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.aioMappableRefs)
 	stateSourceObject.Load(1, &m.mfp)
@@ -127,11 +135,13 @@ func (r *aioMappableRefs) StateFields() []string {
 
 func (r *aioMappableRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *aioMappableRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *aioMappableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -149,6 +159,7 @@ func (s *fileRefcountSet) StateFields() []string {
 
 func (s *fileRefcountSet) beforeSave() {}
 
+// +checklocksignore
 func (s *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *fileRefcountSegmentDataSlices = s.saveRoot()
@@ -157,6 +168,7 @@ func (s *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *fileRefcountSet) afterLoad() {}
 
+// +checklocksignore
 func (s *fileRefcountSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
 }
@@ -180,6 +192,7 @@ func (n *fileRefcountnode) StateFields() []string {
 
 func (n *fileRefcountnode) beforeSave() {}
 
+// +checklocksignore
 func (n *fileRefcountnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -194,6 +207,7 @@ func (n *fileRefcountnode) StateSave(stateSinkObject state.Sink) {
 
 func (n *fileRefcountnode) afterLoad() {}
 
+// +checklocksignore
 func (n *fileRefcountnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -219,6 +233,7 @@ func (f *fileRefcountSegmentDataSlices) StateFields() []string {
 
 func (f *fileRefcountSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (f *fileRefcountSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.Start)
@@ -228,6 +243,7 @@ func (f *fileRefcountSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (f *fileRefcountSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (f *fileRefcountSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.Start)
 	stateSourceObject.Load(1, &f.End)
@@ -247,6 +263,7 @@ func (l *ioList) StateFields() []string {
 
 func (l *ioList) beforeSave() {}
 
+// +checklocksignore
 func (l *ioList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -255,6 +272,7 @@ func (l *ioList) StateSave(stateSinkObject state.Sink) {
 
 func (l *ioList) afterLoad() {}
 
+// +checklocksignore
 func (l *ioList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -273,6 +291,7 @@ func (e *ioEntry) StateFields() []string {
 
 func (e *ioEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *ioEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -281,6 +300,7 @@ func (e *ioEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *ioEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *ioEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -319,6 +339,7 @@ func (mm *MemoryManager) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	mm.beforeSave()
 	if !state.IsZeroValue(&mm.active) {
@@ -353,6 +374,7 @@ func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(23, &mm.membarrierRSeqEnabled)
 }
 
+// +checklocksignore
 func (mm *MemoryManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mm.p)
 	stateSourceObject.Load(1, &mm.mfp)
@@ -401,6 +423,7 @@ func (vma *vma) StateFields() []string {
 
 func (vma *vma) beforeSave() {}
 
+// +checklocksignore
 func (vma *vma) StateSave(stateSinkObject state.Sink) {
 	vma.beforeSave()
 	var realPermsValue int = vma.saveRealPerms()
@@ -417,6 +440,7 @@ func (vma *vma) StateSave(stateSinkObject state.Sink) {
 
 func (vma *vma) afterLoad() {}
 
+// +checklocksignore
 func (vma *vma) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &vma.mappable)
 	stateSourceObject.Load(1, &vma.off)
@@ -446,6 +470,7 @@ func (p *pma) StateFields() []string {
 
 func (p *pma) beforeSave() {}
 
+// +checklocksignore
 func (p *pma) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.off)
@@ -458,6 +483,7 @@ func (p *pma) StateSave(stateSinkObject state.Sink) {
 
 func (p *pma) afterLoad() {}
 
+// +checklocksignore
 func (p *pma) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.off)
 	stateSourceObject.Load(1, &p.translatePerms)
@@ -479,6 +505,7 @@ func (p *privateRefs) StateFields() []string {
 
 func (p *privateRefs) beforeSave() {}
 
+// +checklocksignore
 func (p *privateRefs) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.refs)
@@ -486,6 +513,7 @@ func (p *privateRefs) StateSave(stateSinkObject state.Sink) {
 
 func (p *privateRefs) afterLoad() {}
 
+// +checklocksignore
 func (p *privateRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.refs)
 }
@@ -502,6 +530,7 @@ func (s *pmaSet) StateFields() []string {
 
 func (s *pmaSet) beforeSave() {}
 
+// +checklocksignore
 func (s *pmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *pmaSegmentDataSlices = s.saveRoot()
@@ -510,6 +539,7 @@ func (s *pmaSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *pmaSet) afterLoad() {}
 
+// +checklocksignore
 func (s *pmaSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*pmaSegmentDataSlices)) })
 }
@@ -533,6 +563,7 @@ func (n *pmanode) StateFields() []string {
 
 func (n *pmanode) beforeSave() {}
 
+// +checklocksignore
 func (n *pmanode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -547,6 +578,7 @@ func (n *pmanode) StateSave(stateSinkObject state.Sink) {
 
 func (n *pmanode) afterLoad() {}
 
+// +checklocksignore
 func (n *pmanode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -572,6 +604,7 @@ func (p *pmaSegmentDataSlices) StateFields() []string {
 
 func (p *pmaSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (p *pmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.Start)
@@ -581,6 +614,7 @@ func (p *pmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (p *pmaSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (p *pmaSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.Start)
 	stateSourceObject.Load(1, &p.End)
@@ -602,6 +636,7 @@ func (m *SpecialMappable) StateFields() []string {
 
 func (m *SpecialMappable) beforeSave() {}
 
+// +checklocksignore
 func (m *SpecialMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.SpecialMappableRefs)
@@ -612,6 +647,7 @@ func (m *SpecialMappable) StateSave(stateSinkObject state.Sink) {
 
 func (m *SpecialMappable) afterLoad() {}
 
+// +checklocksignore
 func (m *SpecialMappable) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.SpecialMappableRefs)
 	stateSourceObject.Load(1, &m.mfp)
@@ -631,11 +667,13 @@ func (r *SpecialMappableRefs) StateFields() []string {
 
 func (r *SpecialMappableRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *SpecialMappableRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *SpecialMappableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -653,6 +691,7 @@ func (s *vmaSet) StateFields() []string {
 
 func (s *vmaSet) beforeSave() {}
 
+// +checklocksignore
 func (s *vmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *vmaSegmentDataSlices = s.saveRoot()
@@ -661,6 +700,7 @@ func (s *vmaSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *vmaSet) afterLoad() {}
 
+// +checklocksignore
 func (s *vmaSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*vmaSegmentDataSlices)) })
 }
@@ -684,6 +724,7 @@ func (n *vmanode) StateFields() []string {
 
 func (n *vmanode) beforeSave() {}
 
+// +checklocksignore
 func (n *vmanode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -698,6 +739,7 @@ func (n *vmanode) StateSave(stateSinkObject state.Sink) {
 
 func (n *vmanode) afterLoad() {}
 
+// +checklocksignore
 func (n *vmanode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -723,6 +765,7 @@ func (v *vmaSegmentDataSlices) StateFields() []string {
 
 func (v *vmaSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (v *vmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
 	stateSinkObject.Save(0, &v.Start)
@@ -732,6 +775,7 @@ func (v *vmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (v *vmaSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (v *vmaSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.Start)
 	stateSourceObject.Load(1, &v.End)

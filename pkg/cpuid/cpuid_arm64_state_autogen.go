@@ -25,6 +25,7 @@ func (fs *FeatureSet) StateFields() []string {
 
 func (fs *FeatureSet) beforeSave() {}
 
+// +checklocksignore
 func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Set)
@@ -37,6 +38,7 @@ func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 
 func (fs *FeatureSet) afterLoad() {}
 
+// +checklocksignore
 func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Set)
 	stateSourceObject.Load(1, &fs.CPUImplementer)

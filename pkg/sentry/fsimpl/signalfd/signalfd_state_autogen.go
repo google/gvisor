@@ -23,6 +23,7 @@ func (sfd *SignalFileDescription) StateFields() []string {
 
 func (sfd *SignalFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
 	sfd.beforeSave()
 	stateSinkObject.Save(0, &sfd.vfsfd)
@@ -35,6 +36,7 @@ func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (sfd *SignalFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (sfd *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sfd.vfsfd)
 	stateSourceObject.Load(1, &sfd.FileDescriptionDefaultImpl)

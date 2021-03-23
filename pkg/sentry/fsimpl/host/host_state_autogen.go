@@ -18,11 +18,13 @@ func (r *ConnectedEndpointRefs) StateFields() []string {
 
 func (r *ConnectedEndpointRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *ConnectedEndpointRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -54,6 +56,7 @@ func (i *inode) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.InodeNoStatFS)
@@ -75,6 +78,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(16, &i.buf)
 }
 
+// +checklocksignore
 func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeNoStatFS)
 	stateSourceObject.Load(1, &i.InodeNotDirectory)
@@ -106,12 +110,14 @@ func (f *filesystemType) StateFields() []string {
 
 func (f *filesystemType) beforeSave() {}
 
+// +checklocksignore
 func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
 func (f *filesystemType) afterLoad() {}
 
+// +checklocksignore
 func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -128,6 +134,7 @@ func (fs *filesystem) StateFields() []string {
 
 func (fs *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.Filesystem)
@@ -136,6 +143,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 
 func (fs *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
@@ -157,6 +165,7 @@ func (f *fileDescription) StateFields() []string {
 
 func (f *fileDescription) beforeSave() {}
 
+// +checklocksignore
 func (f *fileDescription) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.vfsfd)
@@ -168,6 +177,7 @@ func (f *fileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (f *fileDescription) afterLoad() {}
 
+// +checklocksignore
 func (f *fileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.vfsfd)
 	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
@@ -188,11 +198,13 @@ func (r *inodeRefs) StateFields() []string {
 
 func (r *inodeRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -213,6 +225,7 @@ func (c *ConnectedEndpoint) StateFields() []string {
 
 func (c *ConnectedEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (c *ConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.ConnectedEndpointRefs)
@@ -223,6 +236,7 @@ func (c *ConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
 
 func (c *ConnectedEndpoint) afterLoad() {}
 
+// +checklocksignore
 func (c *ConnectedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.ConnectedEndpointRefs)
 	stateSourceObject.Load(1, &c.fd)
@@ -245,6 +259,7 @@ func (t *TTYFileDescription) StateFields() []string {
 
 func (t *TTYFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (t *TTYFileDescription) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.fileDescription)
@@ -255,6 +270,7 @@ func (t *TTYFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (t *TTYFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (t *TTYFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.fileDescription)
 	stateSourceObject.Load(1, &t.session)

@@ -28,6 +28,7 @@ func (c *scmCredentials) StateFields() []string {
 
 func (c *scmCredentials) beforeSave() {}
 
+// +checklocksignore
 func (c *scmCredentials) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.t)
@@ -37,6 +38,7 @@ func (c *scmCredentials) StateSave(stateSinkObject state.Sink) {
 
 func (c *scmCredentials) afterLoad() {}
 
+// +checklocksignore
 func (c *scmCredentials) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.t)
 	stateSourceObject.Load(1, &c.kuid)

@@ -18,6 +18,7 @@ func (f *fsFile) StateFields() []string {
 
 func (f *fsFile) beforeSave() {}
 
+// +checklocksignore
 func (f *fsFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.file)
@@ -25,6 +26,7 @@ func (f *fsFile) StateSave(stateSinkObject state.Sink) {
 
 func (f *fsFile) afterLoad() {}
 
+// +checklocksignore
 func (f *fsFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.file)
 }
@@ -43,6 +45,7 @@ func (l *fsLookup) StateFields() []string {
 
 func (l *fsLookup) beforeSave() {}
 
+// +checklocksignore
 func (l *fsLookup) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.mntns)
@@ -52,6 +55,7 @@ func (l *fsLookup) StateSave(stateSinkObject state.Sink) {
 
 func (l *fsLookup) afterLoad() {}
 
+// +checklocksignore
 func (l *fsLookup) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.mntns)
 	stateSourceObject.Load(1, &l.root)
@@ -70,6 +74,7 @@ func (f *VFSFile) StateFields() []string {
 
 func (f *VFSFile) beforeSave() {}
 
+// +checklocksignore
 func (f *VFSFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.file)
@@ -77,6 +82,7 @@ func (f *VFSFile) StateSave(stateSinkObject state.Sink) {
 
 func (f *VFSFile) afterLoad() {}
 
+// +checklocksignore
 func (f *VFSFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.file)
 }
@@ -95,6 +101,7 @@ func (l *vfsLookup) StateFields() []string {
 
 func (l *vfsLookup) beforeSave() {}
 
+// +checklocksignore
 func (l *vfsLookup) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.mntns)
@@ -104,6 +111,7 @@ func (l *vfsLookup) StateSave(stateSinkObject state.Sink) {
 
 func (l *vfsLookup) afterLoad() {}
 
+// +checklocksignore
 func (l *vfsLookup) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.mntns)
 	stateSourceObject.Load(1, &l.root)

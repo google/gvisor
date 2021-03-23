@@ -25,6 +25,7 @@ func (a *FileAsync) StateFields() []string {
 
 func (a *FileAsync) beforeSave() {}
 
+// +checklocksignore
 func (a *FileAsync) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.e)
@@ -39,6 +40,7 @@ func (a *FileAsync) StateSave(stateSinkObject state.Sink) {
 
 func (a *FileAsync) afterLoad() {}
 
+// +checklocksignore
 func (a *FileAsync) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.e)
 	stateSourceObject.Load(1, &a.fd)

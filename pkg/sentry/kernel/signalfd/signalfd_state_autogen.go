@@ -19,6 +19,7 @@ func (s *SignalOperations) StateFields() []string {
 
 func (s *SignalOperations) beforeSave() {}
 
+// +checklocksignore
 func (s *SignalOperations) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.target)
@@ -27,6 +28,7 @@ func (s *SignalOperations) StateSave(stateSinkObject state.Sink) {
 
 func (s *SignalOperations) afterLoad() {}
 
+// +checklocksignore
 func (s *SignalOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.target)
 	stateSourceObject.Load(1, &s.mask)

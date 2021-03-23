@@ -22,6 +22,7 @@ func (e *connectionedEndpoint) StateFields() []string {
 
 func (e *connectionedEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	var acceptedChanValue []*connectionedEndpoint = e.saveAcceptedChan()
@@ -32,6 +33,7 @@ func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &e.stype)
 }
 
+// +checklocksignore
 func (e *connectionedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.baseEndpoint)
 	stateSourceObject.Load(1, &e.id)
@@ -53,11 +55,13 @@ func (e *connectionlessEndpoint) StateFields() []string {
 
 func (e *connectionlessEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (e *connectionlessEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.baseEndpoint)
 }
 
+// +checklocksignore
 func (e *connectionlessEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.baseEndpoint)
 	stateSourceObject.AfterLoad(e.afterLoad)
@@ -82,6 +86,7 @@ func (q *queue) StateFields() []string {
 
 func (q *queue) beforeSave() {}
 
+// +checklocksignore
 func (q *queue) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.queueRefs)
@@ -96,6 +101,7 @@ func (q *queue) StateSave(stateSinkObject state.Sink) {
 
 func (q *queue) afterLoad() {}
 
+// +checklocksignore
 func (q *queue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.queueRefs)
 	stateSourceObject.Load(1, &q.ReaderQueue)
@@ -119,11 +125,13 @@ func (r *queueRefs) StateFields() []string {
 
 func (r *queueRefs) beforeSave() {}
 
+// +checklocksignore
 func (r *queueRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
+// +checklocksignore
 func (r *queueRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
@@ -142,6 +150,7 @@ func (l *messageList) StateFields() []string {
 
 func (l *messageList) beforeSave() {}
 
+// +checklocksignore
 func (l *messageList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -150,6 +159,7 @@ func (l *messageList) StateSave(stateSinkObject state.Sink) {
 
 func (l *messageList) afterLoad() {}
 
+// +checklocksignore
 func (l *messageList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -168,6 +178,7 @@ func (e *messageEntry) StateFields() []string {
 
 func (e *messageEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *messageEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -176,6 +187,7 @@ func (e *messageEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *messageEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *messageEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
@@ -194,6 +206,7 @@ func (c *ControlMessages) StateFields() []string {
 
 func (c *ControlMessages) beforeSave() {}
 
+// +checklocksignore
 func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.Rights)
@@ -202,6 +215,7 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 
 func (c *ControlMessages) afterLoad() {}
 
+// +checklocksignore
 func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.Rights)
 	stateSourceObject.Load(1, &c.Credentials)
@@ -222,6 +236,7 @@ func (m *message) StateFields() []string {
 
 func (m *message) beforeSave() {}
 
+// +checklocksignore
 func (m *message) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.messageEntry)
@@ -232,6 +247,7 @@ func (m *message) StateSave(stateSinkObject state.Sink) {
 
 func (m *message) afterLoad() {}
 
+// +checklocksignore
 func (m *message) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.messageEntry)
 	stateSourceObject.Load(1, &m.Data)
@@ -251,6 +267,7 @@ func (q *queueReceiver) StateFields() []string {
 
 func (q *queueReceiver) beforeSave() {}
 
+// +checklocksignore
 func (q *queueReceiver) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.readQueue)
@@ -258,6 +275,7 @@ func (q *queueReceiver) StateSave(stateSinkObject state.Sink) {
 
 func (q *queueReceiver) afterLoad() {}
 
+// +checklocksignore
 func (q *queueReceiver) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.readQueue)
 }
@@ -277,6 +295,7 @@ func (q *streamQueueReceiver) StateFields() []string {
 
 func (q *streamQueueReceiver) beforeSave() {}
 
+// +checklocksignore
 func (q *streamQueueReceiver) StateSave(stateSinkObject state.Sink) {
 	q.beforeSave()
 	stateSinkObject.Save(0, &q.queueReceiver)
@@ -287,6 +306,7 @@ func (q *streamQueueReceiver) StateSave(stateSinkObject state.Sink) {
 
 func (q *streamQueueReceiver) afterLoad() {}
 
+// +checklocksignore
 func (q *streamQueueReceiver) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.queueReceiver)
 	stateSourceObject.Load(1, &q.buffer)
@@ -307,6 +327,7 @@ func (e *connectedEndpoint) StateFields() []string {
 
 func (e *connectedEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (e *connectedEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.endpoint)
@@ -315,6 +336,7 @@ func (e *connectedEndpoint) StateSave(stateSinkObject state.Sink) {
 
 func (e *connectedEndpoint) afterLoad() {}
 
+// +checklocksignore
 func (e *connectedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.endpoint)
 	stateSourceObject.Load(1, &e.writeQueue)
@@ -337,6 +359,7 @@ func (e *baseEndpoint) StateFields() []string {
 
 func (e *baseEndpoint) beforeSave() {}
 
+// +checklocksignore
 func (e *baseEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.Queue)
@@ -349,6 +372,7 @@ func (e *baseEndpoint) StateSave(stateSinkObject state.Sink) {
 
 func (e *baseEndpoint) afterLoad() {}
 
+// +checklocksignore
 func (e *baseEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Queue)
 	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)

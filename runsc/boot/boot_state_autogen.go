@@ -19,6 +19,7 @@ func (f *sandboxNetstackCreator) StateFields() []string {
 
 func (f *sandboxNetstackCreator) beforeSave() {}
 
+// +checklocksignore
 func (f *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.clock)
@@ -27,6 +28,7 @@ func (f *sandboxNetstackCreator) StateSave(stateSinkObject state.Sink) {
 
 func (f *sandboxNetstackCreator) afterLoad() {}
 
+// +checklocksignore
 func (f *sandboxNetstackCreator) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.clock)
 	stateSourceObject.Load(1, &f.uniqueID)

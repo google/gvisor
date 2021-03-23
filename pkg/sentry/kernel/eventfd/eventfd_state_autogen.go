@@ -20,6 +20,7 @@ func (e *EventOperations) StateFields() []string {
 
 func (e *EventOperations) beforeSave() {}
 
+// +checklocksignore
 func (e *EventOperations) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	if !state.IsZeroValue(&e.wq) {
@@ -32,6 +33,7 @@ func (e *EventOperations) StateSave(stateSinkObject state.Sink) {
 
 func (e *EventOperations) afterLoad() {}
 
+// +checklocksignore
 func (e *EventOperations) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.val)
 	stateSourceObject.Load(1, &e.semMode)

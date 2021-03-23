@@ -19,6 +19,7 @@ func (l *List) StateFields() []string {
 
 func (l *List) beforeSave() {}
 
+// +checklocksignore
 func (l *List) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -27,6 +28,7 @@ func (l *List) StateSave(stateSinkObject state.Sink) {
 
 func (l *List) afterLoad() {}
 
+// +checklocksignore
 func (l *List) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -45,6 +47,7 @@ func (e *Entry) StateFields() []string {
 
 func (e *Entry) beforeSave() {}
 
+// +checklocksignore
 func (e *Entry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -53,6 +56,7 @@ func (e *Entry) StateSave(stateSinkObject state.Sink) {
 
 func (e *Entry) afterLoad() {}
 
+// +checklocksignore
 func (e *Entry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

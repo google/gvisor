@@ -18,6 +18,7 @@ func (o *OwnerInfo) StateFields() []string {
 
 func (o *OwnerInfo) beforeSave() {}
 
+// +checklocksignore
 func (o *OwnerInfo) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 	stateSinkObject.Save(0, &o.PID)
@@ -25,6 +26,7 @@ func (o *OwnerInfo) StateSave(stateSinkObject state.Sink) {
 
 func (o *OwnerInfo) afterLoad() {}
 
+// +checklocksignore
 func (o *OwnerInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &o.PID)
 }
@@ -43,6 +45,7 @@ func (l *Lock) StateFields() []string {
 
 func (l *Lock) beforeSave() {}
 
+// +checklocksignore
 func (l *Lock) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Readers)
@@ -52,6 +55,7 @@ func (l *Lock) StateSave(stateSinkObject state.Sink) {
 
 func (l *Lock) afterLoad() {}
 
+// +checklocksignore
 func (l *Lock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Readers)
 	stateSourceObject.Load(1, &l.Writer)
@@ -70,6 +74,7 @@ func (l *Locks) StateFields() []string {
 
 func (l *Locks) beforeSave() {}
 
+// +checklocksignore
 func (l *Locks) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	if !state.IsZeroValue(&l.blockedQueue) {
@@ -80,6 +85,7 @@ func (l *Locks) StateSave(stateSinkObject state.Sink) {
 
 func (l *Locks) afterLoad() {}
 
+// +checklocksignore
 func (l *Locks) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.locks)
 }
@@ -97,6 +103,7 @@ func (r *LockRange) StateFields() []string {
 
 func (r *LockRange) beforeSave() {}
 
+// +checklocksignore
 func (r *LockRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -105,6 +112,7 @@ func (r *LockRange) StateSave(stateSinkObject state.Sink) {
 
 func (r *LockRange) afterLoad() {}
 
+// +checklocksignore
 func (r *LockRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
@@ -122,6 +130,7 @@ func (s *LockSet) StateFields() []string {
 
 func (s *LockSet) beforeSave() {}
 
+// +checklocksignore
 func (s *LockSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *LockSegmentDataSlices = s.saveRoot()
@@ -130,6 +139,7 @@ func (s *LockSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *LockSet) afterLoad() {}
 
+// +checklocksignore
 func (s *LockSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*LockSegmentDataSlices)) })
 }
@@ -153,6 +163,7 @@ func (n *Locknode) StateFields() []string {
 
 func (n *Locknode) beforeSave() {}
 
+// +checklocksignore
 func (n *Locknode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -167,6 +178,7 @@ func (n *Locknode) StateSave(stateSinkObject state.Sink) {
 
 func (n *Locknode) afterLoad() {}
 
+// +checklocksignore
 func (n *Locknode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -192,6 +204,7 @@ func (l *LockSegmentDataSlices) StateFields() []string {
 
 func (l *LockSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (l *LockSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Start)
@@ -201,6 +214,7 @@ func (l *LockSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (l *LockSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (l *LockSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Start)
 	stateSourceObject.Load(1, &l.End)

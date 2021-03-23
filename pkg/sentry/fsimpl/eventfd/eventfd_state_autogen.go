@@ -25,6 +25,7 @@ func (efd *EventFileDescription) StateFields() []string {
 
 func (efd *EventFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
 	efd.beforeSave()
 	stateSinkObject.Save(0, &efd.vfsfd)
@@ -39,6 +40,7 @@ func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (efd *EventFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (efd *EventFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &efd.vfsfd)
 	stateSourceObject.Load(1, &efd.FileDescriptionDefaultImpl)

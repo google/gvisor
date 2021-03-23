@@ -19,6 +19,7 @@ func (r *Registry) StateFields() []string {
 
 func (r *Registry) beforeSave() {}
 
+// +checklocksignore
 func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.lastAnonDeviceMinor)
@@ -27,6 +28,7 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 
 func (r *Registry) afterLoad() {}
 
+// +checklocksignore
 func (r *Registry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.lastAnonDeviceMinor)
 	stateSourceObject.Load(1, &r.devices)
@@ -45,6 +47,7 @@ func (i *ID) StateFields() []string {
 
 func (i *ID) beforeSave() {}
 
+// +checklocksignore
 func (i *ID) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.Major)
@@ -53,6 +56,7 @@ func (i *ID) StateSave(stateSinkObject state.Sink) {
 
 func (i *ID) afterLoad() {}
 
+// +checklocksignore
 func (i *ID) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Major)
 	stateSourceObject.Load(1, &i.Minor)
@@ -71,6 +75,7 @@ func (d *Device) StateFields() []string {
 
 func (d *Device) beforeSave() {}
 
+// +checklocksignore
 func (d *Device) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.ID)
@@ -79,6 +84,7 @@ func (d *Device) StateSave(stateSinkObject state.Sink) {
 
 func (d *Device) afterLoad() {}
 
+// +checklocksignore
 func (d *Device) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.ID)
 	stateSourceObject.Load(1, &d.last)

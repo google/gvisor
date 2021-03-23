@@ -23,6 +23,7 @@ func (p *packet) StateFields() []string {
 
 func (p *packet) beforeSave() {}
 
+// +checklocksignore
 func (p *packet) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var dataValue buffer.VectorisedView = p.saveData()
@@ -35,6 +36,7 @@ func (p *packet) StateSave(stateSinkObject state.Sink) {
 
 func (p *packet) afterLoad() {}
 
+// +checklocksignore
 func (p *packet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.packetEntry)
 	stateSourceObject.Load(2, &p.timestampNS)
@@ -66,6 +68,7 @@ func (ep *endpoint) StateFields() []string {
 	}
 }
 
+// +checklocksignore
 func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
 	var rcvBufSizeMaxValue int = ep.saveRcvBufSizeMax()
@@ -85,6 +88,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &ep.ops)
 }
 
+// +checklocksignore
 func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.TransportEndpointInfo)
 	stateSourceObject.Load(1, &ep.DefaultSocketOptionsHandler)
@@ -116,6 +120,7 @@ func (l *packetList) StateFields() []string {
 
 func (l *packetList) beforeSave() {}
 
+// +checklocksignore
 func (l *packetList) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.head)
@@ -124,6 +129,7 @@ func (l *packetList) StateSave(stateSinkObject state.Sink) {
 
 func (l *packetList) afterLoad() {}
 
+// +checklocksignore
 func (l *packetList) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
@@ -142,6 +148,7 @@ func (e *packetEntry) StateFields() []string {
 
 func (e *packetEntry) beforeSave() {}
 
+// +checklocksignore
 func (e *packetEntry) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.next)
@@ -150,6 +157,7 @@ func (e *packetEntry) StateSave(stateSinkObject state.Sink) {
 
 func (e *packetEntry) afterLoad() {}
 
+// +checklocksignore
 func (e *packetEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)

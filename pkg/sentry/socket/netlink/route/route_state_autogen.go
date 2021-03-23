@@ -16,12 +16,14 @@ func (p *Protocol) StateFields() []string {
 
 func (p *Protocol) beforeSave() {}
 
+// +checklocksignore
 func (p *Protocol) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 }
 
 func (p *Protocol) afterLoad() {}
 
+// +checklocksignore
 func (p *Protocol) StateLoad(stateSourceObject state.Source) {
 }
 

@@ -30,6 +30,7 @@ func (c *Credentials) StateFields() []string {
 
 func (c *Credentials) beforeSave() {}
 
+// +checklocksignore
 func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.RealKUID)
@@ -49,6 +50,7 @@ func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 
 func (c *Credentials) afterLoad() {}
 
+// +checklocksignore
 func (c *Credentials) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.RealKUID)
 	stateSourceObject.Load(1, &c.EffectiveKUID)
@@ -79,6 +81,7 @@ func (i *IDMapEntry) StateFields() []string {
 
 func (i *IDMapEntry) beforeSave() {}
 
+// +checklocksignore
 func (i *IDMapEntry) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.FirstID)
@@ -88,6 +91,7 @@ func (i *IDMapEntry) StateSave(stateSinkObject state.Sink) {
 
 func (i *IDMapEntry) afterLoad() {}
 
+// +checklocksignore
 func (i *IDMapEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.FirstID)
 	stateSourceObject.Load(1, &i.FirstParentID)
@@ -107,6 +111,7 @@ func (r *idMapRange) StateFields() []string {
 
 func (r *idMapRange) beforeSave() {}
 
+// +checklocksignore
 func (r *idMapRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -115,6 +120,7 @@ func (r *idMapRange) StateSave(stateSinkObject state.Sink) {
 
 func (r *idMapRange) afterLoad() {}
 
+// +checklocksignore
 func (r *idMapRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
@@ -132,6 +138,7 @@ func (s *idMapSet) StateFields() []string {
 
 func (s *idMapSet) beforeSave() {}
 
+// +checklocksignore
 func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *idMapSegmentDataSlices = s.saveRoot()
@@ -140,6 +147,7 @@ func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *idMapSet) afterLoad() {}
 
+// +checklocksignore
 func (s *idMapSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*idMapSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*idMapSegmentDataSlices)) })
 }
@@ -163,6 +171,7 @@ func (n *idMapnode) StateFields() []string {
 
 func (n *idMapnode) beforeSave() {}
 
+// +checklocksignore
 func (n *idMapnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -177,6 +186,7 @@ func (n *idMapnode) StateSave(stateSinkObject state.Sink) {
 
 func (n *idMapnode) afterLoad() {}
 
+// +checklocksignore
 func (n *idMapnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -202,6 +212,7 @@ func (i *idMapSegmentDataSlices) StateFields() []string {
 
 func (i *idMapSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (i *idMapSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.Start)
@@ -211,6 +222,7 @@ func (i *idMapSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (i *idMapSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (i *idMapSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Start)
 	stateSourceObject.Load(1, &i.End)
@@ -234,6 +246,7 @@ func (ns *UserNamespace) StateFields() []string {
 
 func (ns *UserNamespace) beforeSave() {}
 
+// +checklocksignore
 func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	ns.beforeSave()
 	stateSinkObject.Save(0, &ns.parent)
@@ -246,6 +259,7 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 
 func (ns *UserNamespace) afterLoad() {}
 
+// +checklocksignore
 func (ns *UserNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ns.parent)
 	stateSourceObject.Load(1, &ns.owner)

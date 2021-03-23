@@ -20,6 +20,7 @@ func (fst *FilesystemType) StateFields() []string {
 
 func (fst *FilesystemType) beforeSave() {}
 
+// +checklocksignore
 func (fst *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fst.beforeSave()
 	stateSinkObject.Save(0, &fst.initErr)
@@ -27,6 +28,7 @@ func (fst *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fst.root)
 }
 
+// +checklocksignore
 func (fst *FilesystemType) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fst.initErr)
 	stateSourceObject.Load(1, &fst.fs)

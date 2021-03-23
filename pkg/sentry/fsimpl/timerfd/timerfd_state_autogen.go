@@ -24,6 +24,7 @@ func (tfd *TimerFileDescription) StateFields() []string {
 
 func (tfd *TimerFileDescription) beforeSave() {}
 
+// +checklocksignore
 func (tfd *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
 	tfd.beforeSave()
 	stateSinkObject.Save(0, &tfd.vfsfd)
@@ -37,6 +38,7 @@ func (tfd *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
 
 func (tfd *TimerFileDescription) afterLoad() {}
 
+// +checklocksignore
 func (tfd *TimerFileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &tfd.vfsfd)
 	stateSourceObject.Load(1, &tfd.FileDescriptionDefaultImpl)

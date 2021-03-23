@@ -19,6 +19,7 @@ func (vv *VectorisedView) StateFields() []string {
 
 func (vv *VectorisedView) beforeSave() {}
 
+// +checklocksignore
 func (vv *VectorisedView) StateSave(stateSinkObject state.Sink) {
 	vv.beforeSave()
 	stateSinkObject.Save(0, &vv.views)
@@ -27,6 +28,7 @@ func (vv *VectorisedView) StateSave(stateSinkObject state.Sink) {
 
 func (vv *VectorisedView) afterLoad() {}
 
+// +checklocksignore
 func (vv *VectorisedView) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &vv.views)
 	stateSourceObject.Load(1, &vv.size)

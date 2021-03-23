@@ -23,6 +23,7 @@ func (c *context64) StateFields() []string {
 
 func (c *context64) beforeSave() {}
 
+// +checklocksignore
 func (c *context64) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.State)
@@ -31,6 +32,7 @@ func (c *context64) StateSave(stateSinkObject state.Sink) {
 
 func (c *context64) afterLoad() {}
 
+// +checklocksignore
 func (c *context64) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.State)
 	stateSourceObject.Load(1, &c.sigFPState)

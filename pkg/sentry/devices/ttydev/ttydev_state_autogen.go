@@ -16,12 +16,14 @@ func (t *ttyDevice) StateFields() []string {
 
 func (t *ttyDevice) beforeSave() {}
 
+// +checklocksignore
 func (t *ttyDevice) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 }
 
 func (t *ttyDevice) afterLoad() {}
 
+// +checklocksignore
 func (t *ttyDevice) StateLoad(stateSourceObject state.Source) {
 }
 

@@ -18,6 +18,7 @@ func (s *MappingSet) StateFields() []string {
 
 func (s *MappingSet) beforeSave() {}
 
+// +checklocksignore
 func (s *MappingSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var rootValue *MappingSegmentDataSlices = s.saveRoot()
@@ -26,6 +27,7 @@ func (s *MappingSet) StateSave(stateSinkObject state.Sink) {
 
 func (s *MappingSet) afterLoad() {}
 
+// +checklocksignore
 func (s *MappingSet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*MappingSegmentDataSlices), func(y interface{}) { s.loadRoot(y.(*MappingSegmentDataSlices)) })
 }
@@ -49,6 +51,7 @@ func (n *Mappingnode) StateFields() []string {
 
 func (n *Mappingnode) beforeSave() {}
 
+// +checklocksignore
 func (n *Mappingnode) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.nrSegments)
@@ -63,6 +66,7 @@ func (n *Mappingnode) StateSave(stateSinkObject state.Sink) {
 
 func (n *Mappingnode) afterLoad() {}
 
+// +checklocksignore
 func (n *Mappingnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
@@ -88,6 +92,7 @@ func (m *MappingSegmentDataSlices) StateFields() []string {
 
 func (m *MappingSegmentDataSlices) beforeSave() {}
 
+// +checklocksignore
 func (m *MappingSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.Start)
@@ -97,6 +102,7 @@ func (m *MappingSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
 
 func (m *MappingSegmentDataSlices) afterLoad() {}
 
+// +checklocksignore
 func (m *MappingSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Start)
 	stateSourceObject.Load(1, &m.End)

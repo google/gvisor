@@ -22,6 +22,7 @@ func (f *futexWaitRestartBlock) StateFields() []string {
 
 func (f *futexWaitRestartBlock) beforeSave() {}
 
+// +checklocksignore
 func (f *futexWaitRestartBlock) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.duration)
@@ -33,6 +34,7 @@ func (f *futexWaitRestartBlock) StateSave(stateSinkObject state.Sink) {
 
 func (f *futexWaitRestartBlock) afterLoad() {}
 
+// +checklocksignore
 func (f *futexWaitRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.duration)
 	stateSourceObject.Load(1, &f.addr)
@@ -55,6 +57,7 @@ func (p *pollRestartBlock) StateFields() []string {
 
 func (p *pollRestartBlock) beforeSave() {}
 
+// +checklocksignore
 func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.pfdAddr)
@@ -64,6 +67,7 @@ func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 
 func (p *pollRestartBlock) afterLoad() {}
 
+// +checklocksignore
 func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.pfdAddr)
 	stateSourceObject.Load(1, &p.nfds)
@@ -84,6 +88,7 @@ func (n *clockNanosleepRestartBlock) StateFields() []string {
 
 func (n *clockNanosleepRestartBlock) beforeSave() {}
 
+// +checklocksignore
 func (n *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.c)
@@ -93,6 +98,7 @@ func (n *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
 
 func (n *clockNanosleepRestartBlock) afterLoad() {}
 
+// +checklocksignore
 func (n *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.c)
 	stateSourceObject.Load(1, &n.duration)

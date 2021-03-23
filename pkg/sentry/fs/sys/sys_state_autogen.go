@@ -19,6 +19,7 @@ func (c *cpunum) StateFields() []string {
 
 func (c *cpunum) beforeSave() {}
 
+// +checklocksignore
 func (c *cpunum) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.InodeSimpleAttributes)
@@ -27,6 +28,7 @@ func (c *cpunum) StateSave(stateSinkObject state.Sink) {
 
 func (c *cpunum) afterLoad() {}
 
+// +checklocksignore
 func (c *cpunum) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.InodeSimpleAttributes)
 	stateSourceObject.Load(1, &c.InodeStaticFileGetter)
@@ -42,12 +44,14 @@ func (f *filesystem) StateFields() []string {
 
 func (f *filesystem) beforeSave() {}
 
+// +checklocksignore
 func (f *filesystem) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
 func (f *filesystem) afterLoad() {}
 
+// +checklocksignore
 func (f *filesystem) StateLoad(stateSourceObject state.Source) {
 }
 

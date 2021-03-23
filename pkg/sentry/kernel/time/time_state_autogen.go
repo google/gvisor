@@ -18,6 +18,7 @@ func (t *Time) StateFields() []string {
 
 func (t *Time) beforeSave() {}
 
+// +checklocksignore
 func (t *Time) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.ns)
@@ -25,6 +26,7 @@ func (t *Time) StateSave(stateSinkObject state.Sink) {
 
 func (t *Time) afterLoad() {}
 
+// +checklocksignore
 func (t *Time) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.ns)
 }
@@ -43,6 +45,7 @@ func (s *Setting) StateFields() []string {
 
 func (s *Setting) beforeSave() {}
 
+// +checklocksignore
 func (s *Setting) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.Enabled)
@@ -52,6 +55,7 @@ func (s *Setting) StateSave(stateSinkObject state.Sink) {
 
 func (s *Setting) afterLoad() {}
 
+// +checklocksignore
 func (s *Setting) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Enabled)
 	stateSourceObject.Load(1, &s.Next)
@@ -73,6 +77,7 @@ func (t *Timer) StateFields() []string {
 
 func (t *Timer) beforeSave() {}
 
+// +checklocksignore
 func (t *Timer) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 	stateSinkObject.Save(0, &t.clock)
@@ -83,6 +88,7 @@ func (t *Timer) StateSave(stateSinkObject state.Sink) {
 
 func (t *Timer) afterLoad() {}
 
+// +checklocksignore
 func (t *Timer) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.clock)
 	stateSourceObject.Load(1, &t.listener)

@@ -20,6 +20,7 @@ func (p *pollRestartBlock) StateFields() []string {
 
 func (p *pollRestartBlock) beforeSave() {}
 
+// +checklocksignore
 func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.pfdAddr)
@@ -29,6 +30,7 @@ func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 
 func (p *pollRestartBlock) afterLoad() {}
 
+// +checklocksignore
 func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.pfdAddr)
 	stateSourceObject.Load(1, &p.nfds)

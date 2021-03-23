@@ -20,6 +20,7 @@ func (s *CPUStats) StateFields() []string {
 
 func (s *CPUStats) beforeSave() {}
 
+// +checklocksignore
 func (s *CPUStats) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.UserTime)
@@ -29,6 +30,7 @@ func (s *CPUStats) StateSave(stateSinkObject state.Sink) {
 
 func (s *CPUStats) afterLoad() {}
 
+// +checklocksignore
 func (s *CPUStats) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.UserTime)
 	stateSourceObject.Load(1, &s.SysTime)
@@ -53,6 +55,7 @@ func (i *IO) StateFields() []string {
 
 func (i *IO) beforeSave() {}
 
+// +checklocksignore
 func (i *IO) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.CharsRead)
@@ -66,6 +69,7 @@ func (i *IO) StateSave(stateSinkObject state.Sink) {
 
 func (i *IO) afterLoad() {}
 
+// +checklocksignore
 func (i *IO) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.CharsRead)
 	stateSourceObject.Load(1, &i.CharsWritten)

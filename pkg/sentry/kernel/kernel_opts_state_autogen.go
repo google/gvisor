@@ -16,12 +16,14 @@ func (s *SpecialOpts) StateFields() []string {
 
 func (s *SpecialOpts) beforeSave() {}
 
+// +checklocksignore
 func (s *SpecialOpts) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
 func (s *SpecialOpts) afterLoad() {}
 
+// +checklocksignore
 func (s *SpecialOpts) StateLoad(stateSourceObject state.Source) {
 }
 

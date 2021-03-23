@@ -20,6 +20,7 @@ func (a *AccessType) StateFields() []string {
 
 func (a *AccessType) beforeSave() {}
 
+// +checklocksignore
 func (a *AccessType) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.Read)
@@ -29,6 +30,7 @@ func (a *AccessType) StateSave(stateSinkObject state.Sink) {
 
 func (a *AccessType) afterLoad() {}
 
+// +checklocksignore
 func (a *AccessType) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.Read)
 	stateSourceObject.Load(1, &a.Write)
@@ -56,6 +58,7 @@ func (r *AddrRange) StateFields() []string {
 
 func (r *AddrRange) beforeSave() {}
 
+// +checklocksignore
 func (r *AddrRange) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.Start)
@@ -64,6 +67,7 @@ func (r *AddrRange) StateSave(stateSinkObject state.Sink) {
 
 func (r *AddrRange) afterLoad() {}
 
+// +checklocksignore
 func (r *AddrRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)

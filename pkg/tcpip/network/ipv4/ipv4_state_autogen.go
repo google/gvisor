@@ -16,12 +16,14 @@ func (i *icmpv4DestinationUnreachableSockError) StateFields() []string {
 
 func (i *icmpv4DestinationUnreachableSockError) beforeSave() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationUnreachableSockError) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
 func (i *icmpv4DestinationUnreachableSockError) afterLoad() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationUnreachableSockError) StateLoad(stateSourceObject state.Source) {
 }
 
@@ -37,6 +39,7 @@ func (i *icmpv4DestinationHostUnreachableSockError) StateFields() []string {
 
 func (i *icmpv4DestinationHostUnreachableSockError) beforeSave() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationHostUnreachableSockError) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
@@ -44,6 +47,7 @@ func (i *icmpv4DestinationHostUnreachableSockError) StateSave(stateSinkObject st
 
 func (i *icmpv4DestinationHostUnreachableSockError) afterLoad() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationHostUnreachableSockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
@@ -60,6 +64,7 @@ func (i *icmpv4DestinationPortUnreachableSockError) StateFields() []string {
 
 func (i *icmpv4DestinationPortUnreachableSockError) beforeSave() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationPortUnreachableSockError) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
@@ -67,6 +72,7 @@ func (i *icmpv4DestinationPortUnreachableSockError) StateSave(stateSinkObject st
 
 func (i *icmpv4DestinationPortUnreachableSockError) afterLoad() {}
 
+// +checklocksignore
 func (i *icmpv4DestinationPortUnreachableSockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
@@ -84,6 +90,7 @@ func (e *icmpv4FragmentationNeededSockError) StateFields() []string {
 
 func (e *icmpv4FragmentationNeededSockError) beforeSave() {}
 
+// +checklocksignore
 func (e *icmpv4FragmentationNeededSockError) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.icmpv4DestinationUnreachableSockError)
@@ -92,6 +99,7 @@ func (e *icmpv4FragmentationNeededSockError) StateSave(stateSinkObject state.Sin
 
 func (e *icmpv4FragmentationNeededSockError) afterLoad() {}
 
+// +checklocksignore
 func (e *icmpv4FragmentationNeededSockError) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.icmpv4DestinationUnreachableSockError)
 	stateSourceObject.Load(1, &e.mtu)
