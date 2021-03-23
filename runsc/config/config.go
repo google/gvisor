@@ -58,8 +58,11 @@ type Config struct {
 	// DebugLogFormat is the log format for debug.
 	DebugLogFormat string `flag:"debug-log-format"`
 
-	// FileAccess indicates how the filesystem is accessed.
+	// FileAccess indicates how the root filesystem is accessed.
 	FileAccess FileAccessType `flag:"file-access"`
+
+	// FileAccessMounts indicates how non-root volumes are accessed.
+	FileAccessMounts FileAccessType `flag:"file-access-mounts"`
 
 	// Overlay is whether to wrap the root filesystem in an overlay.
 	Overlay bool `flag:"overlay"`
@@ -197,13 +200,19 @@ func (c *Config) validate() error {
 type FileAccessType int
 
 const (
-	// FileAccessExclusive is the same as FileAccessShared, but enables
-	// extra caching for improved performance. It should only be used if
-	// the sandbox has exclusive access to the filesystem.
+	// FileAccessExclusive gives the sandbox exclusive access over files and
+	// directories in the filesystem. No external modifications are permitted and
+	// can lead to undefined behavior.
+	//
+	// Exclusive filesystem access enables more aggressive caching and offers
+	// significantly better performance. This is the default mode for the root
+	// volume.
 	FileAccessExclusive FileAccessType = iota
 
-	// FileAccessShared sends IO requests to a Gofer process that validates the
-	// requests and forwards them to the host.
+	// FileAccessShared is used for volumes that can have external changes. It
+	// requires revalidation on every filesystem access to detect external
+	// changes, and reduces the amount of caching that can be done. This is the
+	// default mode for non-root volumes.
 	FileAccessShared
 )
 

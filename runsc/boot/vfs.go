@@ -494,7 +494,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 			// but unlikely to be correct in this context.
 			return "", nil, false, fmt.Errorf("9P mount requires a connection FD")
 		}
-		data = p9MountData(m.fd, c.getMountAccessType(m.Mount), true /* vfs2 */)
+		data = p9MountData(m.fd, c.getMountAccessType(conf, m.Mount), true /* vfs2 */)
 		iopts = gofer.InternalFilesystemOptions{
 			UniqueID: m.Destination,
 		}
