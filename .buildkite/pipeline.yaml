@@ -188,8 +188,12 @@ steps:
   # but for tmpfs mounts, the size can grow to more memory than the machine
   # has availabe. Fix the runs to 1GB written/read for the benchmark.
   - <<: *benchmarks
-    label: ":floppy_disk: FIO benchmarks"
-    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_OPTIONS=--test.benchtime=1000x
+    label: ":floppy_disk: FIO benchmarks (read/write)"
+    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.[rw][er] BENCHMARKS_OPTIONS=--test.benchtime=1000x
+  # For rand(read|write) fio benchmarks, running 15s does not overwhelm the system for tmpfs mounts.
+  - <<: *benchmarks
+    label: ":cd: FIO benchmarks (randread/randwrite)"
+    command: make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER=Fio/operation\.rand BENCHMARKS_OPTIONS=--test.benchtime=15s
   - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
     command: make benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
