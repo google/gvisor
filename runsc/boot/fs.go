@@ -792,7 +792,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.M
 	case bind:
 		fd := c.fds.remove()
 		fsName = gofervfs2.Name
-		opts = p9MountData(fd, c.getMountAccessType(m), conf.VFS2)
+		opts = p9MountData(fd, c.getMountAccessType(conf, m), conf.VFS2)
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -802,12 +802,11 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.M
 	return fsName, opts, useOverlay, nil
 }
 
-func (c *containerMounter) getMountAccessType(mount specs.Mount) config.FileAccessType {
+func (c *containerMounter) getMountAccessType(conf *config.Config, mount specs.Mount) config.FileAccessType {
 	if hint := c.hints.findMount(mount); hint != nil {
 		return hint.fileAccessType()
 	}
-	// Non-root bind mounts are always shared if no hints were provided.
-	return config.FileAccessShared
+	return conf.FileAccessMounts
 }
 
 // mountSubmount mounts volumes inside the container's root. Because mounts may
