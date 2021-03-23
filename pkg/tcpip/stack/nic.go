@@ -317,11 +317,77 @@ func (n *nic) IsLoopback() bool {
 
 // WritePacket implements NetworkLinkEndpoint.
 func (n *nic) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
+	mtu := n.LinkEndpoint.MTU()
+
+	var g GSO
+	if gso != nil {
+		g = *gso
+	}
+	gso = nil
+
+	if g.Type != GSONone {
+		// If the hardware supports segmentation offloading, make sure we don't give
+		// it a packet that is larger than it can handle.
+		//
+		// If the hardware does not supoort segmentation, segment the packet in
+		// software.
+		if n.LinkEndpoint.Capabilities()&CapabilityHardwareGSO != 0 {
+			gsoEP, ok := n.LinkEndpoint.(GSOEndpoint)
+			if !ok {
+				panic(fmt.Sprintf("NIC(%d)[%s] has hardware GSO capability but is not a GSO endpoint", n.id, n.name))
+			}
+
+			if m := gsoEP.GSOMaxSize(); m > mtu {
+				mtu = m
+			}
+
+			g.NeedsCsum = true
+		} else if mss := uint32(g.MSS + uint16(pkt.NetworkHeader().View().Size()+pkt.TransportHeader().View().Size())); mss < mtu {
+			mtu = mss
+		}
+	}
+
+	if uint32(pkt.Size()) <= mtu {
+		// The packet can be written without software segmentation.
+		_, err := n.enqueuePacketBuffer(r, g, protocol, pkt)
+		return err
+	}
+
+	// Perform transport layer segmentation if the protocol supports it.
+	if t, ok := n.stack.transportProtocols[pkt.TransportProtocolNumber]; ok {
+		if s, ok := t.proto.(Segmentable); ok {
+			pkts, err := s.Segment(pkt.Clone(), SegmentOptions{MTU: mtu, TransportChecksumOffloaded: !r.RequiresTXTransportChecksum()})
+			if err != nil {
+				return err
+			}
+
+			_, err = n.enqueuePacketBuffer(r, g, protocol, &pkts)
+			return err
+		}
+	}
+
+	// The transport protocol doesn't support segmentation so segment the packet
+	// at the network layer, if supported.
+	p, ok := n.stack.networkProtocols[protocol]
+	if !ok {
+		panic(fmt.Sprintf("writing a packet for an unrecognized network protocol = %d", protocol))
+	}
+
+	s, ok := p.(Segmentable)
+	if !ok {
+		return &tcpip.ErrMessageTooLong{}
+	}
+
+	pkts, err := s.Segment(pkt, SegmentOptions{MTU: mtu})
+	if err != nil {
+		return err
+	}
+
+	_, err = n.enqueuePacketBuffer(r, g, protocol, &pkts)
 	return err
 }
 
-func (n *nic) writePacketBuffer(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+func (n *nic) writePacketBuffer(r RouteInfo, gso GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	switch pkt := pkt.(type) {
 	case *PacketBuffer:
 		if err := n.writePacket(r, gso, protocol, pkt); err != nil {
@@ -335,7 +401,7 @@ func (n *nic) writePacketBuffer(r RouteInfo, gso *GSO, protocol tcpip.NetworkPro
 	}
 }
 
-func (n *nic) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+func (n *nic) enqueuePacketBuffer(r *Route, gso GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	routeInfo, _, err := r.resolvedFields(nil)
 	switch err.(type) {
 	case nil:
@@ -369,10 +435,14 @@ func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, pr
 	var r RouteInfo
 	r.NetProto = protocol
 	r.RemoteLinkAddress = remoteLinkAddr
-	return n.writePacket(r, gso, protocol, pkt)
+	var g GSO
+	if gso != nil {
+		g = *gso
+	}
+	return n.writePacket(r, g, protocol, pkt)
 }
 
-func (n *nic) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (n *nic) writePacket(r RouteInfo, gso GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
@@ -388,12 +458,7 @@ func (n *nic) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 	return nil
 }
 
-// WritePackets implements NetworkLinkEndpoint.
-func (n *nic) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return n.enqueuePacketBuffer(r, gso, protocol, &pkts)
-}
-
-func (n *nic) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
+func (n *nic) writePackets(r RouteInfo, gso GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		pkt.EgressRoute = r
 		pkt.GSOOptions = gso

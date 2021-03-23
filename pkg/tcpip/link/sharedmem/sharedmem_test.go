@@ -281,7 +281,7 @@ func TestSimpleSend(t *testing.T) {
 			copy(pkt.NetworkHeader().Push(hdrLen), hdrBuf)
 
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-			if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
+			if err := c.ep.WritePacket(r, stack.GSO{}, proto, pkt); err != nil {
 				t.Fatalf("WritePacket failed: %v", err)
 			}
 
@@ -351,7 +351,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	})
 
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(r, stack.GSO{}, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -407,7 +407,7 @@ func TestFillTxQueue(t *testing.T) {
 			Data:               buf.ToVectorisedView(),
 		})
 
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -425,7 +425,7 @@ func TestFillTxQueue(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
@@ -453,7 +453,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 	}
@@ -476,7 +476,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -494,7 +494,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
@@ -520,7 +520,7 @@ func TestFillTxMemory(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -539,7 +539,7 @@ func TestFillTxMemory(t *testing.T) {
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 		Data:               buf.ToVectorisedView(),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 	}
@@ -566,7 +566,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -581,7 +581,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
-		err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+		err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
 		}
@@ -593,7 +593,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
+		if err := c.ep.WritePacket(r, stack.GSO{}, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 	}
