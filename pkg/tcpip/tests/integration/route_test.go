@@ -162,15 +162,15 @@ func TestLocalPing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for _, dropExternalLoopback := range []bool{true, false} {
-				t.Run(fmt.Sprintf("DropExternalLoopback=%t", dropExternalLoopback), func(t *testing.T) {
+			for _, allowExternalLoopback := range []bool{true, false} {
+				t.Run(fmt.Sprintf("AllowExternalLoopback=%t", allowExternalLoopback), func(t *testing.T) {
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{
 							ipv4.NewProtocolWithOptions(ipv4.Options{
-								DropExternalLoopbackTraffic: dropExternalLoopback,
+								AllowExternalLoopbackTraffic: allowExternalLoopback,
 							}),
 							ipv6.NewProtocolWithOptions(ipv6.Options{
-								DropExternalLoopbackTraffic: dropExternalLoopback,
+								AllowExternalLoopbackTraffic: allowExternalLoopback,
 							}),
 						},
 						TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
