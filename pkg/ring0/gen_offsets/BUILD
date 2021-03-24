@@ -35,6 +35,7 @@ go_binary(
         "//pkg/cpuid",
         "//pkg/ring0/pagetables",
         "//pkg/sentry/arch",
+        "//pkg/sentry/arch/fpu",
         "//pkg/usermem",
     ],
 )

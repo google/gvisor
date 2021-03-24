@@ -33,7 +33,7 @@ func TestSegments(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 				FullRestore:        true,
 			}, &si); err == platform.ErrContextInterrupt {

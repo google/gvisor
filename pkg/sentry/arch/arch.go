@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -49,12 +50,6 @@ func (a Arch) String() string {
 		return fmt.Sprintf("Arch(%d)", a)
 	}
 }
-
-// FloatingPointData is a generic type, and will always be passed as a pointer.
-// We rely on the individual arch implementations to meet all the necessary
-// requirements. For example, on x86 the region must be 16-byte aligned and 512
-// bytes in size.
-type FloatingPointData byte
 
 // Context provides architecture-dependent information for a specific thread.
 //
@@ -187,7 +182,7 @@ type Context interface {
 	ClearSingleStep()
 
 	// FloatingPointData will be passed to underlying save routines.
-	FloatingPointData() *FloatingPointData
+	FloatingPointData() *fpu.State
 
 	// NewMmapLayout returns a layout for a new MM, where MinAddr for the
 	// returned layout must be no lower than min, and MaxAddr for the returned
@@ -220,16 +215,6 @@ type Context interface {
 	// general-purpose registers from src into this Context and returning the
 	// number of bytes read.
 	PtraceSetRegs(src io.Reader) (int, error)
-
-	// PtraceGetFPRegs implements ptrace(PTRACE_GETFPREGS) by writing the
-	// floating-point registers represented by this Context to addr in dst and
-	// returning the number of bytes written.
-	PtraceGetFPRegs(dst io.Writer) (int, error)
-
-	// PtraceSetFPRegs implements ptrace(PTRACE_SETFPREGS) by reading
-	// floating-point registers from src into this Context and returning the
-	// number of bytes read.
-	PtraceSetFPRegs(src io.Reader) (int, error)
 
 	// PtraceGetRegSet implements ptrace(PTRACE_GETREGSET) by writing the
 	// register set given by architecture-defined value regset from this
@@ -364,19 +349,4 @@ func (a SyscallArgument) SizeT() uint {
 // ModeT returns the int representation of a mode_t argument.
 func (a SyscallArgument) ModeT() uint {
 	return uint(uint16(a.Value))
-}
-
-// ErrFloatingPoint indicates a failed restore due to unusable floating point
-// state.
-type ErrFloatingPoint struct {
-	// supported is the supported floating point state.
-	supported uint64
-
-	// saved is the saved floating point state.
-	saved uint64
-}
-
-// Error returns a sensible description of the restore error.
-func (e ErrFloatingPoint) Error() string {
-	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supported, e.saved)
 }

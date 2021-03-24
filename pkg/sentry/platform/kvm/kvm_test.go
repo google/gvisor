@@ -25,13 +25,14 @@ import (
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-var dummyFPState = (*byte)(arch.NewFloatingPointData())
+var dummyFPState = fpu.NewState()
 
 type testHarness interface {
 	Errorf(format string, args ...interface{})
@@ -159,7 +160,7 @@ func TestApplicationSyscall(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
 		}, &si); err == platform.ErrContextInterrupt {
@@ -173,7 +174,7 @@ func TestApplicationSyscall(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			return true // Retry.
@@ -190,7 +191,7 @@ func TestApplicationFault(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
 		}, &si); err == platform.ErrContextInterrupt {
@@ -205,7 +206,7 @@ func TestApplicationFault(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			return true // Retry.
@@ -223,7 +224,7 @@ func TestRegistersSyscall(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 			}, &si); err == platform.ErrContextInterrupt {
 				continue // Retry.
@@ -246,7 +247,7 @@ func TestRegistersFault(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 				FullRestore:        true,
 			}, &si); err == platform.ErrContextInterrupt {
@@ -272,7 +273,7 @@ func TestBounce(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err != platform.ErrContextInterrupt {
 			t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
@@ -287,7 +288,7 @@ func TestBounce(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
 		}, &si); err != platform.ErrContextInterrupt {
@@ -319,7 +320,7 @@ func TestBounceStress(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 			}, &si); err != platform.ErrContextInterrupt {
 				t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
@@ -340,7 +341,7 @@ func TestInvalidate(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 			}, &si); err == platform.ErrContextInterrupt {
 				continue // Retry.
@@ -355,7 +356,7 @@ func TestInvalidate(t *testing.T) {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
-				FloatingPointState: dummyFPState,
+				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
 				Flush:              true,
 			}, &si); err == platform.ErrContextInterrupt {
@@ -379,7 +380,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			return true // Retry.
@@ -393,7 +394,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
 		}, &si); err == platform.ErrContextInterrupt {
@@ -469,7 +470,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			a++
@@ -506,7 +507,7 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 		var si arch.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
-			FloatingPointState: dummyFPState,
+			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
 		}, &si); err == platform.ErrContextInterrupt {
 			a++
