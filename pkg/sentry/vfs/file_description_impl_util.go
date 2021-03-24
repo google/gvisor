@@ -72,7 +72,7 @@ func (FileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, le
 // file_operations::poll == NULL in Linux.
 func (FileDescriptionDefaultImpl) Readiness(mask waiter.EventMask) waiter.EventMask {
 	// include/linux/poll.h:vfs_poll() => DEFAULT_POLLMASK
-	return waiter.EventIn | waiter.EventOut
+	return waiter.ReadableEvents | waiter.WritableEvents
 }
 
 // EventRegister implements waiter.Waitable.EventRegister analogously to

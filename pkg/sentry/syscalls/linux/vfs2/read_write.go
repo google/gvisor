@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	eventMaskRead  = waiter.EventIn | waiter.EventHUp | waiter.EventErr
-	eventMaskWrite = waiter.EventOut | waiter.EventHUp | waiter.EventErr
+	eventMaskRead  = waiter.EventRdNorm | waiter.EventIn | waiter.EventHUp | waiter.EventErr
+	eventMaskWrite = waiter.EventWrNorm | waiter.EventOut | waiter.EventHUp | waiter.EventErr
 )
 
 // Read implements Linux syscall read(2).

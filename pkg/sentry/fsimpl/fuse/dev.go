@@ -368,10 +368,10 @@ func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	}
 
 	// FD is always writable.
-	ready |= waiter.EventOut
+	ready |= waiter.WritableEvents
 	if !fd.queue.Empty() {
 		// Have reqs available, FD is readable.
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 
 	return ready & mask

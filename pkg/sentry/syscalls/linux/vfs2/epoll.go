@@ -169,7 +169,7 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		if ch == nil {
 			var w waiter.Entry
 			w, ch = waiter.NewChannelEntry(nil)
-			epfile.EventRegister(&w, waiter.EventIn)
+			epfile.EventRegister(&w, waiter.ReadableEvents)
 			defer epfile.EventUnregister(&w)
 		} else {
 			// Set up the timer if a timeout was specified.

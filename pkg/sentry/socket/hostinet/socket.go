@@ -200,9 +200,10 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	// (SO_ERROR is zero) or unsuccessfully (SO_ERROR is one of the usual error
 	// codes listed here, explaining the reason for the failure)." - connect(2)
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventOut)
+	writableMask := waiter.WritableEvents
+	s.EventRegister(&e, writableMask)
 	defer s.EventUnregister(&e)
-	if s.Readiness(waiter.EventOut)&waiter.EventOut == 0 {
+	if s.Readiness(writableMask)&writableMask == 0 {
 		if err := t.Block(ch); err != nil {
 			return syserr.FromError(err)
 		}
@@ -244,7 +245,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 			} else {
 				var e waiter.Entry
 				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.EventIn)
+				s.EventRegister(&e, waiter.ReadableEvents)
 				defer s.EventUnregister(&e)
 			}
 			fd, syscallErr = accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
@@ -496,7 +497,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			} else {
 				var e waiter.Entry
 				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.EventIn)
+				s.EventRegister(&e, waiter.ReadableEvents)
 				defer s.EventUnregister(&e)
 			}
 			n, err = copyToDst()
@@ -652,7 +653,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			} else {
 				var e waiter.Entry
 				e, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&e, waiter.EventOut)
+				s.EventRegister(&e, waiter.WritableEvents)
 				defer s.EventUnregister(&e)
 			}
 			n, err = src.CopyInTo(t, sendmsgFromBlocks)

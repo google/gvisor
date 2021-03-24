@@ -162,7 +162,7 @@ func (a *FileAsync) Register(w waiter.Waitable) {
 	a.registered = true
 
 	a.mu.Unlock()
-	w.EventRegister(&a.e, waiter.EventIn|waiter.EventOut|waiter.EventErr|waiter.EventHUp)
+	w.EventRegister(&a.e, waiter.ReadableEvents|waiter.WritableEvents|waiter.EventErr|waiter.EventHUp)
 }
 
 // Unregister stops monitoring a file.

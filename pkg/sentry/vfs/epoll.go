@@ -131,7 +131,7 @@ func (ep *EpollInstance) Release(ctx context.Context) {
 
 // Readiness implements waiter.Waitable.Readiness.
 func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
-	if mask&waiter.EventIn == 0 {
+	if mask&waiter.ReadableEvents == 0 {
 		return 0
 	}
 	ep.mu.Lock()
@@ -139,7 +139,7 @@ func (ep *EpollInstance) Readiness(mask waiter.EventMask) waiter.EventMask {
 		wmask := waiter.EventMaskFromLinux(epi.mask)
 		if epi.key.file.Readiness(wmask)&wmask != 0 {
 			ep.mu.Unlock()
-			return waiter.EventIn
+			return waiter.ReadableEvents
 		}
 	}
 	ep.mu.Unlock()
@@ -321,7 +321,7 @@ func (epi *epollInterest) Callback(*waiter.Entry, waiter.EventMask) {
 	}
 	epi.epoll.mu.Unlock()
 	if newReady {
-		epi.epoll.q.Notify(waiter.EventIn)
+		epi.epoll.q.Notify(waiter.ReadableEvents)
 	}
 }
 

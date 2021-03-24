@@ -410,7 +410,7 @@ func (e *endpoint) deliverAccepted(n *endpoint, withSynCookie bool) {
 				atomic.AddInt32(&e.synRcvdCount, -1)
 			}
 			e.acceptMu.Unlock()
-			e.waiterQueue.Notify(waiter.EventIn)
+			e.waiterQueue.Notify(waiter.ReadableEvents)
 			return
 		default:
 			e.acceptCond.Wait()
@@ -462,7 +462,7 @@ func (e *endpoint) reserveTupleLocked() bool {
 // can't really have any registered waiters except when stack.Wait() is called
 // which waits for all registered endpoints to stop and expects an EventHUp.
 func (e *endpoint) notifyAborted() {
-	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint
@@ -771,7 +771,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 		e.drainClosingSegmentQueue()
 
 		// Notify waiters that the endpoint is shutdown.
-		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
+		e.waiterQueue.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 	}()
 
 	var s sleep.Sleeper

@@ -67,13 +67,17 @@ type EventMask uint64
 // Events that waiters can wait on. The meaning is the same as those in the
 // poll() syscall.
 const (
-	EventIn  EventMask = 0x01 // POLLIN
-	EventPri EventMask = 0x02 // POLLPRI
-	EventOut EventMask = 0x04 // POLLOUT
-	EventErr EventMask = 0x08 // POLLERR
-	EventHUp EventMask = 0x10 // POLLHUP
+	EventIn     EventMask = 0x01   // POLLIN
+	EventPri    EventMask = 0x02   // POLLPRI
+	EventOut    EventMask = 0x04   // POLLOUT
+	EventErr    EventMask = 0x08   // POLLERR
+	EventHUp    EventMask = 0x10   // POLLHUP
+	EventRdNorm EventMask = 0x0040 // POLLRDNORM
+	EventWrNorm EventMask = 0x0100 // POLLWRNORM
 
-	allEvents EventMask = 0x1f
+	allEvents      EventMask = 0x1f | EventRdNorm | EventWrNorm
+	ReadableEvents EventMask = EventIn | EventRdNorm
+	WritableEvents EventMask = EventOut | EventWrNorm
 )
 
 // EventMaskFromLinux returns an EventMask representing the supported events

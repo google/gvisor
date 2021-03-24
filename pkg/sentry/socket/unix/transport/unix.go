@@ -376,13 +376,13 @@ func (q *queueReceiver) Recv(ctx context.Context, data [][]byte, creds bool, num
 
 // RecvNotify implements Receiver.RecvNotify.
 func (q *queueReceiver) RecvNotify() {
-	q.readQueue.WriterQueue.Notify(waiter.EventOut)
+	q.readQueue.WriterQueue.Notify(waiter.WritableEvents)
 }
 
 // CloseNotify implements Receiver.CloseNotify.
 func (q *queueReceiver) CloseNotify() {
-	q.readQueue.ReaderQueue.Notify(waiter.EventIn)
-	q.readQueue.WriterQueue.Notify(waiter.EventOut)
+	q.readQueue.ReaderQueue.Notify(waiter.ReadableEvents)
+	q.readQueue.WriterQueue.Notify(waiter.WritableEvents)
 }
 
 // CloseRecv implements Receiver.CloseRecv.
@@ -692,13 +692,13 @@ func (e *connectedEndpoint) Send(ctx context.Context, data [][]byte, c ControlMe
 
 // SendNotify implements ConnectedEndpoint.SendNotify.
 func (e *connectedEndpoint) SendNotify() {
-	e.writeQueue.ReaderQueue.Notify(waiter.EventIn)
+	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents)
 }
 
 // CloseNotify implements ConnectedEndpoint.CloseNotify.
 func (e *connectedEndpoint) CloseNotify() {
-	e.writeQueue.ReaderQueue.Notify(waiter.EventIn)
-	e.writeQueue.WriterQueue.Notify(waiter.EventOut)
+	e.writeQueue.ReaderQueue.Notify(waiter.ReadableEvents)
+	e.writeQueue.WriterQueue.Notify(waiter.WritableEvents)
 }
 
 // CloseSend implements ConnectedEndpoint.CloseSend.
