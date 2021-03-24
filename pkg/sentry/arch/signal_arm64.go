@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -139,9 +140,9 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	c.Regs.Regs[30] = uint64(act.Restorer)
 
 	// Save the thread's floating point state.
-	c.sigFPState = append(c.sigFPState, c.aarch64FPState)
+	c.sigFPState = append(c.sigFPState, c.fpState)
 	// Signal handler gets a clean floating point state.
-	c.aarch64FPState = newAarch64FPState()
+	c.fpState = fpu.NewState()
 	return nil
 }
 
@@ -166,7 +167,7 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalSt
 	// Restore floating point state.
 	l := len(c.sigFPState)
 	if l > 0 {
-		c.aarch64FPState = c.sigFPState[l-1]
+		c.fpState = c.sigFPState[l-1]
 		// NOTE(cl/133042258): State save requires that any slice
 		// elements from '[len:cap]' to be zero value.
 		c.sigFPState[l-1] = nil

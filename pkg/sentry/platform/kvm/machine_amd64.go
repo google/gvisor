@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -70,7 +71,7 @@ type vCPUArchState struct {
 
 	// floatingPointState is the floating point state buffer used in guest
 	// to host transitions. See usage in bluepill_amd64.go.
-	floatingPointState *arch.FloatingPointData
+	floatingPointState fpu.State
 }
 
 const (
@@ -151,7 +152,7 @@ func (c *vCPU) initArchState() error {
 	// This will be saved prior to leaving the guest, and we restore from
 	// this always. We cannot use the pointer in the context alone because
 	// we don't know how large the area there is in reality.
-	c.floatingPointState = arch.NewFloatingPointData()
+	c.floatingPointState = fpu.NewState()
 
 	// Set the time offset to the host native time.
 	return c.setSystemTime()

@@ -65,7 +65,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	// Prepare switch options.
 	switchOpts := ring0.SwitchOpts{
 		Registers:          &ac.StateData().Regs,
-		FloatingPointState: (*byte)(ac.FloatingPointData()),
+		FloatingPointState: ac.FloatingPointData(),
 		PageTables:         localAS.pageTables,
 		Flush:              localAS.Touch(cpu),
 		FullRestore:        ac.FullRestore(),
