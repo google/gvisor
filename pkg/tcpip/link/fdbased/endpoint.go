@@ -41,6 +41,8 @@ package fdbased
 
 import (
 	"fmt"
+	"math"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
@@ -188,7 +190,9 @@ type Options struct {
 // set of FD's that point to the same NIC. Trying to set the PACKET_FANOUT
 // option for an FD with a fanoutID already in use by another FD for a different
 // NIC will return an EINVAL.
-var fanoutID = 1
+//
+// Must be accessed using atomic operations.
+var fanoutID int32 = 0
 
 // New creates a new fd-based endpoint.
 //
@@ -233,6 +237,10 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		packetDispatchMode: opts.PacketDispatchMode,
 	}
 
+	// Increment fanoutID to ensure that we don't re-use the same fanoutID for
+	// the next endpoint.
+	fid := atomic.AddInt32(&fanoutID, 1)
+
 	// Create per channel dispatchers.
 	for i := 0; i < len(e.fds); i++ {
 		fd := e.fds[i]
@@ -254,21 +262,17 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
 		}
-		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket)
+		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid)
 		if err != nil {
 			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
 
-	// Increment fanoutID to ensure that we don't re-use the same fanoutID for
-	// the next endpoint.
-	fanoutID++
-
 	return e, nil
 }
 
-func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher, error) {
+func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (linkDispatcher, error) {
 	// By default use the readv() dispatcher as it works with all kinds of
 	// FDs (tap/tun/unix domain sockets and af_packet).
 	inboundDispatcher, err := newReadVDispatcher(fd, e)
@@ -283,13 +287,32 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 		}
 		switch sa.(type) {
 		case *unix.SockaddrLinklayer:
+			// See: PACKET_FANOUT_MAX in net/packet/internal.h
+			const packetFanoutMax = 1 << 16
+			if fID > packetFanoutMax {
+				return nil, fmt.Errorf("host fanoutID limit exceeded, fanoutID must be <= %d", math.MaxUint16)
+			}
 			// Enable PACKET_FANOUT mode if the underlying socket is of type
 			// AF_PACKET. We do not enable PACKET_FANOUT_FLAG_DEFRAG as that will
 			// prevent gvisor from receiving fragmented packets and the host does the
 			// reassembly on our behalf before delivering the fragments. This makes it
 			// hard to test fragmentation reassembly code in Netstack.
+			//
+			// See: include/uapi/linux/if_packet.h (struct fanout_args).
+			//
+			// NOTE: We are using SetSockOptInt here even though the underlying
+			// option is actually a struct. The code follows the example in the
+			// kernel documentation as described at the link below:
+			//
+			// See: https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+			//
+			// This works out because the actual implementation for the option zero
+			// initializes the structure and will initialize the max_members field
+			// to a proper value if zero.
+			//
+			// See: https://github.com/torvalds/linux/blob/7acac4b3196caee5e21fb5ea53f8bc124e6a16fc/net/packet/af_packet.c#L3881
 			const fanoutType = unix.PACKET_FANOUT_HASH
-			fanoutArg := fanoutID | fanoutType<<16
+			fanoutArg := int(fID) | fanoutType<<16
 			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
 			}
