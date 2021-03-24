@@ -121,8 +121,8 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkH
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
-	b[dstAddrOffset] = r.RemoteAddress[0]
-	b[srcAddrOffset] = r.LocalAddress[0]
+	b[dstAddrOffset] = r.RemoteAddress()[0]
+	b[srcAddrOffset] = r.LocalAddress()[0]
 	b[protocolNumberOffset] = byte(params.Protocol)
 
 	return f.nic.WritePacket(r, gso, fwdTestNetNumber, pkt)

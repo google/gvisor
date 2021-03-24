@@ -554,8 +554,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		na.Options().Serialize(optsSerializer)
 		packet.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 			Header: packet,
-			Src:    r.LocalAddress,
-			Dst:    r.RemoteAddress,
+			Src:    r.LocalAddress(),
+			Dst:    r.RemoteAddress(),
 		}))
 
 		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
@@ -699,8 +699,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		dataRange := replyPkt.Data().AsRange()
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 			Header:      icmp,
-			Src:         r.LocalAddress,
-			Dst:         r.RemoteAddress,
+			Src:         r.LocalAddress(),
+			Dst:         r.RemoteAddress(),
 			PayloadCsum: dataRange.Checksum(),
 			PayloadLen:  dataRange.Size(),
 		}))
@@ -1161,8 +1161,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	dataRange := newPkt.Data().AsRange()
 	icmpHdr.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      icmpHdr,
-		Src:         route.LocalAddress,
-		Dst:         route.RemoteAddress,
+		Src:         route.LocalAddress(),
+		Dst:         route.RemoteAddress(),
 		PayloadCsum: dataRange.Checksum(),
 		PayloadLen:  dataRange.Size(),
 	}))

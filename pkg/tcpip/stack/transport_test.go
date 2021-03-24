@@ -92,7 +92,7 @@ func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResu
 }
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
-	if len(f.route.RemoteAddress) == 0 {
+	if len(f.route.RemoteAddress()) == 0 {
 		return 0, &tcpip.ErrNoRoute{}
 	}
 
@@ -230,7 +230,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 			NetProto: f.NetProto,
 		},
 		proto:    f.proto,
-		peerAddr: route.RemoteAddress,
+		peerAddr: route.RemoteAddress(),
 		route:    route,
 	}
 	ep.ops.InitHandler(ep, f.proto.stack, tcpip.GetStackSendBufferLimits)

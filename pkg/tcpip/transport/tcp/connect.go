@@ -811,7 +811,7 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stac
 		tf.rcvWnd = math.MaxUint16
 	}
 
-	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
+	if r.Loop()&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
 		return sendTCPBatch(r, tf, data, gso, owner)
 	}
 

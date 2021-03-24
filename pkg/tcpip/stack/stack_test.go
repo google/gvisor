@@ -172,20 +172,20 @@ func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumbe
 
 func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
-	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
+	f.proto.sendPacketCount[int(r.RemoteAddress()[0])%len(f.proto.sendPacketCount)]++
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	hdr := pkt.NetworkHeader().Push(fakeNetHeaderLen)
 	pkt.NetworkProtocolNumber = fakeNetNumber
-	hdr[dstAddrOffset] = r.RemoteAddress[0]
-	hdr[srcAddrOffset] = r.LocalAddress[0]
+	hdr[dstAddrOffset] = r.RemoteAddress()[0]
+	hdr[srcAddrOffset] = r.LocalAddress()[0]
 	hdr[protocolNumberOffset] = byte(params.Protocol)
 
-	if r.Loop&stack.PacketLoop != 0 {
+	if r.Loop()&stack.PacketLoop != 0 {
 		f.HandlePacket(pkt.Clone())
 	}
-	if r.Loop&stack.PacketOut == 0 {
+	if r.Loop()&stack.PacketOut == 0 {
 		return nil
 	}
 
@@ -597,12 +597,12 @@ func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, 
 
 	defer r.Release()
 
-	if r.LocalAddress != expectedSrcAddr {
-		t.Fatalf("Bad source address: expected %v, got %v", expectedSrcAddr, r.LocalAddress)
+	if r.LocalAddress() != expectedSrcAddr {
+		t.Fatalf("got Route.LocalAddress() = %s, want = %s", expectedSrcAddr, r.LocalAddress())
 	}
 
-	if r.RemoteAddress != dstAddr {
-		t.Fatalf("Bad destination address: expected %v, got %v", dstAddr, r.RemoteAddress)
+	if r.RemoteAddress() != dstAddr {
+		t.Fatalf("got Route.RemoteAddress() = %s, want = %s", dstAddr, r.RemoteAddress())
 	}
 }
 
@@ -1451,11 +1451,11 @@ func TestExternalSendWithHandleLocal(t *testing.T) {
 					}
 					defer r.Release()
 
-					if r.LocalAddress != localAddr {
-						t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, localAddr)
+					if r.LocalAddress() != localAddr {
+						t.Errorf("got r.LocalAddress() = %s, want = %s", r.LocalAddress(), localAddr)
 					}
-					if r.RemoteAddress != dstAddr {
-						t.Errorf("got r.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
+					if r.RemoteAddress() != dstAddr {
+						t.Errorf("got r.RemoteAddress() = %s, want = %s", r.RemoteAddress(), dstAddr)
 					}
 
 					if n := ep.Drain(); n != 0 {
@@ -1522,11 +1522,11 @@ func TestSpoofingWithAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal("FindRoute failed:", err)
 	}
-	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
+	if r.LocalAddress() != nonExistentLocalAddr {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nonExistentLocalAddr)
 	}
-	if r.RemoteAddress != dstAddr {
-		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
+	if r.RemoteAddress() != dstAddr {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), dstAddr)
 	}
 	// Sending a packet works.
 	testSendTo(t, s, dstAddr, ep, nil)
@@ -1537,11 +1537,11 @@ func TestSpoofingWithAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal("FindRoute failed:", err)
 	}
-	if r.LocalAddress != localAddr {
-		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
+	if r.LocalAddress() != localAddr {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nonExistentLocalAddr)
 	}
-	if r.RemoteAddress != dstAddr {
-		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
+	if r.RemoteAddress() != dstAddr {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), dstAddr)
 	}
 	// Sending a packet using the route works.
 	testSend(t, r, ep, nil)
@@ -1586,31 +1586,15 @@ func TestSpoofingNoAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal("FindRoute failed:", err)
 	}
-	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
+	if r.LocalAddress() != nonExistentLocalAddr {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nonExistentLocalAddr)
 	}
-	if r.RemoteAddress != dstAddr {
-		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
+	if r.RemoteAddress() != dstAddr {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), dstAddr)
 	}
 	// Sending a packet works.
 	// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 	// testSendTo(t, s, remoteAddr, ep, nil)
-}
-
-func verifyRoute(gotRoute, wantRoute *stack.Route) error {
-	if gotRoute.LocalAddress != wantRoute.LocalAddress {
-		return fmt.Errorf("bad local address: got %s, want = %s", gotRoute.LocalAddress, wantRoute.LocalAddress)
-	}
-	if gotRoute.RemoteAddress != wantRoute.RemoteAddress {
-		return fmt.Errorf("bad remote address: got %s, want = %s", gotRoute.RemoteAddress, wantRoute.RemoteAddress)
-	}
-	if got, want := gotRoute.RemoteLinkAddress(), wantRoute.RemoteLinkAddress(); got != want {
-		return fmt.Errorf("bad remote link address: got %s, want = %s", got, want)
-	}
-	if gotRoute.NextHop != wantRoute.NextHop {
-		return fmt.Errorf("bad next-hop address: got %s, want = %s", gotRoute.NextHop, wantRoute.NextHop)
-	}
-	return nil
 }
 
 func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
@@ -1640,11 +1624,12 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	var wantRoute stack.Route
-	wantRoute.LocalAddress = header.IPv4Any
-	wantRoute.RemoteAddress = header.IPv4Broadcast
-	if err := verifyRoute(r, &wantRoute); err != nil {
-		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
+	if r.LocalAddress() != header.IPv4Any {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), header.IPv4Any)
+	}
+
+	if r.RemoteAddress() != header.IPv4Broadcast {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), header.IPv4Broadcast)
 	}
 
 	// If the NIC doesn't exist, it won't work.
@@ -1700,11 +1685,12 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(1, %v, %v, %d) failed: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	var wantRoute stack.Route
-	wantRoute.LocalAddress = nic1Addr.Address
-	wantRoute.RemoteAddress = header.IPv4Broadcast
-	if err := verifyRoute(r, &wantRoute); err != nil {
-		t.Errorf("FindRoute(1, %v, %v, %d) returned unexpected Route: %v", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
+	if r.LocalAddress() != nic1Addr.Address {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nic1Addr.Address)
+	}
+
+	if r.RemoteAddress() != header.IPv4Broadcast {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), header.IPv4Broadcast)
 	}
 
 	// When an interface is not given, it consults the route table.
@@ -1713,11 +1699,12 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	wantRoute = stack.Route{}
-	wantRoute.LocalAddress = nic2Addr.Address
-	wantRoute.RemoteAddress = header.IPv4Broadcast
-	if err := verifyRoute(r, &wantRoute); err != nil {
-		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
+	if r.LocalAddress() != nic2Addr.Address {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nic2Addr.Address)
+	}
+
+	if r.RemoteAddress() != header.IPv4Broadcast {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), header.IPv4Broadcast)
 	}
 
 	// 2. Case: Having an explicit route for broadcast will select that one.
@@ -1732,11 +1719,12 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
 	}
-	wantRoute = stack.Route{}
-	wantRoute.LocalAddress = nic1Addr.Address
-	wantRoute.RemoteAddress = header.IPv4Broadcast
-	if err := verifyRoute(r, &wantRoute); err != nil {
-		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
+	if r.LocalAddress() != nic1Addr.Address {
+		t.Errorf("got Route.LocalAddress() = %s, want = %s", r.LocalAddress(), nic1Addr.Address)
+	}
+
+	if r.RemoteAddress() != header.IPv4Broadcast {
+		t.Errorf("got Route.RemoteAddress() = %s, want = %s", r.RemoteAddress(), header.IPv4Broadcast)
 	}
 }
 
@@ -1817,11 +1805,11 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 				if err != nil {
 					t.Fatalf("FindRoute(1, %v, %v, %v) failed: %v", anyAddr, tc.address, fakeNetNumber, err)
 				}
-				if r.LocalAddress != anyAddr {
-					t.Errorf("Bad local address: got %v, want = %v", r.LocalAddress, anyAddr)
+				if r.LocalAddress() != anyAddr {
+					t.Errorf("Bad local address: got %v, want = %v", r.LocalAddress(), anyAddr)
 				}
-				if r.RemoteAddress != tc.address {
-					t.Errorf("Bad remote address: got %v, want = %v", r.RemoteAddress, tc.address)
+				if r.RemoteAddress() != tc.address {
+					t.Errorf("Bad remote address: got %v, want = %v", r.RemoteAddress(), tc.address)
 				}
 			}
 			// If the NIC doesn't exist, it won't work.
@@ -3654,23 +3642,23 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FindRoute(%d, '', %s, %d): %s", unspecifiedNICID, test.remoteAddr, netProto, err)
 			}
-			if r.LocalAddress != test.expectedLocalAddress {
-				t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, test.expectedLocalAddress)
+			if r.LocalAddress() != test.expectedLocalAddress {
+				t.Errorf("got r.LocalAddress() = %s, want = %s", r.LocalAddress(), test.expectedLocalAddress)
 			}
-			if r.RemoteAddress != test.expectedRemoteAddress {
-				t.Errorf("got r.RemoteAddress = %s, want = %s", r.RemoteAddress, test.expectedRemoteAddress)
+			if r.RemoteAddress() != test.expectedRemoteAddress {
+				t.Errorf("got r.RemoteAddress = %s, want = %s", r.RemoteAddress(), test.expectedRemoteAddress)
 			}
 			if got := r.RemoteLinkAddress(); got != test.expectedRemoteLinkAddress {
 				t.Errorf("got r.RemoteLinkAddress() = %s, want = %s", got, test.expectedRemoteLinkAddress)
 			}
-			if r.NextHop != test.expectedNextHop {
-				t.Errorf("got r.NextHop = %s, want = %s", r.NextHop, test.expectedNextHop)
+			if r.NextHop() != test.expectedNextHop {
+				t.Errorf("got r.NextHop() = %s, want = %s", r.NextHop(), test.expectedNextHop)
 			}
-			if r.NetProto != test.expectedNetProto {
-				t.Errorf("got r.NetProto = %d, want = %d", r.NetProto, test.expectedNetProto)
+			if r.NetProto() != test.expectedNetProto {
+				t.Errorf("got r.NetProto() = %d, want = %d", r.NetProto(), test.expectedNetProto)
 			}
-			if r.Loop != test.expectedLoop {
-				t.Errorf("got r.Loop = %x, want = %x", r.Loop, test.expectedLoop)
+			if r.Loop() != test.expectedLoop {
+				t.Errorf("got r.Loop() = %x, want = %x", r.Loop(), test.expectedLoop)
 			}
 		})
 	}
@@ -4245,11 +4233,11 @@ func TestFindRouteWithForwarding(t *testing.T) {
 				return
 			}
 
-			if r.LocalAddress != test.localAddr {
-				t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, test.localAddr)
+			if r.LocalAddress() != test.localAddr {
+				t.Errorf("got r.LocalAddress() = %s, want = %s", r.LocalAddress(), test.localAddr)
 			}
-			if r.RemoteAddress != test.netCfg.remoteAddr {
-				t.Errorf("got r.RemoteAddress = %s, want = %s", r.RemoteAddress, test.netCfg.remoteAddr)
+			if r.RemoteAddress() != test.netCfg.remoteAddr {
+				t.Errorf("got r.RemoteAddress() = %s, want = %s", r.RemoteAddress(), test.netCfg.remoteAddr)
 			}
 
 			if t.Failed() {
