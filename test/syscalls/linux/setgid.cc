@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <limits.h>
+#include <linux/capability.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -169,6 +170,7 @@ class SetgidDirTest : public ::testing::Test {
 
 // The control test. Files created with a given GID are owned by that group.
 TEST_F(SetgidDirTest, Control) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1 and create a directory.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, 0777));
@@ -183,6 +185,7 @@ TEST_F(SetgidDirTest, Control) {
 
 // Setgid directories cause created files to inherit GID.
 TEST_F(SetgidDirTest, CreateFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1, create a directory, and enable setgid.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeSgid));
@@ -198,6 +201,7 @@ TEST_F(SetgidDirTest, CreateFile) {
 
 // Setgid directories cause created directories to inherit GID.
 TEST_F(SetgidDirTest, CreateDir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1, create a directory, and enable setgid.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeSgid));
@@ -214,6 +218,7 @@ TEST_F(SetgidDirTest, CreateDir) {
 
 // Setgid directories with group execution disabled still cause GID inheritance.
 TEST_F(SetgidDirTest, NoGroupExec) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1, create a directory, and enable setgid.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeNoExec));
@@ -231,6 +236,7 @@ TEST_F(SetgidDirTest, NoGroupExec) {
 // Setting the setgid bit on directories with an existing file does not change
 // the file's group.
 TEST_F(SetgidDirTest, OldFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1 and create a directory.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeNoSgid));
@@ -254,6 +260,7 @@ TEST_F(SetgidDirTest, OldFile) {
 // Setting the setgid bit on directories with an existing subdirectory does not
 // change the subdirectory's group.
 TEST_F(SetgidDirTest, OldDir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
   // Set group to G1, create a directory, and enable setgid.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
   ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeNoSgid));
