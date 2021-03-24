@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -62,9 +63,9 @@ func (t *thread) setRegs(regs *arch.Registers) error {
 }
 
 // getFPRegs gets the floating-point data via the GETREGSET ptrace unix.
-func (t *thread) getFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsave bool) error {
+func (t *thread) getFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) error {
 	iovec := unix.Iovec{
-		Base: (*byte)(fpState),
+		Base: fpState.BytePointer(),
 		Len:  fpLen,
 	}
 	_, _, errno := unix.RawSyscall6(
@@ -81,9 +82,9 @@ func (t *thread) getFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsa
 }
 
 // setFPRegs sets the floating-point data via the SETREGSET ptrace unix.
-func (t *thread) setFPRegs(fpState *arch.FloatingPointData, fpLen uint64, useXsave bool) error {
+func (t *thread) setFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) error {
 	iovec := unix.Iovec{
-		Base: (*byte)(fpState),
+		Base: fpState.BytePointer(),
 		Len:  fpLen,
 	}
 	_, _, errno := unix.RawSyscall6(
