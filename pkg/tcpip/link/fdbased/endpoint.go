@@ -410,7 +410,7 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) WritePacket(r stack.RouteInfo, gso stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.hdrSize > 0 {
 		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
 	}
@@ -420,7 +420,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
-		if gso != nil {
+		if gso.Type != stack.GSONone {
 			vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 			if gso.NeedsCsum {
 				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
@@ -461,7 +461,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcp
 		var vnetHdrBuf []byte
 		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			vnetHdr := virtioNetHdr{}
-			if pkt.GSOOptions != nil {
+			if pkt.GSOOptions.Type != stack.GSONone {
 				vnetHdr.hdrLen = uint16(pkt.HeaderSize())
 				if pkt.GSOOptions.NeedsCsum {
 					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
@@ -517,7 +517,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcp
 //  - pkt.EgressRoute
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(_ stack.RouteInfo, _ *stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *endpoint) WritePackets(_ stack.RouteInfo, _ stack.GSO, pkts stack.PacketBufferList, _ tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	// Preallocate to avoid repeated reallocation as we append to batch.
 	// batchSz is 47 because when SWGSO is in use then a single 65KB TCP
 	// segment can get split into 46 segments of 1420 bytes and a single 216

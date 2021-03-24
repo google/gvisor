@@ -46,7 +46,7 @@ func (p *PacketBufferList) len() int {
 
 type pendingPacket struct {
 	routeInfo RouteInfo
-	gso       *GSO
+	gso       GSO
 	proto     tcpip.NetworkProtocolNumber
 	pkt       pendingPacketBuffer
 }
@@ -119,7 +119,7 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 // If the maximum number of pending resolutions is reached, the packets
 // associated with the oldest link resolution will be dequeued as if they failed
 // link resolution.
-func (f *packetsPendingLinkResolution) enqueue(r *Route, gso *GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+func (f *packetsPendingLinkResolution) enqueue(r *Route, gso GSO, proto tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	f.mu.Lock()
 	// Make sure we attempt resolution while holding f's lock so that we avoid
 	// a race where link resolution completes before we enqueue the packets.

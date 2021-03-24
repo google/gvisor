@@ -331,7 +331,7 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) []byte {
 	vv := buffer.NewVectorisedView(p.Pkt.Size(), p.Pkt.Views())
 	b := vv.ToView()
 
-	if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
+	if p.GSO.Type != stack.GSONone && p.GSO.L3HdrLen != header.IPv4MinimumSize {
 		c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
 	}
 

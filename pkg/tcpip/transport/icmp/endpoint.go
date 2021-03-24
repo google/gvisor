@@ -430,7 +430,7 @@ func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, owner tcpi
 		ttl = r.DefaultTTL()
 	}
 
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
+	if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
 		r.Stats().ICMP.V4.PacketsSent.Dropped.Increment()
 		return err
 	}
@@ -477,7 +477,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) tcpip.Erro
 		ttl = r.DefaultTTL()
 	}
 
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
+	if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, pkt); err != nil {
 		r.Stats().ICMP.V6.PacketsSent.Dropped.Increment()
 	}
 

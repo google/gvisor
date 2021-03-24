@@ -170,7 +170,7 @@ func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumbe
 	return f.proto.Number()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso stack.GSO, params stack.NetworkHeaderParams, pkt *stack.PacketBuffer) tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
 
@@ -190,11 +190,6 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, params
 	}
 
 	return f.nic.WritePacket(r, gso, fakeNetNumber, pkt)
-}
-
-// WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, tcpip.Error) {
-	panic("not implemented")
 }
 
 func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
@@ -436,7 +431,7 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) tcpip.Error
 }
 
 func send(r *stack.Route, payload buffer.View) tcpip.Error {
-	return r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	return r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               payload.ToVectorisedView(),
 	}))
@@ -1461,7 +1456,7 @@ func TestExternalSendWithHandleLocal(t *testing.T) {
 					if n := ep.Drain(); n != 0 {
 						t.Fatalf("got ep.Drain() = %d, want = 0", n)
 					}
-					if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+					if err := r.WritePacket(stack.GSO{}, stack.NetworkHeaderParams{
 						Protocol: fakeTransNumber,
 						TTL:      123,
 						TOS:      stack.DefaultTOS,
@@ -1469,7 +1464,7 @@ func TestExternalSendWithHandleLocal(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength()),
 						Data:               buffer.NewView(10).ToVectorisedView(),
 					})); err != nil {
-						t.Fatalf("r.WritePacket(nil, _, _): %s", err)
+						t.Fatalf("r.WritePacket(...): %s", err)
 					}
 					if n := ep.Drain(); n != 1 {
 						t.Fatalf("got ep.Drain() = %d, want = 1", n)

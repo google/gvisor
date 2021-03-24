@@ -259,7 +259,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 	}, extensionHeaders); err != nil {
 		panic(fmt.Sprintf("failed to add IP header: %s", err))
 	}
-	if err := mld.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(destAddress), nil /* gso */, ProtocolNumber, pkt); err != nil {
+	if err := mld.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(destAddress), stack.GSO{}, ProtocolNumber, pkt); err != nil {
 		sentStats.dropped.Increment()
 		return false, err
 	}
