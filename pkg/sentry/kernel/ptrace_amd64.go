@@ -51,14 +51,15 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data usermem.Addr) erro
 		return err
 
 	case linux.PTRACE_GETFPREGS:
-		_, err := target.Arch().PtraceGetFPRegs(&usermem.IOReadWriter{
+		s := target.Arch().FloatingPointData()
+		_, err := target.Arch().FloatingPointData().PtraceGetFPRegs(&usermem.IOReadWriter{
 			Ctx:  t,
 			IO:   t.MemoryManager(),
 			Addr: data,
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		})
+		}, len(*s))
 		return err
 
 	case linux.PTRACE_SETREGS:
@@ -73,14 +74,15 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data usermem.Addr) erro
 		return err
 
 	case linux.PTRACE_SETFPREGS:
-		_, err := target.Arch().PtraceSetFPRegs(&usermem.IOReadWriter{
+		s := target.Arch().FloatingPointData()
+		_, err := s.PtraceSetFPRegs(&usermem.IOReadWriter{
 			Ctx:  t,
 			IO:   t.MemoryManager(),
 			Addr: data,
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		})
+		}, len(*s))
 		return err
 
 	default:

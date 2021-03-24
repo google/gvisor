@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"io"
 	"reflect"
@@ -195,7 +196,7 @@ type SwitchOpts struct {
 
 	// FloatingPointState is a byte pointer where floating point state is
 	// saved and restored.
-	FloatingPointState *byte
+	FloatingPointState *fpu.State
 
 	// PageTables are the application page tables.
 	PageTables *pagetables.PageTables
