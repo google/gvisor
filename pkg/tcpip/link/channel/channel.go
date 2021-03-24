@@ -30,7 +30,6 @@ import (
 type PacketInfo struct {
 	Pkt   *stack.PacketBuffer
 	Proto tcpip.NetworkProtocolNumber
-	GSO   *stack.GSO
 	Route stack.RouteInfo
 }
 
@@ -229,11 +228,10 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *Endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	p := PacketInfo{
 		Pkt:   pkt,
 		Proto: protocol,
-		GSO:   gso,
 		Route: r,
 	}
 
@@ -243,13 +241,12 @@ func (e *Endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 }
 
 // WritePackets stores outbound packets into the channel.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	n := 0
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		p := PacketInfo{
 			Pkt:   pkt,
 			Proto: protocol,
-			GSO:   gso,
 			Route: r,
 		}
 

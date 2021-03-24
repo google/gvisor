@@ -16,6 +16,8 @@
 package udp
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -43,6 +45,9 @@ const (
 	// MaxBufferSize is the largest size a receive/send buffer can grow to.
 	MaxBufferSize = 4 << 20 // 4MiB
 )
+
+var _ stack.TransportProtocol = (*protocol)(nil)
+var _ stack.ChecksummableTransportProtocol = (*protocol)(nil)
 
 type protocol struct {
 	stack *stack.Stack
@@ -117,4 +122,27 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 	return &protocol{stack: s}
+}
+
+// UpdateTransportChecksum implements stack.ChecksummableTransportProtocol.
+func (*protocol) UpdateTransportChecksum(pkt *stack.PacketBuffer, target stack.TransportChecksumStatus) {
+	u := header.UDP(pkt.TransportHeader().View())
+
+	switch target {
+	case stack.TransportChecksumNone:
+		panic("stack.TransportChecksumNone should never be a target checksum status")
+	case stack.TransportChecksumNotNeeded:
+		u.SetChecksum(0)
+	case stack.TransportChecksumPartial, stack.TransportChecksumCalculated:
+		net := pkt.Network()
+		u.SetChecksum(header.PseudoHeaderChecksum(ProtocolNumber, net.SourceAddress(), net.DestinationAddress(), uint16(pkt.Data().Size()+len(u))))
+
+		if target == stack.TransportChecksumCalculated {
+			u.SetChecksum(^u.CalculateChecksum(pkt.Data().AsRange().Checksum()))
+		}
+	default:
+		panic(fmt.Sprintf("unhandled TargetTransportChecksumStatus = %d", target))
+	}
+
+	pkt.TransportChecksumStatus = target
 }
