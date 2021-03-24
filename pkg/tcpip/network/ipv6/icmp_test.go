@@ -510,8 +510,8 @@ func TestLinkResolution(t *testing.T) {
 	pkt.SetType(header.ICMPv6EchoRequest)
 	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header: pkt,
-		Src:    r.LocalAddress,
-		Dst:    r.RemoteAddress,
+		Src:    r.LocalAddress(),
+		Dst:    r.RemoteAddress(),
 	}))
 
 	// We can't send our payload directly over the route because that

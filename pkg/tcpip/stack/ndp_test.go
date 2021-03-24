@@ -578,8 +578,8 @@ func TestDADResolve(t *testing.T) {
 				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
 				if err != nil {
 					t.Errorf("got FindRoute(%d, '', %s, %d, false): %s", nicID, addr2, header.IPv6ProtocolNumber, err)
-				} else if r.LocalAddress != addr1 {
-					t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, addr1)
+				} else if r.LocalAddress() != addr1 {
+					t.Errorf("got r.LocalAddress() = %s, want = %s", r.LocalAddress(), addr1)
 				}
 				r.Release()
 			}
@@ -587,8 +587,8 @@ func TestDADResolve(t *testing.T) {
 				r, err := s.FindRoute(nicID, addr1, addr2, header.IPv6ProtocolNumber, false)
 				if err != nil {
 					t.Errorf("got FindRoute(%d, %s, %s, %d, false): %s", nicID, addr1, addr2, header.IPv6ProtocolNumber, err)
-				} else if r.LocalAddress != addr1 {
-					t.Errorf("got r.LocalAddress = %s, want = %s", r.LocalAddress, addr1)
+				} else if r.LocalAddress() != addr1 {
+					t.Errorf("got r.LocalAddress() = %s, want = %s", r.LocalAddress(), addr1)
 				}
 				if r != nil {
 					r.Release()

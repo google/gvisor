@@ -82,7 +82,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			panic(err)
 		}
 
-		e.ID.LocalAddress = e.route.LocalAddress
+		e.ID.LocalAddress = e.route.LocalAddress()
 	} else if len(e.ID.LocalAddress) != 0 { // stateBound
 		if e.stack.CheckLocalAddress(e.RegisterNICID, e.NetProto, e.ID.LocalAddress) == 0 {
 			panic(&tcpip.ErrBadLocalAddress{})

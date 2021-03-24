@@ -305,8 +305,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 		// We need to produce the entire packet in the data segment in order to
 		// use WriteHeaderIncludedPacket(). WriteHeaderIncludedPacket sets the
 		// total length and the header checksum so we don't need to set those here.
-		replyIPHdr.SetSourceAddress(r.LocalAddress)
-		replyIPHdr.SetDestinationAddress(r.RemoteAddress)
+		replyIPHdr.SetSourceAddress(r.LocalAddress())
+		replyIPHdr.SetDestinationAddress(r.RemoteAddress())
 		replyIPHdr.SetTTL(r.DefaultTTL())
 
 		replyICMPHdr := header.ICMPv4(replyData)
