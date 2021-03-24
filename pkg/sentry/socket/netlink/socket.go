@@ -176,10 +176,10 @@ func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
 	// ep holds messages to be read and thus handles EventIn readiness.
 	ready := s.ep.Readiness(mask)
 
-	if mask&waiter.EventOut == waiter.EventOut {
+	if mask&waiter.WritableEvents != 0 {
 		// sendMsg handles messages synchronously and is thus always
 		// ready for writing.
-		ready |= waiter.EventOut
+		ready |= waiter.WritableEvents
 	}
 
 	return ready
@@ -544,7 +544,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	// We'll have to block. Register for notification and keep trying to
 	// receive all the data.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventIn)
+	s.EventRegister(&e, waiter.ReadableEvents)
 	defer s.EventUnregister(&e)
 
 	for {

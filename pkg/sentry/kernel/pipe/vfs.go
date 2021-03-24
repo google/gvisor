@@ -194,11 +194,11 @@ func (fd *VFSPipeFD) Release(context.Context) {
 	var event waiter.EventMask
 	if fd.vfsfd.IsReadable() {
 		fd.pipe.rClose()
-		event |= waiter.EventOut
+		event |= waiter.WritableEvents
 	}
 	if fd.vfsfd.IsWritable() {
 		fd.pipe.wClose()
-		event |= waiter.EventIn | waiter.EventHUp
+		event |= waiter.ReadableEvents | waiter.EventHUp
 	}
 	if event == 0 {
 		panic("invalid pipe flags: must be readable, writable, or both")
@@ -293,7 +293,7 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 	fd.pipe.mu.Unlock()
 
 	if n > 0 {
-		fd.pipe.Notify(waiter.EventOut)
+		fd.pipe.Notify(waiter.WritableEvents)
 	}
 	return n, err
 }
@@ -318,14 +318,14 @@ func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescript
 	fd.pipe.mu.Unlock()
 
 	if n > 0 {
-		fd.pipe.Notify(waiter.EventIn)
+		fd.pipe.Notify(waiter.ReadableEvents)
 	}
 	return n, err
 }
 
 // CopyIn implements usermem.IO.CopyIn. Note that it is the caller's
 // responsibility to call fd.pipe.consumeLocked() and
-// fd.pipe.Notify(waiter.EventOut) after the read is completed.
+// fd.pipe.Notify(waiter.WritableEvents) after the read is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
@@ -336,8 +336,8 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, 
 }
 
 // CopyOut implements usermem.IO.CopyOut. Note that it is the caller's
-// responsibility to call fd.pipe.Notify(waiter.EventIn) after the
-// write is completed.
+// responsibility to call fd.pipe.Notify(waiter.ReadableEvents) after the write
+// is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
@@ -359,7 +359,7 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int6
 
 // CopyInTo implements usermem.IO.CopyInTo. Note that it is the caller's
 // responsibility to call fd.pipe.consumeLocked() and
-// fd.pipe.Notify(waiter.EventOut) after the read is completed.
+// fd.pipe.Notify(waiter.WritableEvents) after the read is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
@@ -369,8 +369,8 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom. Note that it is the caller's
-// responsibility to call fd.pipe.Notify(waiter.EventIn) after the write is
-// completed.
+// responsibility to call fd.pipe.Notify(waiter.ReadableEvents) after the write
+// is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
@@ -431,9 +431,9 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 	src.pipe.mu.Unlock()
 
 	if n > 0 {
-		dst.pipe.Notify(waiter.EventIn)
+		dst.pipe.Notify(waiter.ReadableEvents)
 		if removeFromSrc {
-			src.pipe.Notify(waiter.EventOut)
+			src.pipe.Notify(waiter.WritableEvents)
 		}
 	}
 	return n, err

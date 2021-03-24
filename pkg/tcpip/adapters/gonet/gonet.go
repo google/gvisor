@@ -251,7 +251,7 @@ func (l *TCPListener) Accept() (net.Conn, error) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		l.wq.EventRegister(&waitEntry, waiter.EventIn)
+		l.wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
@@ -301,7 +301,7 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&waitEntry, waiter.EventIn)
+		wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 		defer wq.EventUnregister(&waitEntry)
 		for {
 			res, err = ep.Read(&w, opts)
@@ -382,7 +382,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 			if ch == nil {
 				entry, ch = waiter.NewChannelEntry(nil)
 
-				c.wq.EventRegister(&entry, waiter.EventOut)
+				c.wq.EventRegister(&entry, waiter.WritableEvents)
 				defer c.wq.EventUnregister(&entry)
 			} else {
 				// Don't wait immediately after registration in case more data
@@ -485,7 +485,7 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 	//
 	// We do this unconditionally as Connect will always return an error.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.EventOut)
+	wq.EventRegister(&waitEntry, waiter.WritableEvents)
 	defer wq.EventUnregister(&waitEntry)
 
 	select {
@@ -652,7 +652,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		c.wq.EventRegister(&waitEntry, waiter.EventOut)
+		c.wq.EventRegister(&waitEntry, waiter.WritableEvents)
 		defer c.wq.EventUnregister(&waitEntry)
 		for {
 			select {

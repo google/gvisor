@@ -39,14 +39,14 @@ func (p *Pipe) Release(context.Context) {
 	p.wClose()
 
 	// Wake up readers and writers.
-	p.Notify(waiter.EventIn | waiter.EventOut)
+	p.Notify(waiter.ReadableEvents | waiter.WritableEvents)
 }
 
 // Read reads from the Pipe into dst.
 func (p *Pipe) Read(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	n, err := dst.CopyOutFrom(ctx, p)
 	if n > 0 {
-		p.Notify(waiter.EventOut)
+		p.Notify(waiter.WritableEvents)
 	}
 	return n, err
 }
@@ -75,7 +75,7 @@ func (p *Pipe) WriteTo(ctx context.Context, w io.Writer, count int64, dup bool) 
 		return safemem.FromIOWriter{w}.WriteFromBlocks(srcs)
 	}, !dup /* removeFromSrc */)
 	if n > 0 && !dup {
-		p.Notify(waiter.EventOut)
+		p.Notify(waiter.WritableEvents)
 	}
 	return n, err
 }
@@ -84,7 +84,7 @@ func (p *Pipe) WriteTo(ctx context.Context, w io.Writer, count int64, dup bool) 
 func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	n, err := src.CopyInTo(ctx, p)
 	if n > 0 {
-		p.Notify(waiter.EventIn)
+		p.Notify(waiter.ReadableEvents)
 	}
 	return n, err
 }
@@ -109,7 +109,7 @@ func (p *Pipe) ReadFrom(ctx context.Context, r io.Reader, count int64) (int64, e
 		return safemem.FromIOReader{r}.ReadToBlocks(dsts)
 	})
 	if n > 0 {
-		p.Notify(waiter.EventIn)
+		p.Notify(waiter.ReadableEvents)
 	}
 	return n, err
 }

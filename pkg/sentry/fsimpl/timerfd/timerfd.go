@@ -105,7 +105,7 @@ func (tfd *TimerFileDescription) SetTime(s ktime.Setting) (ktime.Time, ktime.Set
 func (tfd *TimerFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 	if atomic.LoadUint64(&tfd.val) != 0 {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 	return ready
 }
@@ -138,7 +138,7 @@ func (tfd *TimerFileDescription) Release(context.Context) {
 // Notify implements ktime.TimerListener.Notify.
 func (tfd *TimerFileDescription) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	atomic.AddUint64(&tfd.val, exp)
-	tfd.events.Notify(waiter.EventIn)
+	tfd.events.Notify(waiter.ReadableEvents)
 	return ktime.Setting{}, false
 }
 

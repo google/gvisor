@@ -286,7 +286,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 	fs.umounted = true
 	fs.conn.Abort(ctx)
 	// Notify all the waiters on this fd.
-	fs.conn.fd.waitQueue.Notify(waiter.EventIn)
+	fs.conn.fd.waitQueue.Notify(waiter.ReadableEvents)
 
 	fs.conn.fd.mu.Unlock()
 
