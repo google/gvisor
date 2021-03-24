@@ -2211,8 +2211,8 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 	defer r.Release()
 
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
-	e.ID.LocalAddress = r.LocalAddress
-	e.ID.RemoteAddress = r.RemoteAddress
+	e.ID.LocalAddress = r.LocalAddress()
+	e.ID.RemoteAddress = r.RemoteAddress()
 	e.ID.RemotePort = addr.Port
 
 	if e.ID.LocalPort != 0 {
@@ -3102,7 +3102,7 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 
 func (e *endpoint) initHardwareGSO() {
 	gso := &stack.GSO{}
-	switch e.route.NetProto {
+	switch e.route.NetProto() {
 	case header.IPv4ProtocolNumber:
 		gso.Type = stack.GSOTCPv4
 		gso.L3HdrLen = header.IPv4MinimumSize

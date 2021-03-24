@@ -467,8 +467,8 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) tcpip.Erro
 	dataRange := pkt.Data().AsRange()
 	icmpv6.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      icmpv6,
-		Src:         r.LocalAddress,
-		Dst:         r.RemoteAddress,
+		Src:         r.LocalAddress(),
+		Dst:         r.RemoteAddress(),
 		PayloadCsum: dataRange.Checksum(),
 		PayloadLen:  dataRange.Size(),
 	}))
@@ -536,9 +536,9 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	}
 
 	id := stack.TransportEndpointID{
-		LocalAddress:  r.LocalAddress,
+		LocalAddress:  r.LocalAddress(),
 		LocalPort:     localPort,
-		RemoteAddress: r.RemoteAddress,
+		RemoteAddress: r.RemoteAddress(),
 	}
 
 	// Even if we're connected, this endpoint can still be used to send
