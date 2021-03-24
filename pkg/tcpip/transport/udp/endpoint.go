@@ -534,11 +534,11 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		if so.GetRecvError() {
 			so.QueueLocalErr(
 				&tcpip.ErrMessageTooLong{},
-				route.NetProto,
+				route.NetProto(),
 				header.UDPMaximumPacketSize,
 				tcpip.FullAddress{
 					NIC:  route.NICID(),
-					Addr: route.RemoteAddress,
+					Addr: route.RemoteAddress(),
 					Port: dstPort,
 				},
 				v,
@@ -550,7 +550,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	ttl := e.ttl
 	useDefaultTTL := ttl == 0
 
-	if header.IsV4MulticastAddress(route.RemoteAddress) || header.IsV6MulticastAddress(route.RemoteAddress) {
+	if header.IsV4MulticastAddress(route.RemoteAddress()) || header.IsV6MulticastAddress(route.RemoteAddress()) {
 		ttl = e.multicastTTL
 		// Multicast allows a 0 TTL.
 		useDefaultTTL = false
@@ -861,7 +861,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	// transmitter skipped the checksum generation (RFC768).
 	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
 	if r.RequiresTXTransportChecksum() &&
-		(!noChecksum || r.NetProto == header.IPv6ProtocolNumber) {
+		(!noChecksum || r.NetProto() == header.IPv6ProtocolNumber) {
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 		for _, v := range data.Views() {
 			xsum = header.Checksum(v, xsum)
@@ -992,11 +992,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 		LocalAddress:  e.ID.LocalAddress,
 		LocalPort:     localPort,
 		RemotePort:    addr.Port,
-		RemoteAddress: r.RemoteAddress,
+		RemoteAddress: r.RemoteAddress(),
 	}
 
 	if e.EndpointState() == StateInitial {
-		id.LocalAddress = r.LocalAddress
+		id.LocalAddress = r.LocalAddress()
 	}
 
 	// Even if we're connected, this endpoint can still be used to send
@@ -1204,7 +1204,7 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
 
 	addr := e.ID.LocalAddress
 	if e.EndpointState() == StateConnected {
-		addr = e.route.LocalAddress
+		addr = e.route.LocalAddress()
 	}
 
 	return tcpip.FullAddress{

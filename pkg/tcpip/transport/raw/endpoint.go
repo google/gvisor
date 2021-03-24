@@ -614,7 +614,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 
 	// If connected, only accept packets from the remote address we
 	// connected to.
-	if e.connected && e.route.RemoteAddress != remoteAddr {
+	if e.connected && e.route.RemoteAddress() != remoteAddr {
 		e.rcvMu.Unlock()
 		e.mu.RUnlock()
 		return
