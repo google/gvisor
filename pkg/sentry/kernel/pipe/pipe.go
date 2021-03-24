@@ -183,7 +183,7 @@ func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.F
 //
 // peekLocked does not mutate the pipe; if the read consumes bytes from the
 // pipe, then the caller is responsible for calling p.consumeLocked() and
-// p.Notify(waiter.EventOut). (The latter must be called with p.mu unlocked.)
+// p.Notify(waiter.WritableEvents). (The latter must be called with p.mu unlocked.)
 //
 // Preconditions:
 // * p.mu must be locked.
@@ -237,7 +237,7 @@ func (p *Pipe) consumeLocked(n int64) {
 // Unlike peekLocked, writeLocked assumes that f returns the number of bytes
 // written to the pipe, and increases the number of bytes stored in the pipe
 // accordingly. Callers are still responsible for calling
-// p.Notify(waiter.EventIn) with p.mu unlocked.
+// p.Notify(waiter.ReadableEvents) with p.mu unlocked.
 //
 // Preconditions:
 // * p.mu must be locked.
@@ -357,7 +357,7 @@ func (p *Pipe) HasWriters() bool {
 func (p *Pipe) rReadinessLocked() waiter.EventMask {
 	ready := waiter.EventMask(0)
 	if p.HasReaders() && p.size != 0 {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 	if !p.HasWriters() && p.hadWriter {
 		// POLLHUP must be suppressed until the pipe has had at least one writer
@@ -383,7 +383,7 @@ func (p *Pipe) rReadiness() waiter.EventMask {
 func (p *Pipe) wReadinessLocked() waiter.EventMask {
 	ready := waiter.EventMask(0)
 	if p.HasWriters() && p.size < p.max {
-		ready |= waiter.EventOut
+		ready |= waiter.WritableEvents
 	}
 	if !p.HasReaders() {
 		ready |= waiter.EventErr

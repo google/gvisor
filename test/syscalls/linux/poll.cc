@@ -64,7 +64,7 @@ TEST_F(PollTest, NegativeTimeout_NoRandomSave) {
   EXPECT_TRUE(TimerFired());
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLIN) {
+void NonBlockingReadableTest(int16_t mask) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -77,14 +77,24 @@ TEST_F(PollTest, NonBlockingEventPOLLIN) {
   ASSERT_THAT(WriteFd(fd1.get(), s, strlen(s) + 1), SyscallSucceeds());
 
   // Poll on the reader fd with POLLIN event.
-  struct pollfd poll_fd = {fd0.get(), POLLIN, 0};
+  struct pollfd poll_fd = {fd0.get(), mask, 0};
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 0), SyscallSucceedsWithValue(1));
 
   // Should trigger POLLIN event.
-  EXPECT_EQ(poll_fd.revents & POLLIN, POLLIN);
+  EXPECT_EQ(poll_fd.revents & mask, mask);
 }
 
-TEST_F(PollTest, BlockingEventPOLLIN) {
+TEST_F(PollTest, NonBlockingEventPOLLIN) { NonBlockingReadableTest(POLLIN); }
+
+TEST_F(PollTest, NonBlockingEventPOLLRDNORM) {
+  NonBlockingReadableTest(POLLRDNORM);
+}
+
+TEST_F(PollTest, NonBlockingEventPOLLRDNORM_POLLIN) {
+  NonBlockingReadableTest(POLLRDNORM | POLLIN);
+}
+
+void BlockingReadableTest(int16_t mask) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -94,15 +104,15 @@ TEST_F(PollTest, BlockingEventPOLLIN) {
 
   // Start a blocking poll on the read fd.
   absl::Notification notify;
-  ScopedThread t([&fd0, &notify]() {
+  ScopedThread t([&fd0, &notify, &mask]() {
     notify.Notify();
 
-    // Poll on the reader fd with POLLIN event.
-    struct pollfd poll_fd = {fd0.get(), POLLIN, 0};
+    // Poll on the reader fd with readable event.
+    struct pollfd poll_fd = {fd0.get(), mask, 0};
     EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, -1), SyscallSucceedsWithValue(1));
 
-    // Should trigger POLLIN event.
-    EXPECT_EQ(poll_fd.revents & POLLIN, POLLIN);
+    // Should trigger readable event.
+    EXPECT_EQ(poll_fd.revents & mask, mask);
   });
 
   notify.WaitForNotification();
@@ -111,6 +121,57 @@ TEST_F(PollTest, BlockingEventPOLLIN) {
   // Write some data to the pipe.
   char s[] = "foo\n";
   ASSERT_THAT(WriteFd(fd1.get(), s, strlen(s) + 1), SyscallSucceeds());
+}
+
+TEST_F(PollTest, BlockingEventPOLLIN) { BlockingReadableTest(POLLIN); }
+
+TEST_F(PollTest, BlockingEventPOLLRDNORM) { BlockingReadableTest(POLLRDNORM); }
+
+TEST_F(PollTest, BlockingEventPOLLRDNORM_POLLIN) {
+  BlockingReadableTest(POLLRDNORM | POLLIN);
+}
+
+void WritableTest(int16_t mask, int timeout) {
+  // Create a pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+
+  FileDescriptor fd0(fds[0]);
+  FileDescriptor fd1(fds[1]);
+
+  // In a newly created pipe 2nd fd should be writable.
+
+  // Poll on second fd for a writable event.
+  struct pollfd poll_fd = {fd1.get(), mask, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, timeout),
+              SyscallSucceedsWithValue(1));
+
+  // Should trigger a writable event.
+  EXPECT_EQ(poll_fd.revents & mask, mask);
+}
+
+TEST_F(PollTest, NonBlockingEventPOLLOUT) {
+  WritableTest(POLLOUT, /*timeout=*/0);
+}
+
+TEST_F(PollTest, NonBlockingEventPOLLWRNORM) {
+  WritableTest(POLLWRNORM, /*timeout=*/0);
+}
+
+TEST_F(PollTest, NonBlockingEventPOLLWRNORM_POLLOUT) {
+  WritableTest(POLLWRNORM | POLLOUT, /*timeout=*/0);
+}
+
+TEST_F(PollTest, BlockingEventPOLLOUT) {
+  WritableTest(POLLOUT, /*timeout=*/-1);
+}
+
+TEST_F(PollTest, BlockingEventPOLLWRNORM) {
+  WritableTest(POLLWRNORM, /*timeout=*/-1);
+}
+
+TEST_F(PollTest, BlockingEventPOLLWRNORM_POLLOUT) {
+  WritableTest(POLLWRNORM | POLLOUT, /*timeout=*/-1);
 }
 
 TEST_F(PollTest, NonBlockingEventPOLLHUP) {

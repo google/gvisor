@@ -316,7 +316,7 @@ func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureRes
 	conn.fd.completions[r.id] = fut
 
 	// Signal the readers that there is something to read.
-	conn.fd.waitQueue.Notify(waiter.EventIn)
+	conn.fd.waitQueue.Notify(waiter.ReadableEvents)
 
 	return fut, nil
 }

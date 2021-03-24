@@ -1320,7 +1320,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		e.drainClosingSegmentQueue()
 
 		// When the protocol loop exits we should wake up our waiters.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 	}
 
 	if handshake {
@@ -1495,7 +1495,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}
 
 	// Tell waiters that the endpoint is connected and writable.
-	e.waiterQueue.Notify(waiter.EventOut)
+	e.waiterQueue.Notify(waiter.WritableEvents)
 
 	// The following assertions and notifications are needed for restored
 	// endpoints. Fresh newly created endpoints have empty states and should
@@ -1506,7 +1506,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 
 	e.rcvListMu.Lock()
 	if !e.rcvList.Empty() {
-		e.waiterQueue.Notify(waiter.EventIn)
+		e.waiterQueue.Notify(waiter.ReadableEvents)
 	}
 	e.rcvListMu.Unlock()
 
@@ -1570,7 +1570,7 @@ loop:
 		// wakers.
 		s.Done()
 		// Wake up any waiters before we enter TIME_WAIT.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		e.workerCleanup = true
 		reuseTW = e.doTimeWait()
 	}

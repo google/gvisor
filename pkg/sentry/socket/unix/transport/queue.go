@@ -44,8 +44,8 @@ type queue struct {
 // will become unreadable when no more data is pending.
 //
 // Both the read and write queues must be notified after closing:
-// q.ReaderQueue.Notify(waiter.EventIn)
-// q.WriterQueue.Notify(waiter.EventOut)
+// q.ReaderQueue.Notify(waiter.ReadableEvents)
+// q.WriterQueue.Notify(waiter.WritableEvents)
 func (q *queue) Close() {
 	q.mu.Lock()
 	q.closed = true
@@ -55,8 +55,8 @@ func (q *queue) Close() {
 // Reset empties the queue and Releases all of the Entries.
 //
 // Both the read and write queues must be notified after resetting:
-// q.ReaderQueue.Notify(waiter.EventIn)
-// q.WriterQueue.Notify(waiter.EventOut)
+// q.ReaderQueue.Notify(waiter.ReadableEvents)
+// q.WriterQueue.Notify(waiter.WritableEvents)
 func (q *queue) Reset(ctx context.Context) {
 	q.mu.Lock()
 	for cur := q.dataList.Front(); cur != nil; cur = cur.Next() {
@@ -112,7 +112,7 @@ func (q *queue) IsWritable() bool {
 // err indicates why.
 //
 // If notify is true, ReaderQueue.Notify must be called:
-// q.ReaderQueue.Notify(waiter.EventIn)
+// q.ReaderQueue.Notify(waiter.ReadableEvents)
 func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, from tcpip.FullAddress, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
@@ -179,7 +179,7 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 // Dequeue removes the first entry in the data queue, if one exists.
 //
 // If notify is true, WriterQueue.Notify must be called:
-// q.WriterQueue.Notify(waiter.EventOut)
+// q.WriterQueue.Notify(waiter.WritableEvents)
 func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 

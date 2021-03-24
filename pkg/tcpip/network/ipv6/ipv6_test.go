@@ -101,7 +101,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 
 	wq := waiter.Queue{}
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 	defer close(ch)
 
@@ -912,7 +912,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 			wq := waiter.Queue{}
 			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.EventIn)
+			wq.EventRegister(&we, waiter.WritableEvents)
 			defer wq.EventUnregister(&we)
 			defer close(ch)
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)
@@ -1998,7 +1998,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 
 			wq := waiter.Queue{}
 			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.EventIn)
+			wq.EventRegister(&we, waiter.ReadableEvents)
 			defer wq.EventUnregister(&we)
 			defer close(ch)
 			ep, err := s.NewEndpoint(udp.ProtocolNumber, ProtocolNumber, &wq)

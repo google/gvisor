@@ -185,7 +185,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	// Notify writers. We do this even if we were already writable because
 	// it is possible that a writer is waiting to write the maximum value
 	// to the event.
-	efd.queue.Notify(waiter.EventOut)
+	efd.queue.Notify(waiter.WritableEvents)
 
 	var buf [8]byte
 	usermem.ByteOrder.PutUint64(buf[:], val)
@@ -238,7 +238,7 @@ func (efd *EventFileDescription) Signal(val uint64) error {
 	efd.mu.Unlock()
 
 	// Always trigger a notification.
-	efd.queue.Notify(waiter.EventIn)
+	efd.queue.Notify(waiter.ReadableEvents)
 
 	return nil
 }
@@ -254,11 +254,11 @@ func (efd *EventFileDescription) Readiness(mask waiter.EventMask) waiter.EventMa
 
 	ready := waiter.EventMask(0)
 	if efd.val > 0 {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 
 	if efd.val < math.MaxUint64-1 {
-		ready |= waiter.EventOut
+		ready |= waiter.WritableEvents
 	}
 
 	return mask & ready

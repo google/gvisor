@@ -213,8 +213,8 @@ func (e *EventPoll) eventsAvailable() bool {
 func (e *EventPoll) Readiness(mask waiter.EventMask) waiter.EventMask {
 	ready := waiter.EventMask(0)
 
-	if (mask&waiter.EventIn) != 0 && e.eventsAvailable() {
-		ready |= waiter.EventIn
+	if (mask&waiter.ReadableEvents) != 0 && e.eventsAvailable() {
+		ready |= waiter.ReadableEvents
 	}
 
 	return ready
@@ -290,7 +290,7 @@ func (p *pollEntry) Callback(*waiter.Entry, waiter.EventMask) {
 		p.curList = &e.readyList
 		e.listsMu.Unlock()
 
-		e.Notify(waiter.EventIn)
+		e.Notify(waiter.ReadableEvents)
 		return
 	}
 

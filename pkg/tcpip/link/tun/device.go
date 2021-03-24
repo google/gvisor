@@ -309,20 +309,20 @@ func (d *Device) Flags() Flags {
 
 // Readiness implements watier.Waitable.Readiness.
 func (d *Device) Readiness(mask waiter.EventMask) waiter.EventMask {
-	if mask&waiter.EventIn != 0 {
+	if mask&waiter.ReadableEvents != 0 {
 		d.mu.RLock()
 		endpoint := d.endpoint
 		d.mu.RUnlock()
 		if endpoint != nil && endpoint.NumQueued() == 0 {
-			mask &= ^waiter.EventIn
+			mask &= ^waiter.ReadableEvents
 		}
 	}
-	return mask & (waiter.EventIn | waiter.EventOut)
+	return mask & (waiter.ReadableEvents | waiter.WritableEvents)
 }
 
 // WriteNotify implements channel.Notification.WriteNotify.
 func (d *Device) WriteNotify() {
-	d.Notify(waiter.EventIn)
+	d.Notify(waiter.ReadableEvents)
 }
 
 // tunEndpoint is the link endpoint for the NIC created by the tun device.

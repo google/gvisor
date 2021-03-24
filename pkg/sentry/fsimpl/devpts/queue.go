@@ -69,7 +69,7 @@ func (q *queue) readReadiness(t *linux.KernelTermios) waiter.EventMask {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.readBuf) > 0 && q.readable {
-		return waiter.EventIn
+		return waiter.ReadableEvents
 	}
 	return waiter.EventMask(0)
 }
@@ -79,7 +79,7 @@ func (q *queue) writeReadiness(t *linux.KernelTermios) waiter.EventMask {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.waitBufLen < waitBufMaxBytes {
-		return waiter.EventOut
+		return waiter.WritableEvents
 	}
 	return waiter.EventMask(0)
 }

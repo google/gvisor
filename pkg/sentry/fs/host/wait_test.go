@@ -41,13 +41,13 @@ func TestWait(t *testing.T) {
 
 	defer file.DecRef(ctx)
 
-	r := file.Readiness(waiter.EventIn)
+	r := file.Readiness(waiter.ReadableEvents)
 	if r != 0 {
 		t.Fatalf("File is ready for read when it shouldn't be.")
 	}
 
 	e, ch := waiter.NewChannelEntry(nil)
-	file.EventRegister(&e, waiter.EventIn)
+	file.EventRegister(&e, waiter.ReadableEvents)
 	defer file.EventUnregister(&e)
 
 	// Check that there are no notifications yet.

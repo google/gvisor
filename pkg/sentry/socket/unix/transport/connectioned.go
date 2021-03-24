@@ -338,8 +338,8 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		ce.Unlock()
 
 		// Notify on both ends.
-		e.Notify(waiter.EventIn)
-		ce.WaiterQueue().Notify(waiter.EventOut)
+		e.Notify(waiter.ReadableEvents)
+		ce.WaiterQueue().Notify(waiter.WritableEvents)
 
 		return nil
 	default:
@@ -480,15 +480,15 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 	ready := waiter.EventMask(0)
 	switch {
 	case e.Connected():
-		if mask&waiter.EventIn != 0 && e.receiver.Readable() {
-			ready |= waiter.EventIn
+		if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
+			ready |= waiter.ReadableEvents
 		}
-		if mask&waiter.EventOut != 0 && e.connected.Writable() {
-			ready |= waiter.EventOut
+		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
+			ready |= waiter.WritableEvents
 		}
 	case e.Listening():
-		if mask&waiter.EventIn != 0 && len(e.acceptedChan) > 0 {
-			ready |= waiter.EventIn
+		if mask&waiter.ReadableEvents != 0 && len(e.acceptedChan) > 0 {
+			ready |= waiter.ReadableEvents
 		}
 	}
 

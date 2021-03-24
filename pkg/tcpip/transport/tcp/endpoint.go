@@ -960,30 +960,30 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 	case StateListen:
 		// Check if there's anything in the accepted channel.
-		if (mask & waiter.EventIn) != 0 {
+		if (mask & waiter.ReadableEvents) != 0 {
 			e.acceptMu.Lock()
 			if len(e.acceptedChan) > 0 {
-				result |= waiter.EventIn
+				result |= waiter.ReadableEvents
 			}
 			e.acceptMu.Unlock()
 		}
 	}
 	if e.EndpointState().connected() {
 		// Determine if the endpoint is writable if requested.
-		if (mask & waiter.EventOut) != 0 {
+		if (mask & waiter.WritableEvents) != 0 {
 			e.sndBufMu.Lock()
 			sndBufSize := e.getSendBufferSize()
 			if e.sndClosed || e.sndBufUsed < sndBufSize {
-				result |= waiter.EventOut
+				result |= waiter.WritableEvents
 			}
 			e.sndBufMu.Unlock()
 		}
 
 		// Determine if the endpoint is readable if requested.
-		if (mask & waiter.EventIn) != 0 {
+		if (mask & waiter.ReadableEvents) != 0 {
 			e.rcvListMu.Lock()
 			if e.rcvBufUsed > 0 || e.rcvClosed {
-				result |= waiter.EventIn
+				result |= waiter.ReadableEvents
 			}
 			e.rcvListMu.Unlock()
 		}
@@ -1121,7 +1121,7 @@ func (e *endpoint) closeNoShutdownLocked() {
 		return
 	}
 
-	eventMask := waiter.EventIn | waiter.EventOut
+	eventMask := waiter.ReadableEvents | waiter.WritableEvents
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
 	if e.workerRunning {
@@ -2133,7 +2133,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	if err != nil {
 		if !err.IgnoreStats() {
 			// Connect failed. Let's wake up any waiters.
-			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 		}
@@ -2463,7 +2463,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			e.rcvListMu.Unlock()
 			e.closePendingAcceptableConnectionsLocked()
 			// Notify waiters that the endpoint is shutdown.
-			e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut | waiter.EventHUp | waiter.EventErr)
+			e.waiterQueue.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 		}
 		return nil
 	default:
@@ -2811,7 +2811,7 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 	e.sndBufMu.Unlock()
 
 	if notify {
-		e.waiterQueue.Notify(waiter.EventOut)
+		e.waiterQueue.Notify(waiter.WritableEvents)
 	}
 }
 
@@ -2828,7 +2828,7 @@ func (e *endpoint) readyToRead(s *segment) {
 		e.rcvClosed = true
 	}
 	e.rcvListMu.Unlock()
-	e.waiterQueue.Notify(waiter.EventIn)
+	e.waiterQueue.Notify(waiter.ReadableEvents)
 }
 
 // receiveBufferAvailableLocked calculates how many bytes are still available

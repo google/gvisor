@@ -107,7 +107,7 @@ func (i *Inotify) Readiness(mask waiter.EventMask) waiter.EventMask {
 	defer i.evMu.Unlock()
 
 	if !i.events.Empty() {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 
 	return mask & ready
@@ -246,7 +246,7 @@ func (i *Inotify) queueEvent(ev *Event) {
 	// can do.
 	i.evMu.Unlock()
 
-	i.Queue.Notify(waiter.EventIn)
+	i.Queue.Notify(waiter.ReadableEvents)
 }
 
 // newWatchLocked creates and adds a new watch to target.

@@ -32,7 +32,7 @@ import (
 
 const (
 	// EventMaskRead contains events that can be triggered on reads.
-	EventMaskRead = waiter.EventIn | waiter.EventHUp | waiter.EventErr
+	EventMaskRead = waiter.ReadableEvents | waiter.EventHUp | waiter.EventErr
 )
 
 // Read implements linux syscall read(2).  Note that we try to get a buffer that

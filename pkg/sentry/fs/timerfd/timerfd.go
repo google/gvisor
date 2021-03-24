@@ -101,7 +101,7 @@ func (t *TimerOperations) SetTime(s ktime.Setting) (ktime.Time, ktime.Setting) {
 func (t *TimerOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 	if atomic.LoadUint64(&t.val) != 0 {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 	return ready
 }
@@ -143,7 +143,7 @@ func (t *TimerOperations) Write(context.Context, *fs.File, usermem.IOSequence, i
 // Notify implements ktime.TimerListener.Notify.
 func (t *TimerOperations) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	atomic.AddUint64(&t.val, exp)
-	t.events.Notify(waiter.EventIn)
+	t.events.Notify(waiter.ReadableEvents)
 	return ktime.Setting{}, false
 }
 

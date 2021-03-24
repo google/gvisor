@@ -591,7 +591,7 @@ func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped, expe
 
 	// Try to receive the data.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.wq.EventRegister(&we, waiter.EventIn)
+	c.wq.EventRegister(&we, waiter.ReadableEvents)
 	defer c.wq.EventUnregister(&we)
 
 	// Take a snapshot of the stats to validate them at the end of the test.

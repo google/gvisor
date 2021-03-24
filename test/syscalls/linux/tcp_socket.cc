@@ -1204,13 +1204,12 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend_NoRandomSave) {
   EXPECT_THAT(shutdown(s.get(), SHUT_WR), SyscallSucceedsWithValue(0));
 }
 
-TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
+void NonBlockingConnect(int family, int16_t pollMask) {
   const FileDescriptor listener =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, IPPROTO_TCP));
 
   // Initialize address to the loopback one.
-  sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  sockaddr_storage addr = ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(family));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
@@ -1221,7 +1220,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
 
   FileDescriptor s =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, IPPROTO_TCP));
 
   // Set the FD to O_NONBLOCK.
   int opts;
@@ -1241,9 +1240,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   ASSERT_THAT(t = RetryEINTR(accept)(listener.get(), nullptr, nullptr),
               SyscallSucceeds());
 
-  // Now polling on the FD with a timeout should return 0 corresponding to no
-  // FDs ready.
-  struct pollfd poll_fd = {s.get(), POLLOUT, 0};
+  struct pollfd poll_fd = {s.get(), pollMask, 0};
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
               SyscallSucceedsWithValue(1));
 
@@ -1255,6 +1252,18 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   EXPECT_EQ(err, 0);
 
   EXPECT_THAT(close(t), SyscallSucceeds());
+}
+
+TEST_P(SimpleTcpSocketTest, NonBlockingConnect_PollOut) {
+  NonBlockingConnect(GetParam(), POLLOUT);
+}
+
+TEST_P(SimpleTcpSocketTest, NonBlockingConnect_PollWrNorm) {
+  NonBlockingConnect(GetParam(), POLLWRNORM);
+}
+
+TEST_P(SimpleTcpSocketTest, NonBlockingConnect_PollWrNorm_PollOut) {
+  NonBlockingConnect(GetParam(), POLLWRNORM | POLLOUT);
 }
 
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {

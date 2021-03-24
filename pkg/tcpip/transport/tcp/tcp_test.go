@@ -388,7 +388,7 @@ func TestTCPResetSentForACKWhenNotUsingSynCookies(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -809,7 +809,7 @@ func TestSimpleReceive(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -1315,7 +1315,7 @@ func TestListenCloseWhileConnect(t *testing.T) {
 	}
 
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&waitEntry, waiter.EventIn)
+	c.WQ.EventRegister(&waitEntry, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&waitEntry)
 
 	executeHandshake(t, c, context.TestPort, false /* synCookiesInUse */)
@@ -1455,7 +1455,7 @@ func TestConnectBindToDevice(t *testing.T) {
 			}
 			// Start connection attempt.
 			waitEntry, _ := waiter.NewChannelEntry(nil)
-			c.WQ.EventRegister(&waitEntry, waiter.EventOut)
+			c.WQ.EventRegister(&waitEntry, waiter.WritableEvents)
 			defer c.WQ.EventUnregister(&waitEntry)
 
 			err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
@@ -1590,7 +1590,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -1732,7 +1732,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -1801,7 +1801,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -1909,7 +1909,7 @@ func TestFullWindowReceive(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, rcvBufSz)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -2069,7 +2069,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	})
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -2391,7 +2391,7 @@ func TestScaledWindowAccept(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -2465,7 +2465,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -3059,7 +3059,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -3115,7 +3115,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -3191,7 +3191,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 
 	// Start connection attempt.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventOut)
+	c.WQ.EventRegister(&we, waiter.WritableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	{
@@ -3304,7 +3304,7 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 	// Try to read.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 loop:
@@ -4232,7 +4232,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	ept := endpointTester{c.EP}
@@ -4660,7 +4660,7 @@ func TestSelfConnect(t *testing.T) {
 
 	// Register for notification, then start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.EventOut)
+	wq.EventRegister(&waitEntry, waiter.WritableEvents)
 	defer wq.EventUnregister(&waitEntry)
 
 	{
@@ -4685,7 +4685,7 @@ func TestSelfConnect(t *testing.T) {
 
 	// Read back what was written.
 	wq.EventUnregister(&waitEntry)
-	wq.EventRegister(&waitEntry, waiter.EventIn)
+	wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 	ept := endpointTester{ep}
 	rd := ept.CheckReadFull(t, len(data), notifyCh, 5*time.Second)
 
@@ -5382,7 +5382,7 @@ func TestListenBacklogFull(t *testing.T) {
 
 	// Try to accept the connections in the backlog.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	for i := 0; i < listenBacklog; i++ {
@@ -5730,7 +5730,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 
 	// Try to accept the connections in the backlog.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	newEP, _, err := c.EP.Accept(nil)
@@ -5807,7 +5807,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 
 	// Verify that there is only one acceptable connection at this point.
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	_, _, err = c.EP.Accept(nil)
@@ -5969,7 +5969,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Try to accept the connections in the backlog.
 		we, ch := waiter.NewChannelEntry(nil)
-		c.WQ.EventRegister(&we, waiter.EventIn)
+		c.WQ.EventRegister(&we, waiter.ReadableEvents)
 		defer c.WQ.EventUnregister(&we)
 
 		// Wait for connection to be established.
@@ -6029,7 +6029,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 	executeHandshake(t, c, srcPort+1, false)
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	// Verify that there is only one acceptable connection at this point.
@@ -6099,7 +6099,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	}
 
 	we, ch := waiter.NewChannelEntry(nil)
-	c.WQ.EventRegister(&we, waiter.EventIn)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 
 	// Now check that there is one acceptable connections.
@@ -6152,7 +6152,7 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	aep, _, err := ep.Accept(nil)
@@ -6614,7 +6614,7 @@ func TestTCPTimeWaitRSTIgnored(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -6733,7 +6733,7 @@ func TestTCPTimeWaitOutOfOrder(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -6840,7 +6840,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -7004,7 +7004,7 @@ func TestTCPTimeWaitDuplicateFINExtendsTimeWait(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
@@ -7154,7 +7154,7 @@ func TestTCPCloseWithData(t *testing.T) {
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&we, waiter.EventIn)
+	wq.EventRegister(&we, waiter.ReadableEvents)
 	defer wq.EventUnregister(&we)
 
 	c.EP, _, err = ep.Accept(nil)
