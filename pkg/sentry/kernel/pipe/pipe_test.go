@@ -97,7 +97,7 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 		buf := make([]byte, len(msg)+1)
 		dst := usermem.BytesIOSequence(buf)
 		e, ch := waiter.NewChannelEntry(nil)
-		r.EventRegister(&e, waiter.EventIn)
+		r.EventRegister(&e, waiter.ReadableEvents)
 		defer r.EventUnregister(&e)
 		for {
 			n, err := r.Readv(ctx, dst)
@@ -124,7 +124,7 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 
 	src := usermem.BytesIOSequence(msg)
 	e, ch := waiter.NewChannelEntry(nil)
-	w.EventRegister(&e, waiter.EventOut)
+	w.EventRegister(&e, waiter.WritableEvents)
 	defer w.EventUnregister(&e)
 	for src.NumBytes() != 0 {
 		n, err := w.Writev(ctx, src)

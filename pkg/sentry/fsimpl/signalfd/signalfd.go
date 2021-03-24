@@ -117,8 +117,8 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 func (sfd *SignalFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	sfd.mu.Lock()
 	defer sfd.mu.Unlock()
-	if mask&waiter.EventIn != 0 && sfd.target.PendingSignals()&sfd.mask != 0 {
-		return waiter.EventIn // Pending signals.
+	if mask&waiter.ReadableEvents != 0 && sfd.target.PendingSignals()&sfd.mask != 0 {
+		return waiter.ReadableEvents // Pending signals.
 	}
 	return 0
 }

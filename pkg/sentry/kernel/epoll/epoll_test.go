@@ -29,7 +29,7 @@ func TestFileDestroyed(t *testing.T) {
 	ctx := contexttest.Context(t)
 	efile := NewEventPoll(ctx)
 	e := efile.FileOperations.(*EventPoll)
-	if err := e.AddEntry(id, 0, waiter.EventIn, [2]int32{}); err != nil {
+	if err := e.AddEntry(id, 0, waiter.ReadableEvents, [2]int32{}); err != nil {
 		t.Fatalf("addEntry failed: %v", err)
 	}
 

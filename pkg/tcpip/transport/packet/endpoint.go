@@ -152,7 +152,7 @@ func (ep *endpoint) Close() {
 
 	ep.closed = true
 	ep.bound = false
-	ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
+	ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 }
 
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
@@ -287,13 +287,13 @@ func (*endpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error) {
 // Readiness implements tcpip.Endpoint.Readiness.
 func (ep *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	// The endpoint is always writable.
-	result := waiter.EventOut & mask
+	result := waiter.WritableEvents & mask
 
 	// Determine whether the endpoint is readable.
-	if (mask & waiter.EventIn) != 0 {
+	if (mask & waiter.ReadableEvents) != 0 {
 		ep.rcvMu.Lock()
 		if !ep.rcvList.Empty() || ep.rcvClosed {
-			result |= waiter.EventIn
+			result |= waiter.ReadableEvents
 		}
 		ep.rcvMu.Unlock()
 	}
@@ -483,7 +483,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 	ep.stats.PacketsReceived.Increment()
 	// Notify waiters that there's data to be read.
 	if wasEmpty {
-		ep.waiterQueue.Notify(waiter.EventIn)
+		ep.waiterQueue.Notify(waiter.ReadableEvents)
 	}
 }
 

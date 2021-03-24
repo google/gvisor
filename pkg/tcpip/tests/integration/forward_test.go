@@ -48,7 +48,7 @@ func TestForwarding(t *testing.T) {
 		t.Helper()
 		var wq waiter.Queue
 		we, ch := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&we, waiter.EventIn)
+		wq.EventRegister(&we, waiter.ReadableEvents)
 		ep, err := s.NewEndpoint(transProto, netProto, &wq)
 		if err != nil {
 			t.Fatalf("s.NewEndpoint(%d, %d, _): %s", transProto, netProto, err)
@@ -184,7 +184,7 @@ func TestForwarding(t *testing.T) {
 					}
 
 					we, newCH := waiter.NewChannelEntry(nil)
-					wq.EventRegister(&we, waiter.EventIn)
+					wq.EventRegister(&we, waiter.ReadableEvents)
 					return newEP, newCH
 				}
 			},

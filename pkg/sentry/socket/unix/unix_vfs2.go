@@ -121,7 +121,7 @@ func (s *SocketVFS2) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.
 func (s *SocketVFS2) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress) (transport.Endpoint, *syserr.Error) {
 	// Register for notifications.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.socketOpsCommon.EventRegister(&e, waiter.EventIn)
+	s.socketOpsCommon.EventRegister(&e, waiter.ReadableEvents)
 	defer s.socketOpsCommon.EventUnregister(&e)
 
 	// Try to accept the connection; if it fails, then wait until we get a

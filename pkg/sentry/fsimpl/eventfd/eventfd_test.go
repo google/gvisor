@@ -49,7 +49,7 @@ func TestEventFD(t *testing.T) {
 
 		// Register a callback for a write event.
 		w, ch := waiter.NewChannelEntry(nil)
-		eventfd.EventRegister(&w, waiter.EventIn)
+		eventfd.EventRegister(&w, waiter.ReadableEvents)
 		defer eventfd.EventUnregister(&w)
 
 		data := []byte("00000124")

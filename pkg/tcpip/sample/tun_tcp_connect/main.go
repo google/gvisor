@@ -173,7 +173,7 @@ func main() {
 
 	// Issue connect request and wait for it to complete.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.EventOut)
+	wq.EventRegister(&waitEntry, waiter.WritableEvents)
 	terr := ep.Connect(remote)
 	if _, ok := terr.(*tcpip.ErrConnectStarted); ok {
 		fmt.Println("Connect is pending...")
@@ -194,7 +194,7 @@ func main() {
 
 	// Read data and write to standard output until the peer closes the
 	// connection from its side.
-	wq.EventRegister(&waitEntry, waiter.EventIn)
+	wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 	for {
 		_, err := ep.Read(os.Stdout, tcpip.ReadOptions{})
 		if err != nil {

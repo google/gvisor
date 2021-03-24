@@ -290,7 +290,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						// Try to receive the data.
 						wq := waiter.Queue{}
 						we, ch := waiter.NewChannelEntry(nil)
-						wq.EventRegister(&we, waiter.EventIn)
+						wq.EventRegister(&we, waiter.ReadableEvents)
 						defer wq.EventUnregister(&we)
 						defer close(ch)
 

@@ -189,7 +189,7 @@ func TestLocalPing(t *testing.T) {
 
 					var wq waiter.Queue
 					we, ch := waiter.NewChannelEntry(nil)
-					wq.EventRegister(&we, waiter.EventIn)
+					wq.EventRegister(&we, waiter.ReadableEvents)
 					ep, err := s.NewEndpoint(test.transProto, test.netProto, &wq)
 					if err != nil {
 						t.Fatalf("s.NewEndpoint(%d, %d, _): %s", test.transProto, test.netProto, err)
@@ -311,7 +311,7 @@ func TestLocalUDP(t *testing.T) {
 
 					var serverWQ waiter.Queue
 					serverWE, serverCH := waiter.NewChannelEntry(nil)
-					serverWQ.EventRegister(&serverWE, waiter.EventIn)
+					serverWQ.EventRegister(&serverWE, waiter.ReadableEvents)
 					server, err := s.NewEndpoint(udp.ProtocolNumber, test.firstPrimaryAddr.Protocol, &serverWQ)
 					if err != nil {
 						t.Fatalf("s.NewEndpoint(%d, %d): %s", udp.ProtocolNumber, test.firstPrimaryAddr.Protocol, err)
@@ -325,7 +325,7 @@ func TestLocalUDP(t *testing.T) {
 
 					var clientWQ waiter.Queue
 					clientWE, clientCH := waiter.NewChannelEntry(nil)
-					clientWQ.EventRegister(&clientWE, waiter.EventIn)
+					clientWQ.EventRegister(&clientWE, waiter.ReadableEvents)
 					client, err := s.NewEndpoint(udp.ProtocolNumber, test.firstPrimaryAddr.Protocol, &clientWQ)
 					if err != nil {
 						t.Fatalf("s.NewEndpoint(%d, %d): %s", udp.ProtocolNumber, test.firstPrimaryAddr.Protocol, err)

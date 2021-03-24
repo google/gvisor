@@ -45,7 +45,7 @@ func (e *EventPoll) afterLoad() {
 			e.waitingList.Remove(entry)
 			e.readyList.PushBack(entry)
 			entry.curList = &e.readyList
-			e.Notify(waiter.EventIn)
+			e.Notify(waiter.ReadableEvents)
 		}
 	}
 }

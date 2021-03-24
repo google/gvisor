@@ -449,7 +449,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 
 			var wq waiter.Queue
 			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.EventIn)
+			wq.EventRegister(&we, waiter.ReadableEvents)
 			defer wq.EventUnregister(&we)
 			listeningEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {

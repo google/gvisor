@@ -191,13 +191,13 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	defer e.Unlock()
 
 	ready := waiter.EventMask(0)
-	if mask&waiter.EventIn != 0 && e.receiver.Readable() {
-		ready |= waiter.EventIn
+	if mask&waiter.ReadableEvents != 0 && e.receiver.Readable() {
+		ready |= waiter.ReadableEvents
 	}
 
 	if e.Connected() {
-		if mask&waiter.EventOut != 0 && e.connected.Writable() {
-			ready |= waiter.EventOut
+		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
+			ready |= waiter.WritableEvents
 		}
 	}
 

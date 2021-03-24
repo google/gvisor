@@ -79,7 +79,7 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	// Create wait queue entry that notifies a channel.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 
-	wq.EventRegister(&waitEntry, waiter.EventIn)
+	wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 	defer wq.EventUnregister(&waitEntry)
 
 	w := endpointWriter{
@@ -211,7 +211,7 @@ func main() {
 
 	// Wait for connections to appear.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.EventIn)
+	wq.EventRegister(&waitEntry, waiter.ReadableEvents)
 	defer wq.EventUnregister(&waitEntry)
 
 	for {

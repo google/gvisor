@@ -567,7 +567,7 @@ func (s *socketOpsCommon) Connect(t *kernel.Task, sockaddr []byte, blocking bool
 	// Register for notification when the endpoint becomes writable, then
 	// initiate the connection.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventOut)
+	s.EventRegister(&e, waiter.WritableEvents)
 	defer s.EventUnregister(&e)
 
 	switch err := s.Endpoint.Connect(addr); err.(type) {
@@ -663,7 +663,7 @@ func (s *socketOpsCommon) Listen(t *kernel.Task, backlog int) *syserr.Error {
 func (s *socketOpsCommon) blockingAccept(t *kernel.Task, peerAddr *tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, *syserr.Error) {
 	// Register for notifications.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventIn)
+	s.EventRegister(&e, waiter.ReadableEvents)
 	defer s.EventUnregister(&e)
 
 	// Try to accept the connection again; if it fails, then wait until we
@@ -2753,7 +2753,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	// We'll have to block. Register for notifications and keep trying to
 	// send all the data.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventIn)
+	s.EventRegister(&e, waiter.ReadableEvents)
 	defer s.EventUnregister(&e)
 
 	for {
@@ -2840,7 +2840,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 				// We'll have to block. Register for notification and keep trying to
 				// send all the data.
 				entry, ch = waiter.NewChannelEntry(nil)
-				s.EventRegister(&entry, waiter.EventOut)
+				s.EventRegister(&entry, waiter.WritableEvents)
 				defer s.EventUnregister(&entry)
 			} else {
 				// Don't wait immediately after registration in case more data

@@ -183,7 +183,7 @@ func (e *EventOperations) read(ctx context.Context, dst usermem.IOSequence) erro
 	// Notify writers. We do this even if we were already writable because
 	// it is possible that a writer is waiting to write the maximum value
 	// to the event.
-	e.wq.Notify(waiter.EventOut)
+	e.wq.Notify(waiter.WritableEvents)
 
 	var buf [8]byte
 	usermem.ByteOrder.PutUint64(buf[:], val)
@@ -236,7 +236,7 @@ func (e *EventOperations) Signal(val uint64) error {
 	e.mu.Unlock()
 
 	// Always trigger a notification.
-	e.wq.Notify(waiter.EventIn)
+	e.wq.Notify(waiter.ReadableEvents)
 
 	return nil
 }
@@ -251,11 +251,11 @@ func (e *EventOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 	ready := waiter.EventMask(0)
 	if e.val > 0 {
-		ready |= waiter.EventIn
+		ready |= waiter.ReadableEvents
 	}
 
 	if e.val < math.MaxUint64-1 {
-		ready |= waiter.EventOut
+		ready |= waiter.WritableEvents
 	}
 	e.mu.Unlock()
 

@@ -141,7 +141,7 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 		l.inQueue.pushWaitBufLocked(l)
 		l.inQueue.readable = true
 		l.inQueue.mu.Unlock()
-		l.replicaWaiter.Notify(waiter.EventIn)
+		l.replicaWaiter.Notify(waiter.ReadableEvents)
 	}
 
 	return 0, err
@@ -185,9 +185,9 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 		return 0, err
 	}
 	if n > 0 {
-		l.masterWaiter.Notify(waiter.EventOut)
+		l.masterWaiter.Notify(waiter.WritableEvents)
 		if pushed {
-			l.replicaWaiter.Notify(waiter.EventIn)
+			l.replicaWaiter.Notify(waiter.ReadableEvents)
 		}
 		return n, nil
 	}
@@ -202,7 +202,7 @@ func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequ
 		return 0, err
 	}
 	if n > 0 {
-		l.replicaWaiter.Notify(waiter.EventIn)
+		l.replicaWaiter.Notify(waiter.ReadableEvents)
 		return n, nil
 	}
 	return 0, syserror.ErrWouldBlock
@@ -220,9 +220,9 @@ func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequ
 		return 0, err
 	}
 	if n > 0 {
-		l.replicaWaiter.Notify(waiter.EventOut)
+		l.replicaWaiter.Notify(waiter.WritableEvents)
 		if pushed {
-			l.masterWaiter.Notify(waiter.EventIn)
+			l.masterWaiter.Notify(waiter.ReadableEvents)
 		}
 		return n, nil
 	}
@@ -237,7 +237,7 @@ func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSeq
 		return 0, err
 	}
 	if n > 0 {
-		l.masterWaiter.Notify(waiter.EventIn)
+		l.masterWaiter.Notify(waiter.ReadableEvents)
 		return n, nil
 	}
 	return 0, syserror.ErrWouldBlock
@@ -397,7 +397,7 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 		// Anything written to the readBuf will have to be echoed.
 		if l.termios.LEnabled(linux.ECHO) {
 			l.outQueue.writeBytes(cBytes, l)
-			l.masterWaiter.Notify(waiter.EventIn)
+			l.masterWaiter.Notify(waiter.ReadableEvents)
 		}
 
 		// If we finish a line, make it available for reading.
