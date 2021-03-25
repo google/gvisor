@@ -147,9 +147,26 @@ traverseExtensions:
 //
 // Returns true if the header was successfully parsed.
 func UDP(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	h, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
+	if !ok {
+		return false
+	}
+
 	pkt.TransportProtocolNumber = header.UDPProtocolNumber
-	return ok
+
+	// RFC768#page-2,
+	//
+	//   If the computed checksum is zero, it is transmitted as all ones (the
+	//   equivalent in one's complement arithmetic). An all zero transmitted
+	//   checksum value means that the transmitter generated no checksum (for
+	//   debugging or for higher level protocols that don't care).
+	u := header.UDP(h)
+	pkt.TransportChecksumStatus = header.ChecksumNotNeeded
+	if u.Checksum() != 0 {
+		pkt.TransportChecksumStatus = header.ChecksumCalculated
+	}
+
+	return true
 }
 
 // TCP parses a TCP packet found in pkt.Data and populates pkt's transport
@@ -165,13 +182,25 @@ func TCP(pkt *stack.PacketBuffer) bool {
 	}
 
 	// If the header has options, pull those up as well.
-	if offset := int(header.TCP(hdr).DataOffset()); offset > header.TCPMinimumSize && offset <= pkt.Data().Size() {
+	if offset := int(header.TCP(hdr).DataOffset()); offset > hdrLen && offset <= pkt.Data().Size() {
 		// TODO(gvisor.dev/issue/2404): Figure out whether to reject this kind of
 		// packets.
 		hdrLen = offset
 	}
 
-	_, ok = pkt.TransportHeader().Consume(hdrLen)
+	if _, ok := pkt.TransportHeader().Consume(hdrLen); !ok {
+		return false
+	}
+
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber
-	return ok
+	// The TCP checksum is always calculated for TCP packets.
+	//
+	// RFC793#page-16,
+	//
+	//   Checksum:  16 bits
+	//
+	//     The checksum field is the 16 bit one's complement of the one's
+	//     complement sum of all 16 bit words in the header and text.
+	pkt.TransportChecksumStatus = header.ChecksumCalculated
+	return true
 }

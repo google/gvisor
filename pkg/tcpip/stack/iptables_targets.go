@@ -29,7 +29,7 @@ type AcceptTarget struct {
 }
 
 // Action implements Target.Action.
-func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*AcceptTarget) Action(*PacketBuffer, *ConnTrack, Hook, tcpip.Address) (RuleVerdict, int) {
 	return RuleAccept, 0
 }
 
@@ -40,7 +40,7 @@ type DropTarget struct {
 }
 
 // Action implements Target.Action.
-func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*DropTarget) Action(*PacketBuffer, *ConnTrack, Hook, tcpip.Address) (RuleVerdict, int) {
 	return RuleDrop, 0
 }
 
@@ -52,7 +52,7 @@ type ErrorTarget struct {
 }
 
 // Action implements Target.Action.
-func (*ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ErrorTarget) Action(*PacketBuffer, *ConnTrack, Hook, tcpip.Address) (RuleVerdict, int) {
 	log.Debugf("ErrorTarget triggered.")
 	return RuleDrop, 0
 }
@@ -67,7 +67,7 @@ type UserChainTarget struct {
 }
 
 // Action implements Target.Action.
-func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*UserChainTarget) Action(*PacketBuffer, *ConnTrack, Hook, tcpip.Address) (RuleVerdict, int) {
 	panic("UserChainTarget should never be called.")
 }
 
@@ -79,7 +79,7 @@ type ReturnTarget struct {
 }
 
 // Action implements Target.Action.
-func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, *Route, tcpip.Address) (RuleVerdict, int) {
+func (*ReturnTarget) Action(*PacketBuffer, *ConnTrack, Hook, tcpip.Address) (RuleVerdict, int) {
 	return RuleReturn, 0
 }
 
@@ -97,7 +97,7 @@ type RedirectTarget struct {
 }
 
 // Action implements Target.Action.
-func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, address tcpip.Address) (RuleVerdict, int) {
+func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, address tcpip.Address) (RuleVerdict, int) {
 	// Sanity check.
 	if rt.NetworkProtocol != pkt.NetworkProtocolNumber {
 		panic(fmt.Sprintf(
@@ -136,13 +136,12 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r 
 
 		if hook == Output {
 			// Only calculate the checksum if offloading isn't supported.
-			requiresChecksum := r.RequiresTXTransportChecksum()
 			rewritePacket(
 				pkt.Network(),
 				udpHeader,
 				false, /* updateSRCFields */
-				requiresChecksum,
-				requiresChecksum,
+				pkt.TransportChecksumStatus.FullChecksum(),
+				pkt.TransportChecksumStatus.IncludesPseudoHeader(),
 				rt.Port,
 				address,
 			)
@@ -160,7 +159,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r 
 		// packet of the connection comes here. Other packets will be
 		// manipulated in connection tracking.
 		if conn := ct.insertRedirectConn(pkt, hook, rt.Port, address); conn != nil {
-			ct.handlePacket(pkt, hook, r)
+			ct.handlePacket(pkt, hook)
 		}
 	default:
 		return RuleDrop, 0
@@ -180,7 +179,7 @@ type SNATTarget struct {
 }
 
 // Action implements Target.Action.
-func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Route, address tcpip.Address) (RuleVerdict, int) {
+func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, address tcpip.Address) (RuleVerdict, int) {
 	// Sanity check.
 	if st.NetworkProtocol != pkt.NetworkProtocolNumber {
 		panic(fmt.Sprintf(
@@ -209,13 +208,12 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 	switch protocol := pkt.TransportProtocolNumber; protocol {
 	case header.UDPProtocolNumber:
 		// Only calculate the checksum if offloading isn't supported.
-		requiresChecksum := r.RequiresTXTransportChecksum()
 		rewritePacket(
 			pkt.Network(),
 			header.UDP(pkt.TransportHeader().View()),
 			true, /* updateSRCFields */
-			requiresChecksum,
-			requiresChecksum,
+			pkt.TransportChecksumStatus.FullChecksum(),
+			pkt.TransportChecksumStatus.IncludesPseudoHeader(),
 			st.Port,
 			st.Addr,
 		)
@@ -230,7 +228,7 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 		// packet of the connection comes here. Other packets will be
 		// manipulated in connection tracking.
 		if conn := ct.insertSNATConn(pkt, hook, st.Port, st.Addr); conn != nil {
-			ct.handlePacket(pkt, hook, r)
+			ct.handlePacket(pkt, hook)
 		}
 	default:
 		return RuleDrop, 0

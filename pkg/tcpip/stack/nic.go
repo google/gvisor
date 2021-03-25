@@ -302,10 +302,123 @@ func (n *nic) IsLoopback() bool {
 	return n.LinkEndpoint.Capabilities()&CapabilityLoopback != 0
 }
 
+// maybePerformOffloadableTasks performs tasks that the packet expects to be
+// offloaded but the hardware does not support.
+//
+// Returns true if the packet neeeds to be further processed; false if the
+// packet was successfullly written with the number of packets that the packet
+// was segmented/fragmeted into or an error if one was encountered.
+func (n *nic) maybePerformOffloadableTasks(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) (needsWriting bool, packetsWritten int, err tcpip.Error) {
+	supportsTxChecksumOffload := n.LinkEndpoint.Capabilities()&CapabilityTXChecksumOffload != 0
+	targetChecksum := header.ChecksumCalculated
+	mtu := n.LinkEndpoint.MTU()
+
+	if pkt.GSOOptions.Type != GSONone {
+		if gsoEP, ok := n.LinkEndpoint.(GSOEndpoint); ok {
+			if gsoEP.SupportedGSO() == HWGSOSupported {
+				if m := gsoEP.GSOMaxSize(); m > mtu {
+					mtu = m
+				}
+
+				targetChecksum = header.ChecksumPartial
+				pkt.GSOOptions.NeedsCsum = true
+				pkt.GSOOptions.L3HdrLen = uint16(pkt.NetworkHeader().View().Size())
+			} else {
+				// The MTU is limited by the maximum segment size.
+				if mss := uint32(pkt.GSOOptions.MSS + uint16(pkt.NetworkHeader().View().Size()+pkt.TransportHeader().View().Size())); mss < mtu {
+					mtu = mss
+				}
+
+				// The hardware doesn't suport GSO so we will segment the packet in SW.
+				// Clear the GSO options as the link endpoint cannot perform GSO.
+				pkt.GSOOptions = GSO{}
+				if supportsTxChecksumOffload {
+					targetChecksum = header.ChecksumNotNeeded
+				}
+			}
+		}
+
+		if uint32(pkt.Size()) > mtu {
+			t, ok := n.stack.transportProtocols[pkt.TransportProtocolNumber]
+			if !ok {
+				panic(fmt.Sprintf("SW GSO is required but transport protocol = %d is not recognized", pkt.TransportProtocolNumber))
+			}
+
+			s, ok := t.proto.(SegmentAndChecksummableTransportProtocol)
+			if !ok {
+				panic(fmt.Sprintf("SW GSO is required but transport protocol = %d does not support SW GSO", pkt.TransportProtocolNumber))
+			}
+
+			// The interface we are using does not support HW GSO or the packet is
+			// larger then the HW specified maximum GSO size so we need to segment the
+			// packet in software before writing to the link endpoint.
+			pkts, err := s.SegmentWithChecksum(pkt.Clone(), mtu, targetChecksum)
+			if err != nil {
+				return false, 0, err
+			}
+
+			n, err := n.enqueuePacketBuffer(r, protocol, &pkts)
+			return false, n, err
+		}
+	} else if supportsTxChecksumOffload {
+		targetChecksum = header.ChecksumNotNeeded
+	}
+
+	if pkt.TransportChecksumStatus != targetChecksum && pkt.TransportChecksumStatus != header.ChecksumNotNeeded {
+		t, ok := n.stack.transportProtocols[pkt.TransportProtocolNumber]
+		if !ok {
+			panic(fmt.Sprintf("checksumming is required but transport protocol = %d is not recognized", pkt.TransportProtocolNumber))
+		}
+
+		c, ok := t.proto.(ChecksummableTransportProtocol)
+		if !ok {
+			panic(fmt.Sprintf("checksumming is required but transport protocol = %d does not support checksumming", pkt.TransportProtocolNumber))
+		}
+
+		c.UpdateTransportChecksum(pkt, targetChecksum)
+	}
+
+	return true, 0, nil
+}
+
 // WritePacket implements NetworkLinkEndpoint.
-func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	_, err := n.enqueuePacketBuffer(r, protocol, pkt)
-	return err
+func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) (int, tcpip.Error) {
+	if needsWriting, packetsWritten, err := n.maybePerformOffloadableTasks(r, protocol, pkt); err != nil || !needsWriting {
+		return packetsWritten, err
+	}
+
+	// At this point the checksum must be fully or partially calculated if the
+	// checksum is required.
+	switch pkt.TransportChecksumStatus {
+	case header.ChecksumCalculated, header.ChecksumPartial, header.ChecksumNotNeeded:
+	case header.ChecksumNone:
+		panic(fmt.Sprintf("have not calculated checksum for packet with netproto=%d, transproto=%d", protocol, pkt.TransportProtocolNumber))
+	default:
+		panic(fmt.Sprintf("unhandled transport checksum status = %d", pkt.TransportChecksumStatus))
+	}
+
+	if pkt.GSOOptions.Type == GSONone {
+		if mtu := n.LinkEndpoint.MTU(); mtu < uint32(pkt.Size()) {
+			p, ok := n.stack.networkProtocols[protocol]
+			if !ok {
+				panic(fmt.Sprintf("writing a packet for an unrecognized network protocol = %d", protocol))
+			}
+
+			s, ok := p.(FragmentableNetworkProtocol)
+			if !ok {
+				return 0, &tcpip.ErrMessageTooLong{}
+			}
+
+			pkts, err := s.Fragment(pkt, mtu)
+			if err != nil {
+				return 0, err
+			}
+
+			return n.enqueuePacketBuffer(r, protocol, &pkts)
+		}
+	}
+
+	return n.enqueuePacketBuffer(r, protocol, pkt)
 }
 
 func (n *nic) writePacketBuffer(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
@@ -372,11 +485,6 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 	n.stats.tx.packets.Increment()
 	n.stats.tx.bytes.IncrementBy(uint64(numBytes))
 	return nil
-}
-
-// WritePackets implements NetworkLinkEndpoint.
-func (n *nic) WritePackets(r *Route, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return n.enqueuePacketBuffer(r, protocol, &pkts)
 }
 
 func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {

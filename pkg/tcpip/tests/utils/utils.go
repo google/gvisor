@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
 // Common NIC IDs used by tests.
@@ -387,4 +388,72 @@ func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 // the provided endpoint.
 func RxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	rxICMPv6Echo(e, src, dst, ttl, header.ICMPv6EchoReply)
+}
+
+// RxUDPv4 constructs and injects an IPv4 UDP packet on the provided endpoint.
+func RxUDPv4(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, data []byte, f func(header.UDP)) {
+	payloadLen := header.UDPMinimumSize + len(data)
+	totalLen := header.IPv4MinimumSize + payloadLen
+	hdr := buffer.NewPrependable(totalLen)
+	u := header.UDP(hdr.Prepend(payloadLen))
+	u.Encode(&header.UDPFields{
+		SrcPort: RemotePort,
+		DstPort: LocalPort,
+		Length:  uint16(payloadLen),
+	})
+	copy(u.Payload(), data)
+	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
+	sum = header.Checksum(data, sum)
+	u.SetChecksum(^u.CalculateChecksum(sum))
+
+	if f != nil {
+		f(u)
+	}
+
+	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	ip.Encode(&header.IPv4Fields{
+		TotalLength: uint16(totalLen),
+		Protocol:    uint8(udp.ProtocolNumber),
+		TTL:         ttl,
+		SrcAddr:     src,
+		DstAddr:     dst,
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: hdr.View().ToVectorisedView(),
+	}))
+}
+
+// RxUDPv6 constructs and injects an IPv6 UDP packet on the provided endpoint.
+func RxUDPv6(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, data []byte, f func(header.UDP)) {
+	payloadLen := header.UDPMinimumSize + len(data)
+	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
+	u := header.UDP(hdr.Prepend(payloadLen))
+	u.Encode(&header.UDPFields{
+		SrcPort: RemotePort,
+		DstPort: LocalPort,
+		Length:  uint16(payloadLen),
+	})
+	copy(u.Payload(), data)
+	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
+	sum = header.Checksum(data, sum)
+	u.SetChecksum(^u.CalculateChecksum(sum))
+
+	if f != nil {
+		f(u)
+	}
+
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     uint16(payloadLen),
+		TransportProtocol: udp.ProtocolNumber,
+		HopLimit:          ttl,
+		SrcAddr:           src,
+		DstAddr:           dst,
+	})
+
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: hdr.View().ToVectorisedView(),
+	}))
 }

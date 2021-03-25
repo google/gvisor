@@ -116,6 +116,7 @@ func (b IPv6Fragment) TransportProtocol() tcpip.TransportProtocolNumber {
 }
 
 // The functions below have been added only to satisfy the Network interface.
+// TODO(https://gvisor.dev/issue/6186): Do not implement unsupported methods.
 
 // Checksum is not supported by IPv6Fragment.
 func (b IPv6Fragment) Checksum() uint16 {
@@ -154,5 +155,10 @@ func (b IPv6Fragment) TOS() (uint8, uint32) {
 
 // SetTOS is not supported by IPv6Fragment.
 func (b IPv6Fragment) SetTOS(t uint8, l uint32) {
+	panic("not supported")
+}
+
+// SetPacketSize implements Network.
+func (IPv6Fragment) SetPacketSize(uint16) {
 	panic("not supported")
 }

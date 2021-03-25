@@ -44,6 +44,9 @@ const (
 	MaxBufferSize = 4 << 20 // 4MiB
 )
 
+var _ stack.TransportProtocol = (*protocol)(nil)
+var _ stack.ChecksummableTransportProtocol = (*protocol)(nil)
+
 type protocol struct {
 	stack *stack.Stack
 }
@@ -117,4 +120,25 @@ func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 // NewProtocol returns a UDP transport protocol.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 	return &protocol{stack: s}
+}
+
+// UpdateTransportChecksum implements stack.ChecksummableTransportProtocol.
+func (*protocol) UpdateTransportChecksum(pkt *stack.PacketBuffer, target header.ChecksumStatus) {
+	net := pkt.Network()
+	data := pkt.Data()
+	transportHdr := pkt.TransportHeader().View()
+
+	u := header.UDP(transportHdr)
+	u.SetChecksum(header.UpdateTransportChecksum(
+		ProtocolNumber,
+		pkt.TransportChecksumStatus, /* current */
+		target,
+		u.Checksum(),
+		net.SourceAddress(),
+		net.DestinationAddress(),
+		transportHdr,
+		uint16(data.Size()),
+		data.AsRange().Checksum,
+	))
+	pkt.TransportChecksumStatus = target
 }

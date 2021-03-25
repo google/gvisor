@@ -121,10 +121,18 @@ type PacketBuffer struct {
 	// Only set for locally generated packets.
 	Owner tcpip.PacketOwner
 
-	// The following fields are only set by the qdisc layer when the packet
-	// is added to a queue.
+	// EgressRoute is the packet's route.
 	EgressRoute RouteInfo
-	GSOOptions  GSO
+
+	// GSOOptions is the properties for segmentation offloading.
+	//
+	// Note that if an upper layer requests segmentation offloading, it does not
+	// mean that the interface will always perform the task. If the interface
+	// does not support segmentation, segmentation will be performed in software.
+	GSOOptions GSO
+
+	// TransportChecksumStatus is the state of the transport level checksum.
+	TransportChecksumStatus header.ChecksumStatus
 
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.

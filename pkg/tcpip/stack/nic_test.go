@@ -71,12 +71,6 @@ func (*testIPv6Endpoint) WritePacket(*Route, NetworkHeaderParams, *PacketBuffer)
 	return nil
 }
 
-// WritePackets implements NetworkEndpoint.WritePackets.
-func (*testIPv6Endpoint) WritePackets(*Route, PacketBufferList, NetworkHeaderParams) (int, tcpip.Error) {
-	// Our tests don't use this so we don't support it.
-	return 0, &tcpip.ErrNotSupported{}
-}
-
 // WriteHeaderIncludedPacket implements
 // NetworkEndpoint.WriteHeaderIncludedPacket.
 func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) tcpip.Error {

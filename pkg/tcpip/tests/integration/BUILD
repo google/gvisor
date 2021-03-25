@@ -39,7 +39,6 @@ go_test(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/tests/utils",
         "//pkg/tcpip/testutil",
-        "//pkg/tcpip/transport/udp",
     ],
 )
 
@@ -49,7 +48,6 @@ go_test(
     srcs = ["link_resolution_test.go"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
@@ -63,7 +61,6 @@ go_test(
         "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
-        "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
@@ -100,7 +97,6 @@ go_test(
     srcs = ["multicast_broadcast_test.go"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",

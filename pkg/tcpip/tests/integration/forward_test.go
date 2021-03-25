@@ -688,3 +688,126 @@ func TestPerInterfaceForwarding(t *testing.T) {
 		})
 	}
 }
+
+// TestForwardingWithoutFixingTransportChecksums tests that the stack does not
+// fix transport layer checksums if they are unset or invalid.
+func TestForwardingWithoutFixingTransportChecksums(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+
+		ttl = 64
+	)
+
+	data := []byte{1, 2, 3, 4}
+
+	rxUDPv4 := func(e *channel.Endpoint, checksum uint16) {
+		utils.RxUDPv4(e, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address, ttl, data, func(u header.UDP) {
+			u.SetChecksum(checksum)
+		})
+	}
+
+	rxUDPv6 := func(e *channel.Endpoint, checksum uint16) {
+		utils.RxUDPv6(e, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address, ttl, data, func(u header.UDP) {
+			u.SetChecksum(checksum)
+		})
+	}
+
+	v4Checker := func(t *testing.T, b []byte, checksum uint16) {
+		checker.IPv4(t, b,
+			checker.SrcAddr(utils.RemoteIPv4Addr),
+			checker.DstAddr(utils.Ipv4Addr2.AddressWithPrefix.Address),
+			checker.TTL(ttl-1),
+			checker.UDP(
+				checker.SrcPort(utils.RemotePort),
+				checker.DstPort(utils.LocalPort),
+				checker.Checksum(checksum),
+				checker.Payload(data)))
+	}
+
+	v6Checker := func(t *testing.T, b []byte, checksum uint16) {
+		checker.IPv6(t, b,
+			checker.SrcAddr(utils.RemoteIPv6Addr),
+			checker.DstAddr(utils.Ipv6Addr2.AddressWithPrefix.Address),
+			checker.TTL(ttl-1),
+			checker.UDP(
+				checker.SrcPort(utils.RemotePort),
+				checker.DstPort(utils.LocalPort),
+				checker.Checksum(checksum),
+				checker.Payload(data)))
+	}
+
+	tests := []struct {
+		name    string
+		rx      func(*channel.Endpoint, uint16)
+		checker func(*testing.T, []byte, uint16)
+	}{
+		{
+			name:    "IPv4 UDP",
+			rx:      rxUDPv4,
+			checker: v4Checker,
+		},
+		{
+			name:    "IPv6 UDP",
+			rx:      rxUDPv6,
+			checker: v6Checker,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, c := range [...]uint16{0, 1, 2} {
+				t.Run(fmt.Sprintf("Checksum=%d", c), func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+					})
+
+					e1 := channel.New(0, header.IPv6MinimumMTU, "")
+					if err := s.CreateNIC(nicID1, e1); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
+					}
+
+					e2 := channel.New(1, header.IPv6MinimumMTU, "")
+					if err := s.CreateNIC(nicID2, e2); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
+					}
+
+					if err := s.AddAddress(nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address); err != nil {
+						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address, err)
+					}
+					if err := s.AddAddress(nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address); err != nil {
+						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address, err)
+					}
+
+					if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
+					}
+					if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
+					}
+
+					s.SetRouteTable([]tcpip.Route{
+						{
+							Destination: header.IPv4EmptySubnet,
+							NIC:         nicID2,
+						},
+						{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         nicID2,
+						},
+					})
+
+					test.rx(e1, c)
+
+					p, ok := e2.Read()
+					if !ok {
+						t.Fatal("expected packet to be forwarded")
+					}
+
+					test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()), c)
+				})
+			}
+		})
+	}
+}

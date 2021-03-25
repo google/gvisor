@@ -189,12 +189,8 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHe
 		return nil
 	}
 
-	return f.nic.WritePacket(r, fakeNetNumber, pkt)
-}
-
-// WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*fakeNetworkEndpoint) WritePackets(*stack.Route, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
-	panic("not implemented")
+	_, err := f.nic.WritePacket(r, fakeNetNumber, pkt)
+	return err
 }
 
 func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
@@ -1464,7 +1460,7 @@ func TestExternalSendWithHandleLocal(t *testing.T) {
 						ReserveHeaderBytes: int(r.MaxHeaderLength()),
 						Data:               buffer.NewView(10).ToVectorisedView(),
 					})); err != nil {
-						t.Fatalf("r.WritePacket(nil, _, _): %s", err)
+						t.Fatalf("r.WritePacket(...): %s", err)
 					}
 					if n := ep.Drain(); n != 1 {
 						t.Fatalf("got ep.Drain() = %d, want = 1", n)
