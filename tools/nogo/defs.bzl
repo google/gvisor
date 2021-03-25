@@ -411,6 +411,8 @@ def _nogo_test_impl(ctx):
         nogo_findings = depset([findings]),
         # Expose all escape analysis findings (see above).
         nogo_escapes = depset([escapes]),
+        # Expose both kinds of Findings to go/tricorder.
+        tricorder = depset([findings, escapes]),
     )]
 
 nogo_test = rule(
