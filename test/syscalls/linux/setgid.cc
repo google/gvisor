@@ -107,16 +107,7 @@ PosixErrorOr<std::pair<gid_t, gid_t>> Groups() {
   if (!capable.ValueOrDie()) {
     return PosixError(EPERM, "missing CAP_SETGID");
   }
-  gid_t gid = getegid();
-  auto cleanup1 = Setegid(gid);
-  if (!cleanup1.ok()) {
-    return cleanup1.error();
-  }
-  auto cleanup2 = Setegid(kNobody);
-  if (!cleanup2.ok()) {
-    return cleanup2.error();
-  }
-  return std::pair<gid_t, gid_t>(gid, kNobody);
+  return std::pair<gid_t, gid_t>(getegid(), kNobody);
 }
 
 class SetgidDirTest : public ::testing::Test {
@@ -131,6 +122,12 @@ class SetgidDirTest : public ::testing::Test {
     PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
     SKIP_IF(!groups.ok());
     groups_ = groups.ValueOrDie();
+
+    // Ensure we can actually use both groups.
+    auto cleanup1 = Setegid(groups_.first);
+    SKIP_IF(!cleanup1.ok());
+    auto cleanup2 = Setegid(groups_.second);
+    SKIP_IF(!cleanup2.ok());
 
     auto cleanup = Setegid(groups_.first);
     temp_dir_ = ASSERT_NO_ERRNO_AND_VALUE(
