@@ -131,7 +131,7 @@ sudo sh -c 'echo "Hello World!" > rootfs/var/www/html/index.html'
 Next create the `config.json` specifying the network namespace.
 
 ```
-sudo /usr/local/bin/runsc spec \
+sudo runsc spec \
     --cwd /var/www/html \
     --netns /var/run/netns/${CNI_CONTAINERID} \
     -- python -m http.server
