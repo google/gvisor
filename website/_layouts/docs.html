@@ -20,15 +20,20 @@ categories:
             {% comment %}If all pages in the subcategory are excluded don't show it.{% endcomment %}
             {% if sorted_pages.size > 0 %}
               {% if subcategory.name != "" %}
-                {% assign ac = "aria-controls" %}
                 {% assign cid = category | remove: " " | downcase %}
                 {% assign sid = subcategory.name | remove: " " | downcase %}
                 <li>
-                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" aria-expanded="false" {{ ac }}="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
-                  <ul class="collapse sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
+                  {% comment %}
+                  If the current page is in the sub-category then set the collapsible to expanded.
+                  See: https://getbootstrap.com/docs/3.3/javascript/#collapse
+                  {% endcomment %}
+                  {% assign expanded = false %}
+                  {% for p in sorted_pages %}{% if page.url == p.url %}{% assign expanded = true %}{% endif %}{% endfor %}
+                  <a class="sidebar-nav-heading" data-toggle="collapse" href="#{{ cid }}-{{ sid }}" {% if expanded %}aria-expanded="true"{% else %}aria-expanded="false"{% endif %} aria-controls="{{ cid }}-{{ sid }}">{{ subcategory.name }}<span class="caret"></span></a>
+                  <ul class="collapse{% if expanded %} in{% endif %} sidebar-nav sidebar-submenu" id="{{ cid }}-{{ sid }}">
               {% endif %}
               {% for p in sorted_pages %}
-                <li><a href="{{ p.url }}">{{ p.title }}</a></li>
+                <li{% if page.url == p.url %} class="active"{% endif %}><a href="{{ p.url }}">{{ p.title }}</a></li>
               {% endfor %}
               {% if subcategory.name != "" %}
                 </li>
