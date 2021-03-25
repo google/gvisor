@@ -770,8 +770,8 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 	if !t.hasTracer() {
 		return false
 	}
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
 	event := false
 	if !opts.Untraced {
 		switch kind {
