@@ -47,7 +47,7 @@ const (
 	// Beyond a relatively small number, there are likely few perform
 	// benefits, since the TLB has likely long since lost any translations
 	// from more than a few PCIDs past.
-	poolPCIDs = 8
+	poolPCIDs = 128
 )
 
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
