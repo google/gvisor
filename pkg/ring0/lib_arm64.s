@@ -32,6 +32,14 @@ TEXT ·FlushTlbByASID(SB),NOSPLIT,$0-8
 	DSB $11                 // dsb(ish)
 	RET
 
+TEXT ·LocalFlushTlbByASID(SB),NOSPLIT,$0-8
+    MOVD asid+0(FP), R1
+    LSL $TLBI_ASID_SHIFT, R1, R1
+    DSB $10                 // dsb(ishst)
+    WORD $0xd5088741        // tlbi aside1, x1
+    DSB $11                 // dsb(ish)
+    RET
+
 TEXT ·LocalFlushTlbAll(SB),NOSPLIT,$0
 	DSB $6			// dsb(nshst)
 	WORD $0xd508871f	// __tlbi(vmalle1)

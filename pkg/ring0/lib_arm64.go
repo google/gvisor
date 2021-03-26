@@ -31,6 +31,9 @@ func FlushTlbByVA(addr uintptr)
 // FlushTlbByASID invalidates tlb by ASID/Inner-Shareable.
 func FlushTlbByASID(asid uintptr)
 
+// LocalFlushTlbByASID invalidates tlb by ASID.
+func LocalFlushTlbByASID(asid uintptr)
+
 // FlushTlbAll invalidates all tlb.
 func FlushTlbAll()
 
