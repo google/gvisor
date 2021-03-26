@@ -16,6 +16,7 @@
 package tcp
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
@@ -132,6 +133,10 @@ func (s *synRcvdCounter) Threshold() uint64 {
 	return s.threshold
 }
 
+var _ stack.TransportProtocol = (*protocol)(nil)
+var _ stack.SegmentableTransportProtocol = (*protocol)(nil)
+var _ stack.ChecksummableTransportProtocol = (*protocol)(nil)
+
 type protocol struct {
 	stack *stack.Stack
 
@@ -216,8 +221,8 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 // replyWithReset replies to the given segment with a reset segment.
 //
 // If the passed TTL is 0, then the route's default TTL will be used.
-func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
-	route, err := stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
+	route, err := st.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}
@@ -257,7 +262,7 @@ func replyWithReset(stack *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error 
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: 0,
-	}, buffer.VectorisedView{}, nil /* gso */, nil /* PacketOwner */)
+	}, buffer.VectorisedView{}, stack.GSO{}, nil /* PacketOwner */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.
@@ -516,6 +521,81 @@ func (p *protocol) SynRcvdCounter() *synRcvdCounter {
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)
+}
+
+// UpdateTransportChecksum implements stack.ChecksummableTransportProtocol.
+func (*protocol) UpdateTransportChecksum(pkt *stack.PacketBuffer, target stack.TransportChecksumStatus) {
+	t := header.TCP(pkt.TransportHeader().View())
+
+	switch target {
+	case stack.TransportChecksumNone:
+		panic("stack.TransportChecksumNone should never be a target checksum status")
+	case stack.TransportChecksumNotNeeded:
+		t.SetChecksum(0)
+	case stack.TransportChecksumPartial, stack.TransportChecksumCalculated:
+		net := pkt.Network()
+		t.SetChecksum(header.PseudoHeaderChecksum(ProtocolNumber, net.SourceAddress(), net.DestinationAddress(), uint16(pkt.Data().Size()+len(t))))
+
+		if target == stack.TransportChecksumCalculated {
+			t.SetChecksum(^t.CalculateChecksum(pkt.Data().AsRange().Checksum()))
+		}
+	default:
+		panic(fmt.Sprintf("unhandled TargetTransportChecksumStatus = %d", target))
+	}
+
+	pkt.TransportChecksumStatus = target
+}
+
+// Segment implements stack.SegmentableTransportProtocol.
+func (p *protocol) Segment(pkt *stack.PacketBuffer, mtu uint32, targetChecksum stack.TransportChecksumStatus) (stack.PacketBufferList, tcpip.Error) {
+	netHdr := pkt.NetworkHeader().View()
+	transportHdr := pkt.TransportHeader().View()
+
+	hdrLen := uint32(netHdr.Size() + transportHdr.Size())
+	if hdrLen > mtu {
+		return stack.PacketBufferList{}, &tcpip.ErrMessageTooLong{}
+	}
+
+	data := pkt.Data().ExtractVV().Clone(nil)
+
+	resvSize := netHdr.Size() + transportHdr.Size() + pkt.AvailableHeaderBytes()
+	dataSize := mtu - hdrLen
+	var pkts stack.PacketBufferList
+	done := 0
+	for data.Size() > 0 {
+		var segData buffer.VectorisedView
+		data.ReadToVV(&segData, int(dataSize))
+
+		pb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: resvSize,
+			Data:               segData,
+		})
+		pb.GSOOptions = pkt.GSOOptions
+
+		newTransportHdr := pb.TransportHeader().Push(int(transportHdr.Size()))
+		if n := copy(newTransportHdr, transportHdr); n != len(transportHdr) {
+			panic(fmt.Sprintf("got copy(newTransportHdr, transportHdr) = %d, want = %d", n, len(transportHdr)))
+		}
+		pb.TransportProtocolNumber = pkt.TransportProtocolNumber
+		newNetHdr := pb.NetworkHeader().Push(int(netHdr.Size()))
+		if n := copy(newNetHdr, netHdr); n != len(netHdr) {
+			panic(fmt.Sprintf("got copy(newNetHdr, netHdr) = %d, want = %d", n, len(netHdr)))
+		}
+		pb.NetworkProtocolNumber = pkt.NetworkProtocolNumber
+		pb.Network().UpdatePacketSize(uint16(pb.Size()))
+
+		t := header.TCP(newTransportHdr)
+		t.SetSequenceNumber(t.SequenceNumber() + uint32(done))
+		p.UpdateTransportChecksum(pb, targetChecksum)
+
+		pb.Owner = pkt.Owner
+		pb.Hash = pkt.Hash
+
+		pkts.PushBack(pb)
+		done += segData.Size()
+	}
+
+	return pkts, nil
 }
 
 // NewProtocol returns a TCP transport protocol.

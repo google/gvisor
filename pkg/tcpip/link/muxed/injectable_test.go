@@ -54,7 +54,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 	var packetRoute stack.RouteInfo
 	packetRoute.RemoteAddress = dstIP
 
-	endpoint.WritePacket(packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
+	endpoint.WritePacket(packetRoute, ipv4.ProtocolNumber, pkt)
 
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
@@ -76,7 +76,7 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 	pkt.TransportHeader().Push(1)[0] = 0xFA
 	var packetRoute stack.RouteInfo
 	packetRoute.RemoteAddress = dstIP
-	endpoint.WritePacket(packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
+	endpoint.WritePacket(packetRoute, ipv4.ProtocolNumber, pkt)
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
 	if err != nil {

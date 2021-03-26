@@ -91,7 +91,7 @@ func (q *queueDispatcher) dispatchLoop() {
 			}
 			// We pass a protocol of zero here because each packet carries its
 			// NetworkProtocol.
-			q.lower.WritePackets(stack.RouteInfo{}, nil /* gso */, batch, 0 /* protocol */)
+			q.lower.WritePackets(stack.RouteInfo{}, batch, 0 /* protocol */)
 			for pkt := batch.Front(); pkt != nil; pkt = pkt.Next() {
 				batch.Remove(pkt)
 			}
@@ -150,11 +150,10 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
-func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	// WritePacket caller's do not set the following fields in PacketBuffer
 	// so we populate them here.
 	pkt.EgressRoute = r
-	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
 	d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]
 	if !d.q.enqueue(pkt) {
@@ -171,7 +170,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 //  - pkt.EgressRoute
 //  - pkt.GSOOptions
 //  - pkt.NetworkProtocolNumber
-func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	enqueued := 0
 	for pkt := pkts.Front(); pkt != nil; {
 		d := e.dispatchers[int(pkt.Hash)%len(e.dispatchers)]

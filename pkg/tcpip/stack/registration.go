@@ -174,6 +174,21 @@ const (
 	UnknownDestinationPacketHandled
 )
 
+// ChecksummableTransportProtocol is a transport protocol that may require
+// checksuming.
+type ChecksummableTransportProtocol interface {
+	// UpdateTransportChecksum updates the checksum of a packet to match the
+	// target transport checksum status.
+	UpdateTransportChecksum(*PacketBuffer, TransportChecksumStatus)
+}
+
+// SegmentableTransportProtocol is a transport protocol that supports
+// segmentation.
+type SegmentableTransportProtocol interface {
+	// Segment attempts to segment a packet so it can fit in the specified MTU
+	Segment(*PacketBuffer, uint32, TransportChecksumStatus) (PacketBufferList, tcpip.Error)
+}
+
 // TransportProtocol is the interface that needs to be implemented by transport
 // protocols (e.g., tcp, udp) that want to be part of the networking stack.
 type TransportProtocol interface {
@@ -537,24 +552,14 @@ type NetworkInterface interface {
 	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
-	WritePacketToRemote(tcpip.LinkAddress, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+	WritePacketToRemote(tcpip.LinkAddress, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePacket writes a packet with the given protocol through the given
 	// route.
 	//
 	// WritePacket takes ownership of the packet buffer. The packet buffer's
 	// network and transport header must be set.
-	WritePacket(*Route, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
-
-	// WritePackets writes packets with the given protocol through the given
-	// route. Must not be called with an empty list of packet buffers.
-	//
-	// WritePackets takes ownership of the packet buffers.
-	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
-	WritePackets(*Route, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
@@ -610,12 +615,7 @@ type NetworkEndpoint interface {
 	// WritePacket writes a packet to the given destination address and
 	// protocol. It takes ownership of pkt. pkt.TransportHeader must have
 	// already been set.
-	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
-
-	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length. It takes ownership of pkts and
-	// underlying packets.
-	WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
+	WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It takes ownership of pkt.
@@ -653,6 +653,13 @@ type IPNetworkEndpointStats interface {
 
 	// IPStats returns the IP statistics of a network endpoint.
 	IPStats() *tcpip.IPStats
+}
+
+// FragmentableNetworkProtocol is a network protocol that supports
+// fragmentation.
+type FragmentableNetworkProtocol interface {
+	// Fragment attempts to fragment a packet so it can fit in the specified MTU.
+	Fragment(*PacketBuffer, uint32) (PacketBufferList, tcpip.Error)
 }
 
 // ForwardingNetworkProtocol is a NetworkProtocol that may forward packets.
@@ -832,7 +839,7 @@ type LinkEndpoint interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
-	WritePacket(RouteInfo, *GSO, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
+	WritePacket(RouteInfo, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
 
 	// WritePackets writes packets with the given protocol and route. Must not be
 	// called with an empty list of packet buffers.
@@ -842,7 +849,7 @@ type LinkEndpoint interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
-	WritePackets(RouteInfo, *GSO, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
@@ -1021,10 +1028,6 @@ const (
 	// Hardware GSO types:
 	GSOTCPv4
 	GSOTCPv6
-
-	// GSOSW is used for software GSO segments which have to be sent by
-	// endpoint.WritePackets.
-	GSOSW
 )
 
 // GSO contains generic segmentation offload properties.
@@ -1042,9 +1045,6 @@ type GSO struct {
 	MSS uint16
 	// L3Len is L3 (IP) header length.
 	L3HdrLen uint16
-
-	// MaxSize is maximum GSO packet size.
-	MaxSize uint32
 }
 
 // GSOEndpoint provides access to GSO properties.

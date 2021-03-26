@@ -89,4 +89,7 @@ type Network interface {
 
 	// SetTOS sets the values of the "type of service" and "flow label" fields.
 	SetTOS(t uint8, l uint32)
+
+	// UpdatePacketSize updates the size of the packet, including IP headers.
+	UpdatePacketSize(uint16)
 }
