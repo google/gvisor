@@ -42,7 +42,7 @@ func (ds *dirtySet) forEach(m *machine, fn func(c *vCPU)) {
 					continue
 				}
 				id := 64*index + bit
-				fn(m.vCPUsByID[id])
+				fn(m.vCPUsByID[id].Load())
 			}
 		}
 	}

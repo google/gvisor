@@ -17,7 +17,9 @@ package kvm
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -27,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
+	gsync "gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -59,7 +62,7 @@ type machine struct {
 	vCPUsByTID map[uint64]*vCPU
 
 	// vCPUsByID are the machine vCPUs, can be indexed by the vCPU's ID.
-	vCPUsByID []*vCPU
+	vCPUsByID []AtomicPtrVCPU
 
 	// maxVCPUs is the maximum number of vCPUs supported by the machine.
 	maxVCPUs int
@@ -72,6 +75,8 @@ type machine struct {
 
 	// nextID is the next vCPU ID.
 	nextID uint32
+
+	watchdogDone chan bool
 }
 
 const (
@@ -136,6 +141,11 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	watchdogSeqCount        gsync.SeqCount
+	watchdogTimeStamp       int64
+	watchdogSystemRegisters systemRegs
+	watchdogUserRegisters   userRegs
 }
 
 type dieState struct {
@@ -145,6 +155,56 @@ type dieState struct {
 	// guestRegs is used to store register state during vCPU.die() to prevent
 	// allocation inside nosplit function.
 	guestRegs userRegs
+}
+
+const watchdogTimeout = 30
+
+func (m *machine) Watchdog() {
+	ticker := time.NewTicker(watchdogTimeout * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.watchdogDone:
+			return
+		case <-ticker.C:
+			now := watchdogTimestamp()
+			for id, _ := range m.vCPUsByID {
+				c := m.vCPUsByID[id].Load()
+				if c == nil {
+					continue
+				}
+				ts := atomic.LoadInt64(&c.watchdogTimeStamp)
+
+				if ts == 0 || now-ts < watchdogTimeout {
+					continue
+				}
+
+				sregs := systemRegs{}
+				uregs := userRegs{}
+
+				for {
+					epoch := c.watchdogSeqCount.BeginRead()
+					sregs = c.watchdogSystemRegisters
+					uregs = c.watchdogUserRegisters
+					if c.watchdogSeqCount.ReadOk(epoch) {
+						break
+					}
+				}
+
+				var m strings.Builder
+				fmt.Fprintf(&m, "VCPU %d is stuck:\n", id)
+				fmt.Fprintf(&m, "\tsystem registers: %+v\n", sregs)
+				fmt.Fprintf(&m, "\tuser registers: %+v\n", uregs)
+				fmt.Fprintf(&m, "%s", log.Stacks(true))
+				if now-ts > 3*watchdogTimeout {
+					panic(m.String())
+				}
+				log.Warningf("%s", m.String())
+			}
+		}
+
+	}
 }
 
 // newVCPU creates a returns a new vCPU.
@@ -164,7 +224,7 @@ func (m *machine) newVCPU() *vCPU {
 		machine: m,
 	}
 	c.CPU.Init(&m.kernel, c.id, c)
-	m.vCPUsByID[c.id] = c
+	m.vCPUsByID[c.id].Store(c)
 
 	// Ensure the signal mask is correct.
 	if err := c.setSignalMask(); err != nil {
@@ -201,7 +261,7 @@ func newMachine(vm int) (*machine, error) {
 	}
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
 	m.vCPUsByTID = make(map[uint64]*vCPU)
-	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
+	m.vCPUsByID = make([]AtomicPtrVCPU, m.maxVCPUs)
 	m.kernel.Init(m.maxVCPUs)
 
 	// Pull the maximum slots.
@@ -285,6 +345,9 @@ func newMachine(vm int) (*machine, error) {
 		return nil, err
 	}
 
+	m.watchdogDone = make(chan bool)
+	go m.Watchdog()
+
 	// Ensure the machine is cleaned up properly.
 	runtime.SetFinalizer(m, (*machine).Destroy)
 	return m, nil
@@ -339,8 +402,13 @@ func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalReg
 func (m *machine) Destroy() {
 	runtime.SetFinalizer(m, nil)
 
+	if m.watchdogDone != nil {
+		close(m.watchdogDone)
+	}
+
 	// Destroy vCPUs.
-	for _, c := range m.vCPUsByID {
+	for i, _ := range m.vCPUsByID {
+		c := m.vCPUsByID[i].Load()
 		if c == nil {
 			continue
 		}
@@ -486,7 +554,8 @@ func (m *machine) dropPageTables(pt *pagetables.PageTables) {
 	defer m.mu.Unlock()
 
 	// Clear from all PCIDs.
-	for _, c := range m.vCPUsByID {
+	for i, _ := range m.vCPUsByID {
+		c := m.vCPUsByID[i].Load()
 		if c != nil && c.PCIDs != nil {
 			c.PCIDs.Drop(pt)
 		}
