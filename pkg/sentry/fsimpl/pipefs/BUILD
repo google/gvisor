@@ -11,6 +11,7 @@ go_library(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
