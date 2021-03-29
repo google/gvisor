@@ -15,6 +15,7 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/tmpfs",

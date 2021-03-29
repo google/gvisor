@@ -58,7 +58,7 @@ go_marshal = rule(
 marshal_deps = [
     "//pkg/gohacks",
     "//pkg/safecopy",
-    "//pkg/usermem",
+    "//pkg/hostarch",
     "//pkg/marshal",
 ]
 

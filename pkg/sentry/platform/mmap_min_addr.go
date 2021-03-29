@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // systemMMapMinAddrSource is the source file.
@@ -30,8 +30,8 @@ const systemMMapMinAddrSource = "/proc/sys/vm/mmap_min_addr"
 var systemMMapMinAddr uint64
 
 // SystemMMapMinAddr returns the minimum system address.
-func SystemMMapMinAddr() usermem.Addr {
-	return usermem.Addr(systemMMapMinAddr)
+func SystemMMapMinAddr() hostarch.Addr {
+	return hostarch.Addr(systemMMapMinAddr)
 }
 
 // MMapMinAddr is a size zero struct that implements MinUserAddress based on
@@ -41,7 +41,7 @@ type MMapMinAddr struct {
 }
 
 // MinUserAddress implements platform.MinUserAddresss.
-func (*MMapMinAddr) MinUserAddress() usermem.Addr {
+func (*MMapMinAddr) MinUserAddress() hostarch.Addr {
 	return SystemMMapMinAddr()
 }
 

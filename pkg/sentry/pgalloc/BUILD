@@ -85,6 +85,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/safemem",
@@ -106,5 +107,5 @@ go_test(
     size = "small",
     srcs = ["pgalloc_test.go"],
     library = ":pgalloc",
-    deps = ["//pkg/usermem"],
+    deps = ["//pkg/hostarch"],
 )

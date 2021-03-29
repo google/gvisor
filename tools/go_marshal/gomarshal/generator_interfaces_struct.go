@@ -319,8 +319,8 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
@@ -352,8 +352,8 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
@@ -362,8 +362,8 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		fallback := func() {
 			g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
@@ -436,10 +436,10 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 	}
 
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
+	g.recordUsedImport("hostarch")
 
 	g.emit("// Copy%sIn copies in a slice of %s objects from the task's memory.\n", slice.ident, g.typeName())
-	g.emit("func Copy%sIn(cc marshal.CopyContext, addr usermem.Addr, dst []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func Copy%sIn(cc marshal.CopyContext, addr hostarch.Addr, dst []%s) (int, error) {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
 		g.emit("if count == 0 {\n")
@@ -496,7 +496,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 	g.emit("}\n\n")
 
 	g.emit("// Copy%sOut copies a slice of %s objects to the task's memory.\n", slice.ident, g.typeName())
-	g.emit("func Copy%sOut(cc marshal.CopyContext, addr usermem.Addr, src []%s) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func Copy%sOut(cc marshal.CopyContext, addr hostarch.Addr, src []%s) (int, error) {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
 		g.emit("if count == 0 {\n")

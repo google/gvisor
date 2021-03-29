@@ -19,12 +19,12 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // The most significant 29 bits hold either a pid or a file descriptor.
@@ -165,7 +165,7 @@ func Time(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	addr := args[0].Pointer()
 
 	r := t.Kernel().RealtimeClock().Now().TimeT()
-	if addr == usermem.Addr(0) {
+	if addr == hostarch.Addr(0) {
 		return uintptr(r), nil, nil
 	}
 
@@ -182,7 +182,7 @@ func Time(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 type clockNanosleepRestartBlock struct {
 	c        ktime.Clock
 	duration time.Duration
-	rem      usermem.Addr
+	rem      hostarch.Addr
 }
 
 // Restart implements kernel.SyscallRestartBlock.Restart.
@@ -221,7 +221,7 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, ts linux.Timespec) error
 //
 // If blocking is interrupted, the syscall is restarted with the remaining
 // duration timeout.
-func clockNanosleepFor(t *kernel.Task, c ktime.Clock, dur time.Duration, rem usermem.Addr) error {
+func clockNanosleepFor(t *kernel.Task, c ktime.Clock, dur time.Duration, rem hostarch.Addr) error {
 	timer, start, tchan := ktime.After(c, dur)
 
 	err := t.BlockWithTimer(nil, tchan)
@@ -324,14 +324,14 @@ func Gettimeofday(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	tv := args[0].Pointer()
 	tz := args[1].Pointer()
 
-	if tv != usermem.Addr(0) {
+	if tv != hostarch.Addr(0) {
 		nowTv := t.Kernel().RealtimeClock().Now().Timeval()
 		if err := copyTimevalOut(t, tv, &nowTv); err != nil {
 			return 0, nil, err
 		}
 	}
 
-	if tz != usermem.Addr(0) {
+	if tz != hostarch.Addr(0) {
 		// Ask the time package for the timezone.
 		_, offset := time.Now().Zone()
 		// This int32 array mimics linux's struct timezone.

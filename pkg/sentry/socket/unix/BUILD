@@ -40,6 +40,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/refs",

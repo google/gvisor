@@ -21,20 +21,20 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // HandleUserFault handles an application page fault. sp is the faulting
 // application thread's stack pointer.
 //
 // Preconditions: mm.as != nil.
-func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr usermem.Addr, at usermem.AccessType, sp usermem.Addr) error {
-	ar, ok := addr.RoundDown().ToRange(usermem.PageSize)
+func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr, at hostarch.AccessType, sp hostarch.Addr) error {
+	ar, ok := addr.RoundDown().ToRange(hostarch.PageSize)
 	if !ok {
 		return syserror.EFAULT
 	}
@@ -72,11 +72,11 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr usermem.Addr,
 }
 
 // MMap establishes a memory mapping.
-func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (usermem.Addr, error) {
+func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error) {
 	if opts.Length == 0 {
 		return 0, syserror.EINVAL
 	}
-	length, ok := usermem.Addr(opts.Length).RoundUp()
+	length, ok := hostarch.Addr(opts.Length).RoundUp()
 	if !ok {
 		return 0, syserror.ENOMEM
 	}
@@ -84,7 +84,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 
 	if opts.Mappable != nil {
 		// Offset must be aligned.
-		if usermem.Addr(opts.Offset).RoundDown() != usermem.Addr(opts.Offset) {
+		if hostarch.Addr(opts.Offset).RoundDown() != hostarch.Addr(opts.Offset) {
 			return 0, syserror.EINVAL
 		}
 		// Offset + length must not overflow.
@@ -157,7 +157,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 // Preconditions:
 // * mm.mappingMu must be locked.
 // * vseg.Range().IsSupersetOf(ar).
-func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
+func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, precommit bool) {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// Linux doesn't populate inaccessible pages. See
 		// mm/gup.c:populate_vma_page_range.
@@ -175,7 +175,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar u
 	}
 
 	// Ensure that we have usable pmas.
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, usermem.NoAccess)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess)
 	if err != nil {
 		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
 		// mm/gup.c:mm_populate(). If it matters, we'll get it again when
@@ -203,7 +203,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar u
 // * vseg.Range().IsSupersetOf(ar).
 //
 // Postconditions: mm.mappingMu will be unlocked.
-func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
+func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, precommit bool) {
 	// See populateVMA above for commentary.
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		mm.mappingMu.Unlock()
@@ -221,7 +221,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	// mm.mappingMu doesn't need to be write-locked for getPMAsLocked, and it
 	// isn't needed at all for mapASLocked.
 	mm.mappingMu.DowngradeLock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, usermem.NoAccess)
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, hostarch.NoAccess)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		mm.activeMu.Unlock()
@@ -234,7 +234,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 }
 
 // MapStack allocates the initial process stack.
-func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error) {
+func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, error) {
 	// maxStackSize is the maximum supported process stack size in bytes.
 	//
 	// This limit exists because stack growing isn't implemented, so the entire
@@ -242,7 +242,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error
 	const maxStackSize = 128 << 20
 
 	stackSize := limits.FromContext(ctx).Get(limits.Stack)
-	r, ok := usermem.Addr(stackSize.Cur).RoundUp()
+	r, ok := hostarch.Addr(stackSize.Cur).RoundUp()
 	sz := uint64(r)
 	if !ok {
 		// RLIM_INFINITY rounds up to 0.
@@ -251,16 +251,16 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error
 		ctx.Warningf("Capping stack size from RLIMIT_STACK of %v down to %v.", sz, maxStackSize)
 		sz = maxStackSize
 	} else if sz == 0 {
-		return usermem.AddrRange{}, syserror.ENOMEM
+		return hostarch.AddrRange{}, syserror.ENOMEM
 	}
-	szaddr := usermem.Addr(sz)
+	szaddr := hostarch.Addr(sz)
 	ctx.Debugf("Allocating stack with size of %v bytes", sz)
 
 	// Determine the stack's desired location. Unlike Linux, address
 	// randomization can't be disabled.
-	stackEnd := mm.layout.MaxAddr - usermem.Addr(mrand.Int63n(int64(mm.layout.MaxStackRand))).RoundDown()
+	stackEnd := mm.layout.MaxAddr - hostarch.Addr(mrand.Int63n(int64(mm.layout.MaxStackRand))).RoundDown()
 	if stackEnd < szaddr {
-		return usermem.AddrRange{}, syserror.ENOMEM
+		return hostarch.AddrRange{}, syserror.ENOMEM
 	}
 	stackStart := stackEnd - szaddr
 	mm.mappingMu.Lock()
@@ -268,8 +268,8 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error
 	_, ar, err := mm.createVMALocked(ctx, memmap.MMapOpts{
 		Length:    sz,
 		Addr:      stackStart,
-		Perms:     usermem.ReadWrite,
-		MaxPerms:  usermem.AnyAccess,
+		Perms:     hostarch.ReadWrite,
+		MaxPerms:  hostarch.AnyAccess,
 		Private:   true,
 		GrowsDown: true,
 		MLockMode: mm.defMLockMode,
@@ -279,14 +279,14 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error
 }
 
 // MUnmap implements the semantics of Linux's munmap(2).
-func (mm *MemoryManager) MUnmap(ctx context.Context, addr usermem.Addr, length uint64) error {
+func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length uint64) error {
 	if addr != addr.RoundDown() {
 		return syserror.EINVAL
 	}
 	if length == 0 {
 		return syserror.EINVAL
 	}
-	la, ok := usermem.Addr(length).RoundUp()
+	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return syserror.EINVAL
 	}
@@ -308,7 +308,7 @@ type MRemapOpts struct {
 
 	// NewAddr is the new address for the remapping. NewAddr is ignored unless
 	// Move is MMRemapMustMove.
-	NewAddr usermem.Addr
+	NewAddr hostarch.Addr
 }
 
 // MRemapMoveMode controls MRemap's moving behavior.
@@ -328,7 +328,7 @@ const (
 )
 
 // MRemap implements the semantics of Linux's mremap(2).
-func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (usermem.Addr, error) {
+func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (hostarch.Addr, error) {
 	// "Note that old_address has to be page aligned." - mremap(2)
 	if oldAddr.RoundDown() != oldAddr {
 		return 0, syserror.EINVAL
@@ -336,9 +336,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 
 	// Linux treats an old_size that rounds up to 0 as 0, which is otherwise a
 	// valid size. However, new_size can't be 0 after rounding.
-	oldSizeAddr, _ := usermem.Addr(oldSize).RoundUp()
+	oldSizeAddr, _ := hostarch.Addr(oldSize).RoundUp()
 	oldSize = uint64(oldSizeAddr)
-	newSizeAddr, ok := usermem.Addr(newSize).RoundUp()
+	newSizeAddr, ok := hostarch.Addr(newSize).RoundUp()
 	if !ok || newSizeAddr == 0 {
 		return 0, syserror.EINVAL
 	}
@@ -392,8 +392,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			if newSize < oldSize {
 				// If oldAddr+oldSize didn't overflow, oldAddr+newSize can't
 				// either.
-				newEnd := oldAddr + usermem.Addr(newSize)
-				mm.unmapLocked(ctx, usermem.AddrRange{newEnd, oldEnd})
+				newEnd := oldAddr + hostarch.Addr(newSize)
+				mm.unmapLocked(ctx, hostarch.AddrRange{newEnd, oldEnd})
 			}
 			return oldAddr, nil
 		}
@@ -438,7 +438,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	}
 
 	// Find a location for the new mapping.
-	var newAR usermem.AddrRange
+	var newAR hostarch.AddrRange
 	switch opts.Move {
 	case MRemapMayMove:
 		newAddr, err := mm.findAvailableLocked(newSize, findAvailableOpts{})
@@ -457,7 +457,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		if !ok {
 			return 0, syserror.EINVAL
 		}
-		if (usermem.AddrRange{oldAddr, oldEnd}).Overlaps(newAR) {
+		if (hostarch.AddrRange{oldAddr, oldEnd}).Overlaps(newAR) {
 			return 0, syserror.EINVAL
 		}
 
@@ -479,8 +479,8 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		// correct: compare Linux's mm/mremap.c:mremap_to() => do_munmap(),
 		// vma_to_resize().
 		if newSize < oldSize {
-			oldNewEnd := oldAddr + usermem.Addr(newSize)
-			mm.unmapLocked(ctx, usermem.AddrRange{oldNewEnd, oldEnd})
+			oldNewEnd := oldAddr + hostarch.Addr(newSize)
+			mm.unmapLocked(ctx, hostarch.AddrRange{oldNewEnd, oldEnd})
 			oldEnd = oldNewEnd
 		}
 
@@ -488,7 +488,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		vseg = mm.vmas.FindSegment(oldAddr)
 	}
 
-	oldAR := usermem.AddrRange{oldAddr, oldEnd}
+	oldAR := hostarch.AddrRange{oldAddr, oldEnd}
 
 	// Check that oldEnd maps to the same vma as oldAddr.
 	if vseg.End() < oldEnd {
@@ -588,14 +588,14 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 }
 
 // MProtect implements the semantics of Linux's mprotect(2).
-func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms usermem.AccessType, growsDown bool) error {
+func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
 	if addr.RoundDown() != addr {
 		return syserror.EINVAL
 	}
 	if length == 0 {
 		return nil
 	}
-	rlength, ok := usermem.Addr(length).RoundUp()
+	rlength, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return syserror.ENOMEM
 	}
@@ -692,19 +692,19 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 }
 
 // BrkSetup sets mm's brk address to addr and its brk size to 0.
-func (mm *MemoryManager) BrkSetup(ctx context.Context, addr usermem.Addr) {
+func (mm *MemoryManager) BrkSetup(ctx context.Context, addr hostarch.Addr) {
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 	// Unmap the existing brk.
 	if mm.brk.Length() != 0 {
 		mm.unmapLocked(ctx, mm.brk)
 	}
-	mm.brk = usermem.AddrRange{addr, addr}
+	mm.brk = hostarch.AddrRange{addr, addr}
 }
 
 // Brk implements the semantics of Linux's brk(2), except that it returns an
 // error on failure.
-func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Addr, error) {
+func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.Addr, error) {
 	mm.mappingMu.Lock()
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
@@ -741,8 +741,8 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 			Fixed:  true,
 			// Compare Linux's
 			// arch/x86/include/asm/page_types.h:VM_DATA_DEFAULT_FLAGS.
-			Perms:    usermem.ReadWrite,
-			MaxPerms: usermem.AnyAccess,
+			Perms:    hostarch.ReadWrite,
+			MaxPerms: hostarch.AnyAccess,
 			Private:  true,
 			// Linux: mm/mmap.c:sys_brk() => do_brk_flags() includes
 			// mm->def_flags.
@@ -762,7 +762,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 		}
 
 	case newbrkpg < oldbrkpg:
-		mm.unmapLocked(ctx, usermem.AddrRange{newbrkpg, oldbrkpg})
+		mm.unmapLocked(ctx, hostarch.AddrRange{newbrkpg, oldbrkpg})
 		fallthrough
 
 	default:
@@ -775,9 +775,9 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 
 // MLock implements the semantics of Linux's mlock()/mlock2()/munlock(),
 // depending on mode.
-func (mm *MemoryManager) MLock(ctx context.Context, addr usermem.Addr, length uint64, mode memmap.MLockMode) error {
+func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length uint64, mode memmap.MLockMode) error {
 	// Linux allows this to overflow.
-	la, _ := usermem.Addr(length + addr.PageOffset()).RoundUp()
+	la, _ := hostarch.Addr(length + addr.PageOffset()).RoundUp()
 	ar, ok := addr.RoundDown().ToRange(uint64(la))
 	if !ok {
 		return syserror.EINVAL
@@ -850,7 +850,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr usermem.Addr, length ui
 				mm.mappingMu.RUnlock()
 				return syserror.ENOMEM
 			}
-			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), usermem.NoAccess)
+			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess)
 			if err != nil {
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
@@ -945,7 +945,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		mm.mappingMu.DowngradeLock()
 		for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 			if vseg.ValuePtr().effectivePerms.Any() {
-				mm.getPMAsLocked(ctx, vseg, vseg.Range(), usermem.NoAccess)
+				mm.getPMAsLocked(ctx, vseg, vseg.Range(), hostarch.NoAccess)
 			}
 		}
 
@@ -965,7 +965,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 }
 
 // NumaPolicy implements the semantics of Linux's get_mempolicy(MPOL_F_ADDR).
-func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (linux.NumaPolicy, uint64, error) {
+func (mm *MemoryManager) NumaPolicy(addr hostarch.Addr) (linux.NumaPolicy, uint64, error) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	vseg := mm.vmas.FindSegment(addr)
@@ -977,12 +977,12 @@ func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (linux.NumaPolicy, uint64
 }
 
 // SetNumaPolicy implements the semantics of Linux's mbind().
-func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy linux.NumaPolicy, nodemask uint64) error {
+func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy linux.NumaPolicy, nodemask uint64) error {
 	if !addr.IsPageAligned() {
 		return syserror.EINVAL
 	}
 	// Linux allows this to overflow.
-	la, _ := usermem.Addr(length).RoundUp()
+	la, _ := hostarch.Addr(length).RoundUp()
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
 		return syserror.EINVAL
@@ -1018,7 +1018,7 @@ func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy 
 }
 
 // SetDontFork implements the semantics of madvise MADV_DONTFORK.
-func (mm *MemoryManager) SetDontFork(addr usermem.Addr, length uint64, dontfork bool) error {
+func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
 	ar, ok := addr.ToRange(length)
 	if !ok {
 		return syserror.EINVAL
@@ -1044,7 +1044,7 @@ func (mm *MemoryManager) SetDontFork(addr usermem.Addr, length uint64, dontfork 
 }
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
-func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
+func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	ar, ok := addr.ToRange(length)
 	if !ok {
 		return syserror.EINVAL
@@ -1112,14 +1112,14 @@ type MSyncOpts struct {
 }
 
 // MSync implements the semantics of Linux's msync().
-func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length uint64, opts MSyncOpts) error {
+func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length uint64, opts MSyncOpts) error {
 	if addr != addr.RoundDown() {
 		return syserror.EINVAL
 	}
 	if length == 0 {
 		return nil
 	}
-	la, ok := usermem.Addr(length).RoundUp()
+	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return syserror.ENOMEM
 	}
@@ -1188,7 +1188,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length ui
 }
 
 // GetSharedFutexKey is used by kernel.Task.GetSharedKey.
-func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Addr) (futex.Key, error) {
+func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr hostarch.Addr) (futex.Key, error) {
 	ar, ok := addr.ToRange(4) // sizeof(int32).
 	if !ok {
 		return futex.Key{}, syserror.EFAULT
@@ -1196,7 +1196,7 @@ func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Add
 
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
-	vseg, _, err := mm.getVMAsLocked(ctx, ar, usermem.Read, false)
+	vseg, _, err := mm.getVMAsLocked(ctx, ar, hostarch.Read, false)
 	if err != nil {
 		return futex.Key{}, err
 	}
@@ -1230,7 +1230,7 @@ func (mm *MemoryManager) VirtualMemorySize() uint64 {
 
 // VirtualMemorySizeRange returns the combined length in bytes of all mappings
 // in ar in mm.
-func (mm *MemoryManager) VirtualMemorySizeRange(ar usermem.AddrRange) uint64 {
+func (mm *MemoryManager) VirtualMemorySizeRange(ar hostarch.AddrRange) uint64 {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	return uint64(mm.vmas.SpanRange(ar))

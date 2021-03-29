@@ -24,7 +24,8 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -65,7 +66,7 @@ type Layout struct {
 // of a tree. dataSize specifies the size of input data in bytes.
 func InitLayout(dataSize int64, hashAlgorithms int, dataAndTreeInSameFile bool) (Layout, error) {
 	layout := Layout{
-		blockSize: usermem.PageSize,
+		blockSize: hostarch.PageSize,
 	}
 
 	// TODO(b/156980949): Allow config SHA384.

@@ -43,6 +43,7 @@ go_library(
         "//pkg/context",
         "//pkg/fspath",
         "//pkg/gohacks",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",

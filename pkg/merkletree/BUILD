@@ -8,7 +8,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/usermem",
+        "//pkg/hostarch",
     ],
 )
 
@@ -18,6 +18,6 @@ go_test(
     library = ":merkletree",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/usermem",
+        "//pkg/hostarch",
     ],
 )

@@ -23,11 +23,11 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/wire"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SaveTo writes f's state to the given stream.
@@ -49,11 +49,11 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 
 	// Ensure that all pages that contain data have knownCommitted set, since
 	// we only store knownCommitted pages below.
-	zeroPage := make([]byte, usermem.PageSize)
+	zeroPage := make([]byte, hostarch.PageSize)
 	err := f.updateUsageLocked(0, func(bs []byte, committed []byte) error {
-		for pgoff := 0; pgoff < len(bs); pgoff += usermem.PageSize {
-			i := pgoff / usermem.PageSize
-			pg := bs[pgoff : pgoff+usermem.PageSize]
+		for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
+			i := pgoff / hostarch.PageSize
+			pg := bs[pgoff : pgoff+hostarch.PageSize]
 			if !bytes.Equal(pg, zeroPage) {
 				committed[i] = 1
 				continue

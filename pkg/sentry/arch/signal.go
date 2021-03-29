@@ -16,7 +16,7 @@ package arch
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // SignalAct represents the action that should be taken when a signal is
@@ -154,107 +154,107 @@ func (s *SignalInfo) FixSignalCodeForUser() {
 
 // PID returns the si_pid field.
 func (s *SignalInfo) PID() int32 {
-	return int32(usermem.ByteOrder.Uint32(s.Fields[0:4]))
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[0:4]))
 }
 
 // SetPID mutates the si_pid field.
 func (s *SignalInfo) SetPID(val int32) {
-	usermem.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
 }
 
 // UID returns the si_uid field.
 func (s *SignalInfo) UID() int32 {
-	return int32(usermem.ByteOrder.Uint32(s.Fields[4:8]))
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[4:8]))
 }
 
 // SetUID mutates the si_uid field.
 func (s *SignalInfo) SetUID(val int32) {
-	usermem.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
 }
 
 // Sigval returns the sigval field, which is aliased to both si_int and si_ptr.
 func (s *SignalInfo) Sigval() uint64 {
-	return usermem.ByteOrder.Uint64(s.Fields[8:16])
+	return hostarch.ByteOrder.Uint64(s.Fields[8:16])
 }
 
 // SetSigval mutates the sigval field.
 func (s *SignalInfo) SetSigval(val uint64) {
-	usermem.ByteOrder.PutUint64(s.Fields[8:16], val)
+	hostarch.ByteOrder.PutUint64(s.Fields[8:16], val)
 }
 
 // TimerID returns the si_timerid field.
 func (s *SignalInfo) TimerID() linux.TimerID {
-	return linux.TimerID(usermem.ByteOrder.Uint32(s.Fields[0:4]))
+	return linux.TimerID(hostarch.ByteOrder.Uint32(s.Fields[0:4]))
 }
 
 // SetTimerID sets the si_timerid field.
 func (s *SignalInfo) SetTimerID(val linux.TimerID) {
-	usermem.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
 }
 
 // Overrun returns the si_overrun field.
 func (s *SignalInfo) Overrun() int32 {
-	return int32(usermem.ByteOrder.Uint32(s.Fields[4:8]))
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[4:8]))
 }
 
 // SetOverrun sets the si_overrun field.
 func (s *SignalInfo) SetOverrun(val int32) {
-	usermem.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
 }
 
 // Addr returns the si_addr field.
 func (s *SignalInfo) Addr() uint64 {
-	return usermem.ByteOrder.Uint64(s.Fields[0:8])
+	return hostarch.ByteOrder.Uint64(s.Fields[0:8])
 }
 
 // SetAddr sets the si_addr field.
 func (s *SignalInfo) SetAddr(val uint64) {
-	usermem.ByteOrder.PutUint64(s.Fields[0:8], val)
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], val)
 }
 
 // Status returns the si_status field.
 func (s *SignalInfo) Status() int32 {
-	return int32(usermem.ByteOrder.Uint32(s.Fields[8:12]))
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[8:12]))
 }
 
 // SetStatus mutates the si_status field.
 func (s *SignalInfo) SetStatus(val int32) {
-	usermem.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
 }
 
 // CallAddr returns the si_call_addr field.
 func (s *SignalInfo) CallAddr() uint64 {
-	return usermem.ByteOrder.Uint64(s.Fields[0:8])
+	return hostarch.ByteOrder.Uint64(s.Fields[0:8])
 }
 
 // SetCallAddr mutates the si_call_addr field.
 func (s *SignalInfo) SetCallAddr(val uint64) {
-	usermem.ByteOrder.PutUint64(s.Fields[0:8], val)
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], val)
 }
 
 // Syscall returns the si_syscall field.
 func (s *SignalInfo) Syscall() int32 {
-	return int32(usermem.ByteOrder.Uint32(s.Fields[8:12]))
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[8:12]))
 }
 
 // SetSyscall mutates the si_syscall field.
 func (s *SignalInfo) SetSyscall(val int32) {
-	usermem.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
 }
 
 // Arch returns the si_arch field.
 func (s *SignalInfo) Arch() uint32 {
-	return usermem.ByteOrder.Uint32(s.Fields[12:16])
+	return hostarch.ByteOrder.Uint32(s.Fields[12:16])
 }
 
 // SetArch mutates the si_arch field.
 func (s *SignalInfo) SetArch(val uint32) {
-	usermem.ByteOrder.PutUint32(s.Fields[12:16], val)
+	hostarch.ByteOrder.PutUint32(s.Fields[12:16], val)
 }
 
 // Band returns the si_band field.
 func (s *SignalInfo) Band() int64 {
-	return int64(usermem.ByteOrder.Uint64(s.Fields[0:8]))
+	return int64(hostarch.ByteOrder.Uint64(s.Fields[0:8]))
 }
 
 // SetBand mutates the si_band field.
@@ -262,15 +262,15 @@ func (s *SignalInfo) SetBand(val int64) {
 	// Note: this assumes the platform uses `long` as `__ARCH_SI_BAND_T`.
 	// On some platforms, which gVisor doesn't support, `__ARCH_SI_BAND_T` is
 	// `int`. See siginfo.h.
-	usermem.ByteOrder.PutUint64(s.Fields[0:8], uint64(val))
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], uint64(val))
 }
 
 // FD returns the si_fd field.
 func (s *SignalInfo) FD() uint32 {
-	return usermem.ByteOrder.Uint32(s.Fields[8:12])
+	return hostarch.ByteOrder.Uint32(s.Fields[8:12])
 }
 
 // SetFD mutates the si_fd field.
 func (s *SignalInfo) SetFD(val uint32) {
-	usermem.ByteOrder.PutUint32(s.Fields[8:12], val)
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], val)
 }

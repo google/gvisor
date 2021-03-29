@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
 	"gvisor.dev/gvisor/tools/go_marshal/test"
 )
@@ -39,10 +39,10 @@ func BenchmarkEncodingBinary(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		buf := bytes.NewBuffer(make([]byte, size))
 		buf.Reset()
-		if err := encbin.Write(buf, usermem.ByteOrder, &s1); err != nil {
+		if err := encbin.Write(buf, hostarch.ByteOrder, &s1); err != nil {
 			b.Error("Write:", err)
 		}
-		if err := encbin.Read(buf, usermem.ByteOrder, &s2); err != nil {
+		if err := encbin.Read(buf, hostarch.ByteOrder, &s2); err != nil {
 			b.Error("Read:", err)
 		}
 	}
@@ -66,8 +66,8 @@ func BenchmarkBinary(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		buf := make([]byte, 0, size)
-		buf = binary.Marshal(buf, usermem.ByteOrder, &s1)
-		binary.Unmarshal(buf, usermem.ByteOrder, &s2)
+		buf = binary.Marshal(buf, hostarch.ByteOrder, &s1)
+		binary.Unmarshal(buf, hostarch.ByteOrder, &s2)
 	}
 
 	b.StopTimer()
@@ -89,42 +89,42 @@ func BenchmarkMarshalManual(b *testing.B) {
 		buf := make([]byte, 0, s1.SizeBytes())
 
 		// Marshal
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, s1.Dev)
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, s1.Ino)
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, s1.Nlink)
-		buf = binary.AppendUint32(buf, usermem.ByteOrder, s1.Mode)
-		buf = binary.AppendUint32(buf, usermem.ByteOrder, s1.UID)
-		buf = binary.AppendUint32(buf, usermem.ByteOrder, s1.GID)
-		buf = binary.AppendUint32(buf, usermem.ByteOrder, 0)
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, s1.Rdev)
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.Size))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.Blksize))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.Blocks))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.ATime.Sec))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.ATime.Nsec))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.MTime.Sec))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.MTime.Nsec))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.CTime.Sec))
-		buf = binary.AppendUint64(buf, usermem.ByteOrder, uint64(s1.CTime.Nsec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Dev)
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Ino)
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Nlink)
+		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.Mode)
+		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.UID)
+		buf = binary.AppendUint32(buf, hostarch.ByteOrder, s1.GID)
+		buf = binary.AppendUint32(buf, hostarch.ByteOrder, 0)
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, s1.Rdev)
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Size))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Blksize))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.Blocks))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.ATime.Sec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.ATime.Nsec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.MTime.Sec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.MTime.Nsec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.CTime.Sec))
+		buf = binary.AppendUint64(buf, hostarch.ByteOrder, uint64(s1.CTime.Nsec))
 
 		// Unmarshal
-		s2.Dev = usermem.ByteOrder.Uint64(buf[0:8])
-		s2.Ino = usermem.ByteOrder.Uint64(buf[8:16])
-		s2.Nlink = usermem.ByteOrder.Uint64(buf[16:24])
-		s2.Mode = usermem.ByteOrder.Uint32(buf[24:28])
-		s2.UID = usermem.ByteOrder.Uint32(buf[28:32])
-		s2.GID = usermem.ByteOrder.Uint32(buf[32:36])
+		s2.Dev = hostarch.ByteOrder.Uint64(buf[0:8])
+		s2.Ino = hostarch.ByteOrder.Uint64(buf[8:16])
+		s2.Nlink = hostarch.ByteOrder.Uint64(buf[16:24])
+		s2.Mode = hostarch.ByteOrder.Uint32(buf[24:28])
+		s2.UID = hostarch.ByteOrder.Uint32(buf[28:32])
+		s2.GID = hostarch.ByteOrder.Uint32(buf[32:36])
 		// Padding: buf[36:40]
-		s2.Rdev = usermem.ByteOrder.Uint64(buf[40:48])
-		s2.Size = int64(usermem.ByteOrder.Uint64(buf[48:56]))
-		s2.Blksize = int64(usermem.ByteOrder.Uint64(buf[56:64]))
-		s2.Blocks = int64(usermem.ByteOrder.Uint64(buf[64:72]))
-		s2.ATime.Sec = int64(usermem.ByteOrder.Uint64(buf[72:80]))
-		s2.ATime.Nsec = int64(usermem.ByteOrder.Uint64(buf[80:88]))
-		s2.MTime.Sec = int64(usermem.ByteOrder.Uint64(buf[88:96]))
-		s2.MTime.Nsec = int64(usermem.ByteOrder.Uint64(buf[96:104]))
-		s2.CTime.Sec = int64(usermem.ByteOrder.Uint64(buf[104:112]))
-		s2.CTime.Nsec = int64(usermem.ByteOrder.Uint64(buf[112:120]))
+		s2.Rdev = hostarch.ByteOrder.Uint64(buf[40:48])
+		s2.Size = int64(hostarch.ByteOrder.Uint64(buf[48:56]))
+		s2.Blksize = int64(hostarch.ByteOrder.Uint64(buf[56:64]))
+		s2.Blocks = int64(hostarch.ByteOrder.Uint64(buf[64:72]))
+		s2.ATime.Sec = int64(hostarch.ByteOrder.Uint64(buf[72:80]))
+		s2.ATime.Nsec = int64(hostarch.ByteOrder.Uint64(buf[80:88]))
+		s2.MTime.Sec = int64(hostarch.ByteOrder.Uint64(buf[88:96]))
+		s2.MTime.Nsec = int64(hostarch.ByteOrder.Uint64(buf[96:104]))
+		s2.CTime.Sec = int64(hostarch.ByteOrder.Uint64(buf[104:112]))
+		s2.CTime.Nsec = int64(hostarch.ByteOrder.Uint64(buf[112:120]))
 	}
 
 	b.StopTimer()
@@ -187,8 +187,8 @@ func BenchmarkBinarySlice(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		buf := make([]byte, 0, size)
-		buf = binary.Marshal(buf, usermem.ByteOrder, &s1)
-		binary.Unmarshal(buf, usermem.ByteOrder, &s2)
+		buf = binary.Marshal(buf, hostarch.ByteOrder, &s1)
+		binary.Unmarshal(buf, hostarch.ByteOrder, &s2)
 	}
 
 	b.StopTimer()

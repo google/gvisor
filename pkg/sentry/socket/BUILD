@@ -10,6 +10,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",

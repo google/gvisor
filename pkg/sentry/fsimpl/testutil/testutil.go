@@ -30,6 +30,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // System represents the context for a single test.
@@ -105,7 +107,7 @@ func (s *System) Destroy() {
 
 // ReadToEnd reads the contents of fd until EOF to a string.
 func (s *System) ReadToEnd(fd *vfs.FileDescription) (string, error) {
-	buf := make([]byte, usermem.PageSize)
+	buf := make([]byte, hostarch.PageSize)
 	bufIOSeq := usermem.BytesIOSequence(buf)
 	opts := vfs.ReadOptions{}
 

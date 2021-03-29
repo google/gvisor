@@ -29,7 +29,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // newVictim makes a victim binary.
@@ -57,7 +57,7 @@ func dataAsInput(d *linux.SeccompData) bpf.Input {
 	d.MarshalUnsafe(buf)
 	return bpf.InputBytes{
 		Data:  buf,
-		Order: usermem.ByteOrder,
+		Order: hostarch.ByteOrder,
 	}
 }
 

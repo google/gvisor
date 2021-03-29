@@ -15,7 +15,7 @@
 package arch
 
 import (
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // An AuxEntry represents an entry in an ELF auxiliary vector.
@@ -23,7 +23,7 @@ import (
 // +stateify savable
 type AuxEntry struct {
 	Key   uint64
-	Value usermem.Addr
+	Value hostarch.Addr
 }
 
 // An Auxv represents an ELF auxiliary vector.

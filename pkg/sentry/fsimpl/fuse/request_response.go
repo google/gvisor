@@ -19,10 +19,10 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // fuseInitRes is a variable-length wrapper of linux.FUSEInitOut. The FUSE
@@ -45,29 +45,29 @@ func (r *fuseInitRes) UnmarshalBytes(src []byte) {
 	out := &r.initOut
 
 	// Introduced before FUSE kernel version 7.13.
-	out.Major = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	out.Major = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 	src = src[4:]
-	out.Minor = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	out.Minor = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 	src = src[4:]
-	out.MaxReadahead = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	out.MaxReadahead = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 	src = src[4:]
-	out.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	out.Flags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 	src = src[4:]
-	out.MaxBackground = uint16(usermem.ByteOrder.Uint16(src[:2]))
+	out.MaxBackground = uint16(hostarch.ByteOrder.Uint16(src[:2]))
 	src = src[2:]
-	out.CongestionThreshold = uint16(usermem.ByteOrder.Uint16(src[:2]))
+	out.CongestionThreshold = uint16(hostarch.ByteOrder.Uint16(src[:2]))
 	src = src[2:]
-	out.MaxWrite = uint32(usermem.ByteOrder.Uint32(src[:4]))
+	out.MaxWrite = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 	src = src[4:]
 
 	// Introduced in FUSE kernel version 7.23.
 	if len(src) >= 4 {
-		out.TimeGran = uint32(usermem.ByteOrder.Uint32(src[:4]))
+		out.TimeGran = uint32(hostarch.ByteOrder.Uint32(src[:4]))
 		src = src[4:]
 	}
 	// Introduced in FUSE kernel version 7.28.
 	if len(src) >= 2 {
-		out.MaxPages = uint16(usermem.ByteOrder.Uint16(src[:2]))
+		out.MaxPages = uint16(hostarch.ByteOrder.Uint16(src[:2]))
 		src = src[2:]
 	}
 	_ = src // Remove unused warning.

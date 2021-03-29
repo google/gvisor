@@ -21,10 +21,10 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
@@ -133,7 +133,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// space on the user stack naturally caps the amount of memory the
 	// sentry will allocate for this purpose.
 	fpSize, _ := c.fpuFrameSize()
-	sp = (sp - usermem.Addr(fpSize)) & ^usermem.Addr(63)
+	sp = (sp - hostarch.Addr(fpSize)) & ^hostarch.Addr(63)
 
 	// Construct the UContext64 now since we need its size.
 	uc := &UContext64{
@@ -180,8 +180,8 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	ucSize := uc.SizeBytes()
 	// st.Arch.Width() is for the restorer address. sizeof(siginfo) == 128.
 	frameSize := int(st.Arch.Width()) + ucSize + 128
-	frameBottom := (sp-usermem.Addr(frameSize)) & ^usermem.Addr(15) - 8
-	sp = frameBottom + usermem.Addr(frameSize)
+	frameBottom := (sp-hostarch.Addr(frameSize)) & ^hostarch.Addr(15) - 8
+	sp = frameBottom + hostarch.Addr(frameSize)
 	st.Bottom = sp
 
 	// Prior to proceeding, figure out if the frame will exhaust the range

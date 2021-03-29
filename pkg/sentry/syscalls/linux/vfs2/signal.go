@@ -21,11 +21,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // sharedSignalfd is shared between the two calls.
-func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
+func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	// Copy in the signal mask.
 	mask, err := slinux.CopyInSigSet(t, sigset, sigsetsize)
 	if err != nil {

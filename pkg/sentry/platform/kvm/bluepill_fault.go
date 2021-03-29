@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -47,7 +47,7 @@ func yield() {
 //
 //go:nosplit
 func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virtualStart, physicalStart, length uintptr, ok bool) {
-	alignedPhysical := physical &^ uintptr(usermem.PageSize-1)
+	alignedPhysical := physical &^ uintptr(hostarch.PageSize-1)
 	for _, pr := range phyRegions {
 		end := pr.physical + pr.length
 		if physical < pr.physical || physical >= end {

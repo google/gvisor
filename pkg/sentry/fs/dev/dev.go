@@ -19,6 +19,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
@@ -49,7 +50,7 @@ func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.M
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:        devDevice.DeviceID(),
 		InodeID:         devDevice.NextIno(),
-		BlockSize:       usermem.PageSize,
+		BlockSize:       hostarch.PageSize,
 		Type:            fs.CharacterDevice,
 		DeviceFileMajor: major,
 		DeviceFileMinor: minor,
@@ -60,7 +61,7 @@ func newMemDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:        devDevice.DeviceID(),
 		InodeID:         devDevice.NextIno(),
-		BlockSize:       usermem.PageSize,
+		BlockSize:       hostarch.PageSize,
 		Type:            fs.CharacterDevice,
 		DeviceFileMajor: memDevMajor,
 		DeviceFileMinor: minor,
@@ -72,7 +73,7 @@ func newDirectory(ctx context.Context, contents map[string]*fs.Inode, msrc *fs.M
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Directory,
 	})
 }
@@ -82,7 +83,7 @@ func newSymlink(ctx context.Context, target string, msrc *fs.MountSource) *fs.In
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Symlink,
 	})
 }
@@ -137,7 +138,7 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Directory,
 	})
 }

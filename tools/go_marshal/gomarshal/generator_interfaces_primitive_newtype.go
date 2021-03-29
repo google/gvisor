@@ -29,14 +29,14 @@ func (g *interfaceGenerator) marshalPrimitiveScalar(accessor, typ, bufVar string
 	case "int8", "uint8", "byte":
 		g.emit("%s[0] = byte(*%s)\n", bufVar, accessor)
 	case "int16", "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint16(%s[:2], uint16(*%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint16(%s[:2], uint16(*%s))\n", bufVar, accessor)
 	case "int32", "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint32(%s[:4], uint32(*%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint32(%s[:4], uint32(*%s))\n", bufVar, accessor)
 	case "int64", "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint64(%s[:8], uint64(*%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint64(%s[:8], uint64(*%s))\n", bufVar, accessor)
 	default:
 		g.emit("// Explicilty cast to the underlying type before dispatching to\n")
 		g.emit("// MarshalBytes, so we don't recursively call %s.MarshalBytes\n", accessor)
@@ -53,14 +53,14 @@ func (g *interfaceGenerator) unmarshalPrimitiveScalar(accessor, typ, bufVar, typ
 	case "int8", "uint8":
 		g.emit("*%s = %s(%s(%s[0]))\n", accessor, typeCast, typ, bufVar)
 	case "int16", "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("*%s = %s(%s(usermem.ByteOrder.Uint16(%s[:2])))\n", accessor, typeCast, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("*%s = %s(%s(hostarch.ByteOrder.Uint16(%s[:2])))\n", accessor, typeCast, typ, bufVar)
 	case "int32", "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("*%s = %s(%s(usermem.ByteOrder.Uint32(%s[:4])))\n", accessor, typeCast, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("*%s = %s(%s(hostarch.ByteOrder.Uint32(%s[:4])))\n", accessor, typeCast, typ, bufVar)
 	case "int64", "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("*%s = %s(%s(usermem.ByteOrder.Uint64(%s[:8])))\n", accessor, typeCast, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("*%s = %s(%s(hostarch.ByteOrder.Uint64(%s[:8])))\n", accessor, typeCast, typ, bufVar)
 	default:
 		g.emit("// Explicilty cast to the underlying type before dispatching to\n")
 		g.emit("// UnmarshalBytes, so we don't recursively call %s.UnmarshalBytes\n", accessor)
@@ -101,7 +101,7 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.recordUsedImport("runtime")
 	g.recordUsedImport("safecopy")
 	g.recordUsedImport("unsafe")
-	g.recordUsedImport("usermem")
+	g.recordUsedImport("hostarch")
 
 	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
 	g.emit("//go:nosplit\n")
@@ -154,7 +154,7 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
@@ -166,7 +166,7 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
@@ -174,7 +174,7 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
 	g.emit("//go:nosplit\n")
-	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
@@ -199,7 +199,7 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 
 func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Ident, slice *sliceAPI) {
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
+	g.recordUsedImport("hostarch")
 	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
 	g.recordUsedImport("unsafe")
@@ -211,7 +211,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 
 	g.emit("// Copy%sIn copies in a slice of %s objects from the task's memory.\n", slice.ident, eltType)
 	g.emit("//go:nosplit\n")
-	g.emit("func Copy%sIn(cc marshal.CopyContext, addr usermem.Addr, dst []%s) (int, error) {\n", slice.ident, eltType)
+	g.emit("func Copy%sIn(cc marshal.CopyContext, addr hostarch.Addr, dst []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
 		g.emit("if count == 0 {\n")
@@ -231,7 +231,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 
 	g.emit("// Copy%sOut copies a slice of %s objects to the task's memory.\n", slice.ident, eltType)
 	g.emit("//go:nosplit\n")
-	g.emit("func Copy%sOut(cc marshal.CopyContext, addr usermem.Addr, src []%s) (int, error) {\n", slice.ident, eltType)
+	g.emit("func Copy%sOut(cc marshal.CopyContext, addr hostarch.Addr, src []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
 		g.emit("if count == 0 {\n")

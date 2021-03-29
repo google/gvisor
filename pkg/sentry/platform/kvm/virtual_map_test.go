@@ -18,12 +18,12 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 type checker struct {
 	ok         bool
-	accessType usermem.AccessType
+	accessType hostarch.AccessType
 }
 
 func (c *checker) Containing(addr uintptr) func(virtualRegion) {
@@ -46,7 +46,7 @@ func TestParseMaps(t *testing.T) {
 
 	// MMap a new page.
 	addr, _, errno := unix.RawSyscall6(
-		unix.SYS_MMAP, 0, usermem.PageSize,
+		unix.SYS_MMAP, 0, hostarch.PageSize,
 		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_ANONYMOUS|unix.MAP_PRIVATE, 0, 0)
 	if errno != 0 {
@@ -55,19 +55,19 @@ func TestParseMaps(t *testing.T) {
 
 	// Re-parse maps.
 	if err := applyVirtualRegions(c.Containing(addr)); err != nil {
-		unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
+		unix.RawSyscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Assert that it now does contain the region.
 	if !c.ok {
-		unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
+		unix.RawSyscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
 		t.Fatalf("updated map does not contain 0x%08x, expected true", addr)
 	}
 
 	// Map the region as PROT_NONE.
 	newAddr, _, errno := unix.RawSyscall6(
-		unix.SYS_MMAP, addr, usermem.PageSize,
+		unix.SYS_MMAP, addr, hostarch.PageSize,
 		unix.PROT_NONE,
 		unix.MAP_ANONYMOUS|unix.MAP_FIXED|unix.MAP_PRIVATE, 0, 0)
 	if errno != 0 {
@@ -89,5 +89,5 @@ func TestParseMaps(t *testing.T) {
 	}
 
 	// Unmap the region.
-	unix.RawSyscall(unix.SYS_MUNMAP, addr, usermem.PageSize, 0)
+	unix.RawSyscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
 }

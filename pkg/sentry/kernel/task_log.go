@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -108,9 +109,9 @@ func (t *Task) debugDumpStack() {
 		return
 	}
 	t.Debugf("Stack:")
-	start := usermem.Addr(t.Arch().Stack())
+	start := hostarch.Addr(t.Arch().Stack())
 	// Round addr down to a 16-byte boundary.
-	start &= ^usermem.Addr(15)
+	start &= ^hostarch.Addr(15)
 	// Print 16 bytes per line, one byte at a time.
 	for offset := uint64(0); offset < maxStackDebugBytes; offset += 16 {
 		addr, ok := start.AddLength(offset)
@@ -127,7 +128,7 @@ func (t *Task) debugDumpStack() {
 			t.Debugf("%x: % x", addr, data[:n])
 		}
 		if err != nil {
-			t.Debugf("Error reading stack at address %x: %v", addr+usermem.Addr(n), err)
+			t.Debugf("Error reading stack at address %x: %v", addr+hostarch.Addr(n), err)
 			break
 		}
 	}
@@ -147,9 +148,9 @@ func (t *Task) debugDumpCode() {
 	}
 	t.Debugf("Code:")
 	// Print code on both sides of the instruction register.
-	start := usermem.Addr(t.Arch().IP()) - maxCodeDebugBytes/2
+	start := hostarch.Addr(t.Arch().IP()) - maxCodeDebugBytes/2
 	// Round addr down to a 16-byte boundary.
-	start &= ^usermem.Addr(15)
+	start &= ^hostarch.Addr(15)
 	// Print 16 bytes per line, one byte at a time.
 	for offset := uint64(0); offset < maxCodeDebugBytes; offset += 16 {
 		addr, ok := start.AddLength(offset)
@@ -166,7 +167,7 @@ func (t *Task) debugDumpCode() {
 			t.Debugf("%x: % x", addr, data[:n])
 		}
 		if err != nil {
-			t.Debugf("Error reading stack at address %x: %v", addr+usermem.Addr(n), err)
+			t.Debugf("Error reading stack at address %x: %v", addr+hostarch.Addr(n), err)
 			break
 		}
 	}

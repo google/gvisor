@@ -22,9 +22,9 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -74,7 +74,7 @@ func getRTTAndRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rtt, rto tim
 	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
 		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
 	}
-	binary.Unmarshal(infoBytes, usermem.ByteOrder, &info)
+	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
 	return time.Duration(info.RTT) * time.Microsecond, time.Duration(info.RTO) * time.Microsecond
 }
 
@@ -407,7 +407,7 @@ func TestRACKWithLostRetransmission(t *testing.T) {
 	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
 		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
 	}
-	binary.Unmarshal(infoBytes, usermem.ByteOrder, &info)
+	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
 	if info.CaState != linux.TCP_CA_Recovery {
 		t.Fatalf("expected connection to be in fast recovery, want: %v got: %v", linux.TCP_CA_Recovery, info.CaState)
 	}

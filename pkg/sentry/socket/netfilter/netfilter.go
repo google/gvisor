@@ -23,12 +23,12 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // enableLogging controls whether to log the (de)serialization of netfilter
@@ -83,7 +83,7 @@ func DefaultLinuxTables() *stack.IPTables {
 }
 
 // GetInfo returns information about iptables.
-func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, ipv6 bool) (linux.IPTGetinfo, *syserr.Error) {
+func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, ipv6 bool) (linux.IPTGetinfo, *syserr.Error) {
 	// Read in the struct and table name.
 	var info linux.IPTGetinfo
 	if _, err := info.CopyIn(t, outPtr); err != nil {
@@ -106,7 +106,7 @@ func GetInfo(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, ipv6 bool)
 }
 
 // GetEntries4 returns netstack's iptables rules.
-func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
+func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLen int) (linux.KernelIPTGetEntries, *syserr.Error) {
 	// Read in the struct and table name.
 	var userEntries linux.IPTGetEntries
 	if _, err := userEntries.CopyIn(t, outPtr); err != nil {
@@ -130,7 +130,7 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen
 }
 
 // GetEntries6 returns netstack's ip6tables rules.
-func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr usermem.Addr, outLen int) (linux.KernelIP6TGetEntries, *syserr.Error) {
+func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLen int) (linux.KernelIP6TGetEntries, *syserr.Error) {
 	// Read in the struct and table name. IPv4 and IPv6 utilize structs
 	// with the same layout.
 	var userEntries linux.IPTGetEntries
@@ -179,7 +179,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
 	replaceBuf := optVal[:linux.SizeOfIPTReplace]
 	optVal = optVal[linux.SizeOfIPTReplace:]
-	binary.Unmarshal(replaceBuf, usermem.ByteOrder, &replace)
+	binary.Unmarshal(replaceBuf, hostarch.ByteOrder, &replace)
 
 	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
@@ -310,7 +310,7 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 		}
 		var match linux.XTEntryMatch
 		buf := optVal[:linux.SizeOfXTEntryMatch]
-		binary.Unmarshal(buf, usermem.ByteOrder, &match)
+		binary.Unmarshal(buf, hostarch.ByteOrder, &match)
 		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
 
 		// Check some invariants.
@@ -381,7 +381,7 @@ func hookFromLinux(hook int) stack.Hook {
 // TargetRevision returns a linux.XTGetRevision for a given target. It sets
 // Revision to the highest supported value, unless the provided revision number
 // is larger.
-func TargetRevision(t *kernel.Task, revPtr usermem.Addr, netProto tcpip.NetworkProtocolNumber) (linux.XTGetRevision, *syserr.Error) {
+func TargetRevision(t *kernel.Task, revPtr hostarch.Addr, netProto tcpip.NetworkProtocolNumber) (linux.XTGetRevision, *syserr.Error) {
 	// Read in the target name and version.
 	var rev linux.XTGetRevision
 	if _, err := rev.CopyIn(t, revPtr); err != nil {

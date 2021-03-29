@@ -21,10 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-func epollEvent(t *kernel.Task, eventAddr usermem.Addr) string {
+func epollEvent(t *kernel.Task, eventAddr hostarch.Addr) string {
 	var e linux.EpollEvent
 	if _, err := e.CopyIn(t, eventAddr); err != nil {
 		return fmt.Sprintf("%#x {error reading event: %v}", eventAddr, err)
@@ -35,7 +36,7 @@ func epollEvent(t *kernel.Task, eventAddr usermem.Addr) string {
 	return sb.String()
 }
 
-func epollEvents(t *kernel.Task, eventsAddr usermem.Addr, numEvents, maxBytes uint64) string {
+func epollEvents(t *kernel.Task, eventsAddr hostarch.Addr, numEvents, maxBytes uint64) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%#x {", eventsAddr)
 	addr := eventsAddr

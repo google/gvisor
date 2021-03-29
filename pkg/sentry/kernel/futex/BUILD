@@ -37,6 +37,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/memmap",
         "//pkg/sync",
@@ -52,8 +53,8 @@ go_test(
     library = ":futex",
     deps = [
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sync",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

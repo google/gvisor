@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -51,7 +52,7 @@ func TestUsageASUpdates(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:  2 * usermem.PageSize,
+		Length:  2 * hostarch.PageSize,
 		Private: true,
 	})
 	if err != nil {
@@ -62,7 +63,7 @@ func TestUsageASUpdates(t *testing.T) {
 		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", mm.usageAS, realUsage)
 	}
 
-	mm.MUnmap(ctx, addr, usermem.PageSize)
+	mm.MUnmap(ctx, addr, hostarch.PageSize)
 	realUsage = mm.realUsageAS()
 	if mm.usageAS != realUsage {
 		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", mm.usageAS, realUsage)
@@ -86,10 +87,10 @@ func TestDataASUpdates(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   3 * usermem.PageSize,
+		Length:   3 * hostarch.PageSize,
 		Private:  true,
-		Perms:    usermem.Write,
-		MaxPerms: usermem.AnyAccess,
+		Perms:    hostarch.Write,
+		MaxPerms: hostarch.AnyAccess,
 	})
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
@@ -102,19 +103,19 @@ func TestDataASUpdates(t *testing.T) {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
 	}
 
-	mm.MUnmap(ctx, addr, usermem.PageSize)
+	mm.MUnmap(ctx, addr, hostarch.PageSize)
 	realDataAS = mm.realDataAS()
 	if mm.dataAS != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
 	}
 
-	mm.MProtect(addr+usermem.PageSize, usermem.PageSize, usermem.Read, false)
+	mm.MProtect(addr+hostarch.PageSize, hostarch.PageSize, hostarch.Read, false)
 	realDataAS = mm.realDataAS()
 	if mm.dataAS != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
 	}
 
-	mm.MRemap(ctx, addr+2*usermem.PageSize, usermem.PageSize, 2*usermem.PageSize, MRemapOpts{
+	mm.MRemap(ctx, addr+2*hostarch.PageSize, hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{
 		Move: MRemapMayMove,
 	})
 	realDataAS = mm.realDataAS()
@@ -133,7 +134,7 @@ func TestBrkDataLimitUpdates(t *testing.T) {
 
 	// Try to extend the brk by one page and expect doing so to fail.
 	oldBrk, _ := mm.Brk(ctx, 0)
-	if newBrk, _ := mm.Brk(ctx, oldBrk+usermem.PageSize); newBrk != oldBrk {
+	if newBrk, _ := mm.Brk(ctx, oldBrk+hostarch.PageSize); newBrk != oldBrk {
 		t.Errorf("brk() increased data segment above RLIMIT_DATA (old brk = %#x, new brk = %#x", oldBrk, newBrk)
 	}
 }
@@ -145,10 +146,10 @@ func TestIOAfterUnmap(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   usermem.PageSize,
+		Length:   hostarch.PageSize,
 		Private:  true,
-		Perms:    usermem.Read,
-		MaxPerms: usermem.AnyAccess,
+		Perms:    hostarch.Read,
+		MaxPerms: hostarch.AnyAccess,
 	})
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
@@ -164,7 +165,7 @@ func TestIOAfterUnmap(t *testing.T) {
 		t.Errorf("CopyIn got %d want 1", n)
 	}
 
-	err = mm.MUnmap(ctx, addr, usermem.PageSize)
+	err = mm.MUnmap(ctx, addr, hostarch.PageSize)
 	if err != nil {
 		t.Fatalf("MUnmap got err %v want nil", err)
 	}
@@ -185,10 +186,10 @@ func TestIOAfterMProtect(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   usermem.PageSize,
+		Length:   hostarch.PageSize,
 		Private:  true,
-		Perms:    usermem.ReadWrite,
-		MaxPerms: usermem.AnyAccess,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
 	})
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
@@ -204,7 +205,7 @@ func TestIOAfterMProtect(t *testing.T) {
 		t.Errorf("CopyOut got %d want 1", n)
 	}
 
-	err = mm.MProtect(addr, usermem.PageSize, usermem.Read, false)
+	err = mm.MProtect(addr, hostarch.PageSize, hostarch.Read, false)
 	if err != nil {
 		t.Errorf("MProtect got err %v want nil", err)
 	}

@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/inet",

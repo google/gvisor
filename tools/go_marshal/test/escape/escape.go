@@ -16,8 +16,8 @@
 package escape
 
 import (
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/test"
 )
 
@@ -29,21 +29,21 @@ func (*dummyCopyContext) CopyScratchBuffer(size int) []byte {
 	return make([]byte, size)
 }
 
-func (*dummyCopyContext) CopyOutBytes(addr usermem.Addr, b []byte) (int, error) {
+func (*dummyCopyContext) CopyOutBytes(addr hostarch.Addr, b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (*dummyCopyContext) CopyInBytes(addr usermem.Addr, b []byte) (int, error) {
+func (*dummyCopyContext) CopyInBytes(addr hostarch.Addr, b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (t *dummyCopyContext) MarshalBytes(addr usermem.Addr, marshallable marshal.Marshallable) {
+func (t *dummyCopyContext) MarshalBytes(addr hostarch.Addr, marshallable marshal.Marshallable) {
 	buf := t.CopyScratchBuffer(marshallable.SizeBytes())
 	marshallable.MarshalBytes(buf)
 	t.CopyOutBytes(addr, buf)
 }
 
-func (t *dummyCopyContext) MarshalUnsafe(addr usermem.Addr, marshallable marshal.Marshallable) {
+func (t *dummyCopyContext) MarshalUnsafe(addr hostarch.Addr, marshallable marshal.Marshallable) {
 	buf := t.CopyScratchBuffer(marshallable.SizeBytes())
 	marshallable.MarshalUnsafe(buf)
 	t.CopyOutBytes(addr, buf)
@@ -53,14 +53,14 @@ func (t *dummyCopyContext) MarshalUnsafe(addr usermem.Addr, marshallable marshal
 //go:nosplit
 func doCopyIn(t *dummyCopyContext) {
 	var stat test.Stat
-	stat.CopyIn(t, usermem.Addr(0xf000ba12))
+	stat.CopyIn(t, hostarch.Addr(0xf000ba12))
 }
 
 // +checkescape:all
 //go:nosplit
 func doCopyOut(t *dummyCopyContext) {
 	var stat test.Stat
-	stat.CopyOut(t, usermem.Addr(0xf000ba12))
+	stat.CopyOut(t, hostarch.Addr(0xf000ba12))
 }
 
 // +mustescape:builtin
@@ -70,7 +70,7 @@ func doMarshalBytesDirect(t *dummyCopyContext) {
 	var stat test.Stat
 	buf := t.CopyScratchBuffer(stat.SizeBytes())
 	stat.MarshalBytes(buf)
-	t.CopyOutBytes(usermem.Addr(0xf000ba12), buf)
+	t.CopyOutBytes(hostarch.Addr(0xf000ba12), buf)
 }
 
 // +mustescape:builtin
@@ -80,7 +80,7 @@ func doMarshalUnsafeDirect(t *dummyCopyContext) {
 	var stat test.Stat
 	buf := t.CopyScratchBuffer(stat.SizeBytes())
 	stat.MarshalUnsafe(buf)
-	t.CopyOutBytes(usermem.Addr(0xf000ba12), buf)
+	t.CopyOutBytes(hostarch.Addr(0xf000ba12), buf)
 }
 
 // +mustescape:local,heap
@@ -88,7 +88,7 @@ func doMarshalUnsafeDirect(t *dummyCopyContext) {
 //go:nosplit
 func doMarshalBytesViaMarshallable(t *dummyCopyContext) {
 	var stat test.Stat
-	t.MarshalBytes(usermem.Addr(0xf000ba12), &stat)
+	t.MarshalBytes(hostarch.Addr(0xf000ba12), &stat)
 }
 
 // +mustescape:local,heap
@@ -96,5 +96,5 @@ func doMarshalBytesViaMarshallable(t *dummyCopyContext) {
 //go:nosplit
 func doMarshalUnsafeViaMarshallable(t *dummyCopyContext) {
 	var stat test.Stat
-	t.MarshalUnsafe(usermem.Addr(0xf000ba12), &stat)
+	t.MarshalUnsafe(hostarch.Addr(0xf000ba12), &stat)
 }

@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -214,7 +215,7 @@ func (d *tcpSackData) Write(ctx context.Context, src usermem.IOSequence, offset 
 	}
 
 	// Limit the amount of memory allocated.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -262,7 +263,7 @@ func (d *tcpRecoveryData) Write(ctx context.Context, src usermem.IOSequence, off
 	}
 
 	// Limit the amount of memory allocated.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -318,7 +319,7 @@ func (d *tcpMemData) Write(ctx context.Context, src usermem.IOSequence, offset i
 	defer d.mu.Unlock()
 
 	// Limit the amount of memory allocated.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 	size, err := d.readSizeLocked()
 	if err != nil {
 		return 0, err
@@ -406,7 +407,7 @@ func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offs
 	}
 
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -463,7 +464,7 @@ func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset i
 
 	// Limit input size so as not to impact performance if input size is
 	// large.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	ports := make([]int32, 2)
 	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, ports, src.Opts)

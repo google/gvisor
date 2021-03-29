@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -249,7 +250,7 @@ func (f *sliceBackingFile) Allocate(ctx context.Context, offset int64, length in
 type noopMappingSpace struct{}
 
 // Invalidate implements memmap.MappingSpace.Invalidate.
-func (noopMappingSpace) Invalidate(ar usermem.AddrRange, opts memmap.InvalidateOpts) {
+func (noopMappingSpace) Invalidate(ar hostarch.AddrRange, opts memmap.InvalidateOpts) {
 }
 
 func anonInode(ctx context.Context) *fs.Inode {
@@ -259,14 +260,14 @@ func anonInode(ctx context.Context) *fs.Inode {
 		}, 0),
 	}, fs.NewPseudoMountSource(ctx), fs.StableAttr{
 		Type:      fs.Anonymous,
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 	})
 }
 
 func pagesOf(bs ...byte) []byte {
-	buf := make([]byte, 0, len(bs)*usermem.PageSize)
+	buf := make([]byte, 0, len(bs)*hostarch.PageSize)
 	for _, b := range bs {
-		buf = append(buf, bytes.Repeat([]byte{b}, usermem.PageSize)...)
+		buf = append(buf, bytes.Repeat([]byte{b}, hostarch.PageSize)...)
 	}
 	return buf
 }
@@ -292,28 +293,28 @@ func TestRead(t *testing.T) {
 	// expects to only cache mapped pages), then call Translate to force it to
 	// be cached.
 	var ms noopMappingSpace
-	ar := usermem.AddrRange{usermem.PageSize, 2 * usermem.PageSize}
-	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize, true); err != nil {
+	ar := hostarch.AddrRange{hostarch.PageSize, 2 * hostarch.PageSize}
+	if err := iops.AddMapping(ctx, ms, ar, hostarch.PageSize, true); err != nil {
 		t.Fatalf("AddMapping got %v, want nil", err)
 	}
-	mr := memmap.MappableRange{usermem.PageSize, 2 * usermem.PageSize}
-	if _, err := iops.Translate(ctx, mr, mr, usermem.Read); err != nil {
+	mr := memmap.MappableRange{hostarch.PageSize, 2 * hostarch.PageSize}
+	if _, err := iops.Translate(ctx, mr, mr, hostarch.Read); err != nil {
 		t.Fatalf("Translate got %v, want nil", err)
 	}
-	if cached := iops.cache.Span(); cached != usermem.PageSize {
-		t.Errorf("SpanRange got %d, want %d", cached, usermem.PageSize)
+	if cached := iops.cache.Span(); cached != hostarch.PageSize {
+		t.Errorf("SpanRange got %d, want %d", cached, hostarch.PageSize)
 	}
 
 	// Try to read 4 pages. The first and third pages should be read directly
 	// from the "file", the second page should be read from the cache, and only
 	// 3 pages (the size of the file) should be readable.
-	rbuf := make([]byte, 4*usermem.PageSize)
+	rbuf := make([]byte, 4*hostarch.PageSize)
 	dst := usermem.BytesIOSequence(rbuf)
 	n, err := iops.Read(ctx, file, dst, 0)
-	if n != 3*usermem.PageSize || (err != nil && err != io.EOF) {
-		t.Fatalf("Read got (%d, %v), want (%d, nil or EOF)", n, err, 3*usermem.PageSize)
+	if n != 3*hostarch.PageSize || (err != nil && err != io.EOF) {
+		t.Fatalf("Read got (%d, %v), want (%d, nil or EOF)", n, err, 3*hostarch.PageSize)
 	}
-	rbuf = rbuf[:3*usermem.PageSize]
+	rbuf = rbuf[:3*hostarch.PageSize]
 
 	// Did we get the bytes we expect?
 	if !bytes.Equal(rbuf, buf) {
@@ -323,7 +324,7 @@ func TestRead(t *testing.T) {
 	// Delete the memory mapping before iops.Release(). The cached page will
 	// either be evicted by ctx's pgalloc.MemoryFile, or dropped by
 	// iops.Release().
-	iops.RemoveMapping(ctx, ms, ar, usermem.PageSize, true)
+	iops.RemoveMapping(ctx, ms, ar, hostarch.PageSize, true)
 }
 
 func TestWrite(t *testing.T) {
@@ -348,25 +349,25 @@ func TestWrite(t *testing.T) {
 	// CachingInodeOperations expects to only cache mapped pages), then call
 	// Translate to force them to be cached.
 	var ms noopMappingSpace
-	ar := usermem.AddrRange{usermem.PageSize, 3 * usermem.PageSize}
-	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize, true); err != nil {
+	ar := hostarch.AddrRange{hostarch.PageSize, 3 * hostarch.PageSize}
+	if err := iops.AddMapping(ctx, ms, ar, hostarch.PageSize, true); err != nil {
 		t.Fatalf("AddMapping got %v, want nil", err)
 	}
-	defer iops.RemoveMapping(ctx, ms, ar, usermem.PageSize, true)
-	mr := memmap.MappableRange{usermem.PageSize, 3 * usermem.PageSize}
-	if _, err := iops.Translate(ctx, mr, mr, usermem.Read); err != nil {
+	defer iops.RemoveMapping(ctx, ms, ar, hostarch.PageSize, true)
+	mr := memmap.MappableRange{hostarch.PageSize, 3 * hostarch.PageSize}
+	if _, err := iops.Translate(ctx, mr, mr, hostarch.Read); err != nil {
 		t.Fatalf("Translate got %v, want nil", err)
 	}
-	if cached := iops.cache.Span(); cached != 2*usermem.PageSize {
-		t.Errorf("SpanRange got %d, want %d", cached, 2*usermem.PageSize)
+	if cached := iops.cache.Span(); cached != 2*hostarch.PageSize {
+		t.Errorf("SpanRange got %d, want %d", cached, 2*hostarch.PageSize)
 	}
 
 	// Write to the first 2 pages.
 	wbuf := pagesOf('e', 'f')
 	src := usermem.BytesIOSequence(wbuf)
 	n, err := iops.Write(ctx, src, 0)
-	if n != 2*usermem.PageSize || err != nil {
-		t.Fatalf("Write got (%d, %v), want (%d, nil)", n, err, 2*usermem.PageSize)
+	if n != 2*hostarch.PageSize || err != nil {
+		t.Fatalf("Write got (%d, %v), want (%d, nil)", n, err, 2*hostarch.PageSize)
 	}
 
 	// The first page should have been written directly, since it was not cached.
@@ -382,7 +383,7 @@ func TestWrite(t *testing.T) {
 	}
 
 	// Now the second page should have been written as well.
-	copy(want[usermem.PageSize:], pagesOf('f'))
+	copy(want[hostarch.PageSize:], pagesOf('f'))
 	if !bytes.Equal(buf, want) {
 		t.Errorf("File contents are %v, want %v", buf, want)
 	}

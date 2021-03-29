@@ -17,8 +17,8 @@
 package arch
 
 import (
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -36,8 +36,8 @@ func (s SignalStack) IsEnabled() bool {
 }
 
 // Top returns the stack's top address.
-func (s SignalStack) Top() usermem.Addr {
-	return usermem.Addr(s.Addr + s.Size)
+func (s SignalStack) Top() hostarch.Addr {
+	return hostarch.Addr(s.Addr + s.Size)
 }
 
 // SetOnStack marks this signal stack as in use.
@@ -49,8 +49,8 @@ func (s *SignalStack) SetOnStack() {
 }
 
 // Contains checks if the stack pointer is within this stack.
-func (s *SignalStack) Contains(sp usermem.Addr) bool {
-	return usermem.Addr(s.Addr) < sp && sp <= usermem.Addr(s.Addr+s.Size)
+func (s *SignalStack) Contains(sp hostarch.Addr) bool {
+	return hostarch.Addr(s.Addr) < sp && sp <= hostarch.Addr(s.Addr+s.Size)
 }
 
 // NativeSignalStack is a type that is equivalent to stack_t in the guest

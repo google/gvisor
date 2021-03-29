@@ -18,8 +18,8 @@ type Context interface {
 }
 
 type AddressSpace interface {
-    MapFile(addr usermem.Addr, f File, fr FileRange, at usermem.AccessType, ...) error
-    Unmap(addr usermem.Addr, length uint64)
+    MapFile(addr hostarch.Addr, f File, fr FileRange, at hostarch.AccessType, ...) error
+    Unmap(addr hostarch.Addr, length uint64)
 }
 ```
 

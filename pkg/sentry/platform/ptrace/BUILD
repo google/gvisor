@@ -25,6 +25,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/procid",
         "//pkg/safecopy",
@@ -35,7 +36,6 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sync",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

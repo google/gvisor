@@ -20,13 +20,13 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const maxInt = int(^uint(0) >> 1)
@@ -181,12 +181,12 @@ func (c *scmCredentials) Equals(oc transport.CredentialsControlMessage) bool {
 }
 
 func putUint64(buf []byte, n uint64) []byte {
-	usermem.ByteOrder.PutUint64(buf[len(buf):len(buf)+8], n)
+	hostarch.ByteOrder.PutUint64(buf[len(buf):len(buf)+8], n)
 	return buf[:len(buf)+8]
 }
 
 func putUint32(buf []byte, n uint32) []byte {
-	usermem.ByteOrder.PutUint32(buf[len(buf):len(buf)+4], n)
+	hostarch.ByteOrder.PutUint32(buf[len(buf):len(buf)+4], n)
 	return buf[:len(buf)+4]
 }
 
@@ -242,7 +242,7 @@ func putCmsgStruct(buf []byte, msgLevel, msgType uint32, align uint, data interf
 
 	hdrBuf := buf
 
-	buf = binary.Marshal(buf, usermem.ByteOrder, data)
+	buf = binary.Marshal(buf, hostarch.ByteOrder, data)
 
 	// If the control message data brought us over capacity, omit it.
 	if cap(buf) != cap(ob) {
@@ -475,7 +475,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 		}
 
 		var h linux.ControlMessageHeader
-		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], usermem.ByteOrder, &h)
+		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], hostarch.ByteOrder, &h)
 
 		if h.Length < uint64(linux.SizeOfControlMessageHeader) {
 			return socket.ControlMessages{}, syserror.EINVAL
@@ -499,7 +499,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				}
 
 				for j := i; j < i+rightsSize; j += linux.SizeOfControlMessageRight {
-					fds = append(fds, int32(usermem.ByteOrder.Uint32(buf[j:j+linux.SizeOfControlMessageRight])))
+					fds = append(fds, int32(hostarch.ByteOrder.Uint32(buf[j:j+linux.SizeOfControlMessageRight])))
 				}
 
 				i += binary.AlignUp(length, width)
@@ -510,7 +510,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				}
 
 				var creds linux.ControlMessageCredentials
-				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageCredentials], usermem.ByteOrder, &creds)
+				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageCredentials], hostarch.ByteOrder, &creds)
 				scmCreds, err := NewSCMCredentials(t, creds)
 				if err != nil {
 					return socket.ControlMessages{}, err
@@ -523,7 +523,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
 				var ts linux.Timeval
-				binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &ts)
+				binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], hostarch.ByteOrder, &ts)
 				cmsgs.IP.Timestamp = ts.ToNsecCapped()
 				cmsgs.IP.HasTimestamp = true
 				i += binary.AlignUp(length, width)
@@ -539,7 +539,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
 				cmsgs.IP.HasTOS = true
-				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTOS], usermem.ByteOrder, &cmsgs.IP.TOS)
+				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTOS], hostarch.ByteOrder, &cmsgs.IP.TOS)
 				i += binary.AlignUp(length, width)
 
 			case linux.IP_PKTINFO:
@@ -549,7 +549,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 
 				cmsgs.IP.HasIPPacketInfo = true
 				var packetInfo linux.ControlMessageIPPacketInfo
-				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageIPPacketInfo], usermem.ByteOrder, &packetInfo)
+				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageIPPacketInfo], hostarch.ByteOrder, &packetInfo)
 
 				cmsgs.IP.PacketInfo = packetInfo
 				i += binary.AlignUp(length, width)
@@ -559,7 +559,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				if length < addr.SizeBytes() {
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
-				binary.Unmarshal(buf[i:i+addr.SizeBytes()], usermem.ByteOrder, &addr)
+				binary.Unmarshal(buf[i:i+addr.SizeBytes()], hostarch.ByteOrder, &addr)
 				cmsgs.IP.OriginalDstAddress = &addr
 				i += binary.AlignUp(length, width)
 
@@ -583,7 +583,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
 				cmsgs.IP.HasTClass = true
-				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTClass], usermem.ByteOrder, &cmsgs.IP.TClass)
+				binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageTClass], hostarch.ByteOrder, &cmsgs.IP.TClass)
 				i += binary.AlignUp(length, width)
 
 			case linux.IPV6_RECVORIGDSTADDR:
@@ -591,7 +591,7 @@ func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte, width uint)
 				if length < addr.SizeBytes() {
 					return socket.ControlMessages{}, syserror.EINVAL
 				}
-				binary.Unmarshal(buf[i:i+addr.SizeBytes()], usermem.ByteOrder, &addr)
+				binary.Unmarshal(buf[i:i+addr.SizeBytes()], hostarch.ByteOrder, &addr)
 				cmsgs.IP.OriginalDstAddress = &addr
 				i += binary.AlignUp(length, width)
 

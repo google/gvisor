@@ -18,6 +18,7 @@ go_library(
         "//pkg/binary",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/rand",
         "//pkg/safemem",

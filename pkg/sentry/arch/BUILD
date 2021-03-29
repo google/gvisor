@@ -32,6 +32,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",

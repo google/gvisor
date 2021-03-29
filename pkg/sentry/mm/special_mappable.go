@@ -16,11 +16,11 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SpecialMappable implements memmap.MappingIdentity and memmap.Mappable with
@@ -77,21 +77,21 @@ func (m *SpecialMappable) Msync(ctx context.Context, mr memmap.MappableRange) er
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (*SpecialMappable) AddMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) error {
+func (*SpecialMappable) AddMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, uint64, bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (*SpecialMappable) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
+func (*SpecialMappable) RemoveMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, uint64, bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (*SpecialMappable) CopyMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, usermem.AddrRange, uint64, bool) error {
+func (*SpecialMappable) CopyMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, hostarch.AddrRange, uint64, bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (m *SpecialMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (m *SpecialMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
 		err = &memmap.BusError{syserror.EFAULT}
@@ -102,7 +102,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 				Source: source,
 				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
-				Perms:  usermem.AnyAccess,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, err
 	}
@@ -146,7 +146,7 @@ func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*Spec
 	if length == 0 {
 		return nil, syserror.EINVAL
 	}
-	alignedLen, ok := usermem.Addr(length).RoundUp()
+	alignedLen, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return nil, syserror.EINVAL
 	}

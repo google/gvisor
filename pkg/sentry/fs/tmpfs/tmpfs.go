@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var fsInfo = fs.Info{
@@ -41,8 +41,8 @@ var fsInfo = fs.Info{
 	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
 	// applications may also handle incorrectly).
 	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
-	TotalBlocks: math.MaxInt64 / usermem.PageSize,
-	FreeBlocks:  math.MaxInt64 / usermem.PageSize,
+	TotalBlocks: math.MaxInt64 / hostarch.PageSize,
+	FreeBlocks:  math.MaxInt64 / hostarch.PageSize,
 }
 
 // rename implements fs.InodeOperations.Rename for tmpfs nodes.
@@ -99,7 +99,7 @@ func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwn
 	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Directory,
 	})
 }
@@ -232,7 +232,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 			return fs.NewInode(ctx, iops, dir.MountSource, fs.StableAttr{
 				DeviceID:  tmpfsDevice.DeviceID(),
 				InodeID:   tmpfsDevice.NextIno(),
-				BlockSize: usermem.PageSize,
+				BlockSize: hostarch.PageSize,
 				Type:      fs.RegularFile,
 			}), nil
 		},
@@ -281,7 +281,7 @@ func NewSymlink(ctx context.Context, target string, owner fs.FileOwner, msrc *fs
 	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Symlink,
 	})
 }
@@ -311,7 +311,7 @@ func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.Fil
 	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Socket,
 	})
 }
@@ -348,7 +348,7 @@ func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, 
 	return fs.NewInode(ctx, fifoIops, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Pipe,
 	})
 }

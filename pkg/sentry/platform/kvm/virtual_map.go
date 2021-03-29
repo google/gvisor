@@ -22,12 +22,12 @@ import (
 	"regexp"
 	"strconv"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 type virtualRegion struct {
 	region
-	accessType usermem.AccessType
+	accessType hostarch.AccessType
 	shared     bool
 	offset     uintptr
 	filename   string
@@ -92,7 +92,7 @@ func applyVirtualRegions(fn func(vr virtualRegion)) error {
 					virtual: uintptr(start),
 					length:  uintptr(end - start),
 				},
-				accessType: usermem.AccessType{
+				accessType: hostarch.AccessType{
 					Read:    read,
 					Write:   write,
 					Execute: execute,

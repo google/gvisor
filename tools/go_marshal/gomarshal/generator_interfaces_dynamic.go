@@ -46,8 +46,8 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fall back to MarshalBytes.\n", g.typeName())
 		g.emit("buf := cc.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)
@@ -59,8 +59,8 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
@@ -69,8 +69,8 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("usermem")
-	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {\n", g.r, g.typeName())
+	g.recordUsedImport("hostarch")
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fall back to UnmarshalBytes.\n", g.typeName())
 		g.emit("buf := cc.CopyScratchBuffer(%s.SizeBytes()) // escapes: okay.\n", g.r)

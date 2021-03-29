@@ -15,9 +15,8 @@
 package pagetables
 
 import (
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type mapping struct {
@@ -90,7 +89,7 @@ func TestUnmap(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Map and unmap one entry.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite}, pteSize*42)
 	pt.Unmap(0x400000, pteSize)
 
 	checkMappings(t, pt, nil)
@@ -100,10 +99,10 @@ func TestReadOnly(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.Read}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.Read}},
 	})
 }
 
@@ -111,10 +110,10 @@ func TestReadWrite(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite}},
 	})
 }
 
@@ -122,12 +121,12 @@ func TestSerialEntries(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Map two sequential entries.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
-	pt.Map(0x401000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*47)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite}, pteSize*42)
+	pt.Map(0x401000, pteSize, MapOpts{AccessType: hostarch.ReadWrite}, pteSize*47)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
-		{0x401000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.ReadWrite}},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite}},
+		{0x401000, pteSize, pteSize * 47, MapOpts{AccessType: hostarch.ReadWrite}},
 	})
 }
 
@@ -135,11 +134,11 @@ func TestSpanningEntries(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Span a pgd with two pages.
-	pt.Map(0x00007efffffff000, 2*pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
+	pt.Map(0x00007efffffff000, 2*pteSize, MapOpts{AccessType: hostarch.Read}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x00007efffffff000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
-		{0x00007f0000000000, pteSize, pteSize * 43, MapOpts{AccessType: usermem.Read}},
+		{0x00007efffffff000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.Read}},
+		{0x00007f0000000000, pteSize, pteSize * 43, MapOpts{AccessType: hostarch.Read}},
 	})
 }
 
@@ -147,11 +146,11 @@ func TestSparseEntries(t *testing.T) {
 	pt := New(NewRuntimeAllocator())
 
 	// Map two entries in different pgds.
-	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
-	pt.Map(0x00007f0000000000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*47)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: hostarch.ReadWrite}, pteSize*42)
+	pt.Map(0x00007f0000000000, pteSize, MapOpts{AccessType: hostarch.Read}, pteSize*47)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
-		{0x00007f0000000000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.Read}},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: hostarch.ReadWrite}},
+		{0x00007f0000000000, pteSize, pteSize * 47, MapOpts{AccessType: hostarch.Read}},
 	})
 }

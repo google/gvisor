@@ -23,12 +23,12 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type kvmVcpuInit struct {
@@ -209,7 +209,7 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Pc) {
 		return nonCanonical(regs.Pc, int32(unix.SIGSEGV), info)
@@ -246,13 +246,13 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	switch vector {
 	case ring0.Syscall:
 		// Fast path: system call executed.
-		return usermem.NoAccess, nil
+		return hostarch.NoAccess, nil
 	case ring0.PageFault:
 		return c.fault(int32(unix.SIGSEGV), info)
 	case ring0.El0ErrNMI:
 		return c.fault(int32(unix.SIGBUS), info)
 	case ring0.Vector(bounce): // ring0.VirtualizationException.
-		return usermem.NoAccess, platform.ErrContextInterrupt
+		return hostarch.NoAccess, platform.ErrContextInterrupt
 	case ring0.El0SyncUndef:
 		return c.fault(int32(unix.SIGILL), info)
 	case ring0.El0SyncDbg:
@@ -261,16 +261,16 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
 		info.SetAddr(switchOpts.Registers.Pc) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 	case ring0.El0SyncSpPc:
 		*info = arch.SignalInfo{
 			Signo: int32(unix.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}
-		return usermem.NoAccess, platform.ErrContextSignal
+		return hostarch.NoAccess, platform.ErrContextSignal
 	case ring0.El0SyncSys,
 		ring0.El0SyncWfx:
-		return usermem.NoAccess, nil // skip for now.
+		return hostarch.NoAccess, nil // skip for now.
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}

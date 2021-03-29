@@ -21,9 +21,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // initX86FPState (defined in asm files) sets up initial state.
@@ -146,11 +146,11 @@ const (
 // any of the reserved bits of the MXCSR register." - Intel SDM Vol. 1, Section
 // 10.5.1.2 "SSE State")
 func sanitizeMXCSR(f State) {
-	mxcsr := usermem.ByteOrder.Uint32(f[mxcsrOffset:])
+	mxcsr := hostarch.ByteOrder.Uint32(f[mxcsrOffset:])
 	initMXCSRMask.Do(func() {
 		temp := State(alignedBytes(uint(ptraceFPRegsSize), 16))
 		initX86FPState(&temp[0], false /* useXsave */)
-		mxcsrMask = usermem.ByteOrder.Uint32(temp[mxcsrMaskOffset:])
+		mxcsrMask = hostarch.ByteOrder.Uint32(temp[mxcsrMaskOffset:])
 		if mxcsrMask == 0 {
 			// "If the value of the MXCSR_MASK field is 00000000H, then the
 			// MXCSR_MASK value is the default value of 0000FFBFH." - Intel SDM
@@ -160,7 +160,7 @@ func sanitizeMXCSR(f State) {
 		}
 	})
 	mxcsr &= mxcsrMask
-	usermem.ByteOrder.PutUint32(f[mxcsrOffset:], mxcsr)
+	hostarch.ByteOrder.PutUint32(f[mxcsrOffset:], mxcsr)
 }
 
 // PtraceGetXstateRegs implements ptrace(PTRACE_GETREGS, NT_X86_XSTATE) by
@@ -177,7 +177,7 @@ func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet *cpuid
 	// Area". Linux uses the first 8 bytes of this area to store the OS XSTATE
 	// mask. GDB relies on this: see
 	// gdb/x86-linux-nat.c:x86_linux_read_description().
-	usermem.ByteOrder.PutUint64(f[userXstateXCR0Offset:], featureSet.ValidXCR0Mask())
+	hostarch.ByteOrder.PutUint64(f[userXstateXCR0Offset:], featureSet.ValidXCR0Mask())
 	if len(f) > maxlen {
 		f = f[:maxlen]
 	}
@@ -208,9 +208,9 @@ func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet *cpuid
 	// Force reserved bits in MXCSR to 0. This is consistent with Linux.
 	sanitizeMXCSR(State(f))
 	// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
-	xstateBV := usermem.ByteOrder.Uint64(f[xstateBVOffset:])
+	xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:])
 	xstateBV &= featureSet.ValidXCR0Mask()
-	usermem.ByteOrder.PutUint64(f[xstateBVOffset:], xstateBV)
+	hostarch.ByteOrder.PutUint64(f[xstateBVOffset:], xstateBV)
 	// Force XCOMP_BV and reserved bytes in the XSAVE header to 0.
 	reserved := f[xsaveHeaderZeroedOffset : xsaveHeaderZeroedOffset+xsaveHeaderZeroedBytes]
 	for i := range reserved {
@@ -266,7 +266,7 @@ func (s *State) AfterLoad() {
 		// What was in use?
 		savedBV := fxsaveBV
 		if len(old) >= xstateBVOffset+8 {
-			savedBV = usermem.ByteOrder.Uint64(old[xstateBVOffset:])
+			savedBV = hostarch.ByteOrder.Uint64(old[xstateBVOffset:])
 		}
 
 		// Supported features must be a superset of saved features.

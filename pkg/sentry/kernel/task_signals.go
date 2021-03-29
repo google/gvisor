@@ -23,11 +23,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -243,7 +243,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 
 	// Are executing on the main stack,
 	// or the provided alternate stack?
-	sp := usermem.Addr(t.Arch().Stack())
+	sp := hostarch.Addr(t.Arch().Stack())
 
 	// N.B. This is a *copy* of the alternate stack that the user's signal
 	// handler expects to see in its ucontext (even if it's not in use).
@@ -251,7 +251,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	if act.IsOnStack() && alt.IsEnabled() {
 		alt.SetOnStack()
 		if !alt.Contains(sp) {
-			sp = usermem.Addr(alt.Top())
+			sp = hostarch.Addr(alt.Top())
 		}
 	}
 
@@ -652,7 +652,7 @@ func (t *Task) SignalStack() arch.SignalStack {
 
 // onSignalStack returns true if the task is executing on the given signal stack.
 func (t *Task) onSignalStack(alt arch.SignalStack) bool {
-	sp := usermem.Addr(t.Arch().Stack())
+	sp := hostarch.Addr(t.Arch().Stack())
 	return alt.Contains(sp)
 }
 
@@ -720,7 +720,7 @@ func (tg *ThreadGroup) SetSignalAct(sig linux.Signal, actptr *arch.SignalAct) (a
 
 // CopyOutSignalAct converts the given SignalAct into an architecture-specific
 // type and then copies it out to task memory.
-func (t *Task) CopyOutSignalAct(addr usermem.Addr, s *arch.SignalAct) error {
+func (t *Task) CopyOutSignalAct(addr hostarch.Addr, s *arch.SignalAct) error {
 	n := t.Arch().NewSignalAct()
 	n.SerializeFrom(s)
 	_, err := n.CopyOut(t, addr)
@@ -729,7 +729,7 @@ func (t *Task) CopyOutSignalAct(addr usermem.Addr, s *arch.SignalAct) error {
 
 // CopyInSignalAct copies an architecture-specific sigaction type from task
 // memory and then converts it into a SignalAct.
-func (t *Task) CopyInSignalAct(addr usermem.Addr) (arch.SignalAct, error) {
+func (t *Task) CopyInSignalAct(addr hostarch.Addr) (arch.SignalAct, error) {
 	n := t.Arch().NewSignalAct()
 	var s arch.SignalAct
 	if _, err := n.CopyIn(t, addr); err != nil {
@@ -741,7 +741,7 @@ func (t *Task) CopyInSignalAct(addr usermem.Addr) (arch.SignalAct, error) {
 
 // CopyOutSignalStack converts the given SignalStack into an
 // architecture-specific type and then copies it out to task memory.
-func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error {
+func (t *Task) CopyOutSignalStack(addr hostarch.Addr, s *arch.SignalStack) error {
 	n := t.Arch().NewSignalStack()
 	n.SerializeFrom(s)
 	_, err := n.CopyOut(t, addr)
@@ -750,7 +750,7 @@ func (t *Task) CopyOutSignalStack(addr usermem.Addr, s *arch.SignalStack) error 
 
 // CopyInSignalStack copies an architecture-specific stack_t from task memory
 // and then converts it into a SignalStack.
-func (t *Task) CopyInSignalStack(addr usermem.Addr) (arch.SignalStack, error) {
+func (t *Task) CopyInSignalStack(addr hostarch.Addr) (arch.SignalStack, error) {
 	n := t.Arch().NewSignalStack()
 	var s arch.SignalStack
 	if _, err := n.CopyIn(t, addr); err != nil {

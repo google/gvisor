@@ -28,8 +28,8 @@ import (
 	"sort"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 
 	"github.com/bazelbuild/rules_go/go/tools/coverdata"
 )
@@ -141,7 +141,7 @@ func ConsumeCoverageData(w io.Writer) int {
 			// Non-zero coverage data found; consume it and report as a PC.
 			counters[index] = 0
 			pc := globalData.syntheticPCs[fileNum][index]
-			usermem.ByteOrder.PutUint64(pcBuffer[:], pc)
+			hostarch.ByteOrder.PutUint64(pcBuffer[:], pc)
 			n, err := w.Write(pcBuffer[:])
 			if err != nil {
 				if err == io.EOF {

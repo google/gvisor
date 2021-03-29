@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -90,7 +91,7 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 
 	var first *elf.ProgHeader
 	var prev *elf.ProgHeader
-	var prevEnd usermem.Addr
+	var prevEnd hostarch.Addr
 	for i, phdr := range info.phdrs {
 		if phdr.Type != elf.PT_LOAD {
 			continue
@@ -119,7 +120,7 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 			return elfInfo{}, syserror.ENOEXEC
 		}
 
-		start := usermem.Addr(memoryOffset)
+		start := hostarch.Addr(memoryOffset)
 		end, ok := start.AddLength(phdr.Memsz)
 		if !ok {
 			log.Warningf("PT_LOAD segment size overflows: %#x + %#x", start, end)
@@ -210,7 +211,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 	}
 
 	// Then copy it into a VDSO mapping.
-	size, ok := usermem.Addr(len(vdsodata.Binary)).RoundUp()
+	size, ok := hostarch.Addr(len(vdsodata.Binary)).RoundUp()
 	if !ok {
 		return nil, fmt.Errorf("VDSO size overflows? %#x", len(vdsodata.Binary))
 	}
@@ -221,7 +222,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 		return nil, fmt.Errorf("unable to allocate VDSO memory: %v", err)
 	}
 
-	ims, err := mf.MapInternal(vdso, usermem.ReadWrite)
+	ims, err := mf.MapInternal(vdso, hostarch.ReadWrite)
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to map VDSO memory: %v", err)
@@ -234,7 +235,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 	}
 
 	// Finally, allocate a param page for this VDSO.
-	paramPage, err := mf.Allocate(usermem.PageSize, usage.System)
+	paramPage, err := mf.Allocate(hostarch.PageSize, usage.System)
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to allocate VDSO param page: %v", err)
@@ -266,7 +267,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 // compatibility with such binaries, we load the VDSO much like Linux.
 //
 // loadVDSO takes a reference on the VDSO and parameter page FrameRegions.
-func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) (usermem.Addr, error) {
+func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) (hostarch.Addr, error) {
 	if v.os != bin.os {
 		ctx.Warningf("Binary ELF OS %v and VDSO ELF OS %v differ", bin.os, v.os)
 		return 0, syserror.ENOEXEC
@@ -297,8 +298,8 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 		Fixed:           true,
 		Unmap:           true,
 		Private:         true,
-		Perms:           usermem.Read,
-		MaxPerms:        usermem.Read,
+		Perms:           hostarch.Read,
+		MaxPerms:        hostarch.Read,
 	})
 	if err != nil {
 		ctx.Infof("Unable to map VDSO param page: %v", err)
@@ -318,8 +319,8 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 		Fixed:           true,
 		Unmap:           true,
 		Private:         true,
-		Perms:           usermem.Read,
-		MaxPerms:        usermem.AnyAccess,
+		Perms:           hostarch.Read,
+		MaxPerms:        hostarch.AnyAccess,
 	})
 	if err != nil {
 		ctx.Infof("Unable to map VDSO: %v", err)
@@ -349,7 +350,7 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 			return 0, syserror.ENOEXEC
 		}
 		segPage := segAddr.RoundDown()
-		segSize := usermem.Addr(phdr.Memsz)
+		segSize := hostarch.Addr(phdr.Memsz)
 		segSize, ok = segSize.AddLength(segAddr.PageOffset())
 		if !ok {
 			ctx.Warningf("PT_LOAD segment memsize %#x + offset %#x overflows", phdr.Memsz, segAddr.PageOffset())
@@ -371,7 +372,7 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 		}
 
 		perms := progFlagsAsPerms(phdr.Flags)
-		if perms != usermem.Read {
+		if perms != hostarch.Read {
 			if err := m.MProtect(segPage, uint64(segSize), perms, false); err != nil {
 				ctx.Warningf("Unable to set PT_LOAD segment protections %+v at [%#x, %#x): %v", perms, segAddr, segEnd, err)
 				return 0, syserror.ENOEXEC

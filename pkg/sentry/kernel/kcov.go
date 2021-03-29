@@ -22,13 +22,13 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // kcovAreaSizeMax is the maximum number of uint64 entries allowed in the kcov
@@ -130,7 +130,7 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 
 	// To simplify all the logic around mapping, we require that the length of the
 	// shared region is a multiple of the system page size.
-	if (8*size)&(usermem.PageSize-1) != 0 {
+	if (8*size)&(hostarch.PageSize-1) != 0 {
 		return syserror.EINVAL
 	}
 
@@ -286,7 +286,7 @@ func (rw *kcovReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	}
 
 	// Get internal mappings.
-	bs, err := rw.mf.MapInternal(memmap.FileRange{start, end}, usermem.Read)
+	bs, err := rw.mf.MapInternal(memmap.FileRange{start, end}, hostarch.Read)
 	if err != nil {
 		return 0, err
 	}
@@ -314,7 +314,7 @@ func (rw *kcovReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 	}
 
 	// Get internal mapping.
-	bs, err := rw.mf.MapInternal(memmap.FileRange{start, end}, usermem.Write)
+	bs, err := rw.mf.MapInternal(memmap.FileRange{start, end}, hostarch.Write)
 	if err != nil {
 		return 0, err
 	}

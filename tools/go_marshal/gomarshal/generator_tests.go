@@ -32,7 +32,7 @@ var standardImports = []string{
 
 var sliceAPIImports = []string{
 	"encoding/binary",
-	"gvisor.dev/gvisor/pkg/usermem",
+	"gvisor.dev/gvisor/pkg/hostarch",
 }
 
 type testGenerator struct {
@@ -143,7 +143,7 @@ func (g *testGenerator) emitTestMarshalUnmarshalPreservesData() {
 }
 
 func (g *testGenerator) emitTestMarshalUnmarshalSlicePreservesData(slice *sliceAPI) {
-	for _, name := range []string{"binary", "usermem"} {
+	for _, name := range []string{"binary", "hostarch"} {
 		if !g.imports.markUsed(name) {
 			panic(fmt.Sprintf("Generated test for '%s' referenced a non-existent import with local name '%s'", g.typeName(), name))
 		}
@@ -155,7 +155,7 @@ func (g *testGenerator) emitTestMarshalUnmarshalSlicePreservesData(slice *sliceA
 		g.emit("size := (*%s)(nil).SizeBytes() * len(x)\n", g.typeName())
 		g.emit("buf := bytes.NewBuffer(make([]byte, size))\n")
 		g.emit("buf.Reset()\n")
-		g.emit("if err := binary.Write(buf, usermem.ByteOrder, x[:]); err != nil {\n")
+		g.emit("if err := binary.Write(buf, hostarch.ByteOrder, x[:]); err != nil {\n")
 		g.inIndent(func() {
 			g.emit("t.Fatal(fmt.Sprintf(\"binary.Write failed: %v\", err))\n")
 		})

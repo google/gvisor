@@ -17,13 +17,13 @@ package proc
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LINT.IfChange
@@ -125,7 +125,7 @@ func newProcInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      typ,
 	}
 	if t != nil {

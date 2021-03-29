@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package usermem
+package hostarch
 
 import (
 	"fmt"
@@ -57,7 +57,7 @@ func (v Addr) RoundUp() (addr Addr, ok bool) {
 func (v Addr) MustRoundUp() Addr {
 	addr, ok := v.RoundUp()
 	if !ok {
-		panic(fmt.Sprintf("usermem.Addr(%d).RoundUp() wraps", v))
+		panic(fmt.Sprintf("hostarch.Addr(%d).RoundUp() wraps", v))
 	}
 	return addr
 }

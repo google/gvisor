@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Sniffer can sniff raw packets on the wire.
@@ -34,7 +34,7 @@ type Sniffer struct {
 func htons(x uint16) uint16 {
 	buf := [2]byte{}
 	binary.BigEndian.PutUint16(buf[:], x)
-	return usermem.ByteOrder.Uint16(buf[:])
+	return hostarch.ByteOrder.Uint16(buf[:])
 }
 
 // NewSniffer creates a Sniffer connected to *device.

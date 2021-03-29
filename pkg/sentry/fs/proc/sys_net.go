@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
@@ -76,7 +77,7 @@ func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, tm, msrc, sattr)
@@ -136,7 +137,7 @@ func (f *tcpMemFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequen
 	f.tcpMemInode.mu.Lock()
 	defer f.tcpMemInode.mu.Unlock()
 
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 	size, err := readSize(f.tcpMemInode.dir, f.tcpMemInode.s)
 	if err != nil {
 		return 0, err
@@ -192,7 +193,7 @@ func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *f
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ts, msrc, sattr)
@@ -264,7 +265,7 @@ func (f *tcpSackFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSeque
 
 	// Only consider size of one memory page for input for performance reasons.
 	// We are only reading if it's zero or not anyway.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -294,7 +295,7 @@ func newTCPRecoveryInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ts, msrc, sattr)
@@ -354,7 +355,7 @@ func (f *tcpRecoveryFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	if src.NumBytes() == 0 {
 		return 0, nil
 	}
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -413,7 +414,7 @@ func newIPForwardingInode(ctx context.Context, msrc *fs.MountSource, s inet.Stac
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ipf, msrc, sattr)
@@ -486,7 +487,7 @@ func (f *ipForwardingFile) Write(ctx context.Context, _ *fs.File, src usermem.IO
 
 	// Only consider size of one memory page for input for performance reasons.
 	// We are only reading if it's zero or not anyway.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
@@ -524,7 +525,7 @@ func newPortRangeInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) 
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, ipf, msrc, sattr)
@@ -589,7 +590,7 @@ func (pf *portRangeFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSe
 
 	// Only consider size of one memory page for input for performance
 	// reasons.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	ports := make([]int32, 2)
 	n, err := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, ports, src.Opts)

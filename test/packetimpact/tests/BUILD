@@ -105,8 +105,8 @@ packetimpact_testbench(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/tcpip/header",
-        "//pkg/usermem",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -354,9 +354,9 @@ packetimpact_testbench(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
-        "//pkg/usermem",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -368,8 +368,8 @@ packetimpact_testbench(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/tcpip/header",
-        "//pkg/usermem",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],

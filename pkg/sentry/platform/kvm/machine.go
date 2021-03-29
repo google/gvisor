@@ -21,13 +21,13 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // machine contains state associated with the VM as a whole.
@@ -227,9 +227,9 @@ func newMachine(vm int) (*machine, error) {
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		// Map everything in the lower half.
 		m.kernel.PageTables.Map(
-			usermem.Addr(pr.virtual),
+			hostarch.Addr(pr.virtual),
 			pr.length,
-			pagetables.MapOpts{AccessType: usermem.AnyAccess},
+			pagetables.MapOpts{AccessType: hostarch.AnyAccess},
 			pr.physical)
 
 		return true // Keep iterating.

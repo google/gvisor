@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -29,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var dummyFPState = fpu.NewState()
@@ -142,8 +142,8 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 			// done for regular user code, but is fine for test
 			// purposes.)
 			applyPhysicalRegions(func(pr physicalRegion) bool {
-				pt.Map(usermem.Addr(pr.virtual), pr.length, pagetables.MapOpts{
-					AccessType: usermem.AnyAccess,
+				pt.Map(hostarch.Addr(pr.virtual), pr.length, pagetables.MapOpts{
+					AccessType: hostarch.AnyAccess,
 					User:       true,
 				}, pr.physical)
 				return true // Keep iterating.
@@ -351,7 +351,7 @@ func TestInvalidate(t *testing.T) {
 			break // Done.
 		}
 		// Unmap the page containing data & invalidate.
-		pt.Unmap(usermem.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(usermem.PageSize-1)), usermem.PageSize)
+		pt.Unmap(hostarch.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(hostarch.PageSize-1)), hostarch.PageSize)
 		for {
 			var si arch.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{

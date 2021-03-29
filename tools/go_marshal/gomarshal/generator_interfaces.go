@@ -120,16 +120,16 @@ func (g *interfaceGenerator) marshalScalar(accessor, typ, bufVar string) {
 		g.emit("%s[0] = byte(%s)\n", bufVar, accessor)
 		g.shift(bufVar, 1)
 	case "int16", "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint16(%s[:2], uint16(%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint16(%s[:2], uint16(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 2)
 	case "int32", "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint32(%s[:4], uint32(%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint32(%s[:4], uint32(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 4)
 	case "int64", "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("usermem.ByteOrder.PutUint64(%s[:8], uint64(%s))\n", bufVar, accessor)
+		g.recordUsedImport("hostarch")
+		g.emit("hostarch.ByteOrder.PutUint64(%s[:8], uint64(%s))\n", bufVar, accessor)
 		g.shift(bufVar, 8)
 	default:
 		g.emit("%s.MarshalBytes(%s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)
@@ -147,16 +147,16 @@ func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string) {
 		g.emit("%s = %s(%s[0])\n", accessor, typ, bufVar)
 		g.shift(bufVar, 1)
 	case "int16", "uint16":
-		g.recordUsedImport("usermem")
-		g.emit("%s = %s(usermem.ByteOrder.Uint16(%s[:2]))\n", accessor, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("%s = %s(hostarch.ByteOrder.Uint16(%s[:2]))\n", accessor, typ, bufVar)
 		g.shift(bufVar, 2)
 	case "int32", "uint32":
-		g.recordUsedImport("usermem")
-		g.emit("%s = %s(usermem.ByteOrder.Uint32(%s[:4]))\n", accessor, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("%s = %s(hostarch.ByteOrder.Uint32(%s[:4]))\n", accessor, typ, bufVar)
 		g.shift(bufVar, 4)
 	case "int64", "uint64":
-		g.recordUsedImport("usermem")
-		g.emit("%s = %s(usermem.ByteOrder.Uint64(%s[:8]))\n", accessor, typ, bufVar)
+		g.recordUsedImport("hostarch")
+		g.emit("%s = %s(hostarch.ByteOrder.Uint64(%s[:8]))\n", accessor, typ, bufVar)
 		g.shift(bufVar, 8)
 	default:
 		g.emit("%s.UnmarshalBytes(%s[:%s.SizeBytes()])\n", accessor, bufVar, accessor)

@@ -19,9 +19,9 @@ package anon
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // NewInode constructs an anonymous Inode that is not associated
@@ -37,6 +37,6 @@ func NewInode(ctx context.Context) *fs.Inode {
 		Type:      fs.Anonymous,
 		DeviceID:  PseudoDevice.DeviceID(),
 		InodeID:   PseudoDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 	})
 }

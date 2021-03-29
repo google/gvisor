@@ -20,7 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Mount implements Linux syscall mount(2).
@@ -31,7 +32,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	flags := args[3].Uint64()
 	dataAddr := args[4].Pointer()
 
-	fsType, err := t.CopyInString(typeAddr, usermem.PageSize)
+	fsType, err := t.CopyInString(typeAddr, hostarch.PageSize)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -52,7 +53,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// character placement, and the address is passed to each file system.
 		// Most file systems always treat this data as a string, though, and so
 		// do all of the ones we implement.
-		data, err = t.CopyInString(dataAddr, usermem.PageSize)
+		data, err = t.CopyInString(dataAddr, hostarch.PageSize)
 		if err != nil {
 			return 0, nil, err
 		}

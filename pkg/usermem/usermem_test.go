@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -106,7 +107,7 @@ func TestBytesIOZeroOutFailure(t *testing.T) {
 
 func TestBytesIOCopyOutFromSuccess(t *testing.T) {
 	b := newBytesIOString("ABCDEFGH")
-	n, err := b.CopyOutFrom(newContext(), AddrRangeSeqFromSlice([]AddrRange{
+	n, err := b.CopyOutFrom(newContext(), hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
 		{Start: 4, End: 7},
 		{Start: 1, End: 4},
 	}), safemem.FromIOReader{bytes.NewBufferString("barfoo")}, IOOpts{})
@@ -120,7 +121,7 @@ func TestBytesIOCopyOutFromSuccess(t *testing.T) {
 
 func TestBytesIOCopyOutFromFailure(t *testing.T) {
 	b := newBytesIOString("ABCDE")
-	n, err := b.CopyOutFrom(newContext(), AddrRangeSeqFromSlice([]AddrRange{
+	n, err := b.CopyOutFrom(newContext(), hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
 		{Start: 1, End: 4},
 		{Start: 4, End: 7},
 	}), safemem.FromIOReader{bytes.NewBufferString("foobar")}, IOOpts{})
@@ -135,7 +136,7 @@ func TestBytesIOCopyOutFromFailure(t *testing.T) {
 func TestBytesIOCopyInToSuccess(t *testing.T) {
 	b := newBytesIOString("AfoobarH")
 	var dst bytes.Buffer
-	n, err := b.CopyInTo(newContext(), AddrRangeSeqFromSlice([]AddrRange{
+	n, err := b.CopyInTo(newContext(), hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
 		{Start: 4, End: 7},
 		{Start: 1, End: 4},
 	}), safemem.FromIOWriter{&dst}, IOOpts{})
@@ -150,7 +151,7 @@ func TestBytesIOCopyInToSuccess(t *testing.T) {
 func TestBytesIOCopyInToFailure(t *testing.T) {
 	b := newBytesIOString("Afoob")
 	var dst bytes.Buffer
-	n, err := b.CopyInTo(newContext(), AddrRangeSeqFromSlice([]AddrRange{
+	n, err := b.CopyInTo(newContext(), hostarch.AddrRangeSeqFromSlice([]hostarch.AddrRange{
 		{Start: 1, End: 4},
 		{Start: 4, End: 7},
 	}), safemem.FromIOWriter{&dst}, IOOpts{})

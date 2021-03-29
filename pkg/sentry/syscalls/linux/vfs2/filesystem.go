@@ -20,7 +20,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Link implements Linux syscall link(2).
@@ -40,7 +41,7 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return 0, nil, linkat(t, olddirfd, oldpathAddr, newdirfd, newpathAddr, flags)
 }
 
-func linkat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd int32, newpathAddr usermem.Addr, flags int32) error {
+func linkat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd int32, newpathAddr hostarch.Addr, flags int32) error {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_FOLLOW) != 0 {
 		return syserror.EINVAL
 	}
@@ -86,7 +87,7 @@ func Mkdirat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	return 0, nil, mkdirat(t, dirfd, addr, mode)
 }
 
-func mkdirat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode uint) error {
+func mkdirat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode uint) error {
 	path, err := copyInPath(t, addr)
 	if err != nil {
 		return err
@@ -118,7 +119,7 @@ func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	return 0, nil, mknodat(t, dirfd, addr, linux.FileMode(mode), dev)
 }
 
-func mknodat(t *kernel.Task, dirfd int32, addr usermem.Addr, mode linux.FileMode, dev uint32) error {
+func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMode, dev uint32) error {
 	path, err := copyInPath(t, addr)
 	if err != nil {
 		return err
@@ -165,7 +166,7 @@ func Creat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return openat(t, linux.AT_FDCWD, addr, linux.O_WRONLY|linux.O_CREAT|linux.O_TRUNC, mode)
 }
 
-func openat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, flags uint32, mode uint) (uintptr, *kernel.SyscallControl, error) {
+func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, mode uint) (uintptr, *kernel.SyscallControl, error) {
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return 0, nil, err
@@ -217,7 +218,7 @@ func Renameat2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, renameat(t, olddirfd, oldpathAddr, newdirfd, newpathAddr, flags)
 }
 
-func renameat(t *kernel.Task, olddirfd int32, oldpathAddr usermem.Addr, newdirfd int32, newpathAddr usermem.Addr, flags uint32) error {
+func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd int32, newpathAddr hostarch.Addr, flags uint32) error {
 	oldpath, err := copyInPath(t, oldpathAddr)
 	if err != nil {
 		return err
@@ -250,7 +251,7 @@ func Rmdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, rmdirat(t, linux.AT_FDCWD, pathAddr)
 }
 
-func rmdirat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr) error {
+func rmdirat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
@@ -269,7 +270,7 @@ func Unlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return 0, nil, unlinkat(t, linux.AT_FDCWD, pathAddr)
 }
 
-func unlinkat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr) error {
+func unlinkat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
@@ -313,7 +314,7 @@ func Symlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, symlinkat(t, targetAddr, newdirfd, linkpathAddr)
 }
 
-func symlinkat(t *kernel.Task, targetAddr usermem.Addr, newdirfd int32, linkpathAddr usermem.Addr) error {
+func symlinkat(t *kernel.Task, targetAddr hostarch.Addr, newdirfd int32, linkpathAddr hostarch.Addr) error {
 	target, err := t.CopyInString(targetAddr, linux.PATH_MAX)
 	if err != nil {
 		return err

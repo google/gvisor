@@ -51,6 +51,7 @@ go_library(
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/refs",

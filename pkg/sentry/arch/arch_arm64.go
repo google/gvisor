@@ -22,11 +22,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Host specifies the host architecture.
@@ -36,7 +36,7 @@ const Host = ARM64
 const (
 	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
 	// for a 64-bit process.
-	maxAddr64 usermem.Addr = (1 << 48)
+	maxAddr64 hostarch.Addr = (1 << 48)
 
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
@@ -44,7 +44,7 @@ const (
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/arm64/mm/mmap.c:arch_mmap_rnd in Linux.
-	maxMmapRand64 = (1 << 33) * usermem.PageSize
+	maxMmapRand64 = (1 << 33) * hostarch.PageSize
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/arm64/mm/mmap.c:MIN_GAP in Linux.
@@ -55,7 +55,7 @@ const (
 	//
 	// The Platform {Min,Max}UserAddress() may preclude loading at this
 	// address. See other preferredFoo comments below.
-	preferredPIELoadAddr usermem.Addr = maxAddr64 / 6 * 5
+	preferredPIELoadAddr hostarch.Addr = maxAddr64 / 6 * 5
 )
 
 var (
@@ -66,13 +66,13 @@ var (
 // These constants are selected as heuristics to help make the Platform's
 // potentially limited address space conform as closely to Linux as possible.
 const (
-	preferredTopDownAllocMin usermem.Addr = 0x7e8000000000
-	preferredAllocationGap                = 128 << 30 // 128 GB
-	preferredTopDownBaseMin               = preferredTopDownAllocMin + preferredAllocationGap
+	preferredTopDownAllocMin hostarch.Addr = 0x7e8000000000
+	preferredAllocationGap                 = 128 << 30 // 128 GB
+	preferredTopDownBaseMin                = preferredTopDownAllocMin + preferredAllocationGap
 
 	// minMmapRand64 is the smallest we are willing to make the
 	// randomization to stay above preferredTopDownBaseMin.
-	minMmapRand64 = (1 << 18) * usermem.PageSize
+	minMmapRand64 = (1 << 18) * hostarch.PageSize
 )
 
 // context64 represents an ARM64 context.
@@ -187,12 +187,12 @@ func (c *context64) FeatureSet() *cpuid.FeatureSet {
 }
 
 // mmapRand returns a random adjustment for randomizing an mmap layout.
-func mmapRand(max uint64) usermem.Addr {
-	return usermem.Addr(rand.Int63n(int64(max))).RoundDown()
+func mmapRand(max uint64) hostarch.Addr {
+	return hostarch.Addr(rand.Int63n(int64(max))).RoundDown()
 }
 
 // NewMmapLayout implements Context.NewMmapLayout consistently with Linux.
-func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (MmapLayout, error) {
+func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
 		return MmapLayout{}, unix.EINVAL
@@ -210,7 +210,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 
 	// MAX_GAP in Linux.
 	maxGap := (max / 6) * 5
-	gap := usermem.Addr(stackSize.Cur)
+	gap := hostarch.Addr(stackSize.Cur)
 	if gap < minGap64 {
 		gap = minGap64
 	}
@@ -223,7 +223,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 	}
 
 	topDownMin := max - gap - maxMmapRand64
-	maxRand := usermem.Addr(maxMmapRand64)
+	maxRand := hostarch.Addr(maxMmapRand64)
 	if topDownMin < preferredTopDownBaseMin {
 		// Try to keep TopDownBase above preferredTopDownBaseMin by
 		// shrinking maxRand.
@@ -258,7 +258,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 }
 
 // PIELoadAddress implements Context.PIELoadAddress.
-func (c *context64) PIELoadAddress(l MmapLayout) usermem.Addr {
+func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
 	max, ok := base.AddLength(maxMmapRand64)
 	if !ok {

@@ -17,12 +17,12 @@ package kernel
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // mockClocks is a sentrytime.Clocks that simply returns the times in the
@@ -54,7 +54,7 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 func stateTestClocklessTimekeeper(tb testing.TB) *Timekeeper {
 	ctx := contexttest.Context(tb)
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	fr, err := mfp.MemoryFile().Allocate(usermem.PageSize, usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(hostarch.PageSize, usage.Anonymous)
 	if err != nil {
 		tb.Fatalf("failed to allocate memory: %v", err)
 	}

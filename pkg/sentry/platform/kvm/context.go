@@ -18,11 +18,11 @@ import (
 	"sync/atomic"
 
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // context is an implementation of the platform context.
@@ -40,7 +40,7 @@ type context struct {
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*arch.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 
@@ -50,7 +50,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	// Enable interrupts (i.e. calls to vCPU.Notify).
 	if !c.interrupt.Enable(cpu) {
 		c.machine.Put(cpu) // Already preempted.
-		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+		return nil, hostarch.NoAccess, platform.ErrContextInterrupt
 	}
 
 	// Set the active address space.

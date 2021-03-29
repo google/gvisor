@@ -18,11 +18,11 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // HostFileMapper caches mappings of an arbitrary host file descriptor. It is
@@ -50,13 +50,13 @@ type HostFileMapper struct {
 }
 
 const (
-	chunkShift = usermem.HugePageShift
+	chunkShift = hostarch.HugePageShift
 	chunkSize  = 1 << chunkShift
 	chunkMask  = chunkSize - 1
 )
 
 func pagesInChunk(mr memmap.MappableRange, chunkStart uint64) int32 {
-	return int32(mr.Intersect(memmap.MappableRange{chunkStart, chunkStart + chunkSize}).Length() / usermem.PageSize)
+	return int32(mr.Intersect(memmap.MappableRange{chunkStart, chunkStart + chunkSize}).Length() / hostarch.PageSize)
 }
 
 type mapping struct {

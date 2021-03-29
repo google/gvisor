@@ -43,6 +43,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/procid",
         "//pkg/ring0",
@@ -56,7 +57,6 @@ go_library(
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/time",
         "//pkg/sync",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -76,6 +76,7 @@ go_test(
         "requires-kvm",
     ],
     deps = [
+        "//pkg/hostarch",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
         "//pkg/sentry/arch",
@@ -83,7 +84,6 @@ go_test(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm/testutil",
         "//pkg/sentry/time",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

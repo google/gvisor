@@ -20,11 +20,11 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // FileRangeSet maps offsets into a memmap.Mappable to offsets into a
@@ -130,7 +130,7 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 						// MemoryFile.AllocateAndFill truncates down to a page
 						// boundary, but FileRangeSet.Fill is supposed to
 						// zero-fill to the end of the page in this case.
-						donepgaddr, ok := usermem.Addr(done).RoundUp()
+						donepgaddr, ok := hostarch.Addr(done).RoundUp()
 						if donepg := uint64(donepgaddr); ok && donepg != done {
 							dsts.DropFirst64(donepg - done)
 							done = donepg
@@ -184,7 +184,7 @@ func (frs *FileRangeSet) DropAll(mf *pgalloc.MemoryFile) {
 // bytes after the new EOF on the same page are zeroed, and pages after the new
 // EOF are freed.
 func (frs *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) {
-	pgendaddr, ok := usermem.Addr(end).RoundUp()
+	pgendaddr, ok := hostarch.Addr(end).RoundUp()
 	if ok {
 		pgend := uint64(pgendaddr)
 
@@ -208,7 +208,7 @@ func (frs *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) {
 	if seg.Ok() {
 		fr := seg.FileRange()
 		fr.Start += end - seg.Start()
-		ims, err := mf.MapInternal(fr, usermem.Write)
+		ims, err := mf.MapInternal(fr, hostarch.Write)
 		if err != nil {
 			// There's no good recourse from here. This means
 			// that we can't keep cached memory consistent with

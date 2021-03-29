@@ -19,8 +19,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safecopy"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // stub is defined in arch-specific assembly.
@@ -45,8 +45,8 @@ func stubInit() {
 	stubLen := int(safecopy.FindEndAddress(stubBegin) - stubBegin)
 	stubSlice := unsafeSlice(stubBegin, stubLen)
 	mapLen := uintptr(stubLen)
-	if offset := mapLen % usermem.PageSize; offset != 0 {
-		mapLen += usermem.PageSize - offset
+	if offset := mapLen % hostarch.PageSize; offset != 0 {
+		mapLen += hostarch.PageSize - offset
 	}
 
 	for stubStart > 0 {
@@ -70,7 +70,7 @@ func stubInit() {
 			}
 
 			// Attempt to begin at a lower address.
-			stubStart -= uintptr(usermem.PageSize)
+			stubStart -= uintptr(hostarch.PageSize)
 			continue
 		}
 

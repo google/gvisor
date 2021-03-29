@@ -14,6 +14,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/marshal/primitive",
         "//pkg/merkletree",
         "//pkg/refsvfs2",

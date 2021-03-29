@@ -27,7 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Size of a page in bytes. Cloned from usermem.PageSize to avoid a circular
+// Size of a page in bytes. Cloned from hostarch.PageSize to avoid a circular
 // dependency.
 const pageSize = 4096
 

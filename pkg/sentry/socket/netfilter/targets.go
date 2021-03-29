@@ -19,11 +19,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ErrorTargetName is used to mark targets as error targets. Error targets
@@ -167,7 +167,7 @@ func (*standardTargetMaker) marshal(target target) []byte {
 	}
 
 	ret := make([]byte, 0, linux.SizeOfXTStandardTarget)
-	return binary.Marshal(ret, usermem.ByteOrder, xt)
+	return binary.Marshal(ret, hostarch.ByteOrder, xt)
 }
 
 func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -177,7 +177,7 @@ func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	}
 	var standardTarget linux.XTStandardTarget
 	buf = buf[:linux.SizeOfXTStandardTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &standardTarget)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &standardTarget)
 
 	if standardTarget.Verdict < 0 {
 		// A Verdict < 0 indicates a non-jump verdict.
@@ -223,7 +223,7 @@ func (*errorTargetMaker) marshal(target target) []byte {
 	copy(xt.Target.Name[:], ErrorTargetName)
 
 	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
-	return binary.Marshal(ret, usermem.ByteOrder, xt)
+	return binary.Marshal(ret, hostarch.ByteOrder, xt)
 }
 
 func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -233,7 +233,7 @@ func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	}
 	var errTgt linux.XTErrorTarget
 	buf = buf[:linux.SizeOfXTErrorTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &errTgt)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &errTgt)
 
 	// Error targets are used in 2 cases:
 	// * An actual error case. These rules have an error named
@@ -281,7 +281,7 @@ func (*redirectTargetMaker) marshal(target target) []byte {
 	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
 	xt.NfRange.RangeIPV4.MinPort = htons(rt.Port)
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
-	return binary.Marshal(ret, usermem.ByteOrder, xt)
+	return binary.Marshal(ret, hostarch.ByteOrder, xt)
 }
 
 func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -297,7 +297,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 
 	var rt linux.XTRedirectTarget
 	buf = buf[:linux.SizeOfXTRedirectTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &rt)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &rt)
 
 	// Copy linux.XTRedirectTarget to stack.RedirectTarget.
 	target := redirectTarget{RedirectTarget: stack.RedirectTarget{
@@ -372,7 +372,7 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 	nt.Range.MaxProto = nt.Range.MinProto
 
 	ret := make([]byte, 0, nfNATMarhsalledSize)
-	return binary.Marshal(ret, usermem.ByteOrder, nt)
+	return binary.Marshal(ret, hostarch.ByteOrder, nt)
 }
 
 func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -388,7 +388,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 
 	var natRange linux.NFNATRange
 	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarhsalledSize]
-	binary.Unmarshal(buf, usermem.ByteOrder, &natRange)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &natRange)
 
 	// We don't support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
@@ -454,7 +454,7 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.T
 	}
 	var target linux.XTEntryTarget
 	buf := optVal[:linux.SizeOfXTEntryTarget]
-	binary.Unmarshal(buf, usermem.ByteOrder, &target)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &target)
 
 	return unmarshalTarget(target, filter, optVal)
 }
@@ -487,11 +487,11 @@ func (jt *JumpTarget) Action(*stack.PacketBuffer, *stack.ConnTrack, stack.Hook, 
 func ntohs(port uint16) uint16 {
 	buf := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf, port)
-	return usermem.ByteOrder.Uint16(buf)
+	return hostarch.ByteOrder.Uint16(buf)
 }
 
 func htons(port uint16) uint16 {
 	buf := make([]byte, 2)
-	usermem.ByteOrder.PutUint16(buf, port)
+	hostarch.ByteOrder.PutUint16(buf, port)
 	return binary.BigEndian.Uint16(buf)
 }

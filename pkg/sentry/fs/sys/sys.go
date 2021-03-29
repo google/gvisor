@@ -17,16 +17,16 @@ package sys
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func newFile(ctx context.Context, node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
 	sattr := fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialFile,
 	}
 	return fs.NewInode(ctx, node, msrc, sattr)
@@ -37,7 +37,7 @@ func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.I
 	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.SpecialDirectory,
 	})
 }

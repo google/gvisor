@@ -58,7 +58,7 @@ func TestSplit1GPage(t *testing.T) {
 
 	// Map a super page and knock out the middle.
 	pt.Map(0x0000ff0000000000, pudSize, MapOpts{AccessType: usermem.Read, User: true}, pudSize*42)
-	pt.Unmap(usermem.Addr(0x0000ff0000000000+pteSize), pudSize-(2*pteSize))
+	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize), pudSize-(2*pteSize))
 
 	checkMappings(t, pt, []mapping{
 		{0x0000ff0000000000, pteSize, pudSize * 42, MapOpts{AccessType: usermem.Read, User: true}},
@@ -71,7 +71,7 @@ func TestSplit2MPage(t *testing.T) {
 
 	// Map a huge page and knock out the middle.
 	pt.Map(0x0000ff0000000000, pmdSize, MapOpts{AccessType: usermem.Read, User: true}, pmdSize*42)
-	pt.Unmap(usermem.Addr(0x0000ff0000000000+pteSize), pmdSize-(2*pteSize))
+	pt.Unmap(hostarch.Addr(0x0000ff0000000000+pteSize), pmdSize-(2*pteSize))
 
 	checkMappings(t, pt, []mapping{
 		{0x0000ff0000000000, pteSize, pmdSize * 42, MapOpts{AccessType: usermem.Read, User: true}},

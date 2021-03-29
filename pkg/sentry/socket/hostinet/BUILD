@@ -20,6 +20,7 @@ go_library(
         "//pkg/binary",
         "//pkg/context",
         "//pkg/fdnotifier",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",

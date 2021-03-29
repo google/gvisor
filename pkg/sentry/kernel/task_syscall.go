@@ -22,12 +22,12 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var vsyscallCount = metric.MustCreateNewUint64Metric("/kernel/vsyscall_count", false /* sync */, "Number of times vsyscalls were invoked by the application")
@@ -153,7 +153,7 @@ func (t *Task) doSyscall() taskRunState {
 	// Check seccomp filters. The nil check is for performance (as seccomp use
 	// is rare), not needed for correctness.
 	if t.syscallFilters.Load() != nil {
-		switch r := t.checkSeccompSyscall(int32(sysno), args, usermem.Addr(t.Arch().IP())); r {
+		switch r := t.checkSeccompSyscall(int32(sysno), args, hostarch.Addr(t.Arch().IP())); r {
 		case linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_TRAP:
 			t.Debugf("Syscall %d: denied by seccomp", sysno)
 			return (*runSyscallExit)(nil)
@@ -283,12 +283,12 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // doVsyscall is the entry point for a vsyscall invocation of syscall sysno, as
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
-func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
+func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 	vsyscallCount.Increment()
 
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))
-	if _, err := caller.CopyIn(t, usermem.Addr(t.Arch().Stack())); err != nil {
+	if _, err := caller.CopyIn(t, hostarch.Addr(t.Arch().Stack())); err != nil {
 		t.Debugf("vsyscall %d: error reading return address from stack: %v", sysno, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
@@ -322,7 +322,7 @@ func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
 }
 
 type runVsyscallAfterPtraceEventSeccomp struct {
-	addr   usermem.Addr
+	addr   hostarch.Addr
 	sysno  uintptr
 	caller marshal.Marshallable
 }
@@ -337,7 +337,7 @@ func (r *runVsyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
 	// currently emulated call. ... The tracer MUST NOT modify rip or rsp." -
 	// Documentation/prctl/seccomp_filter.txt. On Linux, changing orig_ax or ip
 	// causes do_exit(SIGSYS), and changing sp is ignored.
-	if (sysno != ^uintptr(0) && sysno != r.sysno) || usermem.Addr(t.Arch().IP()) != r.addr {
+	if (sysno != ^uintptr(0) && sysno != r.sysno) || hostarch.Addr(t.Arch().IP()) != r.addr {
 		t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
 		return (*runExit)(nil)
 	}
