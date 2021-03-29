@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -31,7 +32,7 @@ func newFileInode(ctx context.Context) *fs.Inode {
 	return fs.NewInode(ctx, iops, m, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.RegularFile,
 	})
 }

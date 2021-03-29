@@ -19,9 +19,9 @@ import (
 	"sort"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type region struct {
@@ -81,7 +81,7 @@ func fillAddressSpace() (excludedRegions []region) {
 	// faultBlockSize, potentially causing up to faultBlockSize bytes in
 	// internal fragmentation for each physical region. So we need to
 	// account for this properly during allocation.
-	requiredAddr, ok := usermem.Addr(vSize - pSize + faultBlockSize).RoundUp()
+	requiredAddr, ok := hostarch.Addr(vSize - pSize + faultBlockSize).RoundUp()
 	if !ok {
 		panic(fmt.Sprintf(
 			"overflow for vSize (%x) - pSize (%x) + faultBlockSize (%x)",
@@ -99,7 +99,7 @@ func fillAddressSpace() (excludedRegions []region) {
 			0, 0)
 		if errno != 0 {
 			// Attempt half the size; overflow not possible.
-			currentAddr, _ := usermem.Addr(current >> 1).RoundUp()
+			currentAddr, _ := hostarch.Addr(current >> 1).RoundUp()
 			current = uintptr(currentAddr)
 			continue
 		}
@@ -134,8 +134,8 @@ func computePhysicalRegions(excludedRegions []region) (physicalRegions []physica
 			return
 		}
 		if virtual == 0 {
-			virtual += usermem.PageSize
-			length -= usermem.PageSize
+			virtual += hostarch.PageSize
+			length -= hostarch.PageSize
 		}
 		if end := virtual + length; end > ring0.MaximumUserAddress {
 			length -= (end - ring0.MaximumUserAddress)

@@ -18,18 +18,18 @@ import (
 	"reflect"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestDirtySet(t *testing.T) {
 	var set DirtySet
-	set.MarkDirty(memmap.MappableRange{0, 2 * usermem.PageSize})
-	set.KeepDirty(memmap.MappableRange{usermem.PageSize, 2 * usermem.PageSize})
-	set.MarkClean(memmap.MappableRange{0, 2 * usermem.PageSize})
+	set.MarkDirty(memmap.MappableRange{0, 2 * hostarch.PageSize})
+	set.KeepDirty(memmap.MappableRange{hostarch.PageSize, 2 * hostarch.PageSize})
+	set.MarkClean(memmap.MappableRange{0, 2 * hostarch.PageSize})
 	want := &DirtySegmentDataSlices{
-		Start:  []uint64{usermem.PageSize},
-		End:    []uint64{2 * usermem.PageSize},
+		Start:  []uint64{hostarch.PageSize},
+		End:    []uint64{2 * hostarch.PageSize},
 		Values: []DirtyInfo{{Keep: true}},
 	}
 	if got := set.ExportSortedSlices(); !reflect.DeepEqual(got, want) {

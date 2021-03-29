@@ -22,12 +22,12 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type saveRestoreContextID int
@@ -85,7 +85,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 	fd.bufMu.Lock()
 	defer fd.bufMu.Unlock()
-	var buf [usermem.PageSize]byte
+	var buf [hostarch.PageSize]byte
 	for {
 		n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:])), ^uint64(0))
 		if n != 0 {

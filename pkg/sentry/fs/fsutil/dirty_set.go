@@ -18,9 +18,9 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // DirtySet maps offsets into a memmap.Mappable to DirtyInfo. It is used to
@@ -215,7 +215,7 @@ func syncDirtyRange(ctx context.Context, mr memmap.MappableRange, cache *FileRan
 		if max < wbr.Start {
 			break
 		}
-		ims, err := mem.MapInternal(cseg.FileRangeOf(wbr), usermem.Read)
+		ims, err := mem.MapInternal(cseg.FileRangeOf(wbr), hostarch.Read)
 		if err != nil {
 			return err
 		}

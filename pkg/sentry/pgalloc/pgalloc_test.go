@@ -17,12 +17,12 @@ package pgalloc
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
-	page     = usermem.PageSize
-	hugepage = usermem.HugePageSize
+	page     = hostarch.PageSize
+	hugepage = hostarch.HugePageSize
 	topPage  = (1 << 63) - page
 )
 

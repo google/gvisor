@@ -16,6 +16,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -23,7 +24,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
-        "//pkg/usermem",
     ],
 )
 
@@ -35,8 +35,8 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/sentry/socket",
-        "//pkg/usermem",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

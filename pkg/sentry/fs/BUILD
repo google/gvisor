@@ -48,6 +48,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/refs",

@@ -10,12 +10,12 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
-        "//pkg/usermem",
     ],
 )

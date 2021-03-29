@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -31,7 +32,7 @@ const (
 	allowedNodemask = (1 << maxNodes) - 1
 )
 
-func copyInNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32) (uint64, error) {
+func copyInNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32) (uint64, error) {
 	// "nodemask points to a bit mask of node IDs that contains up to maxnode
 	// bits. The bit mask size is rounded to the next multiple of
 	// sizeof(unsigned long), but the kernel will use bits only up to maxnode.
@@ -41,7 +42,7 @@ func copyInNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32) (uint64, 
 	// because of what appears to be a bug: mm/mempolicy.c:get_nodes() uses
 	// maxnode-1, not maxnode, as the number of bits.
 	bits := maxnode - 1
-	if bits > usermem.PageSize*8 { // also handles overflow from maxnode == 0
+	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
 		return 0, syserror.EINVAL
 	}
 	if bits == 0 {
@@ -53,7 +54,7 @@ func copyInNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32) (uint64, 
 	if _, err := t.CopyInBytes(addr, buf); err != nil {
 		return 0, err
 	}
-	val := usermem.ByteOrder.Uint64(buf)
+	val := hostarch.ByteOrder.Uint64(buf)
 	// Check that only allowed bits in the first unsigned long in the nodemask
 	// are set.
 	if val&^allowedNodemask != 0 {
@@ -68,11 +69,11 @@ func copyInNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32) (uint64, 
 	return val, nil
 }
 
-func copyOutNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32, val uint64) error {
+func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uint64) error {
 	// mm/mempolicy.c:copy_nodes_to_user() also uses maxnode-1 as the number of
 	// bits.
 	bits := maxnode - 1
-	if bits > usermem.PageSize*8 { // also handles overflow from maxnode == 0
+	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
 		return syserror.EINVAL
 	}
 	if bits == 0 {
@@ -80,7 +81,7 @@ func copyOutNodemask(t *kernel.Task, addr usermem.Addr, maxnode uint32, val uint
 	}
 	// Copy out the first unsigned long in the nodemask.
 	buf := t.CopyScratchBuffer(8)
-	usermem.ByteOrder.PutUint64(buf, val)
+	hostarch.ByteOrder.PutUint64(buf, val)
 	if _, err := t.CopyOutBytes(addr, buf); err != nil {
 		return err
 	}
@@ -258,7 +259,7 @@ func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, err
 }
 
-func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nodemask usermem.Addr, maxnode uint32) (linux.NumaPolicy, uint64, error) {
+func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nodemask hostarch.Addr, maxnode uint32) (linux.NumaPolicy, uint64, error) {
 	flags := linux.NumaPolicy(modeWithFlags & linux.MPOL_MODE_FLAGS)
 	mode := linux.NumaPolicy(modeWithFlags &^ linux.MPOL_MODE_FLAGS)
 	if flags == linux.MPOL_MODE_FLAGS {

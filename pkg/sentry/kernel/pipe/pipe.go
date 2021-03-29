@@ -22,18 +22,18 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
 	// MinimumPipeSize is a hard limit of the minimum size of a pipe.
 	// It corresponds to fs/pipe.c:pipe_min_size.
-	MinimumPipeSize = usermem.PageSize
+	MinimumPipeSize = hostarch.PageSize
 
 	// MaximumPipeSize is a hard limit on the maximum size of a pipe.
 	// It corresponds to fs/pipe.c:pipe_max_size.
@@ -41,7 +41,7 @@ const (
 
 	// DefaultPipeSize is the system-wide default size of a pipe in bytes.
 	// It corresponds to pipe_fs_i.h:PIPE_DEF_BUFFERS.
-	DefaultPipeSize = 16 * usermem.PageSize
+	DefaultPipeSize = 16 * hostarch.PageSize
 
 	// atomicIOBytes is the maximum number of bytes that the pipe will
 	// guarantee atomic reads or writes atomically.

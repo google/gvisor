@@ -17,6 +17,7 @@ package dev
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -110,7 +111,7 @@ func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io user
 		}
 
 		// Validate flags.
-		flags, err := netstack.LinuxToTUNFlags(usermem.ByteOrder.Uint16(req.Data[:]))
+		flags, err := netstack.LinuxToTUNFlags(hostarch.ByteOrder.Uint16(req.Data[:]))
 		if err != nil {
 			return 0, err
 		}
@@ -119,7 +120,7 @@ func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io user
 	case linux.TUNGETIFF:
 		var req linux.IFReq
 		copy(req.IFName[:], n.device.Name())
-		usermem.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(n.device.Flags()))
+		hostarch.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(n.device.Flags()))
 		_, err := req.CopyOut(t, data)
 		return 0, err
 

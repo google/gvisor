@@ -22,7 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const redirectPort = 42
@@ -848,7 +848,7 @@ func recvOrigDstAddr4(sockfd int) (unix.RawSockaddrInet4, error) {
 		return unix.RawSockaddrInet4{}, err
 	}
 	var addr unix.RawSockaddrInet4
-	binary.Unmarshal(buf, usermem.ByteOrder, &addr)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &addr)
 	return addr, nil
 }
 
@@ -858,7 +858,7 @@ func recvOrigDstAddr6(sockfd int) (unix.RawSockaddrInet6, error) {
 		return unix.RawSockaddrInet6{}, err
 	}
 	var addr unix.RawSockaddrInet6
-	binary.Unmarshal(buf, usermem.ByteOrder, &addr)
+	binary.Unmarshal(buf, hostarch.ByteOrder, &addr)
 	return addr, nil
 }
 

@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // testData implements the Target interface, and allows us to
@@ -43,23 +43,23 @@ func newTestData(size uint) testData {
 	}
 }
 
-func (t testData) SwapUint32(addr usermem.Addr, new uint32) (uint32, error) {
+func (t testData) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
 	val := atomic.SwapUint32((*uint32)(unsafe.Pointer(&t.data[addr])), new)
 	return val, nil
 }
 
-func (t testData) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error) {
+func (t testData) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error) {
 	if atomic.CompareAndSwapUint32((*uint32)(unsafe.Pointer(&t.data[addr])), old, new) {
 		return old, nil
 	}
 	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[addr]))), nil
 }
 
-func (t testData) LoadUint32(addr usermem.Addr) (uint32, error) {
+func (t testData) LoadUint32(addr hostarch.Addr) (uint32, error) {
 	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t.data[addr]))), nil
 }
 
-func (t testData) GetSharedKey(addr usermem.Addr) (Key, error) {
+func (t testData) GetSharedKey(addr hostarch.Addr) (Key, error) {
 	return Key{
 		Kind:   KindSharedMappable,
 		Offset: uint64(addr),
@@ -73,7 +73,7 @@ func futexKind(private bool) string {
 	return "shared"
 }
 
-func newPreparedTestWaiter(t *testing.T, m *Manager, ta Target, addr usermem.Addr, private bool, val uint32, bitmask uint32) *Waiter {
+func newPreparedTestWaiter(t *testing.T, m *Manager, ta Target, addr hostarch.Addr, private bool, val uint32, bitmask uint32) *Waiter {
 	w := NewWaiter()
 	if err := m.WaitPrepare(w, ta, addr, private, val, bitmask); err != nil {
 		t.Fatalf("WaitPrepare failed: %v", err)
@@ -463,12 +463,12 @@ const (
 // Beyond being used as a Locker, this is a simple mechanism for
 // changing the underlying values for simpler tests.
 type testMutex struct {
-	a usermem.Addr
+	a hostarch.Addr
 	d testData
 	m *Manager
 }
 
-func newTestMutex(addr usermem.Addr, d testData, m *Manager) *testMutex {
+func newTestMutex(addr hostarch.Addr, d testData, m *Manager) *testMutex {
 	return &testMutex{a: addr, d: d, m: m}
 }
 

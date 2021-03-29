@@ -32,7 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	pb "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // DefaultLogMaximumSize is the default LogMaximumSize.
@@ -62,7 +63,7 @@ func hexArg(arg arch.SyscallArgument) string {
 	return hexNum(arg.Uint64())
 }
 
-func iovecs(t *kernel.Task, addr usermem.Addr, iovcnt int, printContent bool, maxBytes uint64) string {
+func iovecs(t *kernel.Task, addr hostarch.Addr, iovcnt int, printContent bool, maxBytes uint64) string {
 	if iovcnt < 0 || iovcnt > linux.UIO_MAXIOV {
 		return fmt.Sprintf("%#x (error decoding iovecs: invalid iovcnt)", addr)
 	}
@@ -107,7 +108,7 @@ func iovecs(t *kernel.Task, addr usermem.Addr, iovcnt int, printContent bool, ma
 	return fmt.Sprintf("%#x %s", addr, strings.Join(iovs, ", "))
 }
 
-func dump(t *kernel.Task, addr usermem.Addr, size uint, maximumBlobSize uint) string {
+func dump(t *kernel.Task, addr hostarch.Addr, size uint, maximumBlobSize uint) string {
 	origSize := size
 	if size > maximumBlobSize {
 		size = maximumBlobSize
@@ -131,7 +132,7 @@ func dump(t *kernel.Task, addr usermem.Addr, size uint, maximumBlobSize uint) st
 	return fmt.Sprintf("%#x %q%s", addr, b[:amt], dot)
 }
 
-func path(t *kernel.Task, addr usermem.Addr) string {
+func path(t *kernel.Task, addr hostarch.Addr) string {
 	path, err := t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return fmt.Sprintf("%#x (error decoding path: %s)", addr, err)
@@ -196,7 +197,7 @@ func fdVFS2(t *kernel.Task, fd int32) string {
 	return fmt.Sprintf("%#x %s", fd, name)
 }
 
-func fdpair(t *kernel.Task, addr usermem.Addr) string {
+func fdpair(t *kernel.Task, addr hostarch.Addr) string {
 	var fds [2]int32
 	_, err := primitive.CopyInt32SliceIn(t, addr, fds[:])
 	if err != nil {
@@ -206,7 +207,7 @@ func fdpair(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x [%d %d]", addr, fds[0], fds[1])
 }
 
-func uname(t *kernel.Task, addr usermem.Addr) string {
+func uname(t *kernel.Task, addr hostarch.Addr) string {
 	var u linux.UtsName
 	if _, err := u.CopyIn(t, addr); err != nil {
 		return fmt.Sprintf("%#x (error decoding utsname: %s)", addr, err)
@@ -215,7 +216,7 @@ func uname(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x %s", addr, u)
 }
 
-func utimensTimespec(t *kernel.Task, addr usermem.Addr) string {
+func utimensTimespec(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -237,7 +238,7 @@ func utimensTimespec(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {sec=%v nsec=%s}", addr, tim.Sec, ns)
 }
 
-func timespec(t *kernel.Task, addr usermem.Addr) string {
+func timespec(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -249,7 +250,7 @@ func timespec(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {sec=%v nsec=%v}", addr, tim.Sec, tim.Nsec)
 }
 
-func timeval(t *kernel.Task, addr usermem.Addr) string {
+func timeval(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -262,7 +263,7 @@ func timeval(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {sec=%v usec=%v}", addr, tim.Sec, tim.Usec)
 }
 
-func utimbuf(t *kernel.Task, addr usermem.Addr) string {
+func utimbuf(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -275,7 +276,7 @@ func utimbuf(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {actime=%v, modtime=%v}", addr, utim.Actime, utim.Modtime)
 }
 
-func stat(t *kernel.Task, addr usermem.Addr) string {
+func stat(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -287,27 +288,27 @@ func stat(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {dev=%d, ino=%d, mode=%s, nlink=%d, uid=%d, gid=%d, rdev=%d, size=%d, blksize=%d, blocks=%d, atime=%s, mtime=%s, ctime=%s}", addr, stat.Dev, stat.Ino, linux.FileMode(stat.Mode), stat.Nlink, stat.UID, stat.GID, stat.Rdev, stat.Size, stat.Blksize, stat.Blocks, time.Unix(stat.ATime.Sec, stat.ATime.Nsec), time.Unix(stat.MTime.Sec, stat.MTime.Nsec), time.Unix(stat.CTime.Sec, stat.CTime.Nsec))
 }
 
-func itimerval(t *kernel.Task, addr usermem.Addr) string {
+func itimerval(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
 
 	interval := timeval(t, addr)
-	value := timeval(t, addr+usermem.Addr((*linux.Timeval)(nil).SizeBytes()))
+	value := timeval(t, addr+hostarch.Addr((*linux.Timeval)(nil).SizeBytes()))
 	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
 }
 
-func itimerspec(t *kernel.Task, addr usermem.Addr) string {
+func itimerspec(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
 
 	interval := timespec(t, addr)
-	value := timespec(t, addr+usermem.Addr((*linux.Timespec)(nil).SizeBytes()))
+	value := timespec(t, addr+hostarch.Addr((*linux.Timespec)(nil).SizeBytes()))
 	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
 }
 
-func stringVector(t *kernel.Task, addr usermem.Addr) string {
+func stringVector(t *kernel.Task, addr hostarch.Addr) string {
 	vec, err := t.CopyInVector(addr, slinux.ExecMaxElemSize, slinux.ExecMaxTotalSize)
 	if err != nil {
 		return fmt.Sprintf("%#x {error copying vector: %v}", addr, err)
@@ -323,7 +324,7 @@ func stringVector(t *kernel.Task, addr usermem.Addr) string {
 	return s
 }
 
-func rusage(t *kernel.Task, addr usermem.Addr) string {
+func rusage(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -335,7 +336,7 @@ func rusage(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x %+v", addr, ru)
 }
 
-func capHeader(t *kernel.Task, addr usermem.Addr) string {
+func capHeader(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -360,7 +361,7 @@ func capHeader(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {Version: %s, Pid: %d}", addr, version, hdr.Pid)
 }
 
-func capData(t *kernel.Task, hdrAddr, dataAddr usermem.Addr) string {
+func capData(t *kernel.Task, hdrAddr, dataAddr hostarch.Addr) string {
 	if dataAddr == 0 {
 		return "null"
 	}

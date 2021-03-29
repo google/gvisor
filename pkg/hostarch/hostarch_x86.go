@@ -14,7 +14,7 @@
 
 // +build amd64 386
 
-package usermem
+package hostarch
 
 import "encoding/binary"
 

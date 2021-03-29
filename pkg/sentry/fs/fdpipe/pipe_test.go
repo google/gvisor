@@ -27,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func singlePipeFD() (int, error) {
@@ -52,7 +54,7 @@ func mockPipeDirent(t *testing.T) *fs.Dirent {
 	}
 	inode := fs.NewInode(ctx, node, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type:      fs.Pipe,
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 	})
 	return fs.NewDirent(ctx, inode, "")
 }

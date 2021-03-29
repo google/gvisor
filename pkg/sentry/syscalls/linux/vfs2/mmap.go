@@ -21,7 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Mmap implements Linux syscall mmap(2).
@@ -48,12 +49,12 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		Unmap:    fixed,
 		Map32Bit: map32bit,
 		Private:  private,
-		Perms: usermem.AccessType{
+		Perms: hostarch.AccessType{
 			Read:    linux.PROT_READ&prot != 0,
 			Write:   linux.PROT_WRITE&prot != 0,
 			Execute: linux.PROT_EXEC&prot != 0,
 		},
-		MaxPerms:  usermem.AnyAccess,
+		MaxPerms:  hostarch.AnyAccess,
 		GrowsDown: linux.MAP_GROWSDOWN&flags != 0,
 		Precommit: linux.MAP_POPULATE&flags != 0,
 	}

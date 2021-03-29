@@ -10,6 +10,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fdnotifier",
+        "//pkg/hostarch",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",

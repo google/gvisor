@@ -17,7 +17,7 @@ package marshal
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // StubMarshallable implements the Marshallable interface.
@@ -63,16 +63,16 @@ func (StubMarshallable) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyIn implements Marshallable.CopyIn.
-func (StubMarshallable) CopyIn(cc CopyContext, addr usermem.Addr) (int, error) {
+func (StubMarshallable) CopyIn(cc CopyContext, addr hostarch.Addr) (int, error) {
 	panic("Please implement your own CopyIn function")
 }
 
 // CopyOut implements Marshallable.CopyOut.
-func (StubMarshallable) CopyOut(cc CopyContext, addr usermem.Addr) (int, error) {
+func (StubMarshallable) CopyOut(cc CopyContext, addr hostarch.Addr) (int, error) {
 	panic("Please implement your own CopyOut function")
 }
 
 // CopyOutN implements Marshallable.CopyOutN.
-func (StubMarshallable) CopyOutN(cc CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (StubMarshallable) CopyOutN(cc CopyContext, addr hostarch.Addr, limit int) (int, error) {
 	panic("Please implement your own CopyOutN function")
 }

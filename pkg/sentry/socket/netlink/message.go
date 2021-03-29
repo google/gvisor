@@ -20,7 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // alignPad returns the length of padding required for alignment.
@@ -42,7 +42,7 @@ type Message struct {
 func NewMessage(hdr linux.NetlinkMessageHeader) *Message {
 	return &Message{
 		hdr: hdr,
-		buf: binary.Marshal(nil, usermem.ByteOrder, hdr),
+		buf: binary.Marshal(nil, hostarch.ByteOrder, hdr),
 	}
 }
 
@@ -58,7 +58,7 @@ func ParseMessage(buf []byte) (msg *Message, rest []byte, ok bool) {
 		return
 	}
 	var hdr linux.NetlinkMessageHeader
-	binary.Unmarshal(hdrBytes, usermem.ByteOrder, &hdr)
+	binary.Unmarshal(hdrBytes, hostarch.ByteOrder, &hdr)
 
 	// Msg portion.
 	totalMsgLen := int(hdr.Length)
@@ -105,7 +105,7 @@ func (m *Message) GetData(msg interface{}) (AttrsView, bool) {
 	if !ok {
 		return nil, false
 	}
-	binary.Unmarshal(msgBytes, usermem.ByteOrder, msg)
+	binary.Unmarshal(msgBytes, hostarch.ByteOrder, msg)
 
 	numPad := alignPad(linux.NetlinkMessageHeaderSize+size, linux.NLMSG_ALIGNTO)
 	// Linux permits the last message not being aligned, just consume all of it.
@@ -126,7 +126,7 @@ func (m *Message) GetData(msg interface{}) (AttrsView, bool) {
 // calling Finalize.
 func (m *Message) Finalize() []byte {
 	// Update length, which is the first 4 bytes of the header.
-	usermem.ByteOrder.PutUint32(m.buf, uint32(len(m.buf)))
+	hostarch.ByteOrder.PutUint32(m.buf, uint32(len(m.buf)))
 
 	// Align the message. Note that the message length in the header (set
 	// above) is the useful length of the message, not the total aligned
@@ -146,7 +146,7 @@ func (m *Message) putZeros(n int) {
 
 // Put serializes v into the message.
 func (m *Message) Put(v interface{}) {
-	m.buf = binary.Marshal(m.buf, usermem.ByteOrder, v)
+	m.buf = binary.Marshal(m.buf, hostarch.ByteOrder, v)
 }
 
 // PutAttr adds v to the message as a netlink attribute.
@@ -251,7 +251,7 @@ func (v AttrsView) ParseFirst() (hdr linux.NetlinkAttrHeader, value []byte, rest
 	if !ok {
 		return
 	}
-	binary.Unmarshal(hdrBytes, usermem.ByteOrder, &hdr)
+	binary.Unmarshal(hdrBytes, hostarch.ByteOrder, &hdr)
 
 	value, ok = b.Extract(int(hdr.Length) - linux.NetlinkAttrHeaderSize)
 	if !ok {

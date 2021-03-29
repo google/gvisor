@@ -8,6 +8,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
         "//pkg/syserror",

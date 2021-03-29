@@ -16,11 +16,11 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LINT.IfChange
@@ -106,7 +106,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // stat implements stat from the given *fs.Dirent.
-func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) error {
+func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr hostarch.Addr) error {
 	if dirPath && !fs.IsDir(d.Inode.StableAttr) {
 		return syserror.ENOTDIR
 	}
@@ -120,7 +120,7 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 }
 
 // fstat implements fstat for the given *fs.File.
-func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
+func fstat(t *kernel.Task, f *fs.File, statAddr hostarch.Addr) error {
 	uattr, err := f.UnstableAttr(t)
 	if err != nil {
 		return err
@@ -180,7 +180,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	})
 }
 
-func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr usermem.Addr) error {
+func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr hostarch.Addr) error {
 	// "[T]he kernel may return fields that weren't requested and may fail to
 	// return fields that were requested, depending on what the backing
 	// filesystem supports.
@@ -257,7 +257,7 @@ func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 // statfsImpl implements the linux syscall statfs and fstatfs based on a Dirent,
 // copying the statfs structure out to addr on success, otherwise an error is
 // returned.
-func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
+func statfsImpl(t *kernel.Task, d *fs.Dirent, addr hostarch.Addr) error {
 	info, err := d.Inode.StatFS(t)
 	if err != nil {
 		return err

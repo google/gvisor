@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -38,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
@@ -283,7 +283,7 @@ const (
 	chunkMask  = chunkSize - 1
 
 	// maxPage is the highest 64-bit page.
-	maxPage = math.MaxUint64 &^ (usermem.PageSize - 1)
+	maxPage = math.MaxUint64 &^ (hostarch.PageSize - 1)
 )
 
 // NewMemoryFile creates a MemoryFile backed by the given file. If
@@ -344,7 +344,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	m, _, errno := unix.Syscall6(
 		unix.SYS_MMAP,
 		0,
-		usermem.PageSize,
+		hostarch.PageSize,
 		unix.PROT_EXEC,
 		unix.MAP_SHARED,
 		file.Fd(),
@@ -357,7 +357,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		if _, _, errno := unix.Syscall(
 			unix.SYS_MUNMAP,
 			m,
-			usermem.PageSize,
+			hostarch.PageSize,
 			0); errno != 0 {
 			panic(fmt.Sprintf("failed to unmap PROT_EXEC MemoryFile mapping: %v", errno))
 		}
@@ -386,7 +386,7 @@ func (f *MemoryFile) Destroy() {
 //
 // Preconditions: length must be page-aligned and non-zero.
 func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.FileRange, error) {
-	if length == 0 || length%usermem.PageSize != 0 {
+	if length == 0 || length%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid allocation length: %#x", length))
 	}
 
@@ -395,9 +395,9 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 
 	// Align hugepage-and-larger allocations on hugepage boundaries to try
 	// to take advantage of hugetmpfs.
-	alignment := uint64(usermem.PageSize)
-	if length >= usermem.HugePageSize {
-		alignment = usermem.HugePageSize
+	alignment := uint64(hostarch.PageSize)
+	if length >= hostarch.HugePageSize {
+		alignment = hostarch.HugePageSize
 	}
 
 	// Find a range in the underlying file.
@@ -524,13 +524,13 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 	if err != nil {
 		return memmap.FileRange{}, err
 	}
-	dsts, err := f.MapInternal(fr, usermem.Write)
+	dsts, err := f.MapInternal(fr, hostarch.Write)
 	if err != nil {
 		f.DecRef(fr)
 		return memmap.FileRange{}, err
 	}
 	n, err := safemem.ReadFullToBlocks(r, dsts)
-	un := uint64(usermem.Addr(n).RoundDown())
+	un := uint64(hostarch.Addr(n).RoundDown())
 	if un < length {
 		// Free unused memory and update fr to contain only the memory that is
 		// still allocated.
@@ -552,7 +552,7 @@ const (
 //
 // Preconditions: fr.Length() > 0.
 func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
-	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
+	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
@@ -614,7 +614,7 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 
 // IncRef implements memmap.File.IncRef.
 func (f *MemoryFile) IncRef(fr memmap.FileRange) {
-	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
+	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
@@ -633,7 +633,7 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange) {
 
 // DecRef implements memmap.File.DecRef.
 func (f *MemoryFile) DecRef(fr memmap.FileRange) {
-	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
+	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
@@ -669,7 +669,7 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (f *MemoryFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	if !fr.WellFormed() || fr.Length() == 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
@@ -935,7 +935,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 				// Ensure that we have sufficient buffer for the call
 				// (one byte per page). The length of each slice must
 				// be page-aligned.
-				bufLen := len(s) / usermem.PageSize
+				bufLen := len(s) / hostarch.PageSize
 				if len(buf) < bufLen {
 					buf = make([]byte, bufLen)
 				}
@@ -967,8 +967,8 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 						}
 					}
 					committedFR := memmap.FileRange{
-						Start: r.Start + uint64(i*usermem.PageSize),
-						End:   r.Start + uint64(j*usermem.PageSize),
+						Start: r.Start + uint64(i*hostarch.PageSize),
+						End:   r.Start + uint64(j*hostarch.PageSize),
 					}
 					// Advance seg to committedFR.Start.
 					for seg.Ok() && seg.End() < committedFR.Start {

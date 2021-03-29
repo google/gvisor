@@ -22,8 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func TestParse(t *testing.T) {
@@ -35,12 +35,12 @@ func TestParse(t *testing.T) {
 		Type:   linux.SO_TIMESTAMP,
 	}
 	buf := make([]byte, 0, length)
-	buf = binary.Marshal(buf, usermem.ByteOrder, &hdr)
+	buf = binary.Marshal(buf, hostarch.ByteOrder, &hdr)
 	ts := linux.Timeval{
 		Sec:  2401,
 		Usec: 343,
 	}
-	buf = binary.Marshal(buf, usermem.ByteOrder, &ts)
+	buf = binary.Marshal(buf, hostarch.ByteOrder, &ts)
 
 	cmsg, err := Parse(nil, nil, buf, 8 /* width */)
 	if err != nil {

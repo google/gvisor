@@ -19,9 +19,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // getRegs gets the general purpose register set.
@@ -122,7 +122,7 @@ func (t *thread) getSignalInfo(si *arch.SignalInfo) error {
 //
 // Precondition: the OS thread must be locked and own t.
 func (t *thread) clone() (*thread, error) {
-	r, ok := usermem.Addr(stackPointer(&t.initRegs)).RoundUp()
+	r, ok := hostarch.Addr(stackPointer(&t.initRegs)).RoundUp()
 	if !ok {
 		return nil, unix.EINVAL
 	}

@@ -16,9 +16,9 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Dumpability describes if and how core dumps should be created.
@@ -54,14 +54,14 @@ func (mm *MemoryManager) SetDumpability(d Dumpability) {
 // ArgvStart returns the start of the application argument vector.
 //
 // There is no guarantee that this value is sensible w.r.t. ArgvEnd.
-func (mm *MemoryManager) ArgvStart() usermem.Addr {
+func (mm *MemoryManager) ArgvStart() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	return mm.argv.Start
 }
 
 // SetArgvStart sets the start of the application argument vector.
-func (mm *MemoryManager) SetArgvStart(a usermem.Addr) {
+func (mm *MemoryManager) SetArgvStart(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.argv.Start = a
@@ -70,14 +70,14 @@ func (mm *MemoryManager) SetArgvStart(a usermem.Addr) {
 // ArgvEnd returns the end of the application argument vector.
 //
 // There is no guarantee that this value is sensible w.r.t. ArgvStart.
-func (mm *MemoryManager) ArgvEnd() usermem.Addr {
+func (mm *MemoryManager) ArgvEnd() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	return mm.argv.End
 }
 
 // SetArgvEnd sets the end of the application argument vector.
-func (mm *MemoryManager) SetArgvEnd(a usermem.Addr) {
+func (mm *MemoryManager) SetArgvEnd(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.argv.End = a
@@ -86,14 +86,14 @@ func (mm *MemoryManager) SetArgvEnd(a usermem.Addr) {
 // EnvvStart returns the start of the application environment vector.
 //
 // There is no guarantee that this value is sensible w.r.t. EnvvEnd.
-func (mm *MemoryManager) EnvvStart() usermem.Addr {
+func (mm *MemoryManager) EnvvStart() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	return mm.envv.Start
 }
 
 // SetEnvvStart sets the start of the application environment vector.
-func (mm *MemoryManager) SetEnvvStart(a usermem.Addr) {
+func (mm *MemoryManager) SetEnvvStart(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.envv.Start = a
@@ -102,14 +102,14 @@ func (mm *MemoryManager) SetEnvvStart(a usermem.Addr) {
 // EnvvEnd returns the end of the application environment vector.
 //
 // There is no guarantee that this value is sensible w.r.t. EnvvStart.
-func (mm *MemoryManager) EnvvEnd() usermem.Addr {
+func (mm *MemoryManager) EnvvEnd() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	return mm.envv.End
 }
 
 // SetEnvvEnd sets the end of the application environment vector.
-func (mm *MemoryManager) SetEnvvEnd(a usermem.Addr) {
+func (mm *MemoryManager) SetEnvvEnd(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.envv.End = a

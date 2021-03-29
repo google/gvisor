@@ -16,8 +16,8 @@ go_library(
     visibility = ["//test/iptables:__subpackages__"],
     deps = [
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/test/testutil",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

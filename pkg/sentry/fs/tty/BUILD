@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",

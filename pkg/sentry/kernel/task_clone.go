@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -85,12 +86,12 @@ type CloneOptions struct {
 
 	// Stack is the initial stack pointer of the new task. If Stack is 0, the
 	// new task will start with the same stack pointer as its parent.
-	Stack usermem.Addr
+	Stack hostarch.Addr
 
 	// If SetTLS is true, set the new task's TLS (thread-local storage)
 	// descriptor to TLS. If SetTLS is false, TLS is ignored.
 	SetTLS bool
-	TLS    usermem.Addr
+	TLS    hostarch.Addr
 
 	// If ChildClearTID is true, when the child exits, 0 is written to the
 	// address ChildTID in the child's memory, and if the write is successful a
@@ -101,7 +102,7 @@ type CloneOptions struct {
 	// Linux, failed writes are silently ignored.)
 	ChildClearTID bool
 	ChildSetTID   bool
-	ChildTID      usermem.Addr
+	ChildTID      hostarch.Addr
 
 	// If ParentSetTID is true, the child's thread ID (in the parent's PID
 	// namespace) is written to address ParentTID in the parent's memory. (As
@@ -112,7 +113,7 @@ type CloneOptions struct {
 	// and child's memory, but this is a documentation error fixed by
 	// 87ab04792ced ("clone.2: Fix description of CLONE_PARENT_SETTID").
 	ParentSetTID bool
-	ParentTID    usermem.Addr
+	ParentTID    hostarch.Addr
 
 	// If Vfork is true, place the parent in vforkStop until the cloned task
 	// releases its TaskImage.
@@ -268,7 +269,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 
 	tg := t.tg
-	rseqAddr := usermem.Addr(0)
+	rseqAddr := hostarch.Addr(0)
 	rseqSignature := uint32(0)
 	if opts.NewThreadGroup {
 		if tg.mounts != nil {

@@ -46,6 +46,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/refs",
@@ -75,6 +76,7 @@ go_test(
     library = ":fuse",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",

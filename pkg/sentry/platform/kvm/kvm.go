@@ -20,11 +20,11 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // userMemoryRegion is a region of physical memory.
@@ -146,13 +146,13 @@ func (*KVM) MapUnit() uint64 {
 }
 
 // MinUserAddress returns the lowest available address.
-func (*KVM) MinUserAddress() usermem.Addr {
-	return usermem.PageSize
+func (*KVM) MinUserAddress() hostarch.Addr {
+	return hostarch.PageSize
 }
 
 // MaxUserAddress returns the first address that may not be used.
-func (*KVM) MaxUserAddress() usermem.Addr {
-	return usermem.Addr(ring0.MaximumUserAddress)
+func (*KVM) MaxUserAddress() hostarch.Addr {
+	return hostarch.Addr(ring0.MaximumUserAddress)
 }
 
 // NewAddressSpace returns a new pagetable root.

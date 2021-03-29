@@ -20,9 +20,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // maxSyscallNum is the highest supported syscall number.
@@ -243,7 +243,7 @@ type SyscallTable struct {
 
 	// Emulate is a collection of instruction addresses to emulate. The
 	// keys are addresses, and the values are system call numbers.
-	Emulate map[usermem.Addr]uintptr
+	Emulate map[hostarch.Addr]uintptr
 
 	// The function to call in case of a missing system call.
 	Missing MissingFn
@@ -316,7 +316,7 @@ func (s *SyscallTable) Init() {
 	}
 	if s.Emulate == nil {
 		// Ensure non-nil emulate table.
-		s.Emulate = make(map[usermem.Addr]uintptr)
+		s.Emulate = make(map[hostarch.Addr]uintptr)
 	}
 
 	max := s.MaxSysno() // Checked during RegisterSyscallTable.
@@ -359,7 +359,7 @@ func (s *SyscallTable) LookupNo(name string) (uintptr, error) {
 }
 
 // LookupEmulate looks up an emulation syscall number.
-func (s *SyscallTable) LookupEmulate(addr usermem.Addr) (uintptr, bool) {
+func (s *SyscallTable) LookupEmulate(addr hostarch.Addr) (uintptr, bool) {
 	sysno, ok := s.Emulate[addr]
 	return sysno, ok
 }

@@ -23,7 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Brk implements linux syscall brk(2).
@@ -61,12 +62,12 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		Unmap:    fixed,
 		Map32Bit: map32bit,
 		Private:  private,
-		Perms: usermem.AccessType{
+		Perms: hostarch.AccessType{
 			Read:    linux.PROT_READ&prot != 0,
 			Write:   linux.PROT_WRITE&prot != 0,
 			Execute: linux.PROT_EXEC&prot != 0,
 		},
-		MaxPerms:  usermem.AnyAccess,
+		MaxPerms:  hostarch.AnyAccess,
 		GrowsDown: linux.MAP_GROWSDOWN&flags != 0,
 		Precommit: linux.MAP_POPULATE&flags != 0,
 	}
@@ -160,7 +161,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	length := args[1].Uint64()
 	prot := args[2].Int()
-	err := t.MemoryManager().MProtect(args[0].Pointer(), length, usermem.AccessType{
+	err := t.MemoryManager().MProtect(args[0].Pointer(), length, hostarch.AccessType{
 		Read:    linux.PROT_READ&prot != 0,
 		Write:   linux.PROT_WRITE&prot != 0,
 		Execute: linux.PROT_EXEC&prot != 0,
@@ -183,7 +184,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, nil
 	}
 	// Not explicitly stated: length need not be page-aligned.
-	lenAddr, ok := usermem.Addr(length).RoundUp()
+	lenAddr, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return 0, nil, syserror.EINVAL
 	}
@@ -232,7 +233,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// "The length argument need not be a multiple of the page size, but since
 	// residency information is returned for whole pages, length is effectively
 	// rounded up to the next multiple of the page size." - mincore(2)
-	la, ok := usermem.Addr(length).RoundUp()
+	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
 		return 0, nil, syserror.ENOMEM
 	}
@@ -247,7 +248,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if mapped != uint64(la) {
 		return 0, nil, syserror.ENOMEM
 	}
-	resident := bytes.Repeat([]byte{1}, int(mapped/usermem.PageSize))
+	resident := bytes.Repeat([]byte{1}, int(mapped/hostarch.PageSize))
 	_, err := t.CopyOutBytes(vec, resident)
 	return 0, nil, err
 }

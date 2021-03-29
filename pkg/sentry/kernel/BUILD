@@ -226,6 +226,7 @@ go_library(
         "//pkg/eventchannel",
         "//pkg/fspath",
         "//pkg/goid",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
@@ -294,6 +295,7 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
@@ -305,6 +307,5 @@ go_test(
         "//pkg/sentry/usage",
         "//pkg/sync",
         "//pkg/syserror",
-        "//pkg/usermem",
     ],
 )

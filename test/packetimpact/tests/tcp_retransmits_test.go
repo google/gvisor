@@ -23,8 +23,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -38,7 +38,7 @@ func getRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rto time.Duration)
 	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
 		t.Fatalf("unexpected size for TCP_INFO, got %d bytes want %d bytes", got, want)
 	}
-	binary.Unmarshal(infoBytes, usermem.ByteOrder, &info)
+	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
 	return time.Duration(info.RTO) * time.Microsecond
 }
 

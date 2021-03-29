@@ -21,6 +21,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",

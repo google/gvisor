@@ -23,7 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // ListXattr implements Linux syscall listxattr(2).
@@ -291,7 +292,7 @@ func Fremovexattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	return 0, nil, file.RemoveXattr(t, name)
 }
 
-func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {
+func copyInXattrName(t *kernel.Task, nameAddr hostarch.Addr) (string, error) {
 	name, err := t.CopyInString(nameAddr, linux.XATTR_NAME_MAX+1)
 	if err != nil {
 		if err == syserror.ENAMETOOLONG {
@@ -305,7 +306,7 @@ func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {
 	return name, nil
 }
 
-func copyOutXattrNameList(t *kernel.Task, listAddr usermem.Addr, size uint, names []string) (int, error) {
+func copyOutXattrNameList(t *kernel.Task, listAddr hostarch.Addr, size uint, names []string) (int, error) {
 	if size > linux.XATTR_LIST_MAX {
 		size = linux.XATTR_LIST_MAX
 	}
@@ -327,7 +328,7 @@ func copyOutXattrNameList(t *kernel.Task, listAddr usermem.Addr, size uint, name
 	return t.CopyOutBytes(listAddr, buf.Bytes())
 }
 
-func copyInXattrValue(t *kernel.Task, valueAddr usermem.Addr, size uint) (string, error) {
+func copyInXattrValue(t *kernel.Task, valueAddr hostarch.Addr, size uint) (string, error) {
 	if size > linux.XATTR_SIZE_MAX {
 		return "", syserror.E2BIG
 	}
@@ -338,7 +339,7 @@ func copyInXattrValue(t *kernel.Task, valueAddr usermem.Addr, size uint) (string
 	return gohacks.StringFromImmutableBytes(buf), nil
 }
 
-func copyOutXattrValue(t *kernel.Task, valueAddr usermem.Addr, size uint, value string) (int, error) {
+func copyOutXattrValue(t *kernel.Task, valueAddr hostarch.Addr, size uint, value string) (int, error) {
 	if size > linux.XATTR_SIZE_MAX {
 		size = linux.XATTR_SIZE_MAX
 	}

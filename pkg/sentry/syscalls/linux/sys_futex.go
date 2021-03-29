@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // futexWaitRestartBlock encapsulates the state required to restart futex(2)
@@ -41,7 +41,7 @@ type futexWaitRestartBlock struct {
 
 // Restart implements kernel.SyscallRestartBlock.Restart.
 func (f *futexWaitRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
-	return futexWaitDuration(t, f.duration, false, usermem.Addr(f.addr), f.private, f.val, f.mask)
+	return futexWaitDuration(t, f.duration, false, hostarch.Addr(f.addr), f.private, f.val, f.mask)
 }
 
 // futexWaitAbsolute performs a FUTEX_WAIT_BITSET, blocking until the wait is
@@ -51,7 +51,7 @@ func (f *futexWaitRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
 //
 // If blocking is interrupted, the syscall is restarted with the original
 // arguments.
-func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, forever bool, addr usermem.Addr, private bool, val, mask uint32) (uintptr, error) {
+func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, forever bool, addr hostarch.Addr, private bool, val, mask uint32) (uintptr, error) {
 	w := t.FutexWaiter()
 	err := t.Futex().WaitPrepare(w, t, addr, private, val, mask)
 	if err != nil {
@@ -87,7 +87,7 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 // syscall. If forever is true, the syscall is restarted with the original
 // arguments. If forever is false, duration is a relative timeout and the
 // syscall is restarted with the remaining timeout.
-func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, addr usermem.Addr, private bool, val, mask uint32) (uintptr, error) {
+func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, addr hostarch.Addr, private bool, val, mask uint32) (uintptr, error) {
 	w := t.FutexWaiter()
 	err := t.Futex().WaitPrepare(w, t, addr, private, val, mask)
 	if err != nil {
@@ -124,7 +124,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	return 0, syserror.ERESTART_RESTARTBLOCK
 }
 
-func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.Addr, private bool) error {
+func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr hostarch.Addr, private bool) error {
 	w := t.FutexWaiter()
 	locked, err := t.Futex().LockPI(w, t, addr, uint32(t.ThreadID()), private, false)
 	if err != nil {
@@ -152,7 +152,7 @@ func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.A
 	return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 }
 
-func tryLockPI(t *kernel.Task, addr usermem.Addr, private bool) error {
+func tryLockPI(t *kernel.Task, addr hostarch.Addr, private bool) error {
 	w := t.FutexWaiter()
 	locked, err := t.Futex().LockPI(w, t, addr, uint32(t.ThreadID()), private, true)
 	if err != nil {

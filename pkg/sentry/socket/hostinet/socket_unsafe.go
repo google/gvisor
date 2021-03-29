@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -61,7 +62,7 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 			return 0, translateIOSyscallError(errno)
 		}
 		var buf [4]byte
-		usermem.ByteOrder.PutUint32(buf[:], uint32(val))
+		hostarch.ByteOrder.PutUint32(buf[:], uint32(val))
 		_, err := io.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{
 			AddressSpaceActive: true,
 		})

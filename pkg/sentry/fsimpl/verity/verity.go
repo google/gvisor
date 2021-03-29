@@ -55,6 +55,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -1033,7 +1035,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 }
 
 // measureVerity returns the hash of fd, saved in verityDigest.
-func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest usermem.Addr) (uintptr, error) {
+func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest hostarch.Addr) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		return 0, syserror.EINVAL
@@ -1072,11 +1074,11 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest userm
 	}
 
 	// Now copy the root hash bytes to the memory after metadata.
-	_, err := t.CopyOutBytes(usermem.Addr(uintptr(verityDigest)+linux.SizeOfDigestMetadata), fd.d.hash)
+	_, err := t.CopyOutBytes(hostarch.Addr(uintptr(verityDigest)+linux.SizeOfDigestMetadata), fd.d.hash)
 	return 0, err
 }
 
-func (fd *fileDescription) verityFlags(ctx context.Context, flags usermem.Addr) (uintptr, error) {
+func (fd *fileDescription) verityFlags(ctx context.Context, flags hostarch.Addr) (uintptr, error) {
 	f := int32(0)
 
 	fd.d.hashMu.RLock()

@@ -17,6 +17,7 @@ package netstack
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -197,7 +198,7 @@ func (s *SocketVFS2) Ioctl(ctx context.Context, uio usermem.IO, args arch.Syscal
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketVFS2) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *SocketVFS2) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for netstack.SocketVFS2 rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
@@ -245,7 +246,7 @@ func (s *SocketVFS2) SetSockOpt(t *kernel.Task, level int, name int, optVal []by
 		}
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
-		s.sockOptTimestamp = usermem.ByteOrder.Uint32(optVal) != 0
+		s.sockOptTimestamp = hostarch.ByteOrder.Uint32(optVal) != 0
 		return nil
 	}
 	if level == linux.SOL_TCP && name == linux.TCP_INQ {
@@ -254,7 +255,7 @@ func (s *SocketVFS2) SetSockOpt(t *kernel.Task, level int, name int, optVal []by
 		}
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
-		s.sockOptInq = usermem.ByteOrder.Uint32(optVal) != 0
+		s.sockOptInq = hostarch.ByteOrder.Uint32(optVal) != 0
 		return nil
 	}
 

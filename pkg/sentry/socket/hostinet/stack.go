@@ -22,11 +22,13 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -146,7 +148,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), unix.SizeofIfInfomsg)
 		}
 		var ifinfo unix.IfInfomsg
-		binary.Unmarshal(link.Data[:unix.SizeofIfInfomsg], usermem.ByteOrder, &ifinfo)
+		binary.Unmarshal(link.Data[:unix.SizeofIfInfomsg], hostarch.ByteOrder, &ifinfo)
 		inetIF := inet.Interface{
 			DeviceType: ifinfo.Type,
 			Flags:      ifinfo.Flags,
@@ -177,7 +179,7 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), unix.SizeofIfAddrmsg)
 		}
 		var ifaddr unix.IfAddrmsg
-		binary.Unmarshal(addr.Data[:unix.SizeofIfAddrmsg], usermem.ByteOrder, &ifaddr)
+		binary.Unmarshal(addr.Data[:unix.SizeofIfAddrmsg], hostarch.ByteOrder, &ifaddr)
 		inetAddr := inet.InterfaceAddr{
 			Family:    ifaddr.Family,
 			PrefixLen: ifaddr.Prefixlen,
@@ -209,7 +211,7 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 		}
 
 		var ifRoute unix.RtMsg
-		binary.Unmarshal(routeMsg.Data[:unix.SizeofRtMsg], usermem.ByteOrder, &ifRoute)
+		binary.Unmarshal(routeMsg.Data[:unix.SizeofRtMsg], hostarch.ByteOrder, &ifRoute)
 		inetRoute := inet.Route{
 			Family:   ifRoute.Family,
 			DstLen:   ifRoute.Dst_len,
@@ -243,7 +245,7 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 				if len(attr.Value) != expected {
 					return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid attribute data length (%d bytes, expected %d bytes)", len(attr.Value), expected)
 				}
-				binary.Unmarshal(attr.Value, usermem.ByteOrder, &inetRoute.OutputInterface)
+				binary.Unmarshal(attr.Value, hostarch.ByteOrder, &inetRoute.OutputInterface)
 			}
 		}
 

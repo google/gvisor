@@ -68,8 +68,8 @@ go_library(
         "//pkg/sentry/platform/kvm:__subpackages__",
     ],
     deps = [
+        "//pkg/hostarch",
         "//pkg/sync",
-        "//pkg/usermem",
     ],
 )
 
@@ -84,5 +84,8 @@ go_test(
         ":walker_check_arm64",
     ],
     library = ":pagetables",
-    deps = ["//pkg/usermem"],
+    deps = [
+        "//pkg/hostarch",
+        "//pkg/usermem",
+    ],
 )

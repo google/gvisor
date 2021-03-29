@@ -33,9 +33,9 @@ go_binary(
     ],
     deps = [
         "//pkg/cpuid",
+        "//pkg/hostarch",
         "//pkg/ring0/pagetables",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
-        "//pkg/usermem",
     ],
 )

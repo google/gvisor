@@ -20,13 +20,13 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Linux kernel errnos which "should never be seen by user programs", but will
@@ -240,7 +240,7 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 func (s *subprocess) unmap() {
 	s.Unmap(0, uint64(stubStart))
 	if maximumUserAddress != stubEnd {
-		s.Unmap(usermem.Addr(stubEnd), uint64(maximumUserAddress-stubEnd))
+		s.Unmap(hostarch.Addr(stubEnd), uint64(maximumUserAddress-stubEnd))
 	}
 }
 
@@ -627,7 +627,7 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 }
 
 // MapFile implements platform.AddressSpace.MapFile.
-func (s *subprocess) MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error {
+func (s *subprocess) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error {
 	var flags int
 	if precommit {
 		flags |= unix.MAP_POPULATE
@@ -644,7 +644,7 @@ func (s *subprocess) MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRan
 }
 
 // Unmap implements platform.AddressSpace.Unmap.
-func (s *subprocess) Unmap(addr usermem.Addr, length uint64) {
+func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 	ar, ok := addr.ToRange(length)
 	if !ok {
 		panic(fmt.Sprintf("addr %#x + length %#x overflows", addr, length))

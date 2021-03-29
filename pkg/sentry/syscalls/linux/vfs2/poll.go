@@ -25,8 +25,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // fileCap is the maximum allowable files for poll & select. This has no
@@ -158,7 +159,7 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 }
 
 // copyInPollFDs copies an array of struct pollfd unless nfds exceeds the max.
-func copyInPollFDs(t *kernel.Task, addr usermem.Addr, nfds uint) ([]linux.PollFD, error) {
+func copyInPollFDs(t *kernel.Task, addr hostarch.Addr, nfds uint) ([]linux.PollFD, error) {
 	if uint64(nfds) > t.ThreadGroup().Limits().GetCapped(limits.NumberOfFiles, fileCap) {
 		return nil, syserror.EINVAL
 	}
@@ -173,7 +174,7 @@ func copyInPollFDs(t *kernel.Task, addr usermem.Addr, nfds uint) ([]linux.PollFD
 	return pfd, nil
 }
 
-func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration) (time.Duration, uintptr, error) {
+func doPoll(t *kernel.Task, addr hostarch.Addr, nfds uint, timeout time.Duration) (time.Duration, uintptr, error) {
 	pfd, err := copyInPollFDs(t, addr, nfds)
 	if err != nil {
 		return timeout, 0, err
@@ -201,7 +202,7 @@ func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration)
 }
 
 // CopyInFDSet copies an fd set from select(2)/pselect(2).
-func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes, nBitsInLastPartialByte int) ([]byte, error) {
+func CopyInFDSet(t *kernel.Task, addr hostarch.Addr, nBytes, nBitsInLastPartialByte int) ([]byte, error) {
 	set := make([]byte, nBytes)
 
 	if addr != 0 {
@@ -218,7 +219,7 @@ func CopyInFDSet(t *kernel.Task, addr usermem.Addr, nBytes, nBitsInLastPartialBy
 	return set, nil
 }
 
-func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Addr, timeout time.Duration) (uintptr, error) {
+func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Addr, timeout time.Duration) (uintptr, error) {
 	if nfds < 0 || nfds > fileCap {
 		return 0, syserror.EINVAL
 	}
@@ -368,7 +369,7 @@ func timeoutRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Duration)
 // copyOutTimespecRemaining copies the time remaining in timeout to timespecAddr.
 //
 // startNs must be from CLOCK_MONOTONIC.
-func copyOutTimespecRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Duration, timespecAddr usermem.Addr) error {
+func copyOutTimespecRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Duration, timespecAddr hostarch.Addr) error {
 	if timeout <= 0 {
 		return nil
 	}
@@ -381,7 +382,7 @@ func copyOutTimespecRemaining(t *kernel.Task, startNs ktime.Time, timeout time.D
 // copyOutTimevalRemaining copies the time remaining in timeout to timevalAddr.
 //
 // startNs must be from CLOCK_MONOTONIC.
-func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Duration, timevalAddr usermem.Addr) error {
+func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Duration, timevalAddr hostarch.Addr) error {
 	if timeout <= 0 {
 		return nil
 	}
@@ -396,7 +397,7 @@ func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Du
 //
 // +stateify savable
 type pollRestartBlock struct {
-	pfdAddr usermem.Addr
+	pfdAddr hostarch.Addr
 	nfds    uint
 	timeout time.Duration
 }
@@ -406,7 +407,7 @@ func (p *pollRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
 	return poll(t, p.pfdAddr, p.nfds, p.timeout)
 }
 
-func poll(t *kernel.Task, pfdAddr usermem.Addr, nfds uint, timeout time.Duration) (uintptr, error) {
+func poll(t *kernel.Task, pfdAddr hostarch.Addr, nfds uint, timeout time.Duration) (uintptr, error) {
 	remainingTimeout, n, err := doPoll(t, pfdAddr, nfds, timeout)
 	// On an interrupt poll(2) is restarted with the remaining timeout.
 	if err == syserror.EINTR {
@@ -530,7 +531,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		if _, err := maskStruct.CopyIn(t, maskWithSizeAddr); err != nil {
 			return 0, nil, err
 		}
-		if err := setTempSignalSet(t, usermem.Addr(maskStruct.sigsetAddr), uint(maskStruct.sizeofSigset)); err != nil {
+		if err := setTempSignalSet(t, hostarch.Addr(maskStruct.sigsetAddr), uint(maskStruct.sizeofSigset)); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -551,7 +552,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 // returned value is the maximum that Duration will allow.
 //
 // If timespecAddr is NULL, the returned value is negative.
-func copyTimespecInToDuration(t *kernel.Task, timespecAddr usermem.Addr) (time.Duration, error) {
+func copyTimespecInToDuration(t *kernel.Task, timespecAddr hostarch.Addr) (time.Duration, error) {
 	// Use a negative Duration to indicate "no timeout".
 	timeout := time.Duration(-1)
 	if timespecAddr != 0 {
@@ -567,7 +568,7 @@ func copyTimespecInToDuration(t *kernel.Task, timespecAddr usermem.Addr) (time.D
 	return timeout, nil
 }
 
-func setTempSignalSet(t *kernel.Task, maskAddr usermem.Addr, maskSize uint) error {
+func setTempSignalSet(t *kernel.Task, maskAddr hostarch.Addr, maskSize uint) error {
 	if maskAddr == 0 {
 		return nil
 	}

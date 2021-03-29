@@ -17,12 +17,12 @@
 package kvm
 
 import (
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 type vCPUArchState struct {
@@ -53,9 +53,9 @@ const (
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		pageTable.Map(
-			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
+			hostarch.Addr(ring0.KernelStartAddress|pr.virtual),
 			pr.length,
-			pagetables.MapOpts{AccessType: usermem.AnyAccess, Global: true},
+			pagetables.MapOpts{AccessType: hostarch.AnyAccess, Global: true},
 			pr.physical)
 
 		return true // Keep iterating.
@@ -117,13 +117,13 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
-func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	*info = arch.SignalInfo{
 		Signo: signal,
 		Code:  arch.SignalInfoKernel,
 	}
 	info.SetAddr(addr) // Include address.
-	return usermem.NoAccess, platform.ErrContextSignal
+	return hostarch.NoAccess, platform.ErrContextSignal
 }
 
 // isInstructionAbort returns true if it is an instruction abort.
@@ -148,7 +148,7 @@ func isWriteFault(code uint64) bool {
 // fault generates an appropriate fault return.
 //
 //go:nosplit
-func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := c.GetFaultAddr()
 	code, user := c.ErrorCode()
@@ -157,7 +157,7 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, e
 		// The last fault serviced by this CPU was not a user
 		// fault, so we can't reliably trust the faultAddr or
 		// the code provided here. We need to re-execute.
-		return usermem.NoAccess, platform.ErrContextInterrupt
+		return hostarch.NoAccess, platform.ErrContextInterrupt
 	}
 
 	// Reset the pointed SignalInfo.
@@ -174,7 +174,7 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, e
 		info.Code = 2
 	}
 
-	accessType := usermem.AccessType{
+	accessType := hostarch.AccessType{
 		Read:    !isWriteFault(uint64(code)),
 		Write:   isWriteFault(uint64(code)),
 		Execute: isInstructionAbort(uint64(code)),

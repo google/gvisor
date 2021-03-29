@@ -20,12 +20,12 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/kernel",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
-        "//pkg/usermem",
     ],
 )

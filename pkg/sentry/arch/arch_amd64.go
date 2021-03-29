@@ -23,11 +23,11 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Host specifies the host architecture.
@@ -37,7 +37,7 @@ const Host = AMD64
 const (
 	// maxAddr64 is the maximum userspace address. It is TASK_SIZE in Linux
 	// for a 64-bit process.
-	maxAddr64 usermem.Addr = (1 << 47) - usermem.PageSize
+	maxAddr64 hostarch.Addr = (1 << 47) - hostarch.PageSize
 
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/x86/mm/mmap.c:stack_maxrandom_size in Linux.
@@ -45,7 +45,7 @@ const (
 
 	// maxMmapRand64 is the maximum randomization to apply to the mmap
 	// layout. It is defined by arch/x86/mm/mmap.c:arch_mmap_rnd in Linux.
-	maxMmapRand64 = (1 << 28) * usermem.PageSize
+	maxMmapRand64 = (1 << 28) * hostarch.PageSize
 
 	// minGap64 is the minimum gap to leave at the top of the address space
 	// for the stack. It is defined by arch/x86/mm/mmap.c:MIN_GAP in Linux.
@@ -56,7 +56,7 @@ const (
 	//
 	// The Platform {Min,Max}UserAddress() may preclude loading at this
 	// address. See other preferredFoo comments below.
-	preferredPIELoadAddr usermem.Addr = maxAddr64 / 3 * 2
+	preferredPIELoadAddr hostarch.Addr = maxAddr64 / 3 * 2
 )
 
 // These constants are selected as heuristics to help make the Platform's
@@ -92,13 +92,13 @@ const (
 	// This is all "preferred" because the layout min/max address may not
 	// allow us to select such a TopDownBase, in which case we have to fall
 	// back to a layout that TSAN may not be happy with.
-	preferredTopDownAllocMin usermem.Addr = 0x7e8000000000
-	preferredAllocationGap                = 128 << 30 // 128 GB
-	preferredTopDownBaseMin               = preferredTopDownAllocMin + preferredAllocationGap
+	preferredTopDownAllocMin hostarch.Addr = 0x7e8000000000
+	preferredAllocationGap                 = 128 << 30 // 128 GB
+	preferredTopDownBaseMin                = preferredTopDownAllocMin + preferredAllocationGap
 
 	// minMmapRand64 is the smallest we are willing to make the
 	// randomization to stay above preferredTopDownBaseMin.
-	minMmapRand64 = (1 << 26) * usermem.PageSize
+	minMmapRand64 = (1 << 26) * hostarch.PageSize
 )
 
 // context64 represents an AMD64 context.
@@ -207,12 +207,12 @@ func (c *context64) FeatureSet() *cpuid.FeatureSet {
 }
 
 // mmapRand returns a random adjustment for randomizing an mmap layout.
-func mmapRand(max uint64) usermem.Addr {
-	return usermem.Addr(rand.Int63n(int64(max))).RoundDown()
+func mmapRand(max uint64) hostarch.Addr {
+	return hostarch.Addr(rand.Int63n(int64(max))).RoundDown()
 }
 
 // NewMmapLayout implements Context.NewMmapLayout consistently with Linux.
-func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (MmapLayout, error) {
+func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
 		return MmapLayout{}, unix.EINVAL
@@ -230,7 +230,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 
 	// MAX_GAP in Linux.
 	maxGap := (max / 6) * 5
-	gap := usermem.Addr(stackSize.Cur)
+	gap := hostarch.Addr(stackSize.Cur)
 	if gap < minGap64 {
 		gap = minGap64
 	}
@@ -243,7 +243,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 	}
 
 	topDownMin := max - gap - maxMmapRand64
-	maxRand := usermem.Addr(maxMmapRand64)
+	maxRand := hostarch.Addr(maxMmapRand64)
 	if topDownMin < preferredTopDownBaseMin {
 		// Try to keep TopDownBase above preferredTopDownBaseMin by
 		// shrinking maxRand.
@@ -278,7 +278,7 @@ func (c *context64) NewMmapLayout(min, max usermem.Addr, r *limits.LimitSet) (Mm
 }
 
 // PIELoadAddress implements Context.PIELoadAddress.
-func (c *context64) PIELoadAddress(l MmapLayout) usermem.Addr {
+func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
 	max, ok := base.AddLength(maxMmapRand64)
 	if !ok {
@@ -311,7 +311,7 @@ func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 		regs := c.ptraceGetRegs()
 		buf := make([]byte, regs.SizeBytes())
 		regs.MarshalUnsafe(buf)
-		return c.Native(uintptr(usermem.ByteOrder.Uint64(buf[addr:]))), nil
+		return c.Native(uintptr(hostarch.ByteOrder.Uint64(buf[addr:]))), nil
 	}
 	// Note: x86 debug registers are missing.
 	return c.Native(0), nil
@@ -326,7 +326,7 @@ func (c *context64) PtracePokeUser(addr, data uintptr) error {
 		regs := c.ptraceGetRegs()
 		buf := make([]byte, regs.SizeBytes())
 		regs.MarshalUnsafe(buf)
-		usermem.ByteOrder.PutUint64(buf[addr:], uint64(data))
+		hostarch.ByteOrder.PutUint64(buf[addr:], uint64(data))
 		_, err := c.PtraceSetRegs(bytes.NewBuffer(buf))
 		return err
 	}

@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -339,7 +340,7 @@ func cleanupUpper(ctx context.Context, parent *Inode, name string, copyUpErr err
 // size is the same used by io.Copy.
 var copyUpBuffers = sync.Pool{
 	New: func() interface{} {
-		b := make([]byte, 8*usermem.PageSize)
+		b := make([]byte, 8*hostarch.PageSize)
 		return &b
 	},
 }

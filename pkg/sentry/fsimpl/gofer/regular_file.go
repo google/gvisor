@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -291,8 +292,8 @@ func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64
 	}
 
 	// Remove touched pages from the cache.
-	pgstart := usermem.PageRoundDown(uint64(offset))
-	pgend, ok := usermem.PageRoundUp(uint64(offset + src.NumBytes()))
+	pgstart := hostarch.PageRoundDown(uint64(offset))
+	pgend, ok := hostarch.PageRoundUp(uint64(offset + src.NumBytes()))
 	if !ok {
 		return syserror.EINVAL
 	}
@@ -408,7 +409,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 		switch {
 		case seg.Ok():
 			// Get internal mappings from the cache.
-			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
+			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				dataMuUnlock()
 				rw.d.handleMu.RUnlock()
@@ -434,9 +435,9 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			if fillCache {
 				// Read into the cache, then re-enter the loop to read from the
 				// cache.
-				gapEnd, _ := usermem.PageRoundUp(gapMR.End)
+				gapEnd, _ := hostarch.PageRoundUp(gapMR.End)
 				reqMR := memmap.MappableRange{
-					Start: usermem.PageRoundDown(gapMR.Start),
+					Start: hostarch.PageRoundDown(gapMR.Start),
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
@@ -527,7 +528,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 		case seg.Ok():
 			// Get internal mappings from the cache.
 			segMR := seg.Range().Intersect(mr)
-			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), usermem.Write)
+			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
 			if err != nil {
 				retErr = err
 				goto exitLoop
@@ -714,7 +715,7 @@ func (d *dentry) mayCachePages() bool {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	d.mapsMu.Lock()
 	mapped := d.mappings.AddMapping(ms, ar, offset, writable)
 	// Do this unconditionally since whether we have a host FD can change
@@ -735,7 +736,7 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar user
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	d.mapsMu.Lock()
 	unmapped := d.mappings.RemoveMapping(ms, ar, offset, writable)
 	for _, r := range unmapped {
@@ -759,12 +760,12 @@ func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar u
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return d.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	d.handleMu.RLock()
 	if d.mmapFD >= 0 && !d.fs.opts.forcePageCache {
 		d.handleMu.RUnlock()
@@ -777,7 +778,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 				Source: mr,
 				File:   &d.pf,
 				Offset: mr.Start,
-				Perms:  usermem.AnyAccess,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, nil
 	}
@@ -786,7 +787,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	// Constrain translations to d.size (rounded up) to prevent translation to
 	// pages that may be concurrently truncated.
-	pgend, _ := usermem.PageRoundUp(d.size)
+	pgend, _ := hostarch.PageRoundUp(d.size)
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
@@ -811,7 +812,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		segMR := seg.Range().Intersect(optional)
 		// TODO(jamieliu): Make Translations writable even if writability is
 		// not required if already kept-dirty by another writable translation.
-		perms := usermem.AccessType{
+		perms := hostarch.AccessType{
 			Read:    true,
 			Execute: true,
 		}
@@ -954,7 +955,7 @@ func (d *dentryPlatformFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
 	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD), at.Write)

@@ -19,9 +19,9 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 	// include/linux/kdev_t.h:MINORBITS
 	devMinorBits = 20
 
-	vsyscallEnd        = usermem.Addr(0xffffffffff601000)
+	vsyscallEnd        = hostarch.Addr(0xffffffffff601000)
 	vsyscallMapsEntry  = "ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]\n"
 	vsyscallSmapsEntry = vsyscallMapsEntry +
 		"Size:                  4 kB\n" +
@@ -62,7 +62,7 @@ func (mm *MemoryManager) NeedsUpdate(generation int64) bool {
 func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
-	var start usermem.Addr
+	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
 		mm.appendVMAMapsEntryLocked(ctx, vseg, buf)
@@ -88,9 +88,9 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var data []seqfile.SeqData
-	var start usermem.Addr
+	var start hostarch.Addr
 	if handle != nil {
-		start = *handle.(*usermem.Addr)
+		start = *handle.(*hostarch.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
 		vmaAddr := vseg.End()
@@ -177,7 +177,7 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
-	var start usermem.Addr
+	var start hostarch.Addr
 
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
 		mm.vmaSmapsEntryIntoLocked(ctx, vseg, buf)
@@ -196,9 +196,9 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var data []seqfile.SeqData
-	var start usermem.Addr
+	var start hostarch.Addr
 	if handle != nil {
-		start = *handle.(*usermem.Addr)
+		start = *handle.(*hostarch.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
 		vmaAddr := vseg.End()
@@ -279,8 +279,8 @@ func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIt
 	// Swap is not implemented.
 	fmt.Fprintf(b, "Swap:           %8d kB\n", 0)
 	fmt.Fprintf(b, "SwapPss:        %8d kB\n", 0)
-	fmt.Fprintf(b, "KernelPageSize: %8d kB\n", usermem.PageSize/1024)
-	fmt.Fprintf(b, "MMUPageSize:    %8d kB\n", usermem.PageSize/1024)
+	fmt.Fprintf(b, "KernelPageSize: %8d kB\n", hostarch.PageSize/1024)
+	fmt.Fprintf(b, "MMUPageSize:    %8d kB\n", hostarch.PageSize/1024)
 	locked := rss
 	if vma.mlockMode == memmap.MLockNone {
 		locked = 0

@@ -59,6 +59,7 @@ go_library(
         "//pkg/amutex",
         "//pkg/context",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

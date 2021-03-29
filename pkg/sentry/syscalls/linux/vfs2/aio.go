@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // IoSubmit implements linux syscall io_submit(2).
@@ -40,7 +42,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	for i := int32(0); i < nrEvents; i++ {
 		// Copy in the callback address.
-		var cbAddr usermem.Addr
+		var cbAddr hostarch.Addr
 		switch t.Arch().Width() {
 		case 8:
 			var cbAddrP primitive.Uint64
@@ -52,7 +54,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				// Nothing done.
 				return 0, nil, err
 			}
-			cbAddr = usermem.Addr(cbAddrP)
+			cbAddr = hostarch.Addr(cbAddrP)
 		default:
 			return 0, nil, syserror.ENOSYS
 		}
@@ -79,14 +81,14 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 
 		// Advance to the next one.
-		addr += usermem.Addr(t.Arch().Width())
+		addr += hostarch.Addr(t.Arch().Width())
 	}
 
 	return uintptr(nrEvents), nil, nil
 }
 
 // submitCallback processes a single callback.
-func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr usermem.Addr) error {
+func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr hostarch.Addr) error {
 	if cb.Reserved2 != 0 {
 		return syserror.EINVAL
 	}
@@ -148,7 +150,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr user
 	return nil
 }
 
-func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr usermem.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, aioCtx *mm.AIOContext) kernel.AIOCallback {
+func getAIOCallback(t *kernel.Task, fd, eventFD *vfs.FileDescription, cbAddr hostarch.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, aioCtx *mm.AIOContext) kernel.AIOCallback {
 	return func(ctx context.Context) {
 		// Release references after completing the callback.
 		defer fd.DecRef(ctx)
@@ -206,12 +208,12 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 	// I/O.
 	switch cb.OpCode {
 	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PWRITE:
-		return t.SingleIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
+		return t.SingleIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 
 	case linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITEV:
-		return t.IovecsIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
+		return t.IovecsIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 

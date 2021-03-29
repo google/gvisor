@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
@@ -42,6 +43,7 @@ go_test(
     library = ":tmpfs",
     deps = [
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usage",

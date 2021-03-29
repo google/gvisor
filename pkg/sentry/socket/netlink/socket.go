@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -222,7 +223,7 @@ func ExtractSockAddr(b []byte) (*linux.SockAddrNetlink, *syserr.Error) {
 	}
 
 	var sa linux.SockAddrNetlink
-	binary.Unmarshal(b[:linux.SockAddrNetlinkSize], usermem.ByteOrder, &sa)
+	binary.Unmarshal(b[:linux.SockAddrNetlinkSize], hostarch.ByteOrder, &sa)
 
 	if sa.Family != linux.AF_NETLINK {
 		return nil, syserr.ErrInvalidArgument
@@ -327,7 +328,7 @@ func (s *socketOpsCommon) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *socketOpsCommon) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		switch name {
@@ -388,7 +389,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			if len(opt) < sizeOfInt32 {
 				return syserr.ErrInvalidArgument
 			}
-			size := usermem.ByteOrder.Uint32(opt)
+			size := hostarch.ByteOrder.Uint32(opt)
 			if size < minSendBufferSize {
 				size = minSendBufferSize
 			} else if size > maxSendBufferSize {
@@ -411,7 +412,7 @@ func (s *socketOpsCommon) SetSockOpt(t *kernel.Task, level int, name int, opt []
 			if len(opt) < sizeOfInt32 {
 				return syserr.ErrInvalidArgument
 			}
-			passcred := usermem.ByteOrder.Uint32(opt)
+			passcred := hostarch.ByteOrder.Uint32(opt)
 
 			s.ep.SocketOptions().SetPassCred(passcred != 0)
 			return nil

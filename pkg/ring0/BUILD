@@ -77,10 +77,10 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/cpuid",
+        "//pkg/hostarch",
         "//pkg/ring0/pagetables",
         "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
-        "//pkg/usermem",
     ],
 )

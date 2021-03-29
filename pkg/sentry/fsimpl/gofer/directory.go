@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func (d *dentry) isDir() bool {
@@ -98,7 +98,7 @@ func (d *dentry) createSyntheticChildLocked(opts *createSyntheticOpts) {
 		mode:      uint32(opts.mode),
 		uid:       uint32(opts.kuid),
 		gid:       uint32(opts.kgid),
-		blockSize: usermem.PageSize, // arbitrary
+		blockSize: hostarch.PageSize, // arbitrary
 		atime:     now,
 		mtime:     now,
 		ctime:     now,

@@ -40,6 +40,7 @@ go_test(
         "//pkg/context",
         "//pkg/fd",
         "//pkg/fdnotifier",
+        "//pkg/hostarch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/syserror",

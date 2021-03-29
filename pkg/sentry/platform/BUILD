@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",

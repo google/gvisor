@@ -76,6 +76,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/safemem",
         "//pkg/sentry/arch",
@@ -105,6 +106,7 @@ go_test(
     library = ":fsutil",
     deps = [
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",

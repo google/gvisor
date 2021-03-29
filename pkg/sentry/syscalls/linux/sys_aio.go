@@ -17,6 +17,7 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -152,7 +153,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		// Keep rolling.
-		eventsAddr += usermem.Addr(linux.IOEventSize)
+		eventsAddr += hostarch.Addr(linux.IOEventSize)
 	}
 
 	// Everything finished.
@@ -191,12 +192,12 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 	// I/O.
 	switch cb.OpCode {
 	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PWRITE:
-		return t.SingleIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
+		return t.SingleIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 
 	case linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITEV:
-		return t.IovecsIOSequence(usermem.Addr(cb.Buf), bytes, usermem.IOOpts{
+		return t.IovecsIOSequence(hostarch.Addr(cb.Buf), bytes, usermem.IOOpts{
 			AddressSpaceActive: false,
 		})
 
@@ -219,7 +220,7 @@ func IoCancel(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 // LINT.IfChange
 
-func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, actx *mm.AIOContext, eventFile *fs.File) kernel.AIOCallback {
+func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr hostarch.Addr, cb *linux.IOCallback, ioseq usermem.IOSequence, actx *mm.AIOContext, eventFile *fs.File) kernel.AIOCallback {
 	return func(ctx context.Context) {
 		if actx.Dead() {
 			actx.CancelPendingRequest()
@@ -264,7 +265,7 @@ func getAIOCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *linu
 }
 
 // submitCallback processes a single callback.
-func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr usermem.Addr) error {
+func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr hostarch.Addr) error {
 	file := t.GetFile(cb.FD)
 	if file == nil {
 		// File not found.
@@ -339,7 +340,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	for i := int32(0); i < nrEvents; i++ {
 		// Copy in the callback address.
-		var cbAddr usermem.Addr
+		var cbAddr hostarch.Addr
 		switch t.Arch().Width() {
 		case 8:
 			var cbAddrP primitive.Uint64
@@ -351,7 +352,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				// Nothing done.
 				return 0, nil, err
 			}
-			cbAddr = usermem.Addr(cbAddrP)
+			cbAddr = hostarch.Addr(cbAddrP)
 		default:
 			return 0, nil, syserror.ENOSYS
 		}
@@ -379,7 +380,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 
 		// Advance to the next one.
-		addr += usermem.Addr(t.Arch().Width())
+		addr += hostarch.Addr(t.Arch().Width())
 	}
 
 	return uintptr(nrEvents), nil, nil

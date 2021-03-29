@@ -24,7 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func setup(t *testing.T) *testutil.System {
@@ -82,12 +83,12 @@ func (t *testPayload) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (t *testPayload) MarshalBytes(dst []byte) {
-	usermem.ByteOrder.PutUint32(dst[:4], t.data)
+	hostarch.ByteOrder.PutUint32(dst[:4], t.data)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (t *testPayload) UnmarshalBytes(src []byte) {
-	*t = testPayload{data: usermem.ByteOrder.Uint32(src[:4])}
+	*t = testPayload{data: hostarch.ByteOrder.Uint32(src[:4])}
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -106,17 +107,17 @@ func (t *testPayload) UnmarshalUnsafe(src []byte) {
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
-func (t *testPayload) CopyOutN(task marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (t *testPayload) CopyOutN(task marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
 	panic("not implemented")
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
-func (t *testPayload) CopyOut(task marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (t *testPayload) CopyOut(task marshal.CopyContext, addr hostarch.Addr) (int, error) {
 	panic("not implemented")
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
-func (t *testPayload) CopyIn(task marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (t *testPayload) CopyIn(task marshal.CopyContext, addr hostarch.Addr) (int, error) {
 	panic("not implemented")
 }
 

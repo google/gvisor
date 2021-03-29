@@ -54,6 +54,6 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",
-        "//pkg/usermem",
+        "//pkg/hostarch",
     ],
 )

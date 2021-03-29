@@ -23,7 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const chmodMask = 0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX
@@ -43,7 +44,7 @@ func Fchmodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return 0, nil, fchmodat(t, dirfd, pathAddr, mode)
 }
 
-func fchmodat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, mode uint) error {
+func fchmodat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) error {
 	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
@@ -102,7 +103,7 @@ func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return 0, nil, fchownat(t, dirfd, pathAddr, owner, group, flags)
 }
 
-func fchownat(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, owner, group, flags int32) error {
+func fchownat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, owner, group, flags int32) error {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
 		return syserror.EINVAL
 	}
@@ -327,7 +328,7 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, followFinalSymlink, &opts)
 }
 
-func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr usermem.Addr, opts *vfs.SetStatOptions) error {
+func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
 	if timesAddr == 0 {
 		opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
 		opts.Stat.Atime.Nsec = linux.UTIME_NOW
@@ -391,7 +392,7 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
 }
 
-func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr usermem.Addr, opts *vfs.SetStatOptions) error {
+func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
 	if timesAddr == 0 {
 		opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
 		opts.Stat.Atime.Nsec = linux.UTIME_NOW

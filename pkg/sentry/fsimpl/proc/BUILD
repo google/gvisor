@@ -81,6 +81,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

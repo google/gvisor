@@ -19,9 +19,9 @@ package arch
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // SignalContext64 is equivalent to struct sigcontext, the type passed as the
@@ -107,8 +107,8 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// sizeof(siginfo) == 128.
 	// R30 stores the restorer address.
 	frameSize := ucSize + 128
-	frameBottom := (sp - usermem.Addr(frameSize)) & ^usermem.Addr(15)
-	sp = frameBottom + usermem.Addr(frameSize)
+	frameBottom := (sp - hostarch.Addr(frameSize)) & ^hostarch.Addr(15)
+	sp = frameBottom + hostarch.Addr(frameSize)
 	st.Bottom = sp
 
 	// Prior to proceeding, figure out if the frame will exhaust the range

@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
@@ -469,7 +470,7 @@ func (m *memDataFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	defer mm.DecUsers(ctx)
 	// Buffer the read data because of MM locks
 	buf := make([]byte, dst.NumBytes())
-	n, readErr := mm.CopyIn(ctx, usermem.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
+	n, readErr := mm.CopyIn(ctx, hostarch.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
 	if n > 0 {
 		if _, err := dst.CopyOut(ctx, buf[:n]); err != nil {
 			return 0, syserror.EFAULT
@@ -632,7 +633,7 @@ func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle)
 			rss = mm.ResidentSetSize()
 		}
 	})
-	fmt.Fprintf(&buf, "%d %d ", vss, rss/usermem.PageSize)
+	fmt.Fprintf(&buf, "%d %d ", vss, rss/hostarch.PageSize)
 
 	// rsslim.
 	fmt.Fprintf(&buf, "%d ", s.t.ThreadGroup().Limits().Get(limits.Rss).Cur)
@@ -684,7 +685,7 @@ func (s *statmData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([
 	})
 
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "%d %d 0 0 0 0 0\n", vss/usermem.PageSize, rss/usermem.PageSize)
+	fmt.Fprintf(&buf, "%d %d 0 0 0 0 0\n", vss/hostarch.PageSize, rss/hostarch.PageSize)
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*statmData)(nil)}}, 0
 }
@@ -939,8 +940,8 @@ func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 
 	buf := make([]byte, size)
 	for i, e := range auxv {
-		usermem.ByteOrder.PutUint64(buf[16*i:], e.Key)
-		usermem.ByteOrder.PutUint64(buf[16*i+8:], uint64(e.Value))
+		hostarch.ByteOrder.PutUint64(buf[16*i:], e.Key)
+		hostarch.ByteOrder.PutUint64(buf[16*i+8:], uint64(e.Value))
 	}
 
 	n, err := dst.CopyOut(ctx, buf[offset:])
@@ -1020,7 +1021,7 @@ func (f *oomScoreAdjFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	}
 
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)

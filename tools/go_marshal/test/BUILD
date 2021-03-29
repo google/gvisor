@@ -15,7 +15,7 @@ go_test(
     deps = [
         ":test",
         "//pkg/binary",
-        "//pkg/usermem",
+        "//pkg/hostarch",
         "//tools/go_marshal/analysis",
     ],
 )
@@ -41,6 +41,7 @@ go_test(
     srcs = ["marshal_test.go"],
     deps = [
         ":test",
+        "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/syserror",

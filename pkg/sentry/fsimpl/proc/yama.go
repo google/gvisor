@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -62,7 +63,7 @@ func (s *yamaPtraceScope) Write(ctx context.Context, src usermem.IOSequence, off
 	}
 
 	// Limit the amount of memory allocated.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)

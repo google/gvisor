@@ -36,6 +36,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -43,7 +44,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -252,8 +252,8 @@ func (d *dentry) releaseChildrenLocked(ctx context.Context) {
 // immutable
 var globalStatfs = linux.Statfs{
 	Type:         linux.TMPFS_MAGIC,
-	BlockSize:    usermem.PageSize,
-	FragmentSize: usermem.PageSize,
+	BlockSize:    hostarch.PageSize,
+	FragmentSize: hostarch.PageSize,
 	NameLength:   linux.NAME_MAX,
 
 	// tmpfs currently does not support configurable size limits. In Linux,
@@ -263,9 +263,9 @@ var globalStatfs = linux.Statfs{
 	// chosen to ensure that BlockSize * Blocks does not overflow int64 (which
 	// applications may also handle incorrectly).
 	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
-	Blocks:          math.MaxInt64 / usermem.PageSize,
-	BlocksFree:      math.MaxInt64 / usermem.PageSize,
-	BlocksAvailable: math.MaxInt64 / usermem.PageSize,
+	Blocks:          math.MaxInt64 / hostarch.PageSize,
+	BlocksFree:      math.MaxInt64 / hostarch.PageSize,
+	BlocksAvailable: math.MaxInt64 / hostarch.PageSize,
 }
 
 // dentry implements vfs.DentryImpl.
@@ -485,7 +485,7 @@ func (i *inode) statTo(stat *linux.Statx) {
 		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_SIZE |
 		linux.STATX_BLOCKS | linux.STATX_ATIME | linux.STATX_CTIME |
 		linux.STATX_MTIME
-	stat.Blksize = usermem.PageSize
+	stat.Blksize = hostarch.PageSize
 	stat.Nlink = atomic.LoadUint32(&i.nlink)
 	stat.UID = atomic.LoadUint32(&i.uid)
 	stat.GID = atomic.LoadUint32(&i.gid)

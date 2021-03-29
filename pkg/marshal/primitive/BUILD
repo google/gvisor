@@ -13,6 +13,7 @@ go_library(
     ],
     deps = [
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/usermem",
     ],

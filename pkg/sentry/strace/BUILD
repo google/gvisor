@@ -28,6 +28,7 @@ go_library(
         "//pkg/binary",
         "//pkg/bits",
         "//pkg/eventchannel",
+        "//pkg/hostarch",
         "//pkg/marshal/primitive",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
@@ -35,7 +36,6 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/syscalls/linux",
-        "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

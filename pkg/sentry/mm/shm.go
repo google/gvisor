@@ -16,13 +16,13 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // DetachShm unmaps a sysv shared memory segment.
-func (mm *MemoryManager) DetachShm(ctx context.Context, addr usermem.Addr) error {
+func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) error {
 	if addr != addr.RoundDown() {
 		// "... shmaddr is not aligned on a page boundary." - man shmdt(2)
 		return syserror.EINVAL
@@ -52,7 +52,7 @@ func (mm *MemoryManager) DetachShm(ctx context.Context, addr usermem.Addr) error
 	}
 
 	// Remove all vmas that could have been created by the same attach.
-	end := addr + usermem.Addr(detached.EffectiveSize())
+	end := addr + hostarch.Addr(detached.EffectiveSize())
 	for vseg.Ok() && vseg.End() <= end {
 		vma := vseg.ValuePtr()
 		if vma.mappable == detached && uint64(vseg.Start()-addr) == vma.off {

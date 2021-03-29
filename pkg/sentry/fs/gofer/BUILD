@@ -27,6 +27,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/fd",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/refs",

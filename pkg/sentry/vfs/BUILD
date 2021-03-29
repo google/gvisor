@@ -99,6 +99,7 @@ go_library(
         "//pkg/fdnotifier",
         "//pkg/fspath",
         "//pkg/gohacks",
+        "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

@@ -19,6 +19,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -62,7 +63,7 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getdents implements the core of getdents(2)/getdents64(2).
 // f is the syscall implementation dirent serialization function.
-func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
+func getdents(t *kernel.Task, fd int32, addr hostarch.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
 	dir := t.GetFile(fd)
 	if dir == nil {
 		return 0, syserror.EBADF

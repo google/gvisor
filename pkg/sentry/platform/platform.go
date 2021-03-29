@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -62,16 +63,16 @@ type Platform interface {
 	// for AddressSpace.MapFile. As a special case, a MapUnit of 0 indicates
 	// that the cost of AddressSpace.MapFile is effectively independent of the
 	// number of pages mapped. If MapUnit is non-zero, it must be a power-of-2
-	// multiple of usermem.PageSize.
+	// multiple of hostarch.PageSize.
 	MapUnit() uint64
 
 	// MinUserAddress returns the minimum mappable address on this
 	// platform.
-	MinUserAddress() usermem.Addr
+	MinUserAddress() hostarch.Addr
 
 	// MaxUserAddress returns the maximum mappable address on this
 	// platform.
-	MaxUserAddress() usermem.Addr
+	MaxUserAddress() hostarch.Addr
 
 	// NewAddressSpace returns a new memory context for this platform.
 	//
@@ -172,7 +173,7 @@ type MemoryManager interface {
 	//usermem.IO provides access to the contents of a virtual memory space.
 	usermem.IO
 	// MMap establishes a memory mapping.
-	MMap(ctx context.Context, opts memmap.MMapOpts) (usermem.Addr, error)
+	MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error)
 	// AddressSpace returns the AddressSpace bound to mm.
 	AddressSpace() AddressSpace
 }
@@ -195,7 +196,7 @@ type Context interface {
 	//
 	// - ErrContextSignal: The Context was interrupted by a signal. The
 	// returned *arch.SignalInfo contains information about the signal. If
-	// arch.SignalInfo.Signo == SIGSEGV, the returned usermem.AccessType
+	// arch.SignalInfo.Signo == SIGSEGV, the returned hostarch.AccessType
 	// contains the access type of the triggering fault. The caller owns
 	// the returned SignalInfo.
 	//
@@ -206,7 +207,7 @@ type Context interface {
 	// concurrent call to Switch().
 	//
 	// - ErrContextCPUPreempted: See the definition of that error for details.
-	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error)
+	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, hostarch.AccessType, error)
 
 	// PullFullState() pulls a full state of the application thread.
 	//
@@ -302,14 +303,14 @@ type AddressSpace interface {
 	// * at.Any() == true.
 	// * At least one reference must be held on all pages in fr, and must
 	//   continue to be held as long as pages are mapped.
-	MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error
+	MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error
 
 	// Unmap unmaps the given range.
 	//
 	// Preconditions:
 	// * addr is page-aligned.
 	// * length > 0.
-	Unmap(addr usermem.Addr, length uint64)
+	Unmap(addr hostarch.Addr, length uint64)
 
 	// Release releases this address space. After releasing, a new AddressSpace
 	// must be acquired via platform.NewAddressSpace().
@@ -337,67 +338,67 @@ type AddressSpaceIO interface {
 	// CopyOut copies len(src) bytes from src to the memory mapped at addr. It
 	// returns the number of bytes copied. If the number of bytes copied is <
 	// len(src), it returns a non-nil error explaining why.
-	CopyOut(addr usermem.Addr, src []byte) (int, error)
+	CopyOut(addr hostarch.Addr, src []byte) (int, error)
 
 	// CopyIn copies len(dst) bytes from the memory mapped at addr to dst.
 	// It returns the number of bytes copied. If the number of bytes copied is
 	// < len(dst), it returns a non-nil error explaining why.
-	CopyIn(addr usermem.Addr, dst []byte) (int, error)
+	CopyIn(addr hostarch.Addr, dst []byte) (int, error)
 
 	// ZeroOut sets toZero bytes to 0, starting at addr. It returns the number
 	// of bytes zeroed. If the number of bytes zeroed is < toZero, it returns a
 	// non-nil error explaining why.
-	ZeroOut(addr usermem.Addr, toZero uintptr) (uintptr, error)
+	ZeroOut(addr hostarch.Addr, toZero uintptr) (uintptr, error)
 
 	// SwapUint32 atomically sets the uint32 value at addr to new and returns
 	// the previous value.
 	//
 	// Preconditions: addr must be aligned to a 4-byte boundary.
-	SwapUint32(addr usermem.Addr, new uint32) (uint32, error)
+	SwapUint32(addr hostarch.Addr, new uint32) (uint32, error)
 
 	// CompareAndSwapUint32 atomically compares the uint32 value at addr to
 	// old; if they are equal, the value in memory is replaced by new. In
 	// either case, the previous value stored in memory is returned.
 	//
 	// Preconditions: addr must be aligned to a 4-byte boundary.
-	CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error)
+	CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error)
 
 	// LoadUint32 atomically loads the uint32 value at addr and returns it.
 	//
 	// Preconditions: addr must be aligned to a 4-byte boundary.
-	LoadUint32(addr usermem.Addr) (uint32, error)
+	LoadUint32(addr hostarch.Addr) (uint32, error)
 }
 
 // NoAddressSpaceIO implements AddressSpaceIO methods by panicking.
 type NoAddressSpaceIO struct{}
 
 // CopyOut implements AddressSpaceIO.CopyOut.
-func (NoAddressSpaceIO) CopyOut(addr usermem.Addr, src []byte) (int, error) {
+func (NoAddressSpaceIO) CopyOut(addr hostarch.Addr, src []byte) (int, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
 // CopyIn implements AddressSpaceIO.CopyIn.
-func (NoAddressSpaceIO) CopyIn(addr usermem.Addr, dst []byte) (int, error) {
+func (NoAddressSpaceIO) CopyIn(addr hostarch.Addr, dst []byte) (int, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
 // ZeroOut implements AddressSpaceIO.ZeroOut.
-func (NoAddressSpaceIO) ZeroOut(addr usermem.Addr, toZero uintptr) (uintptr, error) {
+func (NoAddressSpaceIO) ZeroOut(addr hostarch.Addr, toZero uintptr) (uintptr, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
 // SwapUint32 implements AddressSpaceIO.SwapUint32.
-func (NoAddressSpaceIO) SwapUint32(addr usermem.Addr, new uint32) (uint32, error) {
+func (NoAddressSpaceIO) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
 // CompareAndSwapUint32 implements AddressSpaceIO.CompareAndSwapUint32.
-func (NoAddressSpaceIO) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error) {
+func (NoAddressSpaceIO) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
 // LoadUint32 implements AddressSpaceIO.LoadUint32.
-func (NoAddressSpaceIO) LoadUint32(addr usermem.Addr) (uint32, error) {
+func (NoAddressSpaceIO) LoadUint32(addr hostarch.Addr) (uint32, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 
@@ -406,7 +407,7 @@ func (NoAddressSpaceIO) LoadUint32(addr usermem.Addr) (uint32, error) {
 // permissions.
 type SegmentationFault struct {
 	// Addr is the address at which the fault occurred.
-	Addr usermem.Addr
+	Addr hostarch.Addr
 }
 
 // Error implements error.Error.

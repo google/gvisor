@@ -23,13 +23,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/goid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // A taskRunState is a reified state in the task state machine. See README.md
@@ -148,7 +148,7 @@ func (*runApp) handleCPUIDInstruction(t *Task) error {
 	region := trace.StartRegion(t.traceContext, cpuidRegion)
 	expected := arch.CPUIDInstruction[:]
 	found := make([]byte, len(expected))
-	_, err := t.CopyInBytes(usermem.Addr(t.Arch().IP()), found)
+	_, err := t.CopyInBytes(hostarch.Addr(t.Arch().IP()), found)
 	if err == nil && bytes.Equal(expected, found) {
 		// Skip the cpuid instruction.
 		t.Arch().CPUIDEmulate(t)
@@ -307,8 +307,8 @@ func (app *runApp) execute(t *Task) taskRunState {
 		// normally.
 		if at.Any() {
 			region := trace.StartRegion(t.traceContext, faultRegion)
-			addr := usermem.Addr(info.Addr())
-			err := t.MemoryManager().HandleUserFault(t, addr, at, usermem.Addr(t.Arch().Stack()))
+			addr := hostarch.Addr(info.Addr())
+			err := t.MemoryManager().HandleUserFault(t, addr, at, hostarch.Addr(t.Arch().Stack()))
 			region.End()
 			if err == nil {
 				// The fault was handled appropriately.

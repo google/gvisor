@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -216,7 +217,7 @@ type SocketOps interface {
 	Shutdown(t *kernel.Task, how int) *syserr.Error
 
 	// GetSockOpt implements the getsockopt(2) linux unix.
-	GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (marshal.Marshallable, *syserr.Error)
+	GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error)
 
 	// SetSockOpt implements the setsockopt(2) linux unix.
 	SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error
@@ -356,7 +357,7 @@ func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 		Type:      fs.Socket,
 		DeviceID:  d.DeviceID(),
 		InodeID:   ino,
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 	})
 
 	// Dirent name matches net/socket.c:sockfs_dname.
@@ -571,19 +572,19 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
 	case unix.AF_INET:
 		var addr linux.SockAddrInet
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet4], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrInet4], hostarch.ByteOrder, &addr)
 		return &addr
 	case unix.AF_INET6:
 		var addr linux.SockAddrInet6
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet6], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrInet6], hostarch.ByteOrder, &addr)
 		return &addr
 	case unix.AF_UNIX:
 		var addr linux.SockAddrUnix
-		binary.Unmarshal(data[:unix.SizeofSockaddrUnix], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrUnix], hostarch.ByteOrder, &addr)
 		return &addr
 	case unix.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		binary.Unmarshal(data[:unix.SizeofSockaddrNetlink], usermem.ByteOrder, &addr)
+		binary.Unmarshal(data[:unix.SizeofSockaddrNetlink], hostarch.ByteOrder, &addr)
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
@@ -693,7 +694,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 	}
 
 	// Get the rest of the fields based on the address family.
-	switch family := usermem.ByteOrder.Uint16(addr); family {
+	switch family := hostarch.ByteOrder.Uint16(addr); family {
 	case linux.AF_UNIX:
 		path := addr[2:]
 		if len(path) > linux.UnixPathMax {
@@ -715,7 +716,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInetSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
+		binary.Unmarshal(addr[:sockAddrInetSize], hostarch.ByteOrder, &a)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -728,7 +729,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInet6Size {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
+		binary.Unmarshal(addr[:sockAddrInet6Size], hostarch.ByteOrder, &a)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -744,7 +745,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrLinkSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+		binary.Unmarshal(addr[:sockAddrLinkSize], hostarch.ByteOrder, &a)
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}

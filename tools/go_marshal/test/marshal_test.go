@@ -27,6 +27,7 @@ import (
 	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -47,7 +48,7 @@ func (t *mockCopyContext) populate(val interface{}) {
 	var buf bytes.Buffer
 	// Use binary.Write so we aren't testing go-marshal against its own
 	// potentially buggy implementation.
-	if err := binary.Write(&buf, usermem.ByteOrder, val); err != nil {
+	if err := binary.Write(&buf, hostarch.ByteOrder, val); err != nil {
 		panic(err)
 	}
 	t.taskMem.Bytes = buf.Bytes()
@@ -71,14 +72,14 @@ func (t *mockCopyContext) CopyScratchBuffer(size int) []byte {
 // CopyOutBytes implements marshal.CopyContext.CopyOutBytes. The implementation
 // completely ignores the target address and stores a copy of b in its
 // internally buffer, overriding any previous contents.
-func (t *mockCopyContext) CopyOutBytes(_ usermem.Addr, b []byte) (int, error) {
+func (t *mockCopyContext) CopyOutBytes(_ hostarch.Addr, b []byte) (int, error) {
 	return t.taskMem.CopyOut(nil, 0, b, usermem.IOOpts{})
 }
 
 // CopyInBytes implements marshal.CopyContext.CopyInBytes. The implementation
 // completely ignores the source address and always fills b from the begining of
 // its internal buffer.
-func (t *mockCopyContext) CopyInBytes(_ usermem.Addr, b []byte) (int, error) {
+func (t *mockCopyContext) CopyInBytes(_ hostarch.Addr, b []byte) (int, error) {
 	return t.taskMem.CopyIn(nil, 0, b, usermem.IOOpts{})
 }
 
@@ -91,7 +92,7 @@ func unsafeMemory(m marshal.Marshallable) []byte {
 		// since the layout isn't packed. Allocate a temporary buffer
 		// and marshal instead.
 		var buf bytes.Buffer
-		if err := binary.Write(&buf, usermem.ByteOrder, m); err != nil {
+		if err := binary.Write(&buf, hostarch.ByteOrder, m); err != nil {
 			panic(err)
 		}
 		return buf.Bytes()
@@ -130,7 +131,7 @@ func unsafeMemorySlice(m interface{}, elt marshal.Marshallable) []byte {
 		// since the layout isn't packed. Allocate a temporary buffer
 		// and marshal instead.
 		var buf bytes.Buffer
-		if err := binary.Write(&buf, usermem.ByteOrder, m); err != nil {
+		if err := binary.Write(&buf, hostarch.ByteOrder, m); err != nil {
 			panic(err)
 		}
 		return buf.Bytes()
@@ -176,7 +177,7 @@ func limitedCopyIn(t *testing.T, src, dst marshal.Marshallable, limit int) {
 	cc.populate(src)
 	cc.setLimit(limit)
 
-	n, err := dst.CopyIn(&cc, usermem.Addr(0))
+	n, err := dst.CopyIn(&cc, hostarch.Addr(0))
 	if n != limit {
 		t.Errorf("CopyIn copied unexpected number of bytes, expected %d, got %d", limit, n)
 	}
@@ -206,7 +207,7 @@ func limitedCopyOut(t *testing.T, src marshal.Marshallable, limit int) {
 	var cc mockCopyContext
 	cc.setLimit(limit)
 
-	n, err := src.CopyOut(&cc, usermem.Addr(0))
+	n, err := src.CopyOut(&cc, hostarch.Addr(0))
 	if n != limit {
 		t.Errorf("CopyOut copied unexpected number of bytes, expected %d, got %d", limit, n)
 	}
@@ -227,7 +228,7 @@ func copyOutN(t *testing.T, src marshal.Marshallable, limit int) {
 	var cc mockCopyContext
 	cc.setLimit(limit)
 
-	n, err := src.CopyOutN(&cc, usermem.Addr(0), limit)
+	n, err := src.CopyOutN(&cc, hostarch.Addr(0), limit)
 	if err != nil {
 		t.Errorf("CopyOut returned unexpected error: %v", err)
 	}
@@ -304,18 +305,18 @@ func TestLimitedMarshalling(t *testing.T) {
 func TestLimitedSliceMarshalling(t *testing.T) {
 	types := []struct {
 		arrayPtrType reflect.Type
-		copySliceIn  func(cc marshal.CopyContext, addr usermem.Addr, dstSlice interface{}) (int, error)
-		copySliceOut func(cc marshal.CopyContext, addr usermem.Addr, srcSlice interface{}) (int, error)
+		copySliceIn  func(cc marshal.CopyContext, addr hostarch.Addr, dstSlice interface{}) (int, error)
+		copySliceOut func(cc marshal.CopyContext, addr hostarch.Addr, srcSlice interface{}) (int, error)
 		unsafeMemory func(arrPtr interface{}) []byte
 	}{
 		// Packed types.
 		{
 			reflect.TypeOf((*[20]test.Stat)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[20]test.Stat)[:]
 				return test.CopyStatSliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[20]test.Stat)[:]
 				return test.CopyStatSliceOut(cc, addr, slice)
 			},
@@ -326,11 +327,11 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 		},
 		{
 			reflect.TypeOf((*[1]test.Stat)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[1]test.Stat)[:]
 				return test.CopyStatSliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[1]test.Stat)[:]
 				return test.CopyStatSliceOut(cc, addr, slice)
 			},
@@ -341,11 +342,11 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 		},
 		{
 			reflect.TypeOf((*[5]test.SignalSetAlias)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[5]test.SignalSetAlias)[:]
 				return test.CopySignalSetAliasSliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[5]test.SignalSetAlias)[:]
 				return test.CopySignalSetAliasSliceOut(cc, addr, slice)
 			},
@@ -357,11 +358,11 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 		// Non-packed types.
 		{
 			reflect.TypeOf((*[20]test.Type1)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[20]test.Type1)[:]
 				return test.CopyType1SliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[20]test.Type1)[:]
 				return test.CopyType1SliceOut(cc, addr, slice)
 			},
@@ -372,11 +373,11 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 		},
 		{
 			reflect.TypeOf((*[1]test.Type1)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[1]test.Type1)[:]
 				return test.CopyType1SliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[1]test.Type1)[:]
 				return test.CopyType1SliceOut(cc, addr, slice)
 			},
@@ -387,11 +388,11 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 		},
 		{
 			reflect.TypeOf((*[7]test.Type8)(nil)),
-			func(cc marshal.CopyContext, addr usermem.Addr, dst interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, dst interface{}) (int, error) {
 				slice := dst.(*[7]test.Type8)[:]
 				return test.CopyType8SliceIn(cc, addr, slice)
 			},
-			func(cc marshal.CopyContext, addr usermem.Addr, src interface{}) (int, error) {
+			func(cc marshal.CopyContext, addr hostarch.Addr, src interface{}) (int, error) {
 				slice := src.(*[7]test.Type8)[:]
 				return test.CopyType8SliceOut(cc, addr, slice)
 			},
@@ -444,7 +445,7 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 			cc.populate(expected)
 			cc.setLimit(limit)
 
-			n, err := tt.copySliceIn(&cc, usermem.Addr(0), actual)
+			n, err := tt.copySliceIn(&cc, hostarch.Addr(0), actual)
 			if n != limit {
 				t.Errorf("CopyIn copied unexpected number of bytes, expected %d, got %d", limit, n)
 			}
@@ -498,7 +499,7 @@ func TestLimitedSliceMarshalling(t *testing.T) {
 			cc.populate(expected)
 			cc.setLimit(limit)
 
-			n, err := tt.copySliceOut(&cc, usermem.Addr(0), expected)
+			n, err := tt.copySliceOut(&cc, hostarch.Addr(0), expected)
 			if n != limit {
 				t.Errorf("CopyIn copied unexpected number of bytes, expected %d, got %d", limit, n)
 			}
@@ -523,14 +524,14 @@ func TestDynamicTypeStruct(t *testing.T) {
 	var cc mockCopyContext
 	cc.setLimit(t12.SizeBytes())
 
-	if _, err := t12.CopyOut(&cc, usermem.Addr(0)); err != nil {
+	if _, err := t12.CopyOut(&cc, hostarch.Addr(0)); err != nil {
 		t.Fatalf("cc.CopyOut faile: %v", err)
 	}
 
 	res := test.Type12Dynamic{
 		Y: make([]primitive.Int64, len(t12.Y)),
 	}
-	res.CopyIn(&cc, usermem.Addr(0))
+	res.CopyIn(&cc, hostarch.Addr(0))
 	if !reflect.DeepEqual(t12, res) {
 		t.Errorf("dynamic type is not same after marshalling and unmarshalling: before = %+v, after = %+v", t12, res)
 	}
@@ -541,12 +542,12 @@ func TestDynamicTypeIdentifier(t *testing.T) {
 	var cc mockCopyContext
 	cc.setLimit(s.SizeBytes())
 
-	if _, err := s.CopyOut(&cc, usermem.Addr(0)); err != nil {
+	if _, err := s.CopyOut(&cc, hostarch.Addr(0)); err != nil {
 		t.Fatalf("cc.CopyOut faile: %v", err)
 	}
 
 	res := test.Type13Dynamic(make([]byte, len(s)))
-	res.CopyIn(&cc, usermem.Addr(0))
+	res.CopyIn(&cc, hostarch.Addr(0))
 	if res != s {
 		t.Errorf("dynamic type is not same after marshalling and unmarshalling: before = %s, after = %s", s, res)
 	}
