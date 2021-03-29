@@ -58,6 +58,8 @@ func (s *State) Fork() State {
 }
 
 // BytePointer returns a pointer to the first byte of the state.
+//
+//go:nosplit
 func (s *State) BytePointer() *byte {
 	return &(*s)[0]
 }
