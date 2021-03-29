@@ -62,9 +62,10 @@ func LoadFloatingPoint(*byte)
 // SaveFloatingPoint saves floating point state.
 func SaveFloatingPoint(*byte)
 
+// FPSIMDDisableTrap disables fpsimd.
 func FPSIMDDisableTrap()
 
-// DisableVFP disables fpsimd.
+// FPSIMDEnableTrap enables fpsimd.
 func FPSIMDEnableTrap()
 
 // Init sets function pointers based on architectural features.

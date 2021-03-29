@@ -436,7 +436,7 @@ func (m *machine) Get() *vCPU {
 			}
 
 			// The vCPU is not be able to transition to
-			// vCPUGuest|vCPUUser or to vCPUUser because that
+			// vCPUGuest|vCPUWaiter or to vCPUUser because that
 			// transition requires holding the machine mutex, as we
 			// do now. There is no path to register a waiter on
 			// just the vCPUReady state.
