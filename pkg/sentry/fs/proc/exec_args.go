@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -113,7 +114,7 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	defer m.DecUsers(ctx)
 
 	// Figure out the bounds of the exec arg we are trying to read.
-	var execArgStart, execArgEnd usermem.Addr
+	var execArgStart, execArgEnd hostarch.Addr
 	switch f.arg {
 	case cmdlineExecArg:
 		execArgStart, execArgEnd = m.ArgvStart(), m.ArgvEnd()
@@ -172,8 +173,8 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 			// https://elixir.bootlin.com/linux/v4.20/source/fs/proc/base.c#L208
 			// we'll return one page total between argv and envp because of the
 			// above page restrictions.
-			if lengthEnvv > usermem.PageSize-len(buf) {
-				lengthEnvv = usermem.PageSize - len(buf)
+			if lengthEnvv > hostarch.PageSize-len(buf) {
+				lengthEnvv = hostarch.PageSize - len(buf)
 			}
 			// Make a new buffer to fit the whole thing
 			tmp := make([]byte, length+lengthEnvv)

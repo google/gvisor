@@ -17,23 +17,23 @@ package pagetables
 import (
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // newAlignedPTEs returns a set of aligned PTEs.
 func newAlignedPTEs() *PTEs {
 	ptes := new(PTEs)
-	offset := physicalFor(ptes) & (usermem.PageSize - 1)
+	offset := physicalFor(ptes) & (hostarch.PageSize - 1)
 	if offset == 0 {
 		// Already aligned.
 		return ptes
 	}
 
 	// Need to force an aligned allocation.
-	unaligned := make([]byte, (2*usermem.PageSize)-1)
-	offset = uintptr(unsafe.Pointer(&unaligned[0])) & (usermem.PageSize - 1)
+	unaligned := make([]byte, (2*hostarch.PageSize)-1)
+	offset = uintptr(unsafe.Pointer(&unaligned[0])) & (hostarch.PageSize - 1)
 	if offset != 0 {
-		offset = usermem.PageSize - offset
+		offset = hostarch.PageSize - offset
 	}
 	return (*PTEs)(unsafe.Pointer(&unaligned[offset]))
 }

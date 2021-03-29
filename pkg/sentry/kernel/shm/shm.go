@@ -38,6 +38,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -47,7 +48,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Key represents a shm segment key. Analogous to a file name.
@@ -197,13 +197,13 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	}
 
 	var sizeAligned uint64
-	if val, ok := usermem.Addr(size).RoundUp(); ok {
+	if val, ok := hostarch.Addr(size).RoundUp(); ok {
 		sizeAligned = uint64(val)
 	} else {
 		return nil, syserror.EINVAL
 	}
 
-	if numPages := sizeAligned / usermem.PageSize; r.totalPages+numPages > linux.SHMALL {
+	if numPages := sizeAligned / hostarch.PageSize; r.totalPages+numPages > linux.SHMALL {
 		// "... allocating a segment of the requested size would cause the
 		// system to exceed the system-wide limit on shared memory (SHMALL)."
 		//   - man shmget(2)
@@ -232,7 +232,7 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
 	}
 
-	effectiveSize := uint64(usermem.Addr(size).MustRoundUp())
+	effectiveSize := uint64(hostarch.Addr(size).MustRoundUp())
 	fr, err := mfp.MemoryFile().Allocate(effectiveSize, usage.Anonymous)
 	if err != nil {
 		return nil, err
@@ -267,7 +267,7 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 			r.shms[id] = shm
 			r.keysToShms[key] = shm
 
-			r.totalPages += effectiveSize / usermem.PageSize
+			r.totalPages += effectiveSize / hostarch.PageSize
 
 			return shm, nil
 		}
@@ -318,7 +318,7 @@ func (r *Registry) remove(s *Shm) {
 	}
 
 	delete(r.shms, s.ID)
-	r.totalPages -= s.effectiveSize / usermem.PageSize
+	r.totalPages -= s.effectiveSize / hostarch.PageSize
 }
 
 // Release drops the self-reference of each active shm segment in the registry.
@@ -386,7 +386,7 @@ type Shm struct {
 	// effectiveSize of the segment, rounding up to the next page
 	// boundary. Immutable.
 	//
-	// Invariant: effectiveSize must be a multiple of usermem.PageSize.
+	// Invariant: effectiveSize must be a multiple of hostarch.PageSize.
 	effectiveSize uint64
 
 	// fr is the offset into mfp.MemoryFile() that backs this contents of this
@@ -467,7 +467,7 @@ func (s *Shm) Msync(context.Context, memmap.MappableRange) error {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.AddrRange, _ uint64, _ bool) error {
+func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ hostarch.AddrRange, _ uint64, _ bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attachTime = ktime.NowFromContext(ctx)
@@ -482,7 +482,7 @@ func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.A
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.AddrRange, _ uint64, _ bool) {
+func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ hostarch.AddrRange, _ uint64, _ bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// RemoveMapping may be called during task exit, when ctx
@@ -503,12 +503,12 @@ func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ userme
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (*Shm) CopyMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, usermem.AddrRange, uint64, bool) error {
+func (*Shm) CopyMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, hostarch.AddrRange, uint64, bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > s.fr.Length() {
 		err = &memmap.BusError{syserror.EFAULT}
@@ -519,7 +519,7 @@ func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableR
 				Source: source,
 				File:   s.mfp.MemoryFile(),
 				Offset: s.fr.Start + source.Start,
-				Perms:  usermem.AnyAccess,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, err
 	}
@@ -543,7 +543,7 @@ type AttachOpts struct {
 //
 // Postconditions: The returned MMapOpts are valid only as long as a reference
 // continues to be held on s.
-func (s *Shm) ConfigureAttach(ctx context.Context, addr usermem.Addr, opts AttachOpts) (memmap.MMapOpts, error) {
+func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts AttachOpts) (memmap.MMapOpts, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pendingDestruction && s.ReadRefs() == 0 {
@@ -565,12 +565,12 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr usermem.Addr, opts Attac
 		Offset: 0,
 		Addr:   addr,
 		Fixed:  opts.Remap,
-		Perms: usermem.AccessType{
+		Perms: hostarch.AccessType{
 			Read:    true,
 			Write:   !opts.Readonly,
 			Execute: opts.Execute,
 		},
-		MaxPerms:        usermem.AnyAccess,
+		MaxPerms:        hostarch.AnyAccess,
 		Mappable:        s,
 		MappingIdentity: s,
 	}, nil

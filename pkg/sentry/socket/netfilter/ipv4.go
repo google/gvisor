@@ -19,11 +19,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // emptyIPv4Filter is for comparison with a rule's filters to determine whether
@@ -142,7 +142,7 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 		}
 		var entry linux.IPTEntry
 		buf := optVal[:linux.SizeOfIPTEntry]
-		binary.Unmarshal(buf, usermem.ByteOrder, &entry)
+		binary.Unmarshal(buf, hostarch.ByteOrder, &entry)
 		initialOptValLen := len(optVal)
 		optVal = optVal[linux.SizeOfIPTEntry:]
 

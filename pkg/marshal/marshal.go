@@ -23,7 +23,7 @@ package marshal
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // CopyContext defines the memory operations required to marshal to and from
@@ -36,11 +36,11 @@ type CopyContext interface {
 
 	// CopyOutBytes writes the contents of b to the task's memory. See
 	// kernel.CopyOutBytes.
-	CopyOutBytes(addr usermem.Addr, b []byte) (int, error)
+	CopyOutBytes(addr hostarch.Addr, b []byte) (int, error)
 
 	// CopyInBytes reads the contents of the task's memory to b. See
 	// kernel.CopyInBytes.
-	CopyInBytes(addr usermem.Addr, b []byte) (int, error)
+	CopyInBytes(addr hostarch.Addr, b []byte) (int, error)
 }
 
 // Marshallable represents operations on a type that can be marshalled to and
@@ -108,7 +108,7 @@ type Marshallable interface {
 	// If the copy-in from the task memory is only partially successful, CopyIn
 	// should still attempt to deserialize as much data as possible. See comment
 	// for UnmarshalBytes.
-	CopyIn(cc CopyContext, addr usermem.Addr) (int, error)
+	CopyIn(cc CopyContext, addr hostarch.Addr) (int, error)
 
 	// CopyOut serializes a Marshallable type to a task's memory. This may only
 	// be called from a task goroutine. This is more efficient than calling
@@ -119,7 +119,7 @@ type Marshallable interface {
 	// The copy-out to the task memory may be partially successful, in which
 	// case CopyOut returns how much data was serialized. See comment for
 	// MarshalBytes for implications.
-	CopyOut(cc CopyContext, addr usermem.Addr) (int, error)
+	CopyOut(cc CopyContext, addr hostarch.Addr) (int, error)
 
 	// CopyOutN is like CopyOut, but explicitly requests a partial
 	// copy-out. Note that this may yield unexpected results for non-packed
@@ -127,7 +127,7 @@ type Marshallable interface {
 	// comment on MarshalBytes.
 	//
 	// The limit must be less than or equal to SizeBytes().
-	CopyOutN(cc CopyContext, addr usermem.Addr, limit int) (int, error)
+	CopyOutN(cc CopyContext, addr hostarch.Addr, limit int) (int, error)
 }
 
 // go-marshal generates additional functions for a type based on additional
@@ -157,10 +157,10 @@ type Marshallable interface {
 // func UnmarshalUnsafeFooSlice(dst []Foo, src []byte) (int, error) { ... }
 //
 // // CopyFooSliceIn copies in a slice of Foo objects from the task's memory.
-// func CopyFooSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Foo) (int, error) { ... }
+// func CopyFooSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []Foo) (int, error) { ... }
 //
 // // CopyFooSliceIn copies out a slice of Foo objects to the task's memory.
-// func CopyFooSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []Foo) (int, error) { ... }
+// func CopyFooSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []Foo) (int, error) { ... }
 //
 // The name of the functions are of the format "Copy%sIn" and "Copy%sOut", where
 // %s is the first argument to the slice clause. This directive is not supported
@@ -175,10 +175,10 @@ type Marshallable interface {
 // This is only valid on newtypes on primitives, and causes the generated
 // functions to accept slices of the inner type instead:
 //
-// func CopyInt32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int32) (int, error) { ... }
+// func CopyInt32SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int32) (int, error) { ... }
 //
 // Without "inner", they would instead be:
 //
-// func CopyInt32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Int32) (int, error) { ... }
+// func CopyInt32SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []Int32) (int, error) { ... }
 //
 // This may help avoid a cast depending on how the generated functions are used.

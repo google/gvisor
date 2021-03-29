@@ -17,10 +17,10 @@ package kernel
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // vdsoParams are the parameters exposed to the VDSO.
@@ -96,7 +96,7 @@ func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSO
 
 // access returns a mapping of the param page.
 func (v *VDSOParamPage) access() (safemem.Block, error) {
-	bs, err := v.mfp.MemoryFile().MapInternal(v.fr, usermem.ReadWrite)
+	bs, err := v.mfp.MemoryFile().MapInternal(v.fr, hostarch.ReadWrite)
 	if err != nil {
 		return safemem.Block{}, err
 	}

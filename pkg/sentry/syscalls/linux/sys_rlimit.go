@@ -16,12 +16,12 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // rlimit describes an implementation of 'struct rlimit', which may vary from
@@ -67,12 +67,12 @@ func (r *rlimit64) fromLimit(lim limits.Limit) {
 	}
 }
 
-func (r *rlimit64) copyIn(t *kernel.Task, addr usermem.Addr) error {
+func (r *rlimit64) copyIn(t *kernel.Task, addr hostarch.Addr) error {
 	_, err := r.CopyIn(t, addr)
 	return err
 }
 
-func (r *rlimit64) copyOut(t *kernel.Task, addr usermem.Addr) error {
+func (r *rlimit64) copyOut(t *kernel.Task, addr hostarch.Addr) error {
 	_, err := r.CopyOut(t, addr)
 	return err
 }

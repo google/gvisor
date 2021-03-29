@@ -14,7 +14,7 @@
 
 // +build arm64
 
-package usermem
+package hostarch
 
 import (
 	"encoding/binary"

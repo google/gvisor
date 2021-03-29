@@ -10,9 +10,9 @@ package kernel
 
 import (
     "gvisor.dev/gvisor/pkg/gohacks"
+    "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
     "gvisor.dev/gvisor/pkg/safecopy"
-    "gvisor.dev/gvisor/pkg/usermem"
     "io"
     "reflect"
     "runtime"
@@ -31,12 +31,12 @@ func (tid *ThreadID) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (tid *ThreadID) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*tid))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(*tid))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (tid *ThreadID) UnmarshalBytes(src []byte) {
-    *tid = ThreadID(int32(usermem.ByteOrder.Uint32(src[:4])))
+    *tid = ThreadID(int32(hostarch.ByteOrder.Uint32(src[:4])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -58,7 +58,7 @@ func (tid *ThreadID) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (tid *ThreadID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (tid *ThreadID) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -75,13 +75,13 @@ func (tid *ThreadID) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (tid *ThreadID) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (tid *ThreadID) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return tid.CopyOutN(cc, addr, tid.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (tid *ThreadID) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (tid *ThreadID) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -119,41 +119,41 @@ func (v *vdsoParams) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (v *vdsoParams) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicReady))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicReady))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicBaseCycles))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicBaseCycles))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicBaseRef))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicBaseRef))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicFrequency))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.monotonicFrequency))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeReady))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeReady))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeBaseCycles))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeBaseCycles))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeBaseRef))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeBaseRef))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeFrequency))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(v.realtimeFrequency))
     dst = dst[8:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (v *vdsoParams) UnmarshalBytes(src []byte) {
-    v.monotonicReady = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    v.monotonicReady = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.monotonicBaseCycles = int64(usermem.ByteOrder.Uint64(src[:8]))
+    v.monotonicBaseCycles = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.monotonicBaseRef = int64(usermem.ByteOrder.Uint64(src[:8]))
+    v.monotonicBaseRef = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.monotonicFrequency = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    v.monotonicFrequency = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.realtimeReady = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    v.realtimeReady = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.realtimeBaseCycles = int64(usermem.ByteOrder.Uint64(src[:8]))
+    v.realtimeBaseCycles = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.realtimeBaseRef = int64(usermem.ByteOrder.Uint64(src[:8]))
+    v.realtimeBaseRef = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    v.realtimeFrequency = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    v.realtimeFrequency = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 
@@ -175,7 +175,7 @@ func (v *vdsoParams) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (v *vdsoParams) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (v *vdsoParams) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -192,13 +192,13 @@ func (v *vdsoParams) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (v *vdsoParams) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (v *vdsoParams) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return v.CopyOutN(cc, addr, v.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (v *vdsoParams) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (v *vdsoParams) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))

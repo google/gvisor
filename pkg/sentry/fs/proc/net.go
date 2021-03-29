@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
@@ -35,7 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LINT.IfChange
@@ -367,10 +367,10 @@ func (n *netRoute) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 		)
 		if len(rt.GatewayAddr) == header.IPv4AddressSize {
 			flags |= linux.RTF_GATEWAY
-			gw = usermem.ByteOrder.Uint32(rt.GatewayAddr)
+			gw = hostarch.ByteOrder.Uint32(rt.GatewayAddr)
 		}
 		if len(rt.DstAddr) == header.IPv4AddressSize {
-			prefix = usermem.ByteOrder.Uint32(rt.DstAddr)
+			prefix = hostarch.ByteOrder.Uint32(rt.DstAddr)
 		}
 		l := fmt.Sprintf(
 			"%s\t%08X\t%08X\t%04X\t%d\t%d\t%d\t%08X\t%d\t%d\t%d",
@@ -520,7 +520,7 @@ func networkToHost16(n uint16) uint16 {
 	// binary.BigEndian.Uint16() require a read of binary.BigEndian and an
 	// interface method call, defeating inlining.
 	buf := [2]byte{byte(n >> 8 & 0xff), byte(n & 0xff)}
-	return usermem.ByteOrder.Uint16(buf[:])
+	return hostarch.ByteOrder.Uint16(buf[:])
 }
 
 func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
@@ -542,14 +542,14 @@ func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
 		// __be32 which is a typedef for an unsigned int, and is printed with
 		// %X. This means that for a little-endian machine, Linux prints the
 		// least-significant byte of the address first. To emulate this, we first
-		// invert the byte order for the address using usermem.ByteOrder.Uint32,
+		// invert the byte order for the address using hostarch.ByteOrder.Uint32,
 		// which makes it have the equivalent encoding to a __be32 on a little
 		// endian machine. Note that this operation is a no-op on a big endian
 		// machine. Then similar to Linux, we format it with %X, which will print
 		// the most-significant byte of the __be32 address first, which is now
 		// actually the least-significant byte of the original address in
 		// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
-		addr := usermem.ByteOrder.Uint32(a.Addr[:])
+		addr := hostarch.ByteOrder.Uint32(a.Addr[:])
 
 		fmt.Fprintf(w, "%08X:%04X ", addr, port)
 	case linux.AF_INET6:
@@ -559,10 +559,10 @@ func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
 		}
 
 		port := networkToHost16(a.Port)
-		addr0 := usermem.ByteOrder.Uint32(a.Addr[0:4])
-		addr1 := usermem.ByteOrder.Uint32(a.Addr[4:8])
-		addr2 := usermem.ByteOrder.Uint32(a.Addr[8:12])
-		addr3 := usermem.ByteOrder.Uint32(a.Addr[12:16])
+		addr0 := hostarch.ByteOrder.Uint32(a.Addr[0:4])
+		addr1 := hostarch.ByteOrder.Uint32(a.Addr[4:8])
+		addr2 := hostarch.ByteOrder.Uint32(a.Addr[8:12])
+		addr3 := hostarch.ByteOrder.Uint32(a.Addr[12:16])
 		fmt.Fprintf(w, "%08X%08X%08X%08X:%04X ", addr0, addr1, addr2, addr3, port)
 	}
 }

@@ -13,9 +13,9 @@ package arch
 import (
     "gvisor.dev/gvisor/pkg/abi/linux"
     "gvisor.dev/gvisor/pkg/gohacks"
+    "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
     "gvisor.dev/gvisor/pkg/safecopy"
-    "gvisor.dev/gvisor/pkg/usermem"
     "io"
     "reflect"
     "runtime"
@@ -36,11 +36,11 @@ func (s *SignalAct) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SignalAct) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Handler))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Handler))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Flags))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Flags))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Restorer))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Restorer))
     dst = dst[8:]
     s.Mask.MarshalBytes(dst[:s.Mask.SizeBytes()])
     dst = dst[s.Mask.SizeBytes():]
@@ -48,11 +48,11 @@ func (s *SignalAct) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SignalAct) UnmarshalBytes(src []byte) {
-    s.Handler = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Handler = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Flags = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Flags = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Restorer = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Restorer = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     s.Mask.UnmarshalBytes(src[:s.Mask.SizeBytes()])
     src = src[s.Mask.SizeBytes():]
@@ -86,7 +86,7 @@ func (s *SignalAct) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SignalAct) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SignalAct) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !s.Mask.Packed() {
         // Type SignalAct doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
@@ -110,13 +110,13 @@ func (s *SignalAct) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit in
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SignalAct) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalAct) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SignalAct) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalAct) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !s.Mask.Packed() {
         // Type SignalAct doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
@@ -173,11 +173,11 @@ func (s *SignalInfo) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SignalInfo) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Signo))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Signo))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Errno))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Errno))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Code))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Code))
     dst = dst[4:]
     // Padding: dst[:sizeof(uint32)] ~= uint32(0)
     dst = dst[4:]
@@ -189,11 +189,11 @@ func (s *SignalInfo) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SignalInfo) UnmarshalBytes(src []byte) {
-    s.Signo = int32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Signo = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Errno = int32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Errno = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Code = int32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Code = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ uint32 ~= src[:sizeof(uint32)]
     src = src[4:]
@@ -221,7 +221,7 @@ func (s *SignalInfo) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SignalInfo) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SignalInfo) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -238,13 +238,13 @@ func (s *SignalInfo) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SignalInfo) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalInfo) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SignalInfo) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalInfo) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -282,25 +282,25 @@ func (s *SignalStack) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SignalStack) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Addr))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Addr))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Flags))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Flags))
     dst = dst[4:]
     // Padding: dst[:sizeof(uint32)] ~= uint32(0)
     dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Size))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Size))
     dst = dst[8:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *SignalStack) UnmarshalBytes(src []byte) {
-    s.Addr = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Addr = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Flags = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Flags = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ uint32 ~= src[:sizeof(uint32)]
     src = src[4:]
-    s.Size = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Size = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 
@@ -322,7 +322,7 @@ func (s *SignalStack) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SignalStack) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SignalStack) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -339,13 +339,13 @@ func (s *SignalStack) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit 
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SignalStack) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalStack) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SignalStack) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SignalStack) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))

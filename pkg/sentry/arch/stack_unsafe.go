@@ -17,19 +17,19 @@ package arch
 import (
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // pushAddrSliceAndTerminator copies a slices of addresses to the stack, and
 // also pushes an extra null address element at the end of the slice.
 //
 // Internally, we unsafely transmute the slice type from the arch-dependent
-// []usermem.Addr type, to a slice of fixed-sized ints so that we can pass it to
+// []hostarch.Addr type, to a slice of fixed-sized ints so that we can pass it to
 // go-marshal.
 //
 // On error, the contents of the stack and the bottom cursor are undefined.
-func (s *Stack) pushAddrSliceAndTerminator(src []usermem.Addr) (int, error) {
+func (s *Stack) pushAddrSliceAndTerminator(src []hostarch.Addr) (int, error) {
 	// Note: Stack grows upwards, so push the terminator first.
 	switch s.Arch.Width() {
 	case 8:

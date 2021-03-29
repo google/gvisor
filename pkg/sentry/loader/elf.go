@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -41,7 +42,7 @@ const (
 
 	// maxTotalPhdrSize is the maximum combined size of all program
 	// headers.  Linux limits this to one page.
-	maxTotalPhdrSize = usermem.PageSize
+	maxTotalPhdrSize = hostarch.PageSize
 )
 
 var (
@@ -52,8 +53,8 @@ var (
 	prog64Size = int(binary.Size(elf.Prog64{}))
 )
 
-func progFlagsAsPerms(f elf.ProgFlag) usermem.AccessType {
-	var p usermem.AccessType
+func progFlagsAsPerms(f elf.ProgFlag) hostarch.AccessType {
+	var p hostarch.AccessType
 	if f&elf.PF_R == elf.PF_R {
 		p.Read = true
 	}
@@ -75,7 +76,7 @@ type elfInfo struct {
 	arch arch.Arch
 
 	// entry is the program entry point.
-	entry usermem.Addr
+	entry hostarch.Addr
 
 	// phdrs are the program headers.
 	phdrs []elf.ProgHeader
@@ -230,7 +231,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	return elfInfo{
 		os:           os,
 		arch:         a,
-		entry:        usermem.Addr(hdr.Entry),
+		entry:        hostarch.Addr(hdr.Entry),
 		phdrs:        phdrs,
 		phdrOff:      hdr.Phoff,
 		phdrSize:     prog64Size,
@@ -240,9 +241,9 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 
 // mapSegment maps a phdr into the Task. offset is the offset to apply to
 // phdr.Vaddr.
-func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr *elf.ProgHeader, offset usermem.Addr) error {
+func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr *elf.ProgHeader, offset hostarch.Addr) error {
 	// We must make a page-aligned mapping.
-	adjust := usermem.Addr(phdr.Vaddr).PageOffset()
+	adjust := hostarch.Addr(phdr.Vaddr).PageOffset()
 
 	addr, ok := offset.AddLength(phdr.Vaddr)
 	if !ok {
@@ -250,14 +251,14 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		ctx.Warningf("Computed segment load address overflows: %#x + %#x", phdr.Vaddr, offset)
 		return syserror.ENOEXEC
 	}
-	addr -= usermem.Addr(adjust)
+	addr -= hostarch.Addr(adjust)
 
 	fileSize := phdr.Filesz + adjust
 	if fileSize < phdr.Filesz {
 		ctx.Infof("Computed segment file size overflows: %#x + %#x", phdr.Filesz, adjust)
 		return syserror.ENOEXEC
 	}
-	ms, ok := usermem.Addr(fileSize).RoundUp()
+	ms, ok := hostarch.Addr(fileSize).RoundUp()
 	if !ok {
 		ctx.Infof("fileSize %#x too large", fileSize)
 		return syserror.ENOEXEC
@@ -281,7 +282,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 			Unmap:    true,
 			Private:  true,
 			Perms:    prot,
-			MaxPerms: usermem.AnyAccess,
+			MaxPerms: hostarch.AnyAccess,
 		}
 		defer func() {
 			if mopts.MappingIdentity != nil {
@@ -312,7 +313,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 				panic(fmt.Sprintf("zeroSize too big? %#x", uint64(zeroSize)))
 			}
 			if _, err := m.ZeroOut(ctx, zeroAddr, zeroSize, usermem.IOOpts{IgnorePermissions: true}); err != nil {
-				ctx.Warningf("Failed to zero end of page [%#x, %#x): %v", zeroAddr, zeroAddr+usermem.Addr(zeroSize), err)
+				ctx.Warningf("Failed to zero end of page [%#x, %#x): %v", zeroAddr, zeroAddr+hostarch.Addr(zeroSize), err)
 				return err
 			}
 		}
@@ -330,7 +331,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		if !ok {
 			panic(fmt.Sprintf("anonymous memory doesn't fit in pre-sized range? %#x + %#x", addr, mapSize))
 		}
-		anonSize, ok := usermem.Addr(memSize - mapSize).RoundUp()
+		anonSize, ok := hostarch.Addr(memSize - mapSize).RoundUp()
 		if !ok {
 			ctx.Infof("extra anon pages too large: %#x", memSize-mapSize)
 			return syserror.ENOEXEC
@@ -339,7 +340,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		// N.B. Linux uses vm_brk_flags to map these pages, which only
 		// honors the X bit, always mapping at least RW. ignoring These
 		// pages are not included in the final brk region.
-		prot := usermem.ReadWrite
+		prot := hostarch.ReadWrite
 		if phdr.Flags&elf.PF_X == elf.PF_X {
 			prot.Execute = true
 		}
@@ -352,7 +353,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 			Fixed:    true,
 			Private:  true,
 			Perms:    prot,
-			MaxPerms: usermem.AnyAccess,
+			MaxPerms: hostarch.AnyAccess,
 		}); err != nil {
 			ctx.Infof("Error mapping PT_LOAD segment %v anonymous memory: %v", phdr, err)
 			return err
@@ -371,19 +372,19 @@ type loadedELF struct {
 	arch arch.Arch
 
 	// entry is the entry point of the ELF.
-	entry usermem.Addr
+	entry hostarch.Addr
 
 	// start is the end of the ELF.
-	start usermem.Addr
+	start hostarch.Addr
 
 	// end is the end of the ELF.
-	end usermem.Addr
+	end hostarch.Addr
 
 	// interpter is the path to the ELF interpreter.
 	interpreter string
 
 	// phdrAddr is the address of the ELF program headers.
-	phdrAddr usermem.Addr
+	phdrAddr hostarch.Addr
 
 	// phdrSize is the size of a single program header in the ELF.
 	phdrSize int
@@ -407,14 +408,14 @@ type loadedELF struct {
 // It does not load the ELF interpreter, or return any auxv entries.
 //
 // Preconditions: f is an ELF file.
-func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset usermem.Addr) (loadedELF, error) {
+func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, info elfInfo, sharedLoadOffset hostarch.Addr) (loadedELF, error) {
 	first := true
-	var start, end usermem.Addr
+	var start, end hostarch.Addr
 	var interpreter string
 	for _, phdr := range info.phdrs {
 		switch phdr.Type {
 		case elf.PT_LOAD:
-			vaddr := usermem.Addr(phdr.Vaddr)
+			vaddr := hostarch.Addr(phdr.Vaddr)
 			if first {
 				first = false
 				start = vaddr
@@ -492,7 +493,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 	// Note that the vaddr of the first PT_LOAD segment is ignored when
 	// choosing the load address (even if it is non-zero). The vaddr does
 	// become an offset from that load address.
-	var offset usermem.Addr
+	var offset hostarch.Addr
 	if info.sharedObject {
 		totalSize := end - start
 		totalSize, ok := totalSize.RoundUp()
@@ -688,8 +689,8 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 	// ELF-specific auxv entries.
 	bin.auxv = arch.Auxv{
 		arch.AuxEntry{linux.AT_PHDR, bin.phdrAddr},
-		arch.AuxEntry{linux.AT_PHENT, usermem.Addr(bin.phdrSize)},
-		arch.AuxEntry{linux.AT_PHNUM, usermem.Addr(bin.phdrNum)},
+		arch.AuxEntry{linux.AT_PHENT, hostarch.Addr(bin.phdrSize)},
+		arch.AuxEntry{linux.AT_PHNUM, hostarch.Addr(bin.phdrNum)},
 		arch.AuxEntry{linux.AT_ENTRY, bin.entry},
 	}
 	if bin.interpreter != "" {

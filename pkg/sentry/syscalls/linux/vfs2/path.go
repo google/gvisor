@@ -20,10 +20,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-func copyInPath(t *kernel.Task, addr usermem.Addr) (fspath.Path, error) {
+func copyInPath(t *kernel.Task, addr hostarch.Addr) (fspath.Path, error) {
 	pathname, err := t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return fspath.Path{}, err

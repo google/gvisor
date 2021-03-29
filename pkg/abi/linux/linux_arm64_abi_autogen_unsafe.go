@@ -15,9 +15,9 @@ package linux
 
 import (
     "gvisor.dev/gvisor/pkg/gohacks"
+    "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
     "gvisor.dev/gvisor/pkg/safecopy"
-    "gvisor.dev/gvisor/pkg/usermem"
     "io"
     "reflect"
     "runtime"
@@ -41,24 +41,24 @@ func (e *EpollEvent) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (e *EpollEvent) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(e.Events))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Events))
     dst = dst[4:]
     // Padding: dst[:sizeof(int32)] ~= int32(0)
     dst = dst[4:]
     for idx := 0; idx < 2; idx++ {
-        usermem.ByteOrder.PutUint32(dst[:4], uint32(e.Data[idx]))
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(e.Data[idx]))
         dst = dst[4:]
     }
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (e *EpollEvent) UnmarshalBytes(src []byte) {
-    e.Events = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    e.Events = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ int32 ~= src[:sizeof(int32)]
     src = src[4:]
     for idx := 0; idx < 2; idx++ {
-        e.Data[idx] = int32(usermem.ByteOrder.Uint32(src[:4]))
+        e.Data[idx] = int32(hostarch.ByteOrder.Uint32(src[:4]))
         src = src[4:]
     }
 }
@@ -81,7 +81,7 @@ func (e *EpollEvent) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (e *EpollEvent) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (e *EpollEvent) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -98,13 +98,13 @@ func (e *EpollEvent) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (e *EpollEvent) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (e *EpollEvent) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return e.CopyOutN(cc, addr, e.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (e *EpollEvent) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (e *EpollEvent) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -136,7 +136,7 @@ func (e *EpollEvent) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // CopyEpollEventSliceIn copies in a slice of EpollEvent objects from the task's memory.
-func CopyEpollEventSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []EpollEvent) (int, error) {
+func CopyEpollEventSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []EpollEvent) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -161,7 +161,7 @@ func CopyEpollEventSliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []Epol
 }
 
 // CopyEpollEventSliceOut copies a slice of EpollEvent objects to the task's memory.
-func CopyEpollEventSliceOut(cc marshal.CopyContext, addr usermem.Addr, src []EpollEvent) (int, error) {
+func CopyEpollEventSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []EpollEvent) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -232,29 +232,29 @@ func (s *Stat) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *Stat) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Dev))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Dev))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Ino))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Ino))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Mode))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Mode))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Nlink))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Nlink))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.UID))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.UID))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.GID))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.GID))
     dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Rdev))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Rdev))
     dst = dst[8:]
     // Padding: dst[:sizeof(uint64)] ~= uint64(0)
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Size))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Size))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(s.Blksize))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(s.Blksize))
     dst = dst[4:]
     // Padding: dst[:sizeof(int32)] ~= int32(0)
     dst = dst[4:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.Blocks))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.Blocks))
     dst = dst[8:]
     s.ATime.MarshalBytes(dst[:s.ATime.SizeBytes()])
     dst = dst[s.ATime.SizeBytes():]
@@ -268,29 +268,29 @@ func (s *Stat) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (s *Stat) UnmarshalBytes(src []byte) {
-    s.Dev = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Dev = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Ino = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Ino = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Mode = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Mode = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Nlink = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Nlink = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.UID = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.UID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.GID = uint32(usermem.ByteOrder.Uint32(src[:4]))
+    s.GID = uint32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
-    s.Rdev = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Rdev = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     // Padding: var _ uint64 ~= src[:sizeof(uint64)]
     src = src[8:]
-    s.Size = int64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Size = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.Blksize = int32(usermem.ByteOrder.Uint32(src[:4]))
+    s.Blksize = int32(hostarch.ByteOrder.Uint32(src[:4]))
     src = src[4:]
     // Padding: var _ int32 ~= src[:sizeof(int32)]
     src = src[4:]
-    s.Blocks = int64(usermem.ByteOrder.Uint64(src[:8]))
+    s.Blocks = int64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
     s.ATime.UnmarshalBytes(src[:s.ATime.SizeBytes()])
     src = src[s.ATime.SizeBytes():]
@@ -330,7 +330,7 @@ func (s *Stat) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *Stat) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *Stat) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !s.ATime.Packed() && s.CTime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
@@ -354,13 +354,13 @@ func (s *Stat) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *Stat) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *Stat) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *Stat) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *Stat) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !s.ATime.Packed() && s.CTime.Packed() && s.MTime.Packed() {
         // Type Stat doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
@@ -418,28 +418,28 @@ func (p *PtraceRegs) SizeBytes() int {
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (p *PtraceRegs) MarshalBytes(dst []byte) {
     for idx := 0; idx < 31; idx++ {
-        usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Regs[idx]))
+        hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Regs[idx]))
         dst = dst[8:]
     }
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Sp))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Sp))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Pc))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Pc))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(p.Pstate))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(p.Pstate))
     dst = dst[8:]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (p *PtraceRegs) UnmarshalBytes(src []byte) {
     for idx := 0; idx < 31; idx++ {
-        p.Regs[idx] = uint64(usermem.ByteOrder.Uint64(src[:8]))
+        p.Regs[idx] = uint64(hostarch.ByteOrder.Uint64(src[:8]))
         src = src[8:]
     }
-    p.Sp = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    p.Sp = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    p.Pc = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    p.Pc = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    p.Pstate = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    p.Pstate = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 
@@ -461,7 +461,7 @@ func (p *PtraceRegs) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (p *PtraceRegs) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (p *PtraceRegs) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -478,13 +478,13 @@ func (p *PtraceRegs) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (p *PtraceRegs) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (p *PtraceRegs) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return p.CopyOutN(cc, addr, p.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (p *PtraceRegs) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (p *PtraceRegs) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -531,11 +531,11 @@ func (s *SemidDS) MarshalBytes(dst []byte) {
     dst = dst[s.SemOTime.SizeBytes():]
     s.SemCTime.MarshalBytes(dst[:s.SemCTime.SizeBytes()])
     dst = dst[s.SemCTime.SizeBytes():]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.SemNSems))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.SemNSems))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.unused3))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.unused3))
     dst = dst[8:]
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(s.unused4))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(s.unused4))
     dst = dst[8:]
 }
 
@@ -547,11 +547,11 @@ func (s *SemidDS) UnmarshalBytes(src []byte) {
     src = src[s.SemOTime.SizeBytes():]
     s.SemCTime.UnmarshalBytes(src[:s.SemCTime.SizeBytes()])
     src = src[s.SemCTime.SizeBytes():]
-    s.SemNSems = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.SemNSems = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.unused3 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.unused3 = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
-    s.unused4 = uint64(usermem.ByteOrder.Uint64(src[:8]))
+    s.unused4 = uint64(hostarch.ByteOrder.Uint64(src[:8]))
     src = src[8:]
 }
 
@@ -583,7 +583,7 @@ func (s *SemidDS) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (s *SemidDS) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (s *SemidDS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !s.SemCTime.Packed() && s.SemOTime.Packed() && s.SemPerm.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.
@@ -607,13 +607,13 @@ func (s *SemidDS) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int)
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (s *SemidDS) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SemidDS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (s *SemidDS) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (s *SemidDS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     if !s.SemCTime.Packed() && s.SemOTime.Packed() && s.SemPerm.Packed() {
         // Type SemidDS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(s.SizeBytes()) // escapes: okay.

@@ -19,7 +19,7 @@ package pagetables
 import (
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // archPageTables is architecture-specific data.
@@ -63,7 +63,7 @@ const (
 // MapOpts are x86 options.
 type MapOpts struct {
 	// AccessType defines permissions.
-	AccessType usermem.AccessType
+	AccessType hostarch.AccessType
 
 	// Global indicates the page is globally accessible.
 	Global bool
@@ -97,7 +97,7 @@ func (p *PTE) Valid() bool {
 func (p *PTE) Opts() MapOpts {
 	v := atomic.LoadUintptr((*uintptr)(p))
 	return MapOpts{
-		AccessType: usermem.AccessType{
+		AccessType: hostarch.AccessType{
 			Read:    v&present != 0,
 			Write:   v&writable != 0,
 			Execute: v&executeDisable == 0,

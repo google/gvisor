@@ -20,12 +20,12 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // InodeNoopRefCount partially implements the Inode interface, specifically the
@@ -206,7 +206,7 @@ func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor
 	atomic.StoreUint32(&a.uid, uint32(creds.EffectiveKUID))
 	atomic.StoreUint32(&a.gid, uint32(creds.EffectiveKGID))
 	atomic.StoreUint32(&a.nlink, nlink)
-	atomic.StoreUint32(&a.blockSize, usermem.PageSize)
+	atomic.StoreUint32(&a.blockSize, hostarch.PageSize)
 	now := ktime.NowFromContext(ctx).Nanoseconds()
 	atomic.StoreInt64(&a.atime, now)
 	atomic.StoreInt64(&a.mtime, now)

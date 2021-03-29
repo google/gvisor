@@ -26,7 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // SocketFamily are the possible socket(2) families.
@@ -161,7 +162,7 @@ var controlMessageType = map[int32]string{
 	linux.SO_TIMESTAMP:    "SO_TIMESTAMP",
 }
 
-func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) string {
+func cmsghdr(t *kernel.Task, addr hostarch.Addr, length uint64, maxBytes uint64) string {
 	if length > maxBytes {
 		return fmt.Sprintf("%#x (error decoding control: invalid length (%d))", addr, length)
 	}
@@ -180,7 +181,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 		}
 
 		var h linux.ControlMessageHeader
-		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], usermem.ByteOrder, &h)
+		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], hostarch.ByteOrder, &h)
 
 		var skipData bool
 		level := "SOL_SOCKET"
@@ -230,7 +231,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 			numRights := rightsSize / linux.SizeOfControlMessageRight
 			fds := make(linux.ControlMessageRights, numRights)
-			binary.Unmarshal(buf[i:i+rightsSize], usermem.ByteOrder, &fds)
+			binary.Unmarshal(buf[i:i+rightsSize], hostarch.ByteOrder, &fds)
 
 			rights := make([]string, 0, len(fds))
 			for _, fd := range fds {
@@ -257,7 +258,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			}
 
 			var creds linux.ControlMessageCredentials
-			binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageCredentials], usermem.ByteOrder, &creds)
+			binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageCredentials], hostarch.ByteOrder, &creds)
 
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, pid: %d, uid: %d, gid: %d}",
@@ -281,7 +282,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			}
 
 			var tv linux.Timeval
-			binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &tv)
+			binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], hostarch.ByteOrder, &tv)
 
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, Sec: %d, Usec: %d}",
@@ -301,7 +302,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 	return fmt.Sprintf("%#x %s", addr, strings.Join(strs, ", "))
 }
 
-func msghdr(t *kernel.Task, addr usermem.Addr, printContent bool, maxBytes uint64) string {
+func msghdr(t *kernel.Task, addr hostarch.Addr, printContent bool, maxBytes uint64) string {
 	var msg slinux.MessageHeader64
 	if _, err := msg.CopyIn(t, addr); err != nil {
 		return fmt.Sprintf("%#x (error decoding msghdr: %v)", addr, err)
@@ -311,17 +312,17 @@ func msghdr(t *kernel.Task, addr usermem.Addr, printContent bool, maxBytes uint6
 		addr,
 		msg.Name,
 		msg.NameLen,
-		iovecs(t, usermem.Addr(msg.Iov), int(msg.IovLen), printContent, maxBytes),
+		iovecs(t, hostarch.Addr(msg.Iov), int(msg.IovLen), printContent, maxBytes),
 	)
 	if printContent {
-		s = fmt.Sprintf("%s, control={%s}", s, cmsghdr(t, usermem.Addr(msg.Control), msg.ControlLen, maxBytes))
+		s = fmt.Sprintf("%s, control={%s}", s, cmsghdr(t, hostarch.Addr(msg.Control), msg.ControlLen, maxBytes))
 	} else {
 		s = fmt.Sprintf("%s, control=%#x, control_len=%d", s, msg.Control, msg.ControlLen)
 	}
 	return fmt.Sprintf("%s, flags=%d}", s, msg.Flags)
 }
 
-func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
+func sockAddr(t *kernel.Task, addr hostarch.Addr, length uint32) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -335,7 +336,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 	if len(b) < 2 {
 		return fmt.Sprintf("%#x {address too short: %d bytes}", addr, len(b))
 	}
-	family := usermem.ByteOrder.Uint16(b)
+	family := hostarch.ByteOrder.Uint16(b)
 
 	familyStr := SocketFamily.Parse(uint64(family))
 
@@ -362,7 +363,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 	}
 }
 
-func postSockAddr(t *kernel.Task, addr usermem.Addr, lengthPtr usermem.Addr) string {
+func postSockAddr(t *kernel.Task, addr hostarch.Addr, lengthPtr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -379,14 +380,14 @@ func postSockAddr(t *kernel.Task, addr usermem.Addr, lengthPtr usermem.Addr) str
 	return sockAddr(t, addr, l)
 }
 
-func copySockLen(t *kernel.Task, addr usermem.Addr) (uint32, error) {
+func copySockLen(t *kernel.Task, addr hostarch.Addr) (uint32, error) {
 	// socklen_t is 32-bits.
 	var l primitive.Uint32
 	_, err := l.CopyIn(t, addr)
 	return uint32(l), err
 }
 
-func sockLenPointer(t *kernel.Task, addr usermem.Addr) string {
+func sockLenPointer(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -420,7 +421,7 @@ func sockFlags(flags int32) string {
 	return SocketFlagSet.Parse(uint64(flags))
 }
 
-func getSockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, optLen usermem.Addr, maximumBlobSize uint, rval uintptr) string {
+func getSockOptVal(t *kernel.Task, level, optname uint64, optVal hostarch.Addr, optLen hostarch.Addr, maximumBlobSize uint, rval uintptr) string {
 	if int(rval) < 0 {
 		return hexNum(uint64(optVal))
 	}
@@ -434,7 +435,7 @@ func getSockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, o
 	return sockOptVal(t, level, optname, optVal, uint64(l), maximumBlobSize)
 }
 
-func sockOptVal(t *kernel.Task, level, optname uint64, optVal usermem.Addr, optLen uint64, maximumBlobSize uint) string {
+func sockOptVal(t *kernel.Task, level, optname uint64, optVal hostarch.Addr, optLen uint64, maximumBlobSize uint) string {
 	switch optLen {
 	case 1:
 		var v primitive.Uint8

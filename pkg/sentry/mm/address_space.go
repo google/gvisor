@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // AddressSpace returns the platform.AddressSpace bound to mm.
@@ -172,17 +172,17 @@ func (mm *MemoryManager) Deactivate() {
 // * ar.Length() != 0.
 // * ar must be page-aligned.
 // * pseg == mm.pmas.LowerBoundSegment(ar.Start).
-func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar usermem.AddrRange, precommit bool) error {
+func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, precommit bool) error {
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
-	mapAR := usermem.AddrRange{0, ^usermem.Addr(usermem.PageSize - 1)}
+	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}
 	if precommit {
 		// When explicitly precommitting, only map ar, since overmapping may
 		// incur unexpected resource usage.
 		mapAR = ar
 	} else if mapUnit := mm.p.MapUnit(); mapUnit != 0 {
 		// Limit the range we map to ar, aligned to mapUnit.
-		mapMask := usermem.Addr(mapUnit - 1)
+		mapMask := hostarch.Addr(mapUnit - 1)
 		mapAR.Start = ar.Start &^ mapMask
 		// If rounding ar.End up overflows, just keep the existing mapAR.End.
 		if end := (ar.End + mapMask) &^ mapMask; end >= ar.End {
@@ -218,7 +218,7 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar usermem.AddrRange, pre
 // unmapASLocked removes all AddressSpace mappings for addresses in ar.
 //
 // Preconditions: mm.activeMu must be locked.
-func (mm *MemoryManager) unmapASLocked(ar usermem.AddrRange) {
+func (mm *MemoryManager) unmapASLocked(ar hostarch.AddrRange) {
 	if mm.as == nil {
 		// No AddressSpace? Force all mappings to be unmapped on the next
 		// Activate.

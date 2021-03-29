@@ -19,11 +19,11 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // The virtual filesystem implements an overlay configuration. For a high-level
@@ -274,7 +274,7 @@ func (o *overlayEntry) markDirectoryDirty() {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (o *overlayEntry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (o *overlayEntry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
 	if err := o.inodeLocked().Mappable().AddMapping(ctx, ms, ar, offset, writable); err != nil {
@@ -285,7 +285,7 @@ func (o *overlayEntry) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (o *overlayEntry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (o *overlayEntry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
 	o.inodeLocked().Mappable().RemoveMapping(ctx, ms, ar, offset, writable)
@@ -293,7 +293,7 @@ func (o *overlayEntry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (o *overlayEntry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (o *overlayEntry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
 	if err := o.inodeLocked().Mappable().CopyMapping(ctx, ms, srcAR, dstAR, offset, writable); err != nil {
@@ -304,7 +304,7 @@ func (o *overlayEntry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, 
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (o *overlayEntry) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (o *overlayEntry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	o.dataMu.RLock()
 	defer o.dataMu.RUnlock()
 	return o.inodeLocked().Mappable().Translate(ctx, required, optional, at)

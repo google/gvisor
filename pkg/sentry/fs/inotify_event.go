@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -100,10 +101,10 @@ func (e *Event) sizeOf() int {
 // construct the output. We use a buffer allocated ahead of time for
 // performance. buf must be at least inotifyEventBaseSize bytes.
 func (e *Event) CopyTo(ctx context.Context, buf []byte, dst usermem.IOSequence) (int64, error) {
-	usermem.ByteOrder.PutUint32(buf[0:], uint32(e.wd))
-	usermem.ByteOrder.PutUint32(buf[4:], e.mask)
-	usermem.ByteOrder.PutUint32(buf[8:], e.cookie)
-	usermem.ByteOrder.PutUint32(buf[12:], e.len)
+	hostarch.ByteOrder.PutUint32(buf[0:], uint32(e.wd))
+	hostarch.ByteOrder.PutUint32(buf[4:], e.mask)
+	hostarch.ByteOrder.PutUint32(buf[8:], e.cookie)
+	hostarch.ByteOrder.PutUint32(buf[12:], e.len)
 
 	writeLen := 0
 

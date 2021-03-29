@@ -24,7 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Stat implements Linux syscall stat(2).
@@ -50,7 +51,7 @@ func Newfstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return 0, nil, fstatat(t, dirfd, pathAddr, statAddr, flags)
 }
 
-func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr usermem.Addr, flags int32) error {
+func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flags int32) error {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
 		return syserror.EINVAL
 	}
@@ -264,7 +265,7 @@ func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, accessAt(t, dirfd, addr, mode)
 }
 
-func accessAt(t *kernel.Task, dirfd int32, pathAddr usermem.Addr, mode uint) error {
+func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
@@ -312,7 +313,7 @@ func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return readlinkat(t, dirfd, pathAddr, bufAddr, size)
 }
 
-func readlinkat(t *kernel.Task, dirfd int32, pathAddr, bufAddr usermem.Addr, size uint) (uintptr, *kernel.SyscallControl, error) {
+func readlinkat(t *kernel.Task, dirfd int32, pathAddr, bufAddr hostarch.Addr, size uint) (uintptr, *kernel.SyscallControl, error) {
 	if int(size) <= 0 {
 		return 0, nil, syserror.EINVAL
 	}

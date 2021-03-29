@@ -18,11 +18,11 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LINT.IfChange
@@ -87,7 +87,7 @@ func getXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 }
 
 // getXattr implements getxattr(2) from the given *fs.Dirent.
-func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, size uint64) (int, error) {
+func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, size uint64) (int, error) {
 	name, err := copyInXattrName(t, nameAddr)
 	if err != nil {
 		return 0, err
@@ -180,7 +180,7 @@ func setXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 }
 
 // setXattr implements setxattr(2) from the given *fs.Dirent.
-func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, size uint64, flags uint32) error {
+func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, size uint64, flags uint32) error {
 	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
 		return syserror.EINVAL
 	}
@@ -214,7 +214,7 @@ func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr usermem.Addr, si
 	return nil
 }
 
-func copyInXattrName(t *kernel.Task, nameAddr usermem.Addr) (string, error) {
+func copyInXattrName(t *kernel.Task, nameAddr hostarch.Addr) (string, error) {
 	name, err := t.CopyInString(nameAddr, linux.XATTR_NAME_MAX+1)
 	if err != nil {
 		if err == syserror.ENAMETOOLONG {
@@ -306,7 +306,7 @@ func listXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlin
 	return uintptr(n), nil, nil
 }
 
-func listXattr(t *kernel.Task, d *fs.Dirent, addr usermem.Addr, size uint64) (int, error) {
+func listXattr(t *kernel.Task, d *fs.Dirent, addr hostarch.Addr, size uint64) (int, error) {
 	if !xattrFileTypeOk(d.Inode) {
 		return 0, nil
 	}
@@ -408,7 +408,7 @@ func removeXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSyml
 }
 
 // removeXattr implements removexattr(2) from the given *fs.Dirent.
-func removeXattr(t *kernel.Task, d *fs.Dirent, nameAddr usermem.Addr) error {
+func removeXattr(t *kernel.Task, d *fs.Dirent, nameAddr hostarch.Addr) error {
 	name, err := copyInXattrName(t, nameAddr)
 	if err != nil {
 		return err

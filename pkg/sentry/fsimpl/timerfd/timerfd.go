@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -72,7 +73,7 @@ func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 	}
 	if val := atomic.SwapUint64(&tfd.val, 0); val != 0 {
 		var buf [sizeofUint64]byte
-		usermem.ByteOrder.PutUint64(buf[:], val)
+		hostarch.ByteOrder.PutUint64(buf[:], val)
 		if _, err := dst.CopyOut(ctx, buf[:]); err != nil {
 			// Linux does not undo consuming the number of
 			// expirations even if writing to userspace fails.

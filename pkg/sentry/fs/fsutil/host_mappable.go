@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -59,7 +60,7 @@ func NewHostMappable(backingFile CachedFileObject) *HostMappable {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (h *HostMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (h *HostMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	// Hot path. Avoid defers.
 	h.mu.Lock()
 	mapped := h.mappings.AddMapping(ms, ar, offset, writable)
@@ -71,7 +72,7 @@ func (h *HostMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (h *HostMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (h *HostMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	// Hot path. Avoid defers.
 	h.mu.Lock()
 	unmapped := h.mappings.RemoveMapping(ms, ar, offset, writable)
@@ -82,18 +83,18 @@ func (h *HostMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (h *HostMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (h *HostMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return h.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (h *HostMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (h *HostMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
 			File:   h,
 			Offset: optional.Start,
-			Perms:  usermem.AnyAccess,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }
@@ -124,7 +125,7 @@ func (h *HostMappable) NotifyChangeFD() error {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (h *HostMappable) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (h *HostMappable) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	return h.hostFileMapper.MapInternal(fr, h.backingFile.FD(), at.Write)
 }
 

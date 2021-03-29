@@ -18,11 +18,11 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const (
@@ -405,7 +405,7 @@ var AMD64 = &kernel.SyscallTable{
 		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
 	},
-	Emulate: map[usermem.Addr]uintptr{
+	Emulate: map[hostarch.Addr]uintptr{
 		0xffffffffff600000: 96,  // vsyscall gettimeofday(2)
 		0xffffffffff600400: 201, // vsyscall time(2)
 		0xffffffffff600800: 309, // vsyscall getcpu(2)
@@ -723,7 +723,7 @@ var ARM64 = &kernel.SyscallTable{
 		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
 	},
-	Emulate: map[usermem.Addr]uintptr{},
+	Emulate: map[hostarch.Addr]uintptr{},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, syserror.ENOSYS

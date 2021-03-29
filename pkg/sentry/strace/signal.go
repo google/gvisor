@@ -21,7 +21,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // signalNames contains the names of all named signals.
@@ -100,7 +101,7 @@ var sigActionFlags = abi.FlagSet{
 	},
 }
 
-func sigSet(t *kernel.Task, addr usermem.Addr) string {
+func sigSet(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}
@@ -110,7 +111,7 @@ func sigSet(t *kernel.Task, addr usermem.Addr) string {
 		return fmt.Sprintf("%#x (error copying sigset: %v)", addr, err)
 	}
 
-	set := linux.SignalSet(usermem.ByteOrder.Uint64(b[:]))
+	set := linux.SignalSet(hostarch.ByteOrder.Uint64(b[:]))
 
 	return fmt.Sprintf("%#x %s", addr, formatSigSet(set))
 }
@@ -124,7 +125,7 @@ func formatSigSet(set linux.SignalSet) string {
 	return fmt.Sprintf("[%v]", strings.Join(signals, " "))
 }
 
-func sigAction(t *kernel.Task, addr usermem.Addr) string {
+func sigAction(t *kernel.Task, addr hostarch.Addr) string {
 	if addr == 0 {
 		return "null"
 	}

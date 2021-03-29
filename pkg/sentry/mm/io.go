@@ -16,6 +16,7 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -60,11 +61,11 @@ const (
 	rwMapMinBytes = 512
 )
 
-// CheckIORange is similar to usermem.Addr.ToRange, but applies bounds checks
+// CheckIORange is similar to hostarch.Addr.ToRange, but applies bounds checks
 // consistent with Linux's arch/x86/include/asm/uaccess.h:access_ok().
 //
 // Preconditions: length >= 0.
-func (mm *MemoryManager) CheckIORange(addr usermem.Addr, length int64) (usermem.AddrRange, bool) {
+func (mm *MemoryManager) CheckIORange(addr hostarch.Addr, length int64) (hostarch.AddrRange, bool) {
 	// Note that access_ok() constrains end even if length == 0.
 	ar, ok := addr.ToRange(uint64(length))
 	return ar, (ok && ar.End <= mm.layout.MaxAddr)
@@ -72,7 +73,7 @@ func (mm *MemoryManager) CheckIORange(addr usermem.Addr, length int64) (usermem.
 
 // checkIOVec applies bound checks consistent with Linux's
 // arch/x86/include/asm/uaccess.h:access_ok() to ars.
-func (mm *MemoryManager) checkIOVec(ars usermem.AddrRangeSeq) bool {
+func (mm *MemoryManager) checkIOVec(ars hostarch.AddrRangeSeq) bool {
 	for !ars.IsEmpty() {
 		ar := ars.Head()
 		if _, ok := mm.CheckIORange(ar.Start, int64(ar.Length())); !ok {
@@ -100,7 +101,7 @@ func translateIOError(ctx context.Context, err error) error {
 }
 
 // CopyOut implements usermem.IO.CopyOut.
-func (mm *MemoryManager) CopyOut(ctx context.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
 		return 0, syserror.EFAULT
@@ -116,24 +117,24 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr usermem.Addr, src []b
 	}
 
 	// Go through internal mappings.
-	n64, err := mm.withInternalMappings(ctx, ar, usermem.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 		return n, translateIOError(ctx, err)
 	})
 	return int(n64), err
 }
 
-func (mm *MemoryManager) asCopyOut(ctx context.Context, addr usermem.Addr, src []byte) (int, error) {
+func (mm *MemoryManager) asCopyOut(ctx context.Context, addr hostarch.Addr, src []byte) (int, error) {
 	var done int
 	for {
-		n, err := mm.as.CopyOut(addr+usermem.Addr(done), src[done:])
+		n, err := mm.as.CopyOut(addr+hostarch.Addr(done), src[done:])
 		done += n
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
 			ar, _ := addr.ToRange(uint64(len(src)))
-			if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.Write); err != nil {
+			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Write); err != nil {
 				return done, err
 			}
 			continue
@@ -143,7 +144,7 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, addr usermem.Addr, src [
 }
 
 // CopyIn implements usermem.IO.CopyIn.
-func (mm *MemoryManager) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
 		return 0, syserror.EFAULT
@@ -159,24 +160,24 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr usermem.Addr, dst []by
 	}
 
 	// Go through internal mappings.
-	n64, err := mm.withInternalMappings(ctx, ar, usermem.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
 		return n, translateIOError(ctx, err)
 	})
 	return int(n64), err
 }
 
-func (mm *MemoryManager) asCopyIn(ctx context.Context, addr usermem.Addr, dst []byte) (int, error) {
+func (mm *MemoryManager) asCopyIn(ctx context.Context, addr hostarch.Addr, dst []byte) (int, error) {
 	var done int
 	for {
-		n, err := mm.as.CopyIn(addr+usermem.Addr(done), dst[done:])
+		n, err := mm.as.CopyIn(addr+hostarch.Addr(done), dst[done:])
 		done += n
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
 			ar, _ := addr.ToRange(uint64(len(dst)))
-			if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.Read); err != nil {
+			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Read); err != nil {
 				return done, err
 			}
 			continue
@@ -186,7 +187,7 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, addr usermem.Addr, dst []
 }
 
 // ZeroOut implements usermem.IO.ZeroOut.
-func (mm *MemoryManager) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -202,23 +203,23 @@ func (mm *MemoryManager) ZeroOut(ctx context.Context, addr usermem.Addr, toZero 
 	}
 
 	// Go through internal mappings.
-	return mm.withInternalMappings(ctx, ar, usermem.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
+	return mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(dsts safemem.BlockSeq) (uint64, error) {
 		n, err := safemem.ZeroSeq(dsts)
 		return n, translateIOError(ctx, err)
 	})
 }
 
-func (mm *MemoryManager) asZeroOut(ctx context.Context, addr usermem.Addr, toZero int64) (int64, error) {
+func (mm *MemoryManager) asZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64) (int64, error) {
 	var done int64
 	for {
-		n, err := mm.as.ZeroOut(addr+usermem.Addr(done), uintptr(toZero-done))
+		n, err := mm.as.ZeroOut(addr+hostarch.Addr(done), uintptr(toZero-done))
 		done += int64(n)
 		if err == nil {
 			return done, nil
 		}
 		if f, ok := err.(platform.SegmentationFault); ok {
 			ar, _ := addr.ToRange(uint64(toZero))
-			if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.Write); err != nil {
+			if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Write); err != nil {
 				return done, err
 			}
 			continue
@@ -228,7 +229,7 @@ func (mm *MemoryManager) asZeroOut(ctx context.Context, addr usermem.Addr, toZer
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom.
-func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
 		return 0, syserror.EFAULT
 	}
@@ -269,11 +270,11 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeS
 	}
 
 	// Go through internal mappings.
-	return mm.withVecInternalMappings(ctx, ars, usermem.Write, opts.IgnorePermissions, src.ReadToBlocks)
+	return mm.withVecInternalMappings(ctx, ars, hostarch.Write, opts.IgnorePermissions, src.ReadToBlocks)
 }
 
 // CopyInTo implements usermem.IO.CopyInTo.
-func (mm *MemoryManager) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
 		return 0, syserror.EFAULT
 	}
@@ -306,11 +307,11 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq,
 	}
 
 	// Go through internal mappings.
-	return mm.withVecInternalMappings(ctx, ars, usermem.Read, opts.IgnorePermissions, dst.WriteFromBlocks)
+	return mm.withVecInternalMappings(ctx, ars, hostarch.Read, opts.IgnorePermissions, dst.WriteFromBlocks)
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
-func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -324,7 +325,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 				return old, nil
 			}
 			if f, ok := err.(platform.SegmentationFault); ok {
-				if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.ReadWrite); err != nil {
+				if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.ReadWrite); err != nil {
 					return 0, err
 				}
 				continue
@@ -335,7 +336,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 
 	// Go through internal mappings.
 	var old uint32
-	_, err := mm.withInternalMappings(ctx, ar, usermem.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, syserror.EFAULT
@@ -353,7 +354,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 }
 
 // CompareAndSwapUint32 implements usermem.IO.CompareAndSwapUint32.
-func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -367,7 +368,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 				return prev, nil
 			}
 			if f, ok := err.(platform.SegmentationFault); ok {
-				if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.ReadWrite); err != nil {
+				if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.ReadWrite); err != nil {
 					return 0, err
 				}
 				continue
@@ -378,7 +379,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 
 	// Go through internal mappings.
 	var prev uint32
-	_, err := mm.withInternalMappings(ctx, ar, usermem.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, syserror.EFAULT
@@ -396,7 +397,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 }
 
 // LoadUint32 implements usermem.IO.LoadUint32.
-func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -410,7 +411,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts
 				return val, nil
 			}
 			if f, ok := err.(platform.SegmentationFault); ok {
-				if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.Read); err != nil {
+				if err := mm.handleASIOFault(ctx, f.Addr, ar, hostarch.Read); err != nil {
 					return 0, err
 				}
 				continue
@@ -421,7 +422,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts
 
 	// Go through internal mappings.
 	var val uint32
-	_, err := mm.withInternalMappings(ctx, ar, usermem.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
 			return 0, syserror.EFAULT
@@ -445,11 +446,11 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts
 // * mm.as != nil.
 // * ioar.Length() != 0.
 // * ioar.Contains(addr).
-func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr, ioar usermem.AddrRange, at usermem.AccessType) error {
+func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr, ioar hostarch.AddrRange, at hostarch.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
 	// overflow because otherwise it would have been caught by CheckIORange.
 	end, _ := ioar.End.RoundUp()
-	ar := usermem.AddrRange{addr.RoundDown(), end}
+	ar := hostarch.AddrRange{addr.RoundDown(), end}
 
 	// Don't bother trying existingPMAsLocked; in most cases, if we did have
 	// existing pmas, we wouldn't have faulted.
@@ -498,7 +499,7 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr,
 // more useful for usermem.IO methods.
 //
 // Preconditions: 0 < ar.Length() <= math.MaxInt64.
-func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
+func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
 	mm.activeMu.RLock()
@@ -567,7 +568,7 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.Ad
 // internal mappings for the subset of ars for which this property holds.
 //
 // Preconditions: !ars.IsEmpty().
-func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
+func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostarch.AddrRangeSeq, at hostarch.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// withInternalMappings is faster than withVecInternalMappings because of
 	// iterator plumbing (this isn't generally practical in the vector case due
 	// to iterator invalidation between AddrRanges). Use it if possible.
@@ -630,12 +631,12 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars userme
 
 // truncatedAddrRangeSeq returns a copy of ars, but with the end truncated to
 // at most address end on AddrRange arsit.Head(). It is used in vector I/O paths to
-// truncate usermem.AddrRangeSeq when errors occur.
+// truncate hostarch.AddrRangeSeq when errors occur.
 //
 // Preconditions:
 // * !arsit.IsEmpty().
 // * end <= arsit.Head().End.
-func truncatedAddrRangeSeq(ars, arsit usermem.AddrRangeSeq, end usermem.Addr) usermem.AddrRangeSeq {
+func truncatedAddrRangeSeq(ars, arsit hostarch.AddrRangeSeq, end hostarch.Addr) hostarch.AddrRangeSeq {
 	ar := arsit.Head()
 	if end <= ar.Start {
 		return ars.TakeFirst64(ars.NumBytes() - arsit.NumBytes())

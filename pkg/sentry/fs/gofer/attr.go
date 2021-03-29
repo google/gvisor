@@ -17,11 +17,11 @@ package gofer
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // getattr returns the 9p attributes of the p9.File. On success, Mode, Size, and RDev
@@ -98,7 +98,7 @@ func bsize(pattr p9.Attr) int64 {
 	// Some files, particularly those that are not on a local file system,
 	// may have no clue of their block size. Better not to report something
 	// misleading or buggy and have a safe default.
-	return usermem.PageSize
+	return hostarch.PageSize
 }
 
 // ntype returns an fs.InodeType from 9p attributes.

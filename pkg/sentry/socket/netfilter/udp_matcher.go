@@ -19,9 +19,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const matcherNameUDP = "udp"
@@ -48,7 +48,7 @@ func (udpMarshaler) marshal(mr matcher) []byte {
 		DestinationPortEnd:   matcher.destinationPortEnd,
 	}
 	buf := make([]byte, 0, linux.SizeOfXTUDP)
-	return marshalEntryMatch(matcherNameUDP, binary.Marshal(buf, usermem.ByteOrder, xtudp))
+	return marshalEntryMatch(matcherNameUDP, binary.Marshal(buf, hostarch.ByteOrder, xtudp))
 }
 
 // unmarshal implements matchMaker.unmarshal.
@@ -60,7 +60,7 @@ func (udpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Ma
 	// For alignment reasons, the match's total size may exceed what's
 	// strictly necessary to hold matchData.
 	var matchData linux.XTUDP
-	binary.Unmarshal(buf[:linux.SizeOfXTUDP], usermem.ByteOrder, &matchData)
+	binary.Unmarshal(buf[:linux.SizeOfXTUDP], hostarch.ByteOrder, &matchData)
 	nflog("parseMatchers: parsed XTUDP: %+v", matchData)
 
 	if matchData.InverseFlags != 0 {

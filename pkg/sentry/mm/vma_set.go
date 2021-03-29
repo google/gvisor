@@ -1,7 +1,7 @@
 package mm
 
 import (
-	__generics_imported0 "gvisor.dev/gvisor/pkg/usermem"
+	__generics_imported0 "gvisor.dev/gvisor/pkg/hostarch"
 )
 
 import (

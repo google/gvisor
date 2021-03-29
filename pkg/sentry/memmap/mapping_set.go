@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"math"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // MappingSet maps offsets into a Mappable to mappings of those offsets. It is
@@ -39,7 +39,7 @@ type MappingsOfRange map[MappingOfRange]struct{}
 // +stateify savable
 type MappingOfRange struct {
 	MappingSpace MappingSpace
-	AddrRange    usermem.AddrRange
+	AddrRange    hostarch.AddrRange
 	Writable     bool
 }
 
@@ -89,9 +89,9 @@ func (mappingSetFunctions) Merge(r1 MappableRange, val1 MappingsOfRange, r2 Mapp
 		// region with k1.
 		k2 := MappingOfRange{
 			MappingSpace: k1.MappingSpace,
-			AddrRange: usermem.AddrRange{
+			AddrRange: hostarch.AddrRange{
 				Start: k1.AddrRange.End,
-				End:   k1.AddrRange.End + usermem.Addr(r2.Length()),
+				End:   k1.AddrRange.End + hostarch.Addr(r2.Length()),
 			},
 			Writable: k1.Writable,
 		}
@@ -102,7 +102,7 @@ func (mappingSetFunctions) Merge(r1 MappableRange, val1 MappingsOfRange, r2 Mapp
 		// OK. Add it to the merged map.
 		merged[MappingOfRange{
 			MappingSpace: k1.MappingSpace,
-			AddrRange: usermem.AddrRange{
+			AddrRange: hostarch.AddrRange{
 				Start: k1.AddrRange.Start,
 				End:   k2.AddrRange.End,
 			},
@@ -124,11 +124,11 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 
 	// split is a value in MappableRange, we need the offset into the
 	// corresponding MappingsOfRange.
-	offset := usermem.Addr(split - r.Start)
+	offset := hostarch.Addr(split - r.Start)
 	for k := range val {
 		k1 := MappingOfRange{
 			MappingSpace: k.MappingSpace,
-			AddrRange: usermem.AddrRange{
+			AddrRange: hostarch.AddrRange{
 				Start: k.AddrRange.Start,
 				End:   k.AddrRange.Start + offset,
 			},
@@ -138,7 +138,7 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 
 		k2 := MappingOfRange{
 			MappingSpace: k.MappingSpace,
-			AddrRange: usermem.AddrRange{
+			AddrRange: hostarch.AddrRange{
 				Start: k.AddrRange.Start + offset,
 				End:   k.AddrRange.End,
 			},
@@ -157,18 +157,18 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 // indicating that ms maps addresses [0x4000, 0x6000) to MappableRange [0x0,
 // 0x2000). Then for subsetRange = [0x1000, 0x2000), subsetMapping returns a
 // MappingOfRange for which AddrRange = [0x5000, 0x6000).
-func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr usermem.Addr, writable bool) MappingOfRange {
+func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr hostarch.Addr, writable bool) MappingOfRange {
 	if !wholeRange.IsSupersetOf(subsetRange) {
 		panic(fmt.Sprintf("%v is not a superset of %v", wholeRange, subsetRange))
 	}
 
 	offset := subsetRange.Start - wholeRange.Start
-	start := addr + usermem.Addr(offset)
+	start := addr + hostarch.Addr(offset)
 	return MappingOfRange{
 		MappingSpace: ms,
-		AddrRange: usermem.AddrRange{
+		AddrRange: hostarch.AddrRange{
 			Start: start,
-			End:   start + usermem.Addr(subsetRange.Length()),
+			End:   start + hostarch.Addr(subsetRange.Length()),
 		},
 		Writable: writable,
 	}
@@ -178,7 +178,7 @@ func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr 
 // previously had no mappings.
 //
 // Preconditions: Same as Mappable.AddMapping.
-func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
+func (s *MappingSet) AddMapping(ms MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var mapped []MappableRange
 	seg, gap := s.Find(mr.Start)
@@ -205,7 +205,7 @@ func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset ui
 // MappableRanges that now have no mappings.
 //
 // Preconditions: Same as Mappable.RemoveMapping.
-func (s *MappingSet) RemoveMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
+func (s *MappingSet) RemoveMapping(ms MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var unmapped []MappableRange
 

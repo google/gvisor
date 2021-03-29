@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // GenericParseMountOptions parses a comma-separated list of options of the
@@ -50,7 +50,7 @@ func GenericParseMountOptions(str string) map[string]string {
 func GenericStatFS(fsMagic uint64) linux.Statfs {
 	return linux.Statfs{
 		Type:       fsMagic,
-		BlockSize:  usermem.PageSize,
+		BlockSize:  hostarch.PageSize,
 		NameLength: linux.NAME_MAX,
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -188,7 +189,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	efd.queue.Notify(waiter.WritableEvents)
 
 	var buf [8]byte
-	usermem.ByteOrder.PutUint64(buf[:], val)
+	hostarch.ByteOrder.PutUint64(buf[:], val)
 	_, err := dst.CopyOut(ctx, buf[:])
 	return err
 }
@@ -196,7 +197,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 // Preconditions: Must be called with efd.mu locked.
 func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
 	var buf [8]byte
-	usermem.ByteOrder.PutUint64(buf[:], val)
+	hostarch.ByteOrder.PutUint64(buf[:], val)
 	_, err := unix.Write(efd.hostfd, buf[:])
 	if err == unix.EWOULDBLOCK {
 		return syserror.ErrWouldBlock
@@ -209,7 +210,7 @@ func (efd *EventFileDescription) write(ctx context.Context, src usermem.IOSequen
 	if _, err := src.CopyIn(ctx, buf[:]); err != nil {
 		return err
 	}
-	val := usermem.ByteOrder.Uint64(buf[:])
+	val := hostarch.ByteOrder.Uint64(buf[:])
 
 	return efd.Signal(val)
 }

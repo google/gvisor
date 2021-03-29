@@ -22,7 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // PollEventSet is the set of poll(2) event flags.
@@ -52,7 +53,7 @@ func pollFD(t *kernel.Task, pfd *linux.PollFD, post bool) string {
 	return fmt.Sprintf("{FD: %s, Events: %s, REvents: %s}", fd(t, pfd.FD), PollEventSet.Parse(uint64(pfd.Events)), revents)
 }
 
-func pollFDs(t *kernel.Task, addr usermem.Addr, nfds uint, post bool) string {
+func pollFDs(t *kernel.Task, addr hostarch.Addr, nfds uint, post bool) string {
 	if addr == 0 {
 		return "null"
 	}

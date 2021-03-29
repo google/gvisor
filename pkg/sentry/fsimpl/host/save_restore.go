@@ -21,9 +21,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // beforeSave is invoked by stateify.
@@ -38,7 +38,7 @@ func (i *inode) beforeSave() {
 		// EBADF from the read.
 		i.bufMu.Lock()
 		defer i.bufMu.Unlock()
-		var buf [usermem.PageSize]byte
+		var buf [hostarch.PageSize]byte
 		for {
 			n, err := hostfd.Preadv2(int32(i.hostFD), safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:])), -1 /* offset */, 0 /* flags */)
 			if n != 0 {

@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -266,17 +267,17 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 
 	// Add generic auxv entries.
 	auxv := append(loaded.auxv, arch.Auxv{
-		arch.AuxEntry{linux.AT_UID, usermem.Addr(c.RealKUID.In(c.UserNamespace).OrOverflow())},
-		arch.AuxEntry{linux.AT_EUID, usermem.Addr(c.EffectiveKUID.In(c.UserNamespace).OrOverflow())},
-		arch.AuxEntry{linux.AT_GID, usermem.Addr(c.RealKGID.In(c.UserNamespace).OrOverflow())},
-		arch.AuxEntry{linux.AT_EGID, usermem.Addr(c.EffectiveKGID.In(c.UserNamespace).OrOverflow())},
+		arch.AuxEntry{linux.AT_UID, hostarch.Addr(c.RealKUID.In(c.UserNamespace).OrOverflow())},
+		arch.AuxEntry{linux.AT_EUID, hostarch.Addr(c.EffectiveKUID.In(c.UserNamespace).OrOverflow())},
+		arch.AuxEntry{linux.AT_GID, hostarch.Addr(c.RealKGID.In(c.UserNamespace).OrOverflow())},
+		arch.AuxEntry{linux.AT_EGID, hostarch.Addr(c.EffectiveKGID.In(c.UserNamespace).OrOverflow())},
 		// The conditions that require AT_SECURE = 1 never arise. See
 		// kernel.Task.updateCredsForExecLocked.
 		arch.AuxEntry{linux.AT_SECURE, 0},
 		arch.AuxEntry{linux.AT_CLKTCK, linux.CLOCKS_PER_SEC},
 		arch.AuxEntry{linux.AT_EXECFN, execfn},
 		arch.AuxEntry{linux.AT_RANDOM, random},
-		arch.AuxEntry{linux.AT_PAGESZ, usermem.PageSize},
+		arch.AuxEntry{linux.AT_PAGESZ, hostarch.PageSize},
 		arch.AuxEntry{linux.AT_SYSINFO_EHDR, vdsoAddr},
 	}...)
 	auxv = append(auxv, extraAuxv...)

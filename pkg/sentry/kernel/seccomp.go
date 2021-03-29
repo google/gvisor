@@ -18,9 +18,9 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const maxSyscallFilterInstructions = 1 << 15
@@ -35,11 +35,11 @@ func dataAsBPFInput(t *Task, d *linux.SeccompData) bpf.Input {
 	return bpf.InputBytes{
 		Data: buf,
 		// Go-marshal always uses the native byte order.
-		Order: usermem.ByteOrder,
+		Order: hostarch.ByteOrder,
 	}
 }
 
-func seccompSiginfo(t *Task, errno, sysno int32, ip usermem.Addr) *arch.SignalInfo {
+func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *arch.SignalInfo {
 	si := &arch.SignalInfo{
 		Signo: int32(linux.SIGSYS),
 		Errno: errno,
@@ -56,7 +56,7 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip usermem.Addr) *arch.SignalIn
 // in because vsyscalls do not use the values in t.Arch().)
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip usermem.Addr) linux.BPFAction {
+func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) linux.BPFAction {
 	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
 	action := result & linux.SECCOMP_RET_ACTION
 	switch action {
@@ -102,7 +102,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 	return action
 }
 
-func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip usermem.Addr) uint32 {
+func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) uint32 {
 	data := linux.SeccompData{
 		Nr:                 sysno,
 		Arch:               t.image.st.AuditNumber,

@@ -20,11 +20,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ReadInPages sends FUSE_READ requests for the size after round it up to
@@ -43,10 +43,10 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 	}
 
 	// Round up to a multiple of page size.
-	readSize, _ := usermem.PageRoundUp(uint64(size))
+	readSize, _ := hostarch.PageRoundUp(uint64(size))
 
 	// One request cannnot exceed either maxRead or maxPages.
-	maxPages := fs.conn.maxRead >> usermem.PageShift
+	maxPages := fs.conn.maxRead >> hostarch.PageShift
 	if maxPages > uint32(fs.conn.maxPages) {
 		maxPages = uint32(fs.conn.maxPages)
 	}
@@ -54,9 +54,9 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 	var outs [][]byte
 	var sizeRead uint32
 
-	// readSize is a multiple of usermem.PageSize.
+	// readSize is a multiple of hostarch.PageSize.
 	// Always request bytes as a multiple of pages.
-	pagesRead, pagesToRead := uint32(0), uint32(readSize>>usermem.PageShift)
+	pagesRead, pagesToRead := uint32(0), uint32(readSize>>hostarch.PageShift)
 
 	// Reuse the same struct for unmarshalling to avoid unnecessary memory allocation.
 	in := linux.FUSEReadIn{
@@ -76,8 +76,8 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 			pagesCanRead = maxPages
 		}
 
-		in.Offset = off + (uint64(pagesRead) << usermem.PageShift)
-		in.Size = pagesCanRead << usermem.PageShift
+		in.Offset = off + (uint64(pagesRead) << hostarch.PageShift)
+		in.Size = pagesCanRead << hostarch.PageShift
 
 		// TODO(gvisor.dev/issue/3247): support async read.
 
@@ -159,7 +159,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 	}
 
 	// One request cannnot exceed either maxWrite or maxPages.
-	maxWrite := uint32(fs.conn.maxPages) << usermem.PageShift
+	maxWrite := uint32(fs.conn.maxPages) << hostarch.PageShift
 	if maxWrite > fs.conn.maxWrite {
 		maxWrite = fs.conn.maxWrite
 	}
@@ -188,8 +188,8 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		// Limit the write size to one page.
 		// Note that the bigWrites flag is obsolete,
 		// latest libfuse always sets it on.
-		if !fs.conn.bigWrites && toWrite > usermem.PageSize {
-			toWrite = usermem.PageSize
+		if !fs.conn.bigWrites && toWrite > hostarch.PageSize {
+			toWrite = hostarch.PageSize
 		}
 
 		// Limit the write size to maxWrite.
