@@ -63,6 +63,9 @@ func (m *machine) initArchState() error {
 	return nil
 }
 
+type machineArchState struct {
+}
+
 type vCPUArchState struct {
 	// PCIDs is the set of PCIDs for this vCPU.
 	//
@@ -489,4 +492,23 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
 			physical)
 	}
+}
+
+// getMaxVCPU get max vCPU number
+func (m *machine) getMaxVCPU() {
+	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	if errno != 0 {
+		m.maxVCPUs = _KVM_NR_VCPUS
+	} else {
+		m.maxVCPUs = int(maxVCPUs)
+	}
+}
+
+// getNewVCPU create a new vCPU (maybe)
+func (m *machine) getNewVCPU() *vCPU {
+	if int(m.nextID) < m.maxVCPUs {
+		c := m.newVCPU()
+		return c
+	}
+	return nil
 }

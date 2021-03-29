@@ -17,6 +17,10 @@
 package kvm
 
 import (
+	"runtime"
+	"sync/atomic"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -24,6 +28,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
+
+type machineArchState struct {
+	//initialvCPUs is the machine vCPUs which has initialized but not used
+	initialvCPUs map[int]*vCPU
+}
 
 type vCPUArchState struct {
 	// PCIDs is the set of PCIDs for this vCPU.
@@ -181,4 +190,31 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, 
 	}
 
 	return accessType, platform.ErrContextSignal
+}
+
+// getMaxVCPU get max vCPU number
+func (m *machine) getMaxVCPU() {
+	rmaxVCPUs := runtime.NumCPU()
+	smaxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	// compare the max vcpu number from runtime and syscall, use smaller one.
+	if errno != 0 {
+		m.maxVCPUs = rmaxVCPUs
+	} else {
+		if rmaxVCPUs < int(smaxVCPUs) {
+			m.maxVCPUs = rmaxVCPUs
+		} else {
+			m.maxVCPUs = int(smaxVCPUs)
+		}
+	}
+}
+
+// getNewVCPU() scan for an available vCPU from initialvCPUs
+func (m *machine) getNewVCPU() *vCPU {
+	for CID, c := range m.initialvCPUs {
+		if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
+			delete(m.initialvCPUs, CID)
+			return c
+		}
+	}
+	return nil
 }
