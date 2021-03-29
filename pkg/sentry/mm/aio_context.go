@@ -17,6 +17,7 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -83,7 +84,7 @@ func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64)
 	// the same address. Then it would be unmapping memory that it doesn't own.
 	// This is, however, the way Linux implements AIO. Keeps the same [weird]
 	// semantics in case anyone relies on it.
-	mm.MUnmap(ctx, usermem.Addr(id), aioRingBufferSize)
+	mm.MUnmap(ctx, hostarch.Addr(id), aioRingBufferSize)
 
 	delete(mm.aioManager.contexts, id)
 	aioCtx.destroy()
@@ -259,7 +260,7 @@ type aioMappable struct {
 	fr  memmap.FileRange
 }
 
-var aioRingBufferSize = uint64(usermem.Addr(linux.AIORingSize).MustRoundUp())
+var aioRingBufferSize = uint64(hostarch.Addr(linux.AIORingSize).MustRoundUp())
 
 func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, usage.Anonymous)
@@ -300,7 +301,7 @@ func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error 
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
+func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(ar.Length()) != aioRingBufferSize {
@@ -310,11 +311,11 @@ func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar us
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (m *aioMappable) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
+func (m *aioMappable) RemoveMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange, uint64, bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, _ bool) error {
+func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(dstAR.Length()) != aioRingBufferSize {
@@ -346,7 +347,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
 		err = &memmap.BusError{syserror.EFAULT}
@@ -357,7 +358,7 @@ func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.M
 				Source: source,
 				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
-				Perms:  usermem.AnyAccess,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, err
 	}
@@ -389,8 +390,8 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 		// Linux uses "do_mmap_pgoff(..., PROT_READ | PROT_WRITE, ...)" in
 		// fs/aio.c:aio_setup_ring(). Since we don't implement AIO_RING_MAGIC,
 		// user mode should not write to this page.
-		Perms:    usermem.Read,
-		MaxPerms: usermem.Read,
+		Perms:    hostarch.Read,
+		MaxPerms: hostarch.Read,
 	})
 	if err != nil {
 		return 0, err
@@ -435,6 +436,6 @@ func (mm *MemoryManager) LookupAIOContext(ctx context.Context, id uint64) (*AIOC
 // bytes from id).
 func (mm *MemoryManager) isValidAddr(ctx context.Context, id uint64) bool {
 	var buf [4]byte
-	_, err := mm.CopyIn(ctx, usermem.Addr(id), buf[:], usermem.IOOpts{})
+	_, err := mm.CopyIn(ctx, hostarch.Addr(id), buf[:], usermem.IOOpts{})
 	return err == nil
 }

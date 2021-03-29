@@ -49,11 +49,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var (
@@ -88,28 +88,28 @@ type context struct {
 
 	// lastFaultAddr is the last faulting address; this is only meaningful if
 	// lastFaultSP is non-nil.
-	lastFaultAddr usermem.Addr
+	lastFaultAddr hostarch.Addr
 
 	// lastFaultIP is the address of the last faulting instruction;
 	// this is also only meaningful if lastFaultSP is non-nil.
-	lastFaultIP usermem.Addr
+	lastFaultIP hostarch.Addr
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
 	isSyscall := s.switchToApp(c, ac)
 
 	var (
 		faultSP   *subprocess
-		faultAddr usermem.Addr
-		faultIP   usermem.Addr
+		faultAddr hostarch.Addr
+		faultIP   hostarch.Addr
 	)
 	if !isSyscall && linux.Signal(c.signalInfo.Signo) == linux.SIGSEGV {
 		faultSP = s
-		faultAddr = usermem.Addr(c.signalInfo.Addr())
-		faultIP = usermem.Addr(ac.IP())
+		faultAddr = hostarch.Addr(c.signalInfo.Addr())
+		faultIP = hostarch.Addr(ac.IP())
 	}
 
 	// Update the context to reflect the outcome of this context switch.
@@ -140,14 +140,14 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	}
 
 	if isSyscall {
-		return nil, usermem.NoAccess, nil
+		return nil, hostarch.NoAccess, nil
 	}
 
 	si := c.signalInfo
 
 	if faultSP == nil {
 		// Non-fault signal.
-		return &si, usermem.NoAccess, platform.ErrContextSignal
+		return &si, hostarch.NoAccess, platform.ErrContextSignal
 	}
 
 	// Got a page fault. Ideally, we'd get real fault type here, but ptrace
@@ -157,7 +157,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	// pointer.
 	//
 	// It was a write fault if the fault is immediately repeated.
-	at := usermem.Read
+	at := hostarch.Read
 	if faultAddr == faultIP {
 		at.Execute = true
 	}
@@ -235,8 +235,8 @@ func (*PTrace) MapUnit() uint64 {
 
 // MaxUserAddress returns the first address that may not be used by user
 // applications.
-func (*PTrace) MaxUserAddress() usermem.Addr {
-	return usermem.Addr(stubStart)
+func (*PTrace) MaxUserAddress() hostarch.Addr {
+	return hostarch.Addr(stubStart)
 }
 
 // NewAddressSpace returns a new subprocess.

@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -1011,7 +1012,7 @@ func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 }
 
 // Ptrace implements the ptrace system call.
-func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
+func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// PTRACE_TRACEME ignores all other arguments.
 	if req == linux.PTRACE_TRACEME {
 		return t.ptraceTraceme()
@@ -1190,7 +1191,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 			panic(fmt.Sprintf("%#x + %#x overflows. Invalid reg size > %#x", ar.Start, n, ar.Length()))
 		}
 		ar.End = end
-		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
+		return t.CopyOutIovecs(data, hostarch.AddrRangeSeqOf(ar))
 
 	case linux.PTRACE_SETREGSET:
 		ars, err := t.CopyInIovecs(data, 1)
@@ -1214,8 +1215,8 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 			return err
 		}
 		t.p.FullStateChanged()
-		ar.End -= usermem.Addr(n)
-		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
+		ar.End -= hostarch.Addr(n)
+		return t.CopyOutIovecs(data, hostarch.AddrRangeSeqOf(ar))
 
 	case linux.PTRACE_GETSIGINFO:
 		t.tg.pidns.owner.mu.RLock()
@@ -1267,7 +1268,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 	case linux.PTRACE_GETEVENTMSG:
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
-		_, err := primitive.CopyUint64Out(t, usermem.Addr(data), target.ptraceEventMsg)
+		_, err := primitive.CopyUint64Out(t, hostarch.Addr(data), target.ptraceEventMsg)
 		return err
 
 	// PEEKSIGINFO is unimplemented but seems to have no users anywhere.

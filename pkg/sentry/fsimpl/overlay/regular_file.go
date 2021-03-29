@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -445,7 +446,7 @@ func (fd *regularFileFD) ensureMappable(ctx context.Context, opts *memmap.MMapOp
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	d.mapsMu.Lock()
 	defer d.mapsMu.Unlock()
 	if err := d.wrappedMappable.AddMapping(ctx, ms, ar, offset, writable); err != nil {
@@ -458,7 +459,7 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar user
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	d.mapsMu.Lock()
 	defer d.mapsMu.Unlock()
 	d.wrappedMappable.RemoveMapping(ctx, ms, ar, offset, writable)
@@ -468,7 +469,7 @@ func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar u
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	d.mapsMu.Lock()
 	defer d.mapsMu.Unlock()
 	if err := d.wrappedMappable.CopyMapping(ctx, ms, srcAR, dstAR, offset, writable); err != nil {
@@ -481,7 +482,7 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
 	return d.wrappedMappable.Translate(ctx, required, optional, at)

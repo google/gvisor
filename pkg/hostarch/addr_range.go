@@ -1,4 +1,4 @@
-package usermem
+package hostarch
 
 // A Range represents a contiguous range of T.
 //

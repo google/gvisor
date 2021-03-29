@@ -19,13 +19,13 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 const opsMax = 500 // SEMOPM
@@ -310,7 +310,7 @@ func setVal(t *kernel.Task, id int32, num int32, val int16) error {
 	return set.SetVal(t, num, val, creds, int32(pid))
 }
 
-func setValAll(t *kernel.Task, id int32, array usermem.Addr) error {
+func setValAll(t *kernel.Task, id int32, array hostarch.Addr) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
@@ -335,7 +335,7 @@ func getVal(t *kernel.Task, id int32, num int32) (int16, error) {
 	return set.GetVal(num, creds)
 }
 
-func getValAll(t *kernel.Task, id int32, array usermem.Addr) error {
+func getValAll(t *kernel.Task, id int32, array hostarch.Addr) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {

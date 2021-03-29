@@ -19,7 +19,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func fdsFromSet(t *kernel.Task, set []byte) []int {
@@ -35,7 +36,7 @@ func fdsFromSet(t *kernel.Task, set []byte) []int {
 	return fds
 }
 
-func fdSet(t *kernel.Task, nfds int, addr usermem.Addr) string {
+func fdSet(t *kernel.Task, nfds int, addr hostarch.Addr) string {
 	if nfds < 0 {
 		return fmt.Sprintf("%#x (negative nfds)", addr)
 	}

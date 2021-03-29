@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -224,7 +225,7 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	rf.mapsMu.Lock()
 	defer rf.mapsMu.Unlock()
 	rf.dataMu.RLock()
@@ -240,7 +241,7 @@ func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 		pagesBefore := rf.writableMappingPages
 
 		// ar is guaranteed to be page aligned per memmap.Mappable.
-		rf.writableMappingPages += uint64(ar.Length() / usermem.PageSize)
+		rf.writableMappingPages += uint64(ar.Length() / hostarch.PageSize)
 
 		if rf.writableMappingPages < pagesBefore {
 			panic(fmt.Sprintf("Overflow while mapping potentially writable pages pointing to a tmpfs file. Before %v, after %v", pagesBefore, rf.writableMappingPages))
@@ -251,7 +252,7 @@ func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (rf *regularFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (rf *regularFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	rf.mapsMu.Lock()
 	defer rf.mapsMu.Unlock()
 
@@ -261,7 +262,7 @@ func (rf *regularFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace
 		pagesBefore := rf.writableMappingPages
 
 		// ar is guaranteed to be page aligned per memmap.Mappable.
-		rf.writableMappingPages -= uint64(ar.Length() / usermem.PageSize)
+		rf.writableMappingPages -= uint64(ar.Length() / hostarch.PageSize)
 
 		if rf.writableMappingPages > pagesBefore {
 			panic(fmt.Sprintf("Underflow while unmapping potentially writable pages pointing to a tmpfs file. Before %v, after %v", pagesBefore, rf.writableMappingPages))
@@ -270,12 +271,12 @@ func (rf *regularFile) RemoveMapping(ctx context.Context, ms memmap.MappingSpace
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return rf.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 
@@ -307,7 +308,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 			Source: segMR,
 			File:   rf.memFile,
 			Offset: seg.FileRangeOf(segMR).Start,
-			Perms:  usermem.AnyAccess,
+			Perms:  hostarch.AnyAccess,
 		})
 		translatedEnd = segMR.End
 	}
@@ -539,7 +540,7 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
+			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				return done, err
 			}
@@ -608,7 +609,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		//
 		// See Linux, mm/filemap.c:generic_perform_write() and
 		// mm/shmem.c:shmem_write_begin().
-		if pgstart := uint64(usermem.Addr(rw.file.size).RoundDown()); end > pgstart {
+		if pgstart := uint64(hostarch.Addr(rw.file.size).RoundDown()); end > pgstart {
 			end = pgstart
 		}
 		if end <= rw.off {
@@ -619,8 +620,8 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 
 	// Page-aligned mr for when we need to allocate memory. RoundUp can't
 	// overflow since end is an int64.
-	pgstartaddr := usermem.Addr(rw.off).RoundDown()
-	pgendaddr, _ := usermem.Addr(end).RoundUp()
+	pgstartaddr := hostarch.Addr(rw.off).RoundDown()
+	pgendaddr, _ := hostarch.Addr(end).RoundUp()
 	pgMR := memmap.MappableRange{uint64(pgstartaddr), uint64(pgendaddr)}
 
 	var (
@@ -633,7 +634,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Write)
+			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
 			if err != nil {
 				retErr = err
 				goto exitLoop

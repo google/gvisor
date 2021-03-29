@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -46,7 +47,7 @@ var (
 	ExecMaxTotalSize = 2 * 1024 * 1024
 
 	// ExecMaxElemSize is the maximum length of a single argv or envv entry.
-	ExecMaxElemSize = 32 * usermem.PageSize
+	ExecMaxElemSize = 32 * hostarch.PageSize
 )
 
 // Getppid implements linux syscall getppid(2).
@@ -88,7 +89,7 @@ func Execveat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return execveat(t, dirFD, pathnameAddr, argvAddr, envvAddr, flags)
 }
 
-func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr usermem.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
+func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr hostarch.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	pathname, err := t.CopyInString(pathnameAddr, linux.PATH_MAX)
 	if err != nil {
 		return 0, nil, err
@@ -199,7 +200,7 @@ func ExitGroup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // clone is used by Clone, Fork, and VFork.
-func clone(t *kernel.Task, flags int, stack usermem.Addr, parentTID usermem.Addr, childTID usermem.Addr, tls usermem.Addr) (uintptr, *kernel.SyscallControl, error) {
+func clone(t *kernel.Task, flags int, stack hostarch.Addr, parentTID hostarch.Addr, childTID hostarch.Addr, tls hostarch.Addr) (uintptr, *kernel.SyscallControl, error) {
 	opts := kernel.CloneOptions{
 		SharingOptions: kernel.SharingOptions{
 			NewAddressSpace:     flags&linux.CLONE_VM == 0,
@@ -274,7 +275,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 }
 
 // wait4 waits for the given child process to exit.
-func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusageAddr usermem.Addr) (uintptr, error) {
+func wait4(t *kernel.Task, pid int, statusAddr hostarch.Addr, options int, rusageAddr hostarch.Addr) (uintptr, error) {
 	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
 		return 0, syserror.EINVAL
 	}

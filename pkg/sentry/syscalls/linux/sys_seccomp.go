@@ -17,10 +17,10 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // userSockFprog is equivalent to Linux's struct sock_fprog on amd64.
@@ -33,14 +33,14 @@ type userSockFprog struct {
 	_ [6]byte // padding for alignment
 
 	// Filter is a user pointer to the struct sock_filter array that makes up
-	// the filter program. Filter is a uint64 rather than a usermem.Addr
-	// because usermem.Addr is actually uintptr, which is not a fixed-size
+	// the filter program. Filter is a uint64 rather than a hostarch.Addr
+	// because hostarch.Addr is actually uintptr, which is not a fixed-size
 	// type.
 	Filter uint64
 }
 
 // seccomp applies a seccomp policy to the current task.
-func seccomp(t *kernel.Task, mode, flags uint64, addr usermem.Addr) error {
+func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	// We only support SECCOMP_SET_MODE_FILTER at the moment.
 	if mode != linux.SECCOMP_SET_MODE_FILTER {
 		// Unsupported mode.
@@ -60,7 +60,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr usermem.Addr) error {
 		return err
 	}
 	filter := make([]linux.BPFInstruction, int(fprog.Len))
-	if _, err := linux.CopyBPFInstructionSliceIn(t, usermem.Addr(fprog.Filter), filter); err != nil {
+	if _, err := linux.CopyBPFInstructionSliceIn(t, hostarch.Addr(fprog.Filter), filter); err != nil {
 		return err
 	}
 	compiledFilter, err := bpf.Compile(filter)

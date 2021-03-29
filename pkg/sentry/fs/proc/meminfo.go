@@ -19,10 +19,10 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // LINT.IfChange
@@ -53,7 +53,7 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	anon := snapshot.Anonymous + snapshot.Tmpfs
 	file := snapshot.PageCache + snapshot.Mapped
 	// We don't actually have active/inactive LRUs, so just make up numbers.
-	activeFile := (file / 2) &^ (usermem.PageSize - 1)
+	activeFile := (file / 2) &^ (hostarch.PageSize - 1)
 	inactiveFile := file - activeFile
 
 	var buf bytes.Buffer

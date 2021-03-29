@@ -18,11 +18,11 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // dirtySet tracks vCPUs for invalidation.
@@ -118,7 +118,7 @@ type hostMapEntry struct {
 // +checkescape:hard,stack
 //
 //go:nosplit
-func (as *addressSpace) mapLocked(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
+func (as *addressSpace) mapLocked(addr hostarch.Addr, m hostMapEntry, at hostarch.AccessType) (inv bool) {
 	for m.length > 0 {
 		physical, length, ok := translateToPhysical(m.addr)
 		if !ok {
@@ -144,14 +144,14 @@ func (as *addressSpace) mapLocked(addr usermem.Addr, m hostMapEntry, at usermem.
 		}, physical) || inv
 		m.addr += length
 		m.length -= length
-		addr += usermem.Addr(length)
+		addr += hostarch.Addr(length)
 	}
 
 	return inv
 }
 
 // MapFile implements platform.AddressSpace.MapFile.
-func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.FileRange, at usermem.AccessType, precommit bool) error {
+func (as *addressSpace) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
@@ -165,7 +165,7 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.File
 	// We don't execute from application file-mapped memory, and guest page
 	// tables don't care if we have execute permission (but they do need pages
 	// to be readable).
-	bs, err := f.MapInternal(fr, usermem.AccessType{
+	bs, err := f.MapInternal(fr, hostarch.AccessType{
 		Read:  at.Read || at.Execute || precommit,
 		Write: at.Write,
 	})
@@ -187,7 +187,7 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.File
 		// lookup in our host page tables for this translation.
 		if precommit {
 			s := b.ToSlice()
-			for i := 0; i < len(s); i += usermem.PageSize {
+			for i := 0; i < len(s); i += hostarch.PageSize {
 				_ = s[i] // Touch to commit.
 			}
 		}
@@ -201,7 +201,7 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.File
 			length: uintptr(b.Len()),
 		}, at)
 		inv = inv || prev
-		addr += usermem.Addr(b.Len())
+		addr += hostarch.Addr(b.Len())
 	}
 	if inv {
 		as.invalidate()
@@ -215,12 +215,12 @@ func (as *addressSpace) MapFile(addr usermem.Addr, f memmap.File, fr memmap.File
 // +checkescape:hard,stack
 //
 //go:nosplit
-func (as *addressSpace) unmapLocked(addr usermem.Addr, length uint64) bool {
+func (as *addressSpace) unmapLocked(addr hostarch.Addr, length uint64) bool {
 	return as.pageTables.Unmap(addr, uintptr(length))
 }
 
 // Unmap unmaps the given range by calling pagetables.PageTables.Unmap.
-func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
+func (as *addressSpace) Unmap(addr hostarch.Addr, length uint64) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 

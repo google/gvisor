@@ -18,6 +18,7 @@ package tundev
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -89,7 +90,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 		}
 
 		// Validate flags.
-		flags, err := netstack.LinuxToTUNFlags(usermem.ByteOrder.Uint16(req.Data[:]))
+		flags, err := netstack.LinuxToTUNFlags(hostarch.ByteOrder.Uint16(req.Data[:]))
 		if err != nil {
 			return 0, err
 		}
@@ -98,7 +99,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 	case linux.TUNGETIFF:
 		var req linux.IFReq
 		copy(req.IFName[:], fd.device.Name())
-		usermem.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(fd.device.Flags()))
+		hostarch.ByteOrder.PutUint16(req.Data[:], netstack.TUNFlagsToLinux(fd.device.Flags()))
 		_, err := req.CopyOut(t, data)
 		return 0, err
 

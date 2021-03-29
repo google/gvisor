@@ -17,14 +17,14 @@ package fs
 import (
 	"math"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // OffsetPageEnd returns the file offset rounded up to the nearest
 // page boundary. OffsetPageEnd panics if rounding up causes overflow,
 // which shouldn't be possible given that offset is an int64.
 func OffsetPageEnd(offset int64) uint64 {
-	end, ok := usermem.Addr(offset).RoundUp()
+	end, ok := hostarch.Addr(offset).RoundUp()
 	if !ok {
 		panic("impossible overflow")
 	}

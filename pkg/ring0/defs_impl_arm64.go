@@ -6,10 +6,10 @@ package ring0
 
 import (
 	"fmt"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
-	"gvisor.dev/gvisor/pkg/usermem"
 	"io"
 	"reflect"
 )
@@ -216,7 +216,7 @@ var (
 	UserspaceSize = uintptr(1) << (VirtualAddressBits())
 
 	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
+	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
 
 	// KernelStartAddress is the starting kernel address.
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)

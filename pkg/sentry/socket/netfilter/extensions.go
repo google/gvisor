@@ -19,10 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // TODO(gvisor.dev/issue/170): The following per-matcher params should be
@@ -89,7 +89,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	copy(matcher.Name[:], name)
 
 	buf := make([]byte, 0, size)
-	buf = binary.Marshal(buf, usermem.ByteOrder, matcher)
+	buf = binary.Marshal(buf, hostarch.ByteOrder, matcher)
 	return append(buf, make([]byte, size-len(buf))...)
 }
 

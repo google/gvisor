@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -132,7 +133,7 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)
 	srclen := src.NumBytes()
-	if srclen >= usermem.PageSize || offset != 0 {
+	if srclen >= hostarch.PageSize || offset != 0 {
 		return 0, syserror.EINVAL
 	}
 	b := make([]byte, srclen)

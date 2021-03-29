@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -216,7 +217,7 @@ func (i *Inotify) Ioctl(ctx context.Context, _ *File, io usermem.IO, args arch.S
 			n += uint32(e.sizeOf())
 		}
 		var buf [4]byte
-		usermem.ByteOrder.PutUint32(buf[:], n)
+		hostarch.ByteOrder.PutUint32(buf[:], n)
 		_, err := io.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{})
 		return 0, err
 

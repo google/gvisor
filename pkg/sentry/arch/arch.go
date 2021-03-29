@@ -22,11 +22,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Arch describes an architecture.
@@ -188,11 +188,11 @@ type Context interface {
 	// returned layout must be no lower than min, and MaxAddr for the returned
 	// layout must be no higher than max. Repeated calls to NewMmapLayout may
 	// return different layouts.
-	NewMmapLayout(min, max usermem.Addr, limits *limits.LimitSet) (MmapLayout, error)
+	NewMmapLayout(min, max hostarch.Addr, limits *limits.LimitSet) (MmapLayout, error)
 
 	// PIELoadAddress returns a preferred load address for a
 	// position-independent executable within l.
-	PIELoadAddress(l MmapLayout) usermem.Addr
+	PIELoadAddress(l MmapLayout) hostarch.Addr
 
 	// FeatureSet returns the FeatureSet in use in this context.
 	FeatureSet() *cpuid.FeatureSet
@@ -257,18 +257,18 @@ const (
 // +stateify savable
 type MmapLayout struct {
 	// MinAddr is the lowest mappable address.
-	MinAddr usermem.Addr
+	MinAddr hostarch.Addr
 
 	// MaxAddr is the highest mappable address.
-	MaxAddr usermem.Addr
+	MaxAddr hostarch.Addr
 
 	// BottomUpBase is the lowest address that may be returned for a
 	// MmapBottomUp mmap.
-	BottomUpBase usermem.Addr
+	BottomUpBase hostarch.Addr
 
 	// TopDownBase is the highest address that may be returned for a
 	// MmapTopDown mmap.
-	TopDownBase usermem.Addr
+	TopDownBase hostarch.Addr
 
 	// DefaultDirection is the direction for most non-fixed mmaps in this
 	// layout.
@@ -316,9 +316,9 @@ type SyscallArgument struct {
 // SyscallArguments represents the set of arguments passed to a syscall.
 type SyscallArguments [6]SyscallArgument
 
-// Pointer returns the usermem.Addr representation of a pointer argument.
-func (a SyscallArgument) Pointer() usermem.Addr {
-	return usermem.Addr(a.Value)
+// Pointer returns the hostarch.Addr representation of a pointer argument.
+func (a SyscallArgument) Pointer() hostarch.Addr {
+	return hostarch.Addr(a.Value)
 }
 
 // Int returns the int32 representation of a 32-bit signed integer argument.

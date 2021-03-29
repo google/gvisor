@@ -22,7 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Pipe implements Linux syscall pipe(2).
@@ -38,7 +39,7 @@ func Pipe2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, pipe2(t, addr, flags)
 }
 
-func pipe2(t *kernel.Task, addr usermem.Addr, flags int32) error {
+func pipe2(t *kernel.Task, addr hostarch.Addr, flags int32) error {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
 		return syserror.EINVAL
 	}

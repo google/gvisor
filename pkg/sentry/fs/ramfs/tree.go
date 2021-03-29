@@ -20,9 +20,9 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MakeDirectoryTree constructs a ramfs tree of all directories containing
@@ -71,7 +71,7 @@ func emptyDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	return fs.NewInode(ctx, dir, msrc, fs.StableAttr{
 		DeviceID:  anon.PseudoDevice.DeviceID(),
 		InodeID:   anon.PseudoDevice.NextIno(),
-		BlockSize: usermem.PageSize,
+		BlockSize: hostarch.PageSize,
 		Type:      fs.Directory,
 	})
 }

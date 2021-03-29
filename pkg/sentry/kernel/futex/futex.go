@@ -20,10 +20,10 @@ package futex
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // KeyKind indicates the type of a Key.
@@ -83,8 +83,8 @@ func (k *Key) clone() Key {
 }
 
 // Preconditions: k.Kind == KindPrivate or KindSharedPrivate.
-func (k *Key) addr() usermem.Addr {
-	return usermem.Addr(k.Offset)
+func (k *Key) addr() hostarch.Addr {
+	return hostarch.Addr(k.Offset)
 }
 
 // matches returns true if a wakeup on k2 should wake a waiter waiting on k.
@@ -97,14 +97,14 @@ func (k *Key) matches(k2 *Key) bool {
 type Target interface {
 	context.Context
 
-	// SwapUint32 gives access to usermem.IO.SwapUint32.
-	SwapUint32(addr usermem.Addr, new uint32) (uint32, error)
+	// SwapUint32 gives access to hostarch.IO.SwapUint32.
+	SwapUint32(addr hostarch.Addr, new uint32) (uint32, error)
 
-	// CompareAndSwap gives access to usermem.IO.CompareAndSwapUint32.
-	CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error)
+	// CompareAndSwap gives access to hostarch.IO.CompareAndSwapUint32.
+	CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error)
 
-	// LoadUint32 gives access to usermem.IO.LoadUint32.
-	LoadUint32(addr usermem.Addr) (uint32, error)
+	// LoadUint32 gives access to hostarch.IO.LoadUint32.
+	LoadUint32(addr hostarch.Addr) (uint32, error)
 
 	// GetSharedKey returns a Key with kind KindSharedPrivate or
 	// KindSharedMappable corresponding to the memory mapped at address addr.
@@ -112,11 +112,11 @@ type Target interface {
 	// If GetSharedKey returns a Key with a non-nil MappingIdentity, a
 	// reference is held on the MappingIdentity, which must be dropped by the
 	// caller when the Key is no longer in use.
-	GetSharedKey(addr usermem.Addr) (Key, error)
+	GetSharedKey(addr hostarch.Addr) (Key, error)
 }
 
 // check performs a basic equality check on the given address.
-func check(t Target, addr usermem.Addr, val uint32) error {
+func check(t Target, addr hostarch.Addr, val uint32) error {
 	cur, err := t.LoadUint32(addr)
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func check(t Target, addr usermem.Addr, val uint32) error {
 }
 
 // atomicOp performs a complex operation on the given address.
-func atomicOp(t Target, addr usermem.Addr, opIn uint32) (bool, error) {
+func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 	opType := (opIn >> 28) & 0xf
 	cmp := (opIn >> 24) & 0xf
 	opArg := (opIn >> 12) & 0xfff
@@ -328,7 +328,7 @@ const (
 )
 
 // getKey returns a Key representing address addr in c.
-func getKey(t Target, addr usermem.Addr, private bool) (Key, error) {
+func getKey(t Target, addr hostarch.Addr, private bool) (Key, error) {
 	// Ensure the address is aligned.
 	// It must be a DWORD boundary.
 	if addr&0x3 != 0 {
@@ -341,7 +341,7 @@ func getKey(t Target, addr usermem.Addr, private bool) (Key, error) {
 }
 
 // bucketIndexForAddr returns the index into Manager.buckets for addr.
-func bucketIndexForAddr(addr usermem.Addr) uintptr {
+func bucketIndexForAddr(addr hostarch.Addr) uintptr {
 	// - The bottom 2 bits of addr must be 0, per getKey.
 	//
 	// - On amd64, the top 16 bits of addr (bits 48-63) must be equal to bit 47
@@ -448,7 +448,7 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
 
 // Wake wakes up to n waiters matching the bitmask on the given addr.
 // The number of waiters woken is returned.
-func (m *Manager) Wake(t Target, addr usermem.Addr, private bool, bitmask uint32, n int) (int, error) {
+func (m *Manager) Wake(t Target, addr hostarch.Addr, private bool, bitmask uint32, n int) (int, error) {
 	// This function is very hot; avoid defer.
 	k, err := getKey(t, addr, private)
 	if err != nil {
@@ -463,7 +463,7 @@ func (m *Manager) Wake(t Target, addr usermem.Addr, private bool, bitmask uint32
 	return r, nil
 }
 
-func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, checkval bool, val uint32, nwake int, nreq int) (int, error) {
+func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, checkval bool, val uint32, nwake int, nreq int) (int, error) {
 	k1, err := getKey(t, addr, private)
 	if err != nil {
 		return 0, err
@@ -498,14 +498,14 @@ func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, ch
 
 // Requeue wakes up to nwake waiters on the given addr, and unconditionally
 // requeues up to nreq waiters on naddr.
-func (m *Manager) Requeue(t Target, addr, naddr usermem.Addr, private bool, nwake int, nreq int) (int, error) {
+func (m *Manager) Requeue(t Target, addr, naddr hostarch.Addr, private bool, nwake int, nreq int) (int, error) {
 	return m.doRequeue(t, addr, naddr, private, false, 0, nwake, nreq)
 }
 
 // RequeueCmp atomically checks that the addr contains val (via the Target),
 // wakes up to nwake waiters on addr and then unconditionally requeues nreq
 // waiters on naddr.
-func (m *Manager) RequeueCmp(t Target, addr, naddr usermem.Addr, private bool, val uint32, nwake int, nreq int) (int, error) {
+func (m *Manager) RequeueCmp(t Target, addr, naddr hostarch.Addr, private bool, val uint32, nwake int, nreq int) (int, error) {
 	return m.doRequeue(t, addr, naddr, private, true, val, nwake, nreq)
 }
 
@@ -513,7 +513,7 @@ func (m *Manager) RequeueCmp(t Target, addr, naddr usermem.Addr, private bool, v
 // waiters unconditionally from addr1, and, based on the original value at addr2
 // and a comparison encoded in op, wakes up to nwake2 waiters from addr2.
 // It returns the total number of waiters woken.
-func (m *Manager) WakeOp(t Target, addr1, addr2 usermem.Addr, private bool, nwake1 int, nwake2 int, op uint32) (int, error) {
+func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwake1 int, nwake2 int, op uint32) (int, error) {
 	k1, err := getKey(t, addr1, private)
 	if err != nil {
 		return 0, err
@@ -553,7 +553,7 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 usermem.Addr, private bool, nwak
 // enqueues w to be woken by a send to w.C. If WaitPrepare returns nil, the
 // Waiter must be subsequently removed by calling WaitComplete, whether or not
 // a wakeup is received on w.C.
-func (m *Manager) WaitPrepare(w *Waiter, t Target, addr usermem.Addr, private bool, val uint32, bitmask uint32) error {
+func (m *Manager) WaitPrepare(w *Waiter, t Target, addr hostarch.Addr, private bool, val uint32, bitmask uint32) error {
 	k, err := getKey(t, addr, private)
 	if err != nil {
 		return err
@@ -631,7 +631,7 @@ func (m *Manager) WaitComplete(w *Waiter, t Target) {
 // FUTEX_OWNER_DIED is only set by the Linux when robust lists are in use (see
 // exit_robust_list()). Given we don't support robust lists, although handled
 // below, it's never set.
-func (m *Manager) LockPI(w *Waiter, t Target, addr usermem.Addr, tid uint32, private, try bool) (bool, error) {
+func (m *Manager) LockPI(w *Waiter, t Target, addr hostarch.Addr, tid uint32, private, try bool) (bool, error) {
 	k, err := getKey(t, addr, private)
 	if err != nil {
 		return false, err
@@ -663,7 +663,7 @@ func (m *Manager) LockPI(w *Waiter, t Target, addr usermem.Addr, tid uint32, pri
 	return success, nil
 }
 
-func (m *Manager) lockPILocked(w *Waiter, t Target, addr usermem.Addr, tid uint32, b *bucket, try bool) (bool, error) {
+func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint32, b *bucket, try bool) (bool, error) {
 	for {
 		cur, err := t.LoadUint32(addr)
 		if err != nil {
@@ -724,7 +724,7 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr usermem.Addr, tid uint3
 // The address provided must contain the caller's TID. If there are waiters,
 // TID of the next waiter (FIFO) is set to the given address, and the waiter
 // woken up. If there are no waiters, 0 is set to the address.
-func (m *Manager) UnlockPI(t Target, addr usermem.Addr, tid uint32, private bool) error {
+func (m *Manager) UnlockPI(t Target, addr hostarch.Addr, tid uint32, private bool) error {
 	k, err := getKey(t, addr, private)
 	if err != nil {
 		return err
@@ -738,7 +738,7 @@ func (m *Manager) UnlockPI(t Target, addr usermem.Addr, tid uint32, private bool
 	return err
 }
 
-func (m *Manager) unlockPILocked(t Target, addr usermem.Addr, tid uint32, b *bucket, key *Key) error {
+func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bucket, key *Key) error {
 	cur, err := t.LoadUint32(addr)
 	if err != nil {
 		return err

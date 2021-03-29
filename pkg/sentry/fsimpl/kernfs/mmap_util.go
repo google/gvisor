@@ -16,11 +16,11 @@ package kernfs
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // inodePlatformFile implements memmap.File. It exists solely because inode
@@ -66,7 +66,7 @@ func (i *inodePlatformFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (i *inodePlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	return i.fileMapper.MapInternal(fr, i.hostFD, at.Write)
 }
 
@@ -100,7 +100,7 @@ func (i *CachedMappable) Init(hostFD int) {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (i *CachedMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (i *CachedMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	i.mapsMu.Lock()
 	mapped := i.mappings.AddMapping(ms, ar, offset, writable)
 	for _, r := range mapped {
@@ -111,7 +111,7 @@ func (i *CachedMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace,
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (i *CachedMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (i *CachedMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	i.mapsMu.Lock()
 	unmapped := i.mappings.RemoveMapping(ms, ar, offset, writable)
 	for _, r := range unmapped {
@@ -121,19 +121,19 @@ func (i *CachedMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpa
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (i *CachedMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (i *CachedMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return i.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (i *CachedMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (i *CachedMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	mr := optional
 	return []memmap.Translation{
 		{
 			Source: mr,
 			File:   &i.pf,
 			Offset: mr.Start,
-			Perms:  usermem.AnyAccess,
+			Perms:  hostarch.AnyAccess,
 		},
 	}, nil
 }

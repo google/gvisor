@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
@@ -431,8 +432,8 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		}
 		oldSize := uint64(hostStat.Size)
 		if s.Size < oldSize {
-			oldpgend, _ := usermem.PageRoundUp(oldSize)
-			newpgend, _ := usermem.PageRoundUp(s.Size)
+			oldpgend, _ := hostarch.PageRoundUp(oldSize)
+			newpgend, _ := hostarch.PageRoundUp(s.Size)
 			if oldpgend != newpgend {
 				i.CachedMappable.InvalidateRange(memmap.MappableRange{newpgend, oldpgend})
 			}

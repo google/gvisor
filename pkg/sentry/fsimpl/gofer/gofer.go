@@ -44,6 +44,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	refs_vfs1 "gvisor.dev/gvisor/pkg/refs"
@@ -60,7 +61,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Name is the default filesystem name.
@@ -872,7 +872,7 @@ func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, ma
 		mode:      uint32(attr.Mode),
 		uid:       uint32(fs.opts.dfltuid),
 		gid:       uint32(fs.opts.dfltgid),
-		blockSize: usermem.PageSize,
+		blockSize: hostarch.PageSize,
 		readFD:    -1,
 		writeFD:   -1,
 		mmapFD:    -1,
@@ -1217,8 +1217,8 @@ func (d *dentry) updateSizeLocked(newSize uint64) {
 	// so we can't race with Write or another truncate.)
 	d.dataMu.Unlock()
 	if d.size < oldSize {
-		oldpgend, _ := usermem.PageRoundUp(oldSize)
-		newpgend, _ := usermem.PageRoundUp(d.size)
+		oldpgend, _ := hostarch.PageRoundUp(oldSize)
+		newpgend, _ := hostarch.PageRoundUp(d.size)
 		if oldpgend != newpgend {
 			d.mapsMu.Lock()
 			d.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{

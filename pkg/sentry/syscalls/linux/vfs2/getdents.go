@@ -22,7 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Getdents implements Linux syscall getdents(2).
@@ -58,7 +59,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 
 type getdentsCallback struct {
 	t            *kernel.Task
-	addr         usermem.Addr
+	addr         hostarch.Addr
 	remaining    int
 	isGetdents64 bool
 }
@@ -69,7 +70,7 @@ var getdentsCallbackPool = sync.Pool{
 	},
 }
 
-func getGetdentsCallback(t *kernel.Task, addr usermem.Addr, size int, isGetdents64 bool) *getdentsCallback {
+func getGetdentsCallback(t *kernel.Task, addr hostarch.Addr, size int, isGetdents64 bool) *getdentsCallback {
 	cb := getdentsCallbackPool.Get().(*getdentsCallback)
 	*cb = getdentsCallback{
 		t:            t,
@@ -102,9 +103,9 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 			return syserror.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)
-		usermem.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
-		usermem.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
-		usermem.ByteOrder.PutUint16(buf[16:18], uint16(size))
+		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
+		hostarch.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
+		hostarch.ByteOrder.PutUint16(buf[16:18], uint16(size))
 		buf[18] = dirent.Type
 		copy(buf[19:], dirent.Name)
 		// Zero out all remaining bytes in buf, including the NUL terminator
@@ -136,9 +137,9 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 			return syserror.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)
-		usermem.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
-		usermem.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
-		usermem.ByteOrder.PutUint16(buf[16:18], uint16(size))
+		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
+		hostarch.ByteOrder.PutUint64(buf[8:16], uint64(dirent.NextOff))
+		hostarch.ByteOrder.PutUint16(buf[16:18], uint16(size))
 		copy(buf[18:], dirent.Name)
 		// Zero out all remaining bytes in buf, including the NUL terminator
 		// after dirent.Name and the zero padding byte between the name and
@@ -155,7 +156,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		// cb.remaining.
 		return err
 	}
-	cb.addr += usermem.Addr(n)
+	cb.addr += hostarch.Addr(n)
 	cb.remaining -= n
 	return nil
 }

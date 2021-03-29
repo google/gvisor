@@ -36,6 +36,7 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -43,7 +44,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // MemoryManager implements a virtual address space.
@@ -97,7 +97,7 @@ type MemoryManager struct {
 	// binary into the mm.
 	//
 	// brk is protected by mappingMu.
-	brk usermem.AddrRange
+	brk hostarch.AddrRange
 
 	// usageAS is vmas.Span(), cached to accelerate RLIMIT_AS checks.
 	//
@@ -198,14 +198,14 @@ type MemoryManager struct {
 	// requirements apply to argv; we do not require that argv.WellFormed().
 	//
 	// argv is protected by metadataMu.
-	argv usermem.AddrRange
+	argv hostarch.AddrRange
 
 	// envv is the application envv. This is set up by the loader and may be
 	// modified by prctl(PR_SET_MM_ENV_START/PR_SET_MM_ENV_END). No
 	// requirements apply to envv; we do not require that envv.WellFormed().
 	//
 	// envv is protected by metadataMu.
-	envv usermem.AddrRange
+	envv hostarch.AddrRange
 
 	// auxv is the ELF's auxiliary vector.
 	//
@@ -268,20 +268,20 @@ type vma struct {
 
 	// realPerms are the memory permissions on this vma, as defined by the
 	// application.
-	realPerms usermem.AccessType `state:".(int)"`
+	realPerms hostarch.AccessType `state:".(int)"`
 
 	// effectivePerms are the memory permissions on this vma which are
 	// actually used to control access.
 	//
 	// Invariant: effectivePerms == realPerms.Effective().
-	effectivePerms usermem.AccessType `state:"manual"`
+	effectivePerms hostarch.AccessType `state:"manual"`
 
 	// maxPerms limits the set of permissions that may ever apply to this
 	// memory, as well as accesses for which usermem.IOOpts.IgnorePermissions
 	// is true (e.g. ptrace(PTRACE_POKEDATA)).
 	//
 	// Invariant: maxPerms == maxPerms.Effective().
-	maxPerms usermem.AccessType `state:"manual"`
+	maxPerms hostarch.AccessType `state:"manual"`
 
 	// private is true if this is a MAP_PRIVATE mapping, such that writes to
 	// the mapping are propagated to a copy.
@@ -421,8 +421,8 @@ type pma struct {
 	off uint64
 
 	// translatePerms is the permissions returned by memmap.Mappable.Translate.
-	// If private is true, translatePerms is usermem.AnyAccess.
-	translatePerms usermem.AccessType
+	// If private is true, translatePerms is hostarch.AnyAccess.
+	translatePerms hostarch.AccessType
 
 	// effectivePerms is the permissions allowed for non-ignorePermissions
 	// accesses. maxPerms is the permissions allowed for ignorePermissions
@@ -432,8 +432,8 @@ type pma struct {
 	//
 	// These are stored in the pma so that the IO implementation can avoid
 	// iterating mm.vmas when pmas already exist.
-	effectivePerms usermem.AccessType
-	maxPerms       usermem.AccessType
+	effectivePerms hostarch.AccessType
+	maxPerms       hostarch.AccessType
 
 	// needCOW is true if writes to the mapping must be propagated to a copy.
 	needCOW bool
@@ -465,7 +465,7 @@ type privateRefs struct {
 }
 
 type invalidateArgs struct {
-	ar   usermem.AddrRange
+	ar   hostarch.AddrRange
 	opts memmap.InvalidateOpts
 }
 

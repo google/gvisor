@@ -24,13 +24,13 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // initArchState initializes architecture-specific state.
@@ -41,7 +41,7 @@ func (m *machine) initArchState() error {
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
 		_KVM_SET_TSS_ADDR,
-		uintptr(reservedMemory-(3*usermem.PageSize))); errno != 0 {
+		uintptr(reservedMemory-(3*hostarch.PageSize))); errno != 0 {
 		return errno
 	}
 
@@ -256,19 +256,19 @@ func (c *vCPU) setSystemTime() error {
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
-func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	*info = arch.SignalInfo{
 		Signo: signal,
 		Code:  arch.SignalInfoKernel,
 	}
 	info.SetAddr(addr) // Include address.
-	return usermem.NoAccess, platform.ErrContextSignal
+	return hostarch.NoAccess, platform.ErrContextSignal
 }
 
 // fault generates an appropriate fault return.
 //
 //go:nosplit
-func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := ring0.ReadCR2()
 	code, user := c.ErrorCode()
@@ -276,12 +276,12 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, e
 		// The last fault serviced by this CPU was not a user
 		// fault, so we can't reliably trust the faultAddr or
 		// the code provided here. We need to re-execute.
-		return usermem.NoAccess, platform.ErrContextInterrupt
+		return hostarch.NoAccess, platform.ErrContextInterrupt
 	}
 	// Reset the pointed SignalInfo.
 	*info = arch.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
-	accessType := usermem.AccessType{
+	accessType := hostarch.AccessType{
 		Read:    code&(1<<1) == 0,
 		Write:   code&(1<<1) != 0,
 		Execute: code&(1<<4) != 0,
@@ -310,14 +310,14 @@ func loadByte(ptr *byte) byte {
 //go:nosplit
 func prefaultFloatingPointState(data *fpu.State) {
 	size := len(*data)
-	for i := 0; i < size; i += usermem.PageSize {
+	for i := 0; i < size; i += hostarch.PageSize {
 		loadByte(&(*data)[i])
 	}
 	loadByte(&(*data)[size-1])
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
 		return nonCanonical(regs.Rip, int32(unix.SIGSEGV), info)
@@ -353,7 +353,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	switch vector {
 	case ring0.Syscall, ring0.SyscallInt80:
 		// Fast path: system call executed.
-		return usermem.NoAccess, nil
+		return hostarch.NoAccess, nil
 
 	case ring0.PageFault:
 		return c.fault(int32(unix.SIGSEGV), info)
@@ -364,7 +364,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault,
 		ring0.SegmentNotPresent,
@@ -380,9 +380,9 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			// When CPUID faulting is enabled, we will generate a #GP(0) when
 			// userspace executes a CPUID instruction. This is handled above,
 			// because we need to be able to map and read user memory.
-			return usermem.AccessType{}, platform.ErrContextSignalCPUID
+			return hostarch.AccessType{}, platform.ErrContextSignalCPUID
 		}
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.InvalidOpcode:
 		*info = arch.SignalInfo{
@@ -390,7 +390,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  1, // ILL_ILLOPC (illegal opcode).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.DivideByZero:
 		*info = arch.SignalInfo{
@@ -398,7 +398,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  1, // FPE_INTDIV (divide by zero).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Overflow:
 		*info = arch.SignalInfo{
@@ -406,7 +406,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  2, // FPE_INTOVF (integer overflow).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.X87FloatingPointException,
 		ring0.SIMDFloatingPointException:
@@ -415,17 +415,17 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 			Code:  7, // FPE_FLTINV (invalid operation).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return usermem.AccessType{}, platform.ErrContextSignal
+		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Vector(bounce): // ring0.VirtualizationException
-		return usermem.NoAccess, platform.ErrContextInterrupt
+		return hostarch.NoAccess, platform.ErrContextInterrupt
 
 	case ring0.AlignmentCheck:
 		*info = arch.SignalInfo{
 			Signo: int32(unix.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}
-		return usermem.NoAccess, platform.ErrContextSignal
+		return hostarch.NoAccess, platform.ErrContextSignal
 
 	case ring0.NMI:
 		// An NMI is generated only when a fault is not servicable by
@@ -471,9 +471,9 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 				panic("impossible translation")
 			}
 			pageTable.Map(
-				usermem.Addr(ring0.KernelStartAddress|r.virtual),
+				hostarch.Addr(ring0.KernelStartAddress|r.virtual),
 				r.length,
-				pagetables.MapOpts{AccessType: usermem.Execute},
+				pagetables.MapOpts{AccessType: hostarch.Execute},
 				physical)
 		}
 	})
@@ -484,9 +484,9 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 			panic("impossible translation")
 		}
 		pageTable.Map(
-			usermem.Addr(ring0.KernelStartAddress|start),
+			hostarch.Addr(ring0.KernelStartAddress|start),
 			regionLen,
-			pagetables.MapOpts{AccessType: usermem.ReadWrite},
+			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
 			physical)
 	}
 }

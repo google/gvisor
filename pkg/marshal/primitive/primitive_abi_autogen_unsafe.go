@@ -10,9 +10,9 @@ package primitive
 
 import (
     "gvisor.dev/gvisor/pkg/gohacks"
+    "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
     "gvisor.dev/gvisor/pkg/safecopy"
-    "gvisor.dev/gvisor/pkg/usermem"
     "io"
     "reflect"
     "runtime"
@@ -37,12 +37,12 @@ func (i *Int16) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *Int16) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(*i))
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(*i))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *Int16) UnmarshalBytes(src []byte) {
-    *i = Int16(int16(usermem.ByteOrder.Uint16(src[:2])))
+    *i = Int16(int16(hostarch.ByteOrder.Uint16(src[:2])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -64,7 +64,7 @@ func (i *Int16) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (i *Int16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (i *Int16) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -81,13 +81,13 @@ func (i *Int16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (i *Int16) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int16) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (i *Int16) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int16) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -120,7 +120,7 @@ func (i *Int16) WriteTo(w io.Writer) (int64, error) {
 
 // CopyInt16SliceIn copies in a slice of int16 objects from the task's memory.
 //go:nosplit
-func CopyInt16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int16) (int, error) {
+func CopyInt16SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int16) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -146,7 +146,7 @@ func CopyInt16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int16) (i
 
 // CopyInt16SliceOut copies a slice of int16 objects to the task's memory.
 //go:nosplit
-func CopyInt16SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int16) (int, error) {
+func CopyInt16SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []int16) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -214,12 +214,12 @@ func (i *Int32) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *Int32) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*i))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(*i))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *Int32) UnmarshalBytes(src []byte) {
-    *i = Int32(int32(usermem.ByteOrder.Uint32(src[:4])))
+    *i = Int32(int32(hostarch.ByteOrder.Uint32(src[:4])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -241,7 +241,7 @@ func (i *Int32) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (i *Int32) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (i *Int32) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -258,13 +258,13 @@ func (i *Int32) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (i *Int32) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int32) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (i *Int32) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int32) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -297,7 +297,7 @@ func (i *Int32) WriteTo(w io.Writer) (int64, error) {
 
 // CopyInt32SliceIn copies in a slice of int32 objects from the task's memory.
 //go:nosplit
-func CopyInt32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int32) (int, error) {
+func CopyInt32SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int32) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -323,7 +323,7 @@ func CopyInt32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int32) (i
 
 // CopyInt32SliceOut copies a slice of int32 objects to the task's memory.
 //go:nosplit
-func CopyInt32SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int32) (int, error) {
+func CopyInt32SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []int32) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -391,12 +391,12 @@ func (i *Int64) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (i *Int64) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(*i))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(*i))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (i *Int64) UnmarshalBytes(src []byte) {
-    *i = Int64(int64(usermem.ByteOrder.Uint64(src[:8])))
+    *i = Int64(int64(hostarch.ByteOrder.Uint64(src[:8])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -418,7 +418,7 @@ func (i *Int64) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (i *Int64) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (i *Int64) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -435,13 +435,13 @@ func (i *Int64) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (i *Int64) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int64) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (i *Int64) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -474,7 +474,7 @@ func (i *Int64) WriteTo(w io.Writer) (int64, error) {
 
 // CopyInt64SliceIn copies in a slice of int64 objects from the task's memory.
 //go:nosplit
-func CopyInt64SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int64) (int, error) {
+func CopyInt64SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int64) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -500,7 +500,7 @@ func CopyInt64SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int64) (i
 
 // CopyInt64SliceOut copies a slice of int64 objects to the task's memory.
 //go:nosplit
-func CopyInt64SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int64) (int, error) {
+func CopyInt64SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []int64) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -595,7 +595,7 @@ func (i *Int8) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (i *Int8) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (i *Int8) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -612,13 +612,13 @@ func (i *Int8) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (i
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (i *Int8) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int8) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return i.CopyOutN(cc, addr, i.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (i *Int8) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (i *Int8) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -651,7 +651,7 @@ func (i *Int8) WriteTo(w io.Writer) (int64, error) {
 
 // CopyInt8SliceIn copies in a slice of int8 objects from the task's memory.
 //go:nosplit
-func CopyInt8SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int8) (int, error) {
+func CopyInt8SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []int8) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -677,7 +677,7 @@ func CopyInt8SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []int8) (int
 
 // CopyInt8SliceOut copies a slice of int8 objects to the task's memory.
 //go:nosplit
-func CopyInt8SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []int8) (int, error) {
+func CopyInt8SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []int8) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -745,12 +745,12 @@ func (u *Uint16) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (u *Uint16) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint16(dst[:2], uint16(*u))
+    hostarch.ByteOrder.PutUint16(dst[:2], uint16(*u))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (u *Uint16) UnmarshalBytes(src []byte) {
-    *u = Uint16(uint16(usermem.ByteOrder.Uint16(src[:2])))
+    *u = Uint16(uint16(hostarch.ByteOrder.Uint16(src[:2])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -772,7 +772,7 @@ func (u *Uint16) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *Uint16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (u *Uint16) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -789,13 +789,13 @@ func (u *Uint16) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) 
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *Uint16) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint16) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *Uint16) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint16) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -828,7 +828,7 @@ func (u *Uint16) WriteTo(w io.Writer) (int64, error) {
 
 // CopyUint16SliceIn copies in a slice of uint16 objects from the task's memory.
 //go:nosplit
-func CopyUint16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint16) (int, error) {
+func CopyUint16SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint16) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -854,7 +854,7 @@ func CopyUint16SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint16) 
 
 // CopyUint16SliceOut copies a slice of uint16 objects to the task's memory.
 //go:nosplit
-func CopyUint16SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []uint16) (int, error) {
+func CopyUint16SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []uint16) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -922,12 +922,12 @@ func (u *Uint32) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (u *Uint32) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint32(dst[:4], uint32(*u))
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(*u))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (u *Uint32) UnmarshalBytes(src []byte) {
-    *u = Uint32(uint32(usermem.ByteOrder.Uint32(src[:4])))
+    *u = Uint32(uint32(hostarch.ByteOrder.Uint32(src[:4])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -949,7 +949,7 @@ func (u *Uint32) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *Uint32) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (u *Uint32) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -966,13 +966,13 @@ func (u *Uint32) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) 
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *Uint32) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint32) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *Uint32) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint32) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1005,7 +1005,7 @@ func (u *Uint32) WriteTo(w io.Writer) (int64, error) {
 
 // CopyUint32SliceIn copies in a slice of uint32 objects from the task's memory.
 //go:nosplit
-func CopyUint32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint32) (int, error) {
+func CopyUint32SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint32) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -1031,7 +1031,7 @@ func CopyUint32SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint32) 
 
 // CopyUint32SliceOut copies a slice of uint32 objects to the task's memory.
 //go:nosplit
-func CopyUint32SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []uint32) (int, error) {
+func CopyUint32SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []uint32) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -1099,12 +1099,12 @@ func (u *Uint64) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (u *Uint64) MarshalBytes(dst []byte) {
-    usermem.ByteOrder.PutUint64(dst[:8], uint64(*u))
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(*u))
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (u *Uint64) UnmarshalBytes(src []byte) {
-    *u = Uint64(uint64(usermem.ByteOrder.Uint64(src[:8])))
+    *u = Uint64(uint64(hostarch.ByteOrder.Uint64(src[:8])))
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -1126,7 +1126,7 @@ func (u *Uint64) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *Uint64) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (u *Uint64) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1143,13 +1143,13 @@ func (u *Uint64) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) 
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *Uint64) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint64) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *Uint64) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1182,7 +1182,7 @@ func (u *Uint64) WriteTo(w io.Writer) (int64, error) {
 
 // CopyUint64SliceIn copies in a slice of uint64 objects from the task's memory.
 //go:nosplit
-func CopyUint64SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint64) (int, error) {
+func CopyUint64SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint64) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -1208,7 +1208,7 @@ func CopyUint64SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint64) 
 
 // CopyUint64SliceOut copies a slice of uint64 objects to the task's memory.
 //go:nosplit
-func CopyUint64SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []uint64) (int, error) {
+func CopyUint64SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []uint64) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil
@@ -1303,7 +1303,7 @@ func (u *Uint8) UnmarshalUnsafe(src []byte) {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 //go:nosplit
-func (u *Uint8) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (int, error) {
+func (u *Uint8) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1320,13 +1320,13 @@ func (u *Uint8) CopyOutN(cc marshal.CopyContext, addr usermem.Addr, limit int) (
 
 // CopyOut implements marshal.Marshallable.CopyOut.
 //go:nosplit
-func (u *Uint8) CopyOut(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint8) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
 //go:nosplit
-func (u *Uint8) CopyIn(cc marshal.CopyContext, addr usermem.Addr) (int, error) {
+func (u *Uint8) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -1359,7 +1359,7 @@ func (u *Uint8) WriteTo(w io.Writer) (int64, error) {
 
 // CopyUint8SliceIn copies in a slice of uint8 objects from the task's memory.
 //go:nosplit
-func CopyUint8SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint8) (int, error) {
+func CopyUint8SliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []uint8) (int, error) {
     count := len(dst)
     if count == 0 {
         return 0, nil
@@ -1385,7 +1385,7 @@ func CopyUint8SliceIn(cc marshal.CopyContext, addr usermem.Addr, dst []uint8) (i
 
 // CopyUint8SliceOut copies a slice of uint8 objects to the task's memory.
 //go:nosplit
-func CopyUint8SliceOut(cc marshal.CopyContext, addr usermem.Addr, src []uint8) (int, error) {
+func CopyUint8SliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []uint8) (int, error) {
     count := len(src)
     if count == 0 {
         return 0, nil

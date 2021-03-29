@@ -21,11 +21,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 func (d *dentry) isCopiedUp() bool {
@@ -138,8 +138,8 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 			// We may have memory mappings of the file on the lower layer.
 			// Switch to mapping the file on the upper layer instead.
 			mmapOpts = &memmap.MMapOpts{
-				Perms:    usermem.ReadWrite,
-				MaxPerms: usermem.ReadWrite,
+				Perms:    hostarch.ReadWrite,
+				MaxPerms: hostarch.ReadWrite,
 			}
 			if err := newFD.ConfigureMMap(ctx, mmapOpts); err != nil {
 				cleanupUndoCopyUp()

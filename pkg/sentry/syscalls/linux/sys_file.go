@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -29,7 +30,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // fileOpAt performs an operation on the second last component in the path.
@@ -115,7 +115,7 @@ func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(ro
 }
 
 // copyInPath copies a path in.
-func copyInPath(t *kernel.Task, addr usermem.Addr, allowEmpty bool) (path string, dirPath bool, err error) {
+func copyInPath(t *kernel.Task, addr hostarch.Addr, allowEmpty bool) (path string, dirPath bool, err error) {
 	path, err = t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return "", false, err
@@ -133,7 +133,7 @@ func copyInPath(t *kernel.Task, addr usermem.Addr, allowEmpty bool) (path string
 
 // LINT.IfChange
 
-func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uintptr, err error) {
+func openAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint) (fd uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -208,7 +208,7 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 	return fd, err // Use result in frame.
 }
 
-func mknodAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
+func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMode) error {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -301,7 +301,7 @@ func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	return 0, nil, mknodAt(t, dirFD, path, mode)
 }
 
-func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode linux.FileMode) (fd uintptr, err error) {
+func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode linux.FileMode) (fd uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -515,7 +515,7 @@ func (ac accessContext) Value(key interface{}) interface{} {
 	}
 }
 
-func accessAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode uint) error {
+func accessAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode uint) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
@@ -694,7 +694,7 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Top it off with a terminator.
-	_, err = t.CopyOutBytes(addr+usermem.Addr(bytes), []byte("\x00"))
+	_, err = t.CopyOutBytes(addr+hostarch.Addr(bytes), []byte("\x00"))
 	return uintptr(bytes + 1), nil, err
 }
 
@@ -1164,7 +1164,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // LINT.IfChange
 
-func mkdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
+func mkdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1216,7 +1216,7 @@ func Mkdirat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	return 0, nil, mkdirAt(t, dirFD, addr, mode)
 }
 
-func rmdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
+func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1256,7 +1256,7 @@ func Rmdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, rmdirAt(t, linux.AT_FDCWD, addr)
 }
 
-func symlinkAt(t *kernel.Task, dirFD int32, newAddr usermem.Addr, oldAddr usermem.Addr) error {
+func symlinkAt(t *kernel.Task, dirFD int32, newAddr hostarch.Addr, oldAddr hostarch.Addr) error {
 	newPath, dirPath, err := copyInPath(t, newAddr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1341,7 +1341,7 @@ func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
 // linkAt creates a hard link to the target specified by oldDirFD and oldAddr,
 // specified by newDirFD and newAddr.  If resolve is true, then the symlinks
 // will be followed when evaluating the target.
-func linkAt(t *kernel.Task, oldDirFD int32, oldAddr usermem.Addr, newDirFD int32, newAddr usermem.Addr, resolve, allowEmpty bool) error {
+func linkAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int32, newAddr hostarch.Addr, resolve, allowEmpty bool) error {
 	oldPath, _, err := copyInPath(t, oldAddr, allowEmpty)
 	if err != nil {
 		return err
@@ -1448,7 +1448,7 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // LINT.IfChange
 
-func readlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr, bufAddr usermem.Addr, size uint) (copied uintptr, err error) {
+func readlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, bufAddr hostarch.Addr, size uint) (copied uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -1511,7 +1511,7 @@ func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // LINT.IfChange
 
-func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
+func unlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1728,7 +1728,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 	return nil
 }
 
-func chownAt(t *kernel.Task, fd int32, addr usermem.Addr, resolve, allowEmpty bool, uid auth.UID, gid auth.GID) error {
+func chownAt(t *kernel.Task, fd int32, addr hostarch.Addr, resolve, allowEmpty bool, uid auth.UID, gid auth.GID) error {
 	path, _, err := copyInPath(t, addr, allowEmpty)
 	if err != nil {
 		return err
@@ -1815,7 +1815,7 @@ func chmod(t *kernel.Task, d *fs.Dirent, mode linux.FileMode) error {
 	return nil
 }
 
-func chmodAt(t *kernel.Task, fd int32, addr usermem.Addr, mode linux.FileMode) error {
+func chmodAt(t *kernel.Task, fd int32, addr hostarch.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1866,7 +1866,7 @@ func defaultSetToSystemTimeSpec() fs.TimeSpec {
 	}
 }
 
-func utimes(t *kernel.Task, dirFD int32, addr usermem.Addr, ts fs.TimeSpec, resolve bool) error {
+func utimes(t *kernel.Task, dirFD int32, addr hostarch.Addr, ts fs.TimeSpec, resolve bool) error {
 	setTimestamp := func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Does the task own the file?
 		if !d.Inode.CheckOwnership(t) {
@@ -2030,7 +2030,7 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // LINT.IfChange
 
-func renameAt(t *kernel.Task, oldDirFD int32, oldAddr usermem.Addr, newDirFD int32, newAddr usermem.Addr) error {
+func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int32, newAddr hostarch.Addr) error {
 	newPath, _, err := copyInPath(t, newAddr, false /* allowEmpty */)
 	if err != nil {
 		return err

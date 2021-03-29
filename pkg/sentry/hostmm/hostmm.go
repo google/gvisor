@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // NotifyCurrentMemcgPressureCallback requests that f is called whenever the
@@ -88,7 +88,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 			if n != sizeofUint64 {
 				panic(fmt.Sprintf("short read from memory pressure level eventfd: got %d bytes, wanted %d", n, sizeofUint64))
 			}
-			val := usermem.ByteOrder.Uint64(buf[:])
+			val := hostarch.ByteOrder.Uint64(buf[:])
 			if val >= stopVal {
 				// Assume this was due to the notifier's "destructor" (the
 				// function returned by NotifyCurrentMemcgPressureCallback
@@ -103,7 +103,7 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 	return func() {
 		rw := fd.NewReadWriter(eventFD.FD())
 		var buf [sizeofUint64]byte
-		usermem.ByteOrder.PutUint64(buf[:], stopVal)
+		hostarch.ByteOrder.PutUint64(buf[:], stopVal)
 		for {
 			n, err := rw.Write(buf[:])
 			if err != nil {

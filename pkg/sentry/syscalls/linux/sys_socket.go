@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -117,7 +118,7 @@ type multipleMessageHeader64 struct {
 
 // CaptureAddress allocates memory for and copies a socket address structure
 // from the untrusted address space range.
-func CaptureAddress(t *kernel.Task, addr usermem.Addr, addrlen uint32) ([]byte, error) {
+func CaptureAddress(t *kernel.Task, addr hostarch.Addr, addrlen uint32) ([]byte, error) {
 	if addrlen > maxAddrLen {
 		return nil, syserror.EINVAL
 	}
@@ -133,7 +134,7 @@ func CaptureAddress(t *kernel.Task, addr usermem.Addr, addrlen uint32) ([]byte, 
 // writeAddress writes a sockaddr structure and its length to an output buffer
 // in the unstrusted address space range. If the address is bigger than the
 // buffer, it is truncated.
-func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr usermem.Addr, addrLenPtr usermem.Addr) error {
+func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr hostarch.Addr, addrLenPtr hostarch.Addr) error {
 	// Get the buffer length.
 	var bufLen uint32
 	if _, err := primitive.CopyUint32In(t, addrLenPtr, &bufLen); err != nil {
@@ -276,7 +277,7 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 // accept is the implementation of the accept syscall. It is called by accept
 // and accept4 syscall handlers.
-func accept(t *kernel.Task, fd int32, addr usermem.Addr, addrLen usermem.Addr, flags int) (uintptr, error) {
+func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr, flags int) (uintptr, error) {
 	// Check that no unsupported flags are passed in.
 	if flags & ^(linux.SOCK_NONBLOCK|linux.SOCK_CLOEXEC) != 0 {
 		return 0, syserror.EINVAL
@@ -472,7 +473,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getSockOpt tries to handle common socket options, or dispatches to a specific
 // socket implementation.
-func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr usermem.Addr, len int) (marshal.Marshallable, *syserr.Error) {
+func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr hostarch.Addr, len int) (marshal.Marshallable, *syserr.Error) {
 	if level == linux.SOL_SOCKET {
 		switch name {
 		case linux.SO_TYPE, linux.SO_DOMAIN, linux.SO_PROTOCOL:
@@ -735,7 +736,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
-func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
+func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
 	// Capture the message header and io vectors.
 	var msg MessageHeader64
 	if _, err := msg.CopyIn(t, msgPtr); err != nil {
@@ -745,7 +746,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	if msg.IovLen > linux.UIO_MAXIOV {
 		return 0, syserror.EMSGSIZE
 	}
-	dst, err := t.IovecsIOSequence(usermem.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
+	dst, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,
 	})
 	if err != nil {
@@ -796,7 +797,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 	// Copy the address to the caller.
 	if msg.NameLen != 0 {
-		if err := writeAddress(t, sender, senderLen, usermem.Addr(msg.Name), usermem.Addr(msgPtr+nameLenOffset)); err != nil {
+		if err := writeAddress(t, sender, senderLen, hostarch.Addr(msg.Name), hostarch.Addr(msgPtr+nameLenOffset)); err != nil {
 			return 0, err
 		}
 	}
@@ -806,7 +807,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		return 0, err
 	}
 	if len(controlData) > 0 {
-		if _, err := t.CopyOutBytes(usermem.Addr(msg.Control), controlData); err != nil {
+		if _, err := t.CopyOutBytes(hostarch.Addr(msg.Control), controlData); err != nil {
 			return 0, err
 		}
 	}
@@ -821,7 +822,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 // recvFrom is the implementation of the recvfrom syscall. It is called by
 // recvfrom and recv syscall handlers.
-func recvFrom(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flags int32, namePtr usermem.Addr, nameLenPtr usermem.Addr) (uintptr, error) {
+func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags int32, namePtr hostarch.Addr, nameLenPtr hostarch.Addr) (uintptr, error) {
 	if int(bufLen) < 0 {
 		return 0, syserror.EINVAL
 	}
@@ -997,7 +998,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
-func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr usermem.Addr, flags int32) (uintptr, error) {
+func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostarch.Addr, flags int32) (uintptr, error) {
 	// Capture the message header.
 	var msg MessageHeader64
 	if _, err := msg.CopyIn(t, msgPtr); err != nil {
@@ -1011,7 +1012,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 			return 0, syserror.ENOBUFS
 		}
 		controlData = make([]byte, msg.ControlLen)
-		if _, err := t.CopyInBytes(usermem.Addr(msg.Control), controlData); err != nil {
+		if _, err := t.CopyInBytes(hostarch.Addr(msg.Control), controlData); err != nil {
 			return 0, err
 		}
 	}
@@ -1020,7 +1021,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 	var to []byte
 	if msg.NameLen != 0 {
 		var err error
-		to, err = CaptureAddress(t, usermem.Addr(msg.Name), msg.NameLen)
+		to, err = CaptureAddress(t, hostarch.Addr(msg.Name), msg.NameLen)
 		if err != nil {
 			return 0, err
 		}
@@ -1030,7 +1031,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 	if msg.IovLen > linux.UIO_MAXIOV {
 		return 0, syserror.EMSGSIZE
 	}
-	src, err := t.IovecsIOSequence(usermem.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
+	src, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,
 	})
 	if err != nil {
@@ -1064,7 +1065,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 
 // sendTo is the implementation of the sendto syscall. It is called by sendto
 // and send syscall handlers.
-func sendTo(t *kernel.Task, fd int32, bufPtr usermem.Addr, bufLen uint64, flags int32, namePtr usermem.Addr, nameLen uint32) (uintptr, error) {
+func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags int32, namePtr hostarch.Addr, nameLen uint32) (uintptr, error) {
 	bl := int(bufLen)
 	if bl < 0 {
 		return 0, syserror.EINVAL

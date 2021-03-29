@@ -19,18 +19,18 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Preconditions:
 // * mm.mappingMu must be locked for writing.
 // * opts must be valid as defined by the checks in MMap.
-func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOpts) (vmaIterator, usermem.AddrRange, error) {
+func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOpts) (vmaIterator, hostarch.AddrRange, error) {
 	if opts.MaxPerms != opts.MaxPerms.Effective() {
 		panic(fmt.Sprintf("Non-effective MaxPerms %s cannot be enforced", opts.MaxPerms))
 	}
@@ -47,7 +47,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		if opts.Force && opts.Unmap && opts.Fixed {
 			addr = opts.Addr
 		} else {
-			return vmaIterator{}, usermem.AddrRange{}, err
+			return vmaIterator{}, hostarch.AddrRange{}, err
 		}
 	}
 	ar, _ := addr.ToRange(opts.Length)
@@ -58,7 +58,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		newUsageAS -= uint64(mm.vmas.SpanRange(ar))
 	}
 	if limitAS := limits.FromContext(ctx).Get(limits.AS).Cur; newUsageAS > limitAS {
-		return vmaIterator{}, usermem.AddrRange{}, syserror.ENOMEM
+		return vmaIterator{}, hostarch.AddrRange{}, syserror.ENOMEM
 	}
 
 	if opts.MLockMode != memmap.MLockNone {
@@ -66,14 +66,14 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
 			mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 			if mlockLimit == 0 {
-				return vmaIterator{}, usermem.AddrRange{}, syserror.EPERM
+				return vmaIterator{}, hostarch.AddrRange{}, syserror.EPERM
 			}
 			newLockedAS := mm.lockedAS + opts.Length
 			if opts.Unmap {
 				newLockedAS -= mm.mlockedBytesRangeLocked(ar)
 			}
 			if newLockedAS > mlockLimit {
-				return vmaIterator{}, usermem.AddrRange{}, syserror.EAGAIN
+				return vmaIterator{}, hostarch.AddrRange{}, syserror.EAGAIN
 			}
 		}
 	}
@@ -93,7 +93,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		// The expression for writable is vma.canWriteMappableLocked(), but we
 		// don't yet have a vma.
 		if err := opts.Mappable.AddMapping(ctx, mm, ar, opts.Offset, !opts.Private && opts.MaxPerms.Write); err != nil {
-			return vmaIterator{}, usermem.AddrRange{}, err
+			return vmaIterator{}, hostarch.AddrRange{}, err
 		}
 	}
 
@@ -137,7 +137,7 @@ type findAvailableOpts struct {
 	//
 	// - Unmap allows existing guard pages in the returned range.
 
-	Addr     usermem.Addr
+	Addr     hostarch.Addr
 	Fixed    bool
 	Unmap    bool
 	Map32Bit bool
@@ -153,13 +153,13 @@ const (
 // findAvailableLocked finds an allocatable range.
 //
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOpts) (usermem.Addr, error) {
+func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOpts) (hostarch.Addr, error) {
 	if opts.Fixed {
 		opts.Map32Bit = false
 	}
 	allowedAR := mm.applicationAddrRange()
 	if opts.Map32Bit {
-		allowedAR = allowedAR.Intersect(usermem.AddrRange{map32Start, map32End})
+		allowedAR = allowedAR.Intersect(hostarch.AddrRange{map32Start, map32End})
 	}
 
 	// Does the provided suggestion work?
@@ -181,33 +181,33 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 	}
 
 	// Prefer hugepage alignment if a hugepage or more is requested.
-	alignment := uint64(usermem.PageSize)
-	if length >= usermem.HugePageSize {
-		alignment = usermem.HugePageSize
+	alignment := uint64(hostarch.PageSize)
+	if length >= hostarch.HugePageSize {
+		alignment = hostarch.HugePageSize
 	}
 
 	if opts.Map32Bit {
 		return mm.findLowestAvailableLocked(length, alignment, allowedAR)
 	}
 	if mm.layout.DefaultDirection == arch.MmapBottomUp {
-		return mm.findLowestAvailableLocked(length, alignment, usermem.AddrRange{mm.layout.BottomUpBase, mm.layout.MaxAddr})
+		return mm.findLowestAvailableLocked(length, alignment, hostarch.AddrRange{mm.layout.BottomUpBase, mm.layout.MaxAddr})
 	}
-	return mm.findHighestAvailableLocked(length, alignment, usermem.AddrRange{mm.layout.MinAddr, mm.layout.TopDownBase})
+	return mm.findHighestAvailableLocked(length, alignment, hostarch.AddrRange{mm.layout.MinAddr, mm.layout.TopDownBase})
 }
 
-func (mm *MemoryManager) applicationAddrRange() usermem.AddrRange {
-	return usermem.AddrRange{mm.layout.MinAddr, mm.layout.MaxAddr}
+func (mm *MemoryManager) applicationAddrRange() hostarch.AddrRange {
+	return hostarch.AddrRange{mm.layout.MinAddr, mm.layout.MaxAddr}
 }
 
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bounds usermem.AddrRange) (usermem.Addr, error) {
-	for gap := mm.vmas.LowerBoundGap(bounds.Start); gap.Ok() && gap.Start() < bounds.End; gap = gap.NextLargeEnoughGap(usermem.Addr(length)) {
+func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bounds hostarch.AddrRange) (hostarch.Addr, error) {
+	for gap := mm.vmas.LowerBoundGap(bounds.Start); gap.Ok() && gap.Start() < bounds.End; gap = gap.NextLargeEnoughGap(hostarch.Addr(length)) {
 		if gr := gap.availableRange().Intersect(bounds); uint64(gr.Length()) >= length {
 			// Can we shift up to match the alignment?
 			if offset := uint64(gr.Start) % alignment; offset != 0 {
 				if uint64(gr.Length()) >= length+alignment-offset {
 					// Yes, we're aligned.
-					return gr.Start + usermem.Addr(alignment-offset), nil
+					return gr.Start + hostarch.Addr(alignment-offset), nil
 				}
 			}
 
@@ -219,15 +219,15 @@ func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bou
 }
 
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) findHighestAvailableLocked(length, alignment uint64, bounds usermem.AddrRange) (usermem.Addr, error) {
-	for gap := mm.vmas.UpperBoundGap(bounds.End); gap.Ok() && gap.End() > bounds.Start; gap = gap.PrevLargeEnoughGap(usermem.Addr(length)) {
+func (mm *MemoryManager) findHighestAvailableLocked(length, alignment uint64, bounds hostarch.AddrRange) (hostarch.Addr, error) {
+	for gap := mm.vmas.UpperBoundGap(bounds.End); gap.Ok() && gap.End() > bounds.Start; gap = gap.PrevLargeEnoughGap(hostarch.Addr(length)) {
 		if gr := gap.availableRange().Intersect(bounds); uint64(gr.Length()) >= length {
 			// Can we shift down to match the alignment?
-			start := gr.End - usermem.Addr(length)
+			start := gr.End - hostarch.Addr(length)
 			if offset := uint64(start) % alignment; offset != 0 {
-				if gr.Start <= start-usermem.Addr(offset) {
+				if gr.Start <= start-hostarch.Addr(offset) {
 					// Yes, we're aligned.
-					return start - usermem.Addr(offset), nil
+					return start - hostarch.Addr(offset), nil
 				}
 			}
 
@@ -239,7 +239,7 @@ func (mm *MemoryManager) findHighestAvailableLocked(length, alignment uint64, bo
 }
 
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) mlockedBytesRangeLocked(ar usermem.AddrRange) uint64 {
+func (mm *MemoryManager) mlockedBytesRangeLocked(ar hostarch.AddrRange) uint64 {
 	var total uint64
 	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
 		if vseg.ValuePtr().mlockMode != memmap.MLockNone {
@@ -264,7 +264,7 @@ func (mm *MemoryManager) mlockedBytesRangeLocked(ar usermem.AddrRange) uint64 {
 // Preconditions:
 // * mm.mappingMu must be locked for reading; it may be temporarily unlocked.
 // * ar.Length() != 0.
-func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
+func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar hostarch.AddrRange, at hostarch.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -320,7 +320,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange
 // temporarily unlocked.
 //
 // Postconditions: ars is not mutated.
-func (mm *MemoryManager) getVecVMAsLocked(ctx context.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool) (usermem.AddrRangeSeq, error) {
+func (mm *MemoryManager) getVecVMAsLocked(ctx context.Context, ars hostarch.AddrRangeSeq, at hostarch.AccessType, ignorePermissions bool) (hostarch.AddrRangeSeq, error) {
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
 		ar := arsit.Head()
 		if ar.Length() == 0 {
@@ -339,7 +339,7 @@ func (mm *MemoryManager) getVecVMAsLocked(ctx context.Context, ars usermem.AddrR
 //
 // guardBytes is equivalent to Linux's stack_guard_gap after upstream
 // 1be7107fbe18 "mm: larger stack guard gap, between vmas".
-const guardBytes = 256 * usermem.PageSize
+const guardBytes = 256 * hostarch.PageSize
 
 // unmapLocked unmaps all addresses in ar and returns the resulting gap in
 // mm.vmas.
@@ -348,7 +348,7 @@ const guardBytes = 256 * usermem.PageSize
 // * mm.mappingMu must be locked for writing.
 // * ar.Length() != 0.
 // * ar must be page-aligned.
-func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
+func (mm *MemoryManager) unmapLocked(ctx context.Context, ar hostarch.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -369,7 +369,7 @@ func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) 
 // * mm.mappingMu must be locked for writing.
 // * ar.Length() != 0.
 // * ar must be page-aligned.
-func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
+func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -426,12 +426,12 @@ func (vma *vma) isPrivateDataLocked() bool {
 // vmaSetFunctions implements segment.Functions for vmaSet.
 type vmaSetFunctions struct{}
 
-func (vmaSetFunctions) MinKey() usermem.Addr {
+func (vmaSetFunctions) MinKey() hostarch.Addr {
 	return 0
 }
 
-func (vmaSetFunctions) MaxKey() usermem.Addr {
-	return ^usermem.Addr(0)
+func (vmaSetFunctions) MaxKey() hostarch.Addr {
+	return ^hostarch.Addr(0)
 }
 
 func (vmaSetFunctions) ClearValue(vma *vma) {
@@ -440,7 +440,7 @@ func (vmaSetFunctions) ClearValue(vma *vma) {
 	vma.hint = ""
 }
 
-func (vmaSetFunctions) Merge(ar1 usermem.AddrRange, vma1 vma, ar2 usermem.AddrRange, vma2 vma) (vma, bool) {
+func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.AddrRange, vma2 vma) (vma, bool) {
 	if vma1.mappable != vma2.mappable ||
 		(vma1.mappable != nil && vma1.off+uint64(ar1.Length()) != vma2.off) ||
 		vma1.realPerms != vma2.realPerms ||
@@ -462,7 +462,7 @@ func (vmaSetFunctions) Merge(ar1 usermem.AddrRange, vma1 vma, ar2 usermem.AddrRa
 	return vma1, true
 }
 
-func (vmaSetFunctions) Split(ar usermem.AddrRange, v vma, split usermem.Addr) (vma, vma) {
+func (vmaSetFunctions) Split(ar hostarch.AddrRange, v vma, split hostarch.Addr) (vma, vma) {
 	v2 := v
 	if v2.mappable != nil {
 		v2.off += uint64(split - ar.Start)
@@ -476,7 +476,7 @@ func (vmaSetFunctions) Split(ar usermem.AddrRange, v vma, split usermem.Addr) (v
 // Preconditions:
 // * vseg.ValuePtr().mappable != nil.
 // * vseg.Range().Contains(addr).
-func (vseg vmaIterator) mappableOffsetAt(addr usermem.Addr) uint64 {
+func (vseg vmaIterator) mappableOffsetAt(addr hostarch.Addr) uint64 {
 	if checkInvariants {
 		if !vseg.Ok() {
 			panic("terminal vma iterator")
@@ -503,7 +503,7 @@ func (vseg vmaIterator) mappableRange() memmap.MappableRange {
 // * vseg.ValuePtr().mappable != nil.
 // * vseg.Range().IsSupersetOf(ar).
 // * ar.Length() != 0.
-func (vseg vmaIterator) mappableRangeOf(ar usermem.AddrRange) memmap.MappableRange {
+func (vseg vmaIterator) mappableRangeOf(ar hostarch.AddrRange) memmap.MappableRange {
 	if checkInvariants {
 		if !vseg.Ok() {
 			panic("terminal vma iterator")
@@ -528,7 +528,7 @@ func (vseg vmaIterator) mappableRangeOf(ar usermem.AddrRange) memmap.MappableRan
 // * vseg.ValuePtr().mappable != nil.
 // * vseg.mappableRange().IsSupersetOf(mr).
 // * mr.Length() != 0.
-func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
+func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) hostarch.AddrRange {
 	if checkInvariants {
 		if !vseg.Ok() {
 			panic("terminal vma iterator")
@@ -546,7 +546,7 @@ func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
 
 	vma := vseg.ValuePtr()
 	vstart := vseg.Start()
-	return usermem.AddrRange{vstart + usermem.Addr(mr.Start-vma.off), vstart + usermem.Addr(mr.End-vma.off)}
+	return hostarch.AddrRange{vstart + hostarch.Addr(mr.Start-vma.off), vstart + hostarch.Addr(mr.End-vma.off)}
 }
 
 // seekNextLowerBound returns mm.vmas.LowerBoundSegment(addr), but does so by
@@ -555,7 +555,7 @@ func (vseg vmaIterator) addrRangeOf(mr memmap.MappableRange) usermem.AddrRange {
 // Preconditions:
 // * mm.mappingMu must be locked.
 // * addr >= vseg.Start().
-func (vseg vmaIterator) seekNextLowerBound(addr usermem.Addr) vmaIterator {
+func (vseg vmaIterator) seekNextLowerBound(addr hostarch.Addr) vmaIterator {
 	if checkInvariants {
 		if !vseg.Ok() {
 			panic("terminal vma iterator")
@@ -572,7 +572,7 @@ func (vseg vmaIterator) seekNextLowerBound(addr usermem.Addr) vmaIterator {
 
 // availableRange returns the subset of vgap.Range() in which new vmas may be
 // created without MMapOpts.Unmap == true.
-func (vgap vmaGapIterator) availableRange() usermem.AddrRange {
+func (vgap vmaGapIterator) availableRange() hostarch.AddrRange {
 	ar := vgap.Range()
 	next := vgap.NextSegment()
 	if !next.Ok() || !next.ValuePtr().growsDown {
@@ -580,7 +580,7 @@ func (vgap vmaGapIterator) availableRange() usermem.AddrRange {
 	}
 	// Exclude guard pages.
 	if ar.Length() < guardBytes {
-		return usermem.AddrRange{ar.Start, ar.Start}
+		return hostarch.AddrRange{ar.Start, ar.Start}
 	}
 	ar.End -= guardBytes
 	return ar

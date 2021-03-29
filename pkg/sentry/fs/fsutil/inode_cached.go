@@ -19,6 +19,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -622,7 +623,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		switch {
 		case seg.Ok():
 			// Get internal mappings from the cache.
-			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
+			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				unlock()
 				return done, err
@@ -647,7 +648,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 				// Read into the cache, then re-enter the loop to read from the
 				// cache.
 				reqMR := memmap.MappableRange{
-					Start: uint64(usermem.Addr(gapMR.Start).RoundDown()),
+					Start: uint64(hostarch.Addr(gapMR.Start).RoundDown()),
 					End:   fs.OffsetPageEnd(int64(gapMR.End)),
 				}
 				optMR := gap.Range()
@@ -729,7 +730,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 		case seg.Ok() && seg.Start() < mr.End:
 			// Get internal mappings from the cache.
 			segMR := seg.Range().Intersect(mr)
-			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), usermem.Write)
+			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
 			if err != nil {
 				rw.maybeGrowFile()
 				rw.c.dataMu.Unlock()
@@ -786,7 +787,7 @@ func (c *CachingInodeOperations) useHostPageCache() bool {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
+func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	// Hot path. Avoid defers.
 	c.mapsMu.Lock()
 	mapped := c.mappings.AddMapping(ms, ar, offset, writable)
@@ -808,7 +809,7 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
+func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	// Hot path. Avoid defers.
 	c.mapsMu.Lock()
 	unmapped := c.mappings.RemoveMapping(ms, ar, offset, writable)
@@ -836,12 +837,12 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return c.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (c *CachingInodeOperations) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (c *CachingInodeOperations) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	// Hot path. Avoid defer.
 	if c.useHostPageCache() {
 		mr := optional
@@ -853,7 +854,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 				Source: mr,
 				File:   c,
 				Offset: mr.Start,
-				Perms:  usermem.AnyAccess,
+				Perms:  hostarch.AnyAccess,
 			},
 		}, nil
 	}
@@ -885,7 +886,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 		segMR := seg.Range().Intersect(optional)
 		// TODO(jamieliu): Make Translations writable even if writability is
 		// not required if already kept-dirty by another writable translation.
-		perms := usermem.AccessType{
+		perms := hostarch.AccessType{
 			Read:    true,
 			Execute: true,
 		}
@@ -1050,7 +1051,7 @@ func (c *CachingInodeOperations) DecRef(fr memmap.FileRange) {
 // MapInternal implements memmap.File.MapInternal. This is used when we
 // directly map an underlying host fd and CachingInodeOperations is used as the
 // memmap.File during translation.
-func (c *CachingInodeOperations) MapInternal(fr memmap.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+func (c *CachingInodeOperations) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	return c.hostFileMapper.MapInternal(fr, c.backingFile.FD(), at.Write)
 }
 

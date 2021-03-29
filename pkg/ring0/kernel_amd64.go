@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 	"reflect"
 
-	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // init initializes architecture-specific state.
@@ -34,7 +34,7 @@ func (k *Kernel) init(maxCPUs int) {
 		entries = make([]kernelEntry, maxCPUs+padding-1)
 		totalSize := entrySize * uintptr(maxCPUs+padding-1)
 		addr := reflect.ValueOf(&entries[0]).Pointer()
-		if addr&(usermem.PageSize-1) == 0 && totalSize >= usermem.PageSize {
+		if addr&(hostarch.PageSize-1) == 0 && totalSize >= hostarch.PageSize {
 			// The runtime forces power-of-2 alignment for allocations, and we are therefore
 			// safe once the first address is aligned and the chunk is at least a full page.
 			break
@@ -44,10 +44,10 @@ func (k *Kernel) init(maxCPUs int) {
 	k.cpuEntries = entries
 
 	k.globalIDT = &idt64{}
-	if reflect.TypeOf(idt64{}).Size() != usermem.PageSize {
+	if reflect.TypeOf(idt64{}).Size() != hostarch.PageSize {
 		panic("Size of globalIDT should be PageSize")
 	}
-	if reflect.ValueOf(k.globalIDT).Pointer()&(usermem.PageSize-1) != 0 {
+	if reflect.ValueOf(k.globalIDT).Pointer()&(hostarch.PageSize-1) != 0 {
 		panic("Allocated globalIDT should be page aligned")
 	}
 
@@ -71,13 +71,13 @@ func (k *Kernel) EntryRegions() map[uintptr]uintptr {
 
 	addr := reflect.ValueOf(&k.cpuEntries[0]).Pointer()
 	size := reflect.TypeOf(kernelEntry{}).Size() * uintptr(len(k.cpuEntries))
-	end, _ := usermem.Addr(addr + size).RoundUp()
-	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+	end, _ := hostarch.Addr(addr + size).RoundUp()
+	regions[uintptr(hostarch.Addr(addr).RoundDown())] = uintptr(end)
 
 	addr = reflect.ValueOf(k.globalIDT).Pointer()
 	size = reflect.TypeOf(idt64{}).Size()
-	end, _ = usermem.Addr(addr + size).RoundUp()
-	regions[uintptr(usermem.Addr(addr).RoundDown())] = uintptr(end)
+	end, _ = hostarch.Addr(addr + size).RoundUp()
+	regions[uintptr(hostarch.Addr(addr).RoundDown())] = uintptr(end)
 
 	return regions
 }

@@ -20,10 +20,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // NewAnonVirtualDentry returns a VirtualDentry with the given synthetic name,
@@ -43,7 +43,7 @@ func (vfs *VirtualFilesystem) NewAnonVirtualDentry(name string) VirtualDentry {
 }
 
 const (
-	anonfsBlockSize = usermem.PageSize // via fs/libfs.c:pseudo_fs_fill_super()
+	anonfsBlockSize = hostarch.PageSize // via fs/libfs.c:pseudo_fs_fill_super()
 
 	// Mode, UID, and GID for a generic anonfs file.
 	anonFileMode = 0600 // no type is correct

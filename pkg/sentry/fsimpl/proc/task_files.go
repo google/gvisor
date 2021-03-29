@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -122,8 +123,8 @@ func (d *auxvData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.Grow((len(auxv) + 1) * 16)
 	for _, e := range auxv {
 		var tmp [16]byte
-		usermem.ByteOrder.PutUint64(tmp[:8], e.Key)
-		usermem.ByteOrder.PutUint64(tmp[8:], uint64(e.Value))
+		hostarch.ByteOrder.PutUint64(tmp[:8], e.Key)
+		hostarch.ByteOrder.PutUint64(tmp[8:], uint64(e.Value))
 		buf.Write(tmp[:])
 	}
 	var atNull [16]byte
@@ -168,15 +169,15 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	defer m.DecUsers(ctx)
 
 	// Figure out the bounds of the exec arg we are trying to read.
-	var ar usermem.AddrRange
+	var ar hostarch.AddrRange
 	switch d.arg {
 	case cmdlineDataArg:
-		ar = usermem.AddrRange{
+		ar = hostarch.AddrRange{
 			Start: m.ArgvStart(),
 			End:   m.ArgvEnd(),
 		}
 	case environDataArg:
-		ar = usermem.AddrRange{
+		ar = hostarch.AddrRange{
 			Start: m.EnvvStart(),
 			End:   m.EnvvEnd(),
 		}
@@ -192,7 +193,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// until Linux 4.9 (272ddc8b3735 "proc: don't use FOLL_FORCE for reading
 	// cmdline and environment").
 	writer := &bufferWriter{buf: buf}
-	if n, err := m.CopyInTo(ctx, usermem.AddrRangeSeqOf(ar), writer, usermem.IOOpts{}); n == 0 || err != nil {
+	if n, err := m.CopyInTo(ctx, hostarch.AddrRangeSeqOf(ar), writer, usermem.IOOpts{}); n == 0 || err != nil {
 		// Nothing to copy or something went wrong.
 		return err
 	}
@@ -209,7 +210,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 
 		// There is no NULL terminator in the string, return into envp.
-		arEnvv := usermem.AddrRange{
+		arEnvv := hostarch.AddrRange{
 			Start: m.EnvvStart(),
 			End:   m.EnvvEnd(),
 		}
@@ -218,11 +219,11 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// https://elixir.bootlin.com/linux/v4.20/source/fs/proc/base.c#L208
 		// we'll return one page total between argv and envp because of the
 		// above page restrictions.
-		if buf.Len() >= usermem.PageSize {
+		if buf.Len() >= hostarch.PageSize {
 			// Returned at least one page already, nothing else to add.
 			return nil
 		}
-		remaining := usermem.PageSize - buf.Len()
+		remaining := hostarch.PageSize - buf.Len()
 		if int(arEnvv.Length()) > remaining {
 			end, ok := arEnvv.Start.AddLength(uint64(remaining))
 			if !ok {
@@ -230,7 +231,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			}
 			arEnvv.End = end
 		}
-		if _, err := m.CopyInTo(ctx, usermem.AddrRangeSeqOf(arEnvv), writer, usermem.IOOpts{}); err != nil {
+		if _, err := m.CopyInTo(ctx, hostarch.AddrRangeSeqOf(arEnvv), writer, usermem.IOOpts{}); err != nil {
 			return err
 		}
 
@@ -323,7 +324,7 @@ func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset in
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)
 	srclen := src.NumBytes()
-	if srclen >= usermem.PageSize || offset != 0 {
+	if srclen >= hostarch.PageSize || offset != 0 {
 		return 0, syserror.EINVAL
 	}
 	b := make([]byte, srclen)
@@ -481,7 +482,7 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 	defer m.DecUsers(ctx)
 	// Buffer the read data because of MM locks
 	buf := make([]byte, dst.NumBytes())
-	n, readErr := m.CopyIn(ctx, usermem.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
+	n, readErr := m.CopyIn(ctx, hostarch.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
 	if n > 0 {
 		if _, err := dst.CopyOut(ctx, buf[:n]); err != nil {
 			return 0, syserror.EFAULT
@@ -613,7 +614,7 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			rss = mm.ResidentSetSize()
 		}
 	})
-	fmt.Fprintf(buf, "%d %d ", vss, rss/usermem.PageSize)
+	fmt.Fprintf(buf, "%d %d ", vss, rss/hostarch.PageSize)
 
 	// rsslim.
 	fmt.Fprintf(buf, "%d ", s.task.ThreadGroup().Limits().Get(limits.Rss).Cur)
@@ -655,7 +656,7 @@ func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 	})
 
-	fmt.Fprintf(buf, "%d %d 0 0 0 0 0\n", vss/usermem.PageSize, rss/usermem.PageSize)
+	fmt.Fprintf(buf, "%d %d 0 0 0 0 0\n", vss/hostarch.PageSize, rss/hostarch.PageSize)
 	return nil
 }
 
@@ -774,7 +775,7 @@ func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset 
 	}
 
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(usermem.PageSize - 1)
+	src = src.TakeFirst(hostarch.PageSize - 1)
 
 	var v int32
 	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
