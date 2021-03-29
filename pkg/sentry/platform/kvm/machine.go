@@ -72,6 +72,9 @@ type machine struct {
 
 	// nextID is the next vCPU ID.
 	nextID uint32
+
+	// machineArchState is the architecture-specific state.
+	machineArchState
 }
 
 const (
@@ -193,12 +196,7 @@ func newMachine(vm int) (*machine, error) {
 	m.available.L = &m.mu
 
 	// Pull the maximum vCPUs.
-	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
-	if errno != 0 {
-		m.maxVCPUs = _KVM_NR_VCPUS
-	} else {
-		m.maxVCPUs = int(maxVCPUs)
-	}
+	m.getMaxVCPU()
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
 	m.vCPUsByTID = make(map[uint64]*vCPU)
 	m.vCPUsByID = make([]*vCPU, m.maxVCPUs)
@@ -419,9 +417,8 @@ func (m *machine) Get() *vCPU {
 			}
 		}
 
-		// Create a new vCPU (maybe).
-		if int(m.nextID) < m.maxVCPUs {
-			c := m.newVCPU()
+		// Get a new vCPU (maybe).
+		if c := m.getNewVCPU(); c != nil {
 			c.lock()
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
