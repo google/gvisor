@@ -399,15 +399,15 @@ func TestTmpFile(t *testing.T) {
 
 // TestTmpMount checks that mounts inside '/tmp' are not overridden.
 func TestTmpMount(t *testing.T) {
-	ctx := context.Background()
 	dir, err := ioutil.TempDir(testutil.TmpDir(), "tmp-mount")
 	if err != nil {
 		t.Fatalf("TempDir(): %v", err)
 	}
-	want := "123"
+	const want = "123"
 	if err := ioutil.WriteFile(filepath.Join(dir, "file.txt"), []byte("123"), 0666); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
+	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
@@ -422,6 +422,48 @@ func TestTmpMount(t *testing.T) {
 		},
 	}
 	got, err := d.Run(ctx, opts, "cat", "/tmp/foo/file.txt")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	if want != got {
+		t.Errorf("invalid file content, want: %q, got: %q", want, got)
+	}
+}
+
+// Test that it is allowed to mount a file on top of /dev files, e.g.
+// /dev/random.
+func TestMountOverDev(t *testing.T) {
+	if usingVFS2, err := dockerutil.UsingVFS2(); !usingVFS2 {
+		t.Skip("VFS1 doesn't allow /dev/random to be mounted.")
+	} else if err != nil {
+		t.Fatalf("Failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	}
+
+	random, err := ioutil.TempFile(testutil.TmpDir(), "random")
+	if err != nil {
+		t.Fatal("ioutil.TempFile() failed:", err)
+	}
+	const want = "123"
+	if _, err := random.WriteString(want); err != nil {
+		t.Fatalf("WriteString() to %q: %v", random.Name(), err)
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: random.Name(),
+				Target: "/dev/random",
+			},
+		},
+	}
+	cmd := "dd count=1 bs=5 if=/dev/random 2> /dev/null"
+	got, err := d.Run(ctx, opts, "sh", "-c", cmd)
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}

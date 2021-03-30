@@ -110,7 +110,7 @@ func compileMounts(spec *specs.Spec, vfs2Enabled bool) []specs.Mount {
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		if !vfs2Enabled && !specutils.IsVFS1SupportedDevMount(m) {
+		if !specutils.IsSupportedDevMount(m, vfs2Enabled) {
 			log.Warningf("ignoring dev mount at %q", m.Destination)
 			continue
 		}
