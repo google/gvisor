@@ -176,7 +176,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
-		if specutils.Is9PMount(m) {
+		if specutils.Is9PMount(m, conf.VFS2) {
 			cfg := fsgofer.Config{
 				ROMount:           isReadonlyMount(m.Options) || conf.Overlay,
 				HostUDS:           conf.FSGoferHostUDS,
@@ -350,7 +350,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // creates directories as needed.
 func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 	for _, m := range mounts {
-		if m.Type != "bind" || !specutils.IsVFS1SupportedDevMount(m) {
+		if !specutils.Is9PMount(m, conf.VFS2) {
 			continue
 		}
 
@@ -390,7 +390,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if m.Type != "bind" || !specutils.IsVFS1SupportedDevMount(m) {
+		if !specutils.Is9PMount(m, conf.VFS2) {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}
