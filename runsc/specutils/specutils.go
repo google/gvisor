@@ -332,14 +332,20 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 	return auth.CapabilitySetOfMany(caps), nil
 }
 
-// Is9PMount returns true if the given mount can be mounted as an external gofer.
-func Is9PMount(m specs.Mount) bool {
-	return m.Type == "bind" && m.Source != "" && IsVFS1SupportedDevMount(m)
+// Is9PMount returns true if the given mount can be mounted as an external
+// gofer.
+func Is9PMount(m specs.Mount, vfs2Enabled bool) bool {
+	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m, vfs2Enabled)
 }
 
-// IsVFS1SupportedDevMount returns true if m.Destination does not specify a
+// IsSupportedDevMount returns true if m.Destination does not specify a
 // path that is hardcoded by VFS1's implementation of /dev.
-func IsVFS1SupportedDevMount(m specs.Mount) bool {
+func IsSupportedDevMount(m specs.Mount, vfs2Enabled bool) bool {
+	// VFS2 has no hardcoded files under /dev, so everything is allowed.
+	if vfs2Enabled {
+		return true
+	}
+
 	// See pkg/sentry/fs/dev/dev.go.
 	var existingDevices = []string{
 		"/dev/fd", "/dev/stdin", "/dev/stdout", "/dev/stderr",
