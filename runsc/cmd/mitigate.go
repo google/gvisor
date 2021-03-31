@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"runtime"
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
@@ -71,6 +72,11 @@ func (m *Mitigate) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute.
 func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if runtime.GOARCH == "arm64" || runtime.GOARCH == "arm" {
+		log.Warningf("As ARM is not affected by MDS, mitigate does not support")
+		return subcommands.ExitFailure
+	}
+
 	if f.NArg() != 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
