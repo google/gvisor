@@ -49,3 +49,33 @@ func TestSegments(t *testing.T) {
 		return false
 	})
 }
+
+// stmxcsr reads the MXCSR control and status register.
+func stmxcsr(addr *uint32)
+
+func TestMXCSR(t *testing.T) {
+	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		var si arch.SignalInfo
+		switchOpts := ring0.SwitchOpts{
+			Registers:          regs,
+			FloatingPointState: &dummyFPState,
+			PageTables:         pt,
+			FullRestore:        true,
+		}
+		mxcsrBefore := uint32(0)
+		mxcsrAfter := uint32(0)
+		stmxcsr(&mxcsrBefore)
+		switchOpts.FloatingPointState.SetMXCSR(mxcsrBefore ^ 0x8)
+		if _, err := c.SwitchToUser(
+			switchOpts, &si); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if err != nil {
+			t.Errorf("application syscall failed: %v", err)
+		}
+		stmxcsr(&mxcsrAfter)
+		if mxcsrAfter != mxcsrBefore {
+			t.Errorf("mxcsr = %x (expected %x)", mxcsrBefore, mxcsrAfter)
+		}
+		return false
+	})
+}
