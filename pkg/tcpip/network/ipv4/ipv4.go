@@ -541,7 +541,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	// Note that parsing only makes sure that the packet is well formed as per the
 	// wire format. We also want to check if the header's fields are valid before
 	// sending the packet.
-	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().View()).IsValid(pktSize) {
+	if !parse.IPv4(pkt) || !header.IPv4(pkt.NetworkHeader().View()).IsValid(pktSize, false) {
 		return &tcpip.ErrMalformedHeader{}
 	}
 
@@ -1110,32 +1110,7 @@ func (p *protocol) parseAndValidate(pkt *stack.PacketBuffer) (header.IPv4, bool)
 	h := header.IPv4(pkt.NetworkHeader().View())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
-	if !h.IsValid(pkt.Size() - pkt.LinkHeader().View().Size()) {
-		return nil, false
-	}
-
-	// There has been some confusion regarding verifying checksums. We need
-	// just look for negative 0 (0xffff) as the checksum, as it's not possible to
-	// get positive 0 (0) for the checksum. Some bad implementations could get it
-	// when doing entry replacement in the early days of the Internet,
-	// however the lore that one needs to check for both persists.
-	//
-	// RFC 1624 section 1 describes the source of this confusion as:
-	//     [the partial recalculation method described in RFC 1071] computes a
-	//     result for certain cases that differs from the one obtained from
-	//     scratch (one's complement of one's complement sum of the original
-	//     fields).
-	//
-	// However RFC 1624 section 5 clarifies that if using the verification method
-	// "recommended by RFC 1071, it does not matter if an intermediate system
-	// generated a -0 instead of +0".
-	//
-	// RFC1071 page 1 specifies the verification method as:
-	//	  (3)  To check a checksum, the 1's complement sum is computed over the
-	//        same set of octets, including the checksum field.  If the result
-	//        is all 1 bits (-0 in 1's complement arithmetic), the check
-	//        succeeds.
-	if h.CalculateChecksum() != 0xffff {
+	if !h.IsValid(pkt.Size()-pkt.LinkHeader().View().Size(), true) {
 		return nil, false
 	}
 

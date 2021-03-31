@@ -288,7 +288,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		// destination address, route using that address.
 		if e.ops.GetHeaderIncluded() {
 			ip := header.IPv4(payloadBytes)
-			if !ip.IsValid(len(payloadBytes)) {
+			if !ip.IsValid(len(payloadBytes), false) {
 				return nil, nil, nil, &tcpip.ErrInvalidOptionValue{}
 			}
 			dstAddr := ip.DestinationAddress()

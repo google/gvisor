@@ -1189,7 +1189,7 @@ func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketB
 		// Confirm that the packet is valid.
 		allBytes := buffer.NewVectorisedView(packet.Size(), packet.Views())
 		fragmentIPHeader := header.IPv4(allBytes.ToView())
-		if !fragmentIPHeader.IsValid(len(fragmentIPHeader)) {
+		if !fragmentIPHeader.IsValid(len(fragmentIPHeader), false) {
 			return fmt.Errorf("fragment #%d: IP packet is invalid:\n%s", i, hex.Dump(fragmentIPHeader))
 		}
 		if got := len(fragmentIPHeader); got > int(mtu) {

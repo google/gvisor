@@ -1259,16 +1259,19 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // omitted the checksum generation (RFC768).
 // On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
 func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
-	if !pkt.RXTransportChecksumValidated &&
-		(hdr.Checksum() != 0 || pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber) {
-		netHdr := pkt.Network()
-		xsum := header.PseudoHeaderChecksum(ProtocolNumber, netHdr.DestinationAddress(), netHdr.SourceAddress(), hdr.Length())
-		for _, v := range pkt.Data().Views() {
-			xsum = header.Checksum(v, xsum)
-		}
-		return hdr.CalculateChecksum(xsum) == 0xffff
+	if pkt.RXTransportChecksumValidated {
+		return true
 	}
-	return true
+	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber && hdr.Checksum() == 0 {
+		return true
+	}
+
+	netHdr := pkt.Network()
+	xsum := header.PseudoHeaderChecksum(ProtocolNumber, netHdr.DestinationAddress(), netHdr.SourceAddress(), hdr.Length())
+	for _, v := range pkt.Data().Views() {
+		xsum = header.Checksum(v, xsum)
+	}
+	return hdr.CalculateChecksum(xsum) == 0xffff
 }
 
 // HandlePacket is called by the stack when new packets arrive to this transport

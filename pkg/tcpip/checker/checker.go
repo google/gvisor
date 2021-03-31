@@ -49,13 +49,12 @@ func IPv4(t *testing.T, b []byte, checkers ...NetworkChecker) {
 
 	ipv4 := header.IPv4(b)
 
-	if !ipv4.IsValid(len(b)) {
+	if !ipv4.IsValid(len(b), false) {
 		t.Error("Not a valid IPv4 packet")
 	}
 
-	xsum := ipv4.CalculateChecksum()
-	if xsum != 0 && xsum != 0xffff {
-		t.Errorf("Bad checksum: 0x%x, checksum in packet: 0x%x", xsum, ipv4.Checksum())
+	if !ipv4.IsChecksumValid() {
+		t.Errorf("Bad checksum")
 	}
 
 	for _, f := range checkers {
