@@ -61,3 +61,8 @@ func (p *PtraceRegs) InstructionPointer() uint64 {
 func (p *PtraceRegs) StackPointer() uint64 {
 	return p.Rsp
 }
+
+// SetStackPointer sets the stack pointer to the specified value.
+func (p *PtraceRegs) SetStackPointer(sp uint64) {
+	p.Rsp = sp
+}
