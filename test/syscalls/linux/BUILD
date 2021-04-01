@@ -154,7 +154,6 @@ cc_library(
     defines = select_system(),
     deps = default_net_util() + [
         gtest,
-        "//net/util:ports",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
