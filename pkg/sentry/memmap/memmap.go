@@ -375,6 +375,11 @@ type MMapOpts struct {
 	//
 	// If Force is true, Unmap and Fixed must be true.
 	Force bool
+
+	// SentryOwnedContent indicates the sentry exclusively controls the
+	// underlying memory backing the mapping thus the memory content is
+	// guaranteed not to be modified outside the sentry's purview.
+	SentryOwnedContent bool
 }
 
 // File represents a host file that may be mapped into an platform.AddressSpace.

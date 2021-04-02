@@ -93,6 +93,7 @@ func (fd *zeroFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 		// "/dev/zero (deleted)".
 		opts.Offset = 0
 		opts.MappingIdentity = &fd.vfsfd
+		opts.SentryOwnedContent = true
 		opts.MappingIdentity.IncRef()
 		return nil
 	}

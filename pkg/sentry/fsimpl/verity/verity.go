@@ -34,6 +34,7 @@
 package verity
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -44,19 +45,20 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/merkletree"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -722,6 +724,10 @@ type fileDescription struct {
 	// underlying file system.
 	lowerFD *vfs.FileDescription
 
+	// lowerMappable is the memmap.Mappable corresponding to this file in the
+	// underlying file system.
+	lowerMappable memmap.Mappable
+
 	// merkleReader is the read-only FileDescription corresponding to the
 	// Merkle tree file in the underlying file system.
 	merkleReader *vfs.FileDescription
@@ -1201,6 +1207,24 @@ func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, op
 	return 0, syserror.EROFS
 }
 
+// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	if err := fd.lowerFD.ConfigureMMap(ctx, opts); err != nil {
+		return err
+	}
+	fd.lowerMappable = opts.Mappable
+	if opts.MappingIdentity != nil {
+		opts.MappingIdentity.DecRef(ctx)
+		opts.MappingIdentity = nil
+	}
+
+	// Check if mmap is allowed on the lower filesystem.
+	if !opts.SentryOwnedContent {
+		return syserror.ENODEV
+	}
+	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
+}
+
 // LockBSD implements vfs.FileDescriptionImpl.LockBSD.
 func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
 	return fd.lowerFD.LockBSD(ctx, ownerPID, t, block)
@@ -1224,6 +1248,115 @@ func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID,
 // TestPOSIX implements vfs.FileDescriptionImpl.TestPOSIX.
 func (fd *fileDescription) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
 	return fd.lowerFD.TestPOSIX(ctx, uid, t, r)
+}
+
+// Translate implements memmap.Mappable.Translate.
+func (fd *fileDescription) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	ts, err := fd.lowerMappable.Translate(ctx, required, optional, at)
+	if err != nil {
+		return ts, err
+	}
+
+	// dataSize is the size of the whole file.
+	dataSize, err := fd.merkleReader.GetXattr(ctx, &vfs.GetXattrOptions{
+		Name: merkleSizeXattr,
+		Size: sizeOfStringInt32,
+	})
+
+	// The Merkle tree file for the child should have been created and
+	// contains the expected xattrs. If the xattr does not exist, it
+	// indicates unexpected modifications to the file system.
+	if err == syserror.ENODATA {
+		return ts, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
+	}
+	if err != nil {
+		return ts, err
+	}
+
+	// The dataSize xattr should be an integer. If it's not, it indicates
+	// unexpected modifications to the file system.
+	size, err := strconv.Atoi(dataSize)
+	if err != nil {
+		return ts, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
+	}
+
+	merkleReader := FileReadWriteSeeker{
+		FD:  fd.merkleReader,
+		Ctx: ctx,
+	}
+
+	for _, t := range ts {
+		// Content integrity relies on sentry owning the backing data. MapInternal is guaranteed
+		// to fetch sentry owned memory because we disallow verity mmaps otherwise.
+		ims, err := t.File.MapInternal(memmap.FileRange{t.Offset, t.Offset + t.Source.Length()}, hostarch.Read)
+		if err != nil {
+			return nil, err
+		}
+		dataReader := mmapReadSeeker{ims, t.Source.Start}
+		var buf bytes.Buffer
+		_, err = merkletree.Verify(&merkletree.VerifyParams{
+			Out:                   &buf,
+			File:                  &dataReader,
+			Tree:                  &merkleReader,
+			Size:                  int64(size),
+			Name:                  fd.d.name,
+			Mode:                  fd.d.mode,
+			UID:                   fd.d.uid,
+			GID:                   fd.d.gid,
+			HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
+			ReadOffset:            int64(t.Source.Start),
+			ReadSize:              int64(t.Source.Length()),
+			Expected:              fd.d.hash,
+			DataAndTreeInSameFile: false,
+		})
+		if err != nil {
+			return ts, alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
+		}
+	}
+	return ts, err
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (fd *fileDescription) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	return fd.lowerMappable.AddMapping(ctx, ms, ar, offset, writable)
+}
+
+// RemoveMapping implements memmap.Mappable.RemoveMapping.
+func (fd *fileDescription) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	fd.lowerMappable.RemoveMapping(ctx, ms, ar, offset, writable)
+}
+
+// CopyMapping implements memmap.Mappable.CopyMapping.
+func (fd *fileDescription) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+	return fd.lowerMappable.CopyMapping(ctx, ms, srcAR, dstAR, offset, writable)
+}
+
+// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+func (fd *fileDescription) InvalidateUnsavable(context.Context) error {
+	return nil
+}
+
+// mmapReadSeeker is a helper struct used by fileDescription.Translate to pass
+// a safemem.BlockSeq pointing to the mapped region as io.ReaderAt.
+type mmapReadSeeker struct {
+	safemem.BlockSeq
+	Offset uint64
+}
+
+// ReadAt implements io.ReaderAt.ReadAt. off is the offset into the mapped file.
+func (r *mmapReadSeeker) ReadAt(p []byte, off int64) (int, error) {
+	bs := r.BlockSeq
+	// Adjust the offset into the mapped file to get the offset into the internally
+	// mapped region.
+	readOffset := off - int64(r.Offset)
+	if readOffset < 0 {
+		return 0, syserror.EINVAL
+	}
+	bs.DropFirst64(uint64(readOffset))
+	view := bs.TakeFirst64(uint64(len(p)))
+	dst := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(p))
+	n, err := safemem.CopySeq(dst, view)
+	return int(n), err
 }
 
 // FileReadWriteSeeker is a helper struct to pass a vfs.FileDescription as
