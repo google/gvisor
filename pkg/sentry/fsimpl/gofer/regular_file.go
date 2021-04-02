@@ -701,6 +701,7 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 	}
 	// After this point, d may be used as a memmap.Mappable.
 	d.pf.hostFileMapperInitOnce.Do(d.pf.hostFileMapper.Init)
+	opts.SentryOwnedContent = d.fs.opts.forcePageCache
 	return vfs.GenericConfigureMMap(&fd.vfsfd, d, opts)
 }
 
