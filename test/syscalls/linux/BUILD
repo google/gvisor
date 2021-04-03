@@ -4205,3 +4205,24 @@ cc_binary(
         "//test/util:test_util",
     ],
 )
+
+cc_binary(
+    name = "cgroup_test",
+    testonly = 1,
+    srcs = ["cgroup.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:cgroup_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "@com_google_absl//absl/strings",
+        gtest,
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+    ],
+)

@@ -25,8 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// DynamicBytesFile implements kernfs.Inode and represents a read-only
-// file whose contents are backed by a vfs.DynamicBytesSource.
+// DynamicBytesFile implements kernfs.Inode and represents a read-only file
+// whose contents are backed by a vfs.DynamicBytesSource. If data additionally
+// implements vfs.WritableDynamicBytesSource, the file also supports dispatching
+// writes to the implementer, but note that this will not update the source data.
 //
 // Must be instantiated with NewDynamicBytesFile or initialized with Init
 // before first use.
@@ -40,7 +42,9 @@ type DynamicBytesFile struct {
 	InodeNotSymlink
 
 	locks vfs.FileLocks
-	data  vfs.DynamicBytesSource
+	// data can additionally implement vfs.WritableDynamicBytesSource to support
+	// writes.
+	data vfs.DynamicBytesSource
 }
 
 var _ Inode = (*DynamicBytesFile)(nil)

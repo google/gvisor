@@ -57,6 +57,7 @@ go_library(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/fs/tty",
         "//pkg/sentry/fs/user",
+        "//pkg/sentry/fsimpl/cgroupfs",
         "//pkg/sentry/fsimpl/devpts",
         "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/fuse",

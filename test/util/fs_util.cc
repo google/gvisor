@@ -28,6 +28,8 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -364,6 +366,48 @@ PosixErrorOr<std::vector<std::string>> ListDir(absl::string_view abspath,
   }
 
   return files;
+}
+
+PosixError DirContains(absl::string_view path,
+                       const std::vector<std::string>& expect,
+                       const std::vector<std::string>& exclude) {
+  ASSIGN_OR_RETURN_ERRNO(auto listing, ListDir(path, false));
+
+  for (auto& expected_entry : expect) {
+    auto cursor = std::find(listing.begin(), listing.end(), expected_entry);
+    if (cursor == listing.end()) {
+      return PosixError(ENOENT, absl::StrFormat("Failed to find '%s' in '%s'",
+                                                expected_entry, path));
+    }
+  }
+  for (auto& excluded_entry : exclude) {
+    auto cursor = std::find(listing.begin(), listing.end(), excluded_entry);
+    if (cursor != listing.end()) {
+      return PosixError(ENOENT, absl::StrCat("File '", excluded_entry,
+                                             "' found in path '", path, "'"));
+    }
+  }
+  return NoError();
+}
+
+PosixError EventuallyDirContains(absl::string_view path,
+                                 const std::vector<std::string>& expect,
+                                 const std::vector<std::string>& exclude) {
+  constexpr int kRetryCount = 100;
+  const absl::Duration kRetryDelay = absl::Milliseconds(100);
+
+  for (int i = 0; i < kRetryCount; ++i) {
+    auto res = DirContains(path, expect, exclude);
+    if (res.ok()) {
+      return res;
+    }
+    if (i < kRetryCount - 1) {
+      // Sleep if this isn't the final iteration.
+      absl::SleepFor(kRetryDelay);
+    }
+  }
+  return PosixError(ETIMEDOUT,
+                    "Timed out while waiting for directory to contain files ");
 }
 
 PosixError RecursivelyDelete(absl::string_view path, int* undeleted_dirs,

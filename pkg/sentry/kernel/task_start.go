@@ -151,6 +151,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		rseqSignature:      cfg.RSeqSignature,
 		futexWaiter:        futex.NewWaiter(),
 		containerID:        cfg.ContainerID,
+		cgroups:            make(map[Cgroup]struct{}),
 	}
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
@@ -187,6 +188,10 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	}
 	if t.parent != nil {
 		t.parent.children[t] = struct{}{}
+	}
+
+	if VFS2Enabled {
+		t.EnterInitialCgroups(t.parent)
 	}
 
 	if tg.leader == nil {

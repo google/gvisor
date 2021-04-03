@@ -94,6 +94,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         gtest,
     ],
 )
@@ -367,4 +368,21 @@ cc_library(
     name = "temp_umask",
     testonly = 1,
     hdrs = ["temp_umask.h"],
+)
+
+cc_library(
+    name = "cgroup_util",
+    testonly = 1,
+    srcs = ["cgroup_util.cc"],
+    hdrs = ["cgroup_util.h"],
+    deps = [
+        ":cleanup",
+        ":fs_util",
+        ":mount_util",
+        ":posix_error",
+        ":temp_path",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+    ],
 )

@@ -129,6 +129,18 @@ PosixError WalkTree(
 PosixErrorOr<std::vector<std::string>> ListDir(absl::string_view abspath,
                                                bool skipdots);
 
+// Check that a directory contains children nodes named in expect, and does not
+// contain any children nodes named in exclude.
+PosixError DirContains(absl::string_view path,
+                       const std::vector<std::string>& expect,
+                       const std::vector<std::string>& exclude);
+
+// Same as DirContains, but adds a retry. Suitable for checking a directory
+// being modified asynchronously.
+PosixError EventuallyDirContains(absl::string_view path,
+                                 const std::vector<std::string>& expect,
+                                 const std::vector<std::string>& exclude);
+
 // Attempt to recursively delete a directory or file. Returns an error and
 // the number of undeleted directories and files. If either
 // undeleted_dirs or undeleted_files is nullptr then it will not be used.

@@ -86,13 +86,13 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	procfs.MaxCachedDentries = maxCachedDentries
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
-	var cgroups map[string]string
+	var fakeCgroupControllers map[string]string
 	if opts.InternalData != nil {
 		data := opts.InternalData.(*InternalData)
-		cgroups = data.Cgroups
+		fakeCgroupControllers = data.Cgroups
 	}
 
-	inode := procfs.newTasksInode(ctx, k, pidns, cgroups)
+	inode := procfs.newTasksInode(ctx, k, pidns, fakeCgroupControllers)
 	var dentry kernfs.Dentry
 	dentry.InitRoot(&procfs.Filesystem, inode)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil

@@ -141,6 +141,7 @@ go_library(
     srcs = [
         "abstract_socket_namespace.go",
         "aio.go",
+        "cgroup.go",
         "context.go",
         "fd_table.go",
         "fd_table_refs.go",
@@ -178,6 +179,7 @@ go_library(
         "task.go",
         "task_acct.go",
         "task_block.go",
+        "task_cgroup.go",
         "task_clone.go",
         "task_context.go",
         "task_exec.go",
@@ -241,6 +243,7 @@ go_library(
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",
         "//pkg/sentry/fsbridge",
+        "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/fsimpl/timerfd",

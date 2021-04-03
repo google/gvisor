@@ -995,3 +995,7 @@ syscall_test(
 syscall_test(
     test = "//test/syscalls/linux:processes_test",
 )
+
+syscall_test(
+    test = "//test/syscalls/linux:cgroup_test",
+)
