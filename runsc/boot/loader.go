@@ -752,7 +752,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	// Setup the child container file system.
 	l.startGoferMonitor(cid, info.goferFDs)
 
-	mntr := newContainerMounter(info.spec, info.goferFDs, l.k, l.mountHints, kernel.VFS2Enabled)
+	mntr := newContainerMounter(info, l.k, l.mountHints, kernel.VFS2Enabled)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, nil, err
