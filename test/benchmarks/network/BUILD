@@ -18,7 +18,6 @@ go_library(
 
 benchmark_test(
     name = "iperf_test",
-    size = "enormous",
     srcs = [
         "iperf_test.go",
     ],
@@ -34,7 +33,6 @@ benchmark_test(
 
 benchmark_test(
     name = "node_test",
-    size = "enormous",
     srcs = [
         "node_test.go",
     ],
@@ -49,7 +47,6 @@ benchmark_test(
 
 benchmark_test(
     name = "ruby_test",
-    size = "enormous",
     srcs = [
         "ruby_test.go",
     ],
@@ -64,7 +61,6 @@ benchmark_test(
 
 benchmark_test(
     name = "nginx_test",
-    size = "enormous",
     srcs = [
         "nginx_test.go",
     ],
@@ -79,7 +75,6 @@ benchmark_test(
 
 benchmark_test(
     name = "httpd_test",
-    size = "enormous",
     srcs = [
         "httpd_test.go",
     ],

@@ -75,7 +75,6 @@ def runtime_test(name, **kwargs):
             "local",
             "manual",
         ],
-        size = "enormous",
         **kwargs
     )
 

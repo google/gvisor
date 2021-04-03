@@ -11,7 +11,6 @@ go_library(
 
 benchmark_test(
     name = "tensorflow_test",
-    size = "enormous",
     srcs = ["tensorflow_test.go"],
     library = ":ml",
     visibility = ["//:sandbox"],

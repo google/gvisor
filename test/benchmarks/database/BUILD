@@ -11,7 +11,6 @@ go_library(
 
 benchmark_test(
     name = "redis_test",
-    size = "enormous",
     srcs = ["redis_test.go"],
     library = ":database",
     visibility = ["//:sandbox"],
