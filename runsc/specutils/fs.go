@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/bits"
 	"path"
+	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -62,6 +63,12 @@ var optionsMap = map[string]mapping{
 	"strictatime":   {set: true, val: unix.MS_STRICTATIME},
 	"suid":          {set: false, val: unix.MS_NOSUID},
 	"sync":          {set: true, val: unix.MS_SYNCHRONOUS},
+}
+
+// verityMountOptions is the set of valid verity mount option keys.
+var verityMountOptions = map[string]struct{}{
+	"verity.roothash": struct{}{},
+	"verity.action":   struct{}{},
 }
 
 // propOptionsMap is similar to optionsMap, but it lists propagation options
@@ -117,6 +124,14 @@ func validateMount(mnt *specs.Mount) error {
 	return nil
 }
 
+func moptKey(opt string) string {
+	if len(opt) == 0 {
+		return opt
+	}
+	// Guaranteed to have at least one token, since opt is not empty.
+	return strings.SplitN(opt, "=", 2)[0]
+}
+
 // ValidateMountOptions validates that mount options are correct.
 func ValidateMountOptions(opts []string) error {
 	for _, o := range opts {
@@ -125,7 +140,8 @@ func ValidateMountOptions(opts []string) error {
 		}
 		_, ok1 := optionsMap[o]
 		_, ok2 := propOptionsMap[o]
-		if !ok1 && !ok2 {
+		_, ok3 := verityMountOptions[moptKey(o)]
+		if !ok1 && !ok2 && !ok3 {
 			return fmt.Errorf("unknown mount option %q", o)
 		}
 		if err := validatePropagation(o); err != nil {

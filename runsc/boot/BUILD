@@ -66,6 +66,7 @@ go_library(
         "//pkg/sentry/fsimpl/proc",
         "//pkg/sentry/fsimpl/sys",
         "//pkg/sentry/fsimpl/tmpfs",
+        "//pkg/sentry/fsimpl/verity",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel:uncaught_signal_go_proto",
