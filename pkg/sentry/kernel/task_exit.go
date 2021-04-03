@@ -275,6 +275,10 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.fsContext.DecRef(t)
 	t.fdTable.DecRef(t)
 
+	// Detach task from all cgroups. This must happen before potentially the
+	// last ref to the cgroupfs mount is dropped below.
+	t.LeaveCgroups()
+
 	t.mu.Lock()
 	if t.mountNamespaceVFS2 != nil {
 		t.mountNamespaceVFS2.DecRef(t)

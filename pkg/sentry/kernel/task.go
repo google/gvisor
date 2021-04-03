@@ -587,6 +587,12 @@ type Task struct {
 	//
 	// kcov is exclusive to the task goroutine.
 	kcov *Kcov
+
+	// cgroups is the set of cgroups this task belongs to. This may be empty if
+	// no cgroup controllers are enabled. Protected by mu.
+	//
+	// +checklocks:mu
+	cgroups map[Cgroup]struct{}
 }
 
 func (t *Task) savePtraceTracer() *Task {

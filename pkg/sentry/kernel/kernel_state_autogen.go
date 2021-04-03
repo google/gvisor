@@ -68,6 +68,96 @@ func (a *AbstractSocketNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.endpoints)
 }
 
+func (c *Cgroup) StateTypeName() string {
+	return "pkg/sentry/kernel.Cgroup"
+}
+
+func (c *Cgroup) StateFields() []string {
+	return []string{
+		"Dentry",
+		"CgroupImpl",
+	}
+}
+
+func (c *Cgroup) beforeSave() {}
+
+// +checklocksignore
+func (c *Cgroup) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Dentry)
+	stateSinkObject.Save(1, &c.CgroupImpl)
+}
+
+func (c *Cgroup) afterLoad() {}
+
+// +checklocksignore
+func (c *Cgroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Dentry)
+	stateSourceObject.Load(1, &c.CgroupImpl)
+}
+
+func (h *hierarchy) StateTypeName() string {
+	return "pkg/sentry/kernel.hierarchy"
+}
+
+func (h *hierarchy) StateFields() []string {
+	return []string{
+		"id",
+		"controllers",
+		"fs",
+	}
+}
+
+func (h *hierarchy) beforeSave() {}
+
+// +checklocksignore
+func (h *hierarchy) StateSave(stateSinkObject state.Sink) {
+	h.beforeSave()
+	stateSinkObject.Save(0, &h.id)
+	stateSinkObject.Save(1, &h.controllers)
+	stateSinkObject.Save(2, &h.fs)
+}
+
+func (h *hierarchy) afterLoad() {}
+
+// +checklocksignore
+func (h *hierarchy) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &h.id)
+	stateSourceObject.Load(1, &h.controllers)
+	stateSourceObject.Load(2, &h.fs)
+}
+
+func (r *CgroupRegistry) StateTypeName() string {
+	return "pkg/sentry/kernel.CgroupRegistry"
+}
+
+func (r *CgroupRegistry) StateFields() []string {
+	return []string{
+		"lastHierarchyID",
+		"controllers",
+		"hierarchies",
+	}
+}
+
+func (r *CgroupRegistry) beforeSave() {}
+
+// +checklocksignore
+func (r *CgroupRegistry) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.lastHierarchyID)
+	stateSinkObject.Save(1, &r.controllers)
+	stateSinkObject.Save(2, &r.hierarchies)
+}
+
+func (r *CgroupRegistry) afterLoad() {}
+
+// +checklocksignore
+func (r *CgroupRegistry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.lastHierarchyID)
+	stateSourceObject.Load(1, &r.controllers)
+	stateSourceObject.Load(2, &r.hierarchies)
+}
+
 func (f *FDFlags) StateTypeName() string {
 	return "pkg/sentry/kernel.FDFlags"
 }
@@ -353,6 +443,7 @@ func (k *Kernel) StateFields() []string {
 		"SleepForAddressSpaceActivation",
 		"ptraceExceptions",
 		"YAMAPtraceScope",
+		"cgroupRegistry",
 	}
 }
 
@@ -402,6 +493,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(36, &k.SleepForAddressSpaceActivation)
 	stateSinkObject.Save(37, &k.ptraceExceptions)
 	stateSinkObject.Save(38, &k.YAMAPtraceScope)
+	stateSinkObject.Save(39, &k.cgroupRegistry)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -445,6 +537,7 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(36, &k.SleepForAddressSpaceActivation)
 	stateSourceObject.Load(37, &k.ptraceExceptions)
 	stateSourceObject.Load(38, &k.YAMAPtraceScope)
+	stateSourceObject.Load(39, &k.cgroupRegistry)
 	stateSourceObject.LoadValue(24, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	stateSourceObject.LoadValue(28, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
@@ -1280,6 +1373,7 @@ func (t *Task) StateFields() []string {
 		"robustList",
 		"startTime",
 		"kcov",
+		"cgroups",
 	}
 }
 
@@ -1356,6 +1450,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(60, &t.robustList)
 	stateSinkObject.Save(61, &t.startTime)
 	stateSinkObject.Save(62, &t.kcov)
+	stateSinkObject.Save(63, &t.cgroups)
 }
 
 // +checklocksignore
@@ -1421,6 +1516,7 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(60, &t.robustList)
 	stateSourceObject.Load(61, &t.startTime)
 	stateSourceObject.Load(62, &t.kcov)
+	stateSourceObject.Load(63, &t.cgroups)
 	stateSourceObject.LoadValue(31, new(*Task), func(y interface{}) { t.loadPtraceTracer(y.(*Task)) })
 	stateSourceObject.LoadValue(48, new([]bpf.Program), func(y interface{}) { t.loadSyscallFilters(y.([]bpf.Program)) })
 	stateSourceObject.AfterLoad(t.afterLoad)
@@ -2457,6 +2553,9 @@ func (v *VDSOParamPage) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*abstractEndpoint)(nil))
 	state.Register((*AbstractSocketNamespace)(nil))
+	state.Register((*Cgroup)(nil))
+	state.Register((*hierarchy)(nil))
+	state.Register((*CgroupRegistry)(nil))
 	state.Register((*FDFlags)(nil))
 	state.Register((*descriptor)(nil))
 	state.Register((*FDTable)(nil))

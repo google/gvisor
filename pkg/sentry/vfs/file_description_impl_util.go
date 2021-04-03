@@ -252,6 +252,9 @@ type WritableDynamicBytesSource interface {
 // are backed by a bytes.Buffer that is regenerated when necessary, consistent
 // with Linux's fs/seq_file.c:single_open().
 //
+// If data additionally implements WritableDynamicBytesSource, writes are
+// dispatched to the implementer. The source data is not automatically modified.
+//
 // DynamicBytesFileDescriptionImpl.SetDataSource() must be called before first
 // use.
 //

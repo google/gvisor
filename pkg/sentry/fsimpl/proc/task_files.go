@@ -1100,3 +1100,32 @@ func (fd *namespaceFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) err
 func (fd *namespaceFD) Release(ctx context.Context) {
 	fd.inode.DecRef(ctx)
 }
+
+// taskCgroupData generates data for /proc/[pid]/cgroup.
+//
+// +stateify savable
+type taskCgroupData struct {
+	dynamicBytesFileSetAttr
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*taskCgroupData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// When a task is existing on Linux, a task's cgroup set is cleared and
+	// reset to the initial cgroup set, which is essentially the set of root
+	// cgroups. Because of this, the /proc/<pid>/cgroup file is always readable
+	// on Linux throughout a task's lifetime.
+	//
+	// The sentry removes tasks from cgroups during the exit process, but
+	// doesn't move them into an initial cgroup set, so partway through task
+	// exit this file show a task is in no cgroups, which is incorrect. Instead,
+	// once a task has left its cgroups, we return an error.
+	if d.task.ExitState() >= kernel.TaskExitInitiated {
+		return syserror.ESRCH
+	}
+
+	d.task.GenerateProcTaskCgroup(buf)
+	return nil
+}

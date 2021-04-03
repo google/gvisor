@@ -1233,6 +1233,34 @@ func (fd *namespaceFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &fd.inode)
 }
 
+func (d *taskCgroupData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.taskCgroupData"
+}
+
+func (d *taskCgroupData) StateFields() []string {
+	return []string{
+		"dynamicBytesFileSetAttr",
+		"task",
+	}
+}
+
+func (d *taskCgroupData) beforeSave() {}
+
+// +checklocksignore
+func (d *taskCgroupData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dynamicBytesFileSetAttr)
+	stateSinkObject.Save(1, &d.task)
+}
+
+func (d *taskCgroupData) afterLoad() {}
+
+// +checklocksignore
+func (d *taskCgroupData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dynamicBytesFileSetAttr)
+	stateSourceObject.Load(1, &d.task)
+}
+
 func (r *taskInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.taskInodeRefs"
 }
@@ -1554,7 +1582,7 @@ func (i *tasksInode) StateFields() []string {
 		"locks",
 		"fs",
 		"pidns",
-		"cgroupControllers",
+		"fakeCgroupControllers",
 	}
 }
 
@@ -1574,7 +1602,7 @@ func (i *tasksInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.locks)
 	stateSinkObject.Save(9, &i.fs)
 	stateSinkObject.Save(10, &i.pidns)
-	stateSinkObject.Save(11, &i.cgroupControllers)
+	stateSinkObject.Save(11, &i.fakeCgroupControllers)
 }
 
 func (i *tasksInode) afterLoad() {}
@@ -1592,7 +1620,7 @@ func (i *tasksInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &i.locks)
 	stateSourceObject.Load(9, &i.fs)
 	stateSourceObject.Load(10, &i.pidns)
-	stateSourceObject.Load(11, &i.cgroupControllers)
+	stateSourceObject.Load(11, &i.fakeCgroupControllers)
 }
 
 func (s *staticFileSetStat) StateTypeName() string {
@@ -1924,6 +1952,31 @@ func (d *filesystemsData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.DynamicBytesFile)
 }
 
+func (c *cgroupsData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.cgroupsData"
+}
+
+func (c *cgroupsData) StateFields() []string {
+	return []string{
+		"dynamicBytesFileSetAttr",
+	}
+}
+
+func (c *cgroupsData) beforeSave() {}
+
+// +checklocksignore
+func (c *cgroupsData) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.dynamicBytesFileSetAttr)
+}
+
+func (c *cgroupsData) afterLoad() {}
+
+// +checklocksignore
+func (c *cgroupsData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.dynamicBytesFileSetAttr)
+}
+
 func (r *tasksInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.tasksInodeRefs"
 }
@@ -2231,6 +2284,7 @@ func init() {
 	state.Register((*namespaceSymlink)(nil))
 	state.Register((*namespaceInode)(nil))
 	state.Register((*namespaceFD)(nil))
+	state.Register((*taskCgroupData)(nil))
 	state.Register((*taskInodeRefs)(nil))
 	state.Register((*ifinet6)(nil))
 	state.Register((*netDevData)(nil))
@@ -2254,6 +2308,7 @@ func init() {
 	state.Register((*uptimeData)(nil))
 	state.Register((*versionData)(nil))
 	state.Register((*filesystemsData)(nil))
+	state.Register((*cgroupsData)(nil))
 	state.Register((*tasksInodeRefs)(nil))
 	state.Register((*tcpMemDir)(nil))
 	state.Register((*mmapMinAddrData)(nil))
