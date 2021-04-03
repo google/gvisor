@@ -4,7 +4,6 @@ package(licenses = ["notice"])
 
 benchmark_test(
     name = "bazel_test",
-    size = "enormous",
     srcs = ["bazel_test.go"],
     visibility = ["//:sandbox"],
     deps = [
@@ -18,7 +17,6 @@ benchmark_test(
 
 benchmark_test(
     name = "fio_test",
-    size = "enormous",
     srcs = ["fio_test.go"],
     visibility = ["//:sandbox"],
     deps = [

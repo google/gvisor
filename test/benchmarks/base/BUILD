@@ -17,7 +17,6 @@ go_library(
 
 benchmark_test(
     name = "startup_test",
-    size = "enormous",
     srcs = ["startup_test.go"],
     visibility = ["//:sandbox"],
     deps = [
@@ -29,7 +28,6 @@ benchmark_test(
 
 benchmark_test(
     name = "size_test",
-    size = "enormous",
     srcs = ["size_test.go"],
     visibility = ["//:sandbox"],
     deps = [
@@ -42,7 +40,6 @@ benchmark_test(
 
 benchmark_test(
     name = "sysbench_test",
-    size = "enormous",
     srcs = ["sysbench_test.go"],
     visibility = ["//:sandbox"],
     deps = [

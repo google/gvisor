@@ -11,7 +11,6 @@ go_library(
 
 benchmark_test(
     name = "ffmpeg_test",
-    size = "enormous",
     srcs = ["ffmpeg_test.go"],
     library = ":media",
     visibility = ["//:sandbox"],

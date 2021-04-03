@@ -35,7 +35,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
     debug = False,
     tags = ["nogotsan"],
     test = "//test/perf/linux:getdents_benchmark",
@@ -48,7 +48,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
     debug = False,
     tags = ["nogotsan"],
     test = "//test/perf/linux:gettid_benchmark",
@@ -106,7 +106,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
     debug = False,
     test = "//test/perf/linux:signal_benchmark",
 )
@@ -124,7 +124,7 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:unlink_benchmark",
