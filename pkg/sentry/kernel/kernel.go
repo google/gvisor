@@ -294,6 +294,11 @@ type Kernel struct {
 
 	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
 	YAMAPtraceScope int32
+
+	// cgroupRegistry contains the set of active cgroup controllers on the
+	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
+	// the system.
+	cgroupRegistry *CgroupRegistry
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -438,6 +443,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		k.socketMount = socketMount
 
 		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
+
+		k.cgroupRegistry = newCgroupRegistry()
 	}
 	return nil
 }
@@ -1815,6 +1822,11 @@ func (k *Kernel) SocketMount() *vfs.Mount {
 	return k.socketMount
 }
 
+// CgroupRegistry returns the cgroup registry.
+func (k *Kernel) CgroupRegistry() *CgroupRegistry {
+	return k.cgroupRegistry
+}
+
 // Release releases resources owned by k.
 //
 // Precondition: This should only be called after the kernel is fully
@@ -1830,4 +1842,44 @@ func (k *Kernel) Release() {
 	}
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
+}
+
+// PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup
+// hierarchy.
+//
+// Precondition: root must be a new cgroup with no tasks. This implies the
+// controllers for root are also new and currently manage no task, which in turn
+// implies the new cgroup can be populated without migrating tasks between
+// cgroups.
+func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
+	k.tasks.mu.RLock()
+	k.tasks.forEachTaskLocked(func(t *Task) {
+		if t.ExitState() != TaskExitNone {
+			return
+		}
+		t.mu.Lock()
+		t.enterCgroupLocked(root)
+		t.mu.Unlock()
+	})
+	k.tasks.mu.RUnlock()
+}
+
+// ReleaseCgroupHierarchy moves all tasks out of all cgroups belonging to the
+// hierarchy with the provided id.  This is intended for use during hierarchy
+// teardown, as otherwise the tasks would be orphaned w.r.t to some controllers.
+func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
+	k.tasks.mu.RLock()
+	k.tasks.forEachTaskLocked(func(t *Task) {
+		if t.ExitState() != TaskExitNone {
+			return
+		}
+		t.mu.Lock()
+		for cg, _ := range t.cgroups {
+			if cg.HierarchyID() == hid {
+				t.leaveCgroupLocked(cg)
+			}
+		}
+		t.mu.Unlock()
+	})
+	k.tasks.mu.RUnlock()
 }

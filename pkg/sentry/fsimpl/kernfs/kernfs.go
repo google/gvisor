@@ -61,6 +61,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -506,6 +507,15 @@ func (d *Dentry) insertChildLocked(name string, child *Dentry) {
 // Inode returns the dentry's inode.
 func (d *Dentry) Inode() Inode {
 	return d.inode
+}
+
+// FSLocalPath returns an absolute path to d, relative to the root of its
+// filesystem.
+func (d *Dentry) FSLocalPath() string {
+	var b fspath.Builder
+	_ = genericPrependPath(vfs.VirtualDentry{}, nil, d, &b)
+	b.PrependByte('/')
+	return b.String()
 }
 
 // The Inode interface maps filesystem-level operations that operate on paths to

@@ -54,15 +54,15 @@ type tasksInode struct {
 	// '/proc/self' and '/proc/thread-self' have custom directory offsets in
 	// Linux. So handle them outside of OrderedChildren.
 
-	// cgroupControllers is a map of controller name to directory in the
+	// fakeCgroupControllers is a map of controller name to directory in the
 	// cgroup hierarchy. These controllers are immutable and will be listed
 	// in /proc/pid/cgroup if not nil.
-	cgroupControllers map[string]string
+	fakeCgroupControllers map[string]string
 }
 
 var _ kernfs.Inode = (*tasksInode)(nil)
 
-func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, cgroupControllers map[string]string) *tasksInode {
+func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, fakeCgroupControllers map[string]string) *tasksInode {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]kernfs.Inode{
 		"cpuinfo":     fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
@@ -76,11 +76,16 @@ func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns
 		"uptime":      fs.newInode(ctx, root, 0444, &uptimeData{}),
 		"version":     fs.newInode(ctx, root, 0444, &versionData{}),
 	}
+	// If fakeCgroupControllers are provided, don't create a cgroupfs backed
+	// /proc/cgroup as it will not match the fake controllers.
+	if len(fakeCgroupControllers) == 0 {
+		contents["cgroups"] = fs.newInode(ctx, root, 0444, &cgroupsData{})
+	}
 
 	inode := &tasksInode{
-		pidns:             pidns,
-		fs:                fs,
-		cgroupControllers: cgroupControllers,
+		pidns:                 pidns,
+		fs:                    fs,
+		fakeCgroupControllers: fakeCgroupControllers,
 	}
 	inode.InodeAttrs.Init(ctx, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.InitRefs()
@@ -118,7 +123,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 		return nil, syserror.ENOENT
 	}
 
-	return i.fs.newTaskInode(ctx, task, i.pidns, true, i.cgroupControllers)
+	return i.fs.newTaskInode(ctx, task, i.pidns, true, i.fakeCgroupControllers)
 }
 
 // IterDirents implements kernfs.inodeDirectory.IterDirents.

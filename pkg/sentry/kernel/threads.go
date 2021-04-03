@@ -114,6 +114,15 @@ func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup)) {
 	}
 }
 
+// forEachTaskLocked applies f to each Task in ts.
+//
+// Preconditions: ts.mu must be locked (for reading or writing).
+func (ts *TaskSet) forEachTaskLocked(f func(t *Task)) {
+	for t := range ts.Root.tids {
+		f(t)
+	}
+}
+
 // A PIDNamespace represents a PID namespace, a bimap between thread IDs and
 // tasks. See the pid_namespaces(7) man page for further details.
 //

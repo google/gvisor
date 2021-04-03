@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/user"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroupfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	gofervfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
@@ -103,7 +104,7 @@ func addOverlay(ctx context.Context, conf *config.Config, lower *fs.Inode, name 
 
 // compileMounts returns the supported mounts from the mount spec, adding any
 // mandatory mounts that are required by the OCI specification.
-func compileMounts(spec *specs.Spec, vfs2Enabled bool) []specs.Mount {
+func compileMounts(spec *specs.Spec, conf *config.Config, vfs2Enabled bool) []specs.Mount {
 	// Keep track of whether proc and sys were mounted.
 	var procMounted, sysMounted, devMounted, devptsMounted bool
 	var mounts []specs.Mount
@@ -112,6 +113,11 @@ func compileMounts(spec *specs.Spec, vfs2Enabled bool) []specs.Mount {
 	for _, m := range spec.Mounts {
 		if !specutils.IsSupportedDevMount(m, vfs2Enabled) {
 			log.Warningf("ignoring dev mount at %q", m.Destination)
+			continue
+		}
+		// Unconditionally drop any cgroupfs mounts. If requested, we'll add our
+		// own below.
+		if m.Type == cgroupfs.Name {
 			continue
 		}
 		switch filepath.Clean(m.Destination) {
@@ -132,6 +138,24 @@ func compileMounts(spec *specs.Spec, vfs2Enabled bool) []specs.Mount {
 	// Mount proc and sys even if the user did not ask for it, as the spec
 	// says we SHOULD.
 	var mandatoryMounts []specs.Mount
+
+	if conf.Cgroupfs {
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        tmpfsvfs2.Name,
+			Destination: "/sys/fs/cgroup",
+		})
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        cgroupfs.Name,
+			Destination: "/sys/fs/cgroup/memory",
+			Options:     []string{"memory"},
+		})
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
+			Type:        cgroupfs.Name,
+			Destination: "/sys/fs/cgroup/cpu",
+			Options:     []string{"cpu"},
+		})
+	}
+
 	if !procMounted {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
 			Type:        procvfs2.Name,
@@ -246,6 +270,10 @@ func isSupportedMountFlag(fstype, opt string) bool {
 	}
 	if fstype == tmpfsvfs2.Name {
 		ok, err := parseMountOption(opt, tmpfsAllowedData...)
+		return ok && err == nil
+	}
+	if fstype == cgroupfs.Name {
+		ok, err := parseMountOption(opt, cgroupfs.SupportedMountOptions...)
 		return ok && err == nil
 	}
 	return false
@@ -572,11 +600,11 @@ type containerMounter struct {
 	hints *podMountHints
 }
 
-func newContainerMounter(spec *specs.Spec, goferFDs []*fd.FD, k *kernel.Kernel, hints *podMountHints, vfs2Enabled bool) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, vfs2Enabled bool) *containerMounter {
 	return &containerMounter{
-		root:   spec.Root,
-		mounts: compileMounts(spec, vfs2Enabled),
-		fds:    fdDispenser{fds: goferFDs},
+		root:   info.spec.Root,
+		mounts: compileMounts(info.spec, info.conf, vfs2Enabled),
+		fds:    fdDispenser{fds: info.goferFDs},
 		k:      k,
 		hints:  hints,
 	}
@@ -795,7 +823,13 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.M
 		opts = p9MountData(fd, c.getMountAccessType(conf, m), conf.VFS2)
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
-
+	case cgroupfs.Name:
+		fsName = m.Type
+		var err error
+		opts, err = parseAndFilterOptions(m.Options, cgroupfs.SupportedMountOptions...)
+		if err != nil {
+			return "", nil, false, err
+		}
 	default:
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
