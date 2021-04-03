@@ -126,9 +126,8 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		Hostname: hostname,
 	}
 
-	specutils.LogSpec(spec)
-
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
+
 	if conf.Network == config.NetworkNone {
 		addNamespace(spec, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 
@@ -154,55 +153,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		}
 	}
 
-	out, err := json.Marshal(spec)
-	if err != nil {
-		return Errorf("Error to marshal spec: %v", err)
-	}
-	tmpDir, err := ioutil.TempDir("", "runsc-do")
-	if err != nil {
-		return Errorf("Error to create tmp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	log.Infof("Changing configuration RootDir to %q", tmpDir)
-	conf.RootDir = tmpDir
-
-	cfgPath := filepath.Join(tmpDir, "config.json")
-	if err := ioutil.WriteFile(cfgPath, out, 0755); err != nil {
-		return Errorf("Error write spec: %v", err)
-	}
-
-	containerArgs := container.Args{
-		ID:        cid,
-		Spec:      spec,
-		BundleDir: tmpDir,
-		Attached:  true,
-	}
-	ct, err := container.New(conf, containerArgs)
-	if err != nil {
-		return Errorf("creating container: %v", err)
-	}
-	defer ct.Destroy()
-
-	if err := ct.Start(conf); err != nil {
-		return Errorf("starting container: %v", err)
-	}
-
-	// Forward signals to init in the container. Thus if we get SIGINT from
-	// ^C, the container gracefully exit, and we can clean up.
-	//
-	// N.B. There is a still a window before this where a signal may kill
-	// this process, skipping cleanup.
-	stopForwarding := ct.ForwardSignals(0 /* pid */, false /* fgProcess */)
-	defer stopForwarding()
-
-	ws, err := ct.Wait()
-	if err != nil {
-		return Errorf("waiting for container: %v", err)
-	}
-
-	*waitStatus = ws
-	return subcommands.ExitSuccess
+	return startContainerAndWait(spec, conf, cid, waitStatus)
 }
 
 func addNamespace(spec *specs.Spec, ns specs.LinuxNamespace) {
@@ -396,4 +347,59 @@ func calculatePeerIP(ip string) (string, error) {
 		n = 1
 	}
 	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], n), nil
+}
+
+func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
+	specutils.LogSpec(spec)
+
+	out, err := json.Marshal(spec)
+	if err != nil {
+		return Errorf("Error to marshal spec: %v", err)
+	}
+	tmpDir, err := ioutil.TempDir("", "runsc-do")
+	if err != nil {
+		return Errorf("Error to create tmp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	log.Infof("Changing configuration RootDir to %q", tmpDir)
+	conf.RootDir = tmpDir
+
+	cfgPath := filepath.Join(tmpDir, "config.json")
+	if err := ioutil.WriteFile(cfgPath, out, 0755); err != nil {
+		return Errorf("Error write spec: %v", err)
+	}
+
+	containerArgs := container.Args{
+		ID:        cid,
+		Spec:      spec,
+		BundleDir: tmpDir,
+		Attached:  true,
+	}
+
+	ct, err := container.New(conf, containerArgs)
+	if err != nil {
+		return Errorf("creating container: %v", err)
+	}
+	defer ct.Destroy()
+
+	if err := ct.Start(conf); err != nil {
+		return Errorf("starting container: %v", err)
+	}
+
+	// Forward signals to init in the container. Thus if we get SIGINT from
+	// ^C, the container gracefully exit, and we can clean up.
+	//
+	// N.B. There is a still a window before this where a signal may kill
+	// this process, skipping cleanup.
+	stopForwarding := ct.ForwardSignals(0 /* pid */, false /* fgProcess */)
+	defer stopForwarding()
+
+	ws, err := ct.Wait()
+	if err != nil {
+		return Errorf("waiting for container: %v", err)
+	}
+
+	*waitStatus = ws
+	return subcommands.ExitSuccess
 }
