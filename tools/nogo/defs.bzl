@@ -174,7 +174,6 @@ NogoInfo = provider(
     fields = {
         "facts": "serialized package facts",
         "raw_findings": "raw package findings (if relevant)",
-        "escapes": "escape-only findings (if relevant)",
         "importpath": "package import path",
         "binaries": "package binary files",
         "srcs": "srcs (for go_test support)",
@@ -322,15 +321,20 @@ def _nogo_aspect_impl(target, ctx):
     all_raw_findings = [stdlib_info.raw_findings] + depset(all_raw_findings).to_list() + [raw_findings]
 
     # Return the package facts as output.
-    return [NogoInfo(
-        facts = facts,
-        raw_findings = all_raw_findings,
-        escapes = escapes,
-        importpath = importpath,
-        binaries = binaries,
-        srcs = srcs,
-        deps = deps,
-    )]
+    return [
+        NogoInfo(
+            facts = facts,
+            raw_findings = all_raw_findings,
+            importpath = importpath,
+            binaries = binaries,
+            srcs = srcs,
+            deps = deps,
+        ),
+        # Make the escapes data visible to go/tricorder. This is returned here
+        # and not in the nogo_test rule so that this output can be obtained for
+        # ordinary go_* rules by using this as a command-line aspect.
+        OutputGroupInfo(tricorder = [escapes]),
+    ]
 
 nogo_aspect = go_rule(
     aspect,
@@ -367,7 +371,6 @@ def _nogo_test_impl(ctx):
     if len(ctx.attr.deps) != 1:
         fail("nogo_test requires exactly one dep.")
     raw_findings = ctx.attr.deps[0][NogoInfo].raw_findings
-    escapes = ctx.attr.deps[0][NogoInfo].escapes
 
     # Build a step that applies the configuration.
     config_srcs = ctx.attr.config[NogoConfigInfo].srcs
@@ -409,8 +412,6 @@ def _nogo_test_impl(ctx):
         # pays attention to the mnemoic above, so this must be
         # what is expected by the tooling.
         nogo_findings = depset([findings]),
-        # Expose all escape analysis findings (see above).
-        nogo_escapes = depset([escapes]),
     )]
 
 nogo_test = rule(
@@ -431,4 +432,19 @@ nogo_test = rule(
         "_filter": attr.label(default = "//tools/nogo/filter:filter"),
     },
     test = True,
+)
+
+def _nogo_aspect_tricorder_impl(target, ctx):
+    if ctx.rule.kind != "nogo_test" or OutputGroupInfo not in target:
+        return []
+    if not hasattr(target[OutputGroupInfo], "nogo_findings"):
+        return []
+    return [
+        OutputGroupInfo(tricorder = target[OutputGroupInfo].nogo_findings),
+    ]
+
+# Trivial aspect that forwards the findings from a nogo_test rule to
+# go/tricorder, which reads from the `tricorder` output group.
+nogo_aspect_tricorder = aspect(
+    implementation = _nogo_aspect_tricorder_impl,
 )
