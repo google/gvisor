@@ -318,6 +318,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:verity_mount_test",
+)
+
+syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:mremap_test",
 )

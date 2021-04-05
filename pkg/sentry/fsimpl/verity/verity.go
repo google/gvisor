@@ -35,6 +35,7 @@ package verity
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -105,6 +106,13 @@ var (
 	verityMu sync.RWMutex
 )
 
+// Mount option names for verityfs.
+const (
+	moptLowerPath = "lower_path"
+	moptRootHash  = "root_hash"
+	moptRootName  = "root_name"
+)
+
 // HashAlgorithm is a type specifying the algorithm used to hash the file
 // content.
 type HashAlgorithm int
@@ -171,6 +179,9 @@ type filesystem struct {
 	// system.
 	alg HashAlgorithm
 
+	// opts is the string mount options passed to opts.Data.
+	opts string
+
 	// renameMu synchronizes renaming with non-renaming operations in order
 	// to ensure consistent lock ordering between dentry.dirMu in different
 	// dentries.
@@ -193,18 +204,12 @@ type filesystem struct {
 //
 // +stateify savable
 type InternalFilesystemOptions struct {
-	// RootMerkleFileName is the name of the verity root Merkle tree file.
-	RootMerkleFileName string
-
 	// LowerName is the name of the filesystem wrapped by verity fs.
 	LowerName string
 
 	// Alg is the algorithms used to hash the files in the verity file
 	// system.
 	Alg HashAlgorithm
-
-	// RootHash is the root hash of the overall verity file system.
-	RootHash []byte
 
 	// AllowRuntimeEnable specifies whether the verity file system allows
 	// enabling verification for files (i.e. building Merkle trees) during
@@ -239,28 +244,99 @@ func alertIntegrityViolation(msg string) error {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	var rootHash []byte
+	if encodedRootHash, ok := mopts[moptRootHash]; ok {
+		delete(mopts, moptRootHash)
+		hash, err := hex.DecodeString(encodedRootHash)
+		if err != nil {
+			ctx.Warningf("verity.FilesystemType.GetFilesystem: Failed to decode root hash: %v", err)
+			return nil, nil, syserror.EINVAL
+		}
+		rootHash = hash
+	}
+	var lowerPathname string
+	if path, ok := mopts[moptLowerPath]; ok {
+		delete(mopts, moptLowerPath)
+		lowerPathname = path
+	}
+	rootName := "root"
+	if root, ok := mopts[moptRootName]; ok {
+		delete(mopts, moptRootName)
+		rootName = root
+	}
+
+	// Check for unparsed options.
+	if len(mopts) != 0 {
+		ctx.Warningf("verity.FilesystemType.GetFilesystem: unknown options: %v", mopts)
+		return nil, nil, syserror.EINVAL
+	}
+
+	// Handle internal options.
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
-	if !ok {
+	if len(lowerPathname) == 0 && !ok {
 		ctx.Warningf("verity.FilesystemType.GetFilesystem: missing verity configs")
 		return nil, nil, syserror.EINVAL
 	}
+	if len(lowerPathname) != 0 {
+		if ok {
+			ctx.Warningf("verity.FilesystemType.GetFilesystem: unexpected verity configs with specified lower path")
+			return nil, nil, syserror.EINVAL
+		}
+		iopts = InternalFilesystemOptions{
+			AllowRuntimeEnable: len(rootHash) == 0,
+			Action:             ErrorOnViolation,
+		}
+	}
 	action = iopts.Action
 
-	// Mount the lower file system. The lower file system is wrapped inside
-	// verity, and should not be exposed or connected.
-	mopts := &vfs.MountOptions{
-		GetFilesystemOptions: iopts.LowerGetFSOptions,
-		InternalMount:        true,
-	}
-	mnt, err := vfsObj.MountDisconnected(ctx, creds, "", iopts.LowerName, mopts)
-	if err != nil {
-		return nil, nil, err
+	var lowerMount *vfs.Mount
+	var mountedLowerVD vfs.VirtualDentry
+	// Use an existing mount if lowerPath is provided.
+	if len(lowerPathname) != 0 {
+		vfsroot := vfs.RootFromContext(ctx)
+		if vfsroot.Ok() {
+			defer vfsroot.DecRef(ctx)
+		}
+		lowerPath := fspath.Parse(lowerPathname)
+		if !lowerPath.Absolute {
+			ctx.Infof("verity.FilesystemType.GetFilesystem: lower_path %q must be absolute", lowerPathname)
+			return nil, nil, syserror.EINVAL
+		}
+		var err error
+		mountedLowerVD, err = vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
+			Root:               vfsroot,
+			Start:              vfsroot,
+			Path:               lowerPath,
+			FollowFinalSymlink: true,
+		}, &vfs.GetDentryOptions{
+			CheckSearchable: true,
+		})
+		if err != nil {
+			ctx.Infof("verity.FilesystemType.GetFilesystem: failed to resolve lower_path %q: %v", lowerPathname, err)
+			return nil, nil, err
+		}
+		lowerMount = mountedLowerVD.Mount()
+		defer mountedLowerVD.DecRef(ctx)
+	} else {
+		// Mount the lower file system. The lower file system is wrapped inside
+		// verity, and should not be exposed or connected.
+		mountOpts := &vfs.MountOptions{
+			GetFilesystemOptions: iopts.LowerGetFSOptions,
+			InternalMount:        true,
+		}
+		mnt, err := vfsObj.MountDisconnected(ctx, creds, "", iopts.LowerName, mountOpts)
+		if err != nil {
+			return nil, nil, err
+		}
+		lowerMount = mnt
 	}
 
 	fs := &filesystem{
 		creds:              creds.Fork(),
 		alg:                iopts.Alg,
-		lowerMount:         mnt,
+		lowerMount:         lowerMount,
+		opts:               opts.Data,
 		allowRuntimeEnable: iopts.AllowRuntimeEnable,
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
@@ -268,11 +344,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Construct the root dentry.
 	d := fs.newDentry()
 	d.refs = 1
-	lowerVD := vfs.MakeVirtualDentry(mnt, mnt.Root())
+	lowerVD := vfs.MakeVirtualDentry(lowerMount, lowerMount.Root())
 	lowerVD.IncRef()
 	d.lowerVD = lowerVD
 
-	rootMerkleName := merkleRootPrefix + iopts.RootMerkleFileName
+	rootMerkleName := merkleRootPrefix + rootName
 
 	lowerMerkleVD, err := vfsObj.GetDentryAt(ctx, fs.creds, &vfs.PathOperation{
 		Root:  lowerVD,
@@ -352,7 +428,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.mode = uint32(stat.Mode)
 	d.uid = stat.UID
 	d.gid = stat.GID
-	d.hash = make([]byte, len(iopts.RootHash))
+	d.hash = make([]byte, len(rootHash))
 	d.childrenNames = make(map[string]struct{})
 
 	if !d.isDir() {
@@ -427,7 +503,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	d.hashMu.Lock()
-	copy(d.hash, iopts.RootHash)
+	copy(d.hash, rootHash)
 	d.hashMu.Unlock()
 	d.vfsd.Init(d)
 
@@ -443,7 +519,7 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
-	return ""
+	return fs.opts
 }
 
 // dentry implements vfs.DentryImpl.
