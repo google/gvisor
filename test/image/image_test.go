@@ -183,7 +183,10 @@ func TestMysql(t *testing.T) {
 	// Start the container.
 	if err := server.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/mysql",
-		Env:   []string{"MYSQL_ROOT_PASSWORD=foobar123"},
+		Env: []string{
+			"MYSQL_ROOT_PASSWORD=foobar123",
+			"MYSQL_ROOT_HOST=%", // Allow anyone to connect to the server.
+		},
 	}); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}

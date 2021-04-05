@@ -434,7 +434,14 @@ func (c *Container) Wait(ctx context.Context) error {
 	select {
 	case err := <-errChan:
 		return err
-	case <-statusChan:
+	case res := <-statusChan:
+		if res.StatusCode != 0 {
+			var msg string
+			if res.Error != nil {
+				msg = res.Error.Message
+			}
+			return fmt.Errorf("container returned non-zero status: %d, msg: %q", res.StatusCode, msg)
+		}
 		return nil
 	}
 }
