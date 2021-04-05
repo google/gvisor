@@ -102,5 +102,7 @@ func (c *VerityPrepare) Execute(_ context.Context, f *flag.FlagSet, args ...inte
 	// Force no networking, it is not necessary to run the verity measure tool.
 	conf.Network = config.NetworkNone
 
+	conf.Verity = true
+
 	return startContainerAndWait(spec, conf, cid, waitStatus)
 }
