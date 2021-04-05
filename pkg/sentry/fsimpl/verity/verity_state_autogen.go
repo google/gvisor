@@ -39,6 +39,7 @@ func (fs *filesystem) StateFields() []string {
 		"lowerMount",
 		"rootDentry",
 		"alg",
+		"opts",
 	}
 }
 
@@ -53,6 +54,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fs.lowerMount)
 	stateSinkObject.Save(4, &fs.rootDentry)
 	stateSinkObject.Save(5, &fs.alg)
+	stateSinkObject.Save(6, &fs.opts)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -65,6 +67,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &fs.lowerMount)
 	stateSourceObject.Load(4, &fs.rootDentry)
 	stateSourceObject.Load(5, &fs.alg)
+	stateSourceObject.Load(6, &fs.opts)
 }
 
 func (i *InternalFilesystemOptions) StateTypeName() string {
@@ -73,10 +76,8 @@ func (i *InternalFilesystemOptions) StateTypeName() string {
 
 func (i *InternalFilesystemOptions) StateFields() []string {
 	return []string{
-		"RootMerkleFileName",
 		"LowerName",
 		"Alg",
-		"RootHash",
 		"AllowRuntimeEnable",
 		"LowerGetFSOptions",
 		"Action",
@@ -88,26 +89,22 @@ func (i *InternalFilesystemOptions) beforeSave() {}
 // +checklocksignore
 func (i *InternalFilesystemOptions) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.RootMerkleFileName)
-	stateSinkObject.Save(1, &i.LowerName)
-	stateSinkObject.Save(2, &i.Alg)
-	stateSinkObject.Save(3, &i.RootHash)
-	stateSinkObject.Save(4, &i.AllowRuntimeEnable)
-	stateSinkObject.Save(5, &i.LowerGetFSOptions)
-	stateSinkObject.Save(6, &i.Action)
+	stateSinkObject.Save(0, &i.LowerName)
+	stateSinkObject.Save(1, &i.Alg)
+	stateSinkObject.Save(2, &i.AllowRuntimeEnable)
+	stateSinkObject.Save(3, &i.LowerGetFSOptions)
+	stateSinkObject.Save(4, &i.Action)
 }
 
 func (i *InternalFilesystemOptions) afterLoad() {}
 
 // +checklocksignore
 func (i *InternalFilesystemOptions) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.RootMerkleFileName)
-	stateSourceObject.Load(1, &i.LowerName)
-	stateSourceObject.Load(2, &i.Alg)
-	stateSourceObject.Load(3, &i.RootHash)
-	stateSourceObject.Load(4, &i.AllowRuntimeEnable)
-	stateSourceObject.Load(5, &i.LowerGetFSOptions)
-	stateSourceObject.Load(6, &i.Action)
+	stateSourceObject.Load(0, &i.LowerName)
+	stateSourceObject.Load(1, &i.Alg)
+	stateSourceObject.Load(2, &i.AllowRuntimeEnable)
+	stateSourceObject.Load(3, &i.LowerGetFSOptions)
+	stateSourceObject.Load(4, &i.Action)
 }
 
 func (d *dentry) StateTypeName() string {
