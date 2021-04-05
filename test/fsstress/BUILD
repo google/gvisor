@@ -14,9 +14,7 @@ go_test(
         "manual",
         "local",
     ],
-    deps = [
-        "//pkg/test/dockerutil",
-    ],
+    deps = ["//pkg/test/dockerutil"],
 )
 
 go_library(

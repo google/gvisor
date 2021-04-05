@@ -90,6 +90,9 @@ steps:
     label: ":person_in_lotus_position: KVM tests"
     command: make kvm-tests
   - <<: *common
+    label: ":weight_lifter: Fsstress test"
+    command: make fsstress-test
+  - <<: *common
     label: ":docker: Containerd 1.3.9 tests"
     command: make containerd-test-1.3.9
   - <<: *common
