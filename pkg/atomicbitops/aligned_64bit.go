@@ -23,6 +23,8 @@ import "sync/atomic"
 // int64.
 //
 // See aligned_unsafe.go in this directory for justification.
+//
+// +stateify savable
 type AlignedAtomicInt64 struct {
 	value int64
 }
@@ -47,6 +49,8 @@ func (aa *AlignedAtomicInt64) Add(v int64) int64 {
 // uint64.
 //
 // See aligned_unsafe.go in this directory for justification.
+//
+// +stateify savable
 type AlignedAtomicUint64 struct {
 	value uint64
 }
