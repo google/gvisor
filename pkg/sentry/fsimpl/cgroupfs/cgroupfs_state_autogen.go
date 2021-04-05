@@ -136,6 +136,31 @@ func (fsType *FilesystemType) afterLoad() {}
 func (fsType *FilesystemType) StateLoad(stateSourceObject state.Source) {
 }
 
+func (i *InternalData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.InternalData"
+}
+
+func (i *InternalData) StateFields() []string {
+	return []string{
+		"DefaultControlValues",
+	}
+}
+
+func (i *InternalData) beforeSave() {}
+
+// +checklocksignore
+func (i *InternalData) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.DefaultControlValues)
+}
+
+func (i *InternalData) afterLoad() {}
+
+// +checklocksignore
+func (i *InternalData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.DefaultControlValues)
+}
+
 func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.filesystem"
 }
@@ -414,6 +439,7 @@ func (c *memoryController) StateTypeName() string {
 func (c *memoryController) StateFields() []string {
 	return []string{
 		"controllerCommon",
+		"limitBytes",
 	}
 }
 
@@ -423,6 +449,7 @@ func (c *memoryController) beforeSave() {}
 func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
+	stateSinkObject.Save(1, &c.limitBytes)
 }
 
 func (c *memoryController) afterLoad() {}
@@ -430,6 +457,7 @@ func (c *memoryController) afterLoad() {}
 // +checklocksignore
 func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
+	stateSourceObject.Load(1, &c.limitBytes)
 }
 
 func (d *memoryUsageInBytesData) StateTypeName() string {
@@ -459,6 +487,7 @@ func init() {
 	state.Register((*cgroupProcsData)(nil))
 	state.Register((*tasksData)(nil))
 	state.Register((*FilesystemType)(nil))
+	state.Register((*InternalData)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*implStatFS)(nil))
 	state.Register((*dir)(nil))

@@ -28,22 +28,36 @@ type cpuController struct {
 	controllerCommon
 
 	// CFS bandwidth control parameters, values in microseconds.
-	cfsPeriod uint64
+	cfsPeriod int64
 	cfsQuota  int64
 
 	// CPU shares, values should be (num core * 1024).
-	shares uint64
+	shares int64
 }
 
 var _ controller = (*cpuController)(nil)
 
-func newCPUController(fs *filesystem) *cpuController {
+func newCPUController(fs *filesystem, defaults map[string]int64) *cpuController {
 	// Default values for controller parameters from Linux.
 	c := &cpuController{
 		cfsPeriod: 100000,
 		cfsQuota:  -1,
 		shares:    1024,
 	}
+
+	if val, ok := defaults["cpu.cfs_period_us"]; ok {
+		c.cfsPeriod = val
+		delete(defaults, "cpu.cfs_period_us")
+	}
+	if val, ok := defaults["cpu.cfs_quota_us"]; ok {
+		c.cfsQuota = val
+		delete(defaults, "cpu.cfs_quota_us")
+	}
+	if val, ok := defaults["cpu.shares"]; ok {
+		c.shares = val
+		delete(defaults, "cpu.shares")
+	}
+
 	c.controllerCommon.init(controllerCPU, fs)
 	return c
 }
