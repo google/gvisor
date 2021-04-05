@@ -234,14 +234,6 @@ TEST(SemaphoreTest, SemTimedOpBlock) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  ScopedThread th([&sem] {
-    absl::SleepFor(absl::Milliseconds(100));
-
-    struct sembuf buf = {};
-    buf.sem_op = 1;
-    ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1), SyscallSucceeds());
-  });
-
   struct sembuf buf = {};
   buf.sem_op = -1;
   struct timespec timeout = {};
