@@ -711,14 +711,14 @@ type tcpFields struct {
 func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
 	tf.opts = makeSynOptions(opts)
 	// We ignore SYN send errors and let the callers re-attempt send.
-	if err := e.sendTCP(r, tf, buffer.VectorisedView{}, nil); err != nil {
+	if err := e.sendTCP(r, tf, buffer.VectorisedView{}, stack.GSO{}); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
 	putOptions(tf.opts)
 	return nil
 }
 
-func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) tcpip.Error {
+func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso stack.GSO) tcpip.Error {
 	tf.txHash = e.txHash
 	if err := sendTCP(r, tf, data, gso, e.owner); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
@@ -728,7 +728,7 @@ func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedV
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *stack.GSO) {
+func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO) {
 	optLen := len(tf.opts)
 	tcp := header.TCP(pkt.TransportHeader().Push(header.TCPMinimumSize + optLen))
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber
@@ -743,76 +743,15 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 	})
 	copy(tcp[header.TCPMinimumSize:], tf.opts)
 
-	xsum := r.PseudoHeaderChecksum(ProtocolNumber, uint16(pkt.Size()))
-	// Only calculate the checksum if offloading isn't supported.
-	if gso != nil && gso.NeedsCsum {
-		// This is called CHECKSUM_PARTIAL in the Linux kernel. We
-		// calculate a checksum of the pseudo-header and save it in the
-		// TCP header, then the kernel calculate a checksum of the
-		// header and data and get the right sum of the TCP packet.
-		tcp.SetChecksum(xsum)
-	} else if r.RequiresTXTransportChecksum() {
-		xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
-		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
-	}
-}
-
-func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
-	// We need to shallow clone the VectorisedView here as ReadToView will
-	// split the VectorisedView and Trim underlying views as it splits. Not
-	// doing the clone here will cause the underlying views of data itself
-	// to be altered.
-	data = data.Clone(nil)
-
-	optLen := len(tf.opts)
-	if tf.rcvWnd > math.MaxUint16 {
-		tf.rcvWnd = math.MaxUint16
-	}
-
-	mss := int(gso.MSS)
-	n := (data.Size() + mss - 1) / mss
-
-	size := data.Size()
-	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
-	var pkts stack.PacketBufferList
-	for i := 0; i < n; i++ {
-		packetSize := mss
-		if packetSize > size {
-			packetSize = size
-		}
-		size -= packetSize
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: hdrSize,
-		})
-		pkt.Hash = tf.txHash
-		pkt.Owner = owner
-		pkt.Data().ReadFromVV(&data, packetSize)
-		buildTCPHdr(r, tf, pkt, gso)
-		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
-		pkts.PushBack(pkt)
-	}
-
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
-	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos})
-	if err != nil {
-		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
-	}
-	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
-	return err
+	pkt.TransportChecksumStatus = stack.TransportChecksumNone
 }
 
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
+func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
-	}
-
-	if r.Loop()&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
-		return sendTCPBatch(r, tf, data, gso, owner)
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -826,7 +765,9 @@ func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stac
 	if tf.ttl == 0 {
 		tf.ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
+	pkt.GSOOptions = gso
+
+	if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}

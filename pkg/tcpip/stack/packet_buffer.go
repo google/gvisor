@@ -31,6 +31,27 @@ const (
 	numHeaderType
 )
 
+// TransportChecksumStatus is the state of the transport checksum.
+type TransportChecksumStatus int
+
+const (
+	// TransportChecksumNotNeeded indicates that transport layer checksum
+	// calculation is not required.
+	TransportChecksumNotNeeded TransportChecksumStatus = iota
+
+	// TransportChecksumNone indicates that transport layer checksum calculation
+	// has not been performed.
+	TransportChecksumNone
+
+	// TransportChecksumPartial indicates that only the pseudo-header portion of
+	// the transport layer checksum is calculated.
+	TransportChecksumPartial
+
+	// TransportChecksumCalculated indicates that the transport layer checksum is
+	// calculated.
+	TransportChecksumCalculated
+)
+
 // PacketBufferOptions specifies options for PacketBuffer creation.
 type PacketBufferOptions struct {
 	// ReserveHeaderBytes is the number of bytes to reserve for headers. Total
@@ -100,10 +121,11 @@ type PacketBuffer struct {
 	// Only set for locally generated packets.
 	Owner tcpip.PacketOwner
 
-	// The following fields are only set by the qdisc layer when the packet
+	// EgressRoute is only set by the qdisc layer when the packet
 	// is added to a queue.
-	EgressRoute RouteInfo
-	GSOOptions  *GSO
+	EgressRoute             RouteInfo
+	GSOOptions              GSO
+	TransportChecksumStatus TransportChecksumStatus
 
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.

@@ -108,12 +108,12 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements stack.LinkEndpoint.WritePacket. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (e *Endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if !e.writeGate.Enter() {
 		return nil
 	}
 
-	err := e.lower.WritePacket(r, gso, protocol, pkt)
+	err := e.lower.WritePacket(r, protocol, pkt)
 	e.writeGate.Leave()
 	return err
 }
@@ -121,12 +121,12 @@ func (e *Endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip
 // WritePackets implements stack.LinkEndpoint.WritePackets. It is called by
 // higher-level protocols to write packets. It only forwards packets to the
 // lower endpoint if Wait or WaitWrite haven't been called.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	if !e.writeGate.Enter() {
 		return pkts.Len(), nil
 	}
 
-	n, err := e.lower.WritePackets(r, gso, pkts, protocol)
+	n, err := e.lower.WritePackets(r, pkts, protocol)
 	e.writeGate.Leave()
 	return n, err
 }

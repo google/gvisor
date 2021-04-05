@@ -856,23 +856,18 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		Length:  length,
 	})
 
-	// Set the checksum field unless TX checksum offload is enabled.
 	// On IPv4, UDP checksum is optional, and a zero value indicates the
 	// transmitter skipped the checksum generation (RFC768).
 	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
-	if r.RequiresTXTransportChecksum() &&
-		(!noChecksum || r.NetProto() == header.IPv6ProtocolNumber) {
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
-		for _, v := range data.Views() {
-			xsum = header.Checksum(v, xsum)
-		}
-		udp.SetChecksum(^udp.CalculateChecksum(xsum))
+	pkt.TransportChecksumStatus = stack.TransportChecksumNone
+	if r.NetProto() != header.IPv6ProtocolNumber && noChecksum {
+		pkt.TransportChecksumStatus = stack.TransportChecksumNotNeeded
 	}
 
 	if useDefaultTTL {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+	if err := r.WritePacket(stack.NetworkHeaderParams{
 		Protocol: ProtocolNumber,
 		TTL:      ttl,
 		TOS:      tos,

@@ -314,11 +314,11 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		TOS:      stack.DefaultTOS,
 	}
 	data := buffer.View([]byte{1, 2, 3, 4})
-	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	if err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               data.ToVectorisedView(),
 	})); err != nil {
-		t.Fatalf("r.WritePacket(nil, %#v, _): %s", params, err)
+		t.Fatalf("r.WritePacket(%#v, _): %s", params, err)
 	}
 
 	// Removing the address should make the endpoint invalid.
@@ -326,12 +326,12 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
 	}
 	{
-		err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
 			Data:               data.ToVectorisedView(),
 		}))
 		if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
-			t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
+			t.Fatalf("got r.WritePacket(%#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
 		}
 	}
 }

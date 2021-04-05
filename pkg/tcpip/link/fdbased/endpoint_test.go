@@ -207,18 +207,18 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 
 	// Write.
 	want := append(append(buffer.View(nil), b...), payload...)
-	var gso *stack.GSO
+	var gso stack.GSO
 	if gsoMaxSize != 0 {
-		gso = &stack.GSO{
+		gso = stack.GSO{
 			Type:       stack.GSOTCPv6,
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
-			MaxSize:    gsoMaxSize,
 			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, proto, pkt); err != nil {
+	pkt.GSOOptions = gso
+	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 

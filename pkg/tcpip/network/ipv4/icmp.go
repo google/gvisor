@@ -629,7 +629,6 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	icmpHdr.SetChecksum(header.ICMPv4Checksum(icmpHdr, icmpPkt.Data().AsRange().Checksum()))
 
 	if err := route.WritePacket(
-		nil, /* gso */
 		stack.NetworkHeaderParams{
 			Protocol: header.ICMPv4ProtocolNumber,
 			TTL:      route.DefaultTTL(),
