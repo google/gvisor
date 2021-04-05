@@ -17,7 +17,9 @@ package fsstress
 
 import (
 	"context"
+	"flag"
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,33 +32,44 @@ func init() {
 	rand.Seed(int64(time.Now().Nanosecond()))
 }
 
-func fsstress(t *testing.T, dir string) {
+func TestMain(m *testing.M) {
+	dockerutil.EnsureSupportedDockerVersion()
+	flag.Parse()
+	os.Exit(m.Run())
+}
+
+type config struct {
+	operations string
+	processes  string
+	target     string
+}
+
+func fsstress(t *testing.T, conf config) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	const (
-		operations = "10000"
-		processes  = "100"
-		image      = "basic/fsstress"
-	)
+	const image = "basic/fsstress"
 	seed := strconv.FormatUint(uint64(rand.Uint32()), 10)
-	args := []string{"-d", dir, "-n", operations, "-p", processes, "-s", seed, "-X"}
-	t.Logf("Repro: docker run --rm --runtime=runsc %s %s", image, strings.Join(args, ""))
+	args := []string{"-d", conf.target, "-n", conf.operations, "-p", conf.processes, "-s", seed, "-X"}
+	t.Logf("Repro: docker run --rm --runtime=%s gvisor.dev/images/%s %s", dockerutil.Runtime(), image, strings.Join(args, " "))
 	out, err := d.Run(ctx, dockerutil.RunOpts{Image: image}, args...)
 	if err != nil {
 		t.Fatalf("docker run failed: %v\noutput: %s", err, out)
 	}
-	lines := strings.SplitN(out, "\n", 2)
-	if len(lines) > 1 || !strings.HasPrefix(out, "seed =") {
+	// This is to catch cases where fsstress spews out error messages during clean
+	// up but doesn't return error.
+	if len(out) > 0 {
 		t.Fatalf("unexpected output: %s", out)
 	}
 }
 
-func TestFsstressGofer(t *testing.T) {
-	fsstress(t, "/test")
-}
-
 func TestFsstressTmpfs(t *testing.T) {
-	fsstress(t, "/tmp")
+	// This takes between 10s to run on my machine. Adjust as needed.
+	cfg := config{
+		operations: "5000",
+		processes:  "20",
+		target:     "/tmp",
+	}
+	fsstress(t, cfg)
 }
