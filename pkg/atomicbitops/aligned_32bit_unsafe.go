@@ -30,6 +30,8 @@ import (
 // for 64-bit alignment of 64-bit words accessed atomically. The first word in
 // a variable or in an allocated struct, array, or slice can be relied upon to
 // be 64-bit aligned."
+//
+// +stateify savable
 type AlignedAtomicInt64 struct {
 	value [15]byte
 }
@@ -65,6 +67,8 @@ func (aa *AlignedAtomicInt64) Add(v int64) int64 {
 // for 64-bit alignment of 64-bit words accessed atomically. The first word in
 // a variable or in an allocated struct, array, or slice can be relied upon to
 // be 64-bit aligned."
+//
+// +stateify savable
 type AlignedAtomicUint64 struct {
 	value [15]byte
 }
