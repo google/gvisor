@@ -127,6 +127,7 @@ syscall_test(
     size = "large",
     add_overlay = True,
     debug = False,
+    tags = ["nogotsan"],
     test = "//test/perf/linux:unlink_benchmark",
 )
 
@@ -134,6 +135,5 @@ syscall_test(
     size = "large",
     add_overlay = True,
     debug = False,
-    tags = ["nogotsan"],
     test = "//test/perf/linux:write_benchmark",
 )
