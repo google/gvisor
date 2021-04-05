@@ -663,7 +663,7 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	// window space.
 	// ref: net/ipv4/tcp_output.c::tcp_write_xmit(), tcp_mss_split_point()
 	// ref: net/ipv4/tcp_output.c::tcp_write_wakeup(), tcp_snd_wnd_test()
-	if seg.data.Size() > s.maxPayloadSize {
+	if seg.data.Size() > s.maxPayloadSize && seg.flags != 0 {
 		seg.flags ^= header.TCPFlagPsh
 	}
 
@@ -785,6 +785,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
 	// We abuse the flags field to determine if we have already
 	// assigned a sequence number to this segment.
+	maxNagleSize := s.maxPayloadSize
 	if !s.isAssignedSequenceNumber(seg) {
 		// Merge segments if allowed.
 		if seg.data.Size() != 0 {
@@ -814,7 +815,13 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				// Consume the segment that we just merged in.
 				s.writeList.Remove(seg.Next())
 			}
-			if !nextTooBig && seg.data.Size() < available {
+
+			// maxNagleSize is the minimum of mss and available.
+			if maxNagleSize > available {
+				maxNagleSize = available
+			}
+
+			if !nextTooBig && seg.data.Size() < maxNagleSize {
 				// Segment is not full.
 				if s.outstanding > 0 && s.ep.ops.GetDelayOption() {
 					// Nagle's algorithm. From Wikipedia:
@@ -831,20 +838,30 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 					//   sent all at once.
 					return false
 				}
+
 				// With TCP_CORK, hold back until minimum of the available
 				// send space and MSS.
 				// TODO(gvisor.dev/issue/2833): Drain the held segments after a
 				// timeout.
-				if seg.data.Size() < s.maxPayloadSize && s.ep.ops.GetCorkOption() {
+				if s.ep.ops.GetCorkOption() {
 					return false
 				}
 			}
 		}
 
-		// Assign flags. We don't do it above so that we can merge
-		// additional data if Nagle holds the segment.
 		seg.sequenceNumber = s.sndNxt
-		seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+		// Flags should be assigned here when TCP_CORK is enabled. The
+		// segment split will happen further down, this is because we
+		// should not hold segments after the buffer limit is reached
+		// with TCP_CORK.
+		if !s.ep.ops.GetCorkOption() && seg.data.Size() > maxNagleSize {
+			// Assign flags. We don't do it above so that we can
+			// merge additional data if Nagle holds the segment.
+			s.splitSeg(seg, maxNagleSize)
+			seg.flags = header.TCPFlagAck
+		} else {
+			seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+		}
 	}
 
 	var segEnd seqnum.Value
