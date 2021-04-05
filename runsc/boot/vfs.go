@@ -92,7 +92,7 @@ func registerFilesystems(k *kernel.Kernel) error {
 	})
 	vfsObj.MustRegisterFilesystemType(verity.Name, &verity.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserList:  true,
-		AllowUserMount: false,
+		AllowUserMount: true,
 	})
 
 	// Setup files in devtmpfs.
@@ -483,7 +483,7 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 	var data []string
 	var iopts interface{}
 
-	verityOpts, verityRequested, remainingMOpts, err := parseVerityMountOptions(m.Options)
+	verityData, verityOpts, verityRequested, remainingMOpts, err := parseVerityMountOptions(m.Options)
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -555,13 +555,13 @@ func (c *containerMounter) getMountNameAndOptionsVFS2(conf *config.Config, m *mo
 	}
 
 	if verityRequested {
-		verityOpts.RootMerkleFileName = path.Base(m.Mount.Destination)
+		verityData = verityData + "root_name=" + path.Base(m.Mount.Destination)
 		verityOpts.LowerName = fsName
 		verityOpts.LowerGetFSOptions = opts.GetFilesystemOptions
 		fsName = verity.Name
 		opts = &vfs.MountOptions{
 			GetFilesystemOptions: vfs.GetFilesystemOptions{
-				Data:         strings.Join(data, ","),
+				Data:         verityData,
 				InternalData: verityOpts,
 			},
 			InternalMount: true,
@@ -582,9 +582,10 @@ func parseKeyValue(s string) (string, string, bool) {
 // parseAndFilterOptions scans the provided mount options for verity-related
 // mount options. It returns the parsed set of verity mount options, as well as
 // the filtered set of mount options unrelated to verity.
-func parseVerityMountOptions(mopts []string) (verity.InternalFilesystemOptions, bool, []string, error) {
+func parseVerityMountOptions(mopts []string) (string, verity.InternalFilesystemOptions, bool, []string, error) {
 	nonVerity := []string{}
 	found := false
+	var rootHash string
 	verityOpts := verity.InternalFilesystemOptions{
 		Action: verity.PanicOnViolation,
 	}
@@ -596,13 +597,13 @@ func parseVerityMountOptions(mopts []string) (verity.InternalFilesystemOptions, 
 
 		k, v, ok := parseKeyValue(o)
 		if !ok {
-			return verityOpts, found, nonVerity, fmt.Errorf("invalid verity mount option with no value: %q", o)
+			return "", verityOpts, found, nonVerity, fmt.Errorf("invalid verity mount option with no value: %q", o)
 		}
 
 		found = true
 		switch k {
 		case "verity.roothash":
-			verityOpts.RootHash = []byte(v)
+			rootHash = v
 		case "verity.action":
 			switch v {
 			case "error":
@@ -614,11 +615,12 @@ func parseVerityMountOptions(mopts []string) (verity.InternalFilesystemOptions, 
 				verityOpts.Action = verity.PanicOnViolation
 			}
 		default:
-			return verityOpts, found, nonVerity, fmt.Errorf("unknown verity mount option: %q", k)
+			return "", verityOpts, found, nonVerity, fmt.Errorf("unknown verity mount option: %q", k)
 		}
 	}
-	verityOpts.AllowRuntimeEnable = len(verityOpts.RootHash) == 0
-	return verityOpts, found, nonVerity, nil
+	verityOpts.AllowRuntimeEnable = len(rootHash) == 0
+	verityData := "root_hash=" + rootHash + ","
+	return verityData, verityOpts, found, nonVerity, nil
 }
 
 // mountTmpVFS2 mounts an internal tmpfs at '/tmp' if it's safe to do so.

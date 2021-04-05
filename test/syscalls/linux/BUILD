@@ -1304,6 +1304,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "verity_mount_test",
+    testonly = 1,
+    srcs = ["verity_mount.cc"],
+    linkstatic = 1,
+    deps = [
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "mremap_test",
     testonly = 1,
     srcs = ["mremap.cc"],
