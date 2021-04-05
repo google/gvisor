@@ -94,6 +94,14 @@ var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "memory"
 // +stateify savable
 type FilesystemType struct{}
 
+// InternalData contains internal data passed in to the cgroupfs mount via
+// vfs.GetFilesystemOptions.InternalData.
+//
+// +stateify savable
+type InternalData struct {
+	DefaultControlValues map[string]int64
+}
+
 // filesystem implements vfs.FilesystemImpl.
 //
 // +stateify savable
@@ -218,13 +226,19 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs.MaxCachedDentries = maxCachedDentries
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 
+	var defaults map[string]int64
+	if opts.InternalData != nil {
+		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: default control values: %v", defaults)
+		defaults = opts.InternalData.(*InternalData).DefaultControlValues
+	}
+
 	for _, ty := range wantControllers {
 		var c controller
 		switch ty {
 		case controllerMemory:
-			c = newMemoryController(fs)
+			c = newMemoryController(fs, defaults)
 		case controllerCPU:
-			c = newCPUController(fs)
+			c = newCPUController(fs, defaults)
 		case controllerCPUAcct:
 			c = newCPUAcctController(fs)
 		case controllerCPUSet:
@@ -233,6 +247,12 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			panic(fmt.Sprintf("Unreachable: unknown cgroup controller %q", ty))
 		}
 		fs.controllers = append(fs.controllers, c)
+	}
+
+	if len(defaults) != 0 {
+		// Internal data is always provided at sentry startup and unused values
+		// indicate a problem with the sandbox config. Fail fast.
+		panic(fmt.Sprintf("cgroupfs.FilesystemType.GetFilesystem: unknown internal mount data: %v", defaults))
 	}
 
 	// Controllers usually appear in alphabetical order when displayed. Sort it
