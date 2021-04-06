@@ -244,6 +244,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:verity_ioctl_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:iptables_test",
 )
 
