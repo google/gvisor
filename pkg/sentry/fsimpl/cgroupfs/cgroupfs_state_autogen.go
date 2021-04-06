@@ -383,6 +383,131 @@ func (c *cpuacctController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 }
 
+func (c *cpuacctCgroup) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpuacctCgroup"
+}
+
+func (c *cpuacctCgroup) StateFields() []string {
+	return []string{
+		"cgroupInode",
+	}
+}
+
+func (c *cpuacctCgroup) beforeSave() {}
+
+// +checklocksignore
+func (c *cpuacctCgroup) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.cgroupInode)
+}
+
+func (c *cpuacctCgroup) afterLoad() {}
+
+// +checklocksignore
+func (c *cpuacctCgroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.cgroupInode)
+}
+
+func (d *cpuacctStatData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpuacctStatData"
+}
+
+func (d *cpuacctStatData) StateFields() []string {
+	return []string{
+		"cpuacctCgroup",
+	}
+}
+
+func (d *cpuacctStatData) beforeSave() {}
+
+// +checklocksignore
+func (d *cpuacctStatData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctStatData) afterLoad() {}
+
+// +checklocksignore
+func (d *cpuacctStatData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpuacctUsageData"
+}
+
+func (d *cpuacctUsageData) StateFields() []string {
+	return []string{
+		"cpuacctCgroup",
+	}
+}
+
+func (d *cpuacctUsageData) beforeSave() {}
+
+// +checklocksignore
+func (d *cpuacctUsageData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageData) afterLoad() {}
+
+// +checklocksignore
+func (d *cpuacctUsageData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageUserData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpuacctUsageUserData"
+}
+
+func (d *cpuacctUsageUserData) StateFields() []string {
+	return []string{
+		"cpuacctCgroup",
+	}
+}
+
+func (d *cpuacctUsageUserData) beforeSave() {}
+
+// +checklocksignore
+func (d *cpuacctUsageUserData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageUserData) afterLoad() {}
+
+// +checklocksignore
+func (d *cpuacctUsageUserData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageSysData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.cpuacctUsageSysData"
+}
+
+func (d *cpuacctUsageSysData) StateFields() []string {
+	return []string{
+		"cpuacctCgroup",
+	}
+}
+
+func (d *cpuacctUsageSysData) beforeSave() {}
+
+// +checklocksignore
+func (d *cpuacctUsageSysData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.cpuacctCgroup)
+}
+
+func (d *cpuacctUsageSysData) afterLoad() {}
+
+// +checklocksignore
+func (d *cpuacctUsageSysData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.cpuacctCgroup)
+}
+
 func (c *cpusetController) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.cpusetController"
 }
@@ -495,6 +620,11 @@ func init() {
 	state.Register((*staticControllerFile)(nil))
 	state.Register((*cpuController)(nil))
 	state.Register((*cpuacctController)(nil))
+	state.Register((*cpuacctCgroup)(nil))
+	state.Register((*cpuacctStatData)(nil))
+	state.Register((*cpuacctUsageData)(nil))
+	state.Register((*cpuacctUsageUserData)(nil))
+	state.Register((*cpuacctUsageSysData)(nil))
 	state.Register((*cpusetController)(nil))
 	state.Register((*dirRefs)(nil))
 	state.Register((*memoryController)(nil))
