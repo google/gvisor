@@ -1109,7 +1109,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	isLinkLocal := header.IsV6LinkLocalUnicastAddress(remoteAddr) || header.IsV6LinkLocalMulticastAddress(remoteAddr)
+	isLinkLocal := (header.IsV4LinkLocalUnicastAddress(remoteAddr) ||
+		header.IsV4LinkLocalMulticastAddress(remoteAddr) ||
+		header.IsV6LinkLocalUnicastAddress(remoteAddr) ||
+		header.IsV6LinkLocalMulticastAddress(remoteAddr))
 	isLocalBroadcast := remoteAddr == header.IPv4Broadcast
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
 	isLoopback := header.IsV4LoopbackAddress(remoteAddr) || header.IsV6LoopbackAddress(remoteAddr)
@@ -1146,7 +1149,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		return nil, &tcpip.ErrNetworkUnreachable{}
 	}
 
-	onlyGlobalAddresses := !header.IsV6LinkLocalUnicastAddress(localAddr) && !isLinkLocal
+	onlyGlobalAddresses := !isLinkLocal && !header.IsV4LinkLocalUnicastAddress(localAddr) && !header.IsV6LinkLocalUnicastAddress(localAddr)
 
 	// Find a route to the remote with the route table.
 	var chosenRoute tcpip.Route
