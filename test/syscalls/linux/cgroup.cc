@@ -21,6 +21,7 @@
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
 #include "test/util/cgroup_util.h"
 #include "test/util/temp_path.h"
@@ -31,6 +32,7 @@ namespace testing {
 namespace {
 
 using ::testing::_;
+using ::testing::Ge;
 using ::testing::Gt;
 
 std::vector<std::string> known_controllers = {"cpu", "cpuset", "cpuacct",
@@ -204,6 +206,55 @@ TEST(CPUCgroup, ControlFilesHaveDefaultValues) {
               IsPosixErrorOkAndHolds(100000));
   EXPECT_THAT(c.ReadIntegerControlFile("cpu.shares"),
               IsPosixErrorOkAndHolds(1024));
+}
+
+TEST(CPUAcctCgroup, CPUAcctUsage) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+
+  const int64_t usage =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("cpuacct.usage"));
+  const int64_t usage_user =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("cpuacct.usage_user"));
+  const int64_t usage_sys =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("cpuacct.usage_sys"));
+
+  EXPECT_GE(usage, 0);
+  EXPECT_GE(usage_user, 0);
+  EXPECT_GE(usage_sys, 0);
+
+  EXPECT_GE(usage_user + usage_sys, usage);
+}
+
+TEST(CPUAcctCgroup, CPUAcctStat) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+
+  std::string stat =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuacct.stat"));
+
+  // We're expecting the contents of "cpuacct.stat" to look similar to this:
+  //
+  // user 377986
+  // system 220662
+
+  std::vector<absl::string_view> lines =
+      absl::StrSplit(stat, '\n', absl::SkipEmpty());
+  ASSERT_EQ(lines.size(), 2);
+
+  std::vector<absl::string_view> user_tokens =
+      StrSplit(lines[0], absl::ByChar(' '));
+  EXPECT_EQ(user_tokens[0], "user");
+  EXPECT_THAT(Atoi<int64_t>(user_tokens[1]), IsPosixErrorOkAndHolds(Ge(0)));
+
+  std::vector<absl::string_view> sys_tokens =
+      StrSplit(lines[1], absl::ByChar(' '));
+  EXPECT_EQ(sys_tokens[0], "system");
+  EXPECT_THAT(Atoi<int64_t>(sys_tokens[1]), IsPosixErrorOkAndHolds(Ge(0)));
 }
 
 TEST(ProcCgroups, Empty) {
