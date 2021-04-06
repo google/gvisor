@@ -129,7 +129,7 @@ type filesystem struct {
 
 	// tasksMu serializes task membership changes across all cgroups within a
 	// filesystem.
-	tasksMu sync.Mutex `state:"nosave"`
+	tasksMu sync.RWMutex `state:"nosave"`
 }
 
 // Name implements vfs.FilesystemType.Name.
