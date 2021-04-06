@@ -1014,6 +1014,22 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "verity_ioctl_test",
+    testonly = 1,
+    srcs = ["verity_ioctl.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:mount_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
 cc_library(
     name = "iptables_types",
     testonly = 1,
