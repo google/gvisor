@@ -464,3 +464,141 @@ func TestMLDPacketValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestMLDSkipProtocol(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name         string
+		group        tcpip.Address
+		expectReport bool
+	}{
+		{
+			name:         "Reserverd0",
+			group:        "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: false,
+		},
+		{
+			name:         "Interface Local",
+			group:        "\xff\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: false,
+		},
+		{
+			name:         "Link Local",
+			group:        "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Realm Local",
+			group:        "\xff\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Admin Local",
+			group:        "\xff\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Site Local",
+			group:        "\xff\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(6)",
+			group:        "\xff\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(7)",
+			group:        "\xff\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Organization Local",
+			group:        "\xff\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(9)",
+			group:        "\xff\x09\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(A)",
+			group:        "\xff\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(B)",
+			group:        "\xff\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(C)",
+			group:        "\xff\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Unassigned(D)",
+			group:        "\xff\x0d\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "Global",
+			group:        "\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+		{
+			name:         "ReservedF",
+			group:        "\xff\x0f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11",
+			expectReport: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+					MLD: ipv6.MLDOptions{
+						Enabled: true,
+					},
+				})},
+			})
+			e := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID, e); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			if err := s.AddAddress(nicID, ipv6.ProtocolNumber, linkLocalAddr); err != nil {
+				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ipv6.ProtocolNumber, linkLocalAddr, err)
+			}
+			if p, ok := e.Read(); !ok {
+				t.Fatal("expected a report message to be sent")
+			} else {
+				validateMLDPacket(t, stack.PayloadSince(p.Pkt.NetworkHeader()), linkLocalAddr, linkLocalAddrSNMC, header.ICMPv6MulticastListenerReport, linkLocalAddrSNMC)
+			}
+
+			if err := s.JoinGroup(ipv6.ProtocolNumber, nicID, test.group); err != nil {
+				t.Fatalf("s.JoinGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, test.group, err)
+			}
+			if isInGroup, err := s.IsInGroup(nicID, test.group); err != nil {
+				t.Fatalf("IsInGroup(%d, %s): %s", nicID, test.group, err)
+			} else if !isInGroup {
+				t.Fatalf("got IsInGroup(%d, %s) = false, want = true", nicID, test.group)
+			}
+
+			if !test.expectReport {
+				if p, ok := e.Read(); ok {
+					t.Fatalf("got e.Read() = (%#v, true), want = (_, false)", p)
+				}
+
+				return
+			}
+
+			if p, ok := e.Read(); !ok {
+				t.Fatal("expected a report message to be sent")
+			} else {
+				validateMLDPacket(t, stack.PayloadSince(p.Pkt.NetworkHeader()), linkLocalAddr, test.group, header.ICMPv6MulticastListenerReport, test.group)
+			}
+		})
+	}
+}

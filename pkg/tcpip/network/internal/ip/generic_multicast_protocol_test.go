@@ -43,6 +43,8 @@ type mockMulticastGroupProtocolProtectedFields struct {
 type mockMulticastGroupProtocol struct {
 	t *testing.T
 
+	skipProtocolAddress tcpip.Address
+
 	mu mockMulticastGroupProtocolProtectedFields
 }
 
@@ -165,6 +167,11 @@ func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) tcpip
 	return nil
 }
 
+// ShouldPerformProtocol implements ip.MulticastGroupProtocol.
+func (m *mockMulticastGroupProtocol) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
+	return groupAddress != m.skipProtocolAddress
+}
+
 func (m *mockMulticastGroupProtocol) check(sendReportGroupAddresses []tcpip.Address, sendLeaveGroupAddresses []tcpip.Address) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -193,10 +200,11 @@ func (m *mockMulticastGroupProtocol) check(sendReportGroupAddresses []tcpip.Addr
 		cmp.FilterPath(
 			func(p cmp.Path) bool {
 				switch p.Last().String() {
-				case ".RWMutex", ".t", ".makeQueuePackets", ".disabled", ".genericMulticastGroup":
+				case ".RWMutex", ".t", ".makeQueuePackets", ".disabled", ".genericMulticastGroup", ".skipProtocolAddress":
 					return true
+				default:
+					return false
 				}
-				return false
 			},
 			cmp.Ignore(),
 		),
@@ -225,14 +233,13 @@ func TestJoinGroup(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mgp := mockMulticastGroupProtocol{t: t}
+			mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr2}
 			clock := faketime.NewManualClock()
 
 			mgp.init(ip.GenericMulticastProtocolOptions{
 				Rand:                      rand.New(rand.NewSource(0)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-				AllNodesAddress:           addr2,
 			})
 
 			// Joining a group should send a report immediately and another after
@@ -279,14 +286,13 @@ func TestLeaveGroup(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mgp := mockMulticastGroupProtocol{t: t}
+			mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr2}
 			clock := faketime.NewManualClock()
 
 			mgp.init(ip.GenericMulticastProtocolOptions{
 				Rand:                      rand.New(rand.NewSource(1)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-				AllNodesAddress:           addr2,
 			})
 
 			mgp.joinGroup(test.addr)
@@ -356,14 +362,13 @@ func TestHandleReport(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mgp := mockMulticastGroupProtocol{t: t}
+			mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr3}
 			clock := faketime.NewManualClock()
 
 			mgp.init(ip.GenericMulticastProtocolOptions{
 				Rand:                      rand.New(rand.NewSource(2)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-				AllNodesAddress:           addr3,
 			})
 
 			mgp.joinGroup(addr1)
@@ -446,14 +451,13 @@ func TestHandleQuery(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mgp := mockMulticastGroupProtocol{t: t}
+			mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr3}
 			clock := faketime.NewManualClock()
 
 			mgp.init(ip.GenericMulticastProtocolOptions{
 				Rand:                      rand.New(rand.NewSource(3)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-				AllNodesAddress:           addr3,
 			})
 
 			mgp.joinGroup(addr1)
@@ -574,14 +578,13 @@ func TestJoinCount(t *testing.T) {
 }
 
 func TestMakeAllNonMemberAndInitialize(t *testing.T) {
-	mgp := mockMulticastGroupProtocol{t: t}
+	mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr3}
 	clock := faketime.NewManualClock()
 
 	mgp.init(ip.GenericMulticastProtocolOptions{
 		Rand:                      rand.New(rand.NewSource(3)),
 		Clock:                     clock,
 		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-		AllNodesAddress:           addr3,
 	})
 
 	mgp.joinGroup(addr1)
