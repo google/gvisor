@@ -156,14 +156,6 @@ type GenericMulticastProtocolOptions struct {
 	//
 	// Unsolicited reports are transmitted when a group is newly joined.
 	MaxUnsolicitedReportDelay time.Duration
-
-	// AllNodesAddress is a multicast address that all nodes on a network should
-	// be a member of.
-	//
-	// This address will not have the generic multicast protocol performed on it;
-	// it will be left in the non member/listener state, and packets will never
-	// be sent for it.
-	AllNodesAddress tcpip.Address
 }
 
 // MulticastGroupProtocol is a multicast group protocol whose core state machine
@@ -188,6 +180,10 @@ type MulticastGroupProtocol interface {
 
 	// SendLeave sends a multicast leave for the specified group address.
 	SendLeave(groupAddress tcpip.Address) tcpip.Error
+
+	// ShouldPerformProtocol returns true iff the protocol should be performed for
+	// the specified group.
+	ShouldPerformProtocol(tcpip.Address) bool
 }
 
 // GenericMulticastProtocolState is the per interface generic multicast protocol
@@ -455,20 +451,7 @@ func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress t
 
 	info.lastToSendReport = false
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		info.state = idleMember
 		return
 	}
@@ -537,20 +520,7 @@ func (g *GenericMulticastProtocolState) maybeSendLeave(groupAddress tcpip.Addres
 		return
 	}
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		return
 	}
 
@@ -627,20 +597,7 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddr
 		return
 	}
 
-	if groupAddress == g.opts.AllNodesAddress {
-		// As per RFC 2236 section 6 page 10 (for IGMPv2),
-		//
-		//   The all-systems group (address 224.0.0.1) is handled as a special
-		//   case. The host starts in Idle Member state for that group on every
-		//   interface, never transitions to another state, and never sends a
-		//   report for that group.
-		//
-		// As per RFC 2710 section 5 page 10 (for MLDv1),
-		//
-		//   The link-scope all-nodes address (FF02::1) is handled as a special
-		//   case. The node starts in Idle Listener state for that address on
-		//   every interface, never transitions to another state, and never sends
-		//   a Report or Done for that address.
+	if !g.opts.Protocol.ShouldPerformProtocol(groupAddress) {
 		return
 	}
 

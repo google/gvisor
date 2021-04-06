@@ -373,3 +373,83 @@ func TestSolicitedNodeAddr(t *testing.T) {
 		})
 	}
 }
+
+func TestV6MulticastScope(t *testing.T) {
+	tests := []struct {
+		addr tcpip.Address
+		want header.IPv6MulticastScope
+	}{
+		{
+			addr: "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6Reserved0MulticastScope,
+		},
+		{
+			addr: "\xff\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6InterfaceLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6LinkLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6RealmLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6AdminLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6SiteLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(6),
+		},
+		{
+			addr: "\xff\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(7),
+		},
+		{
+			addr: "\xff\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6OrganizationLocalMulticastScope,
+		},
+		{
+			addr: "\xff\x09\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(9),
+		},
+		{
+			addr: "\xff\x0a\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(10),
+		},
+		{
+			addr: "\xff\x0b\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(11),
+		},
+		{
+			addr: "\xff\x0c\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(12),
+		},
+		{
+			addr: "\xff\x0d\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6MulticastScope(13),
+		},
+		{
+			addr: "\xff\x0e\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6GlobalMulticastScope,
+		},
+		{
+			addr: "\xff\x0f\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			want: header.IPv6ReservedFMulticastScope,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
+			if got := header.V6MulticastScope(test.addr); got != test.want {
+				t.Fatalf("got header.V6MulticastScope(%s) = %d, want = %d", test.addr, got, test.want)
+			}
+		})
+	}
+}
