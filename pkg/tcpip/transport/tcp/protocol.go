@@ -68,69 +68,15 @@ const (
 	// DefaultSynRetries is the default value for the number of SYN retransmits
 	// before a connect is aborted.
 	DefaultSynRetries = 6
+
+	// MaxListenBacklog is the maximum limit of listen backlog supported.
+	MaxListenBacklog = 1024
 )
 
 const (
 	ccReno  = "reno"
 	ccCubic = "cubic"
 )
-
-// syncRcvdCounter tracks the number of endpoints in the SYN-RCVD state. The
-// value is protected by a mutex so that we can increment only when it's
-// guaranteed not to go above a threshold.
-type synRcvdCounter struct {
-	sync.Mutex
-	value     uint64
-	pending   sync.WaitGroup
-	threshold uint64
-}
-
-// inc tries to increment the global number of endpoints in SYN-RCVD state. It
-// succeeds if the increment doesn't make the count go beyond the threshold, and
-// fails otherwise.
-func (s *synRcvdCounter) inc() bool {
-	s.Lock()
-	defer s.Unlock()
-	if s.value >= s.threshold {
-		return false
-	}
-
-	s.pending.Add(1)
-	s.value++
-
-	return true
-}
-
-// dec atomically decrements the global number of endpoints in SYN-RCVD
-// state. It must only be called if a previous call to inc succeeded.
-func (s *synRcvdCounter) dec() {
-	s.Lock()
-	defer s.Unlock()
-	s.value--
-	s.pending.Done()
-}
-
-// synCookiesInUse returns true if the synRcvdCount is greater than
-// SynRcvdCountThreshold.
-func (s *synRcvdCounter) synCookiesInUse() bool {
-	s.Lock()
-	defer s.Unlock()
-	return s.value >= s.threshold
-}
-
-// SetThreshold sets synRcvdCounter.Threshold to ths new threshold.
-func (s *synRcvdCounter) SetThreshold(threshold uint64) {
-	s.Lock()
-	defer s.Unlock()
-	s.threshold = threshold
-}
-
-// Threshold returns the current value of synRcvdCounter.Threhsold.
-func (s *synRcvdCounter) Threshold() uint64 {
-	s.Lock()
-	defer s.Unlock()
-	return s.threshold
-}
 
 type protocol struct {
 	stack *stack.Stack
@@ -139,6 +85,7 @@ type protocol struct {
 	sackEnabled                bool
 	recovery                   tcpip.TCPRecovery
 	delayEnabled               bool
+	alwaysUseSynCookies        bool
 	sendBufferSize             tcpip.TCPSendBufferSizeRangeOption
 	recvBufferSize             tcpip.TCPReceiveBufferSizeRangeOption
 	congestionControl          string
@@ -150,7 +97,6 @@ type protocol struct {
 	minRTO                     time.Duration
 	maxRTO                     time.Duration
 	maxRetries                 uint32
-	synRcvdCount               synRcvdCounter
 	synRetries                 uint8
 	dispatcher                 dispatcher
 }
@@ -373,9 +319,9 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 		p.mu.Unlock()
 		return nil
 
-	case *tcpip.TCPSynRcvdCountThresholdOption:
+	case *tcpip.TCPAlwaysUseSynCookies:
 		p.mu.Lock()
-		p.synRcvdCount.SetThreshold(uint64(*v))
+		p.alwaysUseSynCookies = bool(*v)
 		p.mu.Unlock()
 		return nil
 
@@ -480,9 +426,9 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 		p.mu.RUnlock()
 		return nil
 
-	case *tcpip.TCPSynRcvdCountThresholdOption:
+	case *tcpip.TCPAlwaysUseSynCookies:
 		p.mu.RLock()
-		*v = tcpip.TCPSynRcvdCountThresholdOption(p.synRcvdCount.Threshold())
+		*v = tcpip.TCPAlwaysUseSynCookies(p.alwaysUseSynCookies)
 		p.mu.RUnlock()
 		return nil
 
@@ -505,12 +451,6 @@ func (p *protocol) Close() {
 // Wait implements stack.TransportProtocol.Wait.
 func (p *protocol) Wait() {
 	p.dispatcher.wait()
-}
-
-// SynRcvdCounter returns a reference to the synRcvdCount for this protocol
-// instance.
-func (p *protocol) SynRcvdCounter() *synRcvdCounter {
-	return &p.synRcvdCount
 }
 
 // Parse implements stack.TransportProtocol.Parse.
@@ -537,7 +477,6 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		lingerTimeout:              DefaultTCPLingerTimeout,
 		timeWaitTimeout:            DefaultTCPTimeWaitTimeout,
 		timeWaitReuse:              tcpip.TCPTimeWaitReuseLoopbackOnly,
-		synRcvdCount:               synRcvdCounter{threshold: SynRcvdCountThreshold},
 		synRetries:                 DefaultSynRetries,
 		minRTO:                     MinRTO,
 		maxRTO:                     MaxRTO,
