@@ -955,11 +955,7 @@ func TestUserSuppliedMSSOnConnect(t *testing.T) {
 // when completing the handshake for a new TCP connection from a TCP
 // listening socket. It should be present in the sent TCP SYN-ACK segment.
 func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
-	const (
-		nonSynCookieAccepts = 2
-		totalAccepts        = 4
-		mtu                 = 5000
-	)
+	const mtu = 5000
 
 	ips := []struct {
 		name     string
@@ -1033,12 +1029,6 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 
 					ip.createEP(c)
 
-					// Set the SynRcvd threshold to force a syn cookie based accept to happen.
-					opt := tcpip.TCPSynRcvdCountThresholdOption(nonSynCookieAccepts)
-					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-						t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
-					}
-
 					if err := c.EP.SetSockOptInt(tcpip.MaxSegOption, int(test.setMSS)); err != nil {
 						t.Fatalf("SetSockOptInt(MaxSegOption, %d): %s", test.setMSS, err)
 					}
@@ -1048,13 +1038,17 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 						t.Fatalf("Bind(%+v): %s:", bindAddr, err)
 					}
 
-					if err := c.EP.Listen(totalAccepts); err != nil {
-						t.Fatalf("Listen(%d): %s:", totalAccepts, err)
+					backlog := 5
+					// Keep the number of client requests twice to the backlog
+					// such that half of the connections do not use syncookies
+					// and the other half does.
+					clientConnects := backlog * 2
+
+					if err := c.EP.Listen(backlog); err != nil {
+						t.Fatalf("Listen(%d): %s:", backlog, err)
 					}
 
-					// The first nonSynCookieAccepts packets sent will trigger a gorooutine
-					// based accept. The rest will trigger a cookie based accept.
-					for i := 0; i < totalAccepts; i++ {
+					for i := 0; i < clientConnects; i++ {
 						// Send a SYN requests.
 						iss := seqnum.Value(i)
 						srcPort := context.TestPort + uint16(i)
@@ -3087,11 +3081,9 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	c := context.New(t, mtu)
 	defer c.Cleanup()
 
-	// Set the SynRcvd threshold to zero to force a syn cookie based accept
-	// to happen.
-	opt := tcpip.TCPSynRcvdCountThresholdOption(0)
+	opt := tcpip.TCPAlwaysUseSynCookies(true)
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
 	// Create EP and start listening.
@@ -5363,7 +5355,7 @@ func TestListenBacklogFull(t *testing.T) {
 	}
 
 	lastPortOffset := uint16(0)
-	for ; int(lastPortOffset) < listenBacklog; lastPortOffset++ {
+	for ; int(lastPortOffset) < listenBacklog+1; lastPortOffset++ {
 		executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 	}
 
@@ -5671,15 +5663,13 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	}
 
 	// Test acceptance.
-	// Start listening.
-	listenBacklog := 1
-	if err := c.EP.Listen(listenBacklog); err != nil {
+	if err := c.EP.Listen(0); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
 	// Send two SYN's the first one should get a SYN-ACK, the
 	// second one should not get any response and is dropped as
-	// the synRcvd count will be equal to backlog.
+	// the accept queue is full.
 	irs := seqnum.Value(context.TestInitialSequenceNumber)
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -5701,23 +5691,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	}
 	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
 
-	// Now execute send one more SYN. The stack should not respond as the backlog
-	// is full at this point.
-	//
-	// NOTE: we did not complete the handshake for the previous one so the
-	// accept backlog should be empty and there should be one connection in
-	// synRcvd state.
-	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort + 1,
-		DstPort: context.StackPort,
-		Flags:   header.TCPFlagSyn,
-		SeqNum:  seqnum.Value(889),
-		RcvWnd:  30000,
-	})
-	c.CheckNoPacketTimeout("unexpected packet received", 50*time.Millisecond)
-
-	// Now complete the previous connection and verify that there is a connection
-	// to accept.
+	// Now complete the previous connection.
 	// Send ACK.
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -5728,11 +5702,24 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
-	// Try to accept the connections in the backlog.
+	// Verify if that is delivered to the accept queue.
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
+	<-ch
 
+	// Now execute send one more SYN. The stack should not respond as the backlog
+	// is full at this point.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort + 1,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  seqnum.Value(889),
+		RcvWnd:  30000,
+	})
+	c.CheckNoPacketTimeout("unexpected packet received", 50*time.Millisecond)
+
+	// Try to accept the connections in the backlog.
 	newEP, _, err := c.EP.Accept(nil)
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Wait for connection to be established.
@@ -5764,11 +5751,6 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	opt := tcpip.TCPSynRcvdCountThresholdOption(1)
-	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
-	}
-
 	// Create TCP endpoint.
 	var err tcpip.Error
 	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -5781,9 +5763,8 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 		t.Fatalf("Bind failed: %s", err)
 	}
 
-	// Start listening.
-	listenBacklog := 1
-	if err := c.EP.Listen(listenBacklog); err != nil {
+	// Test for SynCookies usage after filling up the backlog.
+	if err := c.EP.Listen(0); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
@@ -6066,7 +6047,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
-	if err := c.EP.Listen(1); err != nil {
+	if err := c.EP.Listen(0); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 

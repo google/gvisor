@@ -35,12 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-// minListenBacklog is the minimum reasonable backlog for listening sockets.
-const minListenBacklog = 8
-
-// maxListenBacklog is the maximum allowed backlog for listening sockets.
-const maxListenBacklog = 1024
-
 // maxAddrLen is the maximum socket address length we're willing to accept.
 const maxAddrLen = 200
 
@@ -384,14 +378,6 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
 		return 0, nil, syserror.ENOTSOCK
-	}
-
-	// Per Linux, the backlog is silently capped to reasonable values.
-	if backlog <= 0 {
-		backlog = minListenBacklog
-	}
-	if backlog > maxListenBacklog {
-		backlog = maxListenBacklog
 	}
 
 	return 0, nil, s.Listen(t, int(backlog)).ToError()

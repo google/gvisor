@@ -786,6 +786,13 @@ func (*TCPRecovery) isGettableTransportProtocolOption() {}
 
 func (*TCPRecovery) isSettableTransportProtocolOption() {}
 
+// TCPAlwaysUseSynCookies indicates unconditional usage of syncookies.
+type TCPAlwaysUseSynCookies bool
+
+func (*TCPAlwaysUseSynCookies) isGettableTransportProtocolOption() {}
+
+func (*TCPAlwaysUseSynCookies) isSettableTransportProtocolOption() {}
+
 const (
 	// TCPRACKLossDetection indicates RACK is used for loss detection and
 	// recovery.
@@ -1019,19 +1026,6 @@ func (*TCPMaxRetriesOption) isSettableSocketOption() {}
 func (*TCPMaxRetriesOption) isGettableTransportProtocolOption() {}
 
 func (*TCPMaxRetriesOption) isSettableTransportProtocolOption() {}
-
-// TCPSynRcvdCountThresholdOption is used by SetSockOpt/GetSockOpt to specify
-// the number of endpoints that can be in SYN-RCVD state before the stack
-// switches to using SYN cookies.
-type TCPSynRcvdCountThresholdOption uint64
-
-func (*TCPSynRcvdCountThresholdOption) isGettableSocketOption() {}
-
-func (*TCPSynRcvdCountThresholdOption) isSettableSocketOption() {}
-
-func (*TCPSynRcvdCountThresholdOption) isGettableTransportProtocolOption() {}
-
-func (*TCPSynRcvdCountThresholdOption) isSettableTransportProtocolOption() {}
 
 // TCPSynRetriesOption is used by SetSockOpt/GetSockOpt to specify stack-wide
 // default for number of times SYN is retransmitted before aborting a connect.

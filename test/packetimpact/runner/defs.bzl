@@ -246,6 +246,12 @@ ALL_TESTS = [
         expect_netstack_failure = True,
     ),
     PacketimpactTestInfo(
+        name = "tcp_listen_backlog",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_syncookie",
+    ),
+    PacketimpactTestInfo(
         name = "icmpv6_param_problem",
     ),
     PacketimpactTestInfo(
