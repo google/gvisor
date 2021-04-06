@@ -80,6 +80,25 @@ func (mld *mldState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
 	return err
 }
 
+// ShouldPerformProtocol implements ip.MulticastGroupProtocol.
+func (mld *mldState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
+	// As per RFC 2710 section 5 page 10,
+	//
+	//   The link-scope all-nodes address (FF02::1) is handled as a special
+	//   case. The node starts in Idle Listener state for that address on
+	//   every interface, never transitions to another state, and never sends
+	//   a Report or Done for that address.
+	//
+	//   MLD messages are never sent for multicast addresses whose scope is 0
+	//   (reserved) or 1 (node-local).
+	if groupAddress == header.IPv6AllNodesMulticastAddress {
+		return false
+	}
+
+	scope := header.V6MulticastScope(groupAddress)
+	return scope != header.IPv6Reserved0MulticastScope && scope != header.IPv6InterfaceLocalMulticastScope
+}
+
 // init sets up an mldState struct, and is required to be called before using
 // a new mldState.
 //
@@ -91,7 +110,6 @@ func (mld *mldState) init(ep *endpoint) {
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  mld,
 		MaxUnsolicitedReportDelay: UnsolicitedReportIntervalMax,
-		AllNodesAddress:           header.IPv6AllNodesMulticastAddress,
 	})
 }
 
