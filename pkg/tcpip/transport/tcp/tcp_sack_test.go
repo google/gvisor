@@ -160,12 +160,9 @@ func TestSackPermittedAccept(t *testing.T) {
 					defer c.Cleanup()
 
 					if tc.cookieEnabled {
-						// Set the SynRcvd threshold to
-						// zero to force a syn cookie
-						// based accept to happen.
-						var opt tcpip.TCPSynRcvdCountThresholdOption
+						opt := tcpip.TCPAlwaysUseSynCookies(true)
 						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-							t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+							t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 						}
 					}
 					setStackSACKPermitted(t, c, sackEnabled)
@@ -235,12 +232,9 @@ func TestSackDisabledAccept(t *testing.T) {
 					defer c.Cleanup()
 
 					if tc.cookieEnabled {
-						// Set the SynRcvd threshold to
-						// zero to force a syn cookie
-						// based accept to happen.
-						var opt tcpip.TCPSynRcvdCountThresholdOption
+						opt := tcpip.TCPAlwaysUseSynCookies(true)
 						if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-							t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+							t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 						}
 					}
 

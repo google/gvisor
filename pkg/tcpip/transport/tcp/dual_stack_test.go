@@ -565,17 +565,15 @@ func TestV4AcceptOnV4(t *testing.T) {
 }
 
 func testV4ListenClose(t *testing.T, c *context.Context) {
-	// Set the SynRcvd threshold to zero to force a syn cookie based accept
-	// to happen.
-	var opt tcpip.TCPSynRcvdCountThresholdOption
+	opt := tcpip.TCPAlwaysUseSynCookies(true)
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		t.Fatalf("setting TCPSynRcvdCountThresholdOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 	}
 
-	const n = uint16(32)
+	const n = 32
 
 	// Start listening.
-	if err := c.EP.Listen(int(tcp.SynRcvdCountThreshold + 1)); err != nil {
+	if err := c.EP.Listen(n); err != nil {
 		t.Fatalf("Listen failed: %v", err)
 	}
 
@@ -591,9 +589,9 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 		})
 	}
 
-	// Each of these ACK's will cause a syn-cookie based connection to be
+	// Each of these ACKs will cause a syn-cookie based connection to be
 	// accepted and delivered to the listening endpoint.
-	for i := uint16(0); i < n; i++ {
+	for i := 0; i < n; i++ {
 		b := c.GetPacket()
 		tcp := header.TCP(header.IPv4(b).Payload())
 		iss := seqnum.Value(tcp.SequenceNumber())

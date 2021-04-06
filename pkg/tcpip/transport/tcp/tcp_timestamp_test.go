@@ -139,9 +139,9 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 	defer c.Cleanup()
 
 	if cookieEnabled {
-		var opt tcpip.TCPSynRcvdCountThresholdOption
+		opt := tcpip.TCPAlwaysUseSynCookies(true)
 		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 
@@ -202,9 +202,9 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	defer c.Cleanup()
 
 	if cookieEnabled {
-		var opt tcpip.TCPSynRcvdCountThresholdOption
+		opt := tcpip.TCPAlwaysUseSynCookies(true)
 		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, opt, opt, err)
+			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
 		}
 	}
 

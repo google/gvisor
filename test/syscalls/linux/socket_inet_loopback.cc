@@ -489,13 +489,6 @@ void TestListenWhileConnect(const TestParam& param,
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
-  constexpr int kBacklog = 2;
-  // Linux completes one more connection than the listen backlog argument.
-  // To ensure that there is at least one client connection that stays in
-  // connecting state, keep 2 more client connections than the listen backlog.
-  // gVisor differs in this behavior though, gvisor.dev/issue/3153.
-  constexpr int kClients = kBacklog + 2;
-
   // Create the listening socket.
   FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
@@ -503,6 +496,13 @@ void TestListenWhileConnect(const TestParam& param,
   ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
                    listener.addr_len),
               SyscallSucceeds());
+  // This test is only interested in deterministically getting a socket in
+  // connecting state. For that, we use a listen backlog of zero which would
+  // mean there is exactly one connection that gets established and is enqueued
+  // to the accept queue. We poll on the listener to ensure that is enqueued.
+  // After that the subsequent client connect will stay in connecting state as
+  // the accept queue is full.
+  constexpr int kBacklog = 0;
   ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
@@ -515,42 +515,49 @@ void TestListenWhileConnect(const TestParam& param,
 
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-  std::vector<FileDescriptor> clients;
-  for (int i = 0; i < kClients; i++) {
-    FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
-        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-    int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                      connector.addr_len);
-    if (ret != 0) {
-      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
-      clients.push_back(std::move(client));
-    }
+  FileDescriptor established_client = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(
+      connect(established_client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+              connector.addr_len),
+      SyscallSucceeds());
+
+  // Ensure that the accept queue has the completed connection.
+  constexpr int kTimeout = 10000;
+  pollfd pfd = {
+      .fd = listen_fd.get(),
+      .events = POLLIN,
+  };
+  ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(pfd.revents, POLLIN);
+
+  FileDescriptor connecting_client = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  // Keep the last client in connecting state.
+  int ret =
+      connect(connecting_client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+              connector.addr_len);
+  if (ret != 0) {
+    EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
   }
 
   stopListen(listen_fd);
 
-  for (auto& client : clients) {
-    constexpr int kTimeout = 10000;
+  std::array<std::pair<int, int>, 2> sockets = {
+      std::make_pair(established_client.get(), ECONNRESET),
+      std::make_pair(connecting_client.get(), ECONNREFUSED),
+  };
+  for (size_t i = 0; i < sockets.size(); i++) {
+    SCOPED_TRACE(absl::StrCat("i=", i));
+    auto [fd, expected_errno] = sockets[i];
     pollfd pfd = {
-        .fd = client.get(),
-        .events = POLLIN,
+        .fd = fd,
     };
-    // When the listening socket is closed, then we expect the remote to reset
-    // the connection.
-    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
-    ASSERT_EQ(pfd.revents, POLLIN | POLLHUP | POLLERR);
+    // When the listening socket is closed, the peer would reset the connection.
+    EXPECT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    EXPECT_EQ(pfd.revents, POLLHUP | POLLERR);
     char c;
-    // Subsequent read can fail with:
-    // ECONNRESET: If the client connection was established and was reset by the
-    // remote.
-    // ECONNREFUSED: If the client connection failed to be established.
-    ASSERT_THAT(read(client.get(), &c, sizeof(c)),
-                AnyOf(SyscallFailsWithErrno(ECONNRESET),
-                      SyscallFailsWithErrno(ECONNREFUSED)));
-    // The last client connection would be in connecting (SYN_SENT) state.
-    if (client.get() == clients[kClients - 1].get()) {
-      ASSERT_EQ(errno, ECONNREFUSED) << strerror(errno);
-    }
+    EXPECT_THAT(read(fd, &c, sizeof(c)), SyscallFailsWithErrno(expected_errno));
   }
 }
 
@@ -570,7 +577,59 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownWhileConnect) {
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
 // causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPbacklog_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes_NoRandomSave) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+  std::array<int, 3> backlogs = {-1, 0, 1};
+  for (auto& backlog : backlogs) {
+    ASSERT_THAT(listen(listen_fd.get(), backlog), SyscallSucceeds());
+
+    int expected_accepts;
+    if (backlog < 0) {
+      expected_accepts = 1024;
+    } else {
+      expected_accepts = backlog + 1;
+    }
+    for (int i = 0; i < expected_accepts; i++) {
+      SCOPED_TRACE(absl::StrCat("i=", i));
+      // Connect to the listening socket.
+      const FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+          Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+      sockaddr_storage conn_addr = connector.addr;
+      ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+      ASSERT_THAT(
+          RetryEINTR(connect)(conn_fd.get(),
+                              reinterpret_cast<struct sockaddr*>(&conn_addr),
+                              connector.addr_len),
+          SyscallSucceeds());
+      const FileDescriptor accepted =
+          ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+    }
+  }
+}
+
+// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
+// random save as established connections which can't be delivered to the accept
+// queue because the queue is full are not correctly delivered after restore
+// causing the last accept to timeout on the restore.
+TEST_P(SocketInetLoopbackTest, TCPBacklog_NoRandomSave) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -595,6 +654,7 @@ TEST_P(SocketInetLoopbackTest, TCPbacklog_NoRandomSave) {
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
   int i = 0;
   while (1) {
+    SCOPED_TRACE(absl::StrCat("i=", i));
     int ret;
 
     // Connect to the listening socket.
@@ -620,7 +680,99 @@ TEST_P(SocketInetLoopbackTest, TCPbacklog_NoRandomSave) {
     i++;
   }
 
+  int client_conns = i;
+  int accepted_conns = 0;
   for (; i != 0; i--) {
+    SCOPED_TRACE(absl::StrCat("i=", i));
+    pollfd pfd = {
+        .fd = listen_fd.get(),
+        .events = POLLIN,
+    };
+    // Look for incoming connections to accept. The last connect request could
+    // be established from the client side, but the ACK of the handshake could
+    // be dropped by the listener if the accept queue was filled up by the
+    // previous connect.
+    int ret;
+    ASSERT_THAT(ret = poll(&pfd, 1, 3000), SyscallSucceeds());
+    if (ret == 0) break;
+    if (pfd.revents == POLLIN) {
+      // Accept the connection.
+      //
+      // We have to assign a name to the accepted socket, as unamed temporary
+      // objects are destructed upon full evaluation of the expression it is in,
+      // potentially causing the connecting socket to fail to shutdown properly.
+      auto accepted =
+          ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+      accepted_conns++;
+    }
+  }
+  // We should accept at least listen backlog + 1 connections. As the stack is
+  // enqueuing established connections to the accept queue, newer SYNs could
+  // still be replied to causing those client connections would be accepted as
+  // we start dequeuing the queue.
+  ASSERT_GE(accepted_conns, kBacklogSize + 1);
+  ASSERT_GE(client_conns, accepted_conns);
+}
+
+// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
+// random save as established connections which can't be delivered to the accept
+// queue because the queue is full are not correctly delivered after restore
+// causing the last accept to timeout on the restore.
+TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll_NoRandomSave) {
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  constexpr int kBacklog = 1;
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  // Fill up the accept queue and trigger more client connections which would be
+  // waiting to be accepted.
+  std::array<FileDescriptor, kBacklog + 1> established_clients;
+  for (auto& fd : established_clients) {
+    fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+    ASSERT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                        connector.addr_len),
+                SyscallSucceeds());
+  }
+  std::array<FileDescriptor, kBacklog> waiting_clients;
+  for (auto& fd : waiting_clients) {
+    fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    int ret = connect(fd.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                      connector.addr_len);
+    if (ret != 0) {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+    }
+  }
+
+  auto accept_connection = [&]() {
+    constexpr int kTimeout = 10000;
+    pollfd pfd = {
+        .fd = listen_fd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    ASSERT_EQ(pfd.revents, POLLIN);
     // Accept the connection.
     //
     // We have to assign a name to the accepted socket, as unamed temporary
@@ -628,95 +780,33 @@ TEST_P(SocketInetLoopbackTest, TCPbacklog_NoRandomSave) {
     // potentially causing the connecting socket to fail to shutdown properly.
     auto accepted =
         ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
-  }
-}
+  };
 
-// Test if the stack completes atmost listen backlog number of client
-// connections. It exercises the path of the stack that enqueues completed
-// connections to accept queue vs new incoming SYNs.
-TEST_P(SocketInetLoopbackTest, TCPConnectBacklog_NoRandomSave) {
-  const auto& param = GetParam();
-  const TestAddress& listener = param.listener;
-  const TestAddress& connector = param.connector;
-
-  constexpr int kBacklog = 1;
-  // Keep the number of client connections more than the listen backlog.
-  // Linux completes one more connection than the listen backlog argument.
-  // gVisor differs in this behavior though, gvisor.dev/issue/3153.
-  int kClients = kBacklog + 2;
-  if (IsRunningOnGvisor()) {
-    kClients--;
+  // Ensure that we accept all client connections. The waiting connections would
+  // get enqueued as we drain the accept queue.
+  for (int i = 0; i < std::size(established_clients); i++) {
+    SCOPED_TRACE(absl::StrCat("established clients i=", i));
+    accept_connection();
   }
 
-  // Run the following test for few iterations to test race between accept queue
-  // getting filled with incoming SYNs.
-  for (int num = 0; num < 10; num++) {
-    FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
-        Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
-    sockaddr_storage listen_addr = listener.addr;
-    ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
-                     listener.addr_len),
-                SyscallSucceeds());
-    ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
-
-    socklen_t addrlen = listener.addr_len;
-    ASSERT_THAT(
-        getsockname(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
-                    &addrlen),
-        SyscallSucceeds());
-    uint16_t const port =
-        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
-    sockaddr_storage conn_addr = connector.addr;
-    ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
-
-    std::vector<FileDescriptor> clients;
-    // Issue multiple non-blocking client connects.
-    for (int i = 0; i < kClients; i++) {
-      FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
-          Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-      int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                        connector.addr_len);
-      if (ret != 0) {
-        EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
-      }
-      clients.push_back(std::move(client));
-    }
-
-    // Now that client connects are issued, wait for the accept queue to get
-    // filled and ensure no new client connection is completed.
-    for (int i = 0; i < kClients; i++) {
-      pollfd pfd = {
-          .fd = clients[i].get(),
-          .events = POLLOUT,
-      };
-      if (i < kClients - 1) {
-        // Poll for client side connection completions with a large timeout.
-        // We cannot poll on the listener side without calling accept as poll
-        // stays level triggered with non-zero accept queue length.
-        //
-        // Client side poll would not guarantee that the completed connection
-        // has been enqueued in to the acccept queue, but the fact that the
-        // listener ACKd the SYN, means that it cannot complete any new incoming
-        // SYNs when it has already ACKd for > backlog number of SYNs.
-        ASSERT_THAT(poll(&pfd, 1, 10000), SyscallSucceedsWithValue(1))
-            << "num=" << num << " i=" << i << " kClients=" << kClients;
-        ASSERT_EQ(pfd.revents, POLLOUT) << "num=" << num << " i=" << i;
-      } else {
-        // Now that we expect accept queue filled up, ensure that the last
-        // client connection never completes with a smaller poll timeout.
-        ASSERT_THAT(poll(&pfd, 1, 1000), SyscallSucceedsWithValue(0))
-            << "num=" << num << " i=" << i;
-      }
-
-      ASSERT_THAT(close(clients[i].release()), SyscallSucceedsWithValue(0))
-          << "num=" << num << " i=" << i;
-    }
-    clients.clear();
-    // We close the listening side and open a new listener. We could instead
-    // drain the accept queue by calling accept() and reuse the listener, but
-    // that is racy as the retransmitted SYNs could get ACKd as we make room in
-    // the accept queue.
-    ASSERT_THAT(close(listen_fd.release()), SyscallSucceedsWithValue(0));
+  // The waiting client connections could be in one of these 2 states:
+  // (1) SYN_SENT: if the SYN was dropped because accept queue was full
+  // (2) ESTABLISHED: if the listener sent back a SYNACK, but may have dropped
+  // the ACK from the client if the accept queue was full (send out a data to
+  // re-send that ACK, to address that case).
+  for (int i = 0; i < std::size(waiting_clients); i++) {
+    SCOPED_TRACE(absl::StrCat("waiting clients i=", i));
+    constexpr int kTimeout = 10000;
+    pollfd pfd = {
+        .fd = waiting_clients[i].get(),
+        .events = POLLOUT,
+    };
+    EXPECT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    EXPECT_EQ(pfd.revents, POLLOUT);
+    char c;
+    EXPECT_THAT(RetryEINTR(send)(waiting_clients[i].get(), &c, sizeof(c), 0),
+                SyscallSucceedsWithValue(sizeof(c)));
+    accept_connection();
   }
 }
 
