@@ -51,11 +51,6 @@ const (
 	// timestamp and the current timestamp. If the difference is greater
 	// than maxTSDiff, the cookie is expired.
 	maxTSDiff = 2
-
-	// SynRcvdCountThreshold is the default global maximum number of
-	// connections that are allowed to be in SYN-RCVD state before TCP
-	// starts using SYN cookies to accept connections.
-	SynRcvdCountThreshold uint64 = 1000
 )
 
 var (
@@ -79,9 +74,6 @@ func encodeMSS(mss uint16) uint32 {
 // may mutate the stored objects.
 type listenContext struct {
 	stack *stack.Stack
-
-	// synRcvdCount is a reference to the stack level synRcvdCount.
-	synRcvdCount *synRcvdCounter
 
 	// rcvWnd is the receive window that is sent by this listening context
 	// in the initial SYN-ACK.
@@ -138,11 +130,6 @@ func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, 
 		listenEP:         listenEP,
 		pendingEndpoints: make(map[stack.TransportEndpointID]*endpoint),
 	}
-	p, ok := stk.TransportProtocolInstance(ProtocolNumber).(*protocol)
-	if !ok {
-		panic(fmt.Sprintf("unable to get TCP protocol instance from stack: %+v", stk))
-	}
-	l.synRcvdCount = p.SynRcvdCounter()
 
 	rand.Read(l.nonce[0][:])
 	rand.Read(l.nonce[1][:])
@@ -197,6 +184,14 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 	}
 
 	return (v - l.cookieHash(id, cookieTS, 1)) & hashMask, true
+}
+
+func (l *listenContext) useSynCookies() bool {
+	var alwaysUseSynCookies tcpip.TCPAlwaysUseSynCookies
+	if err := l.stack.TransportProtocolOption(header.TCPProtocolNumber, &alwaysUseSynCookies); err != nil {
+		panic(fmt.Sprintf("TransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, alwaysUseSynCookies, err))
+	}
+	return bool(alwaysUseSynCookies) || (l.listenEP != nil && l.listenEP.synRcvdBacklogFull())
 }
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
@@ -307,6 +302,7 @@ func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, q
 
 	// Initialize and start the handshake.
 	h := ep.newPassiveHandshake(isn, irs, opts, deferAccept)
+	h.listenEP = l.listenEP
 	h.start()
 	return h, nil
 }
@@ -485,7 +481,6 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	}
 
 	go func() {
-		defer ctx.synRcvdCount.dec()
 		if err := h.complete(); err != nil {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
@@ -497,24 +492,29 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 		h.ep.startAcceptedLoop()
 		e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 		e.deliverAccepted(h.ep, false /*withSynCookie*/)
-	}() // S/R-SAFE: synRcvdCount is the barrier.
+	}()
 
 	return nil
 }
 
-func (e *endpoint) incSynRcvdCount() bool {
+func (e *endpoint) synRcvdBacklogFull() bool {
 	e.acceptMu.Lock()
-	canInc := int(atomic.LoadInt32(&e.synRcvdCount)) < cap(e.acceptedChan)
+	acceptedChanCap := cap(e.acceptedChan)
 	e.acceptMu.Unlock()
-	if canInc {
-		atomic.AddInt32(&e.synRcvdCount, 1)
-	}
-	return canInc
+	// The allocated accepted channel size would always be one greater than the
+	// listen backlog. But, the SYNRCVD connections count is always checked
+	// against the listen backlog value for Linux parity reason.
+	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
+	//
+	// We maintain an equality check here as the synRcvdCount is incremented
+	// and compared only from a single listener context and the capacity of
+	// the accepted channel can only increase by a new listen call.
+	return int(atomic.LoadInt32(&e.synRcvdCount)) == acceptedChanCap-1
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := len(e.acceptedChan)+int(atomic.LoadInt32(&e.synRcvdCount)) >= cap(e.acceptedChan)
+	full := len(e.acceptedChan) == cap(e.acceptedChan)
 	e.acceptMu.Unlock()
 	return full
 }
@@ -539,17 +539,13 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 	switch {
 	case s.flags == header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
-		if ctx.synRcvdCount.inc() {
-			// Only handle the syn if the following conditions hold
-			//   - accept queue is not full.
-			//   - number of connections in synRcvd state is less than the
-			//     backlog.
-			if !e.acceptQueueIsFull() && e.incSynRcvdCount() {
+		if !ctx.useSynCookies() {
+			if !e.acceptQueueIsFull() {
 				s.incRef()
+				atomic.AddInt32(&e.synRcvdCount, 1)
 				_ = e.handleSynSegment(ctx, s, &opts)
 				return nil
 			}
-			ctx.synRcvdCount.dec()
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
@@ -615,25 +611,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			return nil
 		}
 
-		if !ctx.synRcvdCount.synCookiesInUse() {
-			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
-			// Any acknowledgment is bad if it arrives on a connection still in
-			// the LISTEN state.  An acceptable reset segment should be formed
-			// for any arriving ACK-bearing segment.  The RST should be
-			// formatted as follows:
-			//
-			//  <SEQ=SEG.ACK><CTL=RST>
-			//
-			// Send a reset as this is an ACK for which there is no
-			// half open connections and we are not using cookies
-			// yet.
-			//
-			// The only time we should reach here when a connection
-			// was opened and closed really quickly and a delayed
-			// ACK was received from the sender.
-			return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
-		}
-
 		iss := s.ackNumber - 1
 		irs := s.sequenceNumber - 1
 
@@ -651,7 +628,23 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		if !ok || int(data) >= len(mssTable) {
 			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
-			return nil
+
+			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
+			// Any acknowledgment is bad if it arrives on a connection still in
+			// the LISTEN state.  An acceptable reset segment should be formed
+			// for any arriving ACK-bearing segment.  The RST should be
+			// formatted as follows:
+			//
+			//  <SEQ=SEG.ACK><CTL=RST>
+			//
+			// Send a reset as this is an ACK for which there is no
+			// half open connections and we are not using cookies
+			// yet.
+			//
+			// The only time we should reach here when a connection
+			// was opened and closed really quickly and a delayed
+			// ACK was received from the sender.
+			return replyWithReset(e.stack, s, e.sendTOS, e.ttl)
 		}
 		e.stack.Stats().TCP.ListenOverflowSynCookieRcvd.Increment()
 		// Create newly accepted endpoint and deliver it.

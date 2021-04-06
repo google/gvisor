@@ -65,11 +65,12 @@ const (
 // NOTE: handshake.ep.mu is held during handshake processing. It is released if
 // we are going to block and reacquired when we start processing an event.
 type handshake struct {
-	ep     *endpoint
-	state  handshakeState
-	active bool
-	flags  header.TCPFlags
-	ackNum seqnum.Value
+	ep       *endpoint
+	listenEP *endpoint
+	state    handshakeState
+	active   bool
+	flags    header.TCPFlags
+	ackNum   seqnum.Value
 
 	// iss is the initial send sequence number, as defined in RFC 793.
 	iss seqnum.Value
@@ -391,6 +392,15 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.
 		if h.ep.sendTSOk && !s.parsedOptions.TS {
 			h.ep.stack.Stats().DroppedPackets.Increment()
+			return nil
+		}
+
+		// Drop the ACK if the accept queue is full.
+		// https://github.com/torvalds/linux/blob/7acac4b3196/net/ipv4/tcp_ipv4.c#L1523
+		// We could abort the connection as well with a tunable as in
+		// https://github.com/torvalds/linux/blob/7acac4b3196/net/ipv4/tcp_minisocks.c#L788
+		if listenEP := h.listenEP; listenEP != nil && listenEP.acceptQueueIsFull() {
+			listenEP.stack.Stats().DroppedPackets.Increment()
 			return nil
 		}
 
