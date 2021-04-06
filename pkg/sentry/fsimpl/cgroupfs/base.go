@@ -167,8 +167,8 @@ func (d *cgroupProcsData) Generate(ctx context.Context, buf *bytes.Buffer) error
 
 	pgids := make(map[kernel.ThreadID]struct{})
 
-	d.fs.tasksMu.Lock()
-	defer d.fs.tasksMu.Unlock()
+	d.fs.tasksMu.RLock()
+	defer d.fs.tasksMu.RUnlock()
 
 	for task := range d.ts {
 		// Map dedups pgid, since iterating over all tasks produces multiple
@@ -209,8 +209,8 @@ func (d *tasksData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 	var pids []kernel.ThreadID
 
-	d.fs.tasksMu.Lock()
-	defer d.fs.tasksMu.Unlock()
+	d.fs.tasksMu.RLock()
+	defer d.fs.tasksMu.RUnlock()
 
 	for task := range d.ts {
 		if pid := currPidns.IDOfTask(task); pid != 0 {
