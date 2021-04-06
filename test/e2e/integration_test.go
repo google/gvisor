@@ -168,13 +168,6 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Skip("Pause/resume is not supported.")
 	}
 
-	// TODO(gvisor.dev/issue/3373): Remove after implementing.
-	if usingVFS2, err := dockerutil.UsingVFS2(); usingVFS2 {
-		t.Skip("CheckpointRestore not implemented in VFS2.")
-	} else if err != nil {
-		t.Fatalf("failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
-	}
-
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -589,6 +582,30 @@ func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 		t.Fatalf("docker run failed: %v", err)
 	} else if got != "" {
 		t.Errorf("test failed:\n%s", got)
+	}
+}
+
+// Test that UDS can be created using overlay when parent directory is in lower
+// layer only (b/134090485).
+//
+// Prerequisite: the directory where the socket file is created must not have
+// been open for write before bind(2) is called.
+func TestBindOverlay(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Run the container.
+	got, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/ubuntu",
+	}, "bash", "-c", "nc -q -1 -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -q 0 -U /var/run/sock && wait $p")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Check the output contains what we want.
+	if want := "foobar-asdf"; !strings.Contains(got, want) {
+		t.Fatalf("docker run output is missing %q: %s", want, got)
 	}
 }
 
