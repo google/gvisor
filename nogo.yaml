@@ -55,8 +55,6 @@ global:
       # Same story for underscores.
       - "should not use ALL_CAPS in Go names"
       - "should not use underscores in Go names"
-      # TODO(b/179817829): Upgrade to flock to v0.8.0.
-      - "flock.NewFlock is deprecated: Use New instead"
     exclude:
       # Generated: exempt all.
       - pkg/shim/runtimeoptions/runtimeoptions_cri.go
