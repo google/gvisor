@@ -31,6 +31,24 @@ void BM_Getpid(benchmark::State& state) {
 
 BENCHMARK(BM_Getpid);
 
+#ifdef __x86_64__
+
+#define SYSNO_STR1(x) #x
+#define SYSNO_STR(x) SYSNO_STR1(x)
+
+// BM_GetpidOpt uses the most often pattern of calling system calls:
+// mov $SYS_XXX, %eax; syscall.
+void BM_GetpidOpt(benchmark::State& state) {
+  for (auto s : state) {
+    __asm__("movl $" SYSNO_STR(SYS_getpid) ", %%eax\n"
+            "syscall\n"
+            : : : "rax", "rcx", "r11");
+  }
+}
+
+BENCHMARK(BM_GetpidOpt);
+#endif  // __x86_64__
+
 }  // namespace
 
 }  // namespace testing
