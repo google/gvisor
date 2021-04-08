@@ -238,6 +238,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 		Mode:          params.Mode,
 		UID:           params.UID,
 		GID:           params.GID,
+		Children:      params.Children,
 		SymlinkTarget: params.SymlinkTarget,
 	}
 
