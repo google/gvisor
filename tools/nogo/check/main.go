@@ -31,7 +31,6 @@ var (
 	stdlibFile     = flag.String("stdlib", "", "stdlib configuration file (in JSON format)")
 	findingsOutput = flag.String("findings", "", "output file (or stdout, if not specified)")
 	factsOutput    = flag.String("facts", "", "output file for facts (optional)")
-	escapesOutput  = flag.String("escapes", "", "output file for escapes (optional)")
 )
 
 func loadConfig(file string, config interface{}) interface{} {
@@ -66,25 +65,13 @@ func main() {
 
 	// Run the configuration.
 	if *stdlibFile != "" {
-		// Perform basic analysis.
+		// Perform stdlib analysis.
 		c := loadConfig(*stdlibFile, new(nogo.StdlibConfig)).(*nogo.StdlibConfig)
 		findings, factData, err = nogo.CheckStdlib(c, nogo.AllAnalyzers)
-
 	} else if *packageFile != "" {
-		// Perform basic analysis.
+		// Perform standard analysis.
 		c := loadConfig(*packageFile, new(nogo.PackageConfig)).(*nogo.PackageConfig)
 		findings, factData, err = nogo.CheckPackage(c, nogo.AllAnalyzers, nil)
-
-		// Do we need to do escape analysis?
-		if *escapesOutput != "" {
-			escapes, _, err := nogo.CheckPackage(c, nogo.EscapeAnalyzers, nil)
-			if err != nil {
-				log.Fatalf("error performing escape analysis: %v", err)
-			}
-			if err := nogo.WriteFindingsToFile(escapes, *escapesOutput); err != nil {
-				log.Fatalf("error writing escapes to %q: %v", *escapesOutput, err)
-			}
-		}
 	} else {
 		log.Fatalf("please provide at least one of package or stdlib!")
 	}
