@@ -139,7 +139,7 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.dumpPacket(directionRecv, nil, protocol, pkt)
+	e.dumpPacket(directionRecv, protocol, pkt)
 	e.Endpoint.DeliverNetworkPacket(remote, local, protocol, pkt)
 }
 
@@ -148,10 +148,10 @@ func (e *endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protoc
 	e.Endpoint.DeliverOutboundPacket(remote, local, protocol, pkt)
 }
 
-func (e *endpoint) dumpPacket(dir direction, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	writer := e.writer
 	if writer == nil && atomic.LoadUint32(&LogPackets) == 1 {
-		logPacket(e.logPrefix, dir, protocol, pkt, gso)
+		logPacket(e.logPrefix, dir, protocol, pkt)
 	}
 	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
 		totalLength := pkt.Size()
@@ -187,22 +187,22 @@ func (e *endpoint) dumpPacket(dir direction, gso *stack.GSO, protocol tcpip.Netw
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.dumpPacket(directionSend, gso, protocol, pkt)
-	return e.Endpoint.WritePacket(r, gso, protocol, pkt)
+func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+	e.dumpPacket(directionSend, protocol, pkt)
+	return e.Endpoint.WritePacket(r, protocol, pkt)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+func (e *endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.dumpPacket(directionSend, gso, protocol, pkt)
+		e.dumpPacket(directionSend, protocol, pkt)
 	}
-	return e.Endpoint.WritePackets(r, gso, pkts, protocol)
+	return e.Endpoint.WritePackets(r, pkts, protocol)
 }
 
-func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, gso *stack.GSO) {
+func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -411,8 +411,8 @@ func logPacket(prefix string, dir direction, protocol tcpip.NetworkProtocolNumbe
 		return
 	}
 
-	if gso != nil {
-		details += fmt.Sprintf(" gso: %+v", gso)
+	if pkt.GSOOptions.Type != stack.GSONone {
+		details += fmt.Sprintf(" gso: %+v", pkt.GSOOptions)
 	}
 
 	log.Infof("%s%s %s %s:%d -> %s:%d len:%d id:%04x %s", prefix, directionPrefix, transName, src, srcPort, dst, dstPort, size, id, details)

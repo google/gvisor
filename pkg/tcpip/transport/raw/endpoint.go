@@ -352,7 +352,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 			Data:               buffer.View(payloadBytes).ToVectorisedView(),
 		})
 		pkt.Owner = owner
-		if err := route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		if err := route.WritePacket(stack.NetworkHeaderParams{
 			Protocol: e.TransProto,
 			TTL:      route.DefaultTTL(),
 			TOS:      stack.DefaultTOS,
