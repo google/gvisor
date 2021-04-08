@@ -513,22 +513,23 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 		ipv4Loopback = tcpip.Address("\x7f\x00\x00\x01")
 
 		numPackets = 1
+		ttl        = 64
 	)
 
 	loopbackSourcedICMPv4 := func(e *channel.Endpoint) {
-		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address)
+		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)
 	}
 
 	loopbackSourcedICMPv6 := func(e *channel.Endpoint) {
-		utils.RxICMPv6EchoRequest(e, header.IPv6Loopback, utils.Ipv6Addr.Address)
+		utils.RxICMPv6EchoRequest(e, header.IPv6Loopback, utils.Ipv6Addr.Address, ttl)
 	}
 
 	loopbackDestinedICMPv4 := func(e *channel.Endpoint) {
-		utils.RxICMPv4EchoRequest(e, utils.RemoteIPv4Addr, ipv4Loopback)
+		utils.RxICMPv4EchoRequest(e, utils.RemoteIPv4Addr, ipv4Loopback, ttl)
 	}
 
 	loopbackDestinedICMPv6 := func(e *channel.Endpoint) {
-		utils.RxICMPv6EchoRequest(e, utils.RemoteIPv6Addr, header.IPv6Loopback)
+		utils.RxICMPv6EchoRequest(e, utils.RemoteIPv6Addr, header.IPv6Loopback, ttl)
 	}
 
 	invalidSrcAddrStat := func(s tcpip.IPStats) *tcpip.StatCounter {

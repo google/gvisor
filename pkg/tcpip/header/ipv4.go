@@ -178,6 +178,26 @@ const (
 	IPv4FlagDontFragment
 )
 
+// ipv4LinkLocalUnicastSubnet is the IPv4 link local unicast subnet as defined
+// by RFC 3927 section 1.
+var ipv4LinkLocalUnicastSubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet("\xa9\xfe\x00\x00", tcpip.AddressMask("\xff\xff\x00\x00"))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
+// ipv4LinkLocalMulticastSubnet is the IPv4 link local multicast subnet as
+// defined by RFC 5771 section 4.
+var ipv4LinkLocalMulticastSubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet("\xe0\x00\x00\x00", tcpip.AddressMask("\xff\xff\xff\x00"))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
 // IPv4EmptySubnet is the empty IPv4 subnet.
 var IPv4EmptySubnet = func() tcpip.Subnet {
 	subnet, err := tcpip.NewSubnet(IPv4Any, tcpip.AddressMask(IPv4Any))
@@ -421,6 +441,18 @@ func (b IPv4) IsValid(pktSize int) bool {
 	}
 
 	return true
+}
+
+// IsV4LinkLocalUnicastAddress determines if the provided address is an IPv4
+// link-local unicast address.
+func IsV4LinkLocalUnicastAddress(addr tcpip.Address) bool {
+	return ipv4LinkLocalUnicastSubnet.Contains(addr)
+}
+
+// IsV4LinkLocalMulticastAddress determines if the provided address is an IPv4
+// link-local multicast address.
+func IsV4LinkLocalMulticastAddress(addr tcpip.Address) bool {
+	return ipv4LinkLocalMulticastSubnet.Contains(addr)
 }
 
 // IsV4MulticastAddress determines if the provided address is an IPv4 multicast

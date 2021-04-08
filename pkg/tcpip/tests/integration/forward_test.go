@@ -21,6 +21,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -308,6 +310,196 @@ func TestForwarding(t *testing.T) {
 					write(serverEP, data)
 					read(epsAndAddrs.clientReadableCH, epsAndAddrs.clientEP, data, serverAddr)
 				})
+			}
+		})
+	}
+}
+
+func TestMulticastForwarding(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+
+		ipv4LinkLocalUnicastAddr   = tcpip.Address("\xa9\xfe\x00\x0a")
+		ipv4LinkLocalMulticastAddr = tcpip.Address("\xe0\x00\x00\x0a")
+		ipv4GlobalMulticastAddr    = tcpip.Address("\xe0\x00\x01\x0a")
+
+		ipv6LinkLocalUnicastAddr   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
+		ipv6LinkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
+		ipv6GlobalMulticastAddr    = tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
+
+		ttl = 64
+	)
+
+	rxICMPv4EchoRequest := func(e *channel.Endpoint, src, dst tcpip.Address) {
+		utils.RxICMPv4EchoRequest(e, src, dst, ttl)
+	}
+
+	rxICMPv6EchoRequest := func(e *channel.Endpoint, src, dst tcpip.Address) {
+		utils.RxICMPv6EchoRequest(e, src, dst, ttl)
+	}
+
+	v4Checker := func(t *testing.T, b []byte, src, dst tcpip.Address) {
+		checker.IPv4(t, b,
+			checker.SrcAddr(src),
+			checker.DstAddr(dst),
+			checker.TTL(ttl-1),
+			checker.ICMPv4(
+				checker.ICMPv4Type(header.ICMPv4Echo)))
+	}
+
+	v6Checker := func(t *testing.T, b []byte, src, dst tcpip.Address) {
+		checker.IPv6(t, b,
+			checker.SrcAddr(src),
+			checker.DstAddr(dst),
+			checker.TTL(ttl-1),
+			checker.ICMPv6(
+				checker.ICMPv6Type(header.ICMPv6EchoRequest)))
+	}
+
+	tests := []struct {
+		name             string
+		srcAddr, dstAddr tcpip.Address
+		rx               func(*channel.Endpoint, tcpip.Address, tcpip.Address)
+		expectForward    bool
+		checker          func(*testing.T, []byte)
+	}{
+		{
+			name:          "IPv4 link-local multicast destination",
+			srcAddr:       utils.RemoteIPv4Addr,
+			dstAddr:       ipv4LinkLocalMulticastAddr,
+			rx:            rxICMPv4EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv4 link-local source",
+			srcAddr:       ipv4LinkLocalUnicastAddr,
+			dstAddr:       utils.RemoteIPv4Addr,
+			rx:            rxICMPv4EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv4 link-local destination",
+			srcAddr:       utils.RemoteIPv4Addr,
+			dstAddr:       ipv4LinkLocalUnicastAddr,
+			rx:            rxICMPv4EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv4 non-link-local unicast",
+			srcAddr:       utils.RemoteIPv4Addr,
+			dstAddr:       utils.Ipv4Addr2.AddressWithPrefix.Address,
+			rx:            rxICMPv4EchoRequest,
+			expectForward: true,
+			checker: func(t *testing.T, b []byte) {
+				v4Checker(t, b, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address)
+			},
+		},
+		{
+			name:          "IPv4 non-link-local multicast",
+			srcAddr:       utils.RemoteIPv4Addr,
+			dstAddr:       ipv4GlobalMulticastAddr,
+			rx:            rxICMPv4EchoRequest,
+			expectForward: true,
+			checker: func(t *testing.T, b []byte) {
+				v4Checker(t, b, utils.RemoteIPv4Addr, ipv4GlobalMulticastAddr)
+			},
+		},
+
+		{
+			name:          "IPv6 link-local multicast destination",
+			srcAddr:       utils.RemoteIPv6Addr,
+			dstAddr:       ipv6LinkLocalMulticastAddr,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv6 link-local source",
+			srcAddr:       ipv6LinkLocalUnicastAddr,
+			dstAddr:       utils.RemoteIPv6Addr,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv6 link-local destination",
+			srcAddr:       utils.RemoteIPv6Addr,
+			dstAddr:       ipv6LinkLocalUnicastAddr,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: false,
+		},
+		{
+			name:          "IPv6 non-link-local unicast",
+			srcAddr:       utils.RemoteIPv6Addr,
+			dstAddr:       utils.Ipv6Addr2.AddressWithPrefix.Address,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: true,
+			checker: func(t *testing.T, b []byte) {
+				v6Checker(t, b, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address)
+			},
+		},
+		{
+			name:          "IPv6 non-link-local multicast",
+			srcAddr:       utils.RemoteIPv6Addr,
+			dstAddr:       ipv6GlobalMulticastAddr,
+			rx:            rxICMPv6EchoRequest,
+			expectForward: true,
+			checker: func(t *testing.T, b []byte) {
+				v6Checker(t, b, utils.RemoteIPv6Addr, ipv6GlobalMulticastAddr)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+			})
+
+			e1 := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID1, e1); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
+			}
+
+			e2 := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(nicID2, e2); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
+			}
+
+			if err := s.AddAddress(nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address); err != nil {
+				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address, err)
+			}
+			if err := s.AddAddress(nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address); err != nil {
+				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address, err)
+			}
+
+			if err := s.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwarding(%d, true): %s", ipv4.ProtocolNumber, err)
+			}
+			if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv4EmptySubnet,
+					NIC:         nicID2,
+				},
+				{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID2,
+				},
+			})
+
+			test.rx(e1, test.srcAddr, test.dstAddr)
+
+			p, ok := e2.Read()
+			if ok != test.expectForward {
+				t.Fatalf("got e2.Read() = (%#v, %t), want = (_, %t)", p, ok, test.expectForward)
+			}
+
+			if test.expectForward {
+				test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
 			}
 		})
 	}
