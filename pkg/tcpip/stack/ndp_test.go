@@ -5204,13 +5204,13 @@ func TestRouterSolicitation(t *testing.T) {
 				}
 
 				// Make sure the right remote link address is used.
-				if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersMulticastAddress); p.Route.RemoteLinkAddress != want {
+				if want := header.EthernetAddressFromMulticastIPv6Address(header.IPv6AllRoutersLinkLocalMulticastAddress); p.Route.RemoteLinkAddress != want {
 					t.Errorf("got remote link address = %s, want = %s", p.Route.RemoteLinkAddress, want)
 				}
 
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(test.expectedSrcAddr),
-					checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
+					checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPRS(checker.NDPRSOptions(test.expectedNDPOpts)),
 				)
@@ -5362,7 +5362,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 				}
 				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
 					checker.SrcAddr(header.IPv6Any),
-					checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
+					checker.DstAddr(header.IPv6AllRoutersLinkLocalMulticastAddress),
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPRS())
 			}
