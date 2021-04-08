@@ -583,6 +583,22 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 // forwardPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	h := header.IPv4(pkt.NetworkHeader().View())
+
+	dstAddr := h.DestinationAddress()
+	if header.IsV4LinkLocalUnicastAddress(h.SourceAddress()) || header.IsV4LinkLocalUnicastAddress(dstAddr) || header.IsV4LinkLocalMulticastAddress(dstAddr) {
+		// As per RFC 3927 section 7,
+		//
+		//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
+		//   destination address, irrespective of the router's default route
+		//   configuration or routes obtained from dynamic routing protocols.
+		//
+		//   A router which receives a packet with an IPv4 Link-Local source or
+		//   destination address MUST NOT forward the packet.  This prevents
+		//   forwarding of packets back onto the network segment from which they
+		//   originated, or to any other segment.
+		return nil
+	}
+
 	ttl := h.TTL()
 	if ttl == 0 {
 		// As per RFC 792 page 6, Time Exceeded Message,
@@ -620,8 +636,6 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 			opts[i] = byte(header.IPv4OptionListEndType)
 		}
 	}
-
-	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
