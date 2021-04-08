@@ -83,11 +83,6 @@ var AllAnalyzers = []*analysis.Analyzer{
 	checklocks.Analyzer,
 }
 
-// EscapeAnalyzers is a list of escape-related analyzers.
-var EscapeAnalyzers = []*analysis.Analyzer{
-	checkescape.EscapeAnalyzer,
-}
-
 func register(all []*analysis.Analyzer) {
 	// Register all fact types.
 	//
@@ -129,5 +124,4 @@ func init() {
 
 	// Register lists.
 	register(AllAnalyzers)
-	register(EscapeAnalyzers)
 }

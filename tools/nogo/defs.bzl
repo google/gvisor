@@ -280,7 +280,6 @@ def _nogo_aspect_impl(target, ctx):
     go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
     facts = ctx.actions.declare_file(target.label.name + ".facts")
     raw_findings = ctx.actions.declare_file(target.label.name + ".raw_findings")
-    escapes = ctx.actions.declare_file(target.label.name + ".escapes")
     config = struct(
         ImportPath = importpath,
         GoFiles = [src.path for src in srcs if src.path.endswith(".go")],
@@ -297,7 +296,7 @@ def _nogo_aspect_impl(target, ctx):
     inputs.append(config_file)
     ctx.actions.run(
         inputs = inputs,
-        outputs = [facts, raw_findings, escapes],
+        outputs = [facts, raw_findings],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo_objdump_tool),
         executable = ctx.files._nogo_check[0],
         mnemonic = "NogoAnalysis",
@@ -308,7 +307,6 @@ def _nogo_aspect_impl(target, ctx):
             "-package=%s" % config_file.path,
             "-findings=%s" % raw_findings.path,
             "-facts=%s" % facts.path,
-            "-escapes=%s" % escapes.path,
         ],
     )
 
@@ -330,10 +328,6 @@ def _nogo_aspect_impl(target, ctx):
             srcs = srcs,
             deps = deps,
         ),
-        # Make the escapes data visible to go/tricorder. This is returned here
-        # and not in the nogo_test rule so that this output can be obtained for
-        # ordinary go_* rules by using this as a command-line aspect.
-        OutputGroupInfo(tricorder = [escapes]),
     ]
 
 nogo_aspect = go_rule(
