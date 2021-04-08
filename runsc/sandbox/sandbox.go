@@ -486,7 +486,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
-		return fmt.Errorf("opening device file for platform %q: %v", gPlatform, err)
+		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
@@ -1174,7 +1174,7 @@ func deviceFileForPlatform(name string) (*os.File, error) {
 
 	f, err := p.OpenDevice()
 	if err != nil {
-		return nil, fmt.Errorf("opening device file for platform %q: %v", p, err)
+		return nil, fmt.Errorf("opening device file for platform %q: %w", name, err)
 	}
 	return f, nil
 }
