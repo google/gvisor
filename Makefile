@@ -184,8 +184,12 @@ fuse-tests:
 	@$(call test,--test_tag_filters=fuse $(PARTITIONS) test/fuse/...)
 .PHONY: fuse-tests
 
+nogo-tests:
+	@$(call test,--test_tag_filters=nogo //:all pkg/... tools/...)
+.PHONY: nogo-tests
+
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,//:all pkg/... tools/...)
+	@$(call test,--test_tag_filters=-nogo //:all pkg/... tools/...)
 .PHONY: unit-tests
 
 runsc-tests: ## Run all tests in runsc/...

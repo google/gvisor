@@ -58,6 +58,9 @@ steps:
     label: ":test_tube: Unit tests"
     command: make unit-tests
   - <<: *common
+    label: ":golang: Nogo tests"
+    command: make nogo-tests
+  - <<: *common
     label: ":test_tube: runsc tests"
     command: make runsc-tests
 
