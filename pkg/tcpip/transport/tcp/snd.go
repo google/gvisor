@@ -814,6 +814,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				// Consume the segment that we just merged in.
 				s.writeList.Remove(seg.Next())
 			}
+
 			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.
 				if s.outstanding > 0 && s.ep.ops.GetDelayOption() {
@@ -1006,7 +1007,7 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 func (s *sender) sendData() {
 	limit := s.maxPayloadSize
 	if s.gso {
-		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
+		limit = int(s.ep.route.GSOMaxSize() - header.TCPHeaderMaximumSize)
 	}
 	end := s.sndUna.Add(s.sndWnd)
 

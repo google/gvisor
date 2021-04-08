@@ -128,11 +128,6 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, gso *GSO, params NetworkH
 	return f.nic.WritePacket(r, gso, fwdTestNetNumber, pkt)
 }
 
-// WritePackets implements LinkEndpoint.WritePackets.
-func (*fwdTestNetworkEndpoint) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error) {
-	panic("not implemented")
-}
-
 func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error {
 	// The network header should not already be populated.
 	if _, ok := pkt.NetworkHeader().Consume(fwdTestNetHeaderLen); !ok {

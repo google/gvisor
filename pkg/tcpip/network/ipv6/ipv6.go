@@ -632,17 +632,23 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 	return nil
 }
 
-func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32, gso *stack.GSO) bool {
+func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	payload := pkt.TransportHeader().View().Size() + pkt.Data().Size()
-	return (gso == nil || gso.Type == stack.GSONone) && uint32(payload) > networkMTU
+	return uint32(payload) > networkMTU
 }
 
-// handleFragments fragments pkt and calls the handler function on each
-// fragment. It returns the number of fragments handled and the number of
-// fragments left to be processed. The IP header must already be present in the
-// original packet. The transport header protocol number is required to avoid
-// parsing the IPv6 extension headers.
-func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, networkMTU uint32, pkt *stack.PacketBuffer, transProto tcpip.TransportProtocolNumber, handler func(*stack.PacketBuffer) tcpip.Error) (int, int, tcpip.Error) {
+func (p *protocol) Segment(pkt *stack.PacketBuffer, opts stack.SegmentOptions) (stack.PacketBufferList, tcpip.Error) {
+	networkMTU, err := calculateNetworkMTU(opts.MTU, uint32(pkt.NetworkHeader().View().Size()))
+	if err != nil {
+		return stack.PacketBufferList{}, err
+	}
+
+	var pkts stack.PacketBufferList
+	if !packetMustBeFragmented(pkt, networkMTU) {
+		pkts.PushBack(pkt)
+		return pkts, nil
+	}
+
 	networkHeader := header.IPv6(pkt.NetworkHeader().View())
 
 	// TODO(gvisor.dev/issue/3912): Once the Authentication or ESP Headers are
@@ -655,29 +661,28 @@ func (e *endpoint) handleFragments(r *stack.Route, gso *stack.GSO, networkMTU ui
 		// of 8 as per RFC 8200 section 4.5:
 		//   Each complete fragment, except possibly the last ("rightmost") one, is
 		//   an integer multiple of 8 octets long.
-		return 0, 1, &tcpip.ErrMessageTooLong{}
+		return stack.PacketBufferList{}, &tcpip.ErrMessageTooLong{}
 	}
 
 	if fragmentPayloadLen < uint32(pkt.TransportHeader().View().Size()) {
 		// As per RFC 8200 Section 4.5, the Transport Header is expected to be small
 		// enough to fit in the first fragment.
-		return 0, 1, &tcpip.ErrMessageTooLong{}
+		return stack.PacketBufferList{}, &tcpip.ErrMessageTooLong{}
 	}
 
 	pf := fragmentation.MakePacketFragmenter(pkt, fragmentPayloadLen, calculateFragmentReserve(pkt))
-	id := atomic.AddUint32(&e.protocol.ids[hashRoute(r, e.protocol.hashIV)%buckets], 1)
+	id := atomic.AddUint32(&p.ids[hashRoute(networkHeader.SourceAddress(), networkHeader.DestinationAddress(), p.hashIV)%buckets], 1)
 
-	var n int
 	for {
-		fragPkt, more := buildNextFragment(&pf, networkHeader, transProto, id)
-		if err := handler(fragPkt); err != nil {
-			return n, pf.RemainingFragmentCount() + 1, err
-		}
-		n++
+		fragPkt, more := buildNextFragment(&pf, networkHeader, pkt.TransportProtocolNumber, id)
+		pkts.PushBack(fragPkt)
+
 		if !more {
-			return n, pf.RemainingFragmentCount(), nil
+			break
 		}
 	}
+
+	return pkts, nil
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
@@ -727,25 +732,6 @@ func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.Packet
 	}
 
 	stats := e.stats.ip
-	networkMTU, err := calculateNetworkMTU(e.nic.MTU(), uint32(pkt.NetworkHeader().View().Size()))
-	if err != nil {
-		stats.OutgoingPacketErrors.Increment()
-		return err
-	}
-
-	if packetMustBeFragmented(pkt, networkMTU, gso) {
-		sent, remain, err := e.handleFragments(r, gso, networkMTU, pkt, protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
-			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
-			// fragment one by one using WritePacket() (current strategy) or if we
-			// want to create a PacketBufferList from the fragments and feed it to
-			// WritePackets(). It'll be faster but cost more memory.
-			return e.nic.WritePacket(r, gso, ProtocolNumber, fragPkt)
-		})
-		stats.PacketsSent.IncrementBy(uint64(sent))
-		stats.OutgoingPacketErrors.IncrementBy(uint64(remain))
-		return err
-	}
-
 	if err := e.nic.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
@@ -753,81 +739,6 @@ func (e *endpoint) writePacket(r *stack.Route, gso *stack.GSO, pkt *stack.Packet
 
 	stats.PacketsSent.Increment()
 	return nil
-}
-
-// WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, tcpip.Error) {
-	if r.Loop()&stack.PacketLoop != 0 {
-		panic("not implemented")
-	}
-	if r.Loop()&stack.PacketOut == 0 {
-		return pkts.Len(), nil
-	}
-
-	stats := e.stats.ip
-	linkMTU := e.nic.MTU()
-	for pb := pkts.Front(); pb != nil; pb = pb.Next() {
-		if err := addIPHeader(r.LocalAddress(), r.RemoteAddress(), pb, params, nil /* extensionHeaders */); err != nil {
-			return 0, err
-		}
-
-		networkMTU, err := calculateNetworkMTU(linkMTU, uint32(pb.NetworkHeader().View().Size()))
-		if err != nil {
-			stats.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len()))
-			return 0, err
-		}
-		if packetMustBeFragmented(pb, networkMTU, gso) {
-			// Keep track of the packet that is about to be fragmented so it can be
-			// removed once the fragmentation is done.
-			originalPkt := pb
-			if _, _, err := e.handleFragments(r, gso, networkMTU, pb, params.Protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
-				// Modify the packet list in place with the new fragments.
-				pkts.InsertAfter(pb, fragPkt)
-				pb = fragPkt
-				return nil
-			}); err != nil {
-				stats.OutgoingPacketErrors.IncrementBy(uint64(pkts.Len()))
-				return 0, err
-			}
-			// Remove the packet that was just fragmented and process the rest.
-			pkts.Remove(originalPkt)
-		}
-	}
-
-	// iptables filtering. All packets that reach here are locally
-	// generated.
-	outNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	dropped, natPkts := e.protocol.stack.IPTables().CheckPackets(stack.Output, pkts, gso, r, "" /* inNicName */, outNicName)
-	stats.IPTablesOutputDropped.IncrementBy(uint64(len(dropped)))
-	for pkt := range dropped {
-		pkts.Remove(pkt)
-	}
-
-	// The NAT-ed packets may now be destined for us.
-	locallyDelivered := 0
-	for pkt := range natPkts {
-		ep := e.protocol.findEndpointWithAddress(header.IPv6(pkt.NetworkHeader().View()).DestinationAddress())
-		if ep == nil {
-			// The NAT-ed packet is still destined for some remote node.
-			continue
-		}
-
-		// Do not send the locally destined packet out the NIC.
-		pkts.Remove(pkt)
-
-		// Deliver the packet locally.
-		ep.handleLocalPacket(pkt, true /* canSkipRXChecksum */)
-		locallyDelivered++
-	}
-
-	// The rest of the packets can be delivered to the NIC as a batch.
-	pktsLen := pkts.Len()
-	written, err := e.nic.WritePackets(r, gso, pkts, ProtocolNumber)
-	stats.PacketsSent.IncrementBy(uint64(written))
-	stats.OutgoingPacketErrors.IncrementBy(uint64(pktsLen - written))
-
-	// Dropped packets aren't errors, so include them in the return value.
-	return locallyDelivered + written + len(dropped), err
 }
 
 // WriteHeaderIncludedPacket implements stack.NetworkEndpoint.
@@ -2109,15 +2020,15 @@ func calculateFragmentReserve(pkt *stack.PacketBuffer) int {
 
 // hashRoute calculates a hash value for the given route. It uses the source &
 // destination address and 32-bit number to generate the hash.
-func hashRoute(r *stack.Route, hashIV uint32) uint32 {
+func hashRoute(local, remote tcpip.Address, hashIV uint32) uint32 {
 	// The FNV-1a was chosen because it is a fast hashing algorithm, and
 	// cryptographic properties are not needed here.
 	h := fnv.New32a()
-	if _, err := h.Write([]byte(r.LocalAddress())); err != nil {
+	if _, err := h.Write([]byte(local)); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
 
-	if _, err := h.Write([]byte(r.RemoteAddress())); err != nil {
+	if _, err := h.Write([]byte(remote)); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
 
