@@ -6,6 +6,7 @@ go_binary(
     name = "containerd-shim-runsc-v1",
     srcs = ["main.go"],
     static = True,
+    tags = ["staging"],
     visibility = [
         "//visibility:public",
     ],
