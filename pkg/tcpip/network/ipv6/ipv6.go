@@ -912,6 +912,16 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 // forwardPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	h := header.IPv6(pkt.NetworkHeader().View())
+
+	dstAddr := h.DestinationAddress()
+	if header.IsV6LinkLocalAddress(h.SourceAddress()) || header.IsV6LinkLocalAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
+		// As per RFC 4291 section 2.5.6,
+		//
+		//   Routers must not forward any packets with Link-Local source or
+		//   destination addresses to other links.
+		return nil
+	}
+
 	hopLimit := h.HopLimit()
 	if hopLimit <= 1 {
 		// As per RFC 4443 section 3.3,
@@ -923,8 +933,6 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 		//   too small an initial Hop Limit value.
 		return e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt)
 	}
-
-	dstAddr := h.DestinationAddress()
 
 	// Check if the destination is owned by the stack.
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
