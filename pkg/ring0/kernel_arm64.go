@@ -65,7 +65,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	storeEl0Fpstate(switchOpts.FloatingPointState.BytePointer())
 
 	if switchOpts.Flush {
-		FlushTlbByASID(uintptr(switchOpts.UserASID))
+		LocalFlushTlbByASID(uintptr(switchOpts.UserASID))
 	}
 
 	regs := switchOpts.Registers
