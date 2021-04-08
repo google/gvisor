@@ -15,6 +15,7 @@
 package ip_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1935,6 +1936,83 @@ func TestICMPInclusionSize(t *testing.T) {
 				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
 			}
 			test.checker(t, pkt.Pkt, v)
+		})
+	}
+}
+
+func TestJoinLeaveAllRoutersGroup(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name           string
+		netProto       tcpip.NetworkProtocolNumber
+		protoFactory   stack.NetworkProtocolFactory
+		allRoutersAddr tcpip.Address
+	}{
+		{
+			name:           "IPv4",
+			netProto:       ipv4.ProtocolNumber,
+			protoFactory:   ipv4.NewProtocol,
+			allRoutersAddr: header.IPv4AllRoutersGroup,
+		},
+		{
+			name:           "IPv6 Interface Local",
+			netProto:       ipv6.ProtocolNumber,
+			protoFactory:   ipv6.NewProtocol,
+			allRoutersAddr: header.IPv6AllRoutersInterfaceLocalMulticastAddress,
+		},
+		{
+			name:           "IPv6 Link Local",
+			netProto:       ipv6.ProtocolNumber,
+			protoFactory:   ipv6.NewProtocol,
+			allRoutersAddr: header.IPv6AllRoutersLinkLocalMulticastAddress,
+		},
+		{
+			name:           "IPv6 Site Local",
+			netProto:       ipv6.ProtocolNumber,
+			protoFactory:   ipv6.NewProtocol,
+			allRoutersAddr: header.IPv6AllRoutersSiteLocalMulticastAddress,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, nicDisabled := range [...]bool{true, false} {
+				t.Run(fmt.Sprintf("NIC Disabled = %t", nicDisabled), func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+					})
+					opts := stack.NICOptions{Disabled: nicDisabled}
+					if err := s.CreateNICWithOptions(nicID, channel.New(0, 0, ""), opts); err != nil {
+						t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, opts, err)
+					}
+
+					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
+						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
+					} else if got {
+						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
+					}
+
+					if err := s.SetForwarding(test.netProto, true); err != nil {
+						t.Fatalf("s.SetForwarding(%d, true): %s", test.netProto, err)
+					}
+					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
+						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
+					} else if !got {
+						t.Fatalf("got s.IsInGroup(%d, %s) = false, want = true", nicID, test.allRoutersAddr)
+					}
+
+					if err := s.SetForwarding(test.netProto, false); err != nil {
+						t.Fatalf("s.SetForwarding(%d, false): %s", test.netProto, err)
+					}
+					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
+						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
+					} else if got {
+						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
+					}
+				})
+			}
 		})
 	}
 }

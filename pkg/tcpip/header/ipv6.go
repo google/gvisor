@@ -98,12 +98,27 @@ const (
 	// The address is ff02::1.
 	IPv6AllNodesMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
-	// IPv6AllRoutersMulticastAddress is a link-local multicast group that
-	// all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
+	// IPv6AllRoutersInterfaceLocalMulticastAddress is an interface-local
+	// multicast group that all IPv6 routers MUST join, as per RFC 4291, section
+	// 2.8. Packets destined to this address will reach the router on an
+	// interface.
+	//
+	// The address is ff01::2.
+	IPv6AllRoutersInterfaceLocalMulticastAddress tcpip.Address = "\xff\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+
+	// IPv6AllRoutersLinkLocalMulticastAddress is a link-local multicast group
+	// that all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
 	// destined to this address will reach all routers on a link.
 	//
 	// The address is ff02::2.
-	IPv6AllRoutersMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	IPv6AllRoutersLinkLocalMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+
+	// IPv6AllRoutersSiteLocalMulticastAddress is a site-local multicast group
+	// that all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
+	// destined to this address will reach all routers in a site.
+	//
+	// The address is ff05::2.
+	IPv6AllRoutersSiteLocalMulticastAddress tcpip.Address = "\xff\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
 
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 8200,
 	// section 5:

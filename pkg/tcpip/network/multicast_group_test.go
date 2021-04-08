@@ -194,7 +194,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 	if p, ok := e.Read(); !ok {
 		t.Fatal("expected a report message to be sent")
 	} else {
-		validateMLDPacket(t, p, header.IPv6AllRoutersMulticastAddress, mldDone, 0, ipv6AddrSNMC)
+		validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, ipv6AddrSNMC)
 	}
 
 	// Should not send any more packets.
@@ -606,7 +606,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 			validateLeave: func(t *testing.T, p channel.PacketInfo) {
 				t.Helper()
 
-				validateMLDPacket(t, p, header.IPv6AllRoutersMulticastAddress, mldDone, 0, ipv6MulticastAddr1)
+				validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, ipv6MulticastAddr1)
 			},
 			checkInitialGroups: checkInitialIPv6Groups,
 		},
@@ -1014,7 +1014,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			validateLeave: func(t *testing.T, p channel.PacketInfo, addr tcpip.Address) {
 				t.Helper()
 
-				validateMLDPacket(t, p, header.IPv6AllRoutersMulticastAddress, mldDone, 0, addr)
+				validateMLDPacket(t, p, header.IPv6AllRoutersLinkLocalMulticastAddress, mldDone, 0, addr)
 			},
 			getAndCheckGroupAddress: func(t *testing.T, seen map[tcpip.Address]bool, p channel.PacketInfo) tcpip.Address {
 				t.Helper()

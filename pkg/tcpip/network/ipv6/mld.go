@@ -76,7 +76,7 @@ func (mld *mldState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) 
 //
 // Precondition: mld.ep.mu must be read locked.
 func (mld *mldState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
-	_, err := mld.writePacket(header.IPv6AllRoutersMulticastAddress, groupAddress, header.ICMPv6MulticastListenerDone)
+	_, err := mld.writePacket(header.IPv6AllRoutersLinkLocalMulticastAddress, groupAddress, header.ICMPv6MulticastListenerDone)
 	return err
 }
 
