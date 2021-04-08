@@ -9,6 +9,7 @@ go_binary(
         "version.go",
     ],
     pure = True,
+    tags = ["staging"],
     visibility = [
         "//visibility:public",
     ],
