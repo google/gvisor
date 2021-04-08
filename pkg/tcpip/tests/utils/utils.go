@@ -48,10 +48,6 @@ const (
 	LinkAddr4 = tcpip.LinkAddress("\x02\x03\x03\x04\x05\x09")
 )
 
-const (
-	ttl = 255
-)
-
 // Common IP addresses used by tests.
 var (
 	Ipv4Addr = tcpip.AddressWithPrefix{
@@ -322,7 +318,7 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 
 // RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
 // the provided endpoint.
-func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
 	hdr := buffer.NewPrependable(totalLen)
 	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
@@ -347,7 +343,7 @@ func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
 
 // RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on
 // the provided endpoint.
-func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address) {
+func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
 	hdr := buffer.NewPrependable(totalLen)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))

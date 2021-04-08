@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -173,6 +174,80 @@ func TestIPv4EncodeOptions(t *testing.T) {
 
 			if diff := cmp.Diff(wantOptions, options); diff != "" {
 				t.Errorf("options mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestIsV4LinkLocalUnicastAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     tcpip.Address
+		expected bool
+	}{
+		{
+			name:     "Valid (lowest)",
+			addr:     "\xa9\xfe\x00\x00",
+			expected: true,
+		},
+		{
+			name:     "Valid (highest)",
+			addr:     "\xa9\xfe\xff\xff",
+			expected: true,
+		},
+		{
+			name:     "Invalid (before subnet)",
+			addr:     "\xa9\xfd\xff\xff",
+			expected: false,
+		},
+		{
+			name:     "Invalid (after subnet)",
+			addr:     "\xa9\xff\x00\x00",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := header.IsV4LinkLocalUnicastAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV4LinkLocalUnicastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestIsV4LinkLocalMulticastAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     tcpip.Address
+		expected bool
+	}{
+		{
+			name:     "Valid (lowest)",
+			addr:     "\xe0\x00\x00\x00",
+			expected: true,
+		},
+		{
+			name:     "Valid (highest)",
+			addr:     "\xe0\x00\x00\xff",
+			expected: true,
+		},
+		{
+			name:     "Invalid (before subnet)",
+			addr:     "\xdf\xff\xff\xff",
+			expected: false,
+		},
+		{
+			name:     "Invalid (after subnet)",
+			addr:     "\xe0\x00\x01\x00",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := header.IsV4LinkLocalMulticastAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV4LinkLocalMulticastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})
 	}

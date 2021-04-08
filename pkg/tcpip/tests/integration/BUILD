@@ -9,6 +9,8 @@ go_test(
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",

@@ -43,12 +43,15 @@ const (
 // to a multicast or broadcast address uses a unicast source address for the
 // reply.
 func TestPingMulticastBroadcast(t *testing.T) {
-	const nicID = 1
+	const (
+		nicID = 1
+		ttl   = 64
+	)
 
 	tests := []struct {
 		name        string
 		protoNum    tcpip.NetworkProtocolNumber
-		rxICMP      func(*channel.Endpoint, tcpip.Address, tcpip.Address)
+		rxICMP      func(*channel.Endpoint, tcpip.Address, tcpip.Address, uint8)
 		srcAddr     tcpip.Address
 		dstAddr     tcpip.Address
 		expectedSrc tcpip.Address
@@ -136,7 +139,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				},
 			})
 
-			test.rxICMP(e, test.srcAddr, test.dstAddr)
+			test.rxICMP(e, test.srcAddr, test.dstAddr, ttl)
 			pkt, ok := e.Read()
 			if !ok {
 				t.Fatal("expected ICMP response")
