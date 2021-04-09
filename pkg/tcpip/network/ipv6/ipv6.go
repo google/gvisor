@@ -314,7 +314,7 @@ func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
 	//   Snooping switches MUST manage multicast forwarding state based on MLD
 	//   Report and Done messages sent with the unspecified address as the
 	//   IPv6 source address.
-	if header.IsV6LinkLocalAddress(addr) {
+	if header.IsV6LinkLocalUnicastAddress(addr) {
 		e.mu.mld.sendQueuedReports()
 	}
 }
@@ -914,7 +914,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	h := header.IPv6(pkt.NetworkHeader().View())
 
 	dstAddr := h.DestinationAddress()
-	if header.IsV6LinkLocalAddress(h.SourceAddress()) || header.IsV6LinkLocalAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
+	if header.IsV6LinkLocalUnicastAddress(h.SourceAddress()) || header.IsV6LinkLocalUnicastAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
 		// As per RFC 4291 section 2.5.6,
 		//
 		//   Routers must not forward any packets with Link-Local source or
@@ -1622,7 +1622,7 @@ func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
 	var linkLocalAddr tcpip.Address
 	e.mu.addressableEndpointState.ForEachPrimaryEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
 		if addressEndpoint.IsAssigned(false /* allowExpired */) {
-			if addr := addressEndpoint.AddressWithPrefix().Address; header.IsV6LinkLocalAddress(addr) {
+			if addr := addressEndpoint.AddressWithPrefix().Address; header.IsV6LinkLocalUnicastAddress(addr) {
 				linkLocalAddr = addr
 				return false
 			}
