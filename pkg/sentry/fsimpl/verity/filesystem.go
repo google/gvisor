@@ -632,8 +632,6 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	childVD.IncRef()
 	childMerkleVD.IncRef()
 
-	parent.IncRef()
-	child.parent = parent
 	child.name = name
 
 	child.mode = uint32(stat.Mode)
@@ -656,6 +654,9 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 			return nil, err
 		}
 	}
+
+	parent.IncRef()
+	child.parent = parent
 
 	return child, nil
 }
