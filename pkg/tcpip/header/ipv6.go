@@ -391,23 +391,23 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 	return tcpip.Address(lladdrb[:])
 }
 
-// IsV6LinkLocalAddress determines if the provided address is an IPv6
-// link-local address (fe80::/10).
-func IsV6LinkLocalAddress(addr tcpip.Address) bool {
+// IsV6LinkLocalUnicastAddress returns true iff the provided address is an IPv6
+// link-local unicast address, as defined by RFC 4291 section 2.5.6.
+func IsV6LinkLocalUnicastAddress(addr tcpip.Address) bool {
 	if len(addr) != IPv6AddressSize {
 		return false
 	}
 	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
 }
 
-// IsV6LoopbackAddress determines if the provided address is an IPv6 loopback
-// address.
+// IsV6LoopbackAddress returns true iff the provided address is an IPv6 loopback
+// address, as defined by RFC 4291 section 2.5.3.
 func IsV6LoopbackAddress(addr tcpip.Address) bool {
 	return addr == IPv6Loopback
 }
 
-// IsV6LinkLocalMulticastAddress determines if the provided address is an IPv6
-// link-local multicast address.
+// IsV6LinkLocalMulticastAddress returns true iff the provided address is an
+// IPv6 link-local multicast address, as defined by RFC 4291 section 2.7.
 func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
 	return IsV6MulticastAddress(addr) && V6MulticastScope(addr) == IPv6LinkLocalMulticastScope
 }
@@ -472,7 +472,7 @@ func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, tcpip.Error) {
 	case IsV6LinkLocalMulticastAddress(addr):
 		return LinkLocalScope, nil
 
-	case IsV6LinkLocalAddress(addr):
+	case IsV6LinkLocalUnicastAddress(addr):
 		return LinkLocalScope, nil
 
 	default:
@@ -531,7 +531,8 @@ func GenerateTempIPv6SLAACAddr(tempIIDHistory []byte, stableAddr tcpip.Address) 
 	}
 }
 
-// IPv6MulticastScope is the scope of a multicast IPv6 address.
+// IPv6MulticastScope is the scope of a multicast IPv6 address, as defined by
+// RFC 7346 section 2.
 type IPv6MulticastScope uint8
 
 // The various values for IPv6 multicast scopes, as per RFC 7346 section 2:

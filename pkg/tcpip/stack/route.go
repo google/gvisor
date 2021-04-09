@@ -132,7 +132,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 		localAddr = addressEndpoint.AddressWithPrefix().Address
 	}
 
-	if localAddressNIC != outgoingNIC && header.IsV6LinkLocalAddress(localAddr) {
+	if localAddressNIC != outgoingNIC && header.IsV6LinkLocalUnicastAddress(localAddr) {
 		addressEndpoint.DecRef()
 		return nil
 	}
