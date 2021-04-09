@@ -68,9 +68,6 @@ const (
 	// DefaultSynRetries is the default value for the number of SYN retransmits
 	// before a connect is aborted.
 	DefaultSynRetries = 6
-
-	// MaxListenBacklog is the maximum limit of listen backlog supported.
-	MaxListenBacklog = 1024
 )
 
 const (
