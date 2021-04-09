@@ -273,7 +273,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	if iph.HopLimit() != header.MLDHopLimit {
 		return false
 	}
-	if !header.IsV6LinkLocalAddress(iph.SourceAddress()) {
+	if !header.IsV6LinkLocalUnicastAddress(iph.SourceAddress()) {
 		return false
 	}
 	return true
@@ -804,7 +804,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		routerAddr := srcAddr
 
 		// Is the IP Source Address a link-local address?
-		if !header.IsV6LinkLocalAddress(routerAddr) {
+		if !header.IsV6LinkLocalUnicastAddress(routerAddr) {
 			// ...No, silently drop the packet.
 			received.invalid.Increment()
 			return
