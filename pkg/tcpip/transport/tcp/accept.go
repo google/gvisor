@@ -543,8 +543,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			if !e.acceptQueueIsFull() {
 				s.incRef()
 				atomic.AddInt32(&e.synRcvdCount, 1)
-				_ = e.handleSynSegment(ctx, s, &opts)
-				return nil
+				return e.handleSynSegment(ctx, s, &opts)
 			}
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
