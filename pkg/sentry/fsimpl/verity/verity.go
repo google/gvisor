@@ -428,8 +428,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	d.mode = uint32(stat.Mode)
 	d.uid = stat.UID
 	d.gid = stat.GID
-	d.hash = make([]byte, len(rootHash))
 	d.childrenNames = make(map[string]struct{})
+
+	d.hashMu.Lock()
+	d.hash = make([]byte, len(rootHash))
+	copy(d.hash, rootHash)
+	d.hashMu.Unlock()
+
+	fs.rootDentry = d
 
 	if !d.isDir() {
 		ctx.Warningf("verity root must be a directory")
@@ -502,12 +508,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
-	d.hashMu.Lock()
-	copy(d.hash, rootHash)
-	d.hashMu.Unlock()
 	d.vfsd.Init(d)
-
-	fs.rootDentry = d
 
 	return &fs.vfsfs, &d.vfsd, nil
 }
