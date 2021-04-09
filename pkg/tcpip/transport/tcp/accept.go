@@ -538,64 +538,55 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 	switch {
 	case s.flags == header.TCPFlagSyn:
-		opts := parseSynSegmentOptions(s)
-		if !ctx.useSynCookies() {
-			if !e.acceptQueueIsFull() {
-				s.incRef()
-				atomic.AddInt32(&e.synRcvdCount, 1)
-				return e.handleSynSegment(ctx, s, &opts)
-			}
+		if e.acceptQueueIsFull() {
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return nil
-		} else {
-			// If cookies are in use but the endpoint accept queue
-			// is full then drop the syn.
-			if e.acceptQueueIsFull() {
-				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
-				e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
-				e.stack.Stats().DroppedPackets.Increment()
-				return nil
-			}
-			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
-
-			route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
-			if err != nil {
-				return err
-			}
-			defer route.Release()
-
-			// Send SYN without window scaling because we currently
-			// don't encode this information in the cookie.
-			//
-			// Enable Timestamp option if the original syn did have
-			// the timestamp option specified.
-			//
-			// Use the user supplied MSS on the listening socket for
-			// new connections, if available.
-			synOpts := header.TCPSynOptions{
-				WS:    -1,
-				TS:    opts.TS,
-				TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
-				TSEcr: opts.TSVal,
-				MSS:   calculateAdvertisedMSS(e.userMSS, route),
-			}
-			fields := tcpFields{
-				id:     s.id,
-				ttl:    e.ttl,
-				tos:    e.sendTOS,
-				flags:  header.TCPFlagSyn | header.TCPFlagAck,
-				seq:    cookie,
-				ack:    s.sequenceNumber + 1,
-				rcvWnd: ctx.rcvWnd,
-			}
-			if err := e.sendSynTCP(route, fields, synOpts); err != nil {
-				return err
-			}
-			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
-			return nil
 		}
+
+		opts := parseSynSegmentOptions(s)
+		if !ctx.useSynCookies() {
+			s.incRef()
+			atomic.AddInt32(&e.synRcvdCount, 1)
+			return e.handleSynSegment(ctx, s, &opts)
+		}
+		route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
+		if err != nil {
+			return err
+		}
+		defer route.Release()
+
+		// Send SYN without window scaling because we currently
+		// don't encode this information in the cookie.
+		//
+		// Enable Timestamp option if the original syn did have
+		// the timestamp option specified.
+		//
+		// Use the user supplied MSS on the listening socket for
+		// new connections, if available.
+		synOpts := header.TCPSynOptions{
+			WS:    -1,
+			TS:    opts.TS,
+			TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
+			TSEcr: opts.TSVal,
+			MSS:   calculateAdvertisedMSS(e.userMSS, route),
+		}
+		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
+		fields := tcpFields{
+			id:     s.id,
+			ttl:    e.ttl,
+			tos:    e.sendTOS,
+			flags:  header.TCPFlagSyn | header.TCPFlagAck,
+			seq:    cookie,
+			ack:    s.sequenceNumber + 1,
+			rcvWnd: ctx.rcvWnd,
+		}
+		if err := e.sendSynTCP(route, fields, synOpts); err != nil {
+			return err
+		}
+		e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
+		return nil
 
 	case (s.flags & header.TCPFlagAck) != 0:
 		if e.acceptQueueIsFull() {
