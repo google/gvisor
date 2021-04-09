@@ -46,6 +46,9 @@ const maxOptLen = 1024 * 8
 // buffers upto INT_MAX.
 const maxControlLen = 10 * 1024 * 1024
 
+// maxListenBacklog is the maximum limit of listen backlog supported.
+const maxListenBacklog = 1024
+
 // nameLenOffset is the offset from the start of the MessageHeader64 struct to
 // the NameLen field.
 const nameLenOffset = 8
@@ -365,7 +368,7 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 // Listen implements the linux syscall listen(2).
 func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
-	backlog := args[1].Int()
+	backlog := args[1].Uint()
 
 	// Get socket from the file descriptor.
 	file := t.GetFileVFS2(fd)
@@ -378,6 +381,16 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
 		return 0, nil, syserror.ENOTSOCK
+	}
+
+	if backlog > maxListenBacklog {
+		// Linux treats incoming backlog as uint with a limit defined by
+		// sysctl_somaxconn.
+		// https://github.com/torvalds/linux/blob/7acac4b3196/net/socket.c#L1666
+		//
+		// We use the backlog to allocate a channel of that size, hence enforce
+		// a hard limit for the backlog.
+		backlog = maxListenBacklog
 	}
 
 	return 0, nil, s.Listen(t, int(backlog)).ToError()

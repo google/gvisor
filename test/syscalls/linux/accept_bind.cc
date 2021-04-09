@@ -67,6 +67,42 @@ TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
               SyscallSucceeds());
 }
 
+TEST_P(AllSocketPairTest, ListenBacklogSizes_NoRandomSave) {
+  DisableSave ds;
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  int type;
+  socklen_t typelen = sizeof(type);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_TYPE, &type, &typelen),
+      SyscallSucceeds());
+
+  std::array<int, 3> backlogs = {-1, 0, 1};
+  for (auto& backlog : backlogs) {
+    ASSERT_THAT(listen(sockets->first_fd(), backlog), SyscallSucceeds());
+
+    int expected_accepts = backlog;
+    if (backlog < 0) {
+      expected_accepts = 1024;
+    }
+    for (int i = 0; i < expected_accepts; i++) {
+      SCOPED_TRACE(absl::StrCat("i=", i));
+      // Connect to the listening socket.
+      const FileDescriptor client =
+          ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, type, 0));
+      ASSERT_THAT(connect(client.get(), sockets->first_addr(),
+                          sockets->first_addr_size()),
+                  SyscallSucceeds());
+      const FileDescriptor accepted = ASSERT_NO_ERRNO_AND_VALUE(
+          Accept(sockets->first_fd(), nullptr, nullptr));
+    }
+  }
+}
+
 TEST_P(AllSocketPairTest, ListenWithoutBind) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   ASSERT_THAT(listen(sockets->first_fd(), 0), SyscallFailsWithErrno(EINVAL));
