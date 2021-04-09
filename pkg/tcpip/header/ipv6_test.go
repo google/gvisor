@@ -252,7 +252,7 @@ func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
 	}
 }
 
-func TestIsV6LinkLocalAddress(t *testing.T) {
+func TestIsV6LinkLocalUnicastAddress(t *testing.T) {
 	tests := []struct {
 		name     string
 		addr     tcpip.Address
@@ -287,8 +287,8 @@ func TestIsV6LinkLocalAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV6LinkLocalAddress(test.addr); got != test.expected {
-				t.Errorf("got header.IsV6LinkLocalAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			if got := header.IsV6LinkLocalUnicastAddress(test.addr); got != test.expected {
+				t.Errorf("got header.IsV6LinkLocalUnicastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})
 	}
