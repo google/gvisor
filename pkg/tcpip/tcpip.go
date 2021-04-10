@@ -1556,6 +1556,10 @@ type IPStats struct {
 	// chain.
 	IPTablesOutputDropped *StatCounter
 
+	// IPTablesPostroutingDropped is the number of IP packets dropped in the
+	// Postrouting chain.
+	IPTablesPostroutingDropped *StatCounter
+
 	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
 	// of IPStats.
 	// OptionTimestampReceived is the number of Timestamp options seen.

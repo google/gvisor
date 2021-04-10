@@ -35,6 +35,11 @@ const ErrorTargetName = "ERROR"
 // change the destination port and/or IP for packets.
 const RedirectTargetName = "REDIRECT"
 
+// SNATTargetName is used to mark targets as SNAT targets. SNAT targets should
+// be reached for only NAT table. These targets will change the source port
+// and/or IP for packets.
+const SNATTargetName = "SNAT"
+
 func init() {
 	// Standard targets include ACCEPT, DROP, RETURN, and JUMP.
 	registerTargetMaker(&standardTargetMaker{
@@ -57,6 +62,13 @@ func init() {
 		NetworkProtocol: header.IPv4ProtocolNumber,
 	})
 	registerTargetMaker(&nfNATTargetMaker{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+
+	registerTargetMaker(&snatTargetMakerV4{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerV6{
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 }
@@ -128,6 +140,17 @@ func (rt *redirectTarget) id() targetID {
 	return targetID{
 		name:            RedirectTargetName,
 		networkProtocol: rt.NetworkProtocol,
+	}
+}
+
+type snatTarget struct {
+	stack.SNATTarget
+}
+
+func (st *snatTarget) id() targetID {
+	return targetID{
+		name:            SNATTargetName,
+		networkProtocol: st.NetworkProtocol,
 	}
 }
 
@@ -341,7 +364,7 @@ type nfNATTarget struct {
 	Range  linux.NFNATRange
 }
 
-const nfNATMarhsalledSize = linux.SizeOfXTEntryTarget + linux.SizeOfNFNATRange
+const nfNATMarshalledSize = linux.SizeOfXTEntryTarget + linux.SizeOfNFNATRange
 
 type nfNATTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
@@ -358,7 +381,7 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 	rt := target.(*redirectTarget)
 	nt := nfNATTarget{
 		Target: linux.XTEntryTarget{
-			TargetSize: nfNATMarhsalledSize,
+			TargetSize: nfNATMarshalledSize,
 		},
 		Range: linux.NFNATRange{
 			Flags: linux.NF_NAT_RANGE_PROTO_SPECIFIED,
@@ -371,12 +394,12 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 	nt.Range.MinProto = htons(rt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
-	ret := make([]byte, 0, nfNATMarhsalledSize)
+	ret := make([]byte, 0, nfNATMarshalledSize)
 	return binary.Marshal(ret, hostarch.ByteOrder, nt)
 }
 
 func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
-	if size := nfNATMarhsalledSize; len(buf) < size {
+	if size := nfNATMarshalledSize; len(buf) < size {
 		nflog("nfNATTargetMaker: buf has insufficient size (%d) for nfNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -387,7 +410,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	}
 
 	var natRange linux.NFNATRange
-	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarhsalledSize]
+	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
 	binary.Unmarshal(buf, hostarch.ByteOrder, &natRange)
 
 	// We don't support port or address ranges.
@@ -413,6 +436,161 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 			Port:            ntohs(natRange.MinProto),
 		},
 		addr: tcpip.Address(natRange.MinAddr[:]),
+	}
+
+	return &target, nil
+}
+
+type snatTargetMakerV4 struct {
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+func (st *snatTargetMakerV4) id() targetID {
+	return targetID{
+		name:            SNATTargetName,
+		networkProtocol: st.NetworkProtocol,
+	}
+}
+
+func (*snatTargetMakerV4) marshal(target target) []byte {
+	st := target.(*snatTarget)
+	// This is a snat target named snat.
+	xt := linux.XTSNATTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTSNATTarget,
+		},
+	}
+	copy(xt.Target.Name[:], SNATTargetName)
+
+	xt.NfRange.RangeSize = 1
+	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	xt.NfRange.RangeIPV4.MinPort = htons(st.Port)
+	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
+	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr)
+	copy(xt.NfRange.RangeIPV4.MaxIP[:], st.Addr)
+	ret := make([]byte, 0, linux.SizeOfXTSNATTarget)
+	return binary.Marshal(ret, hostarch.ByteOrder, xt)
+}
+
+func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+	if len(buf) < linux.SizeOfXTSNATTarget {
+		nflog("snatTargetMakerV4: buf has insufficient size for snat target %d", len(buf))
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	if p := filter.Protocol; p != header.TCPProtocolNumber && p != header.UDPProtocolNumber {
+		nflog("snatTargetMakerV4: bad proto %d", p)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	var st linux.XTSNATTarget
+	buf = buf[:linux.SizeOfXTSNATTarget]
+	binary.Unmarshal(buf, hostarch.ByteOrder, &st)
+
+	// Copy linux.XTSNATTarget to stack.SNATTarget.
+	target := snatTarget{SNATTarget: stack.SNATTarget{
+		NetworkProtocol: filter.NetworkProtocol(),
+	}}
+
+	// RangeSize should be 1.
+	nfRange := st.NfRange
+	if nfRange.RangeSize != 1 {
+		nflog("snatTargetMakerV4: bad rangesize %d", nfRange.RangeSize)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	// TODO(gvisor.dev/issue/5772): If the rule doesn't specify the source port,
+	// choose one automatically.
+	if nfRange.RangeIPV4.MinPort == 0 {
+		nflog("snatTargetMakerV4: snat target needs to specify a non-zero port")
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	// TODO(gvisor.dev/issue/170): Port range is not supported yet.
+	if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
+		nflog("snatTargetMakerV4: MinPort != MaxPort (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
+		return nil, syserr.ErrInvalidArgument
+	}
+	if nfRange.RangeIPV4.MinIP != nfRange.RangeIPV4.MaxIP {
+		nflog("snatTargetMakerV4: MinIP != MaxIP (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	target.Addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
+
+	return &target, nil
+}
+
+type snatTargetMakerV6 struct {
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+func (st *snatTargetMakerV6) id() targetID {
+	return targetID{
+		name:            SNATTargetName,
+		networkProtocol: st.NetworkProtocol,
+		revision:        1,
+	}
+}
+
+func (*snatTargetMakerV6) marshal(target target) []byte {
+	st := target.(*snatTarget)
+	nt := nfNATTarget{
+		Target: linux.XTEntryTarget{
+			TargetSize: nfNATMarshalledSize,
+		},
+		Range: linux.NFNATRange{
+			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+		},
+	}
+	copy(nt.Target.Name[:], SNATTargetName)
+	copy(nt.Range.MinAddr[:], st.Addr)
+	copy(nt.Range.MaxAddr[:], st.Addr)
+	nt.Range.MinProto = htons(st.Port)
+	nt.Range.MaxProto = nt.Range.MinProto
+
+	ret := make([]byte, 0, nfNATMarshalledSize)
+	return binary.Marshal(ret, hostarch.ByteOrder, nt)
+}
+
+func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+	if size := nfNATMarshalledSize; len(buf) < size {
+		nflog("snatTargetMakerV6: buf has insufficient size (%d) for SNAT V6 target (%d)", len(buf), size)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	if p := filter.Protocol; p != header.TCPProtocolNumber && p != header.UDPProtocolNumber {
+		nflog("snatTargetMakerV6: bad proto %d", p)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	var natRange linux.NFNATRange
+	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
+	binary.Unmarshal(buf, hostarch.ByteOrder, &natRange)
+
+	// TODO(gvisor.dev/issue/5689): Support port or address ranges.
+	if natRange.MinAddr != natRange.MaxAddr {
+		nflog("snatTargetMakerV6: MinAddr and MaxAddr are different")
+		return nil, syserr.ErrInvalidArgument
+	}
+	if natRange.MinProto != natRange.MaxProto {
+		nflog("snatTargetMakerV6: MinProto and MaxProto are different")
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
+	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
+		nflog("snatTargetMakerV6: invalid range flags %d", natRange.Flags)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	target := snatTarget{
+		SNATTarget: stack.SNATTarget{
+			NetworkProtocol: filter.NetworkProtocol(),
+			Addr:            tcpip.Address(natRange.MinAddr[:]),
+			Port:            ntohs(natRange.MinProto),
+		},
 	}
 
 	return &target, nil

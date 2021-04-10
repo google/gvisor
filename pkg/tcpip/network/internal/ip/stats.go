@@ -21,52 +21,55 @@ import "gvisor.dev/gvisor/pkg/tcpip"
 // MultiCounterIPStats holds IP statistics, each counter may have several
 // versions.
 type MultiCounterIPStats struct {
-	// PacketsReceived is the total number of IP packets received from the link
-	// layer.
+	// PacketsReceived is the number of IP packets received from the link layer.
 	PacketsReceived tcpip.MultiCounterStat
 
-	// DisabledPacketsReceived is the total number of IP packets received from the
-	// link layer when the IP layer is disabled.
+	// DisabledPacketsReceived is the number of IP packets received from the link
+	// layer when the IP layer is disabled.
 	DisabledPacketsReceived tcpip.MultiCounterStat
 
-	// InvalidDestinationAddressesReceived is the total number of IP packets
-	// received with an unknown or invalid destination address.
+	// InvalidDestinationAddressesReceived is the number of IP packets received
+	// with an unknown or invalid destination address.
 	InvalidDestinationAddressesReceived tcpip.MultiCounterStat
 
-	// InvalidSourceAddressesReceived is the total number of IP packets received
-	// with a source address that should never have been received on the wire.
+	// InvalidSourceAddressesReceived is the number of IP packets received with a
+	// source address that should never have been received on the wire.
 	InvalidSourceAddressesReceived tcpip.MultiCounterStat
 
-	// PacketsDelivered is the total number of incoming IP packets that are
-	// successfully delivered to the transport layer.
+	// PacketsDelivered is the number of incoming IP packets that are successfully
+	// delivered to the transport layer.
 	PacketsDelivered tcpip.MultiCounterStat
 
-	// PacketsSent is the total number of IP packets sent via WritePacket.
+	// PacketsSent is the number of IP packets sent via WritePacket.
 	PacketsSent tcpip.MultiCounterStat
 
-	// OutgoingPacketErrors is the total number of IP packets which failed to
-	// write to a link-layer endpoint.
+	// OutgoingPacketErrors is the number of IP packets which failed to write to a
+	// link-layer endpoint.
 	OutgoingPacketErrors tcpip.MultiCounterStat
 
-	// MalformedPacketsReceived is the total number of IP Packets that were
-	// dropped due to the IP packet header failing validation checks.
+	// MalformedPacketsReceived is the number of IP Packets that were dropped due
+	// to the IP packet header failing validation checks.
 	MalformedPacketsReceived tcpip.MultiCounterStat
 
-	// MalformedFragmentsReceived is the total number of IP Fragments that were
-	// dropped due to the fragment failing validation checks.
+	// MalformedFragmentsReceived is the number of IP Fragments that were dropped
+	// due to the fragment failing validation checks.
 	MalformedFragmentsReceived tcpip.MultiCounterStat
 
-	// IPTablesPreroutingDropped is the total number of IP packets dropped in the
+	// IPTablesPreroutingDropped is the number of IP packets dropped in the
 	// Prerouting chain.
 	IPTablesPreroutingDropped tcpip.MultiCounterStat
 
-	// IPTablesInputDropped is the total number of IP packets dropped in the Input
+	// IPTablesInputDropped is the number of IP packets dropped in the Input
 	// chain.
 	IPTablesInputDropped tcpip.MultiCounterStat
 
-	// IPTablesOutputDropped is the total number of IP packets dropped in the
-	// Output chain.
+	// IPTablesOutputDropped is the number of IP packets dropped in the Output
+	// chain.
 	IPTablesOutputDropped tcpip.MultiCounterStat
+
+	// IPTablesPostroutingDropped is the number of IP packets dropped in the
+	// Postrouting chain.
+	IPTablesPostroutingDropped tcpip.MultiCounterStat
 
 	// TODO(https://gvisor.dev/issues/5529): Move the IPv4-only option stats out
 	// of IPStats.
@@ -98,6 +101,7 @@ func (m *MultiCounterIPStats) Init(a, b *tcpip.IPStats) {
 	m.IPTablesPreroutingDropped.Init(a.IPTablesPreroutingDropped, b.IPTablesPreroutingDropped)
 	m.IPTablesInputDropped.Init(a.IPTablesInputDropped, b.IPTablesInputDropped)
 	m.IPTablesOutputDropped.Init(a.IPTablesOutputDropped, b.IPTablesOutputDropped)
+	m.IPTablesPostroutingDropped.Init(a.IPTablesPostroutingDropped, b.IPTablesPostroutingDropped)
 	m.OptionTimestampReceived.Init(a.OptionTimestampReceived, b.OptionTimestampReceived)
 	m.OptionRecordRouteReceived.Init(a.OptionRecordRouteReceived, b.OptionRecordRouteReceived)
 	m.OptionRouterAlertReceived.Init(a.OptionRouterAlertReceived, b.OptionRouterAlertReceived)
