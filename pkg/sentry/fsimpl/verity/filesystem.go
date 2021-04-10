@@ -553,7 +553,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	}
 
 	childVD, err := parent.getLowerAt(ctx, vfsObj, name)
-	if err == syserror.ENOENT {
+	if parent.verityEnabled() && err == syserror.ENOENT {
 		return nil, alertIntegrityViolation(fmt.Sprintf("file %s expected but not found", parentPath+"/"+name))
 	}
 	if err != nil {
@@ -565,29 +565,30 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	defer childVD.DecRef(ctx)
 
 	childMerkleVD, err := parent.getLowerAt(ctx, vfsObj, merklePrefix+name)
-	if err == syserror.ENOENT {
-		if !fs.allowRuntimeEnable {
-			return nil, alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", parentPath+"/"+name))
-		}
-		childMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
-			Root:  parent.lowerVD,
-			Start: parent.lowerVD,
-			Path:  fspath.Parse(merklePrefix + name),
-		}, &vfs.OpenOptions{
-			Flags: linux.O_RDWR | linux.O_CREAT,
-			Mode:  0644,
-		})
-		if err != nil {
+	if err != nil {
+		if err == syserror.ENOENT {
+			if parent.verityEnabled() {
+				return nil, alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", parentPath+"/"+name))
+			}
+			childMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
+				Root:  parent.lowerVD,
+				Start: parent.lowerVD,
+				Path:  fspath.Parse(merklePrefix + name),
+			}, &vfs.OpenOptions{
+				Flags: linux.O_RDWR | linux.O_CREAT,
+				Mode:  0644,
+			})
+			if err != nil {
+				return nil, err
+			}
+			childMerkleFD.DecRef(ctx)
+			childMerkleVD, err = parent.getLowerAt(ctx, vfsObj, merklePrefix+name)
+			if err != nil {
+				return nil, err
+			}
+		} else {
 			return nil, err
 		}
-		childMerkleFD.DecRef(ctx)
-		childMerkleVD, err = parent.getLowerAt(ctx, vfsObj, merklePrefix+name)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err != nil && err != syserror.ENOENT {
-		return nil, err
 	}
 
 	// Clear the Merkle tree file if they are to be generated at runtime.
