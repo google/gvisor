@@ -175,9 +175,10 @@ func DefaultTables() *IPTables {
 			},
 		},
 		priorities: [NumHooks][]TableID{
-			Prerouting: {MangleID, NATID},
-			Input:      {NATID, FilterID},
-			Output:     {MangleID, NATID, FilterID},
+			Prerouting:  {MangleID, NATID},
+			Input:       {NATID, FilterID},
+			Output:      {MangleID, NATID, FilterID},
+			Postrouting: {MangleID, NATID},
 		},
 		connections: ConnTrack{
 			seed: generateRandUint32(),

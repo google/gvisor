@@ -274,10 +274,10 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	}
 
 	// TODO(gvisor.dev/issue/170): Support other chains.
-	// Since we only support modifying the INPUT, PREROUTING and OUTPUT chain right now,
-	// make sure all other chains point to ACCEPT rules.
+	// Since we don't support FORWARD, yet, make sure all other chains point to
+	// ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
-		if hook := stack.Hook(hook); hook == stack.Forward || hook == stack.Postrouting {
+		if hook := stack.Hook(hook); hook == stack.Forward {
 			if ruleIdx == stack.HookUnset {
 				continue
 			}

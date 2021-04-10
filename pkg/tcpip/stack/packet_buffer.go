@@ -299,9 +299,18 @@ func (pk *PacketBuffer) Network() header.Network {
 // See PacketBuffer.Data for details about how a packet buffer holds an inbound
 // packet.
 func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
-	return NewPacketBuffer(PacketBufferOptions{
+	newPk := NewPacketBuffer(PacketBufferOptions{
 		Data: buffer.NewVectorisedView(pk.Size(), pk.Views()),
 	})
+	// TODO(gvisor.dev/issue/5696): reimplement conntrack so that no need to
+	// maintain this flag in the packet. Currently conntrack needs this flag to
+	// tell if a noop connection should be inserted at Input hook. Once conntrack
+	// redefines the manipulation field as mutable, we won't need the special noop
+	// connection.
+	if pk.NatDone {
+		newPk.NatDone = true
+	}
+	return newPk
 }
 
 // headerInfo stores metadata about a header in a packet.
