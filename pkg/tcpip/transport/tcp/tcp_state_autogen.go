@@ -158,6 +158,35 @@ func (e *EndpointInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.TransportEndpointInfo)
 }
 
+func (a *accepted) StateTypeName() string {
+	return "pkg/tcpip/transport/tcp.accepted"
+}
+
+func (a *accepted) StateFields() []string {
+	return []string{
+		"endpoints",
+		"cap",
+	}
+}
+
+func (a *accepted) beforeSave() {}
+
+// +checklocksignore
+func (a *accepted) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	var endpointsValue []*endpoint = a.saveEndpoints()
+	stateSinkObject.SaveValue(0, endpointsValue)
+	stateSinkObject.Save(1, &a.cap)
+}
+
+func (a *accepted) afterLoad() {}
+
+// +checklocksignore
+func (a *accepted) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &a.cap)
+	stateSourceObject.LoadValue(0, new([]*endpoint), func(y interface{}) { a.loadEndpoints(y.([]*endpoint)) })
+}
+
 func (e *endpoint) StateTypeName() string {
 	return "pkg/tcpip/transport/tcp.endpoint"
 }
@@ -213,7 +242,7 @@ func (e *endpoint) StateFields() []string {
 		"keepalive",
 		"userTimeout",
 		"deferAccept",
-		"acceptedChan",
+		"accepted",
 		"rcv",
 		"snd",
 		"connectingAddress",
@@ -236,8 +265,6 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(13, stateValue)
 	var recentTSTimeValue unixTime = e.saveRecentTSTime()
 	stateSinkObject.SaveValue(26, recentTSTimeValue)
-	var acceptedChanValue []*endpoint = e.saveAcceptedChan()
-	stateSinkObject.SaveValue(49, acceptedChanValue)
 	var lastOutOfWindowAckTimeValue unixTime = e.saveLastOutOfWindowAckTime()
 	stateSinkObject.SaveValue(61, lastOutOfWindowAckTimeValue)
 	stateSinkObject.Save(0, &e.EndpointInfo)
@@ -287,6 +314,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(46, &e.keepalive)
 	stateSinkObject.Save(47, &e.userTimeout)
 	stateSinkObject.Save(48, &e.deferAccept)
+	stateSinkObject.Save(49, &e.accepted)
 	stateSinkObject.Save(50, &e.rcv)
 	stateSinkObject.Save(51, &e.snd)
 	stateSinkObject.Save(52, &e.connectingAddress)
@@ -349,6 +377,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(46, &e.keepalive)
 	stateSourceObject.Load(47, &e.userTimeout)
 	stateSourceObject.Load(48, &e.deferAccept)
+	stateSourceObject.Load(49, &e.accepted)
 	stateSourceObject.LoadWait(50, &e.rcv)
 	stateSourceObject.LoadWait(51, &e.snd)
 	stateSourceObject.Load(52, &e.connectingAddress)
@@ -362,7 +391,6 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(60, &e.ops)
 	stateSourceObject.LoadValue(13, new(EndpointState), func(y interface{}) { e.loadState(y.(EndpointState)) })
 	stateSourceObject.LoadValue(26, new(unixTime), func(y interface{}) { e.loadRecentTSTime(y.(unixTime)) })
-	stateSourceObject.LoadValue(49, new([]*endpoint), func(y interface{}) { e.loadAcceptedChan(y.([]*endpoint)) })
 	stateSourceObject.LoadValue(61, new(unixTime), func(y interface{}) { e.loadLastOutOfWindowAckTime(y.(unixTime)) })
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
@@ -1093,6 +1121,7 @@ func init() {
 	state.Register((*SACKInfo)(nil))
 	state.Register((*rcvBufAutoTuneParams)(nil))
 	state.Register((*EndpointInfo)(nil))
+	state.Register((*accepted)(nil))
 	state.Register((*endpoint)(nil))
 	state.Register((*keepalive)(nil))
 	state.Register((*rackControl)(nil))
