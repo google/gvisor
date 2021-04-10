@@ -99,37 +99,19 @@ func (e *endpoint) beforeSave() {
 	}
 }
 
-// saveAcceptedChan is invoked by stateify.
-func (e *endpoint) saveAcceptedChan() []*endpoint {
-	if e.acceptedChan == nil {
-		return nil
-	}
-	acceptedEndpoints := make([]*endpoint, len(e.acceptedChan), cap(e.acceptedChan))
-	for i := 0; i < len(acceptedEndpoints); i++ {
-		select {
-		case ep := <-e.acceptedChan:
-			acceptedEndpoints[i] = ep
-		default:
-			panic("endpoint acceptedChan buffer got consumed by background context")
-		}
-	}
-	for i := 0; i < len(acceptedEndpoints); i++ {
-		select {
-		case e.acceptedChan <- acceptedEndpoints[i]:
-		default:
-			panic("endpoint acceptedChan buffer got populated by background context")
-		}
+// saveEndpoints is invoked by stateify.
+func (a *accepted) saveEndpoints() []*endpoint {
+	acceptedEndpoints := make([]*endpoint, a.endpoints.Len())
+	for i, e := 0, a.endpoints.Front(); e != nil; i, e = i+1, e.Next() {
+		acceptedEndpoints[i] = e.Value.(*endpoint)
 	}
 	return acceptedEndpoints
 }
 
-// loadAcceptedChan is invoked by stateify.
-func (e *endpoint) loadAcceptedChan(acceptedEndpoints []*endpoint) {
-	if cap(acceptedEndpoints) > 0 {
-		e.acceptedChan = make(chan *endpoint, cap(acceptedEndpoints))
-		for _, ep := range acceptedEndpoints {
-			e.acceptedChan <- ep
-		}
+// loadEndpoints is invoked by stateify.
+func (a *accepted) loadEndpoints(acceptedEndpoints []*endpoint) {
+	for _, ep := range acceptedEndpoints {
+		a.endpoints.PushBack(ep)
 	}
 }
 
@@ -263,7 +245,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		go func() {
 			connectedLoading.Wait()
 			bind()
-			backlog := cap(e.acceptedChan)
+			backlog := e.accepted.cap
 			if err := e.Listen(backlog); err != nil {
 				panic("endpoint listening failed: " + err.String())
 			}
