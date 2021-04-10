@@ -375,6 +375,17 @@ type XTRedirectTarget struct {
 // SizeOfXTRedirectTarget is the size of an XTRedirectTarget.
 const SizeOfXTRedirectTarget = 56
 
+// XTSNATTarget triggers Source NAT when reached.
+// Adding 4 bytes of padding to make the struct 8 byte aligned.
+type XTSNATTarget struct {
+	Target  XTEntryTarget
+	NfRange NfNATIPV4MultiRangeCompat
+	_       [4]byte
+}
+
+// SizeOfXTSNATTarget is the size of an XTSNATTarget.
+const SizeOfXTSNATTarget = 56
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 //

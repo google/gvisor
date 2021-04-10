@@ -456,3 +456,11 @@ func TestNATPreRECVORIGDSTADDR(t *testing.T) {
 func TestNATOutRECVORIGDSTADDR(t *testing.T) {
 	singleTest(t, &NATOutRECVORIGDSTADDR{})
 }
+
+func TestNATPostSNATUDP(t *testing.T) {
+	singleTest(t, &NATPostSNATUDP{})
+}
+
+func TestNATPostSNATTCP(t *testing.T) {
+	singleTest(t, &NATPostSNATTCP{})
+}

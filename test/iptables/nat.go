@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
@@ -48,6 +49,8 @@ func init() {
 	RegisterTestCase(&NATOutOriginalDst{})
 	RegisterTestCase(&NATPreRECVORIGDSTADDR{})
 	RegisterTestCase(&NATOutRECVORIGDSTADDR{})
+	RegisterTestCase(&NATPostSNATUDP{})
+	RegisterTestCase(&NATPostSNATTCP{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -486,7 +489,12 @@ func (*NATLoopbackSkipsPrerouting) Name() string {
 // ContainerAction implements TestCase.ContainerAction.
 func (*NATLoopbackSkipsPrerouting) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	// Redirect anything sent to localhost to an unused port.
-	dest := []byte{127, 0, 0, 1}
+	var dest net.IP
+	if ipv6 {
+		dest = net.IPv6loopback
+	} else {
+		dest = net.IPv4(127, 0, 0, 1)
+	}
 	if err := natTable(ipv6, "-A", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", dropPort)); err != nil {
 		return err
 	}
@@ -914,4 +922,116 @@ func addrMatches6(got unix.RawSockaddrInet6, wantAddrs []net.IP, port uint16) er
 		}
 	}
 	return fmt.Errorf("got %+v, but wanted one of %+v (note: port numbers are in network byte order)", got, wantAddrs)
+}
+
+const (
+	snatAddrV4 = "194.236.50.155"
+	snatAddrV6 = "2a0a::1"
+	snatPort   = 43
+)
+
+// NATPostSNATUDP tests that the source port/IP in the packets are modified as expected.
+type NATPostSNATUDP struct{ localCase }
+
+var _ TestCase = (*NATPostSNATUDP)(nil)
+
+// Name implements TestCase.Name.
+func (*NATPostSNATUDP) Name() string {
+	return "NATPostSNATUDP"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*NATPostSNATUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	var source string
+	if ipv6 {
+		source = fmt.Sprintf("[%s]:%d", snatAddrV6, snatPort)
+	} else {
+		source = fmt.Sprintf("%s:%d", snatAddrV4, snatPort)
+	}
+
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "udp", "-j", "SNAT", "--to-source", source); err != nil {
+		return err
+	}
+	return sendUDPLoop(ctx, ip, acceptPort, ipv6)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*NATPostSNATUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := listenUDPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	var snatAddr string
+	if ipv6 {
+		snatAddr = snatAddrV6
+	} else {
+		snatAddr = snatAddrV4
+	}
+	if got, want := remote.IP, net.ParseIP(snatAddr); !got.Equal(want) {
+		return fmt.Errorf("got remote address = %s, want = %s", got, want)
+	}
+	if got, want := remote.Port, snatPort; got != want {
+		return fmt.Errorf("got remote port = %d, want = %d", got, want)
+	}
+	return nil
+}
+
+// NATPostSNATTCP tests that the source port/IP in the packets are modified as
+// expected.
+type NATPostSNATTCP struct{ localCase }
+
+var _ TestCase = (*NATPostSNATTCP)(nil)
+
+// Name implements TestCase.Name.
+func (*NATPostSNATTCP) Name() string {
+	return "NATPostSNATTCP"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*NATPostSNATTCP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	addrs, err := getInterfaceAddrs(ipv6)
+	if err != nil {
+		return err
+	}
+	var source string
+	for _, addr := range addrs {
+		if addr.To4() != nil {
+			if !ipv6 {
+				source = fmt.Sprintf("%s:%d", addr, snatPort)
+			}
+		} else if ipv6 && addr.IsGlobalUnicast() {
+			source = fmt.Sprintf("[%s]:%d", addr, snatPort)
+		}
+	}
+	if source == "" {
+		return fmt.Errorf("can't find any interface address to use")
+	}
+
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "tcp", "-j", "SNAT", "--to-source", source); err != nil {
+		return err
+	}
+	return connectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*NATPostSNATTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := listenTCPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	HostStr, portStr, err := net.SplitHostPort(remote.String())
+	if err != nil {
+		return err
+	}
+	if got, want := HostStr, ip.String(); got != want {
+		return fmt.Errorf("got remote address = %s, want = %s", got, want)
+	}
+	port, err := strconv.ParseInt(portStr, 10, 0)
+	if err != nil {
+		return err
+	}
+	if got, want := int(port), snatPort; got != want {
+		return fmt.Errorf("got remote port = %d, want = %d", got, want)
+	}
+	return nil
 }

@@ -45,6 +45,7 @@ go_library(
         "addressable_endpoint_state.go",
         "conntrack.go",
         "headertype_string.go",
+        "hook_string.go",
         "icmp_rate_limit.go",
         "iptables.go",
         "iptables_state.go",
