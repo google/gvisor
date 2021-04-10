@@ -385,8 +385,8 @@ func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
 }
 
 // deliverAccepted delivers the newly-accepted endpoint to the listener. If the
-// endpoint has transitioned out of the listen state (acceptedChan is nil),
-// the new endpoint is closed instead.
+// listener has transitioned out of the listen state (accepted is the zero
+// value), the new endpoint is reset instead.
 func (e *endpoint) deliverAccepted(n *endpoint, withSynCookie bool) {
 	e.mu.Lock()
 	e.pendingAccepted.Add(1)
@@ -395,23 +395,23 @@ func (e *endpoint) deliverAccepted(n *endpoint, withSynCookie bool) {
 
 	e.acceptMu.Lock()
 	for {
-		if e.acceptedChan == nil {
-			e.acceptMu.Unlock()
+		if e.accepted == (accepted{}) {
 			n.notifyProtocolGoroutine(notifyReset)
-			return
+			break
 		}
-		select {
-		case e.acceptedChan <- n:
-			if !withSynCookie {
-				atomic.AddInt32(&e.synRcvdCount, -1)
-			}
-			e.acceptMu.Unlock()
-			e.waiterQueue.Notify(waiter.ReadableEvents)
-			return
-		default:
+		if e.accepted.endpoints.Len() == e.accepted.cap {
 			e.acceptCond.Wait()
+			continue
 		}
+
+		e.accepted.endpoints.PushBack(n)
+		if !withSynCookie {
+			atomic.AddInt32(&e.synRcvdCount, -1)
+		}
+		e.waiterQueue.Notify(waiter.ReadableEvents)
+		break
 	}
+	e.acceptMu.Unlock()
 }
 
 // propagateInheritableOptionsLocked propagates any options set on the listening
@@ -499,7 +499,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 
 func (e *endpoint) synRcvdBacklogFull() bool {
 	e.acceptMu.Lock()
-	acceptedChanCap := cap(e.acceptedChan)
+	backlog := e.accepted.cap
 	e.acceptMu.Unlock()
 	// The allocated accepted channel size would always be one greater than the
 	// listen backlog. But, the SYNRCVD connections count is always checked
@@ -509,12 +509,12 @@ func (e *endpoint) synRcvdBacklogFull() bool {
 	// We maintain an equality check here as the synRcvdCount is incremented
 	// and compared only from a single listener context and the capacity of
 	// the accepted channel can only increase by a new listen call.
-	return int(atomic.LoadInt32(&e.synRcvdCount)) == acceptedChanCap-1
+	return int(atomic.LoadInt32(&e.synRcvdCount)) == backlog-1
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := len(e.acceptedChan) == cap(e.acceptedChan)
+	full := e.accepted.endpoints.Len() == e.accepted.cap
 	e.acceptMu.Unlock()
 	return full
 }
