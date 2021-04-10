@@ -61,6 +61,12 @@ func wrgsbase(addr uintptr)
 // wrgsmsr writes to the GS_BASE MSR.
 func wrgsmsr(addr uintptr)
 
+// stmxcsr reads the MXCSR control and status register.
+func stmxcsr(addr *uint32)
+
+// ldmxcsr writes to the MXCSR control and status register.
+func ldmxcsr(addr *uint32)
+
 // readCR2 reads the current CR2 value.
 func readCR2() uintptr
 

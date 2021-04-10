@@ -44,6 +44,8 @@ namespace {
 #define SET_FP0(var) SET_FPREG(var, d0)
 #endif
 
+#define DEFAULT_MXCSR 0x1f80
+
 int parent, child;
 
 void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
@@ -57,6 +59,12 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   uint64_t got;
   GET_FP0(got);
   TEST_CHECK_MSG(val == got, "Basic FP check failed in sigusr1()");
+
+#ifdef __x86_64
+  uint32_t mxcsr;
+  __asm__("STMXCSR %0" : "=m"(mxcsr));
+  TEST_CHECK_MSG(mxcsr == DEFAULT_MXCSR, "Unexpected mxcsr");
+#endif
 }
 
 TEST(FPSigTest, Fork) {
@@ -124,6 +132,55 @@ TEST(FPSigTest, Fork) {
     _exit(0);
   }
 }
+
+#ifdef __x86_64__
+TEST(FPSigTest, ForkWithZeroMxcsr) {
+  parent = getpid();
+  pid_t parent_tid = gettid();
+
+  struct sigaction sa = {};
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = sigusr1;
+  ASSERT_THAT(sigaction(SIGUSR1, &sa, nullptr), SyscallSucceeds());
+
+  // The control bits of the MXCSR register are callee-saved (preserved across
+  // calls), while the status bits are caller-saved (not preserved).
+  uint32_t expected = 0, origin;
+  __asm__("STMXCSR %0" : "=m"(origin));
+  __asm__("LDMXCSR %0" : : "m"(expected));
+
+  asm volatile(
+      "movl %[killnr], %%eax;"
+      "movl %[parent], %%edi;"
+      "movl %[tid], %%esi;"
+      "movl %[sig], %%edx;"
+      "syscall;"
+      :
+      : [killnr] "i"(__NR_tgkill), [parent] "rm"(parent),
+        [tid] "rm"(parent_tid), [sig] "i"(SIGUSR1)
+      : "rax", "rdi", "rsi", "rdx",
+        // Clobbered by syscall.
+        "rcx", "r11");
+
+  uint32_t got;
+  __asm__("STMXCSR %0" : "=m"(got));
+  __asm__("LDMXCSR %0" : : "m"(origin));
+
+  if (getpid() == parent) {  // Parent.
+    int status;
+    ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  }
+
+  // TEST_CHECK_MSG since this may run in the child.
+  TEST_CHECK_MSG(expected == got, "Bad mxcsr value");
+
+  if (getpid() != parent) {  // Child.
+    _exit(0);
+  }
+}
+#endif
 
 }  // namespace
 

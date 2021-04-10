@@ -198,3 +198,15 @@ TEXT ·rdmsr(SB),NOSPLIT,$0-16
 	MOVL AX, ret+8(FP)
 	MOVL DX, ret+12(FP)
 	RET
+
+// stmxcsr reads the MXCSR control and status register.
+TEXT ·stmxcsr(SB),NOSPLIT,$0-8
+	MOVQ addr+0(FP), SI
+	STMXCSR (SI)
+	RET
+
+// ldmxcsr writes to the MXCSR control and status register.
+TEXT ·ldmxcsr(SB),NOSPLIT,$0-8
+	MOVQ addr+0(FP), SI
+	LDMXCSR (SI)
+	RET

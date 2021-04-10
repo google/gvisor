@@ -219,6 +219,11 @@ func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet *cpuid
 	return copy(*s, f), nil
 }
 
+// SetMXCSR sets the MXCSR control/status register in the state.
+func (s *State) SetMXCSR(mxcsr uint32) {
+	hostarch.ByteOrder.PutUint32((*s)[mxcsrOffset:], mxcsr)
+}
+
 // BytePointer returns a pointer to the first byte of the state.
 //
 //go:nosplit
