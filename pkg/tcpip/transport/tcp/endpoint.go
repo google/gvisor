@@ -877,7 +877,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		waiterQueue: waiterQueue,
 		state:       StateInitial,
 		rcvBufSize:  DefaultReceiveBufferSize,
-		sndMTU:      int(math.MaxInt32),
+		sndMTU:      math.MaxInt32,
 		keepalive: keepalive{
 			// Linux defaults.
 			idle:     2 * time.Hour,
@@ -1703,7 +1703,7 @@ func (e *endpoint) OnReusePortSet(v bool) {
 }
 
 // OnKeepAliveSet implements tcpip.SocketOptionsHandler.OnKeepAliveSet.
-func (e *endpoint) OnKeepAliveSet(v bool) {
+func (e *endpoint) OnKeepAliveSet(bool) {
 	e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 }
 
@@ -2235,12 +2235,22 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		// src IP to ensure that for a given tuple (srcIP, destIP,
 		// destPort) the offset used as a starting point is the same to
 		// ensure that we can cycle through the port space effectively.
-		h := jenkins.Sum32(e.stack.Seed())
-		h.Write([]byte(e.ID.LocalAddress))
-		h.Write([]byte(e.ID.RemoteAddress))
 		portBuf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(portBuf, e.ID.RemotePort)
-		h.Write(portBuf)
+
+		h := jenkins.Sum32(e.stack.Seed())
+		for _, s := range [][]byte{
+			[]byte(e.ID.LocalAddress),
+			[]byte(e.ID.RemoteAddress),
+			portBuf,
+		} {
+			// Per io.Writer.Write:
+			//
+			// Write must return a non-nil error if it returns n < len(p).
+			if _, err := h.Write(s); err != nil {
+				panic(err)
+			}
+		}
 		portOffset := uint16(h.Sum32())
 
 		var twReuse tcpip.TCPTimeWaitReuseOption
@@ -2807,7 +2817,7 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 	// We only notify when there is half the sendBufferSize available after
 	// a full buffer event occurs. This ensures that we don't wake up
 	// writers to queue just 1-2 segments and go back to sleep.
-	notify = notify && e.sndBufUsed < int(sendBufferSize)>>1
+	notify = notify && e.sndBufUsed < sendBufferSize>>1
 	e.sndBufMu.Unlock()
 
 	if notify {
