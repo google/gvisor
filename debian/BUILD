@@ -29,6 +29,9 @@ pkg_deb(
         arm64 = "arm64",
     ),
     changes = "runsc.changes",
+    conffiles = [
+        "/etc/containerd/runsc.toml",
+    ],
     data = ":debian-data",
     deb = "runsc.deb",
     # Note that the description_file will be flatten (all newlines removed),
