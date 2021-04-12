@@ -494,6 +494,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			return nil, nil, err
 		}
 
+		defer lowerMerkleFD.DecRef(ctx)
+
 		childrenNames := make([]byte, size)
 		if _, err := lowerMerkleFD.PRead(ctx, usermem.BytesIOSequence(childrenNames), int64(off), vfs.ReadOptions{}); err != nil {
 			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to read root children map: %v", err))
