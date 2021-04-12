@@ -86,7 +86,7 @@ func (ke *KernelIP6TGetEntries) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) {
-	ke.IPTGetEntries.MarshalBytes(dst)
+	ke.IPTGetEntries.MarshalUnsafe(dst)
 	marshalledUntil := ke.IPTGetEntries.SizeBytes()
 	for i := range ke.Entrytable {
 		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
@@ -96,7 +96,7 @@ func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) {
-	ke.IPTGetEntries.UnmarshalBytes(src)
+	ke.IPTGetEntries.UnmarshalUnsafe(src)
 	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
 	for i := range ke.Entrytable {
 		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
@@ -149,8 +149,8 @@ type IP6TEntry struct {
 const SizeOfIP6TEntry = 168
 
 // KernelIP6TEntry is identical to IP6TEntry, but includes the Elems field.
-// KernelIP6TEntry itself is not Marshallable but it implements some methods of
-// marshal.Marshallable that help in other implementations of Marshallable.
+//
+// +marshal dynamic
 type KernelIP6TEntry struct {
 	Entry IP6TEntry
 
@@ -168,13 +168,13 @@ func (ke *KernelIP6TEntry) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (ke *KernelIP6TEntry) MarshalBytes(dst []byte) {
-	ke.Entry.MarshalBytes(dst)
+	ke.Entry.MarshalUnsafe(dst)
 	ke.Elems.MarshalBytes(dst[ke.Entry.SizeBytes():])
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (ke *KernelIP6TEntry) UnmarshalBytes(src []byte) {
-	ke.Entry.UnmarshalBytes(src)
+	ke.Entry.UnmarshalUnsafe(src)
 	ke.Elems.UnmarshalBytes(src[ke.Entry.SizeBytes():])
 }
 

@@ -145,13 +145,13 @@ func (ke *KernelIPTEntry) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (ke *KernelIPTEntry) MarshalBytes(dst []byte) {
-	ke.Entry.MarshalBytes(dst)
+	ke.Entry.MarshalUnsafe(dst)
 	ke.Elems.MarshalBytes(dst[ke.Entry.SizeBytes():])
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (ke *KernelIPTEntry) UnmarshalBytes(src []byte) {
-	ke.Entry.UnmarshalBytes(src)
+	ke.Entry.UnmarshalUnsafe(src)
 	ke.Elems.UnmarshalBytes(src[ke.Entry.SizeBytes():])
 }
 
@@ -440,7 +440,7 @@ func (ke *KernelIPTGetEntries) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (ke *KernelIPTGetEntries) MarshalBytes(dst []byte) {
-	ke.IPTGetEntries.MarshalBytes(dst)
+	ke.IPTGetEntries.MarshalUnsafe(dst)
 	marshalledUntil := ke.IPTGetEntries.SizeBytes()
 	for i := range ke.Entrytable {
 		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
@@ -450,7 +450,7 @@ func (ke *KernelIPTGetEntries) MarshalBytes(dst []byte) {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (ke *KernelIPTGetEntries) UnmarshalBytes(src []byte) {
-	ke.IPTGetEntries.UnmarshalBytes(src)
+	ke.IPTGetEntries.UnmarshalUnsafe(src)
 	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
 	for i := range ke.Entrytable {
 		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
