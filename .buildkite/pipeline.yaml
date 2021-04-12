@@ -57,6 +57,7 @@ steps:
   - <<: *common
     label: ":test_tube: Unit tests"
     command: make unit-tests
+    timeout_in_minutes: 45
   - <<: *common
     label: ":test_tube: runsc tests"
     command: make runsc-tests
