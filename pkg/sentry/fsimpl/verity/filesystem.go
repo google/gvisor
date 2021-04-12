@@ -229,6 +229,8 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 		return nil, err
 	}
 
+	defer parentMerkleFD.DecRef(ctx)
+
 	// dataSize is the size of raw data for the Merkle tree. For a file,
 	// dataSize is the size of the whole file. For a directory, dataSize is
 	// the size of all its children's hashes.
@@ -336,6 +338,8 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 	if err != nil {
 		return err
 	}
+
+	defer fd.DecRef(ctx)
 
 	merkleSize, err := fd.GetXattr(ctx, &vfs.GetXattrOptions{
 		Name: merkleSizeXattr,
