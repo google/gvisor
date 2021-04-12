@@ -85,7 +85,7 @@ go_add_tags = _go_rule(
     },
 )
 
-def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **kwargs):
+def go_binary(name, nogo = False, pure = False, static = False, x_defs = None, **kwargs):
     """Wraps the standard go_binary.
 
     Args:
@@ -160,7 +160,7 @@ def go_imports(name, src, out):
         cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
     )
 
-def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = True, **kwargs):
+def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = False, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
     The recommended way is to use this rule with mostly identical configuration as the native
@@ -275,7 +275,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
                 **kwargs
             )
 
-def go_test(name, nogo = True, **kwargs):
+def go_test(name, nogo = False, **kwargs):
     """Wraps the standard go_test.
 
     Args:
