@@ -398,25 +398,32 @@ func (e *endpoint) deliverAccepted(n *endpoint, withSynCookie bool) {
 	e.mu.Unlock()
 	defer e.pendingAccepted.Done()
 
-	e.acceptMu.Lock()
-	for {
-		if e.accepted == (accepted{}) {
-			n.notifyProtocolGoroutine(notifyReset)
-			break
-		}
-		if e.accepted.endpoints.Len() == e.accepted.cap {
-			e.acceptCond.Wait()
-			continue
-		}
+	// Drop the lock before notifying to avoid deadlock in user-specified
+	// callbacks.
+	delivered := func() bool {
+		e.acceptMu.Lock()
+		defer e.acceptMu.Unlock()
+		for {
+			if e.accepted == (accepted{}) {
+				return false
+			}
+			if e.accepted.endpoints.Len() == e.accepted.cap {
+				e.acceptCond.Wait()
+				continue
+			}
 
-		e.accepted.endpoints.PushBack(n)
-		if !withSynCookie {
-			atomic.AddInt32(&e.synRcvdCount, -1)
+			e.accepted.endpoints.PushBack(n)
+			if !withSynCookie {
+				atomic.AddInt32(&e.synRcvdCount, -1)
+			}
+			return true
 		}
+	}()
+	if delivered {
 		e.waiterQueue.Notify(waiter.ReadableEvents)
-		break
+	} else {
+		n.notifyProtocolGoroutine(notifyReset)
 	}
-	e.acceptMu.Unlock()
 }
 
 // propagateInheritableOptionsLocked propagates any options set on the listening
