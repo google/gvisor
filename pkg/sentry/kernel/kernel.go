@@ -1854,7 +1854,7 @@ func (k *Kernel) Release() {
 func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
 	k.tasks.mu.RLock()
 	k.tasks.forEachTaskLocked(func(t *Task) {
-		if t.ExitState() != TaskExitNone {
+		if t.exitState != TaskExitNone {
 			return
 		}
 		t.mu.Lock()
@@ -1870,7 +1870,7 @@ func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
 func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 	k.tasks.mu.RLock()
 	k.tasks.forEachTaskLocked(func(t *Task) {
-		if t.ExitState() != TaskExitNone {
+		if t.exitState != TaskExitNone {
 			return
 		}
 		t.mu.Lock()
