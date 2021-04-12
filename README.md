@@ -125,5 +125,5 @@ See [Contributing.md](CONTRIBUTING.md).
 [gvisor-dev]: https://gvisor.dev
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [oci]: https://www.opencontainers.org
-[old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
+[old-linux]:  https://gvisor.dev/docs/user_guide/networking/#gso
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
