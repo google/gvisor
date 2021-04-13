@@ -511,22 +511,22 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 
 func (e *endpoint) synRcvdBacklogFull() bool {
 	e.acceptMu.Lock()
-	backlog := e.accepted.cap
+	acceptedCap := e.accepted.cap
 	e.acceptMu.Unlock()
-	// The allocated accepted channel size would always be one greater than the
+	// The capacity of the accepted queue would always be one greater than the
 	// listen backlog. But, the SYNRCVD connections count is always checked
 	// against the listen backlog value for Linux parity reason.
 	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/inet_connection_sock.h#L280
 	//
 	// We maintain an equality check here as the synRcvdCount is incremented
 	// and compared only from a single listener context and the capacity of
-	// the accepted channel can only increase by a new listen call.
-	return int(atomic.LoadInt32(&e.synRcvdCount)) == backlog-1
+	// the accepted queue can only increase by a new listen call.
+	return int(atomic.LoadInt32(&e.synRcvdCount)) == acceptedCap-1
 }
 
 func (e *endpoint) acceptQueueIsFull() bool {
 	e.acceptMu.Lock()
-	full := e.accepted.endpoints.Len() == e.accepted.cap
+	full := e.accepted != (accepted{}) && e.accepted.endpoints.Len() == e.accepted.cap
 	e.acceptMu.Unlock()
 	return full
 }
