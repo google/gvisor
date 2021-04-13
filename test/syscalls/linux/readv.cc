@@ -267,7 +267,7 @@ TEST_F(ReadvTest, ReadvWithOpath) {
 
 // This test depends on the maximum extent of a single readv() syscall, so
 // we can't tolerate interruption from saving.
-TEST(ReadvTestNoFixture, TruncatedAtMax_NoRandomSave) {
+TEST(ReadvTestNoFixture, TruncatedAtMax) {
   // Ensure that we won't be interrupted by ITIMER_PROF. This is particularly
   // important in environments where automated profiling tools may start
   // ITIMER_PROF automatically.

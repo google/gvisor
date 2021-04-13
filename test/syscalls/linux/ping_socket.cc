@@ -35,7 +35,7 @@ namespace {
 //
 // We disable both random/cooperative S/R for this test as it makes way too many
 // syscalls.
-TEST(PingSocket, ICMPPortExhaustion_NoRandomSave) {
+TEST(PingSocket, ICMPPortExhaustion) {
   DisableSave ds;
 
   {

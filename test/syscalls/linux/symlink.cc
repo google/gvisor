@@ -248,7 +248,7 @@ TEST(SymlinkTest, PwriteToSymlink) {
   EXPECT_THAT(unlink(linkname.c_str()), SyscallSucceeds());
 }
 
-TEST(SymlinkTest, SymlinkAtDegradedPermissions_NoRandomSave) {
+TEST(SymlinkTest, SymlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -299,7 +299,7 @@ TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
   EXPECT_EQ(0, strncmp("/dangling", buf.data(), linksize));
 }
 
-TEST(SymlinkTest, ReadlinkAtDegradedPermissions_NoRandomSave) {
+TEST(SymlinkTest, ReadlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));

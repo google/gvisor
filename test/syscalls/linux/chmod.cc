@@ -53,7 +53,7 @@ TEST(ChmodTest, ChmodDirSucceeds) {
   EXPECT_THAT(open(fileInDir.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodFileSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodFileSucceeds) {
   // Drop capabilities that allow us to file directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
 
@@ -70,7 +70,7 @@ TEST(ChmodTest, FchmodFileSucceeds_NoRandomSave) {
   EXPECT_THAT(open(file.path().c_str(), O_RDWR), SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodDirSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodDirSucceeds) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -212,7 +212,7 @@ TEST(ChmodTest, FchmodatDir) {
               SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, ChmodDowngradeWritability_NoRandomSave) {
+TEST(ChmodTest, ChmodDowngradeWritability) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666));
 
   int fd;
@@ -238,7 +238,7 @@ TEST(ChmodTest, ChmodFileToNoPermissionsSucceeds) {
               SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodDowngradeWritability_NoRandomSave) {
+TEST(ChmodTest, FchmodDowngradeWritability) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   int fd;
@@ -252,7 +252,7 @@ TEST(ChmodTest, FchmodDowngradeWritability_NoRandomSave) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
-TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds) {
   // Drop capabilities that allow us to override file permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));

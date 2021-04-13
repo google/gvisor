@@ -208,7 +208,7 @@ TEST(TruncateTest, FtruncateWithOpath) {
 
 // ftruncate(2) should succeed as long as the file descriptor is writeable,
 // regardless of whether the file permissions allow writing.
-TEST(TruncateTest, FtruncateWithoutWritePermission_NoRandomSave) {
+TEST(TruncateTest, FtruncateWithoutWritePermission) {
   // Drop capabilities that allow us to override file permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
 
@@ -230,7 +230,7 @@ TEST(TruncateTest, TruncateNonExist) {
   EXPECT_THAT(truncate("/foo/bar", 0), SyscallFailsWithErrno(ENOENT));
 }
 
-TEST(TruncateTest, FtruncateVirtualTmp_NoRandomSave) {
+TEST(TruncateTest, FtruncateVirtualTmp) {
   auto temp_file = NewTempAbsPathInDir("/dev/shm");
   const DisableSave ds;  // Incompatible permissions.
   const FileDescriptor fd =

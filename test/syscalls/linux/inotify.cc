@@ -1156,7 +1156,7 @@ TEST(Inotify, ZeroLengthReadWriteDoesNotGenerateEvent) {
   EXPECT_TRUE(events.empty());
 }
 
-TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
+TEST(Inotify, ChmodGeneratesAttribEvent) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
@@ -1999,7 +1999,7 @@ TEST(Inotify, Exec) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
+TEST(Inotify, IncludeUnlinkedFile) {
   const DisableSave ds;
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2052,7 +2052,7 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlink_NoRandomSave) {
+TEST(Inotify, ExcludeUnlink) {
   const DisableSave ds;
   // TODO(gvisor.dev/issue/1624): This test fails on VFS1.
   SKIP_IF(IsRunningWithVFS1());
@@ -2093,7 +2093,7 @@ TEST(Inotify, ExcludeUnlink_NoRandomSave) {
 
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
+TEST(Inotify, ExcludeUnlinkDirectory) {
   // TODO(gvisor.dev/issue/1624): This test fails on VFS1. Remove once VFS1 is
   // deleted.
   SKIP_IF(IsRunningWithVFS1());
@@ -2138,7 +2138,7 @@ TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
+TEST(Inotify, ExcludeUnlinkMultipleChildren) {
   // Inotify does not work properly with hard links in gofer and overlay fs.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
@@ -2184,7 +2184,7 @@ TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
+TEST(Inotify, ExcludeUnlinkInodeEvents) {
   // TODO(gvisor.dev/issue/1624): Fails on VFS1.
   SKIP_IF(IsRunningWithVFS1());
 
@@ -2284,7 +2284,7 @@ TEST(Inotify, OneShot) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when inotify instances and watch targets are concurrently being
 // destroyed.
-TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave) {
+TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   // A file descriptor protected by a mutex. This ensures that while a
@@ -2350,7 +2350,7 @@ TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when adding/removing watches occurs concurrently with the
 // removal of their targets.
-TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock_NoRandomSave) {
+TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   // Set up inotify instances.
@@ -2405,7 +2405,7 @@ TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock_NoRandomSave) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when many inotify events and filesystem operations occur
 // simultaneously.
-TEST(InotifyTest, NotifyNoDeadlock_NoRandomSave) {
+TEST(InotifyTest, NotifyNoDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

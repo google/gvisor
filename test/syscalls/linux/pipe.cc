@@ -399,7 +399,7 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
   t.Join();
 }
 
-TEST_P(PipeTest, ReadFromClosedFd_NoRandomSave) {
+TEST_P(PipeTest, ReadFromClosedFd) {
   SKIP_IF(!CreateBlocking());
 
   absl::Notification notify;

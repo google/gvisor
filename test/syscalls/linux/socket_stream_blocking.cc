@@ -68,7 +68,7 @@ TEST_P(BlockingStreamSocketPairTest, BlockPartialWriteClosed) {
 
 // Random save may interrupt the call to sendmsg() in SendLargeSendMsg(),
 // causing the write to be incomplete and the test to hang.
-TEST_P(BlockingStreamSocketPairTest, SendMsgTooLarge_NoRandomSave) {
+TEST_P(BlockingStreamSocketPairTest, SendMsgTooLarge) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   int sndbuf;
@@ -102,7 +102,7 @@ TEST_P(BlockingStreamSocketPairTest, RecvLessThanBuffer) {
 // Test that MSG_WAITALL causes recv to block until all requested data is
 // received. Random save can interrupt blocking and cause received data to be
 // returned, even if the amount received is less than the full requested amount.
-TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll_NoRandomSave) {
+TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[100];

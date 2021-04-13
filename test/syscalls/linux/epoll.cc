@@ -115,7 +115,7 @@ TEST(EpollTest, LastNonWritable) {
   }
 }
 
-TEST(EpollTest, Timeout_NoRandomSave) {
+TEST(EpollTest, Timeout) {
   auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
   std::vector<FileDescriptor> eventfds;
   for (int i = 0; i < kFDsPerEpoll; i++) {
@@ -290,7 +290,7 @@ TEST(EpollTest, Oneshot) {
               SyscallSucceedsWithValue(0));
 }
 
-TEST(EpollTest, EdgeTriggered_NoRandomSave) {
+TEST(EpollTest, EdgeTriggered) {
   // Test edge-triggered entry: make it edge-triggered, first wait should
   // return it, second one should time out, make it writable again, third wait
   // should return it, fourth wait should timeout.

@@ -324,7 +324,7 @@ TEST_P(TcpSocketTest, NonblockingLargeWrite) {
 
 // Test that a blocking write with a buffer that is larger than the send buffer
 // will block until the entire buffer is sent.
-TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
+TEST_P(TcpSocketTest, BlockingLargeWrite) {
   // Allocate a buffer three times the size of the send buffer on the heap. We
   // do this as a vector to avoid allocating on the stack.
   int size = 3 * sendbuf_size_;
@@ -408,7 +408,7 @@ TEST_P(TcpSocketTest, NonblockingLargeSend) {
 }
 
 // Same test as above, but calls send instead of write.
-TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
+TEST_P(TcpSocketTest, BlockingLargeSend) {
   // Allocate a buffer three times the size of the send buffer. We do this on
   // with a vector to avoid allocating on the stack.
   int size = 3 * sendbuf_size_;
@@ -1095,7 +1095,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerPeek) {
               SyscallFailsWithErrno(ECONNABORTED));
 }
 
-TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
+TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
@@ -1143,7 +1143,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
   EXPECT_EQ(read_bytes, kBufSz);
 }
 
-TEST_P(SimpleTcpSocketTest, SelfConnectSend_NoRandomSave) {
+TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));

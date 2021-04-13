@@ -57,7 +57,7 @@ TEST_F(PollTest, ZeroTimeout) {
 
 // If random S/R interrupts the poll, SIGALRM may be delivered before poll
 // restarts, causing the poll to hang forever.
-TEST_F(PollTest, NegativeTimeout_NoRandomSave) {
+TEST_F(PollTest, NegativeTimeout) {
   // Negative timeout mean wait forever so set a timer.
   SetTimer(absl::Milliseconds(100));
   EXPECT_THAT(poll(nullptr, 0, -1), SyscallFailsWithErrno(EINTR));

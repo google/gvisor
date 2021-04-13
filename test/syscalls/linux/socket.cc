@@ -111,7 +111,7 @@ TEST(SocketTest, UnixSocketStatFS) {
   EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
-TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
+TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
   const DisableSave ds;
 
   int sockets[2];

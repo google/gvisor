@@ -88,7 +88,7 @@ TEST_F(PselectTest, ZeroTimeout) {
 
 // If random S/R interrupts the pselect, SIGALRM may be delivered before pselect
 // restarts, causing the pselect to hang forever.
-TEST_F(PselectTest, NoTimeout_NoRandomSave) {
+TEST_F(PselectTest, NoTimeout) {
   // When there's no timeout, pselect may never return so set a timer.
   SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.

@@ -107,7 +107,7 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
 
 // Do not allow save/restore cycles after making the test file read-only, as
 // the restore will fail to open it with r/w permissions.
-TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
+TEST_F(XattrTest, XattrReadOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -138,7 +138,7 @@ TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
 
 // Do not allow save/restore cycles after making the test file write-only, as
 // the restore will fail to open it with r/w permissions.
-TEST_F(XattrTest, XattrWriteOnly_NoRandomSave) {
+TEST_F(XattrTest, XattrWriteOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));

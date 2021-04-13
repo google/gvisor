@@ -1625,7 +1625,7 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToBcastThenSend) {
 //
 // FIXME(gvisor.dev/issue/873): Endpoint order is not restored correctly. Enable
 // random and co-op save (below) once that is fixed.
-TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution_NoRandomSave) {
+TEST_P(IPv4UDPUnboundSocketTest, ReuseAddrDistribution) {
   std::vector<std::unique_ptr<FileDescriptor>> sockets;
   sockets.emplace_back(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()));
 

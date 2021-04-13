@@ -239,7 +239,7 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
               SyscallSucceeds());
 
   // The buffer size should be big enough to avoid many iterations in the next
-  // loop. Otherwise, this will slow down cooperative_save tests.
+  // loop. Otherwise, this will slow down save tests.
   std::vector<char> buf(kPageSize);
   for (;;) {
     int ret;

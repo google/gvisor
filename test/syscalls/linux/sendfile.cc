@@ -654,7 +654,7 @@ TEST(SendFileTest, SendFileToPipe) {
               SyscallSucceedsWithValue(kDataSize));
 }
 
-TEST(SendFileTest, SendFileToSelf_NoRandomSave) {
+TEST(SendFileTest, SendFileToSelf) {
   int rawfd;
   ASSERT_THAT(rawfd = memfd_create("memfd", 0), SyscallSucceeds());
   const FileDescriptor fd(rawfd);
@@ -675,7 +675,7 @@ TEST(SendFileTest, SendFileToSelf_NoRandomSave) {
 static volatile int signaled = 0;
 void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
 
-TEST(SendFileTest, ToEventFDDoesNotSpin_NoRandomSave) {
+TEST(SendFileTest, ToEventFDDoesNotSpin) {
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
 
   // Write the maximum value of an eventfd to a file.
