@@ -67,7 +67,7 @@ func (e *endpoint) beforeSave() {
 			e.mu.Lock()
 		}
 		if !e.workerRunning {
-			// The endpoint must be in acceptedChan or has been just
+			// The endpoint must be in the accepted queue or has been just
 			// disconnected and closed.
 			break
 		}

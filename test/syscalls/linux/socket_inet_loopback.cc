@@ -472,8 +472,68 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   }
 }
 
-void TestListenWhileConnect(const TestParam& param,
-                            void (*stopListen)(FileDescriptor&)) {
+void TestHangupDuringConnect(const TestParam& param,
+                             void (*hangup)(FileDescriptor&)) {
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), 1), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  // Connect asynchronously and immediately hang up the listener.
+  FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                    connector.addr_len);
+  if (ret != 0) {
+    EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+  }
+
+  hangup(listen_fd);
+
+  // Wait for the connection to close.
+  struct pollfd pfd = {
+      .fd = client.get(),
+  };
+  constexpr int kTimeout = 10000;
+  int n = poll(&pfd, 1, kTimeout);
+  ASSERT_GE(n, 0) << strerror(errno);
+  ASSERT_EQ(n, 1);
+  ASSERT_EQ(pfd.revents, POLLHUP | POLLERR);
+  ASSERT_EQ(close(client.release()), 0) << strerror(errno);
+}
+
+TEST_P(SocketInetLoopbackTest, TCPListenCloseDuringConnect) {
+  TestHangupDuringConnect(GetParam(), [](FileDescriptor& f) {
+    ASSERT_THAT(close(f.release()), SyscallSucceeds());
+  });
+}
+
+TEST_P(SocketInetLoopbackTest, TCPListenShutdownDuringConnect) {
+  TestHangupDuringConnect(GetParam(), [](FileDescriptor& f) {
+    ASSERT_THAT(shutdown(f.get(), SHUT_RD), SyscallSucceeds());
+  });
+}
+
+void TestListenHangupConnectingRead(const TestParam& param,
+                                    void (*hangup)(FileDescriptor&)) {
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
@@ -526,7 +586,7 @@ void TestListenWhileConnect(const TestParam& param,
     EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
   }
 
-  stopListen(listen_fd);
+  hangup(listen_fd);
 
   std::array<std::pair<int, int>, 2> sockets = {
       std::make_pair(established_client.get(), ECONNRESET),
@@ -546,14 +606,14 @@ void TestListenWhileConnect(const TestParam& param,
   }
 }
 
-TEST_P(SocketInetLoopbackTest, TCPListenCloseWhileConnect) {
-  TestListenWhileConnect(GetParam(), [](FileDescriptor& f) {
+TEST_P(SocketInetLoopbackTest, TCPListenCloseConnectingRead) {
+  TestListenHangupConnectingRead(GetParam(), [](FileDescriptor& f) {
     ASSERT_THAT(close(f.release()), SyscallSucceeds());
   });
 }
 
-TEST_P(SocketInetLoopbackTest, TCPListenShutdownWhileConnect) {
-  TestListenWhileConnect(GetParam(), [](FileDescriptor& f) {
+TEST_P(SocketInetLoopbackTest, TCPListenShutdownConnectingRead) {
+  TestListenHangupConnectingRead(GetParam(), [](FileDescriptor& f) {
     ASSERT_THAT(shutdown(f.get(), SHUT_RD), SyscallSucceeds());
   });
 }
