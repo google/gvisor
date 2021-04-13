@@ -962,7 +962,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 		result = mask
 
 	case StateListen:
-		// Check if there's anything in the accepted channel.
+		// Check if there's anything in the accepted queue.
 		if (mask & waiter.ReadableEvents) != 0 {
 			e.acceptMu.Lock()
 			if e.accepted.endpoints.Len() != 0 {
