@@ -57,8 +57,7 @@ TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
   TestAddress addr = V6Loopback();
   reinterpret_cast<sockaddr_in6*>(&addr.addr)->sin6_port = 65535;
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  EXPECT_THAT(connect(sock->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                      addr.addr_len),
+  EXPECT_THAT(connect(sock->get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
@@ -90,8 +89,7 @@ TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
   TestAddress addr = V4Loopback();
   reinterpret_cast<sockaddr_in*>(&addr.addr)->sin_port = 65535;
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  EXPECT_THAT(connect(sock->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                      addr.addr_len),
+  EXPECT_THAT(connect(sock->get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(ENETUNREACH));
 }
 

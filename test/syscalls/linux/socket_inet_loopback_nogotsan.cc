@@ -98,15 +98,14 @@ TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion_NoRandomSave) {
   auto listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
   sockaddr_storage listen_addr = listener.addr;
-  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
-                   listener.addr_len),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      bind(listen_fd.get(), AsSockAddr(&listen_addr), listener.addr_len),
+      SyscallSucceeds());
   ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = listener.addr_len;
-  ASSERT_THAT(getsockname(listen_fd.get(),
-                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(&listen_addr), &addrlen),
               SyscallSucceeds());
   uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
@@ -124,8 +123,7 @@ TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion_NoRandomSave) {
   for (int i = 0; i < kClients; i++) {
     FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-    int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                      connector.addr_len);
+    int ret = connect(client.get(), AsSockAddr(&conn_addr), connector.addr_len);
     if (ret == 0) {
       clients.push_back(std::move(client));
       FileDescriptor server =
@@ -205,8 +203,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
                            &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
 
-    int ret = bind(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
-                   test_addr.addr_len);
+    int ret = bind(bound_fd.get(), AsSockAddr(&bound_addr), test_addr.addr_len);
     if (ret != 0) {
       ASSERT_EQ(errno, EADDRINUSE);
       break;
@@ -214,8 +211,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest,
     // Get the port that we bound.
     socklen_t bound_addr_len = test_addr.addr_len;
     ASSERT_THAT(
-        getsockname(bound_fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
-                    &bound_addr_len),
+        getsockname(bound_fd.get(), AsSockAddr(&bound_addr), &bound_addr_len),
         SyscallSucceeds());
     uint16_t port = reinterpret_cast<sockaddr_in*>(&bound_addr)->sin_port;
 

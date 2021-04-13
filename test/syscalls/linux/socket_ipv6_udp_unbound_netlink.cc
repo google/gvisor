@@ -44,9 +44,9 @@ TEST_P(IPv6UDPUnboundSocketNetlinkTest, JoinSubnet) {
                          reinterpret_cast<sockaddr_in6*>(&sender_addr.addr)
                              ->sin6_addr.s6_addr));
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  EXPECT_THAT(bind(sock->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
-                   sender_addr.addr_len),
-              SyscallFailsWithErrno(EADDRNOTAVAIL));
+  EXPECT_THAT(
+      bind(sock->get(), AsSockAddr(&sender_addr.addr), sender_addr.addr_len),
+      SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
 }  // namespace testing

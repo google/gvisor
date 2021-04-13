@@ -82,8 +82,7 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     RETURN_ERROR_IF_SYSCALL_FAIL(bound = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(bound, reinterpret_cast<struct sockaddr*>(&bind_addr),
-             sizeof(bind_addr)));
+        bind(bound, AsSockAddr(&bind_addr), sizeof(bind_addr)));
     MaybeSave();  // Successful bind.
     RETURN_ERROR_IF_SYSCALL_FAIL(listen(bound, /* backlog = */ 5));
     MaybeSave();  // Successful listen.
@@ -92,8 +91,7 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     RETURN_ERROR_IF_SYSCALL_FAIL(connected = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        connect(connected, reinterpret_cast<struct sockaddr*>(&bind_addr),
-                sizeof(bind_addr)));
+        connect(connected, AsSockAddr(&bind_addr), sizeof(bind_addr)));
     MaybeSave();  // Successful connect.
 
     int accepted;
@@ -145,22 +143,22 @@ Creator<SocketPair> BidirectionalBindSocketPairCreator(bool abstract,
     RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(sock1, reinterpret_cast<struct sockaddr*>(&addr1), sizeof(addr1)));
+        bind(sock1, AsSockAddr(&addr1), sizeof(addr1)));
     MaybeSave();  // Successful bind.
 
     int sock2;
     RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
     RETURN_ERROR_IF_SYSCALL_FAIL(
-        bind(sock2, reinterpret_cast<struct sockaddr*>(&addr2), sizeof(addr2)));
+        bind(sock2, AsSockAddr(&addr2), sizeof(addr2)));
     MaybeSave();  // Successful bind.
 
-    RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-        sock1, reinterpret_cast<struct sockaddr*>(&addr2), sizeof(addr2)));
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        connect(sock1, AsSockAddr(&addr2), sizeof(addr2)));
     MaybeSave();  // Successful connect.
 
-    RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-        sock2, reinterpret_cast<struct sockaddr*>(&addr1), sizeof(addr1)));
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        connect(sock2, AsSockAddr(&addr1), sizeof(addr1)));
     MaybeSave();  // Successful connect.
 
     // Cleanup no longer needed resources.
@@ -206,15 +204,15 @@ Creator<SocketPair> SocketpairGoferSocketPairCreator(int domain, int type,
     int sock1;
     RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
-    RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-        sock1, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)));
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        connect(sock1, AsSockAddr(&addr), sizeof(addr)));
     MaybeSave();  // Successful connect.
 
     int sock2;
     RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
     MaybeSave();  // Successful socket creation.
-    RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-        sock2, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)));
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        connect(sock2, AsSockAddr(&addr), sizeof(addr)));
     MaybeSave();  // Successful connect.
 
     // Make and close another socketpair to ensure that the duped ends of the
@@ -228,8 +226,8 @@ Creator<SocketPair> SocketpairGoferSocketPairCreator(int domain, int type,
     for (int i = 0; i < 2; i++) {
       int sock;
       RETURN_ERROR_IF_SYSCALL_FAIL(sock = socket(domain, type, protocol));
-      RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-          sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)));
+      RETURN_ERROR_IF_SYSCALL_FAIL(
+          connect(sock, AsSockAddr(&addr), sizeof(addr)));
       RETURN_ERROR_IF_SYSCALL_FAIL(close(sock));
     }
 
@@ -308,11 +306,9 @@ template <typename T>
 PosixErrorOr<T> BindIP(int fd, bool dual_stack) {
   T addr = {};
   LocalhostAddr(&addr, dual_stack);
-  RETURN_ERROR_IF_SYSCALL_FAIL(
-      bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)));
+  RETURN_ERROR_IF_SYSCALL_FAIL(bind(fd, AsSockAddr(&addr), sizeof(addr)));
   socklen_t addrlen = sizeof(addr);
-  RETURN_ERROR_IF_SYSCALL_FAIL(
-      getsockname(fd, reinterpret_cast<struct sockaddr*>(&addr), &addrlen));
+  RETURN_ERROR_IF_SYSCALL_FAIL(getsockname(fd, AsSockAddr(&addr), &addrlen));
   return addr;
 }
 
@@ -329,9 +325,8 @@ CreateTCPConnectAcceptSocketPair(int bound, int connected, int type,
                                  bool dual_stack, T bind_addr) {
   int connect_result = 0;
   RETURN_ERROR_IF_SYSCALL_FAIL(
-      (connect_result = RetryEINTR(connect)(
-           connected, reinterpret_cast<struct sockaddr*>(&bind_addr),
-           sizeof(bind_addr))) == -1 &&
+      (connect_result = RetryEINTR(connect)(connected, AsSockAddr(&bind_addr),
+                                            sizeof(bind_addr))) == -1 &&
               errno == EINPROGRESS
           ? 0
           : connect_result);
@@ -703,7 +698,7 @@ PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
   }
 
   RETURN_ERROR_IF_SYSCALL_FAIL(
-      bind(fd.get(), reinterpret_cast<sockaddr*>(&storage), storage_size));
+      bind(fd.get(), AsSockAddr(&storage), storage_size));
 
   // If the user specified 0 as the port, we will return the port that the
   // kernel gave us, otherwise we will validate that this socket bound to the
@@ -711,8 +706,7 @@ PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
   sockaddr_storage bound_storage = {};
   socklen_t bound_storage_size = sizeof(bound_storage);
   RETURN_ERROR_IF_SYSCALL_FAIL(
-      getsockname(fd.get(), reinterpret_cast<sockaddr*>(&bound_storage),
-                  &bound_storage_size));
+      getsockname(fd.get(), AsSockAddr(&bound_storage), &bound_storage_size));
 
   int available_port = -1;
   if (bound_storage.ss_family == AF_INET) {

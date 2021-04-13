@@ -139,20 +139,16 @@ void TcpSocketTest::SetUp() {
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
-  ASSERT_THAT(
-      bind(listener_, reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(listener_, AsSockAddr(&addr), addrlen), SyscallSucceeds());
 
   ASSERT_THAT(listen(listener_, SOMAXCONN), SyscallSucceeds());
 
   // Get the address we're listening on, then connect to it. We need to do this
   // because we're allowing the stack to pick a port for us.
-  ASSERT_THAT(getsockname(listener_, reinterpret_cast<struct sockaddr*>(&addr),
-                          &addrlen),
+  ASSERT_THAT(getsockname(listener_, AsSockAddr(&addr), &addrlen),
               SyscallSucceeds());
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  first_fd, reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(first_fd, AsSockAddr(&addr), addrlen),
               SyscallSucceeds());
 
   // Get the initial send buffer size.
@@ -229,10 +225,9 @@ TEST_P(TcpSocketTest, SenderAddressIgnored) {
   socklen_t addrlen = sizeof(addr);
   memset(&addr, 0, sizeof(addr));
 
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), 0,
-                           reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
-      SyscallSucceedsWithValue(3));
+  ASSERT_THAT(RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), 0,
+                                   AsSockAddr(&addr), &addrlen),
+              SyscallSucceedsWithValue(3));
 
   // Check that addr remains zeroed-out.
   const char* ptr = reinterpret_cast<char*>(&addr);
@@ -250,10 +245,9 @@ TEST_P(TcpSocketTest, SenderAddressIgnoredOnPeek) {
   socklen_t addrlen = sizeof(addr);
   memset(&addr, 0, sizeof(addr));
 
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), MSG_PEEK,
-                           reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
-      SyscallSucceedsWithValue(3));
+  ASSERT_THAT(RetryEINTR(recvfrom)(second_fd, buf, sizeof(buf), MSG_PEEK,
+                                   AsSockAddr(&addr), &addrlen),
+              SyscallSucceedsWithValue(3));
 
   // Check that addr remains zeroed-out.
   const char* ptr = reinterpret_cast<char*>(&addr);
@@ -268,10 +262,9 @@ TEST_P(TcpSocketTest, SendtoAddressIgnored) {
   addr.ss_family = GetParam();  // FIXME(b/63803955)
 
   char data = '\0';
-  EXPECT_THAT(
-      RetryEINTR(sendto)(first_fd, &data, sizeof(data), 0,
-                         reinterpret_cast<sockaddr*>(&addr), sizeof(addr)),
-      SyscallSucceedsWithValue(1));
+  EXPECT_THAT(RetryEINTR(sendto)(first_fd, &data, sizeof(data), 0,
+                                 AsSockAddr(&addr), sizeof(addr)),
+              SyscallSucceedsWithValue(1));
 }
 
 TEST_P(TcpSocketTest, WritevZeroIovec) {
@@ -869,10 +862,9 @@ TEST_P(SimpleTcpSocketTest, SendtoWithAddressUnconnected) {
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   char data = '\0';
-  EXPECT_THAT(
-      RetryEINTR(sendto)(fd, &data, sizeof(data), 0,
-                         reinterpret_cast<sockaddr*>(&addr), sizeof(addr)),
-      SyscallFailsWithErrno(EPIPE));
+  EXPECT_THAT(RetryEINTR(sendto)(fd, &data, sizeof(data), 0, AsSockAddr(&addr),
+                                 sizeof(addr)),
+              SyscallFailsWithErrno(EPIPE));
 }
 
 TEST_P(SimpleTcpSocketTest, GetPeerNameUnconnected) {
@@ -883,7 +875,7 @@ TEST_P(SimpleTcpSocketTest, GetPeerNameUnconnected) {
 
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(getpeername(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+  EXPECT_THAT(getpeername(fd, AsSockAddr(&addr), &addrlen),
               SyscallFailsWithErrno(ENOTCONN));
 }
 
@@ -974,24 +966,20 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRetry) {
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port but don't listen yet.
-  ASSERT_THAT(
-      bind(listener.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
 
   // Get the address we're bound to, then connect to it. We need to do this
   // because we're allowing the stack to pick a port for us.
-  ASSERT_THAT(getsockname(listener.get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+  ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
               SyscallSucceeds());
 
   FileDescriptor connector =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
   // Verify that connect fails.
-  ASSERT_THAT(
-      RetryEINTR(connect)(connector.get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallFailsWithErrno(ECONNREFUSED));
+  ASSERT_THAT(RetryEINTR(connect)(connector.get(), AsSockAddr(&addr), addrlen),
+              SyscallFailsWithErrno(ECONNREFUSED));
 
   // Now start listening
   ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
@@ -1000,17 +988,14 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRetry) {
   //   failed first connect should succeed.
   if (IsRunningOnGvisor()) {
     ASSERT_THAT(
-        RetryEINTR(connect)(connector.get(),
-                            reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+        RetryEINTR(connect)(connector.get(), AsSockAddr(&addr), addrlen),
         SyscallFailsWithErrno(ECONNABORTED));
     return;
   }
 
   // Verify that connect now succeeds.
-  ASSERT_THAT(
-      RetryEINTR(connect)(connector.get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(connector.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
 
   // Accept the connection.
   const FileDescriptor accepted =
@@ -1030,13 +1015,11 @@ PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(const int family,
   int b_sock;
   RETURN_ERROR_IF_SYSCALL_FAIL(b_sock = socket(family, sock_type, IPPROTO_TCP));
   FileDescriptor b(b_sock);
-  EXPECT_THAT(bind(b.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-              SyscallSucceeds());
+  EXPECT_THAT(bind(b.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
 
   // Get the address bound by the listening socket.
-  EXPECT_THAT(
-      getsockname(b.get(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(b.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 
   // Now create another socket and issue a connect on this one. This connect
   // should fail as there is no listener.
@@ -1046,8 +1029,7 @@ PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(const int family,
 
   // Now connect to the bound address and this should fail as nothing
   // is listening on the bound address.
-  EXPECT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  EXPECT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EINPROGRESS));
 
   // Wait for the connect to fail.
@@ -1078,8 +1060,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   opts &= ~O_NONBLOCK;
   EXPECT_THAT(fcntl(s.get(), F_SETFL, opts), SyscallSucceeds());
   // Try connecting again.
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(ECONNABORTED));
 }
 
@@ -1094,8 +1075,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerRead) {
   unsigned char c;
   ASSERT_THAT(read(s.get(), &c, 1), SyscallFailsWithErrno(ECONNREFUSED));
   ASSERT_THAT(read(s.get(), &c, 1), SyscallSucceedsWithValue(0));
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(ECONNABORTED));
 }
 
@@ -1111,8 +1091,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerPeek) {
   ASSERT_THAT(recv(s.get(), &c, 1, MSG_PEEK),
               SyscallFailsWithErrno(ECONNREFUSED));
   ASSERT_THAT(recv(s.get(), &c, 1, MSG_PEEK), SyscallSucceedsWithValue(0));
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(ECONNABORTED));
 }
 
@@ -1125,15 +1104,11 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv_NoRandomSave) {
   const FileDescriptor s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
-  ASSERT_THAT(
-      (bind)(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT((bind)(s.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
   // Get the bound port.
-  ASSERT_THAT(
-      getsockname(s.get(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(getsockname(s.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallSucceeds());
 
   constexpr int kBufSz = 1 << 20;  // 1 MiB
@@ -1182,14 +1157,11 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend_NoRandomSave) {
       setsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &max_seg, sizeof(max_seg)),
       SyscallSucceeds());
 
-  ASSERT_THAT(bind(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-              SyscallSucceeds());
+  ASSERT_THAT(bind(s.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
   // Get the bound port.
-  ASSERT_THAT(
-      getsockname(s.get(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(getsockname(s.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallSucceeds());
 
   std::vector<char> writebuf(512 << 10);  // 512 KiB.
@@ -1213,9 +1185,8 @@ void NonBlockingConnect(int family, int16_t pollMask) {
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
-  ASSERT_THAT(
-      bind(listener.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
 
   ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
 
@@ -1228,12 +1199,10 @@ void NonBlockingConnect(int family, int16_t pollMask) {
   opts |= O_NONBLOCK;
   ASSERT_THAT(fcntl(s.get(), F_SETFL, opts), SyscallSucceeds());
 
-  ASSERT_THAT(getsockname(listener.get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+  ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
               SyscallSucceeds());
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EINPROGRESS));
 
   int t;
@@ -1276,21 +1245,18 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
-  ASSERT_THAT(
-      bind(listener.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
 
   ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
 
   FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
 
-  ASSERT_THAT(getsockname(listener.get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+  ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
               SyscallSucceeds());
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EINPROGRESS));
 
   int t;
@@ -1305,12 +1271,10 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {
   EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
               SyscallSucceedsWithValue(1));
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallSucceeds());
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EISCONN));
 }
 
@@ -1325,8 +1289,7 @@ TEST_P(SimpleTcpSocketTest, BlockingConnectRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(ECONNREFUSED));
 
   // Avoiding triggering save in destructor of s.
@@ -1346,17 +1309,14 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t bound_addrlen = sizeof(bound_addr);
 
-  ASSERT_THAT(
-      bind(bound_s.get(), reinterpret_cast<struct sockaddr*>(&bound_addr),
-           bound_addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
+              SyscallSucceeds());
 
   // Get the addresses the socket is bound to because the port is chosen by the
   // stack.
-  ASSERT_THAT(getsockname(bound_s.get(),
-                          reinterpret_cast<struct sockaddr*>(&bound_addr),
-                          &bound_addrlen),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
+      SyscallSucceeds());
 
   // Create, initialize, and bind the socket that is used to test connecting to
   // the non-listening port.
@@ -1367,15 +1327,12 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t client_addrlen = sizeof(client_addr);
 
-  ASSERT_THAT(
-      bind(client_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
-           client_addrlen),
-      SyscallSucceeds());
-
-  ASSERT_THAT(getsockname(client_s.get(),
-                          reinterpret_cast<struct sockaddr*>(&client_addr),
-                          &client_addrlen),
+  ASSERT_THAT(bind(client_s.get(), AsSockAddr(&client_addr), client_addrlen),
               SyscallSucceeds());
+
+  ASSERT_THAT(
+      getsockname(client_s.get(), AsSockAddr(&client_addr), &client_addrlen),
+      SyscallSucceeds());
 
   // Now the test: connect to the bound but not listening socket with the
   // client socket. The bound socket should return a RST and cause the client
@@ -1392,10 +1349,8 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
 
   // Test binding to the address from the client socket. This should be okay
   // if it was dropped correctly.
-  ASSERT_THAT(
-      bind(new_s.get(), reinterpret_cast<struct sockaddr*>(&client_addr),
-           client_addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(new_s.get(), AsSockAddr(&client_addr), client_addrlen),
+              SyscallSucceeds());
 
   // Attempt #2, with the new socket and reused addr our connect should fail in
   // the same way as before, not with an EADDRINUSE.
@@ -1428,8 +1383,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  ASSERT_THAT(RetryEINTR(connect)(
-                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EINPROGRESS));
 
   // We don't need to specify any events to get POLLHUP or POLLERR as these
@@ -1720,8 +1674,7 @@ TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                      addrlen);
+  RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen);
   int buf_sz = 1 << 18;
   EXPECT_THAT(
       setsockopt(s.get(), SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
@@ -2034,8 +1987,7 @@ TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
-  ASSERT_THAT(bind(s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
-              SyscallSucceeds());
+  ASSERT_THAT(bind(s.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
 
   ASSERT_THAT(listen(s.get(), SOMAXCONN), SyscallSucceeds());
 
@@ -2062,10 +2014,8 @@ TEST_P(SimpleTcpSocketTest, ConnectUnspecifiedAddress) {
   auto do_connect = [&addr, addrlen]() {
     FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(addr.ss_family, SOCK_STREAM, IPPROTO_TCP));
-    ASSERT_THAT(
-        RetryEINTR(connect)(s.get(), reinterpret_cast<struct sockaddr*>(&addr),
-                            addrlen),
-        SyscallFailsWithErrno(ECONNREFUSED));
+    ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
+                SyscallFailsWithErrno(ECONNREFUSED));
   };
   do_connect();
   // Test the v4 mapped address as well.

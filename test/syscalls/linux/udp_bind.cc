@@ -83,27 +83,24 @@ TEST_P(SendtoTest, Sendto) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(param.recv_domain, SOCK_DGRAM, 0));
 
   if (param.send_addr_len > 0) {
-    ASSERT_THAT(bind(s1.get(), reinterpret_cast<sockaddr*>(&param.send_addr),
-                     param.send_addr_len),
-                SyscallSucceeds());
-  }
-
-  if (param.connect_addr_len > 0) {
     ASSERT_THAT(
-        connect(s1.get(), reinterpret_cast<sockaddr*>(&param.connect_addr),
-                param.connect_addr_len),
+        bind(s1.get(), AsSockAddr(&param.send_addr), param.send_addr_len),
         SyscallSucceeds());
   }
 
-  ASSERT_THAT(bind(s2.get(), reinterpret_cast<sockaddr*>(&param.recv_addr),
-                   param.recv_addr_len),
+  if (param.connect_addr_len > 0) {
+    ASSERT_THAT(connect(s1.get(), AsSockAddr(&param.connect_addr),
+                        param.connect_addr_len),
+                SyscallSucceeds());
+  }
+
+  ASSERT_THAT(bind(s2.get(), AsSockAddr(&param.recv_addr), param.recv_addr_len),
               SyscallSucceeds());
 
   struct sockaddr_storage real_recv_addr = {};
   socklen_t real_recv_addr_len = param.recv_addr_len;
   ASSERT_THAT(
-      getsockname(s2.get(), reinterpret_cast<sockaddr*>(&real_recv_addr),
-                  &real_recv_addr_len),
+      getsockname(s2.get(), AsSockAddr(&real_recv_addr), &real_recv_addr_len),
       SyscallSucceeds());
 
   ASSERT_EQ(real_recv_addr_len, param.recv_addr_len);
@@ -116,23 +113,22 @@ TEST_P(SendtoTest, Sendto) {
 
   char buf[20] = {};
   if (!param.sendto_errnos.empty()) {
-    ASSERT_THAT(RetryEINTR(sendto)(s1.get(), buf, sizeof(buf), 0,
-                                   reinterpret_cast<sockaddr*>(&sendto_addr),
-                                   param.sendto_addr_len),
-                SyscallFailsWithErrno(ElementOf(param.sendto_errnos)));
+    ASSERT_THAT(
+        RetryEINTR(sendto)(s1.get(), buf, sizeof(buf), 0,
+                           AsSockAddr(&sendto_addr), param.sendto_addr_len),
+        SyscallFailsWithErrno(ElementOf(param.sendto_errnos)));
     return;
   }
 
-  ASSERT_THAT(RetryEINTR(sendto)(s1.get(), buf, sizeof(buf), 0,
-                                 reinterpret_cast<sockaddr*>(&sendto_addr),
-                                 param.sendto_addr_len),
-              SyscallSucceedsWithValue(sizeof(buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(s1.get(), buf, sizeof(buf), 0,
+                         AsSockAddr(&sendto_addr), param.sendto_addr_len),
+      SyscallSucceedsWithValue(sizeof(buf)));
 
   struct sockaddr_storage got_addr = {};
   socklen_t got_addr_len = sizeof(sockaddr_storage);
   ASSERT_THAT(RetryEINTR(recvfrom)(s2.get(), buf, sizeof(buf), 0,
-                                   reinterpret_cast<sockaddr*>(&got_addr),
-                                   &got_addr_len),
+                                   AsSockAddr(&got_addr), &got_addr_len),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   ASSERT_GT(got_addr_len, sizeof(sockaddr_in_common));
@@ -140,8 +136,7 @@ TEST_P(SendtoTest, Sendto) {
 
   struct sockaddr_storage sender_addr = {};
   socklen_t sender_addr_len = sizeof(sockaddr_storage);
-  ASSERT_THAT(getsockname(s1.get(), reinterpret_cast<sockaddr*>(&sender_addr),
-                          &sender_addr_len),
+  ASSERT_THAT(getsockname(s1.get(), AsSockAddr(&sender_addr), &sender_addr_len),
               SyscallSucceeds());
 
   ASSERT_GT(sender_addr_len, sizeof(sockaddr_in_common));

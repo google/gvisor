@@ -520,6 +520,20 @@ uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
 uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
                       ssize_t payload_len);
 
+// Convenient functions for reinterpreting common types to sockaddr pointer.
+inline sockaddr* AsSockAddr(sockaddr_storage* s) {
+  return reinterpret_cast<sockaddr*>(s);
+}
+inline sockaddr* AsSockAddr(sockaddr_in* s) {
+  return reinterpret_cast<sockaddr*>(s);
+}
+inline sockaddr* AsSockAddr(sockaddr_in6* s) {
+  return reinterpret_cast<sockaddr*>(s);
+}
+inline sockaddr* AsSockAddr(sockaddr_un* s) {
+  return reinterpret_cast<sockaddr*>(s);
+}
+
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
                                    SocketType type, bool reuse_addr);

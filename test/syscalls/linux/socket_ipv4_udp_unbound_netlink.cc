@@ -56,10 +56,9 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, JoinSubnet) {
   ASSERT_EQ(1, inet_pton(AF_INET, "192.0.2.2",
                          &(reinterpret_cast<sockaddr_in*>(&sender_addr.addr)
                                ->sin_addr.s_addr)));
-  ASSERT_THAT(
-      bind(snd_sock->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
-           sender_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(snd_sock->get(), AsSockAddr(&sender_addr.addr),
+                   sender_addr.addr_len),
+              SyscallSucceeds());
 
   // Send the packet to an unassigned address but an address that is in the
   // subnet associated with the loopback interface.
@@ -69,23 +68,20 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, JoinSubnet) {
   ASSERT_EQ(1, inet_pton(AF_INET, "192.0.2.254",
                          &(reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)
                                ->sin_addr.s_addr)));
-  ASSERT_THAT(
-      bind(rcv_sock->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(rcv_sock->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(rcv_sock->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(rcv_sock->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   ASSERT_EQ(receiver_addr_len, receiver_addr.addr_len);
   char send_buf[kSendBufSize];
   RandomizeBuffer(send_buf, kSendBufSize);
-  ASSERT_THAT(
-      RetryEINTR(sendto)(snd_sock->get(), send_buf, kSendBufSize, 0,
-                         reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-                         receiver_addr.addr_len),
-      SyscallSucceedsWithValue(kSendBufSize));
+  ASSERT_THAT(RetryEINTR(sendto)(snd_sock->get(), send_buf, kSendBufSize, 0,
+                                 AsSockAddr(&receiver_addr.addr),
+                                 receiver_addr.addr_len),
+              SyscallSucceedsWithValue(kSendBufSize));
 
   // Check that we received the packet.
   char recv_buf[kSendBufSize] = {};
@@ -155,14 +151,12 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, ReuseAddrSubnetDirectedBroadcast) {
           << "socks[" << idx << "]";
 
       if (bind_wildcard) {
-        ASSERT_THAT(
-            bind(sock->get(), reinterpret_cast<sockaddr*>(&any_address.addr),
-                 any_address.addr_len),
-            SyscallSucceeds())
+        ASSERT_THAT(bind(sock->get(), AsSockAddr(&any_address.addr),
+                         any_address.addr_len),
+                    SyscallSucceeds())
             << "socks[" << idx << "]";
       } else {
-        ASSERT_THAT(bind(sock->get(),
-                         reinterpret_cast<sockaddr*>(&broadcast_address.addr),
+        ASSERT_THAT(bind(sock->get(), AsSockAddr(&broadcast_address.addr),
                          broadcast_address.addr_len),
                     SyscallSucceeds())
             << "socks[" << idx << "]";
@@ -179,11 +173,10 @@ TEST_P(IPv4UDPUnboundSocketNetlinkTest, ReuseAddrSubnetDirectedBroadcast) {
   // the sending socket).
   for (long unsigned int w = 0; w < socks.size(); w++) {
     auto& w_sock = socks[w];
-    ASSERT_THAT(
-        RetryEINTR(sendto)(w_sock->get(), send_buf, kSendBufSize, 0,
-                           reinterpret_cast<sockaddr*>(&broadcast_address.addr),
-                           broadcast_address.addr_len),
-        SyscallSucceedsWithValue(kSendBufSize))
+    ASSERT_THAT(RetryEINTR(sendto)(w_sock->get(), send_buf, kSendBufSize, 0,
+                                   AsSockAddr(&broadcast_address.addr),
+                                   broadcast_address.addr_len),
+                SyscallSucceedsWithValue(kSendBufSize))
         << "write socks[" << w << "]";
 
     // Check that we received the packet on all sockets.

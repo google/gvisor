@@ -263,9 +263,8 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = sizeof(sin);
-  ASSERT_THAT(
-      getsockname(s_listen.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(s_listen.get(), AsSockAddr(&sin), &addrlen),
+              SyscallSucceeds());
 
   FileDescriptor s_connect =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
@@ -384,9 +383,8 @@ TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
               SyscallSucceeds());
   // Get the port bound by the server socket.
   socklen_t addrlen = sizeof(sin);
-  ASSERT_THAT(
-      getsockname(server.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(server.get(), AsSockAddr(&sin), &addrlen),
+              SyscallSucceeds());
 
   FileDescriptor client =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
