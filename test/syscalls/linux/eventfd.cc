@@ -175,7 +175,7 @@ TEST(EventfdTest, SpliceFromPipePartialSucceeds) {
 }
 
 // NotifyNonZero is inherently racy, so random save is disabled.
-TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
+TEST(EventfdTest, NotifyNonZero) {
   // Waits will time out at 10 seconds.
   constexpr int kEpollTimeoutMs = 10000;
   // Create an eventfd descriptor.

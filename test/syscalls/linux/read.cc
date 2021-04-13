@@ -97,7 +97,7 @@ TEST_F(ReadTest, DevNullReturnsEof) {
 const int kReadSize = 128 * 1024;
 
 // Do not allow random save as it could lead to partial reads.
-TEST_F(ReadTest, CanReadFullyFromDevZero_NoRandomSave) {
+TEST_F(ReadTest, CanReadFullyFromDevZero) {
   int fd;
   ASSERT_THAT(fd = open("/dev/zero", O_RDONLY), SyscallSucceeds());
 

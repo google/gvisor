@@ -618,11 +618,11 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownConnectingRead) {
   });
 }
 
-// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
+// TODO(b/157236388): Remove  once bug is fixed. Test fails w/
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
 // causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -667,11 +667,11 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes_NoRandomSave) {
   }
 }
 
-// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
+// TODO(b/157236388): Remove  once bug is fixed. Test fails w/
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
 // causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPBacklog_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPBacklog) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -754,11 +754,11 @@ TEST_P(SocketInetLoopbackTest, TCPBacklog_NoRandomSave) {
   ASSERT_GE(client_conns, accepted_conns);
 }
 
-// TODO(b/157236388): Remove _NoRandomSave once bug is fixed. Test fails w/
+// TODO(b/157236388): Remove  once bug is fixed. Test fails w/
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
 // causing the last accept to timeout on the restore.
-TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -855,7 +855,7 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll_NoRandomSave) {
 //
 // TCP timers are not S/R today, this can cause this test to be flaky when run
 // under random S/R due to timer being reset on a restore.
-TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPFinWait2Test) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -937,7 +937,7 @@ TEST_P(SocketInetLoopbackTest, TCPFinWait2Test_NoRandomSave) {
 //
 // TCP timers are not S/R today, this can cause this test to be flaky when run
 // under random S/R due to timer being reset on a restore.
-TEST_P(SocketInetLoopbackTest, TCPLinger2TimeoutAfterClose_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPLinger2TimeoutAfterClose) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -1176,7 +1176,7 @@ void setupTimeWaitClose(const TestAddress* listener,
 //
 // Test re-binding of client and server bound addresses when the older
 // connection is in TIME_WAIT.
-TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest) {
   auto const& param = GetParam();
   sockaddr_storage listen_addr, conn_bound_addr;
   listen_addr = param.listener.addr;
@@ -1198,8 +1198,7 @@ TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitTest_NoRandomSave) {
       SyscallFailsWithErrno(EADDRINUSE));
 }
 
-TEST_P(SocketInetLoopbackTest,
-       TCPPassiveCloseNoTimeWaitReuseTest_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPPassiveCloseNoTimeWaitReuseTest) {
   auto const& param = GetParam();
   sockaddr_storage listen_addr, conn_bound_addr;
   listen_addr = param.listener.addr;
@@ -1236,7 +1235,7 @@ TEST_P(SocketInetLoopbackTest,
               SyscallSucceeds());
 }
 
-TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitTest_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitTest) {
   auto const& param = GetParam();
   sockaddr_storage listen_addr, conn_bound_addr;
   listen_addr = param.listener.addr;
@@ -1250,7 +1249,7 @@ TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitTest_NoRandomSave) {
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
-TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitReuseTest_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPActiveCloseTimeWaitReuseTest) {
   auto const& param = GetParam();
   sockaddr_storage listen_addr, conn_bound_addr;
   listen_addr = param.listener.addr;
@@ -1425,7 +1424,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
 
 // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
 // saved. Enable S/R once issue is fixed.
-TEST_P(SocketInetLoopbackTest, TCPDeferAccept_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPDeferAccept) {
   // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
   // saved. Enable S/R issue is fixed.
   DisableSave ds;
@@ -1505,7 +1504,7 @@ TEST_P(SocketInetLoopbackTest, TCPDeferAccept_NoRandomSave) {
 
 // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
 // saved. Enable S/R once issue is fixed.
-TEST_P(SocketInetLoopbackTest, TCPDeferAcceptTimeout_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, TCPDeferAcceptTimeout) {
   // TODO(gvisor.dev/issue/1688): Partially completed passive endpoints are not
   // saved. Enable S/R once issue is fixed.
   DisableSave ds;
@@ -1609,9 +1608,9 @@ INSTANTIATE_TEST_SUITE_P(
 
 using SocketInetReusePortTest = ::testing::TestWithParam<TestParam>;
 
-// TODO(gvisor.dev/issue/940): Remove _NoRandomSave when portHint/stack.Seed is
+// TODO(gvisor.dev/issue/940): Remove  when portHint/stack.Seed is
 // saved/restored.
-TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
+TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -1721,7 +1720,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread_NoRandomSave) {
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
 }
 
-TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread_NoRandomSave) {
+TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;
@@ -1832,7 +1831,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread_NoRandomSave) {
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
 }
 
-TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort_NoRandomSave) {
+TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
   auto const& param = GetParam();
 
   TestAddress const& listener = param.listener;

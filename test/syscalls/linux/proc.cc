@@ -1629,7 +1629,7 @@ TEST(ProcPidStatusTest, StateRunning) {
               IsPosixErrorOkAndHolds(Contains(Pair("State", "R (running)"))));
 }
 
-TEST(ProcPidStatusTest, StateSleeping_NoRandomSave) {
+TEST(ProcPidStatusTest, StateSleeping) {
   // Starts a child process that blocks and checks that State is sleeping.
   auto res = WithSubprocess(
       [&](int pid) -> PosixError {

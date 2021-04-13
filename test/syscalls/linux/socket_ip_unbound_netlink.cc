@@ -35,7 +35,7 @@ namespace testing {
 // Test fixture for tests that apply to pairs of IP sockets.
 using IPv6UnboundSocketTest = SimpleSocketTest;
 
-TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
+TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // TODO(gvisor.dev/issue/4595): Addresses on net devices are not saved
@@ -68,7 +68,7 @@ INSTANTIATE_TEST_SUITE_P(IPUnboundSockets, IPv6UnboundSocketTest,
 
 using IPv4UnboundSocketTest = SimpleSocketTest;
 
-TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
+TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // TODO(gvisor.dev/issue/4595): Addresses on net devices are not saved

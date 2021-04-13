@@ -883,7 +883,7 @@ TEST(SpliceTest, FromPipeToDevZero) {
 static volatile int signaled = 0;
 void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
 
-TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin_NoRandomSave) {
+TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin) {
   // Writes to a pipe that are less than PIPE_BUF must be atomic. This test
   // creates a pipe with only 128 bytes of capacity (< PIPE_BUF) and checks that
   // splicing to the pipe does not spin. See b/170743336.

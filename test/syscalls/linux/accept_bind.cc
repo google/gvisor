@@ -67,7 +67,7 @@ TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
               SyscallSucceeds());
 }
 
-TEST_P(AllSocketPairTest, ListenBacklogSizes_NoRandomSave) {
+TEST_P(AllSocketPairTest, ListenBacklogSizes) {
   DisableSave ds;
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

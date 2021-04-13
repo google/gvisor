@@ -76,7 +76,7 @@ TEST_F(PpollTest, ZeroTimeout) {
 
 // If random S/R interrupts the ppoll, SIGALRM may be delivered before ppoll
 // restarts, causing the ppoll to hang forever.
-TEST_F(PpollTest, NoTimeout_NoRandomSave) {
+TEST_F(PpollTest, NoTimeout) {
   // When there's no timeout, ppoll may never return so set a timer.
   SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.

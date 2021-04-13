@@ -205,7 +205,7 @@ TEST_F(FlockTest, TestSharedLockFailExclusiveHolderNonblocking) {
 
 void trivial_handler(int signum) {}
 
-TEST_F(FlockTest, TestSharedLockFailExclusiveHolderBlocking_NoRandomSave) {
+TEST_F(FlockTest, TestSharedLockFailExclusiveHolderBlocking) {
   const DisableSave ds;  // Timing-related.
 
   // This test will verify that a shared lock is denied while
@@ -262,7 +262,7 @@ TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderNonblocking) {
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceedsWithValue(0));
 }
 
-TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderBlocking_NoRandomSave) {
+TEST_F(FlockTest, TestExclusiveLockFailExclusiveHolderBlocking) {
   const DisableSave ds;  // Timing-related.
 
   // This test will verify that an exclusive lock is denied while
@@ -499,7 +499,7 @@ TEST_F(FlockTest, TestDupFdFollowedByLock) {
 // NOTE: These blocking tests are not perfect. Unfortunately it's very hard to
 // determine if a thread was actually blocked in the kernel so we're forced
 // to use timing.
-TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks_NoRandomSave) {
+TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks) {
   // This test will verify that although LOCK_NB isn't specified
   // two different fds can obtain shared locks without blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_SH), SyscallSucceeds());
@@ -539,7 +539,7 @@ TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks_NoRandomSave) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive_NoRandomSave) {
+TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive) {
   // This test will verify that if someone holds a shared lock any attempt to
   // obtain an exclusive lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_SH), SyscallSucceeds());
@@ -576,7 +576,7 @@ TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive_NoRandomSave) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared_NoRandomSave) {
+TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared) {
   // This test will verify that if someone holds an exclusive lock any attempt
   // to obtain a shared lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX), SyscallSucceeds());
@@ -613,7 +613,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared_NoRandomSave) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive_NoRandomSave) {
+TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive) {
   // This test will verify that if someone holds an exclusive lock any attempt
   // to obtain another exclusive lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX), SyscallSucceeds());

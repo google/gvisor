@@ -64,7 +64,7 @@ TEST(UnlinkTest, AtDir) {
   ASSERT_THAT(close(dirfd), SyscallSucceeds());
 }
 
-TEST(UnlinkTest, AtDirDegradedPermissions_NoRandomSave) {
+TEST(UnlinkTest, AtDirDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
@@ -162,7 +162,7 @@ TEST(UnlinkTest, AtFile) {
   EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", 0), SyscallSucceeds());
 }
 
-TEST(UnlinkTest, OpenFile_NoRandomSave) {
+TEST(UnlinkTest, OpenFile) {
   // We can't save unlinked file unless they are on tmpfs.
   const DisableSave ds;
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

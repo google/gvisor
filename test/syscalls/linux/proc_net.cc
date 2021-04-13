@@ -189,7 +189,7 @@ PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
       EINVAL, absl::StrCat("failed to find ", type, "/", item, " in:", snmp));
 }
 
-TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
+TEST(ProcNetSnmp, TcpReset) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -231,7 +231,7 @@ TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
   EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
 }
 
-TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
+TEST(ProcNetSnmp, TcpEstab) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -325,7 +325,7 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
   EXPECT_EQ(oldEstabResets, newEstabResets - 2);
 }
 
-TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
+TEST(ProcNetSnmp, UdpNoPorts) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -359,7 +359,7 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
   EXPECT_EQ(oldNoPorts, newNoPorts - 1);
 }
 
-TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
+TEST(ProcNetSnmp, UdpIn) {
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   const DisableSave ds;
 

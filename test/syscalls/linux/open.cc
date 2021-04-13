@@ -431,7 +431,7 @@ TEST_F(OpenTest, CanTruncateReadOnly) {
 
 // If we don't have read permission on the file, opening with
 // O_TRUNC should fail.
-TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission_NoRandomSave) {
+TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission) {
   // Drop capabilities that allow us to override file permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
 
@@ -452,7 +452,7 @@ TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission_NoRandomSave) {
 
 // If we don't have read permission but have write permission, opening O_WRONLY
 // and O_TRUNC should succeed.
-TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission_NoRandomSave) {
+TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission) {
   const DisableSave ds;  // Permissions are dropped.
 
   EXPECT_THAT(fchmod(test_file_fd_.get(), S_IWUSR | S_IWGRP),

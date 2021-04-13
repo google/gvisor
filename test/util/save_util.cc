@@ -27,23 +27,13 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-std::atomic<absl::optional<bool>> cooperative_save_present;
-std::atomic<absl::optional<bool>> random_save_present;
+std::atomic<absl::optional<bool>> save_present;
 
-bool CooperativeSavePresent() {
-  auto present = cooperative_save_present.load();
+bool SavePresent() {
+  auto present = save_present.load();
   if (!present.has_value()) {
-    present = getenv("GVISOR_COOPERATIVE_SAVE_TEST") != nullptr;
-    cooperative_save_present.store(present);
-  }
-  return present.value();
-}
-
-bool RandomSavePresent() {
-  auto present = random_save_present.load();
-  if (!present.has_value()) {
-    present = getenv("GVISOR_RANDOM_SAVE_TEST") != nullptr;
-    random_save_present.store(present);
+    present = getenv("GVISOR_SAVE_TEST") != nullptr;
+    save_present.store(present);
   }
   return present.value();
 }
@@ -52,12 +42,10 @@ std::atomic<int> save_disable;
 
 }  // namespace
 
-bool IsRunningWithSaveRestore() {
-  return CooperativeSavePresent() || RandomSavePresent();
-}
+bool IsRunningWithSaveRestore() { return SavePresent(); }
 
 void MaybeSave() {
-  if (CooperativeSavePresent() && save_disable.load() == 0) {
+  if (SavePresent() && save_disable.load() == 0) {
     internal::DoCooperativeSave();
   }
 }

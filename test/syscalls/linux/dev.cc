@@ -117,7 +117,7 @@ TEST(DevTest, ReadDevNull) {
 }
 
 // Do not allow random save as it could lead to partial reads.
-TEST(DevTest, ReadDevZero_NoRandomSave) {
+TEST(DevTest, ReadDevZero) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/zero", O_RDONLY));
 

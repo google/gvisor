@@ -29,8 +29,7 @@ using IPv4UDPUnboundSocketNogotsanTest = SimpleSocketTest;
 
 // Check that connect returns EAGAIN when out of local ephemeral ports.
 // We disable S/R because this test creates a large number of sockets.
-TEST_P(IPv4UDPUnboundSocketNogotsanTest,
-       UDPConnectPortExhaustion_NoRandomSave) {
+TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPConnectPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   constexpr int kClients = 65536;
   // Bind the first socket to the loopback and take note of the selected port.
@@ -60,7 +59,7 @@ TEST_P(IPv4UDPUnboundSocketNogotsanTest,
 
 // Check that bind returns EADDRINUSE when out of local ephemeral ports.
 // We disable S/R because this test creates a large number of sockets.
-TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion_NoRandomSave) {
+TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   constexpr int kClients = 65536;
   auto addr = V4Loopback();

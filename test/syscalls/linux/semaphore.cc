@@ -287,7 +287,7 @@ TEST(SemaphoreTest, SemOpSimple) {
 
 // Tests that semaphore can be removed while there are waiters.
 // NoRandomSave: Test relies on timing that random save throws off.
-TEST(SemaphoreTest, SemOpRemoveWithWaiter_NoRandomSave) {
+TEST(SemaphoreTest, SemOpRemoveWithWaiter) {
   AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
@@ -708,7 +708,7 @@ TEST(SemaphoreTest, SemopGetzcntOnSetRemoval) {
   EXPECT_THAT(semctl(semid, 0, GETZCNT), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(SemaphoreTest, SemopGetzcntOnSignal_NoRandomSave) {
+TEST(SemaphoreTest, SemopGetzcntOnSignal) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
   ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
@@ -813,7 +813,7 @@ TEST(SemaphoreTest, SemopGetncntOnSetRemoval) {
   EXPECT_THAT(semctl(semid, 0, GETNCNT), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
+TEST(SemaphoreTest, SemopGetncntOnSignal) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
   ASSERT_EQ(semctl(sem.get(), 0, GETNCNT), 0);

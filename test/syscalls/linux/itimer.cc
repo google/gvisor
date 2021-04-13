@@ -215,7 +215,7 @@ int TestSIGALRMToMainThread() {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGALRMToMainThread_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGALRMToMainThread) {
   pid_t child;
   int execve_errno;
   auto kill = ASSERT_NO_ERRNO_AND_VALUE(
@@ -266,7 +266,7 @@ int TestSIGPROFFairness(absl::Duration sleep) {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
   // On the KVM and ptrace platforms, switches between sentry and application
   // context are sometimes extremely slow, causing the itimer to send SIGPROF to
   // a thread that either already has one pending or has had SIGPROF delivered,
@@ -301,7 +301,7 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle) {
   // See comment in DeliversSIGPROFToThreadsRoughlyFairlyActive.
   const auto gvisor_platform = GvisorPlatform();
   SKIP_IF(gvisor_platform == Platform::kKVM ||

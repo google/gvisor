@@ -1708,8 +1708,7 @@ INSTANTIATE_TEST_SUITE_P(TraceExec, PtraceExecveTest, ::testing::Bool());
 // This test has expectations on when syscall-enter/exit-stops occur that are
 // violated if saving occurs, since saving interrupts all syscalls, causing
 // premature syscall-exit.
-TEST(PtraceTest,
-     ExitWhenParentIsNotTracer_Syscall_TraceVfork_TraceVforkDone_NoRandomSave) {
+TEST(PtraceTest, ExitWhenParentIsNotTracer_Syscall_TraceVfork_TraceVforkDone) {
   constexpr int kExitTraceeExitCode = 99;
 
   pid_t const child_pid = fork();
@@ -2006,7 +2005,7 @@ TEST(PtraceTest, Sysemu_PokeUser) {
 }
 
 // This test also cares about syscall-exit-stop.
-TEST(PtraceTest, ERESTART_NoRandomSave) {
+TEST(PtraceTest, ERESTART) {
   constexpr int kSigno = SIGUSR1;
 
   pid_t const child_pid = fork();

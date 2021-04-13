@@ -1153,7 +1153,7 @@ TEST_P(TCPSocketPairTest, IpMulticastLoopDefault) {
   EXPECT_EQ(get, 1);
 }
 
-TEST_P(TCPSocketPairTest, TCPResetDuringClose_NoRandomSave) {
+TEST_P(TCPSocketPairTest, TCPResetDuringClose) {
   DisableSave ds;  // Too many syscalls.
   constexpr int kThreadCount = 1000;
   std::unique_ptr<ScopedThread> instances[kThreadCount];

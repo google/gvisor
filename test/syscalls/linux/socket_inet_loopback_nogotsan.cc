@@ -86,7 +86,7 @@ using SocketInetLoopbackTest = ::testing::TestWithParam<TestParam>;
 // We disable S/R because this test creates a large number of sockets.
 //
 // FIXME(b/162475855): This test is failing reliably.
-TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion_NoRandomSave) {
+TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion) {
   auto const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
@@ -179,8 +179,7 @@ std::string DescribeProtocolTestParam(
 using SocketMultiProtocolInetLoopbackTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
-TEST_P(SocketMultiProtocolInetLoopbackTest,
-       BindAvoidsListeningPortsReuseAddr_NoRandomSave) {
+TEST_P(SocketMultiProtocolInetLoopbackTest, BindAvoidsListeningPortsReuseAddr) {
   const auto& param = GetParam();
   // UDP sockets are allowed to bind/listen on the port w/ SO_REUSEADDR, for TCP
   // this is only permitted if there is no other listening socket.

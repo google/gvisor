@@ -52,7 +52,7 @@ TEST(SigtimedwaitTest, InvalidTimeout) {
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and wait.
-TEST(SigtimedwaitTest, AlarmReturnsAlarm_NoRandomSave) {
+TEST(SigtimedwaitTest, AlarmReturnsAlarm) {
   struct itimerval itv = {};
   itv.it_value.tv_sec = kAlarmSecs;
   const auto itimer_cleanup =
@@ -69,7 +69,7 @@ TEST(SigtimedwaitTest, AlarmReturnsAlarm_NoRandomSave) {
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and wait.
-TEST(SigtimedwaitTest, NullTimeoutReturnsEINTR_NoRandomSave) {
+TEST(SigtimedwaitTest, NullTimeoutReturnsEINTR) {
   struct sigaction sa;
   sa.sa_sigaction = NoopHandler;
   sigfillset(&sa.sa_mask);

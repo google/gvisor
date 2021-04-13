@@ -52,7 +52,7 @@ TEST(CreateTest, CreateAtFile) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
-TEST(CreateTest, HonorsUmask_NoRandomSave) {
+TEST(CreateTest, HonorsUmask) {
   const DisableSave ds;  // file cannot be re-opened as writable.
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempUmask mask(0222);
@@ -119,7 +119,7 @@ TEST(CreateTest, OpenCreateROThenRW) {
   EXPECT_THAT(WriteFd(fd2.get(), &c, 1), SyscallSucceedsWithValue(1));
 }
 
-TEST(CreateTest, ChmodReadToWriteBetweenOpens_NoRandomSave) {
+TEST(CreateTest, ChmodReadToWriteBetweenOpens) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions. CAP_DAC_READ_SEARCH needs to be
   // cleared for the same reason.
@@ -149,7 +149,7 @@ TEST(CreateTest, ChmodReadToWriteBetweenOpens_NoRandomSave) {
   EXPECT_EQ(c, 'x');
 }
 
-TEST(CreateTest, ChmodWriteToReadBetweenOpens_NoRandomSave) {
+TEST(CreateTest, ChmodWriteToReadBetweenOpens) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
@@ -177,7 +177,7 @@ TEST(CreateTest, ChmodWriteToReadBetweenOpens_NoRandomSave) {
   EXPECT_EQ(c, 'x');
 }
 
-TEST(CreateTest, CreateWithReadFlagNotAllowedByMode_NoRandomSave) {
+TEST(CreateTest, CreateWithReadFlagNotAllowedByMode) {
   // The only time we can open a file with flags forbidden by its permissions
   // is when we are creating the file. We cannot re-open with the same flags,
   // so we cannot restore an fd obtained from such an operation.
@@ -204,7 +204,7 @@ TEST(CreateTest, CreateWithReadFlagNotAllowedByMode_NoRandomSave) {
   EXPECT_EQ(c, 'x');
 }
 
-TEST(CreateTest, CreateWithWriteFlagNotAllowedByMode_NoRandomSave) {
+TEST(CreateTest, CreateWithWriteFlagNotAllowedByMode) {
   // The only time we can open a file with flags forbidden by its permissions
   // is when we are creating the file. We cannot re-open with the same flags,
   // so we cannot restore an fd obtained from such an operation.

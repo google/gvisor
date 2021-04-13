@@ -114,7 +114,7 @@ TEST_P(TimerfdTest, BlockingRead) {
   EXPECT_GE((end_time - start_time) + TimerSlack(), kDelay);
 }
 
-TEST_P(TimerfdTest, NonblockingRead_NoRandomSave) {
+TEST_P(TimerfdTest, NonblockingRead) {
   constexpr absl::Duration kDelay = absl::Seconds(5);
 
   auto const tfd =

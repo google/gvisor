@@ -144,7 +144,7 @@ TEST_F(Pread64Test, Overflow) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(Pread64TestNoTempFile, CantReadSocketPair_NoRandomSave) {
+TEST(Pread64TestNoTempFile, CantReadSocketPair) {
   int sock_fds[2];
   EXPECT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds), SyscallSucceeds());
 
