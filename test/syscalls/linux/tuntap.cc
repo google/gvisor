@@ -397,8 +397,7 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
       .sin_port = htons(42),
       .sin_addr = {.s_addr = kTapPeerIPAddr},
   };
-  ASSERT_THAT(sendto(sock, "hello", 5, 0, reinterpret_cast<sockaddr*>(&remote),
-                     sizeof(remote)),
+  ASSERT_THAT(sendto(sock, "hello", 5, 0, AsSockAddr(&remote), sizeof(remote)),
               SyscallSucceeds());
 
   struct inpkt {
@@ -498,7 +497,7 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
       .sin_addr = {.s_addr = kTapIPAddr},
   };
   // Return values do not matter in this test.
-  connect(sock, reinterpret_cast<struct sockaddr*>(&remote), sizeof(remote));
+  connect(sock, AsSockAddr(&remote), sizeof(remote));
   write(sock, "hello", 5);
 }
 

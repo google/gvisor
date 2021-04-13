@@ -138,7 +138,7 @@ void UdpSocketTest::SetUp() {
   bind_ =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
   memset(&bind_addr_storage_, 0, sizeof(bind_addr_storage_));
-  bind_addr_ = reinterpret_cast<struct sockaddr*>(&bind_addr_storage_);
+  bind_addr_ = AsSockAddr(&bind_addr_storage_);
 
   sock_ =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
@@ -153,15 +153,13 @@ int UdpSocketTest::GetFamily() {
 
 PosixError UdpSocketTest::BindLoopback() {
   bind_addr_storage_ = InetLoopbackAddr();
-  struct sockaddr* bind_addr_ =
-      reinterpret_cast<struct sockaddr*>(&bind_addr_storage_);
+  struct sockaddr* bind_addr_ = AsSockAddr(&bind_addr_storage_);
   return BindSocket(bind_.get(), bind_addr_);
 }
 
 PosixError UdpSocketTest::BindAny() {
   bind_addr_storage_ = InetAnyAddr();
-  struct sockaddr* bind_addr_ =
-      reinterpret_cast<struct sockaddr*>(&bind_addr_storage_);
+  struct sockaddr* bind_addr_ = AsSockAddr(&bind_addr_storage_);
   return BindSocket(bind_.get(), bind_addr_);
 }
 
@@ -195,7 +193,7 @@ socklen_t UdpSocketTest::GetAddrLength() {
 sockaddr_storage UdpSocketTest::InetAnyAddr() {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
-  reinterpret_cast<struct sockaddr*>(&addr)->sa_family = GetFamily();
+  AsSockAddr(&addr)->sa_family = GetFamily();
 
   if (GetFamily() == AF_INET) {
     auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
@@ -213,7 +211,7 @@ sockaddr_storage UdpSocketTest::InetAnyAddr() {
 sockaddr_storage UdpSocketTest::InetLoopbackAddr() {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
-  reinterpret_cast<struct sockaddr*>(&addr)->sa_family = GetFamily();
+  AsSockAddr(&addr)->sa_family = GetFamily();
 
   if (GetFamily() == AF_INET) {
     auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
@@ -229,7 +227,7 @@ sockaddr_storage UdpSocketTest::InetLoopbackAddr() {
 
 void UdpSocketTest::Disconnect(int sockfd) {
   sockaddr_storage addr_storage = InetAnyAddr();
-  sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  sockaddr* addr = AsSockAddr(&addr_storage);
   socklen_t addrlen = sizeof(addr_storage);
 
   addr->sa_family = AF_UNSPEC;
@@ -265,19 +263,16 @@ TEST_P(UdpSocketTest, Getsockname) {
   // Check that we're not bound.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getsockname(bind_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(bind_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   struct sockaddr_storage any = InetAnyAddr();
-  EXPECT_EQ(memcmp(&addr, reinterpret_cast<struct sockaddr*>(&any), addrlen_),
-            0);
+  EXPECT_EQ(memcmp(&addr, AsSockAddr(&any), addrlen_), 0);
 
   ASSERT_NO_ERRNO(BindLoopback());
 
-  EXPECT_THAT(
-      getsockname(bind_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(bind_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(memcmp(&addr, bind_addr_, addrlen_), 0);
@@ -289,17 +284,15 @@ TEST_P(UdpSocketTest, Getpeername) {
   // Check that we're not connected.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallFailsWithErrno(ENOTCONN));
 
   // Connect, then check that we get the right address.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
   addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(memcmp(&addr, bind_addr_, addrlen_), 0);
 }
@@ -322,9 +315,8 @@ TEST_P(UdpSocketTest, SendNotConnected) {
   // Check that we're bound now.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_NE(*Port(&addr), 0);
 }
@@ -338,9 +330,8 @@ TEST_P(UdpSocketTest, ConnectBinds) {
   // Check that we're bound now.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_NE(*Port(&addr), 0);
 }
@@ -361,9 +352,8 @@ TEST_P(UdpSocketTest, Bind) {
   // Check that we're still bound to the original address.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getsockname(bind_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(bind_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(memcmp(&addr, bind_addr_, addrlen_), 0);
 }
@@ -383,7 +373,7 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
   // same time.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   socklen_t addrlen = sizeof(addr_storage);
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   FileDescriptor s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_THAT(bind(s.get(), addr, addrlen), SyscallSucceeds());
@@ -417,7 +407,7 @@ TEST_P(UdpSocketTest, ConnectSimultaneousWriteToInvalidPort) {
   // same time.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   socklen_t addrlen = sizeof(addr_storage);
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   FileDescriptor s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_THAT(bind(s.get(), addr, addrlen), SyscallSucceeds());
@@ -465,18 +455,17 @@ TEST_P(UdpSocketTest, ReceiveAfterDisconnect) {
 
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
-    EXPECT_THAT(
-        getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-        SyscallSucceeds());
+    EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &addrlen),
+                SyscallSucceeds());
     EXPECT_EQ(addrlen, addrlen_);
 
     // Send from sock to bind_.
     char buf[512];
     RandomizeBuffer(buf, sizeof(buf));
 
-    ASSERT_THAT(sendto(bind_.get(), buf, sizeof(buf), 0,
-                       reinterpret_cast<sockaddr*>(&addr), addrlen),
-                SyscallSucceedsWithValue(sizeof(buf)));
+    ASSERT_THAT(
+        sendto(bind_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), addrlen),
+        SyscallSucceedsWithValue(sizeof(buf)));
 
     // Receive the data.
     char received[sizeof(buf)];
@@ -499,21 +488,18 @@ TEST_P(UdpSocketTest, Connect) {
   // Check that we're connected to the right peer.
   struct sockaddr_storage peer;
   socklen_t peerlen = sizeof(peer);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&peer), &peerlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&peer), &peerlen),
+              SyscallSucceeds());
   EXPECT_EQ(peerlen, addrlen_);
   EXPECT_EQ(memcmp(&peer, bind_addr_, addrlen_), 0);
 
   // Try to bind after connect.
   struct sockaddr_storage any = InetAnyAddr();
-  EXPECT_THAT(
-      bind(sock_.get(), reinterpret_cast<struct sockaddr*>(&any), addrlen_),
-      SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(bind(sock_.get(), AsSockAddr(&any), addrlen_),
+              SyscallFailsWithErrno(EINVAL));
 
   struct sockaddr_storage bind2_storage = InetLoopbackAddr();
-  struct sockaddr* bind2_addr =
-      reinterpret_cast<struct sockaddr*>(&bind2_storage);
+  struct sockaddr* bind2_addr = AsSockAddr(&bind2_storage);
   FileDescriptor bind2 =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetFamily(), SOCK_DGRAM, IPPROTO_UDP));
   ASSERT_NO_ERRNO(BindSocket(bind2.get(), bind2_addr));
@@ -523,9 +509,8 @@ TEST_P(UdpSocketTest, Connect) {
 
   // Check that peer name changed.
   peerlen = sizeof(peer);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&peer), &peerlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&peer), &peerlen),
+              SyscallSucceeds());
   EXPECT_EQ(peerlen, addrlen_);
   EXPECT_EQ(memcmp(&peer, bind2_addr, addrlen_), 0);
 }
@@ -535,15 +520,13 @@ TEST_P(UdpSocketTest, ConnectAnyZero) {
   SKIP_IF(IsRunningOnGvisor());
 
   struct sockaddr_storage any = InetAnyAddr();
-  EXPECT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&any), addrlen_),
-      SyscallSucceeds());
+  EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
+              SyscallSucceeds());
 
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallFailsWithErrno(ENOTCONN));
 }
 
 TEST_P(UdpSocketTest, ConnectAnyWithPort) {
@@ -552,24 +535,21 @@ TEST_P(UdpSocketTest, ConnectAnyWithPort) {
 
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 }
 
 TEST_P(UdpSocketTest, DisconnectAfterConnectAny) {
   // TODO(138658473): Enable when we can connect to port 0 with gVisor.
   SKIP_IF(IsRunningOnGvisor());
   struct sockaddr_storage any = InetAnyAddr();
-  EXPECT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&any), addrlen_),
-      SyscallSucceeds());
+  EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
+              SyscallSucceeds());
 
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallFailsWithErrno(ENOTCONN));
 
   Disconnect(sock_.get());
 }
@@ -580,9 +560,8 @@ TEST_P(UdpSocketTest, DisconnectAfterConnectAnyWithPort) {
 
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(*Port(&bind_addr_storage_), *Port(&addr));
@@ -595,7 +574,7 @@ TEST_P(UdpSocketTest, DisconnectAfterBind) {
 
   // Bind to the next port above bind_.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
 
@@ -604,15 +583,14 @@ TEST_P(UdpSocketTest, DisconnectAfterBind) {
 
   struct sockaddr_storage unspec = {};
   unspec.ss_family = AF_UNSPEC;
-  EXPECT_THAT(connect(sock_.get(), reinterpret_cast<sockaddr*>(&unspec),
-                      sizeof(unspec.ss_family)),
-              SyscallSucceeds());
+  EXPECT_THAT(
+      connect(sock_.get(), AsSockAddr(&unspec), sizeof(unspec.ss_family)),
+      SyscallSucceeds());
 
   // Check that we're still bound.
   socklen_t addrlen = sizeof(unspec);
-  EXPECT_THAT(
-      getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&unspec), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&unspec), &addrlen),
+              SyscallSucceeds());
 
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(memcmp(addr, &unspec, addrlen_), 0);
@@ -626,7 +604,7 @@ TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
   ASSERT_NO_ERRNO(BindAny());
 
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   socklen_t addrlen = sizeof(addr);
 
@@ -653,7 +631,7 @@ TEST_P(UdpSocketTest, DisconnectAfterBindToAny) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   struct sockaddr_storage any_storage = InetAnyAddr();
-  struct sockaddr* any = reinterpret_cast<struct sockaddr*>(&any_storage);
+  struct sockaddr* any = AsSockAddr(&any_storage);
   SetPort(&any_storage, *Port(&bind_addr_storage_) + 1);
 
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), any));
@@ -666,24 +644,22 @@ TEST_P(UdpSocketTest, DisconnectAfterBindToAny) {
   // Check that we're still bound.
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallSucceeds());
+  EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 
   EXPECT_EQ(addrlen, addrlen_);
   EXPECT_EQ(memcmp(&addr, any, addrlen), 0);
 
   addrlen = sizeof(addr);
-  EXPECT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-      SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallFailsWithErrno(ENOTCONN));
 }
 
 TEST_P(UdpSocketTest, Disconnect) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   struct sockaddr_storage any_storage = InetAnyAddr();
-  struct sockaddr* any = reinterpret_cast<struct sockaddr*>(&any_storage);
+  struct sockaddr* any = AsSockAddr(&any_storage);
   SetPort(&any_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_NO_ERRNO(BindSocket(sock_.get(), any));
 
@@ -694,29 +670,25 @@ TEST_P(UdpSocketTest, Disconnect) {
     // Check that we're connected to the right peer.
     struct sockaddr_storage peer;
     socklen_t peerlen = sizeof(peer);
-    EXPECT_THAT(
-        getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&peer), &peerlen),
-        SyscallSucceeds());
+    EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&peer), &peerlen),
+                SyscallSucceeds());
     EXPECT_EQ(peerlen, addrlen_);
     EXPECT_EQ(memcmp(&peer, bind_addr_, addrlen_), 0);
 
     // Try to disconnect.
     struct sockaddr_storage addr = {};
     addr.ss_family = AF_UNSPEC;
-    EXPECT_THAT(connect(sock_.get(), reinterpret_cast<sockaddr*>(&addr),
-                        sizeof(addr.ss_family)),
+    EXPECT_THAT(connect(sock_.get(), AsSockAddr(&addr), sizeof(addr.ss_family)),
                 SyscallSucceeds());
 
     peerlen = sizeof(peer);
-    EXPECT_THAT(
-        getpeername(sock_.get(), reinterpret_cast<sockaddr*>(&peer), &peerlen),
-        SyscallFailsWithErrno(ENOTCONN));
+    EXPECT_THAT(getpeername(sock_.get(), AsSockAddr(&peer), &peerlen),
+                SyscallFailsWithErrno(ENOTCONN));
 
     // Check that we're still bound.
     socklen_t addrlen = sizeof(addr);
-    EXPECT_THAT(
-        getsockname(sock_.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen),
-        SyscallSucceeds());
+    EXPECT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &addrlen),
+                SyscallSucceeds());
     EXPECT_EQ(addrlen, addrlen_);
     EXPECT_EQ(*Port(&addr), *Port(&any_storage));
   }
@@ -733,7 +705,7 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
   ASSERT_NO_ERRNO(BindLoopback());
 
   struct sockaddr_storage addr_storage = InetAnyAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
 
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
@@ -881,7 +853,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowed) {
   ASSERT_NO_ERRNO(BindLoopback());
   // Connect to loopback:bind_addr_+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -910,7 +882,7 @@ TEST_P(UdpSocketTest, ZerolengthWriteAllowedNonBlockRead) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -961,7 +933,7 @@ TEST_P(UdpSocketTest, SendAndReceiveConnected) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -987,13 +959,13 @@ TEST_P(UdpSocketTest, ReceiveFromNotConnected) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
   // Bind sock to loopback:bind_addr_port+2.
   struct sockaddr_storage addr2_storage = InetLoopbackAddr();
-  struct sockaddr* addr2 = reinterpret_cast<struct sockaddr*>(&addr2_storage);
+  struct sockaddr* addr2 = AsSockAddr(&addr2_storage);
   SetPort(&addr2_storage, *Port(&bind_addr_storage_) + 2);
   ASSERT_THAT(bind(sock_.get(), addr2, addrlen_), SyscallSucceeds());
 
@@ -1013,7 +985,7 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
 
   // Bind sock to loopback:bind_addr_port+2.
   struct sockaddr_storage addr2_storage = InetLoopbackAddr();
-  struct sockaddr* addr2 = reinterpret_cast<struct sockaddr*>(&addr2_storage);
+  struct sockaddr* addr2 = AsSockAddr(&addr2_storage);
   SetPort(&addr2_storage, *Port(&bind_addr_storage_) + 2);
   ASSERT_THAT(bind(sock_.get(), addr2, addrlen_), SyscallSucceeds());
 
@@ -1026,7 +998,7 @@ TEST_P(UdpSocketTest, ReceiveBeforeConnect) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -1050,7 +1022,7 @@ TEST_P(UdpSocketTest, ReceiveFrom) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -1069,7 +1041,7 @@ TEST_P(UdpSocketTest, ReceiveFrom) {
   struct sockaddr_storage addr2;
   socklen_t addr2len = sizeof(addr2);
   EXPECT_THAT(recvfrom(bind_.get(), received, sizeof(received), 0,
-                       reinterpret_cast<sockaddr*>(&addr2), &addr2len),
+                       AsSockAddr(&addr2), &addr2len),
               SyscallSucceedsWithValue(sizeof(received)));
   EXPECT_EQ(memcmp(buf, received, sizeof(buf)), 0);
   EXPECT_EQ(addr2len, addrlen_);
@@ -1093,7 +1065,7 @@ TEST_P(UdpSocketTest, ReadShutdownNonblockPendingData) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -1149,7 +1121,7 @@ TEST_P(UdpSocketTest, ReadShutdownSameSocketResetsShutdownState) {
 
   // Connect to loopback:bind_addr_port+1.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
   SetPort(&addr_storage, *Port(&bind_addr_storage_) + 1);
   ASSERT_THAT(connect(bind_.get(), addr, addrlen_), SyscallSucceeds());
 
@@ -2051,68 +2023,57 @@ TEST_P(UdpSocketTest, SendToZeroPort) {
 
   // Sending to an invalid port should fail.
   SetPort(&addr, 0);
-  EXPECT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0,
-                     reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
-              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(
+      sendto(sock_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), sizeof(addr)),
+      SyscallFailsWithErrno(EINVAL));
 
   SetPort(&addr, 1234);
-  EXPECT_THAT(sendto(sock_.get(), buf, sizeof(buf), 0,
-                     reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
-              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_THAT(
+      sendto(sock_.get(), buf, sizeof(buf), 0, AsSockAddr(&addr), sizeof(addr)),
+      SyscallSucceedsWithValue(sizeof(buf)));
 }
 
 TEST_P(UdpSocketTest, ConnectToZeroPortUnbound) {
   struct sockaddr_storage addr = InetLoopbackAddr();
   SetPort(&addr, 0);
-  ASSERT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
-      SyscallSucceeds());
+  ASSERT_THAT(connect(sock_.get(), AsSockAddr(&addr), addrlen_),
+              SyscallSucceeds());
 }
 
 TEST_P(UdpSocketTest, ConnectToZeroPortBound) {
   struct sockaddr_storage addr = InetLoopbackAddr();
-  ASSERT_NO_ERRNO(
-      BindSocket(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr)));
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), AsSockAddr(&addr)));
 
   SetPort(&addr, 0);
-  ASSERT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
-      SyscallSucceeds());
+  ASSERT_THAT(connect(sock_.get(), AsSockAddr(&addr), addrlen_),
+              SyscallSucceeds());
   socklen_t len = sizeof(sockaddr_storage);
-  ASSERT_THAT(
-      getsockname(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), &len),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(sock_.get(), AsSockAddr(&addr), &len),
+              SyscallSucceeds());
   ASSERT_EQ(len, addrlen_);
 }
 
 TEST_P(UdpSocketTest, ConnectToZeroPortConnected) {
   struct sockaddr_storage addr = InetLoopbackAddr();
-  ASSERT_NO_ERRNO(
-      BindSocket(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr)));
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), AsSockAddr(&addr)));
 
   // Connect to an address with non-zero port should succeed.
-  ASSERT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
-      SyscallSucceeds());
+  ASSERT_THAT(connect(sock_.get(), AsSockAddr(&addr), addrlen_),
+              SyscallSucceeds());
   sockaddr_storage peername;
   socklen_t peerlen = sizeof(peername);
-  ASSERT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<struct sockaddr*>(&peername),
-                  &peerlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getpeername(sock_.get(), AsSockAddr(&peername), &peerlen),
+              SyscallSucceeds());
   ASSERT_EQ(peerlen, addrlen_);
   ASSERT_EQ(memcmp(&peername, &addr, addrlen_), 0);
 
   // However connect() to an address with port 0 will make the following
   // getpeername() fail.
   SetPort(&addr, 0);
-  ASSERT_THAT(
-      connect(sock_.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen_),
-      SyscallSucceeds());
-  ASSERT_THAT(
-      getpeername(sock_.get(), reinterpret_cast<struct sockaddr*>(&peername),
-                  &peerlen),
-      SyscallFailsWithErrno(ENOTCONN));
+  ASSERT_THAT(connect(sock_.get(), AsSockAddr(&addr), addrlen_),
+              SyscallSucceeds());
+  ASSERT_THAT(getpeername(sock_.get(), AsSockAddr(&peername), &peerlen),
+              SyscallFailsWithErrno(ENOTCONN));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
@@ -2133,8 +2094,7 @@ TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
       SyscallSucceeds());
   sockaddr_storage sockname;
   socklen_t len = sizeof(sockaddr_storage);
-  ASSERT_THAT(getsockname(sock_.get(),
-                          reinterpret_cast<struct sockaddr*>(&sockname), &len),
+  ASSERT_THAT(getsockname(sock_.get(), AsSockAddr(&sockname), &len),
               SyscallSucceeds());
   ASSERT_EQ(sockname.ss_family, AF_INET6);
   ASSERT_EQ(len, sizeof(sockaddr_in6));

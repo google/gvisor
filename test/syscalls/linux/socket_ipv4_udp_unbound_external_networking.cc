@@ -50,38 +50,35 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Bind the first socket to the ANY address and let the system assign a port.
   auto rcv1_addr = V4Any();
-  ASSERT_THAT(bind(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
-                   rcv1_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(rcvr1->get(), AsSockAddr(&rcv1_addr.addr), rcv1_addr.addr_len),
+      SyscallSucceedsWithValue(0));
   // Retrieve port number from first socket so that it can be bound to the
   // second socket.
   socklen_t rcv_addr_sz = rcv1_addr.addr_len;
   ASSERT_THAT(
-      getsockname(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
-                  &rcv_addr_sz),
+      getsockname(rcvr1->get(), AsSockAddr(&rcv1_addr.addr), &rcv_addr_sz),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(rcv_addr_sz, rcv1_addr.addr_len);
   auto port = reinterpret_cast<sockaddr_in*>(&rcv1_addr.addr)->sin_port;
 
   // Bind the second socket to the same address:port as the first.
-  ASSERT_THAT(bind(rcvr2->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
-                   rcv_addr_sz),
+  ASSERT_THAT(bind(rcvr2->get(), AsSockAddr(&rcv1_addr.addr), rcv_addr_sz),
               SyscallSucceedsWithValue(0));
 
   // Bind the non-receiving socket to an ephemeral port.
   auto norecv_addr = V4Any();
-  ASSERT_THAT(bind(norcv->get(), reinterpret_cast<sockaddr*>(&norecv_addr.addr),
-                   norecv_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(norcv->get(), AsSockAddr(&norecv_addr.addr), norecv_addr.addr_len),
+      SyscallSucceedsWithValue(0));
 
   // Broadcast a test message.
   auto dst_addr = V4Broadcast();
   reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port = port;
   constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(
-      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
-      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+                     AsSockAddr(&dst_addr.addr), dst_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
   // Verify that the receiving sockets received the test message.
   char buf[sizeof(kTestMsg)] = {};
@@ -130,15 +127,14 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Bind the first socket the ANY address and let the system assign a port.
   auto rcv1_addr = V4Any();
-  ASSERT_THAT(bind(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
-                   rcv1_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(rcvr1->get(), AsSockAddr(&rcv1_addr.addr), rcv1_addr.addr_len),
+      SyscallSucceedsWithValue(0));
   // Retrieve port number from first socket so that it can be bound to the
   // second socket.
   socklen_t rcv_addr_sz = rcv1_addr.addr_len;
   ASSERT_THAT(
-      getsockname(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
-                  &rcv_addr_sz),
+      getsockname(rcvr1->get(), AsSockAddr(&rcv1_addr.addr), &rcv_addr_sz),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(rcv_addr_sz, rcv1_addr.addr_len);
   auto port = reinterpret_cast<sockaddr_in*>(&rcv1_addr.addr)->sin_port;
@@ -146,26 +142,25 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Bind the second socket to the broadcast address.
   auto rcv2_addr = V4Broadcast();
   reinterpret_cast<sockaddr_in*>(&rcv2_addr.addr)->sin_port = port;
-  ASSERT_THAT(bind(rcvr2->get(), reinterpret_cast<sockaddr*>(&rcv2_addr.addr),
-                   rcv2_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(rcvr2->get(), AsSockAddr(&rcv2_addr.addr), rcv2_addr.addr_len),
+      SyscallSucceedsWithValue(0));
 
   // Bind the non-receiving socket to the unicast ethernet address.
   auto norecv_addr = rcv1_addr;
   reinterpret_cast<sockaddr_in*>(&norecv_addr.addr)->sin_addr =
       eth_if_addr_.sin_addr;
-  ASSERT_THAT(bind(norcv->get(), reinterpret_cast<sockaddr*>(&norecv_addr.addr),
-                   norecv_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(norcv->get(), AsSockAddr(&norecv_addr.addr), norecv_addr.addr_len),
+      SyscallSucceedsWithValue(0));
 
   // Broadcast a test message.
   auto dst_addr = V4Broadcast();
   reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port = port;
   constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(
-      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
-      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+                     AsSockAddr(&dst_addr.addr), dst_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
   // Verify that the receiving sockets received the test message.
   char buf[sizeof(kTestMsg)] = {};
@@ -199,12 +194,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Bind the sender to the broadcast address.
   auto src_addr = V4Broadcast();
-  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&src_addr.addr),
-                   src_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(sender->get(), AsSockAddr(&src_addr.addr), src_addr.addr_len),
+      SyscallSucceedsWithValue(0));
   socklen_t src_sz = src_addr.addr_len;
-  ASSERT_THAT(getsockname(sender->get(),
-                          reinterpret_cast<sockaddr*>(&src_addr.addr), &src_sz),
+  ASSERT_THAT(getsockname(sender->get(), AsSockAddr(&src_addr.addr), &src_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(src_sz, src_addr.addr_len);
 
@@ -213,10 +207,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port =
       reinterpret_cast<sockaddr_in*>(&src_addr.addr)->sin_port;
   constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(
-      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
-      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+                     AsSockAddr(&dst_addr.addr), dst_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
   // Verify that the message was received.
   char buf[sizeof(kTestMsg)] = {};
@@ -241,12 +234,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Bind the sender to the ANY address.
   auto src_addr = V4Any();
-  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&src_addr.addr),
-                   src_addr.addr_len),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(
+      bind(sender->get(), AsSockAddr(&src_addr.addr), src_addr.addr_len),
+      SyscallSucceedsWithValue(0));
   socklen_t src_sz = src_addr.addr_len;
-  ASSERT_THAT(getsockname(sender->get(),
-                          reinterpret_cast<sockaddr*>(&src_addr.addr), &src_sz),
+  ASSERT_THAT(getsockname(sender->get(), AsSockAddr(&src_addr.addr), &src_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(src_sz, src_addr.addr_len);
 
@@ -255,10 +247,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port =
       reinterpret_cast<sockaddr_in*>(&src_addr.addr)->sin_port;
   constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(
-      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
-      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+                     AsSockAddr(&dst_addr.addr), dst_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
   // Verify that the message was received.
   char buf[sizeof(kTestMsg)] = {};
@@ -280,7 +271,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendBroadcast) {
   constexpr char kTestMsg[] = "hello, world";
 
   EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-                     reinterpret_cast<sockaddr*>(&addr.addr), addr.addr_len),
+                     AsSockAddr(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(EACCES));
 }
 
@@ -294,19 +285,17 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendUnicastOnUnbound) {
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(0);
-  ASSERT_THAT(bind(rcvr->get(), reinterpret_cast<struct sockaddr*>(&addr),
-                   sizeof(addr)),
+  ASSERT_THAT(bind(rcvr->get(), AsSockAddr(&addr), sizeof(addr)),
               SyscallSucceedsWithValue(0));
   memset(&addr, 0, sizeof(addr));
   socklen_t addr_sz = sizeof(addr);
-  ASSERT_THAT(getsockname(rcvr->get(),
-                          reinterpret_cast<struct sockaddr*>(&addr), &addr_sz),
+  ASSERT_THAT(getsockname(rcvr->get(), AsSockAddr(&addr), &addr_sz),
               SyscallSucceedsWithValue(0));
 
   // Send a test message to the receiver.
   constexpr char kTestMsg[] = "hello, world";
   ASSERT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-                     reinterpret_cast<struct sockaddr*>(&addr), addr_sz),
+                     AsSockAddr(&addr), addr_sz),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
   char buf[sizeof(kTestMsg)] = {};
   ASSERT_THAT(recv(rcvr->get(), buf, sizeof(buf), 0),
@@ -326,13 +315,12 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
-  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                   bind_addr.addr_len),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      bind(socket->get(), AsSockAddr(&bind_addr.addr), bind_addr.addr_len),
+      SyscallSucceeds());
   socklen_t bind_addr_len = bind_addr.addr_len;
   ASSERT_THAT(
-      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                  &bind_addr_len),
+      getsockname(socket->get(), AsSockAddr(&bind_addr.addr), &bind_addr_len),
       SyscallSucceeds());
   EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
 
@@ -342,10 +330,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
       reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -361,13 +349,12 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastSelf) {
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
-  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                   bind_addr.addr_len),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      bind(socket->get(), AsSockAddr(&bind_addr.addr), bind_addr.addr_len),
+      SyscallSucceeds());
   socklen_t bind_addr_len = bind_addr.addr_len;
   ASSERT_THAT(
-      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                  &bind_addr_len),
+      getsockname(socket->get(), AsSockAddr(&bind_addr.addr), &bind_addr_len),
       SyscallSucceeds());
   EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
 
@@ -384,10 +371,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastSelf) {
       reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -405,13 +392,12 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto bind_addr = V4Any();
-  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                   bind_addr.addr_len),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      bind(socket->get(), AsSockAddr(&bind_addr.addr), bind_addr.addr_len),
+      SyscallSucceeds());
   socklen_t bind_addr_len = bind_addr.addr_len;
   ASSERT_THAT(
-      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
-                  &bind_addr_len),
+      getsockname(socket->get(), AsSockAddr(&bind_addr.addr), &bind_addr_len),
       SyscallSucceeds());
   EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
 
@@ -433,10 +419,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
       reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -460,13 +446,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
   // Bind the second FD to the v4 any address to ensure that we can receive the
   // multicast packet.
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -477,10 +461,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
       reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -499,13 +483,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticast) {
   // Bind the second FD to the v4 any address to ensure that we can receive the
   // multicast packet.
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -523,10 +505,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticast) {
       reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -547,13 +529,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Bind the second FD to the v4 any address to ensure that we can receive the
   // multicast packet.
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -576,10 +556,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
       reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we did not receive the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -600,13 +580,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Bind the second FD to the v4 any address to ensure that we can receive the
   // multicast packet.
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -629,10 +607,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
       reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Check that we received the multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
@@ -661,13 +639,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                            &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
     // Bind to ANY to receive multicast packets.
-    ASSERT_THAT(
-        bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-             receiver_addr.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                     receiver_addr.addr_len),
+                SyscallSucceeds());
     socklen_t receiver_addr_len = receiver_addr.addr_len;
-    ASSERT_THAT(getsockname(receiver->get(),
-                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+    ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                             &receiver_addr_len),
                 SyscallSucceeds());
     EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -696,10 +672,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
   for (auto& receiver : receivers) {
     char recv_buf[sizeof(send_buf)] = {};
     ASSERT_THAT(
@@ -727,13 +703,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
     ASSERT_THAT(setsockopt(receiver->get(), SOL_SOCKET, SO_REUSEPORT,
                            &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
-    ASSERT_THAT(
-        bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-             receiver_addr.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                     receiver_addr.addr_len),
+                SyscallSucceeds());
     socklen_t receiver_addr_len = receiver_addr.addr_len;
-    ASSERT_THAT(getsockname(receiver->get(),
-                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+    ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                             &receiver_addr_len),
                 SyscallSucceeds());
     EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -765,10 +739,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
   for (auto& receiver : receivers) {
     char recv_buf[sizeof(send_buf)] = {};
     ASSERT_THAT(
@@ -798,13 +772,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
     ASSERT_THAT(setsockopt(receiver->get(), SOL_SOCKET, SO_REUSEPORT,
                            &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
-    ASSERT_THAT(
-        bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-             receiver_addr.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                     receiver_addr.addr_len),
+                SyscallSucceeds());
     socklen_t receiver_addr_len = receiver_addr.addr_len;
-    ASSERT_THAT(getsockname(receiver->get(),
-                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+    ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                             &receiver_addr_len),
                 SyscallSucceeds());
     EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -840,10 +812,10 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
   char send_buf[200];
   RandomizeBuffer(send_buf, sizeof(send_buf));
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
-                                 send_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&send_addr.addr), send_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
   for (auto& receiver : receivers) {
     char recv_buf[sizeof(send_buf)] = {};
     ASSERT_THAT(
@@ -863,13 +835,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -887,15 +857,13 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // receiver side).
   auto sendto_addr = V4Multicast();
   reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port = receiver_port;
-  ASSERT_THAT(RetryEINTR(connect)(
-                  sender->get(), reinterpret_cast<sockaddr*>(&sendto_addr.addr),
-                  sendto_addr.addr_len),
+  ASSERT_THAT(RetryEINTR(connect)(sender->get(), AsSockAddr(&sendto_addr.addr),
+                                  sendto_addr.addr_len),
               SyscallSucceeds());
   auto sender_addr = V4EmptyAddress();
-  ASSERT_THAT(
-      getsockname(sender->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
-                  &sender_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(sender->get(), AsSockAddr(&sender_addr.addr),
+                          &sender_addr.addr_len),
+              SyscallSucceeds());
   ASSERT_EQ(sizeof(struct sockaddr_in), sender_addr.addr_len);
   sockaddr_in* sender_addr_in =
       reinterpret_cast<sockaddr_in*>(&sender_addr.addr);
@@ -910,8 +878,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto src_addr = V4EmptyAddress();
   ASSERT_THAT(
       RetryEINTR(recvfrom)(receiver->get(), recv_buf, sizeof(recv_buf), 0,
-                           reinterpret_cast<sockaddr*>(&src_addr.addr),
-                           &src_addr.addr_len),
+                           AsSockAddr(&src_addr.addr), &src_addr.addr_len),
       SyscallSucceedsWithValue(sizeof(recv_buf)));
   ASSERT_EQ(sizeof(struct sockaddr_in), src_addr.addr_len);
   sockaddr_in* src_addr_in = reinterpret_cast<sockaddr_in*>(&src_addr.addr);
@@ -931,13 +898,11 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   // Create receiver, bind to ANY and join the multicast group.
   auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver_addr = V4Any();
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
@@ -964,18 +929,17 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   auto sendto_addr = V4Multicast();
   reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port = receiver_port;
   char send_buf[4] = {};
-  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
-                                 reinterpret_cast<sockaddr*>(&sendto_addr.addr),
-                                 sendto_addr.addr_len),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                         AsSockAddr(&sendto_addr.addr), sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
 
   // Receive a multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
   auto src_addr = V4EmptyAddress();
   ASSERT_THAT(
       RetryEINTR(recvfrom)(receiver->get(), recv_buf, sizeof(recv_buf), 0,
-                           reinterpret_cast<sockaddr*>(&src_addr.addr),
-                           &src_addr.addr_len),
+                           AsSockAddr(&src_addr.addr), &src_addr.addr_len),
       SyscallSucceedsWithValue(sizeof(recv_buf)));
   ASSERT_EQ(sizeof(struct sockaddr_in), src_addr.addr_len);
   sockaddr_in* src_addr_in = reinterpret_cast<sockaddr_in*>(&src_addr.addr);
@@ -1000,9 +964,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Create sender and bind to eth interface.
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&eth_if_addr_),
-                   sizeof(eth_if_addr_)),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      bind(sender->get(), AsSockAddr(&eth_if_addr_), sizeof(eth_if_addr_)),
+      SyscallSucceeds());
 
   // Run through all possible combinations of index and address for
   // IP_MULTICAST_IF that selects the loopback interface.

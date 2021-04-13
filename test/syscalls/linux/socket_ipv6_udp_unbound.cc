@@ -47,29 +47,25 @@ TEST_P(IPv6UDPUnboundSocketTest, SetAndReceiveIPReceiveOrigDstAddr) {
   int level = SOL_IPV6;
   int type = IPV6_RECVORIGDSTADDR;
 
-  ASSERT_THAT(
-      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-           receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(bind(receiver->get(), AsSockAddr(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
 
   // Retrieve the port bound by the receiver.
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  ASSERT_THAT(getsockname(receiver->get(),
-                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+  ASSERT_THAT(getsockname(receiver->get(), AsSockAddr(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
   EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
 
-  ASSERT_THAT(
-      connect(sender->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
-              receiver_addr.addr_len),
-      SyscallSucceeds());
+  ASSERT_THAT(connect(sender->get(), AsSockAddr(&receiver_addr.addr),
+                      receiver_addr.addr_len),
+              SyscallSucceeds());
 
   // Get address and port bound by the sender.
   sockaddr_storage sender_addr_storage;
   socklen_t sender_addr_len = sizeof(sender_addr_storage);
-  ASSERT_THAT(getsockname(sender->get(),
-                          reinterpret_cast<sockaddr*>(&sender_addr_storage),
+  ASSERT_THAT(getsockname(sender->get(), AsSockAddr(&sender_addr_storage),
                           &sender_addr_len),
               SyscallSucceeds());
   ASSERT_EQ(sender_addr_len, sizeof(struct sockaddr_in6));
