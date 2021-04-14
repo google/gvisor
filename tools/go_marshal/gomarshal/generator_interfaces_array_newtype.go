@@ -33,13 +33,13 @@ func (g *interfaceGenerator) validateArrayNewtype(n *ast.Ident, a *ast.ArrayType
 }
 
 func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *ast.ArrayType, elt *ast.Ident) {
+	g.recordUsedImport("gohacks")
+	g.recordUsedImport("hostarch")
 	g.recordUsedImport("io")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
-	g.recordUsedImport("safecopy")
 	g.recordUsedImport("unsafe")
-	g.recordUsedImport("hostarch")
 
 	lenExpr := g.arrayLenExpr(a)
 
@@ -89,14 +89,14 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
 	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&%s[0]), uintptr(len(dst)))\n", g.r)
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
 	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
 	})
 	g.emit("}\n\n")
 
