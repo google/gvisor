@@ -43,6 +43,7 @@ go_template(
     ],
     deps = [
         ":sync",
+        "//pkg/gohacks",
     ],
 )
 

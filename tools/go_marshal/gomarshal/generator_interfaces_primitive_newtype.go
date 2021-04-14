@@ -95,13 +95,13 @@ func (g *interfaceGenerator) validatePrimitiveNewtype(t *ast.Ident) {
 // newtypes are always packed, so we can omit the various fallbacks required for
 // non-packed structs.
 func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) {
+	g.recordUsedImport("gohacks")
+	g.recordUsedImport("hostarch")
 	g.recordUsedImport("io")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
-	g.recordUsedImport("safecopy")
 	g.recordUsedImport("unsafe")
-	g.recordUsedImport("hostarch")
 
 	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
 	g.emit("//go:nosplit\n")
@@ -141,14 +141,14 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
 	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s), uintptr(len(dst)))\n", g.r)
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
 	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
 	})
 	g.emit("}\n\n")
 
@@ -260,11 +260,9 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitNoEscapeSliceDataPointer("&src", "val")
-
-		g.emit("length, err := safecopy.CopyIn(dst[:(size*count)], val)\n")
-		g.emitKeepAlive("src")
-		g.emit("return length, err\n")
+		g.emit("dst = dst[:size*count]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))\n")
+		g.emit("return size*count, nil\n")
 	})
 	g.emit("}\n\n")
 
@@ -279,11 +277,9 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitNoEscapeSliceDataPointer("&dst", "val")
-
-		g.emit("length, err := safecopy.CopyOut(val, src[:(size*count)])\n")
-		g.emitKeepAlive("dst")
-		g.emit("return length, err\n")
+		g.emit("src = src[:(size*count)]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))\n")
+		g.emit("return size*count, nil\n")
 	})
 	g.emit("}\n\n")
 }

@@ -17,20 +17,6 @@ import (
 	"unsafe"
 )
 
-// Note that go:linkname silently doesn't work if the local name is exported,
-// necessitating an indirection for exported functions.
-
-// Memmove is runtime.memmove, exported for SeqAtomicLoad/SeqAtomicTryLoad<T>.
-//
-//go:nosplit
-func Memmove(to, from unsafe.Pointer, n uintptr) {
-	memmove(to, from, n)
-}
-
-//go:linkname memmove runtime.memmove
-//go:noescape
-func memmove(to, from unsafe.Pointer, n uintptr)
-
 // Gopark is runtime.gopark. Gopark calls unlockf(pointer to runtime.g, lock);
 // if unlockf returns true, Gopark blocks until Goready(pointer to runtime.g)
 // is called. unlockf and its callees must be nosplit and norace, since stack

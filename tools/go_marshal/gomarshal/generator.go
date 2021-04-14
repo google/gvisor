@@ -112,10 +112,8 @@ func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string,
 	g.imports.add("runtime")
 	g.imports.add("unsafe")
 	g.imports.add("gvisor.dev/gvisor/pkg/gohacks")
-	g.imports.add("gvisor.dev/gvisor/pkg/safecopy")
 	g.imports.add("gvisor.dev/gvisor/pkg/hostarch")
 	g.imports.add("gvisor.dev/gvisor/pkg/marshal")
-
 	return &g, nil
 }
 

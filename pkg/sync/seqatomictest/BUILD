@@ -18,6 +18,7 @@ go_library(
     name = "seqatomic",
     srcs = ["seqatomic_int_unsafe.go"],
     deps = [
+        "//pkg/gohacks",
         "//pkg/sync",
     ],
 )

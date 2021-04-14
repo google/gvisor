@@ -57,7 +57,6 @@ go_marshal = rule(
 # marshal_deps are the dependencies requied by generated code.
 marshal_deps = [
     "//pkg/gohacks",
-    "//pkg/safecopy",
     "//pkg/hostarch",
     "//pkg/marshal",
 ]

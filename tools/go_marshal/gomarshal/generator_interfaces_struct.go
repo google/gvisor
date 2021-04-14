@@ -270,18 +270,18 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			g.emit("%s.MarshalBytes(dst)\n", g.r)
 		}
 		if thisPacked {
-			g.recordUsedImport("safecopy")
+			g.recordUsedImport("gohacks")
 			g.recordUsedImport("unsafe")
 			if cond, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if %s {\n", cond)
 				g.inIndent(func() {
-					g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
+					g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(len(dst)))\n", g.r)
 				})
 				g.emit("} else {\n")
 				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
-				g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
+				g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(len(dst)))\n", g.r)
 			}
 		} else {
 			fallback()
@@ -297,25 +297,23 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			g.emit("%s.UnmarshalBytes(src)\n", g.r)
 		}
 		if thisPacked {
-			g.recordUsedImport("safecopy")
-			g.recordUsedImport("unsafe")
+			g.recordUsedImport("gohacks")
 			if cond, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if %s {\n", cond)
 				g.inIndent(func() {
-					g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
+					g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
 				})
 				g.emit("} else {\n")
 				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
-				g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
+				g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
 			}
 		} else {
 			fallback()
 		}
 	})
 	g.emit("}\n\n")
-
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
 	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
@@ -561,16 +559,15 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
+			g.recordUsedImport("gohacks")
 			if _, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if !src[0].Packed() {\n")
 				g.inIndent(fallback)
 				g.emit("}\n\n")
 			}
-			g.emitNoEscapeSliceDataPointer("&src", "val")
-
-			g.emit("length, err := safecopy.CopyIn(dst[:(size*count)], val)\n")
-			g.emitKeepAlive("src")
-			g.emit("return length, err\n")
+			g.emit("dst = dst[:size*count]\n")
+			g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))\n")
+			g.emit("return size * count, nil\n")
 		} else {
 			fallback()
 		}
@@ -598,19 +595,19 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return size * count, nil\n")
 		}
 		if thisPacked {
+			g.recordUsedImport("gohacks")
 			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
-			g.recordUsedImport("unsafe")
 			if _, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if !dst[0].Packed() {\n")
 				g.inIndent(fallback)
 				g.emit("}\n\n")
 			}
-			g.emitNoEscapeSliceDataPointer("&dst", "val")
 
-			g.emit("length, err := safecopy.CopyOut(val, src[:(size*count)])\n")
-			g.emitKeepAlive("dst")
-			g.emit("return length, err\n")
+			g.emit("src = src[:(size*count)]\n")
+			g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))\n")
+
+			g.emit("return count*size, nil\n")
 		} else {
 			fallback()
 		}

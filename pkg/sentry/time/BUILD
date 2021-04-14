@@ -32,6 +32,7 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/gohacks",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sync",

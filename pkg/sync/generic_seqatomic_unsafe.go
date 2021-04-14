@@ -10,6 +10,7 @@ package seqatomic
 import (
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -39,7 +40,7 @@ func SeqAtomicTryLoad(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Value) 
 		// runtime.RaceDisable() doesn't actually stop the race detector, so it
 		// can't help us here. Instead, call runtime.memmove directly, which is
 		// not instrumented by the race detector.
-		sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
+		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
 		// This is ~40% faster for short reads than going through memmove.
 		val = *ptr
