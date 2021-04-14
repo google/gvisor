@@ -76,3 +76,9 @@ forwardtailloop:
 	CMP R3, R9
 	BNE forwardtailloop
 	RET
+
+// func addrOfMemcpy() uintptr
+TEXT ·addrOfMemcpy(SB), $0-8
+	MOVD	$·memcpy(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

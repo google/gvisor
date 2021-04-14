@@ -26,6 +26,13 @@ import (
 // stub is defined in arch-specific assembly.
 func stub()
 
+// addrOfStub returns the start address of stub.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func addrOfStub() uintptr
+
 // stubCall calls the stub at the given address with the given pid.
 func stubCall(addr, pid uintptr)
 
@@ -41,7 +48,7 @@ func unsafeSlice(addr uintptr, length int) (slice []byte) {
 // stubInit initializes the stub.
 func stubInit() {
 	// Grab the existing stub.
-	stubBegin := reflect.ValueOf(stub).Pointer()
+	stubBegin := addrOfStub()
 	stubLen := int(safecopy.FindEndAddress(stubBegin) - stubBegin)
 	stubSlice := unsafeSlice(stubBegin, stubLen)
 	mapLen := uintptr(stubLen)

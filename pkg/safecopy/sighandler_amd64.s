@@ -131,3 +131,9 @@ handle_fault:
 	MOVL DI, REG_RDI(DX)
 
 	RET
+
+// func addrOfSignalHandler() uintptr
+TEXT ·addrOfSignalHandler(SB), $0-8
+	MOVQ	$·signalHandler(SB), AX
+	MOVQ	AX, ret+0(FP)
+	RET

@@ -217,3 +217,9 @@ move_129through256:
 	MOVOU	-16(SI)(BX*1), X15
 	MOVOU	X15, -16(DI)(BX*1)
 	RET
+
+// func addrOfMemcpy() uintptr
+TEXT ·addrOfMemcpy(SB), $0-8
+	MOVQ	$·memcpy(SB), AX
+	MOVQ	AX, ret+0(FP)
+	RET

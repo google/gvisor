@@ -89,6 +89,18 @@ func compareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (prev uint32, sig
 //go:noescape
 func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 
+// Return the start address of the functions above.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func addrOfMemcpy() uintptr
+func addrOfMemclr() uintptr
+func addrOfSwapUint32() uintptr
+func addrOfSwapUint64() uintptr
+func addrOfCompareAndSwapUint32() uintptr
+func addrOfLoadUint32() uintptr
+
 // CopyIn copies len(dst) bytes from src to dst. It returns the number of bytes
 // copied and an error if SIGSEGV or SIGBUS is received while reading from src.
 func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {

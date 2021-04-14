@@ -92,6 +92,12 @@ fallback:
 	MOVD	·savedHandler(SB), R7
 	B	(R7)
 
+// func addrOfSighandler() uintptr
+TEXT ·addrOfSighandler(SB), $0-8
+	MOVD	$·sighandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
 // dieTrampoline: see bluepill.go, bluepill_arm64_unsafe.go for documentation.
 TEXT ·dieTrampoline(SB),NOSPLIT,$0
 	// R0: Fake the old PC as caller
@@ -99,3 +105,9 @@ TEXT ·dieTrampoline(SB),NOSPLIT,$0
 	MOVD.P R1, 8(RSP) // R1: First argument (vCPU)
 	MOVD.P R0, 8(RSP) // R0: Fake the old PC as caller
 	B ·dieHandler(SB)
+
+// func addrOfDieTrampoline() uintptr
+TEXT ·addrOfDieTrampoline(SB), $0-8
+	MOVD	$·dieTrampoline(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

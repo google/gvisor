@@ -16,7 +16,6 @@ package kvm
 
 import (
 	"fmt"
-	"reflect"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -35,6 +34,14 @@ func sighandler()
 // This uses an architecture-specific calling convention, documented in
 // dieArchSetup and the assembly implementation for dieTrampoline.
 func dieTrampoline()
+
+// Return the start address of the functions above.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func addrOfSighandler() uintptr
+func addrOfDieTrampoline() uintptr
 
 var (
 	// bounceSignal is the signal used for bouncing KVM.
@@ -87,10 +94,10 @@ func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 
 func init() {
 	// Install the handler.
-	if err := safecopy.ReplaceSignalHandler(bluepillSignal, reflect.ValueOf(sighandler).Pointer(), &savedHandler); err != nil {
+	if err := safecopy.ReplaceSignalHandler(bluepillSignal, addrOfSighandler(), &savedHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 	}
 
 	// Extract the address for the trampoline.
-	dieTrampolineAddr = reflect.ValueOf(dieTrampoline).Pointer()
+	dieTrampolineAddr = addrOfDieTrampoline()
 }
