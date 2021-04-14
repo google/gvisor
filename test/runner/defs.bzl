@@ -4,7 +4,7 @@ load("//tools:defs.bzl", "default_platform", "platforms")
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
-    runner = ctx.actions.declare_file("%s-runner" % ctx.label.name)
+    runner = ctx.actions.declare_file(ctx.label.name)
     runner_content = "\n".join([
         "#!/bin/bash",
         "set -euf -x -o pipefail",
