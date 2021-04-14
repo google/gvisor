@@ -9,3 +9,11 @@ bzl_library(
         "//:sandbox",
     ],
 )
+
+bzl_library(
+    name = "deps_bzl",
+    srcs = ["deps.bzl"],
+    visibility = [
+        "//:sandbox",
+    ],
+)
