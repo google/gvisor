@@ -151,8 +151,20 @@ fallback:
 	MOVQ ·savedHandler(SB), AX
 	JMP AX
 
+// func addrOfSighandler() uintptr
+TEXT ·addrOfSighandler(SB), $0-8
+	MOVQ $·sighandler(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
 // dieTrampoline: see bluepill.go, bluepill_amd64_unsafe.go for documentation.
 TEXT ·dieTrampoline(SB),NOSPLIT,$0
 	PUSHQ BX // First argument (vCPU).
 	PUSHQ AX // Fake the old RIP as caller.
 	JMP ·dieHandler(SB)
+
+// func addrOfDieTrampoline() uintptr
+TEXT ·addrOfDieTrampoline(SB), $0-8
+	MOVQ $·dieTrampoline(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET

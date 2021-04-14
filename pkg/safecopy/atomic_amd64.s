@@ -44,6 +44,12 @@ TEXT ·swapUint32(SB), NOSPLIT, $0-24
   MOVL AX, old+16(FP)
   RET
 
+// func addrOfSwapUint32() uintptr
+TEXT ·addrOfSwapUint32(SB), $0-8
+  MOVQ $·swapUint32(SB), AX
+  MOVQ AX, ret+0(FP)
+  RET
+
 // handleSwapUint64Fault returns the value stored in DI. Control is transferred
 // to it when swapUint64 below receives SIGSEGV or SIGBUS, with the signal
 // number stored in DI.
@@ -72,6 +78,12 @@ TEXT ·swapUint64(SB), NOSPLIT, $0-28
   MOVQ new+8(FP), AX
   XCHGQ AX, 0(DI)
   MOVQ AX, old+16(FP)
+  RET
+
+// func addrOfSwapUint64() uintptr
+TEXT ·addrOfSwapUint64(SB), $0-8
+  MOVQ $·swapUint64(SB), AX
+  MOVQ AX, ret+0(FP)
   RET
 
 // handleCompareAndSwapUint32Fault returns the value stored in DI. Control is
@@ -107,6 +119,12 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
   MOVL AX, prev+16(FP)
   RET
 
+// func addrOfCompareAndSwapUint32() uintptr
+TEXT ·addrOfCompareAndSwapUint32(SB), $0-8
+  MOVQ $·compareAndSwapUint32(SB), AX
+  MOVQ AX, ret+0(FP)
+  RET
+
 // handleLoadUint32Fault returns the value stored in DI. Control is transferred
 // to it when LoadUint32 below receives SIGSEGV or SIGBUS, with the signal
 // number stored in DI.
@@ -133,4 +151,10 @@ TEXT ·loadUint32(SB), NOSPLIT, $0-16
   MOVQ addr+0(FP), AX
   MOVL (AX), BX
   MOVL BX, val+8(FP)
+  RET
+
+// func addrOfLoadUint32() uintptr
+TEXT ·addrOfLoadUint32(SB), $0-8
+  MOVQ $·loadUint32(SB), AX
+  MOVQ AX, ret+0(FP)
   RET
