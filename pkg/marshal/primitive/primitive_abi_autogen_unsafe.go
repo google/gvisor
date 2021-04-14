@@ -12,7 +12,6 @@ import (
     "gvisor.dev/gvisor/pkg/gohacks"
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
-    "gvisor.dev/gvisor/pkg/safecopy"
     "io"
     "reflect"
     "runtime"
@@ -54,12 +53,12 @@ func (i *Int16) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int16) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int16) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -178,14 +177,9 @@ func MarshalUnsafeInt16Slice(src []Int16, dst []byte) (int, error) {
     }
     size := (*Int16)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeInt16Slice is like Int16.UnmarshalUnsafe, but for a []Int16.
@@ -196,14 +190,9 @@ func UnmarshalUnsafeInt16Slice(dst []Int16, src []byte) (int, error) {
     }
     size := (*Int16)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -231,12 +220,12 @@ func (i *Int32) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int32) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int32) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -355,14 +344,9 @@ func MarshalUnsafeInt32Slice(src []Int32, dst []byte) (int, error) {
     }
     size := (*Int32)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeInt32Slice is like Int32.UnmarshalUnsafe, but for a []Int32.
@@ -373,14 +357,9 @@ func UnmarshalUnsafeInt32Slice(dst []Int32, src []byte) (int, error) {
     }
     size := (*Int32)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -408,12 +387,12 @@ func (i *Int64) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int64) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int64) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -532,14 +511,9 @@ func MarshalUnsafeInt64Slice(src []Int64, dst []byte) (int, error) {
     }
     size := (*Int64)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeInt64Slice is like Int64.UnmarshalUnsafe, but for a []Int64.
@@ -550,14 +524,9 @@ func UnmarshalUnsafeInt64Slice(dst []Int64, src []byte) (int, error) {
     }
     size := (*Int64)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -585,12 +554,12 @@ func (i *Int8) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int8) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int8) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -709,14 +678,9 @@ func MarshalUnsafeInt8Slice(src []Int8, dst []byte) (int, error) {
     }
     size := (*Int8)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeInt8Slice is like Int8.UnmarshalUnsafe, but for a []Int8.
@@ -727,14 +691,9 @@ func UnmarshalUnsafeInt8Slice(dst []Int8, src []byte) (int, error) {
     }
     size := (*Int8)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -762,12 +721,12 @@ func (u *Uint16) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint16) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint16) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -886,14 +845,9 @@ func MarshalUnsafeUint16Slice(src []Uint16, dst []byte) (int, error) {
     }
     size := (*Uint16)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeUint16Slice is like Uint16.UnmarshalUnsafe, but for a []Uint16.
@@ -904,14 +858,9 @@ func UnmarshalUnsafeUint16Slice(dst []Uint16, src []byte) (int, error) {
     }
     size := (*Uint16)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -939,12 +888,12 @@ func (u *Uint32) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint32) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint32) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1063,14 +1012,9 @@ func MarshalUnsafeUint32Slice(src []Uint32, dst []byte) (int, error) {
     }
     size := (*Uint32)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeUint32Slice is like Uint32.UnmarshalUnsafe, but for a []Uint32.
@@ -1081,14 +1025,9 @@ func UnmarshalUnsafeUint32Slice(dst []Uint32, src []byte) (int, error) {
     }
     size := (*Uint32)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1116,12 +1055,12 @@ func (u *Uint64) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint64) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint64) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1240,14 +1179,9 @@ func MarshalUnsafeUint64Slice(src []Uint64, dst []byte) (int, error) {
     }
     size := (*Uint64)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeUint64Slice is like Uint64.UnmarshalUnsafe, but for a []Uint64.
@@ -1258,14 +1192,9 @@ func UnmarshalUnsafeUint64Slice(dst []Uint64, src []byte) (int, error) {
     }
     size := (*Uint64)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1293,12 +1222,12 @@ func (u *Uint8) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint8) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint8) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1417,14 +1346,9 @@ func MarshalUnsafeUint8Slice(src []Uint8, dst []byte) (int, error) {
     }
     size := (*Uint8)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size*count, nil
 }
 
 // UnmarshalUnsafeUint8Slice is like Uint8.UnmarshalUnsafe, but for a []Uint8.
@@ -1435,13 +1359,8 @@ func UnmarshalUnsafeUint8Slice(dst []Uint8, src []byte) (int, error) {
     }
     size := (*Uint8)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return size*count, nil
 }
 

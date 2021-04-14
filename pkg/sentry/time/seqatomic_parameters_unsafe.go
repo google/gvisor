@@ -3,6 +3,7 @@ package time
 import (
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -27,7 +28,7 @@ func SeqAtomicLoadParameters(seq *sync.SeqCount, ptr *Parameters) Parameters {
 func SeqAtomicTryLoadParameters(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *Parameters) (val Parameters, ok bool) {
 	if sync.RaceEnabled {
 
-		sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
+		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
 
 		val = *ptr

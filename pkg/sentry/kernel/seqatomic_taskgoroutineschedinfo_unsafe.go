@@ -3,6 +3,7 @@ package kernel
 import (
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -27,7 +28,7 @@ func SeqAtomicLoadTaskGoroutineSchedInfo(seq *sync.SeqCount, ptr *TaskGoroutineS
 func SeqAtomicTryLoadTaskGoroutineSchedInfo(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *TaskGoroutineSchedInfo) (val TaskGoroutineSchedInfo, ok bool) {
 	if sync.RaceEnabled {
 
-		sync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
+		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
 
 		val = *ptr

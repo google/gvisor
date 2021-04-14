@@ -12,7 +12,6 @@ import (
     "gvisor.dev/gvisor/pkg/gohacks"
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
-    "gvisor.dev/gvisor/pkg/safecopy"
     "io"
     "reflect"
     "runtime"
@@ -181,12 +180,12 @@ func (i *IOCallback) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IOCallback) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IOCallback) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -282,12 +281,12 @@ func (i *IOEvent) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IOEvent) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IOEvent) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -383,12 +382,12 @@ func (b *BPFInstruction) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (b *BPFInstruction) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(b))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(b),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (b *BPFInstruction) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(b), src)
+    gohacks.Memmove(unsafe.Pointer(b), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -505,14 +504,9 @@ func MarshalUnsafeBPFInstructionSlice(src []BPFInstruction, dst []byte) (int, er
     }
     size := (*BPFInstruction)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafeBPFInstructionSlice is like BPFInstruction.UnmarshalUnsafe, but for a []BPFInstruction.
@@ -523,14 +517,9 @@ func UnmarshalUnsafeBPFInstructionSlice(dst []BPFInstruction, src []byte) (int, 
     }
     size := (*BPFInstruction)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -566,12 +555,12 @@ func (c *CapUserData) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (c *CapUserData) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (c *CapUserData) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
+    gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -688,14 +677,9 @@ func MarshalUnsafeCapUserDataSlice(src []CapUserData, dst []byte) (int, error) {
     }
     size := (*CapUserData)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafeCapUserDataSlice is like CapUserData.UnmarshalUnsafe, but for a []CapUserData.
@@ -706,14 +690,9 @@ func UnmarshalUnsafeCapUserDataSlice(dst []CapUserData, src []byte) (int, error)
     }
     size := (*CapUserData)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -745,12 +724,12 @@ func (c *CapUserHeader) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (c *CapUserHeader) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (c *CapUserHeader) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
+    gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -841,7 +820,7 @@ func (s *SockErrCMsgIPv4) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockErrCMsgIPv4) MarshalUnsafe(dst []byte) {
     if s.Offender.Packed() && s.SockExtendedErr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type SockErrCMsgIPv4 doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -851,7 +830,7 @@ func (s *SockErrCMsgIPv4) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockErrCMsgIPv4) UnmarshalUnsafe(src []byte) {
     if s.Offender.Packed() && s.SockExtendedErr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type SockErrCMsgIPv4 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -971,7 +950,7 @@ func (s *SockErrCMsgIPv6) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockErrCMsgIPv6) MarshalUnsafe(dst []byte) {
     if s.Offender.Packed() && s.SockExtendedErr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type SockErrCMsgIPv6 doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -981,7 +960,7 @@ func (s *SockErrCMsgIPv6) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockErrCMsgIPv6) UnmarshalUnsafe(src []byte) {
     if s.Offender.Packed() && s.SockExtendedErr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type SockErrCMsgIPv6 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -1118,12 +1097,12 @@ func (s *SockExtendedErr) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockExtendedErr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockExtendedErr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1211,12 +1190,12 @@ func (f *FOwnerEx) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FOwnerEx) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FOwnerEx) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1326,12 +1305,12 @@ func (f *Flock) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *Flock) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *Flock) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1496,7 +1475,7 @@ func (s *Statx) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Statx) MarshalUnsafe(dst []byte) {
     if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -1506,7 +1485,7 @@ func (s *Statx) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statx) UnmarshalUnsafe(src []byte) {
     if s.Atime.Packed() && s.Btime.Packed() && s.Ctime.Packed() && s.Mtime.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type Statx doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -1673,12 +1652,12 @@ func (s *Statfs) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Statfs) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Statfs) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1822,12 +1801,12 @@ func (f *FUSEAttr) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEAttr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEAttr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1923,12 +1902,12 @@ func (f *FUSECreateMeta) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSECreateMeta) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSECreateMeta) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -2024,12 +2003,12 @@ func (f *FUSEDirentMeta) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEDirentMeta) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEDirentMeta) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -2139,7 +2118,7 @@ func (f *FUSEEntryOut) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEEntryOut) MarshalUnsafe(dst []byte) {
     if f.Attr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(f))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
     } else {
         // Type FUSEEntryOut doesn't have a packed layout in memory, fallback to MarshalBytes.
         f.MarshalBytes(dst)
@@ -2149,7 +2128,7 @@ func (f *FUSEEntryOut) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEEntryOut) UnmarshalUnsafe(src []byte) {
     if f.Attr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(f), src)
+        gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type FUSEEntryOut doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         f.UnmarshalBytes(src)
@@ -2270,12 +2249,12 @@ func (f *FUSEGetAttrIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEGetAttrIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEGetAttrIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -2373,7 +2352,7 @@ func (f *FUSEGetAttrOut) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEGetAttrOut) MarshalUnsafe(dst []byte) {
     if f.Attr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(f))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
     } else {
         // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to MarshalBytes.
         f.MarshalBytes(dst)
@@ -2383,7 +2362,7 @@ func (f *FUSEGetAttrOut) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEGetAttrOut) UnmarshalUnsafe(src []byte) {
     if f.Attr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(f), src)
+        gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type FUSEGetAttrOut doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         f.UnmarshalBytes(src)
@@ -2527,7 +2506,7 @@ func (f *FUSEHeaderIn) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEHeaderIn) MarshalUnsafe(dst []byte) {
     if f.Opcode.Packed() && f.Unique.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(f))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
     } else {
         // Type FUSEHeaderIn doesn't have a packed layout in memory, fallback to MarshalBytes.
         f.MarshalBytes(dst)
@@ -2537,7 +2516,7 @@ func (f *FUSEHeaderIn) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEHeaderIn) UnmarshalUnsafe(src []byte) {
     if f.Opcode.Packed() && f.Unique.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(f), src)
+        gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type FUSEHeaderIn doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         f.UnmarshalBytes(src)
@@ -2660,7 +2639,7 @@ func (f *FUSEHeaderOut) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEHeaderOut) MarshalUnsafe(dst []byte) {
     if f.Unique.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(f))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
     } else {
         // Type FUSEHeaderOut doesn't have a packed layout in memory, fallback to MarshalBytes.
         f.MarshalBytes(dst)
@@ -2670,7 +2649,7 @@ func (f *FUSEHeaderOut) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEHeaderOut) UnmarshalUnsafe(src []byte) {
     if f.Unique.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(f), src)
+        gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type FUSEHeaderOut doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         f.UnmarshalBytes(src)
@@ -2795,12 +2774,12 @@ func (f *FUSEInitIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEInitIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEInitIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -2925,12 +2904,12 @@ func (f *FUSEInitOut) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEInitOut) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEInitOut) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3018,12 +2997,12 @@ func (f *FUSEMkdirMeta) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEMkdirMeta) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEMkdirMeta) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3119,12 +3098,12 @@ func (f *FUSEMknodMeta) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEMknodMeta) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEMknodMeta) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3208,12 +3187,12 @@ func (f *FUSEOpID) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEOpID) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEOpID) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3297,12 +3276,12 @@ func (f *FUSEOpcode) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEOpcode) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEOpcode) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3390,12 +3369,12 @@ func (f *FUSEOpenIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEOpenIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEOpenIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3487,12 +3466,12 @@ func (f *FUSEOpenOut) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEOpenOut) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEOpenOut) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3600,12 +3579,12 @@ func (f *FUSEReadIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEReadIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEReadIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3701,12 +3680,12 @@ func (f *FUSEReleaseIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEReleaseIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEReleaseIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3850,12 +3829,12 @@ func (f *FUSESetAttrIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSESetAttrIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSESetAttrIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -3963,12 +3942,12 @@ func (f *FUSEWriteIn) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEWriteIn) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEWriteIn) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4056,12 +4035,12 @@ func (f *FUSEWriteOut) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (f *FUSEWriteOut) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(f))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(f),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (f *FUSEWriteOut) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(f), src)
+    gohacks.Memmove(unsafe.Pointer(f), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4153,12 +4132,12 @@ func (r *RobustListHead) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (r *RobustListHead) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(r))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (r *RobustListHead) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(r), src)
+    gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4246,12 +4225,12 @@ func (d *DigestMetadata) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (d *DigestMetadata) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(d))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(d),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (d *DigestMetadata) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(d), src)
+    gohacks.Memmove(unsafe.Pointer(d), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4379,12 +4358,12 @@ func (i *IPCPerm) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPCPerm) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPCPerm) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4593,12 +4572,12 @@ func (n *NumaPolicy) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (n *NumaPolicy) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(n))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (n *NumaPolicy) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(n), src)
+    gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4691,12 +4670,12 @@ func (i *IFConf) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IFConf) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IFConf) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4794,12 +4773,12 @@ func (ifr *IFReq) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (ifr *IFReq) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(ifr))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(ifr),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (ifr *IFReq) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(ifr), src)
+    gohacks.Memmove(unsafe.Pointer(ifr), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -4889,12 +4868,12 @@ func (en *ExtensionName) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (en *ExtensionName) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(en))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&en[0]), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (en *ExtensionName) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(en), src)
+    gohacks.Memmove(unsafe.Pointer(en), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -5001,7 +4980,7 @@ func (i *IPTEntry) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTEntry) MarshalUnsafe(dst []byte) {
     if i.Counters.Packed() && i.IP.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IPTEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -5011,7 +4990,7 @@ func (i *IPTEntry) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTEntry) UnmarshalUnsafe(src []byte) {
     if i.Counters.Packed() && i.IP.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IPTEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -5135,7 +5114,7 @@ func (i *IPTGetEntries) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTGetEntries) MarshalUnsafe(dst []byte) {
     if i.Name.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IPTGetEntries doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -5145,7 +5124,7 @@ func (i *IPTGetEntries) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTGetEntries) UnmarshalUnsafe(src []byte) {
     if i.Name.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IPTGetEntries doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -5290,7 +5269,7 @@ func (i *IPTGetinfo) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTGetinfo) MarshalUnsafe(dst []byte) {
     if i.Name.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IPTGetinfo doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -5300,7 +5279,7 @@ func (i *IPTGetinfo) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTGetinfo) UnmarshalUnsafe(src []byte) {
     if i.Name.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IPTGetinfo doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -5478,7 +5457,7 @@ func (i *IPTIP) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IPTIP) MarshalUnsafe(dst []byte) {
     if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IPTIP doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -5488,7 +5467,7 @@ func (i *IPTIP) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IPTIP) UnmarshalUnsafe(src []byte) {
     if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IPTIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -5717,12 +5696,12 @@ func (tn *TableName) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (tn *TableName) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(tn))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&tn[0]), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (tn *TableName) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(tn), src)
+    gohacks.Memmove(unsafe.Pointer(tn), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -5810,12 +5789,12 @@ func (x *XTCounters) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (x *XTCounters) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(x))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (x *XTCounters) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(x), src)
+    gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -5905,7 +5884,7 @@ func (x *XTGetRevision) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (x *XTGetRevision) MarshalUnsafe(dst []byte) {
     if x.Name.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(x))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x),  uintptr(len(dst)))
     } else {
         // Type XTGetRevision doesn't have a packed layout in memory, fallback to MarshalBytes.
         x.MarshalBytes(dst)
@@ -5915,7 +5894,7 @@ func (x *XTGetRevision) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (x *XTGetRevision) UnmarshalUnsafe(src []byte) {
     if x.Name.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(x), src)
+        gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type XTGetRevision doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         x.UnmarshalBytes(src)
@@ -6056,7 +6035,7 @@ func (i *IP6TEntry) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IP6TEntry) MarshalUnsafe(dst []byte) {
     if i.Counters.Packed() && i.IPv6.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IP6TEntry doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -6066,7 +6045,7 @@ func (i *IP6TEntry) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IP6TEntry) UnmarshalUnsafe(src []byte) {
     if i.Counters.Packed() && i.IPv6.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IP6TEntry doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -6253,7 +6232,7 @@ func (i *IP6TIP) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IP6TIP) MarshalUnsafe(dst []byte) {
     if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IP6TIP doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -6263,7 +6242,7 @@ func (i *IP6TIP) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IP6TIP) UnmarshalUnsafe(src []byte) {
     if i.Dst.Packed() && i.DstMask.Packed() && i.Src.Packed() && i.SrcMask.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IP6TIP doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -6416,7 +6395,7 @@ func (i *IP6TReplace) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *IP6TReplace) MarshalUnsafe(dst []byte) {
     if i.Name.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type IP6TReplace doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -6426,7 +6405,7 @@ func (i *IP6TReplace) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *IP6TReplace) UnmarshalUnsafe(src []byte) {
     if i.Name.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type IP6TReplace doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -6661,12 +6640,12 @@ func (s *SockAddrNetlink) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockAddrNetlink) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockAddrNetlink) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -6758,12 +6737,12 @@ func (p *PollFD) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (p *PollFD) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(p))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(p),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (p *PollFD) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(p), src)
+    gohacks.Memmove(unsafe.Pointer(p), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -6880,14 +6859,9 @@ func MarshalUnsafePollFDSlice(src []PollFD, dst []byte) (int, error) {
     }
     size := (*PollFD)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafePollFDSlice is like PollFD.UnmarshalUnsafe, but for a []PollFD.
@@ -6898,14 +6872,9 @@ func UnmarshalUnsafePollFDSlice(dst []PollFD, src []byte) (int, error) {
     }
     size := (*PollFD)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -6949,12 +6918,12 @@ func (r *RSeqCriticalSection) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (r *RSeqCriticalSection) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(r))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (r *RSeqCriticalSection) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(r), src)
+    gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7101,7 +7070,7 @@ func (r *Rusage) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (r *Rusage) MarshalUnsafe(dst []byte) {
     if r.STime.Packed() && r.UTime.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(r))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(r),  uintptr(len(dst)))
     } else {
         // Type Rusage doesn't have a packed layout in memory, fallback to MarshalBytes.
         r.MarshalBytes(dst)
@@ -7111,7 +7080,7 @@ func (r *Rusage) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (r *Rusage) UnmarshalUnsafe(src []byte) {
     if r.STime.Packed() && r.UTime.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(r), src)
+        gohacks.Memmove(unsafe.Pointer(r), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type Rusage doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         r.UnmarshalBytes(src)
@@ -7241,12 +7210,12 @@ func (s *SeccompData) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SeccompData) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SeccompData) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7366,12 +7335,12 @@ func (s *SemInfo) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SemInfo) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SemInfo) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7463,12 +7432,12 @@ func (s *Sembuf) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Sembuf) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Sembuf) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7585,14 +7554,9 @@ func MarshalUnsafeSembufSlice(src []Sembuf, dst []byte) (int, error) {
     }
     size := (*Sembuf)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafeSembufSlice is like Sembuf.UnmarshalUnsafe, but for a []Sembuf.
@@ -7603,14 +7567,9 @@ func UnmarshalUnsafeSembufSlice(dst []Sembuf, src []byte) (int, error) {
     }
     size := (*Sembuf)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -7663,12 +7622,12 @@ func (s *ShmInfo) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *ShmInfo) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *ShmInfo) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7768,12 +7727,12 @@ func (s *ShmParams) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *ShmParams) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *ShmParams) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -7898,7 +7857,7 @@ func (s *ShmidDS) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *ShmidDS) MarshalUnsafe(dst []byte) {
     if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type ShmidDS doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -7908,7 +7867,7 @@ func (s *ShmidDS) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *ShmidDS) UnmarshalUnsafe(src []byte) {
     if s.ShmAtime.Packed() && s.ShmCtime.Packed() && s.ShmDtime.Packed() && s.ShmPerm.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type ShmidDS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -8042,12 +8001,12 @@ func (s *Sigevent) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *Sigevent) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *Sigevent) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8131,12 +8090,12 @@ func (s *SignalSet) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SignalSet) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SignalSet) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8368,12 +8327,12 @@ func (c *ControlMessageCredentials) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (c *ControlMessageCredentials) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (c *ControlMessageCredentials) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
+    gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8463,12 +8422,12 @@ func (i *Inet6Addr) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Inet6Addr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&i[0]), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Inet6Addr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8558,12 +8517,12 @@ func (i *InetAddr) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *InetAddr) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(i))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&i[0]), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *InetAddr) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(i), src)
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8651,12 +8610,12 @@ func (l *Linger) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (l *Linger) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(l))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(l),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (l *Linger) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(l), src)
+    gohacks.Memmove(unsafe.Pointer(l), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -8755,7 +8714,7 @@ func (s *SockAddrInet) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockAddrInet) MarshalUnsafe(dst []byte) {
     if s.Addr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type SockAddrInet doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -8765,7 +8724,7 @@ func (s *SockAddrInet) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockAddrInet) UnmarshalUnsafe(src []byte) {
     if s.Addr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type SockAddrInet doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -8899,12 +8858,12 @@ func (s *SockAddrInet6) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockAddrInet6) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockAddrInet6) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9017,12 +8976,12 @@ func (s *SockAddrLink) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockAddrLink) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockAddrLink) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9115,12 +9074,12 @@ func (s *SockAddrUnix) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SockAddrUnix) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SockAddrUnix) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9408,12 +9367,12 @@ func (t *TCPInfo) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *TCPInfo) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(t))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(t),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *TCPInfo) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(t), src)
+    gohacks.Memmove(unsafe.Pointer(t), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9497,12 +9456,12 @@ func (c *ClockT) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (c *ClockT) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(c))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (c *ClockT) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(c), src)
+    gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9593,7 +9552,7 @@ func (i *ItimerVal) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *ItimerVal) MarshalUnsafe(dst []byte) {
     if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type ItimerVal doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -9603,7 +9562,7 @@ func (i *ItimerVal) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *ItimerVal) UnmarshalUnsafe(src []byte) {
     if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type ItimerVal doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -9723,7 +9682,7 @@ func (i *Itimerspec) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Itimerspec) MarshalUnsafe(dst []byte) {
     if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(i))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i),  uintptr(len(dst)))
     } else {
         // Type Itimerspec doesn't have a packed layout in memory, fallback to MarshalBytes.
         i.MarshalBytes(dst)
@@ -9733,7 +9692,7 @@ func (i *Itimerspec) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Itimerspec) UnmarshalUnsafe(src []byte) {
     if i.Interval.Packed() && i.Value.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(i), src)
+        gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type Itimerspec doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         i.UnmarshalBytes(src)
@@ -9854,12 +9813,12 @@ func (sxts *StatxTimestamp) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (sxts *StatxTimestamp) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(sxts))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(sxts),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (sxts *StatxTimestamp) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(sxts), src)
+    gohacks.Memmove(unsafe.Pointer(sxts), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -9943,12 +9902,12 @@ func (t *TimeT) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *TimeT) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(t))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(t), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *TimeT) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(t), src)
+    gohacks.Memmove(unsafe.Pointer(t), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10032,12 +9991,12 @@ func (t *TimerID) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *TimerID) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(t))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(t), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *TimerID) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(t), src)
+    gohacks.Memmove(unsafe.Pointer(t), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10125,12 +10084,12 @@ func (ts *Timespec) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (ts *Timespec) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(ts))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(ts),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (ts *Timespec) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(ts), src)
+    gohacks.Memmove(unsafe.Pointer(ts), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10247,14 +10206,9 @@ func MarshalUnsafeTimespecSlice(src []Timespec, dst []byte) (int, error) {
     }
     size := (*Timespec)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafeTimespecSlice is like Timespec.UnmarshalUnsafe, but for a []Timespec.
@@ -10265,14 +10219,9 @@ func UnmarshalUnsafeTimespecSlice(dst []Timespec, src []byte) (int, error) {
     }
     size := (*Timespec)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -10304,12 +10253,12 @@ func (tv *Timeval) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (tv *Timeval) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(tv))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(tv),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (tv *Timeval) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(tv), src)
+    gohacks.Memmove(unsafe.Pointer(tv), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10426,14 +10375,9 @@ func MarshalUnsafeTimevalSlice(src []Timeval, dst []byte) (int, error) {
     }
     size := (*Timeval)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&src)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyIn(dst[:(size*count)], val)
-    // Since we bypassed the compiler's escape analysis, indicate that src
-    // must live until the use above.
-    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
-    return length, err
+    dst = dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(dst)))
+    return size * count, nil
 }
 
 // UnmarshalUnsafeTimevalSlice is like Timeval.UnmarshalUnsafe, but for a []Timeval.
@@ -10444,14 +10388,9 @@ func UnmarshalUnsafeTimevalSlice(dst []Timeval, src []byte) (int, error) {
     }
     size := (*Timeval)(nil).SizeBytes()
 
-    ptr := unsafe.Pointer(&dst)
-    val := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))
-
-    length, err := safecopy.CopyOut(val, src[:(size*count)])
-    // Since we bypassed the compiler's escape analysis, indicate that dst
-    // must live until the use above.
-    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
-    return length, err
+    src = src[:(size*count)]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    return count*size, nil
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -10496,7 +10435,7 @@ func (t *Tms) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *Tms) MarshalUnsafe(dst []byte) {
     if t.CSTime.Packed() && t.CUTime.Packed() && t.STime.Packed() && t.UTime.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(t))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(t),  uintptr(len(dst)))
     } else {
         // Type Tms doesn't have a packed layout in memory, fallback to MarshalBytes.
         t.MarshalBytes(dst)
@@ -10506,7 +10445,7 @@ func (t *Tms) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *Tms) UnmarshalUnsafe(src []byte) {
     if t.CSTime.Packed() && t.CUTime.Packed() && t.STime.Packed() && t.UTime.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(t), src)
+        gohacks.Memmove(unsafe.Pointer(t), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type Tms doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         t.UnmarshalBytes(src)
@@ -10623,12 +10562,12 @@ func (u *Utime) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Utime) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Utime) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10737,12 +10676,12 @@ func (t *Termios) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (t *Termios) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(t))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(t),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (t *Termios) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(t), src)
+    gohacks.Memmove(unsafe.Pointer(t), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10835,12 +10774,12 @@ func (w *WindowSize) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (w *WindowSize) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(w))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(w),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (w *WindowSize) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(w), src)
+    gohacks.Memmove(unsafe.Pointer(w), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -10936,12 +10875,12 @@ func (w *Winsize) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (w *Winsize) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(w))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(w),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (w *Winsize) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(w), src)
+    gohacks.Memmove(unsafe.Pointer(w), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -11075,12 +11014,12 @@ func (u *UtsName) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *UtsName) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(u))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *UtsName) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(u), src)
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

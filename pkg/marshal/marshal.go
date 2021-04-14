@@ -166,6 +166,9 @@ type Marshallable interface {
 // %s is the first argument to the slice clause. This directive is not supported
 // for newtypes on arrays.
 //
+// Note: Partial copies are not supported for Slice API UnmarshalUnsafe and
+// MarshalUnsafe.
+//
 // The slice clause also takes an optional second argument, which must be the
 // value "inner":
 //

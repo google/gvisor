@@ -12,7 +12,6 @@ import (
     "gvisor.dev/gvisor/pkg/gohacks"
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
-    "gvisor.dev/gvisor/pkg/safecopy"
     "io"
     "reflect"
     "runtime"
@@ -53,12 +52,12 @@ func (s *sigSetWithSize) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *sigSetWithSize) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(s))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *sigSetWithSize) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(s), src)
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -174,12 +173,12 @@ func (m *MessageHeader64) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (m *MessageHeader64) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(m))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (m *MessageHeader64) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(m), src)
+    gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -273,7 +272,7 @@ func (m *multipleMessageHeader64) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (m *multipleMessageHeader64) MarshalUnsafe(dst []byte) {
     if m.msgHdr.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(m))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(m),  uintptr(len(dst)))
     } else {
         // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to MarshalBytes.
         m.MarshalBytes(dst)
@@ -283,7 +282,7 @@ func (m *multipleMessageHeader64) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (m *multipleMessageHeader64) UnmarshalUnsafe(src []byte) {
     if m.msgHdr.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(m), src)
+        gohacks.Memmove(unsafe.Pointer(m), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type multipleMessageHeader64 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         m.UnmarshalBytes(src)

@@ -12,7 +12,6 @@ import (
     "gvisor.dev/gvisor/pkg/gohacks"
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
-    "gvisor.dev/gvisor/pkg/safecopy"
     "io"
     "reflect"
     "runtime"
@@ -48,12 +47,12 @@ func (tid *ThreadID) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (tid *ThreadID) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(tid))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(tid), uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (tid *ThreadID) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(tid), src)
+    gohacks.Memmove(unsafe.Pointer(tid), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -165,12 +164,12 @@ func (v *vdsoParams) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (v *vdsoParams) MarshalUnsafe(dst []byte) {
-    safecopy.CopyIn(dst, unsafe.Pointer(v))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(v),  uintptr(len(dst)))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (v *vdsoParams) UnmarshalUnsafe(src []byte) {
-    safecopy.CopyOut(unsafe.Pointer(v), src)
+    gohacks.Memmove(unsafe.Pointer(v), unsafe.Pointer(&src[0]), uintptr(len(src)))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

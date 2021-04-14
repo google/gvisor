@@ -17,7 +17,6 @@ import (
     "gvisor.dev/gvisor/pkg/gohacks"
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
-    "gvisor.dev/gvisor/pkg/safecopy"
     "io"
     "reflect"
     "runtime"
@@ -170,7 +169,7 @@ func (s *SignalContext64) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SignalContext64) MarshalUnsafe(dst []byte) {
     if s.Oldmask.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(s))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
     } else {
         // Type SignalContext64 doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -180,7 +179,7 @@ func (s *SignalContext64) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SignalContext64) UnmarshalUnsafe(src []byte) {
     if s.Oldmask.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(s), src)
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type SignalContext64 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -313,7 +312,7 @@ func (u *UContext64) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *UContext64) MarshalUnsafe(dst []byte) {
     if u.MContext.Packed() && u.Sigset.Packed() && u.Stack.Packed() {
-        safecopy.CopyIn(dst, unsafe.Pointer(u))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u),  uintptr(len(dst)))
     } else {
         // Type UContext64 doesn't have a packed layout in memory, fallback to MarshalBytes.
         u.MarshalBytes(dst)
@@ -323,7 +322,7 @@ func (u *UContext64) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *UContext64) UnmarshalUnsafe(src []byte) {
     if u.MContext.Packed() && u.Sigset.Packed() && u.Stack.Packed() {
-        safecopy.CopyOut(unsafe.Pointer(u), src)
+        gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
     } else {
         // Type UContext64 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         u.UnmarshalBytes(src)
