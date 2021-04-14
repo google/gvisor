@@ -109,6 +109,12 @@ parent_dead:
 	SYSCALL
 	HLT
 
+// func addrOfStub() uintptr
+TEXT ·addrOfStub(SB), $0-8
+	MOVQ $·stub(SB), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
 // stubCall calls the stub function at the given address with the given PPID.
 //
 // This is a distinct function because stub, above, may be mapped at any

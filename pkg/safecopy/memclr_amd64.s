@@ -145,3 +145,9 @@ _129through256:
 	MOVOU	X0, -32(DI)(BX*1)
 	MOVOU	X0, -16(DI)(BX*1)
 	RET
+
+// func addrOfMemclr() uintptr
+TEXT ·addrOfMemclr(SB), $0-8
+	MOVQ	$·memclr(SB), AX
+	MOVQ	AX, ret+0(FP)
+	RET
