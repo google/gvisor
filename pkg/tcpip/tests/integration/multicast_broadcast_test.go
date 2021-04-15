@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -438,10 +439,10 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 // interested endpoints.
 func TestReuseAddrAndBroadcast(t *testing.T) {
 	const (
-		nicID             = 1
-		localPort         = 9000
-		loopbackBroadcast = tcpip.Address("\x7f\xff\xff\xff")
+		nicID     = 1
+		localPort = 9000
 	)
+	loopbackBroadcast := testutil.MustParse4("127.255.255.255")
 
 	tests := []struct {
 		name          string

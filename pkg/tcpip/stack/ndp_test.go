@@ -33,15 +33,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+var (
+	addr1 = testutil.MustParse6("a00::1")
+	addr2 = testutil.MustParse6("a00::2")
+	addr3 = testutil.MustParse6("a00::3")
+)
+
 const (
-	addr1     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	addr2     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	addr3     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
 	linkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 	linkAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
 	linkAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x08")
@@ -1390,7 +1394,7 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 // configured not to.
 func TestNoPrefixDiscovery(t *testing.T) {
 	prefix := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		Address:   testutil.MustParse6("102:304:506:708::"),
 		PrefixLen: 64,
 	}
 
@@ -1590,7 +1594,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	}()
 
 	prefix := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x00"),
+		Address:   testutil.MustParse6("102:304:506:708::"),
 		PrefixLen: 64,
 	}
 	subnet := prefix.Subnet()

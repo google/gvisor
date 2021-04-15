@@ -27,15 +27,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-)
-
-const (
-	linkLocalAddr       = "\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	globalAddr          = "\x0a\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	globalMulticastAddr = "\xff\x05\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 var (
+	linkLocalAddr       = testutil.MustParse6("fe80::1")
+	globalAddr          = testutil.MustParse6("a80::1")
+	globalMulticastAddr = testutil.MustParse6("ff05:100::2")
+
 	linkLocalAddrSNMC = header.SolicitedNodeAddr(linkLocalAddr)
 	globalAddrSNMC    = header.SolicitedNodeAddr(globalAddr)
 )
@@ -354,10 +353,8 @@ func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, ho
 }
 
 func TestMLDPacketValidation(t *testing.T) {
-	const (
-		nicID          = 1
-		linkLocalAddr2 = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	)
+	const nicID = 1
+	linkLocalAddr2 := testutil.MustParse6("fe80::2")
 
 	tests := []struct {
 		name                     string

@@ -30,19 +30,15 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
 const (
 	nicID = 1
 
-	stackAddr     = tcpip.Address("\x0a\x00\x00\x01")
-	stackLinkAddr = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
-
-	remoteAddr     = tcpip.Address("\x0a\x00\x00\x02")
+	stackLinkAddr  = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
 	remoteLinkAddr = tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06")
-
-	unknownAddr = tcpip.Address("\x0a\x00\x00\x03")
 
 	defaultChannelSize = 1
 	defaultMTU         = 65536
@@ -52,6 +48,12 @@ const (
 	// queue all the events received during tests before consumption.
 	// If eventChanSize is too small, the tests may deadlock.
 	eventChanSize = 32
+)
+
+var (
+	stackAddr   = testutil.MustParse4("10.0.0.1")
+	remoteAddr  = testutil.MustParse4("10.0.0.2")
+	unknownAddr = testutil.MustParse4("10.0.0.3")
 )
 
 type eventType uint8

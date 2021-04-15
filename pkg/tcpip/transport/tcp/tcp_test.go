@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	tcpiptestutil "gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -5529,8 +5530,8 @@ func TestListenBacklogFull(t *testing.T) {
 // TestListenNoAcceptMulticastBroadcastV4 makes sure that TCP segments with a
 // non unicast IPv4 address are not accepted.
 func TestListenNoAcceptNonUnicastV4(t *testing.T) {
-	multicastAddr := tcpip.Address("\xe0\x00\x01\x02")
-	otherMulticastAddr := tcpip.Address("\xe0\x00\x01\x03")
+	multicastAddr := tcpiptestutil.MustParse4("224.0.1.2")
+	otherMulticastAddr := tcpiptestutil.MustParse4("224.0.1.3")
 	subnet := context.StackAddrWithPrefix.Subnet()
 	subnetBroadcastAddr := subnet.Broadcast()
 
@@ -5641,8 +5642,8 @@ func TestListenNoAcceptNonUnicastV4(t *testing.T) {
 // TestListenNoAcceptMulticastBroadcastV6 makes sure that TCP segments with a
 // non unicast IPv6 address are not accepted.
 func TestListenNoAcceptNonUnicastV6(t *testing.T) {
-	multicastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01")
-	otherMulticastAddr := tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02")
+	multicastAddr := tcpiptestutil.MustParse6("ff0e::101")
+	otherMulticastAddr := tcpiptestutil.MustParse6("ff0e::102")
 
 	tests := []struct {
 		name    string

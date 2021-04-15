@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -510,11 +511,10 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 		nicID1 = 1
 		nicID2 = 2
 
-		ipv4Loopback = tcpip.Address("\x7f\x00\x00\x01")
-
 		numPackets = 1
 		ttl        = 64
 	)
+	ipv4Loopback := testutil.MustParse4("127.0.0.1")
 
 	loopbackSourcedICMPv4 := func(e *channel.Endpoint) {
 		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)

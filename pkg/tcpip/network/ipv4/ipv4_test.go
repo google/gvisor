@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	tcptestutil "gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -3039,10 +3040,12 @@ func TestCloseLocking(t *testing.T) {
 		nicID1 = 1
 		nicID2 = 2
 
-		src = tcpip.Address("\x10\x00\x00\x01")
-		dst = tcpip.Address("\x10\x00\x00\x02")
-
 		iterations = 1000
+	)
+
+	var (
+		src = tcptestutil.MustParse4("16.0.0.1")
+		dst = tcptestutil.MustParse4("16.0.0.2")
 	)
 
 	s := stack.New(stack.Options{

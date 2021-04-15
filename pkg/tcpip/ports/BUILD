@@ -21,6 +21,7 @@ go_test(
     library = ":ports",
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

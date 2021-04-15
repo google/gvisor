@@ -107,6 +107,7 @@ go_test(
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/tcp/testing/context",
         "//pkg/test/testutil",
         "//pkg/waiter",
