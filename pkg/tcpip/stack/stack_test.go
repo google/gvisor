@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
@@ -1645,10 +1646,10 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	defaultAddr := tcpip.AddressWithPrefix{header.IPv4Any, 0}
 	// Local subnet on NIC1: 192.168.1.58/24, gateway 192.168.1.1.
 	nic1Addr := tcpip.AddressWithPrefix{"\xc0\xa8\x01\x3a", 24}
-	nic1Gateway := tcpip.Address("\xc0\xa8\x01\x01")
+	nic1Gateway := testutil.MustParse4("192.168.1.1")
 	// Local subnet on NIC2: 10.10.10.5/24, gateway 10.10.10.1.
 	nic2Addr := tcpip.AddressWithPrefix{"\x0a\x0a\x0a\x05", 24}
-	nic2Gateway := tcpip.Address("\x0a\x0a\x0a\x01")
+	nic2Gateway := testutil.MustParse4("10.10.10.1")
 
 	// Create a new stack with two NICs.
 	s := stack.New(stack.Options{
@@ -2789,23 +2790,25 @@ func TestNewPEBOnPromotionToPermanent(t *testing.T) {
 
 func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 	const (
-		linkLocalAddr1         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		linkLocalAddr2         = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		linkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		uniqueLocalAddr1       = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		globalAddr1            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		globalAddr2            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		globalAddr3            = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-		ipv4MappedIPv6Addr1    = tcpip.Address("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x01")
-		ipv4MappedIPv6Addr2    = tcpip.Address("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x02")
-		toredoAddr1            = tcpip.Address("\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		toredoAddr2            = tcpip.Address("\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-		ipv6ToIPv4Addr1        = tcpip.Address("\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		ipv6ToIPv4Addr2        = tcpip.Address("\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-
 		nicID           = 1
 		lifetimeSeconds = 9999
+	)
+
+	var (
+		linkLocalAddr1         = testutil.MustParse6("fe80::1")
+		linkLocalAddr2         = testutil.MustParse6("fe80::2")
+		linkLocalMulticastAddr = testutil.MustParse6("ff02::1")
+		uniqueLocalAddr1       = testutil.MustParse6("fc00::1")
+		uniqueLocalAddr2       = testutil.MustParse6("fd00::2")
+		globalAddr1            = testutil.MustParse6("a000::1")
+		globalAddr2            = testutil.MustParse6("a000::2")
+		globalAddr3            = testutil.MustParse6("a000::3")
+		ipv4MappedIPv6Addr1    = testutil.MustParse6("::ffff:0.0.0.1")
+		ipv4MappedIPv6Addr2    = testutil.MustParse6("::ffff:0.0.0.2")
+		toredoAddr1            = testutil.MustParse6("2001::1")
+		toredoAddr2            = testutil.MustParse6("2001::2")
+		ipv6ToIPv4Addr1        = testutil.MustParse6("2002::1")
+		ipv6ToIPv4Addr2        = testutil.MustParse6("2002::2")
 	)
 
 	prefix1, _, stableGlobalAddr1 := prefixSubnetAddr(0, linkAddr1)
@@ -3448,7 +3451,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 	}
 	ipv4Subnet := ipv4Addr.Subnet()
 	ipv4SubnetBcast := ipv4Subnet.Broadcast()
-	ipv4Gateway := tcpip.Address("\xc0\xa8\x01\x01")
+	ipv4Gateway := testutil.MustParse4("192.168.1.1")
 	ipv4AddrPrefix31 := tcpip.AddressWithPrefix{
 		Address:   "\xc0\xa8\x01\x3a",
 		PrefixLen: 31,
@@ -4352,11 +4355,13 @@ func TestWritePacketToRemote(t *testing.T) {
 
 func TestClearNeighborCacheOnNICDisable(t *testing.T) {
 	const (
-		nicID = 1
-
-		ipv4Addr = tcpip.Address("\x01\x02\x03\x04")
-		ipv6Addr = tcpip.Address("\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04")
+		nicID    = 1
 		linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+	)
+
+	var (
+		ipv4Addr = testutil.MustParse4("1.2.3.4")
+		ipv6Addr = testutil.MustParse6("102:304:102:304:102:304:102:304")
 	)
 
 	clock := faketime.NewManualClock()

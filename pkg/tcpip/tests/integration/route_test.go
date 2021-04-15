@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -40,13 +41,13 @@ import (
 // This tests that a local route is created and packets do not leave the stack.
 func TestLocalPing(t *testing.T) {
 	const (
-		nicID        = 1
-		ipv4Loopback = tcpip.Address("\x7f\x00\x00\x01")
+		nicID = 1
 
 		// icmpDataOffset is the offset to the data in both ICMPv4 and ICMPv6 echo
 		// request/reply packets.
 		icmpDataOffset = 8
 	)
+	ipv4Loopback := testutil.MustParse4("127.0.0.1")
 
 	channelEP := func() stack.LinkEndpoint { return channel.New(1, header.IPv6MinimumMTU, "") }
 	channelEPCheck := func(t *testing.T, e stack.LinkEndpoint) {

@@ -30,23 +30,25 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-const (
-	localIPv4Addr  = tcpip.Address("\x0a\x00\x00\x01")
-	remoteIPv4Addr = tcpip.Address("\x0a\x00\x00\x02")
-	ipv4SubnetAddr = tcpip.Address("\x0a\x00\x00\x00")
-	ipv4SubnetMask = tcpip.Address("\xff\xff\xff\x00")
-	ipv4Gateway    = tcpip.Address("\x0a\x00\x00\x03")
-	localIPv6Addr  = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	remoteIPv6Addr = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	ipv6SubnetAddr = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-	ipv6SubnetMask = tcpip.Address("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00")
-	ipv6Gateway    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	nicID          = 1
+const nicID = 1
+
+var (
+	localIPv4Addr  = testutil.MustParse4("10.0.0.1")
+	remoteIPv4Addr = testutil.MustParse4("10.0.0.2")
+	ipv4SubnetAddr = testutil.MustParse4("10.0.0.0")
+	ipv4SubnetMask = testutil.MustParse4("255.255.255.0")
+	ipv4Gateway    = testutil.MustParse4("10.0.0.3")
+	localIPv6Addr  = testutil.MustParse6("a00::1")
+	remoteIPv6Addr = testutil.MustParse6("a00::2")
+	ipv6SubnetAddr = testutil.MustParse6("a00::")
+	ipv6SubnetMask = testutil.MustParse6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ff00")
+	ipv6Gateway    = testutil.MustParse6("a00::3")
 )
 
 var localIPv4AddrWithPrefix = tcpip.AddressWithPrefix{

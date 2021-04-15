@@ -30,22 +30,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 
-	stackIPv4Addr           = tcpip.Address("\x0a\x00\x00\x01")
 	defaultIPv4PrefixLength = 24
-	linkLocalIPv6Addr1      = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	linkLocalIPv6Addr2      = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-
-	ipv4MulticastAddr1 = tcpip.Address("\xe0\x00\x00\x03")
-	ipv4MulticastAddr2 = tcpip.Address("\xe0\x00\x00\x04")
-	ipv4MulticastAddr3 = tcpip.Address("\xe0\x00\x00\x05")
-	ipv6MulticastAddr1 = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	ipv6MulticastAddr2 = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04")
-	ipv6MulticastAddr3 = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05")
 
 	igmpMembershipQuery    = uint8(header.IGMPMembershipQuery)
 	igmpv1MembershipReport = uint8(header.IGMPv1MembershipReport)
@@ -56,6 +47,19 @@ const (
 	mldDone                = uint8(header.ICMPv6MulticastListenerDone)
 
 	maxUnsolicitedReports = 2
+)
+
+var (
+	stackIPv4Addr      = testutil.MustParse4("10.0.0.1")
+	linkLocalIPv6Addr1 = testutil.MustParse6("fe80::1")
+	linkLocalIPv6Addr2 = testutil.MustParse6("fe80::2")
+
+	ipv4MulticastAddr1 = testutil.MustParse4("224.0.0.3")
+	ipv4MulticastAddr2 = testutil.MustParse4("224.0.0.4")
+	ipv4MulticastAddr3 = testutil.MustParse4("224.0.0.5")
+	ipv6MulticastAddr1 = testutil.MustParse6("ff02::3")
+	ipv6MulticastAddr2 = testutil.MustParse6("ff02::4")
+	ipv6MulticastAddr3 = testutil.MustParse6("ff02::5")
 )
 
 var (

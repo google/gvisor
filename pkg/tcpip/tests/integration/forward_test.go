@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -319,16 +320,17 @@ func TestMulticastForwarding(t *testing.T) {
 	const (
 		nicID1 = 1
 		nicID2 = 2
+		ttl    = 64
+	)
 
-		ipv4LinkLocalUnicastAddr   = tcpip.Address("\xa9\xfe\x00\x0a")
-		ipv4LinkLocalMulticastAddr = tcpip.Address("\xe0\x00\x00\x0a")
-		ipv4GlobalMulticastAddr    = tcpip.Address("\xe0\x00\x01\x0a")
+	var (
+		ipv4LinkLocalUnicastAddr   = testutil.MustParse4("169.254.0.10")
+		ipv4LinkLocalMulticastAddr = testutil.MustParse4("224.0.0.10")
+		ipv4GlobalMulticastAddr    = testutil.MustParse4("224.0.1.10")
 
-		ipv6LinkLocalUnicastAddr   = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
-		ipv6LinkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
-		ipv6GlobalMulticastAddr    = tcpip.Address("\xff\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0a")
-
-		ttl = 64
+		ipv6LinkLocalUnicastAddr   = testutil.MustParse6("fe80::a")
+		ipv6LinkLocalMulticastAddr = testutil.MustParse6("ff02::a")
+		ipv6GlobalMulticastAddr    = testutil.MustParse6("ff0e::a")
 	)
 
 	rxICMPv4EchoRequest := func(e *channel.Endpoint, src, dst tcpip.Address) {

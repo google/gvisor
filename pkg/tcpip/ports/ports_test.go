@@ -20,14 +20,17 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	fakeTransNumber   tcpip.TransportProtocolNumber = 1
 	fakeNetworkNumber tcpip.NetworkProtocolNumber   = 2
+)
 
-	fakeIPAddress  = tcpip.Address("\x08\x08\x08\x08")
-	fakeIPAddress1 = tcpip.Address("\x08\x08\x08\x09")
+var (
+	fakeIPAddress  = testutil.MustParse4("8.8.8.8")
+	fakeIPAddress1 = testutil.MustParse4("8.8.8.9")
 )
 
 type portReserveTestAction struct {

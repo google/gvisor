@@ -26,16 +26,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	linkAddr            = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	stackAddr           = tcpip.Address("\x0a\x00\x00\x01")
-	remoteAddr          = tcpip.Address("\x0a\x00\x00\x02")
-	multicastAddr       = tcpip.Address("\xe0\x00\x00\x03")
 	nicID               = 1
 	defaultTTL          = 1
 	defaultPrefixLength = 24
+)
+
+var (
+	stackAddr     = testutil.MustParse4("10.0.0.1")
+	remoteAddr    = testutil.MustParse4("10.0.0.2")
+	multicastAddr = testutil.MustParse4("224.0.0.3")
 )
 
 // validateIgmpPacket checks that a passed PacketInfo is an IPv4 IGMP packet
@@ -292,7 +296,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			messageType:              header.IGMPLeaveGroup,
 			includeRouterAlertOption: true,
 			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
-			srcAddr:                  tcpip.Address("\x0a\x00\x01\x02"),
+			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
 			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.IGMP.PacketsReceived.LeaveGroup.Value() },
@@ -302,7 +306,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			messageType:              header.IGMPMembershipQuery,
 			includeRouterAlertOption: true,
 			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
-			srcAddr:                  tcpip.Address("\x0a\x00\x01\x02"),
+			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          true,
 			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.IGMP.PacketsReceived.MembershipQuery.Value() },
@@ -312,7 +316,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			messageType:              header.IGMPv1MembershipReport,
 			includeRouterAlertOption: true,
 			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
-			srcAddr:                  tcpip.Address("\x0a\x00\x01\x02"),
+			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
 			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.IGMP.PacketsReceived.V1MembershipReport.Value() },
@@ -322,7 +326,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			messageType:              header.IGMPv2MembershipReport,
 			includeRouterAlertOption: true,
 			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
-			srcAddr:                  tcpip.Address("\x0a\x00\x01\x02"),
+			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
 			getMessageTypeStatValue:  func(stats tcpip.Stats) uint64 { return stats.IGMP.PacketsReceived.V2MembershipReport.Value() },
@@ -332,7 +336,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			messageType:              header.IGMPv2MembershipReport,
 			includeRouterAlertOption: true,
 			stackAddresses: []tcpip.AddressWithPrefix{
-				{Address: tcpip.Address("\x0a\x00\x0f\x01"), PrefixLen: 24},
+				{Address: testutil.MustParse4("10.0.15.1"), PrefixLen: 24},
 				{Address: stackAddr, PrefixLen: 24},
 			},
 			srcAddr:                 remoteAddr,

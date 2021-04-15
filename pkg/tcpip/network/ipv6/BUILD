@@ -66,5 +66,6 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
     ],
 )

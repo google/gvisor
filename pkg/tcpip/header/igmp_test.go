@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 // TestIGMPHeader tests the functions within header.igmp
@@ -46,7 +46,7 @@ func TestIGMPHeader(t *testing.T) {
 		t.Errorf("got igmpHeader.Checksum() = %x, want = %x", got, want)
 	}
 
-	if got, want := igmpHeader.GroupAddress(), tcpip.Address("\x01\x02\x03\x04"); got != want {
+	if got, want := igmpHeader.GroupAddress(), testutil.MustParse4("1.2.3.4"); got != want {
 		t.Errorf("got igmpHeader.GroupAddress() = %s, want = %s", got, want)
 	}
 
@@ -71,7 +71,7 @@ func TestIGMPHeader(t *testing.T) {
 		t.Errorf("got igmpHeader.Checksum() = %x, want = %x", got, checksum)
 	}
 
-	groupAddress := tcpip.Address("\x04\x03\x02\x01")
+	groupAddress := testutil.MustParse4("4.3.2.1")
 	igmpHeader.SetGroupAddress(groupAddress)
 	if got := igmpHeader.GroupAddress(); got != groupAddress {
 		t.Errorf("got igmpHeader.GroupAddress() = %s, want = %s", got, groupAddress)

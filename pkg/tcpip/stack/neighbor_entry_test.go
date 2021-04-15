@@ -26,14 +26,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	entryTestNetNumber tcpip.NetworkProtocolNumber = math.MaxUint32
 
 	entryTestNICID tcpip.NICID = 1
-	entryTestAddr1             = tcpip.Address("\x00\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	entryTestAddr2             = tcpip.Address("\x00\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 
 	entryTestLinkAddr1 = tcpip.LinkAddress("\x0a\x00\x00\x00\x00\x01")
 	entryTestLinkAddr2 = tcpip.LinkAddress("\x0a\x00\x00\x00\x00\x02")
@@ -42,6 +41,11 @@ const (
 	// except where another value is explicitly used. It is chosen to match the
 	// MTU of loopback interfaces on Linux systems.
 	entryTestNetDefaultMTU = 65536
+)
+
+var (
+	entryTestAddr1 = testutil.MustParse6("a::1")
+	entryTestAddr2 = testutil.MustParse6("a::2")
 )
 
 // runImmediatelyScheduledJobs runs all jobs scheduled to run at the current

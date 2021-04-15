@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 // TestNDPNeighborSolicit tests the functions of NDPNeighborSolicit.
@@ -40,13 +41,13 @@ func TestNDPNeighborSolicit(t *testing.T) {
 
 	// Test getting the Target Address.
 	ns := NDPNeighborSolicit(b)
-	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
+	addr := testutil.MustParse6("102:304:506:708:90a:b0c:d0e:f10")
 	if got := ns.TargetAddress(); got != addr {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr)
 	}
 
 	// Test updating the Target Address.
-	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
+	addr2 := testutil.MustParse6("1112:1314:1516:1718:191a:1b1c:1d1e:1f11")
 	ns.SetTargetAddress(addr2)
 	if got := ns.TargetAddress(); got != addr2 {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
@@ -69,7 +70,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 
 	// Test getting the Target Address.
 	na := NDPNeighborAdvert(b)
-	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
+	addr := testutil.MustParse6("102:304:506:708:90a:b0c:d0e:f10")
 	if got := na.TargetAddress(); got != addr {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr)
 	}
@@ -90,7 +91,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 	}
 
 	// Test updating the Target Address.
-	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
+	addr2 := testutil.MustParse6("1112:1314:1516:1718:191a:1b1c:1d1e:1f11")
 	na.SetTargetAddress(addr2)
 	if got := na.TargetAddress(); got != addr2 {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr2)
@@ -277,7 +278,7 @@ func TestOpts(t *testing.T) {
 	}
 
 	const validLifetimeSeconds = 16909060
-	const address = tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18")
+	address := testutil.MustParse6("90a:b0c:d0e:f10:1112:1314:1516:1718")
 
 	expectedRDNSSBytes := [...]byte{
 		// Type, Length

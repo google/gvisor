@@ -52,6 +52,7 @@ go_test(
         "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
@@ -69,6 +70,7 @@ go_test(
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
