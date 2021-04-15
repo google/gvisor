@@ -460,6 +460,9 @@ func (i *inode) DecRef(ctx context.Context) {
 		if err := unix.Close(i.hostFD); err != nil {
 			log.Warningf("failed to close host fd %d: %v", i.hostFD, err)
 		}
+		// We can't rely on fdnotifier when closing the fd, because the event may race
+		// with fdnotifier.RemoveFD. Instead, notify the queue explicitly.
+		i.queue.Notify(waiter.EventHUp | waiter.ReadableEvents | waiter.WritableEvents)
 	})
 }
 
