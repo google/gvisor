@@ -1212,7 +1212,7 @@ func (s *StatCounter) Decrement() {
 }
 
 // Value returns the current value of the counter.
-func (s *StatCounter) Value() uint64 {
+func (s *StatCounter) Value(name ...string) uint64 {
 	return atomic.LoadUint64(&s.count)
 }
 

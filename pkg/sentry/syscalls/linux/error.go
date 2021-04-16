@@ -33,6 +33,14 @@ var (
 	partialResultOnce   sync.Once
 )
 
+// incrementPartialResultMetric increments PartialResultMetric by calling
+// Increment(). This is added as the func Do() which is called below requires
+// us to pass a function which does not take any arguments, whereas Increment()
+// takes a variadic number of arguments.
+func incrementPartialResultMetric() {
+	partialResultMetric.Increment()
+}
+
 // HandleIOErrorVFS2 handles special error cases for partial results. For some
 // errors, we may consume the error and return only the partial read/write.
 //
@@ -48,7 +56,7 @@ func HandleIOErrorVFS2(ctx context.Context, partialResult bool, ioerr, intr erro
 		root := vfs.RootFromContext(ctx)
 		name, _ := fs.PathnameWithDeleted(ctx, root, f.VirtualDentry())
 		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q", partialResult, ioerr, ioerr, op, name)
-		partialResultOnce.Do(partialResultMetric.Increment)
+		partialResultOnce.Do(incrementPartialResultMetric)
 	}
 	return nil
 }
@@ -66,7 +74,7 @@ func handleIOError(ctx context.Context, partialResult bool, ioerr, intr error, o
 		// An unknown error is encountered with a partial read/write.
 		name, _ := f.Dirent.FullName(nil /* ignore chroot */)
 		log.Traceback("Invalid request partialResult %v and err (type %T) %v for %s operation on %q, %T", partialResult, ioerr, ioerr, op, name, f.FileOperations)
-		partialResultOnce.Do(partialResultMetric.Increment)
+		partialResultOnce.Do(incrementPartialResultMetric)
 	}
 	return nil
 }
