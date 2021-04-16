@@ -39,7 +39,7 @@ import (
 func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
 	// Set up an external transport.Endpoint using the host fd.
 	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	e, err := NewConnectedEndpoint(ctx, hostFD, addr, true /* saveable */)
+	e, err := NewConnectedEndpoint(hostFD, addr)
 	if err != nil {
 		return nil, err.ToError()
 	}
@@ -86,7 +86,10 @@ type ConnectedEndpoint struct {
 // for restoring them.
 func (c *ConnectedEndpoint) init() *syserr.Error {
 	c.InitRefs()
+	return c.initFromOptions()
+}
 
+func (c *ConnectedEndpoint) initFromOptions() *syserr.Error {
 	family, err := unix.GetsockoptInt(c.fd, unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
 		return syserr.FromError(err)
@@ -123,7 +126,7 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(ctx context.Context, hostFD int, addr string, saveable bool) (*ConnectedEndpoint, *syserr.Error) {
+func NewConnectedEndpoint(hostFD int, addr string) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
 		fd:   hostFD,
 		addr: addr,

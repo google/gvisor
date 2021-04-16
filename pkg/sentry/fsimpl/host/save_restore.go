@@ -68,3 +68,10 @@ func (i *inode) afterLoad() {
 		}
 	}
 }
+
+// afterLoad is invoked by stateify.
+func (c *ConnectedEndpoint) afterLoad() {
+	if err := c.initFromOptions(); err != nil {
+		panic(fmt.Sprintf("initFromOptions failed: %v", err))
+	}
+}

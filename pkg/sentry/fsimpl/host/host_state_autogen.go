@@ -234,14 +234,13 @@ func (c *ConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &c.stype)
 }
 
-func (c *ConnectedEndpoint) afterLoad() {}
-
 // +checklocksignore
 func (c *ConnectedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.ConnectedEndpointRefs)
 	stateSourceObject.Load(1, &c.fd)
 	stateSourceObject.Load(2, &c.addr)
 	stateSourceObject.Load(3, &c.stype)
+	stateSourceObject.AfterLoad(c.afterLoad)
 }
 
 func (t *TTYFileDescription) StateTypeName() string {
