@@ -369,30 +369,32 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 		"--dut_infos_json", string(dutInfosBytes),
 	)
 	testbenchLogs, err := testbenchContainer.Exec(ctx, dockerutil.ExecOpts{}, testArgs...)
-	if (err != nil) != expectFailure {
-		var dutLogs string
-		for i, dut := range duts {
-			logs, err := dut.Logs(ctx)
-			if err != nil {
-				logs = fmt.Sprintf("failed to fetch DUT logs: %s", err)
-			}
-			dutLogs = fmt.Sprintf(`%s====== Begin of DUT-%d Logs ======
+	var dutLogs string
+	for i, dut := range duts {
+		logs, err := dut.Logs(ctx)
+		if err != nil {
+			logs = fmt.Sprintf("failed to fetch DUT logs: %s", err)
+		}
+		dutLogs = fmt.Sprintf(`%s====== Begin of DUT-%d Logs ======
 
 %s
 
 ====== End of DUT-%d Logs ======
 
 `, dutLogs, i, logs, i)
-		}
-
-		t.Errorf(`test error: %v, expect failure: %t
-
+	}
+	testLogs := fmt.Sprintf(`
 %s====== Begin of Testbench Logs ======
 
 %s
 
-====== End of Testbench Logs ======`,
-			err, expectFailure, dutLogs, testbenchLogs)
+====== End of Testbench Logs ======`, dutLogs, testbenchLogs)
+	if (err != nil) != expectFailure {
+		t.Errorf(`test error: %v, expect failure: %t
+%s`, err, expectFailure, testLogs)
+	} else if expectFailure {
+		t.Logf(`test failed as expected: %v
+%s`, err, testLogs)
 	}
 }
 
