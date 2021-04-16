@@ -17,6 +17,7 @@
 package ports
 
 import (
+	"math"
 	"math/rand"
 	"sync/atomic"
 
@@ -24,7 +25,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-const anyIPAddress tcpip.Address = ""
+const (
+	firstEphemeral               = 16000
+	anyIPAddress   tcpip.Address = ""
+)
 
 // Reservation describes a port reservation.
 type Reservation struct {
@@ -220,10 +224,8 @@ type PortManager struct {
 func NewPortManager() *PortManager {
 	return &PortManager{
 		allocatedPorts: make(map[portDescriptor]addrToDevice),
-		// Match Linux's default ephemeral range. See:
-		// https://github.com/torvalds/linux/blob/e54937963fa249595824439dc839c948188dea83/net/ipv4/af_inet.c#L1842
-		firstEphemeral: 32768,
-		numEphemeral:   28232,
+		firstEphemeral: firstEphemeral,
+		numEphemeral:   math.MaxUint16 - firstEphemeral + 1,
 	}
 }
 
@@ -242,13 +244,13 @@ func (pm *PortManager) PickEphemeralPort(testPort PortTester) (port uint16, err 
 	numEphemeral := pm.numEphemeral
 	pm.ephemeralMu.RUnlock()
 
-	offset := uint16(rand.Int31n(int32(numEphemeral)))
+	offset := uint32(rand.Int31n(int32(numEphemeral)))
 	return pickEphemeralPort(offset, firstEphemeral, numEphemeral, testPort)
 }
 
 // portHint atomically reads and returns the pm.hint value.
-func (pm *PortManager) portHint() uint16 {
-	return uint16(atomic.LoadUint32(&pm.hint))
+func (pm *PortManager) portHint() uint32 {
+	return atomic.LoadUint32(&pm.hint)
 }
 
 // incPortHint atomically increments pm.hint by 1.
@@ -260,7 +262,7 @@ func (pm *PortManager) incPortHint() {
 // iterates over all ephemeral ports, allowing the caller to decide whether a
 // given port is suitable for its needs and stopping when a port is found or an
 // error occurs.
-func (pm *PortManager) PickEphemeralPortStable(offset uint16, testPort PortTester) (port uint16, err tcpip.Error) {
+func (pm *PortManager) PickEphemeralPortStable(offset uint32, testPort PortTester) (port uint16, err tcpip.Error) {
 	pm.ephemeralMu.RLock()
 	firstEphemeral := pm.firstEphemeral
 	numEphemeral := pm.numEphemeral
@@ -277,9 +279,9 @@ func (pm *PortManager) PickEphemeralPortStable(offset uint16, testPort PortTeste
 // and iterates over the number of ports specified by count and allows the
 // caller to decide whether a given port is suitable for its needs, and stopping
 // when a port is found or an error occurs.
-func pickEphemeralPort(offset, first, count uint16, testPort PortTester) (port uint16, err tcpip.Error) {
-	for i := uint16(0); i < count; i++ {
-		port = first + (offset+i)%count
+func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) (port uint16, err tcpip.Error) {
+	for i := uint32(0); i < uint32(count); i++ {
+		port := uint16(uint32(first) + (offset+i)%uint32(count))
 		ok, err := testPort(port)
 		if err != nil {
 			return 0, err

@@ -2251,7 +2251,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 				panic(err)
 			}
 		}
-		portOffset := uint16(h.Sum32())
+		portOffset := h.Sum32()
 
 		var twReuse tcpip.TCPTimeWaitReuseOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &twReuse); err != nil {
@@ -2362,6 +2362,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 			e.boundDest = addr
 			return true, nil
 		}); err != nil {
+			e.stack.Stats().TCP.FailedPortReservations.Increment()
 			return err
 		}
 	}
@@ -2685,6 +2686,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 		return true, nil
 	})
 	if err != nil {
+		e.stack.Stats().TCP.FailedPortReservations.Increment()
 		return err
 	}
 
