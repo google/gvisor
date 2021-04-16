@@ -59,8 +59,9 @@ func reset() {
 }
 
 const (
-	fooDescription = "Foo!"
-	barDescription = "Bar Baz"
+	fooDescription     = "Foo!"
+	barDescription     = "Bar Baz"
+	counterDescription = "Counter"
 )
 
 func TestInitialize(t *testing.T) {
@@ -95,7 +96,7 @@ func TestInitialize(t *testing.T) {
 	foundBar := false
 	for _, m := range mr.Metrics {
 		if m.Type != pb.MetricMetadata_TYPE_UINT64 {
-			t.Errorf("Metadata %+v Type got %v want %v", m, m.Type, pb.MetricMetadata_TYPE_UINT64)
+			t.Errorf("Metadata %+v Type got %v want pb.MetricMetadata_TYPE_UINT64", m, m.Type)
 		}
 		if !m.Cumulative {
 			t.Errorf("Metadata %+v Cumulative got false want true", m)
@@ -254,5 +255,90 @@ func TestEmitMetricUpdate(t *testing.T) {
 	}
 	if uv.Uint64Value != 1 {
 		t.Errorf("%v: Value got %v want 1", m, uv.Uint64Value)
+	}
+}
+
+func TestEmitMetricUpdateWithFields(t *testing.T) {
+	defer reset()
+
+	field := Field{
+		name:          "weirdness_type",
+		allowedValues: []string{"weird1", "weird2"}}
+
+	counter, err := NewUint64Metric("/weirdness", false, pb.MetricMetadata_UNITS_NONE, counterDescription, field)
+	if err != nil {
+		t.Fatalf("NewUint64Metric got err %v want nil", err)
+	}
+
+	Initialize()
+
+	// Don't care about the registration metrics.
+	emitter.Reset()
+	EmitMetricUpdate()
+
+	// For metrics with fields, we do not emit data unless the value is
+	// incremented.
+	if len(emitter) != 0 {
+		t.Fatalf("EmitMetricUpdate emitted %d events want 0", len(emitter))
+	}
+
+	counter.IncrementBy(4, "weird1")
+	counter.Increment("weird2")
+
+	emitter.Reset()
+	EmitMetricUpdate()
+
+	if len(emitter) != 1 {
+		t.Fatalf("EmitMetricUpdate emitted %d events want 1", len(emitter))
+	}
+
+	update, ok := emitter[0].(*pb.MetricUpdate)
+	if !ok {
+		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
+	}
+
+	if len(update.Metrics) != 2 {
+		t.Errorf("MetricUpdate got %d metrics want 2", len(update.Metrics))
+	}
+
+	foundWeird1 := false
+	foundWeird2 := false
+	for i := 0; i < len(update.Metrics); i++ {
+		m := update.Metrics[i]
+
+		if m.Name != "/weirdness" {
+			t.Errorf("Metric %+v name got %q want '/weirdness'", m, m.Name)
+		}
+		if len(m.FieldValues) != 1 {
+			t.Errorf("MetricUpdate got %d fields want 1", len(m.FieldValues))
+		}
+
+		switch m.FieldValues[0] {
+		case "weird1":
+			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
+			if !ok {
+				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
+			}
+			if uv.Uint64Value != 4 {
+				t.Errorf("%v: Value got %v want 4", m, uv.Uint64Value)
+			}
+			foundWeird1 = true
+		case "weird2":
+			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
+			if !ok {
+				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
+			}
+			if uv.Uint64Value != 1 {
+				t.Errorf("%v: Value got %v want 1", m, uv.Uint64Value)
+			}
+			foundWeird2 = true
+		}
+	}
+
+	if !foundWeird1 {
+		t.Errorf("Field value weird1 not found: %+v", emitter)
+	}
+	if !foundWeird2 {
+		t.Errorf("Field value weird2 not found: %+v", emitter)
 	}
 }
