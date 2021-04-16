@@ -181,11 +181,15 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 .PHONY: smoke-tests
 
 fuse-tests:
-	@$(call test,--test_tag_filters=fuse $(PARTITIONS) test/fuse/...)
+	@$(call test,--build_tag_filters=fuse --test_tag_filters=fuse $(PARTITIONS) test/fuse/...)
 .PHONY: fuse-tests
 
+nogo-tests:
+	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)
+.PHONY: nogo-tests
+
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,//:all pkg/... tools/...)
+	@$(call test,--build_tag_filters=-nogo --test_tag_filters=-nogo //:all pkg/... tools/...)
 .PHONY: unit-tests
 
 runsc-tests: ## Run all tests in runsc/...
@@ -193,7 +197,7 @@ runsc-tests: ## Run all tests in runsc/...
 .PHONY: runsc-tests
 
 tests: ## Runs all unit tests and syscall tests.
-tests: unit-tests runsc-tests syscall-tests
+tests: unit-tests nogo-tests runsc-tests syscall-tests
 .PHONY: tests
 
 integration-tests: ## Run all standard integration tests.
@@ -206,10 +210,10 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 .PHONY: network-tests
 
 syscall-%-tests:
-	@$(call test,--test_tag_filters=runsc_$* $(PARTITIONS) test/syscalls/...)
+	@$(call test,--build_tag_filters=runsc_$* --test_tag_filters=runsc_$* $(PARTITIONS) test/syscalls/...)
 
 syscall-native-tests:
-	@$(call test,--test_tag_filters=native $(PARTITIONS) test/syscalls/...)
+	@$(call test,--build_tag_filters=native --test_tag_filters=native $(PARTITIONS) test/syscalls/...)
 .PHONY: syscall-native-tests
 
 syscall-tests: ## Run all system call tests.
