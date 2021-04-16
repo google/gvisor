@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/mitigate"
 	"gvisor.dev/gvisor/runsc/mitigate/mock"
 )
 
@@ -84,9 +83,6 @@ power management::84
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Mitigate{
 				dryRun: true,
-				vulnerable: func(other mitigate.Thread) bool {
-					return other.IsVulnerable()
-				},
 			}
 			m.doExecuteTest(t, "Mitigate", tc.mitigateData, tc.mitigateCPU, tc.mitigateError)
 
@@ -104,9 +100,6 @@ func TestExecuteSmoke(t *testing.T) {
 
 	m := &Mitigate{
 		dryRun: true,
-		vulnerable: func(other mitigate.Thread) bool {
-			return other.IsVulnerable()
-		},
 	}
 
 	m.doExecuteTest(t, "Mitigate", string(smokeMitigate), 0, nil)

@@ -40,8 +40,8 @@ type Mitigate struct {
 	reverse bool
 	// Path to file to read to create CPUSet.
 	path string
-	// Callback to check if a given thread is vulnerable.
-	vulnerable func(other mitigate.Thread) bool
+	// Extra data for post mitigate operations.
+	data string
 }
 
 // Name implements subcommands.command.name.
@@ -54,19 +54,20 @@ func (*Mitigate) Synopsis() string {
 	return "mitigate mitigates the underlying system against side channel attacks"
 }
 
-// Usage implments Usage for cmd.Mitigate.
+// Usage implements Usage for cmd.Mitigate.
 func (m Mitigate) Usage() string {
-	return `mitigate [flags]
+	return fmt.Sprintf(`mitigate [flags]
 
 mitigate mitigates a system to the "MDS" vulnerability by implementing a manual shutdown of SMT. The command checks /proc/cpuinfo for cpus having the MDS vulnerability, and if found, shutdown all but one CPU per hyperthread pair via /sys/devices/system/cpu/cpu{N}/online. CPUs can be restored by writing "2" to each file in /sys/devices/system/cpu/cpu{N}/online or performing a system reboot.
 
-The command can be reversed with --reverse, which reads the total CPUs from /sys/devices/system/cpu/possible and enables all with /sys/devices/system/cpu/cpu{N}/online.`
+The command can be reversed with --reverse, which reads the total CPUs from /sys/devices/system/cpu/possible and enables all with /sys/devices/system/cpu/cpu{N}/online.%s`, m.usage())
 }
 
 // SetFlags sets flags for the command Mitigate.
 func (m *Mitigate) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&m.dryRun, "dryrun", false, "run the command without changing system")
 	f.BoolVar(&m.reverse, "reverse", false, "reverse mitigate by enabling all CPUs")
+	m.setFlags(f)
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -81,13 +82,17 @@ func (m *Mitigate) Execute(_ context.Context, f *flag.FlagSet, args ...interface
 		m.path = allPossibleCPUs
 	}
 
-	m.vulnerable = func(other mitigate.Thread) bool {
-		return other.IsVulnerable()
+	set, err := m.doExecute()
+	if err != nil {
+		return Errorf("Execute failed: %v", err)
 	}
 
-	if _, err := m.doExecute(); err != nil {
-		log.Warningf("Execute failed: %v", err)
-		return subcommands.ExitFailure
+	if m.data == "" {
+		return subcommands.ExitSuccess
+	}
+
+	if err = m.postMitigate(set); err != nil {
+		return Errorf("Post Mitigate failed: %v", err)
 	}
 
 	return subcommands.ExitSuccess
@@ -98,32 +103,26 @@ func (m *Mitigate) doExecute() (mitigate.CPUSet, error) {
 	if m.dryRun {
 		log.Infof("Running with DryRun. No cpu settings will be changed.")
 	}
+	data, err := ioutil.ReadFile(m.path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", m.path, err)
+	}
 	if m.reverse {
-		data, err := ioutil.ReadFile(m.path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read %s: %v", m.path, err)
-		}
-
 		set, err := m.doReverse(data)
 		if err != nil {
-			return nil, fmt.Errorf("reverse operation failed: %v", err)
+			return nil, fmt.Errorf("reverse operation failed: %w", err)
 		}
 		return set, nil
 	}
-
-	data, err := ioutil.ReadFile(m.path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %v", m.path, err)
-	}
 	set, err := m.doMitigate(data)
 	if err != nil {
-		return nil, fmt.Errorf("mitigate operation failed: %v", err)
+		return nil, fmt.Errorf("mitigate operation failed: %w", err)
 	}
 	return set, nil
 }
 
 func (m *Mitigate) doMitigate(data []byte) (mitigate.CPUSet, error) {
-	set, err := mitigate.NewCPUSet(data, m.vulnerable)
+	set, err := mitigate.NewCPUSet(data)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +138,7 @@ func (m *Mitigate) doMitigate(data []byte) (mitigate.CPUSet, error) {
 			continue
 		}
 		if err := t.Disable(); err != nil {
-			return nil, fmt.Errorf("error disabling thread: %s err: %v", t, err)
+			return nil, fmt.Errorf("error disabling thread: %s err: %w", t, err)
 		}
 	}
 	log.Infof("Shutdown successful.")
@@ -164,7 +163,7 @@ func (m *Mitigate) doReverse(data []byte) (mitigate.CPUSet, error) {
 			continue
 		}
 		if err := t.Enable(); err != nil {
-			return nil, fmt.Errorf("error enabling thread: %s err: %v", t, err)
+			return nil, fmt.Errorf("error enabling thread: %s err: %w", t, err)
 		}
 	}
 	log.Infof("Enable successful.")

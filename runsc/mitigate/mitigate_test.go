@@ -52,13 +52,12 @@ func TestMockCPUSet(t *testing.T) {
 	} {
 		t.Run(tc.testCase.Name, func(t *testing.T) {
 			data := tc.testCase.MakeCPUString()
-			vulnerable := func(t Thread) bool {
-				return t.IsVulnerable()
-			}
-			set, err := NewCPUSet([]byte(data), vulnerable)
+			set, err := NewCPUSet([]byte(data))
 			if err != nil {
 				t.Fatalf("Failed to create cpuSet: %v", err)
 			}
+
+			t.Logf("data: %s", data)
 
 			for _, tg := range set {
 				if err := checkSorted(tg.threads); err != nil {
@@ -258,11 +257,7 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("Failed to read cpuinfo: %v", err)
 	}
 
-	vulnerable := func(t Thread) bool {
-		return t.IsVulnerable()
-	}
-
-	set, err := NewCPUSet(data, vulnerable)
+	set, err := NewCPUSet(data)
 	if err != nil {
 		t.Fatalf("Failed to parse CPU data %v\n%s", err, data)
 	}
