@@ -349,9 +349,8 @@ TEST_F(TuntapTest, PingKernel) {
   };
   while (1) {
     inpkt r = {};
-    int nread = read(fd.get(), &r, sizeof(r));
-    EXPECT_THAT(nread, SyscallSucceeds());
-    long unsigned int n = static_cast<long unsigned int>(nread);
+    size_t n;
+    EXPECT_THAT(n = read(fd.get(), &r, sizeof(r)), SyscallSucceeds());
 
     if (n < sizeof(pihdr)) {
       std::cerr << "Ignored packet, protocol: " << r.pi.pi_protocol
@@ -408,9 +407,8 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
   };
   while (1) {
     inpkt r = {};
-    int nread = read(fd.get(), &r, sizeof(r));
-    EXPECT_THAT(nread, SyscallSucceeds());
-    long unsigned int n = static_cast<long unsigned int>(nread);
+    size_t n;
+    EXPECT_THAT(n = read(fd.get(), &r, sizeof(r)), SyscallSucceeds());
 
     if (n < sizeof(pihdr)) {
       std::cerr << "Ignored packet, protocol: " << r.pi.pi_protocol
