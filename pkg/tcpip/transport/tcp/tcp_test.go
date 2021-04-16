@@ -4899,7 +4899,13 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												t.Fatalf("unknown address type: '%s'", candidateAddressType)
 											}
 
-											start, end := s.PortRange()
+											const (
+												start = 16000
+												end   = 16050
+											)
+											if err := s.SetPortRange(start, end); err != nil {
+												t.Fatalf("got s.SetPortRange(%d, %d) = %s, want = nil", start, end, err)
+											}
 											for i := start; i <= end; i++ {
 												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}); err != nil {
 													t.Fatalf("Bind(%d) failed: %s", i, err)
