@@ -50,7 +50,7 @@ const (
 type CPUSet map[threadID]*ThreadGroup
 
 // NewCPUSet creates a CPUSet from data read from /proc/cpuinfo.
-func NewCPUSet(data []byte, vulnerable func(Thread) bool) (CPUSet, error) {
+func NewCPUSet(data []byte) (CPUSet, error) {
 	processors, err := getThreads(string(data))
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func NewCPUSet(data []byte, vulnerable func(Thread) bool) (CPUSet, error) {
 			core = &ThreadGroup{}
 			set[p.id] = core
 		}
-		core.isVulnerable = core.isVulnerable || vulnerable(p)
+		core.isVulnerable = core.isVulnerable || p.IsVulnerable()
 		core.threads = append(core.threads, p)
 	}
 
@@ -446,6 +446,7 @@ func buildRegex(key, match string) *regexp.Regexp {
 func parseRegex(data, key, match string) (string, error) {
 	r := buildRegex(key, match)
 	matches := r.FindStringSubmatch(data)
+
 	if len(matches) < 2 {
 		return "", fmt.Errorf("failed to match key %q: %q", key, data)
 	}

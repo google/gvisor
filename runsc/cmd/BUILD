@@ -23,6 +23,7 @@ go_library(
         "kill.go",
         "list.go",
         "mitigate.go",
+        "mitigate_extras.go",
         "path.go",
         "pause.go",
         "ps.go",
