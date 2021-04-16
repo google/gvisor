@@ -48,6 +48,15 @@ message MetricMetadata {
 
   // units is the units of the metric value.
   Units units = 6;
+
+  message Field {
+    string field_name = 1;
+    repeated string allowed_values = 2;
+  }
+
+  // fields contains the metric fields. Currently a metric can have at most
+  // one field.
+  repeated Field fields = 7;
 }
 
 // MetricRegistration contains the metadata for all metrics that will be in
@@ -66,6 +75,8 @@ message MetricValue {
   oneof value {
     uint64 uint64_value = 2;
   }
+
+  repeated string field_values = 4;
 }
 
 // MetricUpdate contains new values for multiple distinct metrics.

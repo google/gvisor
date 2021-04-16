@@ -38,7 +38,7 @@ var (
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
-// monitored.
+// monitored. We currently support metrics with at most one field.
 //
 // Metrics are not saved across save/restore and thus reset to zero on restore.
 //
@@ -46,6 +46,16 @@ var (
 type Uint64Metric struct {
 	// value is the actual value of the metric. It must be accessed atomically.
 	value uint64
+
+	// numFields is the number of metric fields. It is immutable once
+	// initialized.
+	numFields int
+
+	// mu protects the below fields.
+	mu sync.RWMutex `state:"nosave"`
+
+	// fields is the map of fields in the metric.
+	fields map[string]uint64
 }
 
 var (
@@ -97,8 +107,19 @@ type customUint64Metric struct {
 	// metadata describes the metric. It is immutable.
 	metadata *pb.MetricMetadata
 
-	// value returns the current value of the metric.
-	value func() uint64
+	// value returns the current value of the metric for the given set of
+	// fields. It takes a variadic number of field values as argument.
+	value func(fieldValues ...string) uint64
+}
+
+// Field contains the field name and allowed values for the metric which is
+// used in registration of the metric.
+type Field struct {
+	// name is the metric field name.
+	name string
+
+	// allowedValues is the list of allowed values for the field.
+	allowedValues []string
 }
 
 // RegisterCustomUint64Metric registers a metric with the given name.
@@ -109,7 +130,8 @@ type customUint64Metric struct {
 // Preconditions:
 // * name must be globally unique.
 // * Initialize/Disable have not been called.
-func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func() uint64) error {
+// * value is expected to accept exactly len(fields) arguments.
+func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func(...string) uint64, fields ...Field) error {
 	if initialized {
 		return ErrInitializationDone
 	}
@@ -129,13 +151,25 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 		},
 		value: value,
 	}
+
+	// Metrics can exist without fields.
+	if len(fields) > 1 {
+		panic("Sentry metrics support at most one field")
+	}
+
+	for _, field := range fields {
+		allMetrics.m[name].metadata.Fields = append(allMetrics.m[name].metadata.Fields, &pb.MetricMetadata_Field{
+			FieldName:     field.name,
+			AllowedValues: field.allowedValues,
+		})
+	}
 	return nil
 }
 
-// MustRegisterCustomUint64Metric calls RegisterCustomUint64Metric and panics
-// if it returns an error.
-func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func() uint64) {
-	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_NONE, description, value); err != nil {
+// MustRegisterCustomUint64Metric calls RegisterCustomUint64Metric for metrics
+// without fields and panics if it returns an error.
+func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func(...string) uint64, fields ...Field) {
+	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_NONE, description, value, fields...); err != nil {
 		panic(fmt.Sprintf("Unable to register metric %q: %v", name, err))
 	}
 }
@@ -144,15 +178,24 @@ func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, descript
 // name.
 //
 // Metrics must be statically defined (i.e., at init).
-func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string) (*Uint64Metric, error) {
-	var m Uint64Metric
-	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value)
+func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*Uint64Metric, error) {
+	m := Uint64Metric{
+		numFields: len(fields),
+	}
+
+	if m.numFields == 1 {
+		m.fields = make(map[string]uint64)
+		for _, fieldValue := range fields[0].allowedValues {
+			m.fields[fieldValue] = 0
+		}
+	}
+	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
 }
 
 // MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns an
 // error.
-func MustCreateNewUint64Metric(name string, sync bool, description string) *Uint64Metric {
-	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description)
+func MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
+	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to create metric %q: %v", name, err))
 	}
@@ -169,19 +212,56 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 	return m
 }
 
-// Value returns the current value of the metric.
-func (m *Uint64Metric) Value() uint64 {
-	return atomic.LoadUint64(&m.value)
+// Value returns the current value of the metric for the given set of fields.
+func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
+	if m.numFields != len(fieldValues) {
+		panic(fmt.Sprintf("Number of fieldValues %d is not equal to the number of metric fields %d", len(fieldValues), m.numFields))
+	}
+
+	switch m.numFields {
+	case 0:
+		return atomic.LoadUint64(&m.value)
+	case 1:
+		m.mu.RLock()
+		defer m.mu.RUnlock()
+
+		fieldValue := fieldValues[0]
+		if _, ok := m.fields[fieldValue]; !ok {
+			panic(fmt.Sprintf("Metric does not allow to have field value %s", fieldValue))
+		}
+		return m.fields[fieldValue]
+	default:
+		panic("Sentry metrics do not support more than one field")
+	}
 }
 
-// Increment increments the metric by 1.
-func (m *Uint64Metric) Increment() {
-	atomic.AddUint64(&m.value, 1)
+// Increment increments the metric field by 1.
+func (m *Uint64Metric) Increment(fieldValues ...string) {
+	m.IncrementBy(1, fieldValues...)
 }
 
 // IncrementBy increments the metric by v.
-func (m *Uint64Metric) IncrementBy(v uint64) {
-	atomic.AddUint64(&m.value, v)
+func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
+	if m.numFields != len(fieldValues) {
+		panic(fmt.Sprintf("Number of fieldValues %d is not equal to the number of metric fields %d", len(fieldValues), m.numFields))
+	}
+
+	switch m.numFields {
+	case 0:
+		atomic.AddUint64(&m.value, v)
+		return
+	case 1:
+		fieldValue := fieldValues[0]
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		if _, ok := m.fields[fieldValue]; !ok {
+			panic(fmt.Sprintf("Metric does not allow to have field value %s", fieldValue))
+		}
+		m.fields[fieldValue] += v
+	default:
+		panic("Sentry metrics do not support more than one field")
+	}
 }
 
 // metricSet holds named metrics.
@@ -199,14 +279,30 @@ func makeMetricSet() metricSet {
 // Values returns a snapshot of all values in m.
 func (m *metricSet) Values() metricValues {
 	vals := make(metricValues)
+
 	for k, v := range m.m {
-		vals[k] = v.value()
+		fields := v.metadata.GetFields()
+		switch len(fields) {
+		case 0:
+			vals[k] = v.value()
+		case 1:
+			values := fields[0].GetAllowedValues()
+			fieldsMap := make(map[string]uint64)
+			for _, fieldValue := range values {
+				fieldsMap[fieldValue] = v.value(fieldValue)
+			}
+			vals[k] = fieldsMap
+		default:
+			panic(fmt.Sprintf("Unsupported number of metric fields: %d", len(fields)))
+		}
 	}
 	return vals
 }
 
-// metricValues contains a copy of the values of all metrics.
-type metricValues map[string]uint64
+// metricValues contains a copy of the values of all metrics. It is a map
+// with key as metric name and value can be either uint64 or map[string]uint64
+// to support metrics with one field.
+type metricValues map[string]interface{}
 
 var (
 	// emitMu protects metricsAtLastEmit and ensures that all emitted
@@ -233,14 +329,37 @@ func EmitMetricUpdate() {
 	snapshot := allMetrics.Values()
 
 	m := pb.MetricUpdate{}
+	// On the first call metricsAtLastEmit will be empty. Include all
+	// metrics then.
 	for k, v := range snapshot {
-		// On the first call metricsAtLastEmit will be empty. Include
-		// all metrics then.
-		if prev, ok := metricsAtLastEmit[k]; !ok || prev != v {
+		prev, ok := metricsAtLastEmit[k]
+		switch t := v.(type) {
+		case uint64:
+			// Metric exists and value did not change.
+			if ok && prev.(uint64) == t {
+				continue
+			}
+
 			m.Metrics = append(m.Metrics, &pb.MetricValue{
 				Name:  k,
-				Value: &pb.MetricValue_Uint64Value{v},
+				Value: &pb.MetricValue_Uint64Value{t},
 			})
+		case map[string]uint64:
+			for fieldValue, metricValue := range t {
+				// Emit data on the first call only if the field
+				// value has been incremented. For all other
+				// calls, emit data if the field value has been
+				// changed from the previous emit.
+				if (!ok && metricValue == 0) || (ok && prev.(map[string]uint64)[fieldValue] == metricValue) {
+					continue
+				}
+
+				m.Metrics = append(m.Metrics, &pb.MetricValue{
+					Name:        k,
+					FieldValues: []string{fieldValue},
+					Value:       &pb.MetricValue_Uint64Value{metricValue},
+				})
+			}
 		}
 	}
 
