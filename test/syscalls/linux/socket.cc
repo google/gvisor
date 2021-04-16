@@ -47,7 +47,7 @@ TEST(SocketTest, ProtocolUnix) {
       {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
       {AF_UNIX, SOCK_DGRAM, PF_UNIX},
   };
-  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
@@ -60,7 +60,7 @@ TEST(SocketTest, ProtocolInet) {
       {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
       {AF_INET, SOCK_STREAM, IPPROTO_TCP},
   };
-  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }

@@ -166,7 +166,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
   std::vector<std::unique_ptr<ScopedThread>> listen_threads(
       listener_fds.size());
 
-  for (long unsigned int i = 0; i < listener_fds.size(); i++) {
+  for (size_t i = 0; i < listener_fds.size(); i++) {
     listen_threads[i] = absl::make_unique<ScopedThread>(
         [&listener_fds, &accept_counts, &connects_received, i,
          kConnectAttempts]() {
@@ -218,7 +218,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
     listen_thread->Join();
   }
   // Check that connections are distributed correctly among listening sockets.
-  for (long unsigned int i = 0; i < accept_counts.size(); i++) {
+  for (size_t i = 0; i < accept_counts.size(); i++) {
     EXPECT_THAT(
         accept_counts[i],
         EquivalentWithin(static_cast<int>(kConnectAttempts *
@@ -289,7 +289,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
   std::vector<std::unique_ptr<ScopedThread>> receiver_threads(
       listener_fds.size());
 
-  for (long unsigned int i = 0; i < listener_fds.size(); i++) {
+  for (size_t i = 0; i < listener_fds.size(); i++) {
     receiver_threads[i] = absl::make_unique<ScopedThread>(
         [&listener_fds, &packets_per_socket, &packets_received, i]() {
           do {
@@ -346,7 +346,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
     receiver_thread->Join();
   }
   // Check that packets are distributed correctly among listening sockets.
-  for (long unsigned int i = 0; i < packets_per_socket.size(); i++) {
+  for (size_t i = 0; i < packets_per_socket.size(); i++) {
     EXPECT_THAT(
         packets_per_socket[i],
         EquivalentWithin(static_cast<int>(kConnectAttempts *

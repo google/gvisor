@@ -419,14 +419,14 @@ TEST(ProcNetSnmp, CheckNetStat) {
   int name_count = 0;
   int value_count = 0;
   std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
-  for (long unsigned int i = 0; i + 1 < lines.size(); i += 2) {
+  for (size_t i = 0; i + 1 < lines.size(); i += 2) {
     std::vector<absl::string_view> names =
         absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
     std::vector<absl::string_view> values =
         absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
     EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
                                            << "' and '" << lines[i + 1] << "'";
-    for (long unsigned int j = 0; j < names.size() && j < values.size(); ++j) {
+    for (size_t j = 0; j < names.size() && j < values.size(); ++j) {
       if (names[j] == "TCPOrigDataSent" || names[j] == "TCPSynRetrans" ||
           names[j] == "TCPDSACKRecv" || names[j] == "TCPDSACKOfoRecv") {
         ++name_count;
@@ -456,14 +456,14 @@ TEST(ProcNetSnmp, CheckSnmp) {
   int name_count = 0;
   int value_count = 0;
   std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
-  for (long unsigned int i = 0; i + 1 < lines.size(); i += 2) {
+  for (size_t i = 0; i + 1 < lines.size(); i += 2) {
     std::vector<absl::string_view> names =
         absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
     std::vector<absl::string_view> values =
         absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
     EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
                                            << "' and '" << lines[i + 1] << "'";
-    for (long unsigned int j = 0; j < names.size() && j < values.size(); ++j) {
+    for (size_t j = 0; j < names.size() && j < values.size(); ++j) {
       if (names[j] == "RetransSegs") {
         ++name_count;
         int64_t val;
