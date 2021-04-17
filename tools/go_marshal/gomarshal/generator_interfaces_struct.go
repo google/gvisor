@@ -275,13 +275,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			if cond, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if %s {\n", cond)
 				g.inIndent(func() {
-					g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(len(dst)))\n", g.r)
+					g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(%s.SizeBytes()))\n", g.r, g.r)
 				})
 				g.emit("} else {\n")
 				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
-				g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(len(dst)))\n", g.r)
+				g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s),  uintptr(%s.SizeBytes()))\n", g.r, g.r)
 			}
 		} else {
 			fallback()
@@ -301,13 +301,13 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			if cond, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if %s {\n", cond)
 				g.inIndent(func() {
-					g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
+					g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(%s.SizeBytes()))\n", g.r, g.r)
 				})
 				g.emit("} else {\n")
 				g.inIndent(fallback)
 				g.emit("}\n")
 			} else {
-				g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(len(src)))\n", g.r)
+				g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(%s.SizeBytes()))\n", g.r, g.r)
 			}
 		} else {
 			fallback()
