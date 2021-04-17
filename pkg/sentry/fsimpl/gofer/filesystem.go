@@ -141,21 +141,8 @@ func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, dsp **
 		return
 	}
 	ds := **dsp
-	// Only go through calling dentry.checkCachingLocked() (which requires
-	// re-locking renameMu) if we actually have any dentries with zero refs.
-	checkAny := false
-	for i := range ds {
-		if atomic.LoadInt64(&ds[i].refs) == 0 {
-			checkAny = true
-			break
-		}
-	}
-	if checkAny {
-		fs.renameMu.Lock()
-		for _, d := range ds {
-			d.checkCachingLocked(ctx)
-		}
-		fs.renameMu.Unlock()
+	for _, d := range ds {
+		d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 	}
 	putDentrySlice(*dsp)
 }
@@ -166,7 +153,7 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 		return
 	}
 	for _, d := range **ds {
-		d.checkCachingLocked(ctx)
+		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	}
 	fs.renameMu.Unlock()
 	putDentrySlice(*ds)

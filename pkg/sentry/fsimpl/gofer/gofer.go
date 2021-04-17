@@ -18,15 +18,17 @@
 // Lock order:
 //   regularFileFD/directoryFD.mu
 //     filesystem.renameMu
-//       dentry.dirMu
-//         filesystem.syncMu
-//         dentry.metadataMu
-//           *** "memmap.Mappable locks" below this point
-//           dentry.mapsMu
-//             *** "memmap.Mappable locks taken by Translate" below this point
-//             dentry.handleMu
-//               dentry.dataMu
-//           filesystem.inoMu
+//       dentry.cachingMu
+//         filesystem.cacheMu
+//         dentry.dirMu
+//           filesystem.syncMu
+//           dentry.metadataMu
+//             *** "memmap.Mappable locks" below this point
+//             dentry.mapsMu
+//               *** "memmap.Mappable locks taken by Translate" below this point
+//               dentry.handleMu
+//                 dentry.dataMu
+//             filesystem.inoMu
 //   specialFileFD.mu
 //     specialFileFD.bufMu
 //
@@ -140,7 +142,8 @@ type filesystem struct {
 	// cachedDentries contains all dentries with 0 references. (Due to race
 	// conditions, it may also contain dentries with non-zero references.)
 	// cachedDentriesLen is the number of dentries in cachedDentries. These fields
-	// are protected by renameMu.
+	// are protected by cacheMu.
+	cacheMu           sync.Mutex `state:"nosave"`
 	cachedDentries    dentryList
 	cachedDentriesLen uint64
 
@@ -620,11 +623,11 @@ func (fs *filesystem) Release(ctx context.Context) {
 // the reference count on every synthetic dentry. Synthetic dentries have one
 // reference for existence that should be dropped during filesystem.Release.
 //
-// Precondition: d.fs.renameMu is locked.
+// Precondition: d.fs.renameMu is locked for writing.
 func (d *dentry) releaseSyntheticRecursiveLocked(ctx context.Context) {
 	if d.isSynthetic() {
 		d.decRefNoCaching()
-		d.checkCachingLocked(ctx)
+		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	}
 	if d.isDir() {
 		var children []*dentry
@@ -682,9 +685,13 @@ type dentry struct {
 	// deleted. deleted is accessed using atomic memory operations.
 	deleted uint32
 
+	// cachingMu is used to synchronize concurrent dentry caching attempts on
+	// this dentry.
+	cachingMu sync.Mutex `state:"nosave"`
+
 	// If cached is true, dentryEntry links dentry into
 	// filesystem.cachedDentries. cached and dentryEntry are protected by
-	// filesystem.renameMu.
+	// cachingMu.
 	cached bool
 	dentryEntry
 
@@ -1315,9 +1322,7 @@ func (d *dentry) TryIncRef() bool {
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
 	if d.decRefNoCaching() == 0 {
-		d.fs.renameMu.Lock()
-		d.checkCachingLocked(ctx)
-		d.fs.renameMu.Unlock()
+		d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 	}
 }
 
@@ -1377,11 +1382,7 @@ func (d *dentry) Watches() *vfs.Watches {
 //
 // If no watches are left on this dentry and it has no references, cache it.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
-	if atomic.LoadInt64(&d.refs) == 0 {
-		d.fs.renameMu.Lock()
-		d.checkCachingLocked(ctx)
-		d.fs.renameMu.Unlock()
-	}
+	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 
 // checkCachingLocked should be called after d's reference count becomes 0 or it
@@ -1393,33 +1394,46 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 // operation. One of the calls may destroy the dentry, so subsequent calls will
 // do nothing.
 //
-// Preconditions: d.fs.renameMu must be locked for writing; it may be
-// temporarily unlocked.
-func (d *dentry) checkCachingLocked(ctx context.Context) {
-	// Dentries with a non-zero reference count must be retained. (The only way
-	// to obtain a reference on a dentry with zero references is via path
-	// resolution, which requires renameMu, so if d.refs is zero then it will
-	// remain zero while we hold renameMu for writing.)
+// Preconditions: d.fs.renameMu must be locked for writing if
+// renameMuWriteLocked is true; it may be temporarily unlocked.
+func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked bool) {
+	d.cachingMu.Lock()
 	refs := atomic.LoadInt64(&d.refs)
 	if refs == -1 {
 		// Dentry has already been destroyed.
+		d.cachingMu.Unlock()
 		return
 	}
 	if refs > 0 {
-		// This isn't strictly necessary (fs.cachedDentries is permitted to
-		// contain dentries with non-zero refs, which are skipped by
-		// fs.evictCachedDentryLocked() upon reaching the end of the LRU), but
-		// since we are already holding fs.renameMu for writing we may as well.
+		// fs.cachedDentries is permitted to contain dentries with non-zero refs,
+		// which are skipped by fs.evictCachedDentryLocked() upon reaching the end
+		// of the LRU. But it is still beneficial to remove d from the cache as we
+		// are already holding d.cachingMu. Keeping a cleaner cache also reduces
+		// the number of evictions (which is expensive as it acquires fs.renameMu).
 		d.removeFromCacheLocked()
+		d.cachingMu.Unlock()
 		return
 	}
 	// Deleted and invalidated dentries with zero references are no longer
 	// reachable by path resolution and should be dropped immediately.
 	if d.vfsd.IsDead() {
+		d.removeFromCacheLocked()
+		d.cachingMu.Unlock()
+		if !renameMuWriteLocked {
+			// Need to lock d.fs.renameMu for writing as needed by d.destroyLocked().
+			d.fs.renameMu.Lock()
+			defer d.fs.renameMu.Unlock()
+			// Now that renameMu is locked for writing, no more refs can be taken on
+			// d because path resolution requires renameMu for reading at least.
+			if atomic.LoadInt64(&d.refs) != 0 {
+				// Destroy d only if its ref is still 0. If not, either someone took a
+				// ref on it or it got destroyed before fs.renameMu could be acquired.
+				return
+			}
+		}
 		if d.isDeleted() {
 			d.watches.HandleDeletion(ctx)
 		}
-		d.removeFromCacheLocked()
 		d.destroyLocked(ctx)
 		return
 	}
@@ -1429,24 +1443,36 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	// d.watches cannot concurrently transition from zero to non-zero, because
 	// adding a watch requires holding a reference on d.
 	if d.watches.Size() > 0 {
-		// As in the refs > 0 case, this is not strictly necessary.
+		// As in the refs > 0 case, removing d is beneficial.
 		d.removeFromCacheLocked()
+		d.cachingMu.Unlock()
 		return
 	}
 
 	if atomic.LoadInt32(&d.fs.released) != 0 {
+		d.cachingMu.Unlock()
+		if !renameMuWriteLocked {
+			// Need to lock d.fs.renameMu to access d.parent. Lock it for writing as
+			// needed by d.destroyLocked() later.
+			d.fs.renameMu.Lock()
+			defer d.fs.renameMu.Unlock()
+		}
 		if d.parent != nil {
 			d.parent.dirMu.Lock()
 			delete(d.parent.children, d.name)
 			d.parent.dirMu.Unlock()
 		}
 		d.destroyLocked(ctx)
+		return
 	}
 
+	d.fs.cacheMu.Lock()
 	// If d is already cached, just move it to the front of the LRU.
 	if d.cached {
 		d.fs.cachedDentries.Remove(d)
 		d.fs.cachedDentries.PushFront(d)
+		d.fs.cacheMu.Unlock()
+		d.cachingMu.Unlock()
 		return
 	}
 	// Cache the dentry, then evict the least recently used cached dentry if
@@ -1454,18 +1480,28 @@ func (d *dentry) checkCachingLocked(ctx context.Context) {
 	d.fs.cachedDentries.PushFront(d)
 	d.fs.cachedDentriesLen++
 	d.cached = true
-	if d.fs.cachedDentriesLen > d.fs.opts.maxCachedDentries {
+	shouldEvict := d.fs.cachedDentriesLen > d.fs.opts.maxCachedDentries
+	d.fs.cacheMu.Unlock()
+	d.cachingMu.Unlock()
+
+	if shouldEvict {
+		if !renameMuWriteLocked {
+			// Need to lock d.fs.renameMu for writing as needed by
+			// d.evictCachedDentryLocked().
+			d.fs.renameMu.Lock()
+			defer d.fs.renameMu.Unlock()
+		}
 		d.fs.evictCachedDentryLocked(ctx)
-		// Whether or not victim was destroyed, we brought fs.cachedDentriesLen
-		// back down to fs.opts.maxCachedDentries, so we don't loop.
 	}
 }
 
-// Preconditions: d.fs.renameMu must be locked for writing.
+// Preconditions: d.cachingMu must be locked.
 func (d *dentry) removeFromCacheLocked() {
 	if d.cached {
+		d.fs.cacheMu.Lock()
 		d.fs.cachedDentries.Remove(d)
 		d.fs.cachedDentriesLen--
+		d.fs.cacheMu.Unlock()
 		d.cached = false
 	}
 }
@@ -1480,28 +1516,43 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 
 // Preconditions:
 // * fs.renameMu must be locked for writing; it may be temporarily unlocked.
-// * fs.cachedDentriesLen != 0.
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
+	fs.cacheMu.Lock()
 	victim := fs.cachedDentries.Back()
+	fs.cacheMu.Unlock()
+	if victim == nil {
+		// fs.cachedDentries may have become empty between when it was checked and
+		// when we locked fs.cacheMu.
+		return
+	}
+
+	victim.cachingMu.Lock()
 	victim.removeFromCacheLocked()
 	// victim.refs or victim.watches.Size() may have become non-zero from an
 	// earlier path resolution since it was inserted into fs.cachedDentries.
-	if atomic.LoadInt64(&victim.refs) == 0 && victim.watches.Size() == 0 {
-		if victim.parent != nil {
-			victim.parent.dirMu.Lock()
-			if !victim.vfsd.IsDead() {
-				// Note that victim can't be a mount point (in any mount
-				// namespace), since VFS holds references on mount points.
-				fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
-				delete(victim.parent.children, victim.name)
-				// We're only deleting the dentry, not the file it
-				// represents, so we don't need to update
-				// victimParent.dirents etc.
-			}
-			victim.parent.dirMu.Unlock()
-		}
-		victim.destroyLocked(ctx)
+	if atomic.LoadInt64(&victim.refs) != 0 || victim.watches.Size() != 0 {
+		victim.cachingMu.Unlock()
+		return
 	}
+	if victim.parent != nil {
+		victim.parent.dirMu.Lock()
+		if !victim.vfsd.IsDead() {
+			// Note that victim can't be a mount point (in any mount
+			// namespace), since VFS holds references on mount points.
+			fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &victim.vfsd)
+			delete(victim.parent.children, victim.name)
+			// We're only deleting the dentry, not the file it
+			// represents, so we don't need to update
+			// victimParent.dirents etc.
+		}
+		victim.parent.dirMu.Unlock()
+	}
+	// Safe to unlock cachingMu now that victim.vfsd.IsDead(). Henceforth any
+	// concurrent caching attempts on victim will attempt to destroy it and so
+	// will try to acquire fs.renameMu (which we have already acquired). Hence,
+	// fs.renameMu will synchronize the destroy attempts.
+	victim.cachingMu.Unlock()
+	victim.destroyLocked(ctx)
 }
 
 // destroyLocked destroys the dentry.
@@ -1587,7 +1638,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	// Drop the reference held by d on its parent without recursively locking
 	// d.fs.renameMu.
 	if d.parent != nil && d.parent.decRefNoCaching() == 0 {
-		d.parent.checkCachingLocked(ctx)
+		d.parent.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	}
 	refsvfs2.Unregister(d)
 }
