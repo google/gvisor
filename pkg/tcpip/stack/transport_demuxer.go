@@ -150,16 +150,17 @@ func (epsByNIC *endpointsByNIC) transportEndpoints() []TransportEndpoint {
 	return eps
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
-func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *PacketBuffer) {
+// handlePacket is called by the stack when new packets arrive to this transport
+// endpoint. It returns false if the packet could not be matched to any
+// transport endpoint, true otherwise.
+func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *PacketBuffer) bool {
 	epsByNIC.mu.RLock()
 
 	mpep, ok := epsByNIC.endpoints[pkt.NICID]
 	if !ok {
 		if mpep, ok = epsByNIC.endpoints[0]; !ok {
 			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
-			return
+			return false
 		}
 	}
 
@@ -168,18 +169,19 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt *Packet
 	if isInboundMulticastOrBroadcast(pkt, id.LocalAddress) {
 		mpep.handlePacketAll(id, pkt)
 		epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
-		return
+		return true
 	}
 	// multiPortEndpoints are guaranteed to have at least one element.
 	transEP := selectEndpoint(id, mpep, epsByNIC.seed)
 	if queuedProtocol, mustQueue := mpep.demux.queuedProtocols[protocolIDs{mpep.netProto, mpep.transProto}]; mustQueue {
 		queuedProtocol.QueuePacket(transEP, id, pkt)
 		epsByNIC.mu.RUnlock()
-		return
+		return true
 	}
 
 	transEP.HandlePacket(id, pkt)
 	epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
+	return true
 }
 
 // handleError delivers an error to the transport endpoint identified by id.
@@ -567,8 +569,7 @@ func (d *transportDemuxer) deliverPacket(protocol tcpip.TransportProtocolNumber,
 		}
 		return false
 	}
-	ep.handlePacket(id, pkt)
-	return true
+	return ep.handlePacket(id, pkt)
 }
 
 // deliverRawPacket attempts to deliver the given packet and returns whether it
