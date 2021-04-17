@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -1000,6 +1001,13 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// consider the container exited.
 	ws := l.wait(tg)
 	*waitStatus = ws
+
+	// Write coverage report after the root container has exited. This guarantees
+	// that the report is written in cases where the sandbox is killed by a signal
+	// after the ContainerWait request is completed.
+	if l.root.procArgs.ContainerID == cid {
+		coverage.Report()
+	}
 	return nil
 }
 

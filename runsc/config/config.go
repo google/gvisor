@@ -55,6 +55,9 @@ type Config struct {
 	// PanicLog is the path to log GO's runtime messages, if not empty.
 	PanicLog string `flag:"panic-log"`
 
+	// CoverageReport is the path to write Go coverage information, if not empty.
+	CoverageReport string `flag:"coverage-report"`
+
 	// DebugLogFormat is the log format for debug.
 	DebugLogFormat string `flag:"debug-log-format"`
 

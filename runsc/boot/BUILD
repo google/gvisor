@@ -30,6 +30,7 @@ go_library(
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/control/server",
+        "//pkg/coverage",
         "//pkg/cpuid",
         "//pkg/eventchannel",
         "//pkg/fd",

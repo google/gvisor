@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -399,15 +400,15 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Args = append(cmd.Args, "--log-fd="+strconv.Itoa(nextFD))
 		nextFD++
 	}
-	if conf.DebugLog != "" {
-		test := ""
-		if len(conf.TestOnlyTestNameEnv) != 0 {
-			// Fetch test name if one is provided and the test only flag was set.
-			if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
-				test = t
-			}
-		}
 
+	test := ""
+	if len(conf.TestOnlyTestNameEnv) != 0 {
+		// Fetch test name if one is provided and the test only flag was set.
+		if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
+			test = t
+		}
+	}
+	if conf.DebugLog != "" {
 		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot", test)
 		if err != nil {
 			return fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
@@ -418,21 +419,27 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		nextFD++
 	}
 	if conf.PanicLog != "" {
-		test := ""
-		if len(conf.TestOnlyTestNameEnv) != 0 {
-			// Fetch test name if one is provided and the test only flag was set.
-			if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
-				test = t
-			}
-		}
-
 		panicLogFile, err := specutils.DebugLogFile(conf.PanicLog, "panic", test)
 		if err != nil {
-			return fmt.Errorf("opening debug log file in %q: %v", conf.PanicLog, err)
+			return fmt.Errorf("opening panic log file in %q: %v", conf.PanicLog, err)
 		}
 		defer panicLogFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, panicLogFile)
 		cmd.Args = append(cmd.Args, "--panic-log-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+	covFilename := conf.CoverageReport
+	if covFilename == "" {
+		covFilename = os.Getenv("GO_COVERAGE_FILE")
+	}
+	if covFilename != "" && coverage.Available() {
+		covFile, err := specutils.DebugLogFile(covFilename, "cov", test)
+		if err != nil {
+			return fmt.Errorf("opening debug log file in %q: %v", covFilename, err)
+		}
+		defer covFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, covFile)
+		cmd.Args = append(cmd.Args, "--coverage-fd="+strconv.Itoa(nextFD))
 		nextFD++
 	}
 
