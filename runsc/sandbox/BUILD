@@ -16,6 +16,7 @@ go_library(
         "//pkg/cleanup",
         "//pkg/control/client",
         "//pkg/control/server",
+        "//pkg/coverage",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/platform",

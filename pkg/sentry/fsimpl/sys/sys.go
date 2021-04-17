@@ -122,11 +122,11 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {
-	// If kcov is available, set up /sys/kernel/debug/kcov. Technically, debugfs
-	// should be mounted at debug/, but for our purposes, it is sufficient to
-	// keep it in sys.
+	// Set up /sys/kernel/debug/kcov. Technically, debugfs should be
+	// mounted at debug/, but for our purposes, it is sufficient to keep it
+	// in sys.
 	var children map[string]kernfs.Inode
-	if coverage.KcovAvailable() {
+	if coverage.KcovSupported() {
 		log.Debugf("Set up /sys/kernel/debug/kcov")
 		children = map[string]kernfs.Inode{
 			"debug": fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{

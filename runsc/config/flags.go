@@ -44,7 +44,8 @@ func RegisterFlags() {
 
 		// Debugging flags.
 		flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-		flag.String("panic-log", "", "file path were panic reports and other Go's runtime messages are written.")
+		flag.String("panic-log", "", "file path where panic reports and other Go's runtime messages are written.")
+		flag.String("coverage-report", "", "file path where Go coverage reports are written. Reports will only be generated if runsc is built with --collect_code_coverage and --instrumentation_filter Bazel flags.")
 		flag.Bool("log-packets", false, "enable network packet logging.")
 		flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
 		flag.Bool("alsologtostderr", false, "send log messages to stderr.")
