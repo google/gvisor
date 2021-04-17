@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -34,12 +35,16 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/coverdata"
 )
 
-// coverageMu must be held while accessing coverdata.Cover. This prevents
-// concurrent reads/writes from multiple threads collecting coverage data.
-var coverageMu sync.RWMutex
+var (
+	// coverageMu must be held while accessing coverdata.Cover. This prevents
+	// concurrent reads/writes from multiple threads collecting coverage data.
+	coverageMu sync.RWMutex
 
-// once ensures that globalData is only initialized once.
-var once sync.Once
+	// reportOutput is the place to write out a coverage report. It should be
+	// closed after the report is written. It is protected by reportOutputMu.
+	reportOutput   io.WriteCloser
+	reportOutputMu sync.Mutex
+)
 
 // blockBitLength is the number of bits used to represent coverage block index
 // in a synthetic PC (the rest are used to represent the file index). Even
@@ -51,10 +56,24 @@ var once sync.Once
 // file and every block.
 const blockBitLength = 16
 
-// KcovAvailable returns whether the kcov coverage interface is available. It is
-// available as long as coverage is enabled for some files.
-func KcovAvailable() bool {
+// Available returns whether any coverage data is available.
+func Available() bool {
 	return len(coverdata.Cover.Blocks) > 0
+}
+
+// EnableReport sets up coverage reporting.
+func EnableReport(w io.WriteCloser) {
+	reportOutputMu.Lock()
+	defer reportOutputMu.Unlock()
+	reportOutput = w
+}
+
+// KcovSupported returns whether the kcov interface should be made available.
+//
+// If coverage reporting is on, do not turn on kcov, which will consume
+// coverage data.
+func KcovSupported() bool {
+	return (reportOutput == nil) && Available()
 }
 
 var globalData struct {
@@ -65,6 +84,9 @@ var globalData struct {
 	// syntheticPCs are a set of PCs calculated at startup, where the PC
 	// at syntheticPCs[i][j] corresponds to file i, block j.
 	syntheticPCs [][]uint64
+
+	// once ensures that globalData is only initialized once.
+	once sync.Once
 }
 
 // ClearCoverageData clears existing coverage data.
@@ -166,7 +188,7 @@ func ConsumeCoverageData(w io.Writer) int {
 // InitCoverageData initializes globalData. It should be called before any kcov
 // data is written.
 func InitCoverageData() {
-	once.Do(func() {
+	globalData.once.Do(func() {
 		// First, order all files. Then calculate synthetic PCs for every block
 		// (using the well-defined ordering for files as well).
 		for file := range coverdata.Cover.Blocks {
@@ -185,6 +207,38 @@ func InitCoverageData() {
 	})
 }
 
+// reportOnce ensures that a coverage report is written at most once. For a
+// complete coverage report, Report should be called during the sandbox teardown
+// process. Report is called from multiple places (which may overlap) so that a
+// coverage report is written in different sandbox exit scenarios.
+var reportOnce sync.Once
+
+// Report writes out a coverage report with all blocks that have been covered.
+//
+// TODO(b/144576401): Decide whether this should actually be in LCOV format
+func Report() error {
+	if reportOutput == nil {
+		return nil
+	}
+
+	var err error
+	reportOnce.Do(func() {
+		for file, counters := range coverdata.Cover.Counters {
+			blocks := coverdata.Cover.Blocks[file]
+			for i := 0; i < len(counters); i++ {
+				if atomic.LoadUint32(&counters[i]) > 0 {
+					err = writeBlock(reportOutput, file, blocks[i])
+					if err != nil {
+						return
+					}
+				}
+			}
+		}
+		reportOutput.Close()
+	})
+	return err
+}
+
 // Symbolize prints information about the block corresponding to pc.
 func Symbolize(out io.Writer, pc uint64) error {
 	fileNum, blockNum := syntheticPCToIndexes(pc)
@@ -196,18 +250,32 @@ func Symbolize(out io.Writer, pc uint64) error {
 	if err != nil {
 		return err
 	}
-	writeBlock(out, pc, file, block)
-	return nil
+	return writeBlockWithPC(out, pc, file, block)
 }
 
 // WriteAllBlocks prints all information about all blocks along with their
 // corresponding synthetic PCs.
-func WriteAllBlocks(out io.Writer) {
+func WriteAllBlocks(out io.Writer) error {
 	for fileNum, file := range globalData.files {
 		for blockNum, block := range coverdata.Cover.Blocks[file] {
-			writeBlock(out, calculateSyntheticPC(fileNum, blockNum), file, block)
+			if err := writeBlockWithPC(out, calculateSyntheticPC(fileNum, blockNum), file, block); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
+
+func writeBlockWithPC(out io.Writer, pc uint64, file string, block testing.CoverBlock) error {
+	if _, err := io.WriteString(out, fmt.Sprintf("%#x\n", pc)); err != nil {
+		return err
+	}
+	return writeBlock(out, file, block)
+}
+
+func writeBlock(out io.Writer, file string, block testing.CoverBlock) error {
+	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", file, block.Line0, block.Col0, block.Line1, block.Col1))
+	return err
 }
 
 func calculateSyntheticPC(fileNum int, blockNum int) uint64 {
@@ -238,9 +306,4 @@ func blockFromIndex(file string, i int) (testing.CoverBlock, error) {
 		return testing.CoverBlock{}, fmt.Errorf("block index out of range: [%d] with length %d", i, total)
 	}
 	return blocks[i], nil
-}
-
-func writeBlock(out io.Writer, pc uint64, file string, block testing.CoverBlock) {
-	io.WriteString(out, fmt.Sprintf("%#x\n", pc))
-	io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", file, block.Line0, block.Col0, block.Line1, block.Col1))
 }

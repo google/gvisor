@@ -53,12 +53,12 @@ func (i *Int16) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int16) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(i.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int16) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(i.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -220,12 +220,12 @@ func (i *Int32) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int32) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(i.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int32) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(i.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -387,12 +387,12 @@ func (i *Int64) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int64) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(i.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int64) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(i.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -554,12 +554,12 @@ func (i *Int8) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (i *Int8) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(i), uintptr(i.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (i *Int8) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(i), unsafe.Pointer(&src[0]), uintptr(i.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -721,12 +721,12 @@ func (u *Uint16) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint16) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(u.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint16) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(u.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -888,12 +888,12 @@ func (u *Uint32) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint32) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(u.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint32) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(u.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1055,12 +1055,12 @@ func (u *Uint64) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint64) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(u.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint64) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(u.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -1222,12 +1222,12 @@ func (u *Uint8) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (u *Uint8) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(u.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (u *Uint8) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(u.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

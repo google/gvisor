@@ -66,7 +66,7 @@ func (s *SignalAct) Packed() bool {
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SignalAct) MarshalUnsafe(dst []byte) {
     if s.Mask.Packed() {
-        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(s.SizeBytes()))
     } else {
         // Type SignalAct doesn't have a packed layout in memory, fallback to MarshalBytes.
         s.MarshalBytes(dst)
@@ -76,7 +76,7 @@ func (s *SignalAct) MarshalUnsafe(dst []byte) {
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SignalAct) UnmarshalUnsafe(src []byte) {
     if s.Mask.Packed() {
-        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
+        gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(s.SizeBytes()))
     } else {
         // Type SignalAct doesn't have a packed layout in memory, fallback to UnmarshalBytes.
         s.UnmarshalBytes(src)
@@ -210,12 +210,12 @@ func (s *SignalInfo) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SignalInfo) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(s.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SignalInfo) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(s.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -311,12 +311,12 @@ func (s *SignalStack) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (s *SignalStack) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(s),  uintptr(s.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (s *SignalStack) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(s), unsafe.Pointer(&src[0]), uintptr(s.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

@@ -47,12 +47,12 @@ func (tid *ThreadID) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (tid *ThreadID) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(tid), uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(tid), uintptr(tid.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (tid *ThreadID) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(tid), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(tid), unsafe.Pointer(&src[0]), uintptr(tid.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
@@ -164,12 +164,12 @@ func (v *vdsoParams) Packed() bool {
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (v *vdsoParams) MarshalUnsafe(dst []byte) {
-    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(v),  uintptr(len(dst)))
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(v),  uintptr(v.SizeBytes()))
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (v *vdsoParams) UnmarshalUnsafe(src []byte) {
-    gohacks.Memmove(unsafe.Pointer(v), unsafe.Pointer(&src[0]), uintptr(len(src)))
+    gohacks.Memmove(unsafe.Pointer(v), unsafe.Pointer(&src[0]), uintptr(v.SizeBytes()))
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.

@@ -65,13 +65,15 @@ func (c *Symbolize) Execute(_ context.Context, f *flag.FlagSet, args ...interfac
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
-	if !coverage.KcovAvailable() {
+	if !coverage.Available() {
 		return Errorf("symbolize can only be used when coverage is available.")
 	}
 	coverage.InitCoverageData()
 
 	if c.dumpAll {
-		coverage.WriteAllBlocks(os.Stdout)
+		if err := coverage.WriteAllBlocks(os.Stdout); err != nil {
+			return Errorf("Failed to write out blocks: %v", err)
+		}
 		return subcommands.ExitSuccess
 	}
 
