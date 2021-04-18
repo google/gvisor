@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"time"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/facts"
@@ -358,6 +359,7 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 		callback:      importCallback,
 	}
 
+	start := time.Now()
 	// Load all source files.
 	var syntax []*ast.File
 	for _, file := range config.GoFiles {
@@ -400,6 +402,7 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 	if err != nil {
 		return nil, nil, fmt.Errorf("error decoding facts: %w", err)
 	}
+	log.Printf("ayush: CheckPackage %f", time.Now().Sub(start).Seconds())
 
 	// Register fact types and establish dependencies between analyzers.
 	// The visit closure will execute recursively, and populate results
@@ -460,11 +463,18 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 
 	// Visit all analyzers recursively.
 	for _, a := range analyzers {
+		start := time.Now()
 		if imp.lastErr == ErrSkip {
 			continue // No local analysis.
 		}
 		if err := visit(a); err != nil {
+			if a.Name == "checkescape" {
+				log.Printf("ayush: checkescape %f", time.Now().Sub(start).Seconds())
+			}
 			return nil, nil, err // Already has context.
+		}
+		if a.Name == "checkescape" {
+			log.Printf("ayush: checkescape %f", time.Now().Sub(start).Seconds())
 		}
 	}
 

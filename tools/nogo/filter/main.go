@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	yaml "gopkg.in/yaml.v2"
 	"gvisor.dev/gvisor/tools/nogo"
@@ -56,6 +57,7 @@ func init() {
 func main() {
 	flag.Parse()
 
+	start := time.Now()
 	// Load all available findings.
 	var findings []nogo.Finding
 	for _, filename := range inputFiles {
@@ -119,9 +121,11 @@ func main() {
 		if err := nogo.WriteFindingsToFile(filteredFindings, outputFile); err != nil {
 			log.Fatalf("unable to write findings: %v", err)
 		}
+		log.Printf("ayush: filter %f", time.Now().Sub(start).Seconds())
 		return
 	}
 
+	log.Printf("ayush: filter %f", time.Now().Sub(start).Seconds())
 	// Treat the run as a test.
 	if len(filteredFindings) == 0 {
 		fmt.Fprintf(os.Stdout, "PASS\n")

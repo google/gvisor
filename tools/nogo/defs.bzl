@@ -67,6 +67,7 @@ def _nogo_objdump_tool_impl(ctx):
     dumper = ctx.actions.declare_file(ctx.label.name)
     ctx.actions.write(dumper, "\n".join([
         "#!/bin/bash",
+        "SECONDS=0",
         "set -euo pipefail",
         "if [[ $# -eq 0 ]]; then",
         " T=$(mktemp -u -t libXXXXXX.a)",
@@ -81,6 +82,7 @@ def _nogo_objdump_tool_impl(ctx):
         "if [[ $# -eq 0 ]]; then",
         " rm -rf ${T}",
         "fi",
+        "echo \"ayush: objdump $SECONDS\"",
         "",
     ]), is_executable = True)
 

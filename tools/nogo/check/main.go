@@ -22,6 +22,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
+	"time"
 
 	"gvisor.dev/gvisor/tools/nogo"
 )
@@ -58,6 +60,7 @@ func main() {
 		err      error
 	)
 
+	start := time.Now()
 	// Check & load the configuration.
 	if *packageFile != "" && *stdlibFile != "" {
 		log.Fatalf("unable to perform stdlib and package analysis; provide only one!")
@@ -97,5 +100,14 @@ func main() {
 		for _, finding := range findings {
 			fmt.Fprintf(os.Stdout, "%s\n", finding.String())
 		}
+	}
+
+	duration := time.Now().Sub(start).Seconds()
+	if *stdlibFile != "" {
+		log.Printf("ayush: _stdlib %f", duration)
+	} else if strings.Contains(*packageFile, "bin/external") {
+		log.Printf("ayush: _external %f", duration)
+	} else {
+		log.Printf("ayush: _internal %f", duration)
 	}
 }

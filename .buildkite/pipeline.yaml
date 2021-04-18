@@ -1,6 +1,6 @@
 _templates:
   common: &common
-    timeout_in_minutes: 30
+    timeout_in_minutes: 60
     retry:
       automatic:
         - exit_status: -1
