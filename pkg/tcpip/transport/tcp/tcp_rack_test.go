@@ -33,6 +33,7 @@ const (
 	tsOptionSize     = 12
 	maxTCPOptionSize = 40
 	mtu              = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+	latency          = 5 * time.Millisecond
 )
 
 func setStackRACKPermitted(t *testing.T, c *context.Context) {
@@ -182,6 +183,9 @@ func sendAndReceiveWithSACK(t *testing.T, c *context.Context, numPackets int, en
 	for i := 0; i < numPackets; i++ {
 		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
 		bytesRead += maxPayload
+		// This delay is added to increase RTT as low RTT can cause TLP
+		// before sending ACK.
+		time.Sleep(latency)
 	}
 
 	return data
@@ -479,7 +483,7 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 		}{
 			// #3 was retransmitted as TLP.
 			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 0},
-			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 0},
+			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
 			{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery", 0},
 			// RTO should not have fired.
 			{tcpStats.Timeouts, "stats.TCP.Timeouts", 0},
