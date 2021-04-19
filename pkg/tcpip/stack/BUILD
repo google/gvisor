@@ -67,6 +67,7 @@ go_library(
         "stack.go",
         "stack_global_state.go",
         "stack_options.go",
+        "tcp.go",
         "transport_demuxer.go",
         "tuple_list.go",
     ],

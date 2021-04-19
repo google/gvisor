@@ -34,14 +34,14 @@ func newRenoCC(s *sender) *renoState {
 func (r *renoState) updateSlowStart(packetsAcked int) int {
 	// Don't let the congestion window cross into the congestion
 	// avoidance range.
-	newcwnd := r.s.sndCwnd + packetsAcked
-	if newcwnd >= r.s.sndSsthresh {
-		newcwnd = r.s.sndSsthresh
-		r.s.sndCAAckCount = 0
+	newcwnd := r.s.SndCwnd + packetsAcked
+	if newcwnd >= r.s.Ssthresh {
+		newcwnd = r.s.Ssthresh
+		r.s.SndCAAckCount = 0
 	}
 
-	packetsAcked -= newcwnd - r.s.sndCwnd
-	r.s.sndCwnd = newcwnd
+	packetsAcked -= newcwnd - r.s.SndCwnd
+	r.s.SndCwnd = newcwnd
 	return packetsAcked
 }
 
@@ -49,19 +49,19 @@ func (r *renoState) updateSlowStart(packetsAcked int) int {
 // avoidance mode as described in RFC5681 section 3.1
 func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 	// Consume the packets in congestion avoidance mode.
-	r.s.sndCAAckCount += packetsAcked
-	if r.s.sndCAAckCount >= r.s.sndCwnd {
-		r.s.sndCwnd += r.s.sndCAAckCount / r.s.sndCwnd
-		r.s.sndCAAckCount = r.s.sndCAAckCount % r.s.sndCwnd
+	r.s.SndCAAckCount += packetsAcked
+	if r.s.SndCAAckCount >= r.s.SndCwnd {
+		r.s.SndCwnd += r.s.SndCAAckCount / r.s.SndCwnd
+		r.s.SndCAAckCount = r.s.SndCAAckCount % r.s.SndCwnd
 	}
 }
 
 // reduceSlowStartThreshold reduces the slow-start threshold per RFC 5681,
 // page 6, eq. 4. It is called when we detect congestion in the network.
 func (r *renoState) reduceSlowStartThreshold() {
-	r.s.sndSsthresh = r.s.outstanding / 2
-	if r.s.sndSsthresh < 2 {
-		r.s.sndSsthresh = 2
+	r.s.Ssthresh = r.s.Outstanding / 2
+	if r.s.Ssthresh < 2 {
+		r.s.Ssthresh = 2
 	}
 
 }
@@ -70,7 +70,7 @@ func (r *renoState) reduceSlowStartThreshold() {
 // were acknowledged.
 // Update implements congestionControl.Update.
 func (r *renoState) Update(packetsAcked int) {
-	if r.s.sndCwnd < r.s.sndSsthresh {
+	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {
 			return
@@ -94,7 +94,7 @@ func (r *renoState) HandleRTOExpired() {
 	// Reduce the congestion window to 1, i.e., enter slow-start. Per
 	// RFC 5681, page 7, we must use 1 regardless of the value of the
 	// initial congestion window.
-	r.s.sndCwnd = 1
+	r.s.SndCwnd = 1
 }
 
 // PostRecovery implements congestionControl.PostRecovery.
