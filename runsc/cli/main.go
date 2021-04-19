@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/config"
@@ -240,7 +241,8 @@ func Main(version string) {
 	// Call the subcommand and pass in the configuration.
 	var ws unix.WaitStatus
 	subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
-	// Write coverage report before os.Exit().
+	// Check for leaks and write coverage report before os.Exit().
+	refsvfs2.DoLeakCheck()
 	coverage.Report()
 	if subcmdCode == subcommands.ExitSuccess {
 		log.Infof("Exiting with status: %v", ws)

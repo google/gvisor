@@ -112,20 +112,27 @@ func logEvent(obj CheckedObject, msg string) {
 	log.Infof("[%s %p] %s:\n%s", obj.RefType(), obj, msg, refs_vfs1.FormatStack(refs_vfs1.RecordStack()))
 }
 
+// checkOnce makes sure that leak checking is only done once. DoLeakCheck is
+// called from multiple places (which may overlap) to cover different sandbox
+// exit scenarios.
+var checkOnce sync.Once
+
 // DoLeakCheck iterates through the live object map and logs a message for each
 // object. It is called once no reference-counted objects should be reachable
 // anymore, at which point anything left in the map is considered a leak.
 func DoLeakCheck() {
 	if leakCheckEnabled() {
-		liveObjectsMu.Lock()
-		defer liveObjectsMu.Unlock()
-		leaked := len(liveObjects)
-		if leaked > 0 {
-			msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
-			for obj := range liveObjects {
-				msg += obj.LeakMessage() + "\n"
+		checkOnce.Do(func() {
+			liveObjectsMu.Lock()
+			defer liveObjectsMu.Unlock()
+			leaked := len(liveObjects)
+			if leaked > 0 {
+				msg := fmt.Sprintf("Leak checking detected %d leaked objects:\n", leaked)
+				for obj := range liveObjects {
+					msg += obj.LeakMessage() + "\n"
+				}
+				log.Warningf(msg)
 			}
-			log.Warningf(msg)
-		}
+		})
 	}
 }
