@@ -169,6 +169,11 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 //   RACK.fack is (selectively or cumulatively) acknowledged, it has been
 //   delivered out of order. The sender sets RACK.reord to TRUE if such segment
 //   is identified.
+//   The false retransmission would solicit DSACK option in the ACK. Therefore
+//   if the ACK has a DSACK option covering some sequence that were both
+//   acknowledged and retransmitted, this implies the original packet was
+//   reordered but RACK retransmitted the packet too quickly and should set
+//   RACK.reord to TRUE.
 func (rc *rackControl) detectReorder(seg *segment) {
 	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 	if rc.fack.LessThan(endSeq) {
@@ -177,6 +182,11 @@ func (rc *rackControl) detectReorder(seg *segment) {
 	}
 
 	if endSeq.LessThan(rc.fack) && seg.xmitCount == 1 {
+		rc.reorderSeen = true
+		return
+	}
+
+	if seg.dsackCovered && seg.xmitCount > 1 {
 		rc.reorderSeen = true
 	}
 }

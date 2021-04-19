@@ -86,6 +86,9 @@ type segment struct {
 
 	// lost indicates if the segment is marked as lost by RACK.
 	lost bool
+
+	// dsackCovered indicates if the segment is covered by DSACK block.
+	dsackCovered bool
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {

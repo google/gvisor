@@ -100,8 +100,6 @@ func TestRACKDetectReorder(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
 
-	t.Skipf("Skipping this test as reorder detection does not consider DSACK.")
-
 	var n int
 	const ackNumToVerify = 2
 	probeDone := make(chan struct{})
@@ -152,7 +150,13 @@ func TestRACKDetectReorder(t *testing.T) {
 	end := start.Add(maxPayload)
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	c.SendAckWithSACK(seq, 0, []header.SACKBlock{{start, end}})
-	c.SendAck(seq, bytesRead)
+
+	// Expect retransmission of #1 packet.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, tsOptionSize)
+
+	dsackStart := c.IRS.Add(1)
+	dsackEnd := start.Add(maxPayload)
+	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{dsackStart, dsackEnd}})
 
 	// Wait for the probe function to finish processing the ACK before the
 	// test completes.
