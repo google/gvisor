@@ -116,7 +116,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 			if ep.EndpointState() == StateEstablished && ep.mu.TryLock() {
 				// If the endpoint is in a connected state then we do direct delivery
 				// to ensure low latency and avoid scheduler interactions.
-				switch err := ep.handleSegments(true /* fastPath */); {
+				switch err := ep.handleSegmentsLocked(true /* fastPath */); {
 				case err != nil:
 					// Send any active resets if required.
 					ep.resetConnectionLocked(err)

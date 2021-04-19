@@ -600,6 +600,572 @@ func (t *TransportEndpointInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &t.RegisterNICID)
 }
 
+func (t *TCPCubicState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPCubicState"
+}
+
+func (t *TCPCubicState) StateFields() []string {
+	return []string{
+		"WLastMax",
+		"WMax",
+		"T",
+		"TimeSinceLastCongestion",
+		"C",
+		"K",
+		"Beta",
+		"WC",
+		"WEst",
+	}
+}
+
+func (t *TCPCubicState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPCubicState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	var TValue unixTime = t.saveT()
+	stateSinkObject.SaveValue(2, TValue)
+	stateSinkObject.Save(0, &t.WLastMax)
+	stateSinkObject.Save(1, &t.WMax)
+	stateSinkObject.Save(3, &t.TimeSinceLastCongestion)
+	stateSinkObject.Save(4, &t.C)
+	stateSinkObject.Save(5, &t.K)
+	stateSinkObject.Save(6, &t.Beta)
+	stateSinkObject.Save(7, &t.WC)
+	stateSinkObject.Save(8, &t.WEst)
+}
+
+func (t *TCPCubicState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPCubicState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.WLastMax)
+	stateSourceObject.Load(1, &t.WMax)
+	stateSourceObject.Load(3, &t.TimeSinceLastCongestion)
+	stateSourceObject.Load(4, &t.C)
+	stateSourceObject.Load(5, &t.K)
+	stateSourceObject.Load(6, &t.Beta)
+	stateSourceObject.Load(7, &t.WC)
+	stateSourceObject.Load(8, &t.WEst)
+	stateSourceObject.LoadValue(2, new(unixTime), func(y interface{}) { t.loadT(y.(unixTime)) })
+}
+
+func (t *TCPRACKState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPRACKState"
+}
+
+func (t *TCPRACKState) StateFields() []string {
+	return []string{
+		"XmitTime",
+		"EndSequence",
+		"FACK",
+		"RTT",
+		"Reord",
+		"DSACKSeen",
+		"ReoWnd",
+		"ReoWndIncr",
+		"ReoWndPersist",
+		"RTTSeq",
+	}
+}
+
+func (t *TCPRACKState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPRACKState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	var XmitTimeValue unixTime = t.saveXmitTime()
+	stateSinkObject.SaveValue(0, XmitTimeValue)
+	stateSinkObject.Save(1, &t.EndSequence)
+	stateSinkObject.Save(2, &t.FACK)
+	stateSinkObject.Save(3, &t.RTT)
+	stateSinkObject.Save(4, &t.Reord)
+	stateSinkObject.Save(5, &t.DSACKSeen)
+	stateSinkObject.Save(6, &t.ReoWnd)
+	stateSinkObject.Save(7, &t.ReoWndIncr)
+	stateSinkObject.Save(8, &t.ReoWndPersist)
+	stateSinkObject.Save(9, &t.RTTSeq)
+}
+
+func (t *TCPRACKState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPRACKState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &t.EndSequence)
+	stateSourceObject.Load(2, &t.FACK)
+	stateSourceObject.Load(3, &t.RTT)
+	stateSourceObject.Load(4, &t.Reord)
+	stateSourceObject.Load(5, &t.DSACKSeen)
+	stateSourceObject.Load(6, &t.ReoWnd)
+	stateSourceObject.Load(7, &t.ReoWndIncr)
+	stateSourceObject.Load(8, &t.ReoWndPersist)
+	stateSourceObject.Load(9, &t.RTTSeq)
+	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { t.loadXmitTime(y.(unixTime)) })
+}
+
+func (t *TCPEndpointID) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPEndpointID"
+}
+
+func (t *TCPEndpointID) StateFields() []string {
+	return []string{
+		"LocalPort",
+		"LocalAddress",
+		"RemotePort",
+		"RemoteAddress",
+	}
+}
+
+func (t *TCPEndpointID) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPEndpointID) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.LocalPort)
+	stateSinkObject.Save(1, &t.LocalAddress)
+	stateSinkObject.Save(2, &t.RemotePort)
+	stateSinkObject.Save(3, &t.RemoteAddress)
+}
+
+func (t *TCPEndpointID) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPEndpointID) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.LocalPort)
+	stateSourceObject.Load(1, &t.LocalAddress)
+	stateSourceObject.Load(2, &t.RemotePort)
+	stateSourceObject.Load(3, &t.RemoteAddress)
+}
+
+func (t *TCPFastRecoveryState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPFastRecoveryState"
+}
+
+func (t *TCPFastRecoveryState) StateFields() []string {
+	return []string{
+		"Active",
+		"First",
+		"Last",
+		"MaxCwnd",
+		"HighRxt",
+		"RescueRxt",
+	}
+}
+
+func (t *TCPFastRecoveryState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPFastRecoveryState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Active)
+	stateSinkObject.Save(1, &t.First)
+	stateSinkObject.Save(2, &t.Last)
+	stateSinkObject.Save(3, &t.MaxCwnd)
+	stateSinkObject.Save(4, &t.HighRxt)
+	stateSinkObject.Save(5, &t.RescueRxt)
+}
+
+func (t *TCPFastRecoveryState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPFastRecoveryState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Active)
+	stateSourceObject.Load(1, &t.First)
+	stateSourceObject.Load(2, &t.Last)
+	stateSourceObject.Load(3, &t.MaxCwnd)
+	stateSourceObject.Load(4, &t.HighRxt)
+	stateSourceObject.Load(5, &t.RescueRxt)
+}
+
+func (t *TCPReceiverState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPReceiverState"
+}
+
+func (t *TCPReceiverState) StateFields() []string {
+	return []string{
+		"RcvNxt",
+		"RcvAcc",
+		"RcvWndScale",
+		"PendingBufUsed",
+	}
+}
+
+func (t *TCPReceiverState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPReceiverState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.RcvNxt)
+	stateSinkObject.Save(1, &t.RcvAcc)
+	stateSinkObject.Save(2, &t.RcvWndScale)
+	stateSinkObject.Save(3, &t.PendingBufUsed)
+}
+
+func (t *TCPReceiverState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPReceiverState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.RcvNxt)
+	stateSourceObject.Load(1, &t.RcvAcc)
+	stateSourceObject.Load(2, &t.RcvWndScale)
+	stateSourceObject.Load(3, &t.PendingBufUsed)
+}
+
+func (t *TCPRTTState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPRTTState"
+}
+
+func (t *TCPRTTState) StateFields() []string {
+	return []string{
+		"SRTT",
+		"RTTVar",
+		"SRTTInited",
+	}
+}
+
+func (t *TCPRTTState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPRTTState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.SRTT)
+	stateSinkObject.Save(1, &t.RTTVar)
+	stateSinkObject.Save(2, &t.SRTTInited)
+}
+
+func (t *TCPRTTState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPRTTState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.SRTT)
+	stateSourceObject.Load(1, &t.RTTVar)
+	stateSourceObject.Load(2, &t.SRTTInited)
+}
+
+func (t *TCPSenderState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPSenderState"
+}
+
+func (t *TCPSenderState) StateFields() []string {
+	return []string{
+		"LastSendTime",
+		"DupAckCount",
+		"SndCwnd",
+		"Ssthresh",
+		"SndCAAckCount",
+		"Outstanding",
+		"SackedOut",
+		"SndWnd",
+		"SndUna",
+		"SndNxt",
+		"RTTMeasureSeqNum",
+		"RTTMeasureTime",
+		"Closed",
+		"RTO",
+		"RTTState",
+		"MaxPayloadSize",
+		"SndWndScale",
+		"MaxSentAck",
+		"FastRecovery",
+		"Cubic",
+		"RACKState",
+	}
+}
+
+func (t *TCPSenderState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPSenderState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	var LastSendTimeValue unixTime = t.saveLastSendTime()
+	stateSinkObject.SaveValue(0, LastSendTimeValue)
+	var RTTMeasureTimeValue unixTime = t.saveRTTMeasureTime()
+	stateSinkObject.SaveValue(11, RTTMeasureTimeValue)
+	stateSinkObject.Save(1, &t.DupAckCount)
+	stateSinkObject.Save(2, &t.SndCwnd)
+	stateSinkObject.Save(3, &t.Ssthresh)
+	stateSinkObject.Save(4, &t.SndCAAckCount)
+	stateSinkObject.Save(5, &t.Outstanding)
+	stateSinkObject.Save(6, &t.SackedOut)
+	stateSinkObject.Save(7, &t.SndWnd)
+	stateSinkObject.Save(8, &t.SndUna)
+	stateSinkObject.Save(9, &t.SndNxt)
+	stateSinkObject.Save(10, &t.RTTMeasureSeqNum)
+	stateSinkObject.Save(12, &t.Closed)
+	stateSinkObject.Save(13, &t.RTO)
+	stateSinkObject.Save(14, &t.RTTState)
+	stateSinkObject.Save(15, &t.MaxPayloadSize)
+	stateSinkObject.Save(16, &t.SndWndScale)
+	stateSinkObject.Save(17, &t.MaxSentAck)
+	stateSinkObject.Save(18, &t.FastRecovery)
+	stateSinkObject.Save(19, &t.Cubic)
+	stateSinkObject.Save(20, &t.RACKState)
+}
+
+func (t *TCPSenderState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPSenderState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &t.DupAckCount)
+	stateSourceObject.Load(2, &t.SndCwnd)
+	stateSourceObject.Load(3, &t.Ssthresh)
+	stateSourceObject.Load(4, &t.SndCAAckCount)
+	stateSourceObject.Load(5, &t.Outstanding)
+	stateSourceObject.Load(6, &t.SackedOut)
+	stateSourceObject.Load(7, &t.SndWnd)
+	stateSourceObject.Load(8, &t.SndUna)
+	stateSourceObject.Load(9, &t.SndNxt)
+	stateSourceObject.Load(10, &t.RTTMeasureSeqNum)
+	stateSourceObject.Load(12, &t.Closed)
+	stateSourceObject.Load(13, &t.RTO)
+	stateSourceObject.Load(14, &t.RTTState)
+	stateSourceObject.Load(15, &t.MaxPayloadSize)
+	stateSourceObject.Load(16, &t.SndWndScale)
+	stateSourceObject.Load(17, &t.MaxSentAck)
+	stateSourceObject.Load(18, &t.FastRecovery)
+	stateSourceObject.Load(19, &t.Cubic)
+	stateSourceObject.Load(20, &t.RACKState)
+	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { t.loadLastSendTime(y.(unixTime)) })
+	stateSourceObject.LoadValue(11, new(unixTime), func(y interface{}) { t.loadRTTMeasureTime(y.(unixTime)) })
+}
+
+func (t *TCPSACKInfo) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPSACKInfo"
+}
+
+func (t *TCPSACKInfo) StateFields() []string {
+	return []string{
+		"Blocks",
+		"ReceivedBlocks",
+		"MaxSACKED",
+	}
+}
+
+func (t *TCPSACKInfo) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPSACKInfo) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.Blocks)
+	stateSinkObject.Save(1, &t.ReceivedBlocks)
+	stateSinkObject.Save(2, &t.MaxSACKED)
+}
+
+func (t *TCPSACKInfo) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPSACKInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.Blocks)
+	stateSourceObject.Load(1, &t.ReceivedBlocks)
+	stateSourceObject.Load(2, &t.MaxSACKED)
+}
+
+func (r *RcvBufAutoTuneParams) StateTypeName() string {
+	return "pkg/tcpip/stack.RcvBufAutoTuneParams"
+}
+
+func (r *RcvBufAutoTuneParams) StateFields() []string {
+	return []string{
+		"MeasureTime",
+		"CopiedBytes",
+		"PrevCopiedBytes",
+		"RcvBufSize",
+		"RTT",
+		"RTTVar",
+		"RTTMeasureSeqNumber",
+		"RTTMeasureTime",
+		"Disabled",
+	}
+}
+
+func (r *RcvBufAutoTuneParams) beforeSave() {}
+
+// +checklocksignore
+func (r *RcvBufAutoTuneParams) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	var MeasureTimeValue unixTime = r.saveMeasureTime()
+	stateSinkObject.SaveValue(0, MeasureTimeValue)
+	var RTTMeasureTimeValue unixTime = r.saveRTTMeasureTime()
+	stateSinkObject.SaveValue(7, RTTMeasureTimeValue)
+	stateSinkObject.Save(1, &r.CopiedBytes)
+	stateSinkObject.Save(2, &r.PrevCopiedBytes)
+	stateSinkObject.Save(3, &r.RcvBufSize)
+	stateSinkObject.Save(4, &r.RTT)
+	stateSinkObject.Save(5, &r.RTTVar)
+	stateSinkObject.Save(6, &r.RTTMeasureSeqNumber)
+	stateSinkObject.Save(8, &r.Disabled)
+}
+
+func (r *RcvBufAutoTuneParams) afterLoad() {}
+
+// +checklocksignore
+func (r *RcvBufAutoTuneParams) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &r.CopiedBytes)
+	stateSourceObject.Load(2, &r.PrevCopiedBytes)
+	stateSourceObject.Load(3, &r.RcvBufSize)
+	stateSourceObject.Load(4, &r.RTT)
+	stateSourceObject.Load(5, &r.RTTVar)
+	stateSourceObject.Load(6, &r.RTTMeasureSeqNumber)
+	stateSourceObject.Load(8, &r.Disabled)
+	stateSourceObject.LoadValue(0, new(unixTime), func(y interface{}) { r.loadMeasureTime(y.(unixTime)) })
+	stateSourceObject.LoadValue(7, new(unixTime), func(y interface{}) { r.loadRTTMeasureTime(y.(unixTime)) })
+}
+
+func (t *TCPRcvBufState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPRcvBufState"
+}
+
+func (t *TCPRcvBufState) StateFields() []string {
+	return []string{
+		"RcvBufSize",
+		"RcvBufUsed",
+		"RcvAutoParams",
+		"RcvClosed",
+	}
+}
+
+func (t *TCPRcvBufState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPRcvBufState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.RcvBufSize)
+	stateSinkObject.Save(1, &t.RcvBufUsed)
+	stateSinkObject.Save(2, &t.RcvAutoParams)
+	stateSinkObject.Save(3, &t.RcvClosed)
+}
+
+func (t *TCPRcvBufState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPRcvBufState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.RcvBufSize)
+	stateSourceObject.Load(1, &t.RcvBufUsed)
+	stateSourceObject.Load(2, &t.RcvAutoParams)
+	stateSourceObject.Load(3, &t.RcvClosed)
+}
+
+func (t *TCPSndBufState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPSndBufState"
+}
+
+func (t *TCPSndBufState) StateFields() []string {
+	return []string{
+		"SndBufSize",
+		"SndBufUsed",
+		"SndClosed",
+		"SndBufInQueue",
+		"PacketTooBigCount",
+		"SndMTU",
+	}
+}
+
+func (t *TCPSndBufState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPSndBufState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.SndBufSize)
+	stateSinkObject.Save(1, &t.SndBufUsed)
+	stateSinkObject.Save(2, &t.SndClosed)
+	stateSinkObject.Save(3, &t.SndBufInQueue)
+	stateSinkObject.Save(4, &t.PacketTooBigCount)
+	stateSinkObject.Save(5, &t.SndMTU)
+}
+
+func (t *TCPSndBufState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPSndBufState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.SndBufSize)
+	stateSourceObject.Load(1, &t.SndBufUsed)
+	stateSourceObject.Load(2, &t.SndClosed)
+	stateSourceObject.Load(3, &t.SndBufInQueue)
+	stateSourceObject.Load(4, &t.PacketTooBigCount)
+	stateSourceObject.Load(5, &t.SndMTU)
+}
+
+func (t *TCPEndpointStateInner) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPEndpointStateInner"
+}
+
+func (t *TCPEndpointStateInner) StateFields() []string {
+	return []string{
+		"TSOffset",
+		"SACKPermitted",
+		"SendTSOk",
+		"RecentTS",
+	}
+}
+
+func (t *TCPEndpointStateInner) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPEndpointStateInner) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.TSOffset)
+	stateSinkObject.Save(1, &t.SACKPermitted)
+	stateSinkObject.Save(2, &t.SendTSOk)
+	stateSinkObject.Save(3, &t.RecentTS)
+}
+
+func (t *TCPEndpointStateInner) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPEndpointStateInner) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.TSOffset)
+	stateSourceObject.Load(1, &t.SACKPermitted)
+	stateSourceObject.Load(2, &t.SendTSOk)
+	stateSourceObject.Load(3, &t.RecentTS)
+}
+
+func (t *TCPEndpointState) StateTypeName() string {
+	return "pkg/tcpip/stack.TCPEndpointState"
+}
+
+func (t *TCPEndpointState) StateFields() []string {
+	return []string{
+		"TCPEndpointStateInner",
+		"ID",
+		"SegTime",
+		"RcvBufState",
+		"SndBufState",
+		"SACK",
+		"Receiver",
+		"Sender",
+	}
+}
+
+func (t *TCPEndpointState) beforeSave() {}
+
+// +checklocksignore
+func (t *TCPEndpointState) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	var SegTimeValue unixTime = t.saveSegTime()
+	stateSinkObject.SaveValue(2, SegTimeValue)
+	stateSinkObject.Save(0, &t.TCPEndpointStateInner)
+	stateSinkObject.Save(1, &t.ID)
+	stateSinkObject.Save(3, &t.RcvBufState)
+	stateSinkObject.Save(4, &t.SndBufState)
+	stateSinkObject.Save(5, &t.SACK)
+	stateSinkObject.Save(6, &t.Receiver)
+	stateSinkObject.Save(7, &t.Sender)
+}
+
+func (t *TCPEndpointState) afterLoad() {}
+
+// +checklocksignore
+func (t *TCPEndpointState) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.TCPEndpointStateInner)
+	stateSourceObject.Load(1, &t.ID)
+	stateSourceObject.Load(3, &t.RcvBufState)
+	stateSourceObject.Load(4, &t.SndBufState)
+	stateSourceObject.Load(5, &t.SACK)
+	stateSourceObject.Load(6, &t.Receiver)
+	stateSourceObject.Load(7, &t.Sender)
+	stateSourceObject.LoadValue(2, new(unixTime), func(y interface{}) { t.loadSegTime(y.(unixTime)) })
+}
+
 func (ep *multiPortEndpoint) StateTypeName() string {
 	return "pkg/tcpip/stack.multiPortEndpoint"
 }
@@ -712,6 +1278,19 @@ func init() {
 	state.Register((*GSOType)(nil))
 	state.Register((*GSO)(nil))
 	state.Register((*TransportEndpointInfo)(nil))
+	state.Register((*TCPCubicState)(nil))
+	state.Register((*TCPRACKState)(nil))
+	state.Register((*TCPEndpointID)(nil))
+	state.Register((*TCPFastRecoveryState)(nil))
+	state.Register((*TCPReceiverState)(nil))
+	state.Register((*TCPRTTState)(nil))
+	state.Register((*TCPSenderState)(nil))
+	state.Register((*TCPSACKInfo)(nil))
+	state.Register((*RcvBufAutoTuneParams)(nil))
+	state.Register((*TCPRcvBufState)(nil))
+	state.Register((*TCPSndBufState)(nil))
+	state.Register((*TCPEndpointStateInner)(nil))
+	state.Register((*TCPEndpointState)(nil))
 	state.Register((*multiPortEndpoint)(nil))
 	state.Register((*tupleList)(nil))
 	state.Register((*tupleEntry)(nil))

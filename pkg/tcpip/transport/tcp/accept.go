@@ -215,11 +215,11 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 
 	n := newEndpoint(l.stack, netProto, queue)
 	n.ops.SetV6Only(l.v6Only)
-	n.ID = s.id
+	n.TransportEndpointInfo.ID = s.id
 	n.boundNICID = s.nicID
 	n.route = route
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.netProto}
-	n.rcvBufSize = int(l.rcvWnd)
+	n.rcvQueueInfo.RcvBufSize = int(l.rcvWnd)
 	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 	n.setEndpointState(StateConnecting)
 
@@ -231,7 +231,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 	// Bootstrap the auto tuning algorithm. Starting at zero will result in
 	// a large step function on the first window adjustment causing the
 	// window to grow to a really large value.
-	n.rcvAutoParams.prevCopied = n.initialReceiveWindow()
+	n.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = n.initialReceiveWindow()
 
 	return n, nil
 }
@@ -290,7 +290,14 @@ func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, q
 	}
 
 	// Register new endpoint so that packets are routed to it.
-	if err := ep.stack.RegisterTransportEndpoint(ep.effectiveNetProtos, ProtocolNumber, ep.ID, ep, ep.boundPortFlags, ep.boundBindToDevice); err != nil {
+	if err := ep.stack.RegisterTransportEndpoint(
+		ep.effectiveNetProtos,
+		ProtocolNumber,
+		ep.TransportEndpointInfo.ID,
+		ep,
+		ep.boundPortFlags,
+		ep.boundBindToDevice,
+	); err != nil {
 		ep.mu.Unlock()
 		ep.Close()
 
@@ -335,14 +342,14 @@ func (l *listenContext) performHandshake(s *segment, opts *header.TCPSynOptions,
 
 func (l *listenContext) addPendingEndpoint(n *endpoint) {
 	l.pendingMu.Lock()
-	l.pendingEndpoints[n.ID] = n
+	l.pendingEndpoints[n.TransportEndpointInfo.ID] = n
 	l.pending.Add(1)
 	l.pendingMu.Unlock()
 }
 
 func (l *listenContext) removePendingEndpoint(n *endpoint) {
 	l.pendingMu.Lock()
-	delete(l.pendingEndpoints, n.ID)
+	delete(l.pendingEndpoints, n.TransportEndpointInfo.ID)
 	l.pending.Done()
 	l.pendingMu.Unlock()
 }
@@ -383,7 +390,7 @@ func (l *listenContext) cleanupCompletedHandshake(h *handshake) {
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
 	// scaling.
-	e.rcv.rcvWndScale = e.h.effectiveRcvWndScale()
+	e.rcv.RcvWndScale = e.h.effectiveRcvWndScale()
 
 	// Clean up handshake state stored in the endpoint so that it can be GCed.
 	e.h = nil
@@ -444,12 +451,15 @@ func (e *endpoint) propagateInheritableOptionsLocked(n *endpoint) {
 // * propagateInheritableOptionsLocked has been called.
 // * e.mu is held.
 func (e *endpoint) reserveTupleLocked() bool {
-	dest := tcpip.FullAddress{Addr: e.ID.RemoteAddress, Port: e.ID.RemotePort}
+	dest := tcpip.FullAddress{
+		Addr: e.TransportEndpointInfo.ID.RemoteAddress,
+		Port: e.TransportEndpointInfo.ID.RemotePort,
+	}
 	portRes := ports.Reservation{
 		Networks:     e.effectiveNetProtos,
 		Transport:    ProtocolNumber,
-		Addr:         e.ID.LocalAddress,
-		Port:         e.ID.LocalPort,
+		Addr:         e.TransportEndpointInfo.ID.LocalAddress,
+		Port:         e.TransportEndpointInfo.ID.LocalPort,
 		Flags:        e.boundPortFlags,
 		BindToDevice: e.boundBindToDevice,
 		Dest:         dest,
@@ -537,9 +547,9 @@ func (e *endpoint) acceptQueueIsFull() bool {
 //
 // Precondition: if ctx.listenEP != nil, ctx.listenEP.mu must be locked.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Error {
-	e.rcvListMu.Lock()
-	rcvClosed := e.rcvClosed
-	e.rcvListMu.Unlock()
+	e.rcvQueueInfo.rcvQueueMu.Lock()
+	rcvClosed := e.rcvQueueInfo.RcvClosed
+	e.rcvQueueInfo.rcvQueueMu.Unlock()
 	if rcvClosed || s.flagsAreSet(header.TCPFlagSyn|header.TCPFlagAck) {
 		// If the endpoint is shutdown, reply with reset.
 		//
@@ -689,7 +699,14 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 
 		// Register new endpoint so that packets are routed to it.
-		if err := n.stack.RegisterTransportEndpoint(n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.boundPortFlags, n.boundBindToDevice); err != nil {
+		if err := n.stack.RegisterTransportEndpoint(
+			n.effectiveNetProtos,
+			ProtocolNumber,
+			n.TransportEndpointInfo.ID,
+			n,
+			n.boundPortFlags,
+			n.boundBindToDevice,
+		); err != nil {
 			n.mu.Unlock()
 			n.Close()
 
@@ -704,7 +721,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		// endpoint as the Timestamp was already
 		// randomly offset when the original SYN-ACK was
 		// sent above.
-		n.tsOffset = 0
+		n.TSOffset = 0
 
 		// Switch state to connected.
 		n.isConnectNotified = true

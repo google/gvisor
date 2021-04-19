@@ -492,10 +492,6 @@ func (l *Loader) Destroy() {
 	// save/restore.
 	l.k.Release()
 
-	// All sentry-created resources should have been released at this point;
-	// check for reference leaks.
-	refsvfs2.DoLeakCheck()
-
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and
 	// gofer sessions. Close them here in case of failure.
@@ -1002,10 +998,12 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	ws := l.wait(tg)
 	*waitStatus = ws
 
-	// Write coverage report after the root container has exited. This guarantees
-	// that the report is written in cases where the sandbox is killed by a signal
-	// after the ContainerWait request is completed.
+	// Check for leaks and write coverage report after the root container has
+	// exited. This guarantees that the report is written in cases where the
+	// sandbox is killed by a signal after the ContainerWait request is completed.
 	if l.root.procArgs.ContainerID == cid {
+		// All sentry-created resources should have been released at this point.
+		refsvfs2.DoLeakCheck()
 		coverage.Report()
 	}
 	return nil

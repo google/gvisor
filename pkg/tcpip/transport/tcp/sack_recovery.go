@@ -42,14 +42,14 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 	}
 
 	nextSegHint := snd.writeList.Front()
-	for snd.outstanding < snd.sndCwnd {
+	for snd.Outstanding < snd.SndCwnd {
 		var nextSeg *segment
 		var rescueRtx bool
 		nextSeg, nextSegHint, rescueRtx = snd.NextSeg(nextSegHint)
 		if nextSeg == nil {
 			return dataSent
 		}
-		if !snd.isAssignedSequenceNumber(nextSeg) || snd.sndNxt.LessThanEq(nextSeg.sequenceNumber) {
+		if !snd.isAssignedSequenceNumber(nextSeg) || snd.SndNxt.LessThanEq(nextSeg.sequenceNumber) {
 			// New data being sent.
 
 			// Step C.3 described below is handled by
@@ -67,7 +67,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 				return dataSent
 			}
 			dataSent = true
-			snd.outstanding++
+			snd.Outstanding++
 			snd.writeNext = nextSeg.Next()
 			continue
 		}
@@ -79,7 +79,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 		// "The estimate of the amount of data outstanding in the network
 		// must be updated by incrementing pipe by the number of octets
 		// transmitted in (C.1)."
-		snd.outstanding++
+		snd.Outstanding++
 		dataSent = true
 		snd.sendSegment(nextSeg)
 
@@ -88,7 +88,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 			// We do the last part of rule (4) of NextSeg here to update
 			// RescueRxt as until this point we don't know if we are going
 			// to use the rescue transmission.
-			snd.fr.rescueRxt = snd.fr.last
+			snd.FastRecovery.RescueRxt = snd.FastRecovery.Last
 		} else {
 			// RFC 6675, Step C.2
 			//
@@ -96,7 +96,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 			// HighData, HighRxt MUST be set to the highest sequence
 			// number of the retransmitted segment unless NextSeg ()
 			// rule (4) was invoked for this retransmission."
-			snd.fr.highRxt = segEnd - 1
+			snd.FastRecovery.HighRxt = segEnd - 1
 		}
 	}
 	return dataSent
@@ -109,12 +109,12 @@ func (sr *sackRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	}
 
 	// We are in fast recovery mode. Ignore the ack if it's out of range.
-	if ack := rcvdSeg.ackNumber; !ack.InRange(snd.sndUna, snd.sndNxt+1) {
+	if ack := rcvdSeg.ackNumber; !ack.InRange(snd.SndUna, snd.SndNxt+1) {
 		return
 	}
 
 	// RFC 6675 recovery algorithm step C 1-5.
-	end := snd.sndUna.Add(snd.sndWnd)
-	dataSent := sr.handleSACKRecovery(snd.maxPayloadSize, end)
+	end := snd.SndUna.Add(snd.SndWnd)
+	dataSent := sr.handleSACKRecovery(snd.MaxPayloadSize, end)
 	snd.postXmit(dataSent, true /* shouldScheduleProbe */)
 }

@@ -31,25 +31,25 @@ func (rr *renoRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	snd := rr.s
 
 	// We are in fast recovery mode. Ignore the ack if it's out of range.
-	if !ack.InRange(snd.sndUna, snd.sndNxt+1) {
+	if !ack.InRange(snd.SndUna, snd.SndNxt+1) {
 		return
 	}
 
 	// Don't count this as a duplicate if it is carrying data or
 	// updating the window.
-	if rcvdSeg.logicalLen() != 0 || snd.sndWnd != rcvdSeg.window {
+	if rcvdSeg.logicalLen() != 0 || snd.SndWnd != rcvdSeg.window {
 		return
 	}
 
 	// Inflate the congestion window if we're getting duplicate acks
 	// for the packet we retransmitted.
-	if !fastRetransmit && ack == snd.fr.first {
+	if !fastRetransmit && ack == snd.FastRecovery.First {
 		// We received a dup, inflate the congestion window by 1 packet
 		// if we're not at the max yet. Only inflate the window if
 		// regular FastRecovery is in use, RFC6675 does not require
 		// inflating cwnd on duplicate ACKs.
-		if snd.sndCwnd < snd.fr.maxCwnd {
-			snd.sndCwnd++
+		if snd.SndCwnd < snd.FastRecovery.MaxCwnd {
+			snd.SndCwnd++
 		}
 		return
 	}
@@ -61,7 +61,7 @@ func (rr *renoRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	// back onto the wire.
 	//
 	// N.B. The retransmit timer will be reset by the caller.
-	snd.fr.first = ack
-	snd.dupAckCount = 0
+	snd.FastRecovery.First = ack
+	snd.DupAckCount = 0
 	snd.resendSegment()
 }

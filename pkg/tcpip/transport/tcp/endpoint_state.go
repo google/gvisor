@@ -58,7 +58,7 @@ func (e *endpoint) beforeSave() {
 		if !e.route.HasSaveRestoreCapability() {
 			if !e.route.HasDisconncetOkCapability() {
 				panic(&tcpip.ErrSaveRejection{
-					Err: fmt.Errorf("endpoint cannot be saved in connected state: local %s:%d, remote %s:%d", e.ID.LocalAddress, e.ID.LocalPort, e.ID.RemoteAddress, e.ID.RemotePort),
+					Err: fmt.Errorf("endpoint cannot be saved in connected state: local %s:%d, remote %s:%d", e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.LocalPort, e.TransportEndpointInfo.ID.RemoteAddress, e.TransportEndpointInfo.ID.RemotePort),
 				})
 			}
 			e.resetConnectionLocked(&tcpip.ErrConnectionAborted{})
@@ -88,7 +88,7 @@ func (e *endpoint) beforeSave() {
 			e.mu.Lock()
 		}
 		if e.workerRunning {
-			panic(fmt.Sprintf("endpoint: %+v still has worker running in closed or error state", e.ID))
+			panic(fmt.Sprintf("endpoint: %+v still has worker running in closed or error state", e.TransportEndpointInfo.ID))
 		}
 	default:
 		panic(fmt.Sprintf("endpoint in unknown state %v", e.EndpointState()))
@@ -180,14 +180,14 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 		var rs tcpip.TCPReceiveBufferSizeRangeOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
-			if e.rcvBufSize < rs.Min || e.rcvBufSize > rs.Max {
-				panic(fmt.Sprintf("endpoint.rcvBufSize %d is outside the min and max allowed [%d, %d]", e.rcvBufSize, rs.Min, rs.Max))
+			if e.rcvQueueInfo.RcvBufSize < rs.Min || e.rcvQueueInfo.RcvBufSize > rs.Max {
+				panic(fmt.Sprintf("endpoint.rcvQueueInfo.RcvBufSize %d is outside the min and max allowed [%d, %d]", e.rcvQueueInfo.RcvBufSize, rs.Min, rs.Max))
 			}
 		}
 	}
 
 	bind := func() {
-		addr, _, err := e.checkV4MappedLocked(tcpip.FullAddress{Addr: e.BindAddr, Port: e.ID.LocalPort})
+		addr, _, err := e.checkV4MappedLocked(tcpip.FullAddress{Addr: e.BindAddr, Port: e.TransportEndpointInfo.ID.LocalPort})
 		if err != nil {
 			panic("unable to parse BindAddr: " + err.String())
 		}
@@ -213,19 +213,19 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	case epState.connected():
 		bind()
 		if len(e.connectingAddress) == 0 {
-			e.connectingAddress = e.ID.RemoteAddress
+			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
 			// This endpoint is accepted by netstack but not yet by
 			// the app. If the endpoint is IPv6 but the remote
 			// address is IPv4, we need to connect as IPv6 so that
 			// dual-stack mode can be properly activated.
-			if e.NetProto == header.IPv6ProtocolNumber && len(e.ID.RemoteAddress) != header.IPv6AddressSize {
-				e.connectingAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + e.ID.RemoteAddress
+			if e.NetProto == header.IPv6ProtocolNumber && len(e.TransportEndpointInfo.ID.RemoteAddress) != header.IPv6AddressSize {
+				e.connectingAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + e.TransportEndpointInfo.ID.RemoteAddress
 			}
 		}
 		// Reset the scoreboard to reinitialize the sack information as
 		// we do not restore SACK information.
 		e.scoreboard.Reset()
-		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}, false, e.workerRunning)
+		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false, e.workerRunning)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			panic("endpoint connecting failed: " + err.String())
 		}
@@ -263,7 +263,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectedLoading.Wait()
 			listenLoading.Wait()
 			bind()
-			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort})
+			err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort})
 			if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 				panic("endpoint connecting failed: " + err.String())
 			}
@@ -309,24 +309,4 @@ func (e *endpoint) saveLastOutOfWindowAckTime() unixTime {
 // loadLastOutOfWindowAckTime is invoked by stateify.
 func (e *endpoint) loadLastOutOfWindowAckTime(unix unixTime) {
 	e.lastOutOfWindowAckTime = time.Unix(unix.second, unix.nano)
-}
-
-// saveMeasureTime is invoked by stateify.
-func (r *rcvBufAutoTuneParams) saveMeasureTime() unixTime {
-	return unixTime{r.measureTime.Unix(), r.measureTime.UnixNano()}
-}
-
-// loadMeasureTime is invoked by stateify.
-func (r *rcvBufAutoTuneParams) loadMeasureTime(unix unixTime) {
-	r.measureTime = time.Unix(unix.second, unix.nano)
-}
-
-// saveRttMeasureTime is invoked by stateify.
-func (r *rcvBufAutoTuneParams) saveRttMeasureTime() unixTime {
-	return unixTime{r.rttMeasureTime.Unix(), r.rttMeasureTime.UnixNano()}
-}
-
-// loadRttMeasureTime is invoked by stateify.
-func (r *rcvBufAutoTuneParams) loadRttMeasureTime(unix unixTime) {
-	r.rttMeasureTime = time.Unix(unix.second, unix.nano)
 }
