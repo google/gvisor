@@ -524,7 +524,7 @@ func (fd *FileDescription) Stat(ctx context.Context, opts StatOptions) (linux.St
 			Start: fd.vd,
 		})
 		stat, err := fd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return stat, err
 	}
 	return fd.impl.Stat(ctx, opts)
@@ -539,7 +539,7 @@ func (fd *FileDescription) SetStat(ctx context.Context, opts SetStatOptions) err
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.SetStatAt(ctx, rp, opts)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return err
 	}
 	return fd.impl.SetStat(ctx, opts)
@@ -555,7 +555,7 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 			Start: fd.vd,
 		})
 		statfs, err := fd.vd.mount.fs.impl.StatFSAt(ctx, rp)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return statfs, err
 	}
 	return fd.impl.StatFS(ctx)
@@ -701,7 +701,7 @@ func (fd *FileDescription) ListXattr(ctx context.Context, size uint64) ([]string
 			Start: fd.vd,
 		})
 		names, err := fd.vd.mount.fs.impl.ListXattrAt(ctx, rp, size)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return names, err
 	}
 	names, err := fd.impl.ListXattr(ctx, size)
@@ -730,7 +730,7 @@ func (fd *FileDescription) GetXattr(ctx context.Context, opts *GetXattrOptions) 
 			Start: fd.vd,
 		})
 		val, err := fd.vd.mount.fs.impl.GetXattrAt(ctx, rp, *opts)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return val, err
 	}
 	return fd.impl.GetXattr(ctx, *opts)
@@ -746,7 +746,7 @@ func (fd *FileDescription) SetXattr(ctx context.Context, opts *SetXattrOptions) 
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.SetXattrAt(ctx, rp, *opts)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return err
 	}
 	return fd.impl.SetXattr(ctx, *opts)
@@ -762,7 +762,7 @@ func (fd *FileDescription) RemoveXattr(ctx context.Context, name string) error {
 			Start: fd.vd,
 		})
 		err := fd.vd.mount.fs.impl.RemoveXattrAt(ctx, rp, name)
-		vfsObj.putResolvingPath(ctx, rp)
+		rp.Release(ctx)
 		return err
 	}
 	return fd.impl.RemoveXattr(ctx, name)

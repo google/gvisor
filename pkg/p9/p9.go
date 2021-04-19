@@ -402,6 +402,8 @@ const (
 	MsgRallocate     MsgType = 139
 	MsgTsetattrclunk MsgType = 140
 	MsgRsetattrclunk MsgType = 141
+	MsgTmultigetattr MsgType = 142
+	MsgRmultigetattr MsgType = 143
 	MsgTchannel      MsgType = 250
 	MsgRchannel      MsgType = 251
 )
@@ -1177,4 +1179,30 @@ func (a *AllocateMode) encode(b *buffer) {
 		mask |= 0x40
 	}
 	b.Write32(mask)
+}
+
+// FullStat is used in the result of a MultiGetAttr call.
+type FullStat struct {
+	QID   QID
+	Valid AttrMask
+	Attr  Attr
+}
+
+// String implements fmt.Stringer.
+func (f *FullStat) String() string {
+	return fmt.Sprintf("FullStat{QID: %v, Valid: %v, Attr: %v}", f.QID, f.Valid, f.Attr)
+}
+
+// decode implements encoder.decode.
+func (f *FullStat) decode(b *buffer) {
+	f.QID.decode(b)
+	f.Valid.decode(b)
+	f.Attr.decode(b)
+}
+
+// encode implements encoder.encode.
+func (f *FullStat) encode(b *buffer) {
+	f.QID.encode(b)
+	f.Valid.encode(b)
+	f.Attr.encode(b)
 }
