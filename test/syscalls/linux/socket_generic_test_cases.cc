@@ -849,9 +849,20 @@ TEST_P(AllSocketPairTest, GetSockoptProtocol) {
 }
 
 TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
-  int sock_opts[] = {SO_BROADCAST, SO_PASSCRED,  SO_NO_CHECK,
-                     SO_REUSEADDR, SO_REUSEPORT, SO_KEEPALIVE};
-  for (int sock_opt : sock_opts) {
+#define BOOLEAN_SOCKOPTS(T) \
+  T(SO_BROADCAST)           \
+  T(SO_PASSCRED)            \
+  T(SO_NO_CHECK)            \
+  T(SO_REUSEADDR)           \
+  T(SO_REUSEPORT)           \
+  T(SO_KEEPALIVE)           \
+  T(SO_PASSCRED)
+#define T(x) {x, #x},
+  std::pair<int, const char*> sock_opts[] = {BOOLEAN_SOCKOPTS(T)};
+#undef T
+#undef BOOLEAN_SOCKOPTS
+
+  for (const auto& [sock_opt, name] : sock_opts) {
     auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
     int enable = -1;
     socklen_t enableLen = sizeof(enable);
@@ -859,7 +870,9 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
     // Test that the option is initially set to false.
     ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
                            &enableLen),
-                SyscallSucceeds());
+                SyscallSucceeds())
+        << absl::StrFormat("getsockopt(SOL_SOCKET, %s) = %s", name,
+                           strerror(errno));
     ASSERT_EQ(enableLen, sizeof(enable));
     EXPECT_EQ(enable, 0) << absl::StrFormat(
         "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",
@@ -870,12 +883,16 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
     enable = 1;
     ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
                            sizeof(enable)),
-                SyscallSucceeds());
+                SyscallSucceeds())
+        << absl::StrFormat("setsockopt(SOL_SOCKET, %s) = %s", name,
+                           strerror(errno));
     enable = -1;
     enableLen = sizeof(enable);
     ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
                            &enableLen),
-                SyscallSucceeds());
+                SyscallSucceeds())
+        << absl::StrFormat("getsockopt(SOL_SOCKET, %s) = %s", name,
+                           strerror(errno));
     ASSERT_EQ(enableLen, sizeof(enable));
     EXPECT_EQ(enable, 1) << absl::StrFormat(
         "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",
