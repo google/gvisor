@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // A Block is a range of contiguous bytes, similar to []byte but with the
@@ -223,8 +224,22 @@ func Copy(dst, src Block) (int, error) {
 func Zero(dst Block) (int, error) {
 	if !dst.needSafecopy {
 		bs := dst.ToSlice()
-		for i := range bs {
-			bs[i] = 0
+		if !sync.RaceEnabled {
+			// If the race detector isn't enabled, the golang
+			// compiler replaces the next loop with memclr
+			// (https://github.com/golang/go/issues/5373).
+			for i := range bs {
+				bs[i] = 0
+			}
+		} else {
+			bsLen := len(bs)
+			if bsLen == 0 {
+				return 0, nil
+			}
+			bs[0] = 0
+			for i := 1; i < bsLen; i *= 2 {
+				copy(bs[i:], bs[:i])
+			}
 		}
 		return len(bs), nil
 	}
