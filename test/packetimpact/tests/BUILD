@@ -416,6 +416,7 @@ validate_all_tests()
 test_suite(
     name = "all_tests",
     tags = [
+        "local",
         "manual",
         "packetimpact",
     ],

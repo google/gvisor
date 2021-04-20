@@ -12,8 +12,8 @@ go_test(
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
-        "manual",
         "local",
+        "manual",
     ],
     visibility = ["//:sandbox"],
     deps = [

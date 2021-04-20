@@ -72,9 +72,6 @@ steps:
 
   # Integration tests.
   - <<: *common
-    label: ":parachute: FUSE tests"
-    command: make fuse-tests
-  - <<: *common
     label: ":docker: Docker tests"
     command: make docker-tests
   - <<: *common

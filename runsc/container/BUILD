@@ -51,9 +51,7 @@ go_test(
     ],
     library = ":container",
     shard_count = more_shards,
-    tags = [
-        "requires-kvm",
-    ],
+    tags = ["requires-kvm"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bits",

@@ -50,5 +50,4 @@ sh_test(
     srcs = ["version_test.sh"],
     args = ["$(location :runsc)"],
     data = [":runsc"],
-    tags = ["noguitar"],
 )

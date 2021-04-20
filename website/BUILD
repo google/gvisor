@@ -14,7 +14,7 @@ docker_image(
     tags = [
         "local",
         "manual",
-        "nosandbox",
+        "no-sandbox",
     ],
 )
 
@@ -69,7 +69,7 @@ genrule(
     tags = [
         "local",
         "manual",
-        "nosandbox",
+        "no-sandbox",
     ],
 )
 

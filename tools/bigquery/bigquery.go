@@ -119,6 +119,14 @@ func NewBenchmark(name string, iters int) *Benchmark {
 	}
 }
 
+// NewBenchmarkWithMetric creates a new sending to BigQuery, initialized with a
+// single iteration and single metric.
+func NewBenchmarkWithMetric(name, metric, unit string, value float64) *Benchmark {
+	b := NewBenchmark(name, 1)
+	b.AddMetric(metric, unit, value)
+	return b
+}
+
 // NewSuite initializes a new Suite.
 func NewSuite(name string, official bool) *Suite {
 	return &Suite{

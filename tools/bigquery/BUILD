@@ -12,5 +12,6 @@ go_library(
     deps = [
         "@com_google_cloud_go_bigquery//:go_default_library",
         "@org_golang_google_api//option:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
     ],
 )
