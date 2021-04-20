@@ -20,9 +20,9 @@
 
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -40,13 +40,7 @@ int syscallPpoll(struct pollfd* fds, nfds_t nfds, struct timespec* timeout_ts,
   return syscall(SYS_ppoll, fds, nfds, timeout_ts, sigmask, mask_size);
 }
 
-class PpollTest : public BasePollTest {
- protected:
-  void SetUp() override { BasePollTest::SetUp(); }
-  void TearDown() override { BasePollTest::TearDown(); }
-};
-
-TEST_F(PpollTest, InvalidFds) {
+TEST(PpollTest, InvalidFds) {
   // fds is invalid because it's null, but we tell ppoll the length is non-zero.
   struct timespec timeout = {};
   sigset_t sigmask;
@@ -58,7 +52,7 @@ TEST_F(PpollTest, InvalidFds) {
 }
 
 // See that when fds is null, ppoll behaves like sleep.
-TEST_F(PpollTest, NullFds) {
+TEST(PpollTest, NullFds) {
   struct timespec timeout = absl::ToTimespec(absl::Milliseconds(10));
   ASSERT_THAT(syscallPpoll(nullptr, 0, &timeout, nullptr, 0),
               SyscallSucceeds());
@@ -66,7 +60,7 @@ TEST_F(PpollTest, NullFds) {
   EXPECT_EQ(timeout.tv_nsec, 0);
 }
 
-TEST_F(PpollTest, ZeroTimeout) {
+TEST(PpollTest, ZeroTimeout) {
   struct timespec timeout = {};
   ASSERT_THAT(syscallPpoll(nullptr, 0, &timeout, nullptr, 0),
               SyscallSucceeds());
@@ -76,28 +70,29 @@ TEST_F(PpollTest, ZeroTimeout) {
 
 // If random S/R interrupts the ppoll, SIGALRM may be delivered before ppoll
 // restarts, causing the ppoll to hang forever.
-TEST_F(PpollTest, NoTimeout) {
+TEST(PpollTest, NoTimeout) {
   // When there's no timeout, ppoll may never return so set a timer.
-  SetTimer(absl::Milliseconds(100));
+  Alarm a;
+  a.SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.
   ASSERT_THAT(syscallPpoll(nullptr, 0, nullptr, nullptr, 0),
               SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
 }
 
-TEST_F(PpollTest, InvalidTimeoutNegative) {
+TEST(PpollTest, InvalidTimeoutNegative) {
   struct timespec timeout = absl::ToTimespec(absl::Nanoseconds(-1));
   EXPECT_THAT(syscallPpoll(nullptr, 0, &timeout, nullptr, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PpollTest, InvalidTimeoutNotNormalized) {
+TEST(PpollTest, InvalidTimeoutNotNormalized) {
   struct timespec timeout = {0, 1000000001};
   EXPECT_THAT(syscallPpoll(nullptr, 0, &timeout, nullptr, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PpollTest, InvalidMaskSize) {
+TEST(PpollTest, InvalidMaskSize) {
   struct timespec timeout = {};
   sigset_t sigmask;
   TEST_PCHECK(sigemptyset(&sigmask) == 0);
@@ -107,7 +102,7 @@ TEST_F(PpollTest, InvalidMaskSize) {
 
 // Verify that signals blocked by the ppoll mask (that would otherwise be
 // allowed) do not interrupt ppoll.
-TEST_F(PpollTest, SignalMaskBlocksSignal) {
+TEST(PpollTest, SignalMaskBlocksSignal) {
   absl::Duration duration(absl::Seconds(30));
   struct timespec timeout = absl::ToTimespec(duration);
   absl::Duration timer_duration(absl::Seconds(10));
@@ -117,18 +112,19 @@ TEST_F(PpollTest, SignalMaskBlocksSignal) {
   sigset_t mask;
   ASSERT_THAT(sigprocmask(0, nullptr, &mask), SyscallSucceeds());
   TEST_PCHECK(sigaddset(&mask, SIGALRM) == 0);
-  SetTimer(timer_duration);
+  Alarm a;
+  a.SetTimer(timer_duration);
   MaybeSave();
-  ASSERT_FALSE(TimerFired());
+  ASSERT_FALSE(a.TimerFired());
   ASSERT_THAT(syscallPpoll(nullptr, 0, &timeout, &mask, kSigsetSize),
               SyscallSucceeds());
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
   EXPECT_EQ(absl::DurationFromTimespec(timeout), absl::Duration());
 }
 
 // Verify that signals allowed by the ppoll mask (that would otherwise be
 // blocked) interrupt ppoll.
-TEST_F(PpollTest, SignalMaskAllowsSignal) {
+TEST(PpollTest, SignalMaskAllowsSignal) {
   absl::Duration duration(absl::Seconds(30));
   struct timespec timeout = absl::ToTimespec(duration);
   absl::Duration timer_duration(absl::Seconds(10));
@@ -141,12 +137,13 @@ TEST_F(PpollTest, SignalMaskAllowsSignal) {
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, SIGALRM));
 
   // Call with a mask that unblocks SIGALRM. See that ppoll is interrupted.
-  SetTimer(timer_duration);
+  Alarm a;
+  a.SetTimer(timer_duration);
   MaybeSave();
-  ASSERT_FALSE(TimerFired());
+  ASSERT_FALSE(a.TimerFired());
   ASSERT_THAT(syscallPpoll(nullptr, 0, &timeout, &mask, kSigsetSize),
               SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
   EXPECT_GT(absl::DurationFromTimespec(timeout), absl::Duration());
 }
 

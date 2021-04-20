@@ -24,44 +24,39 @@
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
 
-class PollTest : public BasePollTest {
- protected:
-  void SetUp() override { BasePollTest::SetUp(); }
-  void TearDown() override { BasePollTest::TearDown(); }
-};
-
-TEST_F(PollTest, InvalidFds) {
+TEST(PollTest, InvalidFds) {
   // fds is invalid because it's null, but we tell ppoll the length is non-zero.
   EXPECT_THAT(poll(nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
   EXPECT_THAT(poll(nullptr, -1, 1), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(PollTest, NullFds) {
+TEST(PollTest, NullFds) {
   EXPECT_THAT(poll(nullptr, 0, 10), SyscallSucceeds());
 }
 
-TEST_F(PollTest, ZeroTimeout) {
+TEST(PollTest, ZeroTimeout) {
   EXPECT_THAT(poll(nullptr, 0, 0), SyscallSucceeds());
 }
 
 // If random S/R interrupts the poll, SIGALRM may be delivered before poll
 // restarts, causing the poll to hang forever.
-TEST_F(PollTest, NegativeTimeout) {
+TEST(PollTest, NegativeTimeout) {
   // Negative timeout mean wait forever so set a timer.
-  SetTimer(absl::Milliseconds(100));
+  Alarm a;
+  a.SetTimer(absl::Milliseconds(100));
   EXPECT_THAT(poll(nullptr, 0, -1), SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
 }
 
 void NonBlockingReadableTest(int16_t mask) {
@@ -84,13 +79,13 @@ void NonBlockingReadableTest(int16_t mask) {
   EXPECT_EQ(poll_fd.revents & mask, mask);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLIN) { NonBlockingReadableTest(POLLIN); }
+TEST(PollTest, NonBlockingEventPOLLIN) { NonBlockingReadableTest(POLLIN); }
 
-TEST_F(PollTest, NonBlockingEventPOLLRDNORM) {
+TEST(PollTest, NonBlockingEventPOLLRDNORM) {
   NonBlockingReadableTest(POLLRDNORM);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLRDNORM_POLLIN) {
+TEST(PollTest, NonBlockingEventPOLLRDNORM_POLLIN) {
   NonBlockingReadableTest(POLLRDNORM | POLLIN);
 }
 
@@ -123,11 +118,11 @@ void BlockingReadableTest(int16_t mask) {
   ASSERT_THAT(WriteFd(fd1.get(), s, strlen(s) + 1), SyscallSucceeds());
 }
 
-TEST_F(PollTest, BlockingEventPOLLIN) { BlockingReadableTest(POLLIN); }
+TEST(PollTest, BlockingEventPOLLIN) { BlockingReadableTest(POLLIN); }
 
-TEST_F(PollTest, BlockingEventPOLLRDNORM) { BlockingReadableTest(POLLRDNORM); }
+TEST(PollTest, BlockingEventPOLLRDNORM) { BlockingReadableTest(POLLRDNORM); }
 
-TEST_F(PollTest, BlockingEventPOLLRDNORM_POLLIN) {
+TEST(PollTest, BlockingEventPOLLRDNORM_POLLIN) {
   BlockingReadableTest(POLLRDNORM | POLLIN);
 }
 
@@ -150,31 +145,29 @@ void WritableTest(int16_t mask, int timeout) {
   EXPECT_EQ(poll_fd.revents & mask, mask);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLOUT) {
+TEST(PollTest, NonBlockingEventPOLLOUT) {
   WritableTest(POLLOUT, /*timeout=*/0);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLWRNORM) {
+TEST(PollTest, NonBlockingEventPOLLWRNORM) {
   WritableTest(POLLWRNORM, /*timeout=*/0);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLWRNORM_POLLOUT) {
+TEST(PollTest, NonBlockingEventPOLLWRNORM_POLLOUT) {
   WritableTest(POLLWRNORM | POLLOUT, /*timeout=*/0);
 }
 
-TEST_F(PollTest, BlockingEventPOLLOUT) {
-  WritableTest(POLLOUT, /*timeout=*/-1);
-}
+TEST(PollTest, BlockingEventPOLLOUT) { WritableTest(POLLOUT, /*timeout=*/-1); }
 
-TEST_F(PollTest, BlockingEventPOLLWRNORM) {
+TEST(PollTest, BlockingEventPOLLWRNORM) {
   WritableTest(POLLWRNORM, /*timeout=*/-1);
 }
 
-TEST_F(PollTest, BlockingEventPOLLWRNORM_POLLOUT) {
+TEST(PollTest, BlockingEventPOLLWRNORM_POLLOUT) {
   WritableTest(POLLWRNORM | POLLOUT, /*timeout=*/-1);
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLHUP) {
+TEST(PollTest, NonBlockingEventPOLLHUP) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -196,7 +189,7 @@ TEST_F(PollTest, NonBlockingEventPOLLHUP) {
   EXPECT_EQ(poll_fd.revents & POLLIN, 0);
 }
 
-TEST_F(PollTest, BlockingEventPOLLHUP) {
+TEST(PollTest, BlockingEventPOLLHUP) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -227,7 +220,7 @@ TEST_F(PollTest, BlockingEventPOLLHUP) {
   fd1.reset();
 }
 
-TEST_F(PollTest, NonBlockingEventPOLLERR) {
+TEST(PollTest, NonBlockingEventPOLLERR) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -252,7 +245,7 @@ TEST_F(PollTest, NonBlockingEventPOLLERR) {
 // This test will validate that if an FD is already ready on some event, whether
 // it's POLLIN or POLLOUT it will not immediately return unless that's actually
 // what the caller was interested in.
-TEST_F(PollTest, ImmediatelyReturnOnlyOnPollEvents) {
+TEST(PollTest, ImmediatelyReturnOnlyOnPollEvents) {
   // Create a pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -279,7 +272,7 @@ TEST_F(PollTest, ImmediatelyReturnOnlyOnPollEvents) {
 }
 
 // This test validates that poll(2) while data is available immediately returns.
-TEST_F(PollTest, PollLevelTriggered) {
+TEST(PollTest, PollLevelTriggered) {
   int fds[2] = {};
   ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, /*protocol=*/0, fds),
               SyscallSucceeds());
@@ -314,7 +307,7 @@ TEST_F(PollTest, PollLevelTriggered) {
   EXPECT_NE(poll_fd_after.revents & POLLIN, 0);
 }
 
-TEST_F(PollTest, Nfds) {
+TEST(PollTest, Nfds) {
   // Stash value of RLIMIT_NOFILES.
   struct rlimit rlim;
   TEST_PCHECK(getrlimit(RLIMIT_NOFILE, &rlim) == 0);

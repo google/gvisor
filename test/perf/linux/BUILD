@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "cc_binary", "gbenchmark", "gtest")
+load("//test/syscalls:defs.bzl", "targets")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -369,4 +370,10 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
     ],
+)
+
+targets(
+    name = "targets",
+    testonly = 1,
+    defined = existing_rules(),
 )
