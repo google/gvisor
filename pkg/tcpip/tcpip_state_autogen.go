@@ -908,6 +908,7 @@ func (so *SocketOptions) StateFields() []string {
 		"errQueue",
 		"bindToDevice",
 		"sendBufferSize",
+		"receiveBufferSize",
 		"linger",
 	}
 }
@@ -938,7 +939,8 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(18, &so.errQueue)
 	stateSinkObject.Save(19, &so.bindToDevice)
 	stateSinkObject.Save(20, &so.sendBufferSize)
-	stateSinkObject.Save(21, &so.linger)
+	stateSinkObject.Save(21, &so.receiveBufferSize)
+	stateSinkObject.Save(22, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -966,7 +968,8 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(18, &so.errQueue)
 	stateSourceObject.Load(19, &so.bindToDevice)
 	stateSourceObject.Load(20, &so.sendBufferSize)
-	stateSourceObject.Load(21, &so.linger)
+	stateSourceObject.Load(21, &so.receiveBufferSize)
+	stateSourceObject.Load(22, &so.linger)
 }
 
 func (l *LocalSockError) StateTypeName() string {

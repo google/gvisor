@@ -54,5 +54,5 @@ func (e *connectionedEndpoint) loadAcceptedChan(acceptedSlice []*connectionedEnd
 
 // afterLoad is invoked by stateify.
 func (e *connectionedEndpoint) afterLoad() {
-	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits)
+	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 }

@@ -57,7 +57,6 @@ func (ep *endpoint) StateFields() []string {
 		"waiterQueue",
 		"cooked",
 		"rcvList",
-		"rcvBufSizeMax",
 		"rcvBufSize",
 		"rcvClosed",
 		"closed",
@@ -65,27 +64,27 @@ func (ep *endpoint) StateFields() []string {
 		"boundNIC",
 		"lastError",
 		"ops",
+		"frozen",
 	}
 }
 
 // +checklocksignore
 func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
-	var rcvBufSizeMaxValue int = ep.saveRcvBufSizeMax()
-	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
 	stateSinkObject.Save(0, &ep.TransportEndpointInfo)
 	stateSinkObject.Save(1, &ep.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &ep.netProto)
 	stateSinkObject.Save(3, &ep.waiterQueue)
 	stateSinkObject.Save(4, &ep.cooked)
 	stateSinkObject.Save(5, &ep.rcvList)
-	stateSinkObject.Save(7, &ep.rcvBufSize)
-	stateSinkObject.Save(8, &ep.rcvClosed)
-	stateSinkObject.Save(9, &ep.closed)
-	stateSinkObject.Save(10, &ep.bound)
-	stateSinkObject.Save(11, &ep.boundNIC)
-	stateSinkObject.Save(12, &ep.lastError)
-	stateSinkObject.Save(13, &ep.ops)
+	stateSinkObject.Save(6, &ep.rcvBufSize)
+	stateSinkObject.Save(7, &ep.rcvClosed)
+	stateSinkObject.Save(8, &ep.closed)
+	stateSinkObject.Save(9, &ep.bound)
+	stateSinkObject.Save(10, &ep.boundNIC)
+	stateSinkObject.Save(11, &ep.lastError)
+	stateSinkObject.Save(12, &ep.ops)
+	stateSinkObject.Save(13, &ep.frozen)
 }
 
 // +checklocksignore
@@ -96,14 +95,14 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &ep.waiterQueue)
 	stateSourceObject.Load(4, &ep.cooked)
 	stateSourceObject.Load(5, &ep.rcvList)
-	stateSourceObject.Load(7, &ep.rcvBufSize)
-	stateSourceObject.Load(8, &ep.rcvClosed)
-	stateSourceObject.Load(9, &ep.closed)
-	stateSourceObject.Load(10, &ep.bound)
-	stateSourceObject.Load(11, &ep.boundNIC)
-	stateSourceObject.Load(12, &ep.lastError)
-	stateSourceObject.Load(13, &ep.ops)
-	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { ep.loadRcvBufSizeMax(y.(int)) })
+	stateSourceObject.Load(6, &ep.rcvBufSize)
+	stateSourceObject.Load(7, &ep.rcvClosed)
+	stateSourceObject.Load(8, &ep.closed)
+	stateSourceObject.Load(9, &ep.bound)
+	stateSourceObject.Load(10, &ep.boundNIC)
+	stateSourceObject.Load(11, &ep.lastError)
+	stateSourceObject.Load(12, &ep.ops)
+	stateSourceObject.Load(13, &ep.frozen)
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 

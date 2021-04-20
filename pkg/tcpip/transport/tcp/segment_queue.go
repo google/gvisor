@@ -52,12 +52,12 @@ func (q *segmentQueue) empty() bool {
 func (q *segmentQueue) enqueue(s *segment) bool {
 	// q.ep.receiveBufferParams() must be called without holding q.mu to
 	// avoid lock order inversion.
-	bufSz := q.ep.receiveBufferSize()
+	bufSz := q.ep.ops.GetReceiveBufferSize()
 	used := q.ep.receiveMemUsed()
 	q.mu.Lock()
 	// Allow zero sized segments (ACK/FIN/RSTs etc even if the segment queue
 	// is currently full).
-	allow := (used <= bufSz || s.payloadSize() == 0) && !q.frozen
+	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
 
 	if allow {
 		q.list.PushBack(s)

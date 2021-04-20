@@ -54,7 +54,6 @@ func (e *endpoint) StateFields() []string {
 		"uniqueID",
 		"rcvReady",
 		"rcvList",
-		"rcvBufSizeMax",
 		"rcvBufSize",
 		"rcvClosed",
 		"shutdownFlags",
@@ -62,27 +61,27 @@ func (e *endpoint) StateFields() []string {
 		"ttl",
 		"owner",
 		"ops",
+		"frozen",
 	}
 }
 
 // +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
-	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
 	stateSinkObject.Save(0, &e.TransportEndpointInfo)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.waiterQueue)
 	stateSinkObject.Save(3, &e.uniqueID)
 	stateSinkObject.Save(4, &e.rcvReady)
 	stateSinkObject.Save(5, &e.rcvList)
-	stateSinkObject.Save(7, &e.rcvBufSize)
-	stateSinkObject.Save(8, &e.rcvClosed)
-	stateSinkObject.Save(9, &e.shutdownFlags)
-	stateSinkObject.Save(10, &e.state)
-	stateSinkObject.Save(11, &e.ttl)
-	stateSinkObject.Save(12, &e.owner)
-	stateSinkObject.Save(13, &e.ops)
+	stateSinkObject.Save(6, &e.rcvBufSize)
+	stateSinkObject.Save(7, &e.rcvClosed)
+	stateSinkObject.Save(8, &e.shutdownFlags)
+	stateSinkObject.Save(9, &e.state)
+	stateSinkObject.Save(10, &e.ttl)
+	stateSinkObject.Save(11, &e.owner)
+	stateSinkObject.Save(12, &e.ops)
+	stateSinkObject.Save(13, &e.frozen)
 }
 
 // +checklocksignore
@@ -93,14 +92,14 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &e.uniqueID)
 	stateSourceObject.Load(4, &e.rcvReady)
 	stateSourceObject.Load(5, &e.rcvList)
-	stateSourceObject.Load(7, &e.rcvBufSize)
-	stateSourceObject.Load(8, &e.rcvClosed)
-	stateSourceObject.Load(9, &e.shutdownFlags)
-	stateSourceObject.Load(10, &e.state)
-	stateSourceObject.Load(11, &e.ttl)
-	stateSourceObject.Load(12, &e.owner)
-	stateSourceObject.Load(13, &e.ops)
-	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
+	stateSourceObject.Load(6, &e.rcvBufSize)
+	stateSourceObject.Load(7, &e.rcvClosed)
+	stateSourceObject.Load(8, &e.shutdownFlags)
+	stateSourceObject.Load(9, &e.state)
+	stateSourceObject.Load(10, &e.ttl)
+	stateSourceObject.Load(11, &e.owner)
+	stateSourceObject.Load(12, &e.ops)
+	stateSourceObject.Load(13, &e.frozen)
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

@@ -63,7 +63,6 @@ func (e *endpoint) StateFields() []string {
 		"uniqueID",
 		"rcvReady",
 		"rcvList",
-		"rcvBufSizeMax",
 		"rcvBufSize",
 		"rcvClosed",
 		"state",
@@ -82,38 +81,38 @@ func (e *endpoint) StateFields() []string {
 		"effectiveNetProtos",
 		"owner",
 		"ops",
+		"frozen",
 	}
 }
 
 // +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var rcvBufSizeMaxValue int = e.saveRcvBufSizeMax()
-	stateSinkObject.SaveValue(6, rcvBufSizeMaxValue)
 	stateSinkObject.Save(0, &e.TransportEndpointInfo)
 	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
 	stateSinkObject.Save(2, &e.waiterQueue)
 	stateSinkObject.Save(3, &e.uniqueID)
 	stateSinkObject.Save(4, &e.rcvReady)
 	stateSinkObject.Save(5, &e.rcvList)
-	stateSinkObject.Save(7, &e.rcvBufSize)
-	stateSinkObject.Save(8, &e.rcvClosed)
-	stateSinkObject.Save(9, &e.state)
-	stateSinkObject.Save(10, &e.dstPort)
-	stateSinkObject.Save(11, &e.ttl)
-	stateSinkObject.Save(12, &e.multicastTTL)
-	stateSinkObject.Save(13, &e.multicastAddr)
-	stateSinkObject.Save(14, &e.multicastNICID)
-	stateSinkObject.Save(15, &e.portFlags)
-	stateSinkObject.Save(16, &e.lastError)
-	stateSinkObject.Save(17, &e.boundBindToDevice)
-	stateSinkObject.Save(18, &e.boundPortFlags)
-	stateSinkObject.Save(19, &e.sendTOS)
-	stateSinkObject.Save(20, &e.shutdownFlags)
-	stateSinkObject.Save(21, &e.multicastMemberships)
-	stateSinkObject.Save(22, &e.effectiveNetProtos)
-	stateSinkObject.Save(23, &e.owner)
-	stateSinkObject.Save(24, &e.ops)
+	stateSinkObject.Save(6, &e.rcvBufSize)
+	stateSinkObject.Save(7, &e.rcvClosed)
+	stateSinkObject.Save(8, &e.state)
+	stateSinkObject.Save(9, &e.dstPort)
+	stateSinkObject.Save(10, &e.ttl)
+	stateSinkObject.Save(11, &e.multicastTTL)
+	stateSinkObject.Save(12, &e.multicastAddr)
+	stateSinkObject.Save(13, &e.multicastNICID)
+	stateSinkObject.Save(14, &e.portFlags)
+	stateSinkObject.Save(15, &e.lastError)
+	stateSinkObject.Save(16, &e.boundBindToDevice)
+	stateSinkObject.Save(17, &e.boundPortFlags)
+	stateSinkObject.Save(18, &e.sendTOS)
+	stateSinkObject.Save(19, &e.shutdownFlags)
+	stateSinkObject.Save(20, &e.multicastMemberships)
+	stateSinkObject.Save(21, &e.effectiveNetProtos)
+	stateSinkObject.Save(22, &e.owner)
+	stateSinkObject.Save(23, &e.ops)
+	stateSinkObject.Save(24, &e.frozen)
 }
 
 // +checklocksignore
@@ -124,25 +123,25 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &e.uniqueID)
 	stateSourceObject.Load(4, &e.rcvReady)
 	stateSourceObject.Load(5, &e.rcvList)
-	stateSourceObject.Load(7, &e.rcvBufSize)
-	stateSourceObject.Load(8, &e.rcvClosed)
-	stateSourceObject.Load(9, &e.state)
-	stateSourceObject.Load(10, &e.dstPort)
-	stateSourceObject.Load(11, &e.ttl)
-	stateSourceObject.Load(12, &e.multicastTTL)
-	stateSourceObject.Load(13, &e.multicastAddr)
-	stateSourceObject.Load(14, &e.multicastNICID)
-	stateSourceObject.Load(15, &e.portFlags)
-	stateSourceObject.Load(16, &e.lastError)
-	stateSourceObject.Load(17, &e.boundBindToDevice)
-	stateSourceObject.Load(18, &e.boundPortFlags)
-	stateSourceObject.Load(19, &e.sendTOS)
-	stateSourceObject.Load(20, &e.shutdownFlags)
-	stateSourceObject.Load(21, &e.multicastMemberships)
-	stateSourceObject.Load(22, &e.effectiveNetProtos)
-	stateSourceObject.Load(23, &e.owner)
-	stateSourceObject.Load(24, &e.ops)
-	stateSourceObject.LoadValue(6, new(int), func(y interface{}) { e.loadRcvBufSizeMax(y.(int)) })
+	stateSourceObject.Load(6, &e.rcvBufSize)
+	stateSourceObject.Load(7, &e.rcvClosed)
+	stateSourceObject.Load(8, &e.state)
+	stateSourceObject.Load(9, &e.dstPort)
+	stateSourceObject.Load(10, &e.ttl)
+	stateSourceObject.Load(11, &e.multicastTTL)
+	stateSourceObject.Load(12, &e.multicastAddr)
+	stateSourceObject.Load(13, &e.multicastNICID)
+	stateSourceObject.Load(14, &e.portFlags)
+	stateSourceObject.Load(15, &e.lastError)
+	stateSourceObject.Load(16, &e.boundBindToDevice)
+	stateSourceObject.Load(17, &e.boundPortFlags)
+	stateSourceObject.Load(18, &e.sendTOS)
+	stateSourceObject.Load(19, &e.shutdownFlags)
+	stateSourceObject.Load(20, &e.multicastMemberships)
+	stateSourceObject.Load(21, &e.effectiveNetProtos)
+	stateSourceObject.Load(22, &e.owner)
+	stateSourceObject.Load(23, &e.ops)
+	stateSourceObject.Load(24, &e.frozen)
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 

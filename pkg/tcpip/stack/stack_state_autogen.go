@@ -1017,7 +1017,6 @@ func (t *TCPRcvBufState) StateTypeName() string {
 
 func (t *TCPRcvBufState) StateFields() []string {
 	return []string{
-		"RcvBufSize",
 		"RcvBufUsed",
 		"RcvAutoParams",
 		"RcvClosed",
@@ -1029,20 +1028,18 @@ func (t *TCPRcvBufState) beforeSave() {}
 // +checklocksignore
 func (t *TCPRcvBufState) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	stateSinkObject.Save(0, &t.RcvBufSize)
-	stateSinkObject.Save(1, &t.RcvBufUsed)
-	stateSinkObject.Save(2, &t.RcvAutoParams)
-	stateSinkObject.Save(3, &t.RcvClosed)
+	stateSinkObject.Save(0, &t.RcvBufUsed)
+	stateSinkObject.Save(1, &t.RcvAutoParams)
+	stateSinkObject.Save(2, &t.RcvClosed)
 }
 
 func (t *TCPRcvBufState) afterLoad() {}
 
 // +checklocksignore
 func (t *TCPRcvBufState) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.RcvBufSize)
-	stateSourceObject.Load(1, &t.RcvBufUsed)
-	stateSourceObject.Load(2, &t.RcvAutoParams)
-	stateSourceObject.Load(3, &t.RcvClosed)
+	stateSourceObject.Load(0, &t.RcvBufUsed)
+	stateSourceObject.Load(1, &t.RcvAutoParams)
+	stateSourceObject.Load(2, &t.RcvClosed)
 }
 
 func (t *TCPSndBufState) StateTypeName() string {
