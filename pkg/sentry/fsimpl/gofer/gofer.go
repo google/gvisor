@@ -1412,8 +1412,13 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 
-// checkCachingLocked should be called after d's reference count becomes 0 or it
-// becomes disowned.
+// checkCachingLocked should be called after d's reference count becomes 0 or
+// it becomes disowned.
+//
+// For performance, checkCachingLocked can also be called after d's reference
+// count becomes non-zero, so that d can be removed from the LRU cache. This
+// may help in reducing the size of the cache and hence reduce evictions. Note
+// that this is not necessary for correctness.
 //
 // It may be called on a destroyed dentry. For example,
 // renameMu[R]UnlockAndCheckCaching may call checkCachingLocked multiple times
