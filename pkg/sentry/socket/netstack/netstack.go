@@ -886,10 +886,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		size, err := ep.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
-		if err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
+		size := ep.SocketOptions().GetReceiveBufferSize()
 
 		if size > math.MaxInt32 {
 			size = math.MaxInt32
@@ -1662,7 +1659,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-		ep.SocketOptions().SetSendBufferSize(int64(v), true)
+		ep.SocketOptions().SetSendBufferSize(int64(v), true /* notify */)
 		return nil
 
 	case linux.SO_RCVBUF:
@@ -1671,7 +1668,8 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, int(v)))
+		ep.SocketOptions().SetReceiveBufferSize(int64(v), true /* notify */)
+		return nil
 
 	case linux.SO_REUSEADDR:
 		if len(optVal) < sizeOfInt32 {

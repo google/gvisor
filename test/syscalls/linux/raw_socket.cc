@@ -514,10 +514,7 @@ TEST_P(RawSocketTest, SetSocketRecvBuf) {
               SyscallSucceeds());
 
   // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
-  // TODO(gvisor.dev/issue/2926): Remove when Netstack matches linux behavior.
-  if (!IsRunningOnGvisor()) {
-    quarter_sz *= 2;
-  }
+  quarter_sz *= 2;
   ASSERT_EQ(quarter_sz, val);
 }
 
@@ -713,12 +710,7 @@ TEST_P(RawSocketTest, RecvBufLimits) {
   }
 
   // Now set the limit to min * 2.
-  int new_rcv_buf_sz = min * 4;
-  if (!IsRunningOnGvisor()) {
-    // Linux doubles the value specified so just set to min.
-    new_rcv_buf_sz = min * 2;
-  }
-
+  int new_rcv_buf_sz = min * 2;
   ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &new_rcv_buf_sz,
                          sizeof(new_rcv_buf_sz)),
               SyscallSucceeds());

@@ -384,8 +384,16 @@ func (c *ConnectedEndpoint) CloseUnread() {}
 
 // SetSendBufferSize implements transport.ConnectedEndpoint.SetSendBufferSize.
 func (c *ConnectedEndpoint) SetSendBufferSize(v int64) (newSz int64) {
-	// gVisor does not permit setting of SO_SNDBUF for host backed unix domain
-	// sockets.
+	// gVisor does not permit setting of SO_SNDBUF for host backed unix
+	// domain sockets.
+	return atomic.LoadInt64(&c.sndbuf)
+}
+
+// SetReceiveBufferSize implements transport.ConnectedEndpoint.SetReceiveBufferSize.
+func (c *ConnectedEndpoint) SetReceiveBufferSize(v int64) (newSz int64) {
+	// gVisor does not permit setting of SO_RCVBUF for host backed unix
+	// domain sockets. Receive buffer does not have any effect for unix
+	// sockets and we claim to be the same as send buffer.
 	return atomic.LoadInt64(&c.sndbuf)
 }
 

@@ -68,7 +68,7 @@ func (s *Stack) SetOption(option interface{}) tcpip.Error {
 		s.mu.Unlock()
 		return nil
 
-	case ReceiveBufferSizeOption:
+	case tcpip.ReceiveBufferSizeOption:
 		// Make sure we don't allow lowering the buffer below minimum
 		// required for stack to work.
 		if v.Min < MinBufferSize {
@@ -107,7 +107,7 @@ func (s *Stack) Option(option interface{}) tcpip.Error {
 		s.mu.RUnlock()
 		return nil
 
-	case *ReceiveBufferSizeOption:
+	case *tcpip.ReceiveBufferSizeOption:
 		s.mu.RLock()
 		*v = s.receiveBufferSize
 		s.mu.RUnlock()
