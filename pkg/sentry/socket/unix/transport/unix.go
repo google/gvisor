@@ -868,11 +868,7 @@ func (e *baseEndpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
-	switch opt {
-	case tcpip.ReceiveBufferSizeOption:
-	default:
-		log.Warningf("Unsupported socket option: %d", opt)
-	}
+	log.Warningf("Unsupported socket option: %d", opt)
 	return nil
 }
 
@@ -899,19 +895,6 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 			return -1, &tcpip.ErrNotConnected{}
 		}
 		v := e.connected.SendQueuedSize()
-		e.Unlock()
-		if v < 0 {
-			return -1, &tcpip.ErrQueueSizeNotSupported{}
-		}
-		return int(v), nil
-
-	case tcpip.ReceiveBufferSizeOption:
-		e.Lock()
-		if e.receiver == nil {
-			e.Unlock()
-			return -1, &tcpip.ErrNotConnected{}
-		}
-		v := e.receiver.RecvMaxQueueSize()
 		e.Unlock()
 		if v < 0 {
 			return -1, &tcpip.ErrQueueSizeNotSupported{}
@@ -1024,6 +1007,18 @@ func (h *stackHandler) TransportProtocolOption(proto tcpip.TransportProtocolNumb
 // define default/max values here in the unix socket implementation itself.
 func getSendBufferLimits(tcpip.StackHandler) tcpip.SendBufferSizeOption {
 	return tcpip.SendBufferSizeOption{
+		Min:     minimumBufferSize,
+		Default: defaultBufferSize,
+		Max:     maxBufferSize,
+	}
+}
+
+// getReceiveBufferLimits implements tcpip.GetReceiveBufferLimits.
+//
+// We define min, max and default values for unix socket implementation. Unix
+// sockets do not use receive buffer.
+func getReceiveBufferLimits(tcpip.StackHandler) tcpip.ReceiveBufferSizeOption {
+	return tcpip.ReceiveBufferSizeOption{
 		Min:     minimumBufferSize,
 		Default: defaultBufferSize,
 		Max:     maxBufferSize,

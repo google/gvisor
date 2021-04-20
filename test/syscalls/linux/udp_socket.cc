@@ -1904,13 +1904,8 @@ TEST_P(UdpSocketTest, RecvBufLimits) {
                 SyscallSucceeds());
   }
 
-  // Now set the limit to min * 4.
-  int new_rcv_buf_sz = min * 4;
-  if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
-    // Linux doubles the value specified so just set to min * 2.
-    new_rcv_buf_sz = min * 2;
-  }
-
+  // Now set the limit to min * 2.
+  int new_rcv_buf_sz = min * 2;
   ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_RCVBUF, &new_rcv_buf_sz,
                          sizeof(new_rcv_buf_sz)),
               SyscallSucceeds());

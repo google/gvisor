@@ -37,43 +37,25 @@ func (u *udpPacket) loadData(data buffer.VectorisedView) {
 	u.data = data
 }
 
-// beforeSave is invoked by stateify.
-func (e *endpoint) beforeSave() {
-	// Stop incoming packets from being handled (and mutate endpoint state).
-	// The lock will be released after savercvBufSizeMax(), which would have
-	// saved e.rcvBufSizeMax and set it to 0 to continue blocking incoming
-	// packets.
-	e.rcvMu.Lock()
-}
-
-// saveRcvBufSizeMax is invoked by stateify.
-func (e *endpoint) saveRcvBufSizeMax() int {
-	max := e.rcvBufSizeMax
-	// Make sure no new packets will be handled regardless of the lock.
-	e.rcvBufSizeMax = 0
-	// Release the lock acquired in beforeSave() so regular endpoint closing
-	// logic can proceed after save.
-	e.rcvMu.Unlock()
-	return max
-}
-
-// loadRcvBufSizeMax is invoked by stateify.
-func (e *endpoint) loadRcvBufSizeMax(max int) {
-	e.rcvBufSizeMax = max
-}
-
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 
+// beforeSave is invoked by stateify.
+func (e *endpoint) beforeSave() {
+	e.freeze()
+}
+
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
+	e.thaw()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	e.stack = s
-	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits)
+	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 
 	for m := range e.multicastMemberships {
 		if err := e.stack.JoinGroup(e.NetProto, m.nicID, m.multicastAddr); err != nil {

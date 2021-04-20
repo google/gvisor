@@ -2305,9 +2305,7 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBuf) {
               SyscallSucceeds());
 
   // Linux doubles the value set by SO_SNDBUF/SO_RCVBUF.
-  if (!IsRunningOnGvisor()) {
-    quarter_sz *= 2;
-  }
+  quarter_sz *= 2;
   ASSERT_EQ(quarter_sz, val);
 }
 

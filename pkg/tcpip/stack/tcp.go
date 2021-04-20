@@ -353,10 +353,6 @@ type RcvBufAutoTuneParams struct {
 //
 // +stateify savable
 type TCPRcvBufState struct {
-	// RcvBufSize is the size of the receive socket buffer for the
-	// endpoint.
-	RcvBufSize int
-
 	// RcvBufUsed is the amount of bytes actually held in the receive
 	// socket buffer for the endpoint.
 	RcvBufUsed int

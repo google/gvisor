@@ -63,12 +63,11 @@ type endpoint struct {
 
 	// The following fields are used to manage the receive queue, and are
 	// protected by rcvMu.
-	rcvMu         sync.Mutex `state:"nosave"`
-	rcvReady      bool
-	rcvList       icmpPacketList
-	rcvBufSizeMax int `state:".(int)"`
-	rcvBufSize    int
-	rcvClosed     bool
+	rcvMu      sync.Mutex `state:"nosave"`
+	rcvReady   bool
+	rcvList    icmpPacketList
+	rcvBufSize int
+	rcvClosed  bool
 
 	// The following fields are protected by the mu mutex.
 	mu sync.RWMutex `state:"nosave"`
@@ -84,6 +83,10 @@ type endpoint struct {
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
+
+	// frozen indicates if the packets should be delivered to the endpoint
+	// during restore.
+	frozen bool
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
@@ -93,18 +96,22 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 			NetProto:   netProto,
 			TransProto: transProto,
 		},
-		waiterQueue:   waiterQueue,
-		rcvBufSizeMax: 32 * 1024,
-		state:         stateInitial,
-		uniqueID:      s.UniqueID(),
+		waiterQueue: waiterQueue,
+		state:       stateInitial,
+		uniqueID:    s.UniqueID(),
 	}
-	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits)
+	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(32*1024, false /* notify */)
+	ep.ops.SetReceiveBufferSize(32*1024, false /* notify */)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
 	if err := s.Option(&ss); err == nil {
 		ep.ops.SetSendBufferSize(int64(ss.Default), false /* notify */)
+	}
+	var rs tcpip.ReceiveBufferSizeOption
+	if err := s.Option(&rs); err == nil {
+		ep.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */)
 	}
 	return ep, nil
 }
@@ -368,12 +375,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 			p := e.rcvList.Front()
 			v = p.data.Size()
 		}
-		e.rcvMu.Unlock()
-		return v, nil
-
-	case tcpip.ReceiveBufferSizeOption:
-		e.rcvMu.Lock()
-		v := e.rcvBufSizeMax
 		e.rcvMu.Unlock()
 		return v, nil
 
@@ -774,7 +775,8 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		return
 	}
 
-	if e.rcvBufSize >= e.rcvBufSizeMax {
+	rcvBufSize := e.ops.GetReceiveBufferSize()
+	if e.frozen || e.rcvBufSize >= int(rcvBufSize) {
 		e.rcvMu.Unlock()
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
@@ -842,4 +844,19 @@ func (*endpoint) LastError() tcpip.Error {
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
+}
+
+// freeze prevents any more packets from being delivered to the endpoint.
+func (e *endpoint) freeze() {
+	e.mu.Lock()
+	e.frozen = true
+	e.mu.Unlock()
+}
+
+// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
+// new packets to be delivered again.
+func (e *endpoint) thaw() {
+	e.mu.Lock()
+	e.frozen = false
+	e.mu.Unlock()
 }

@@ -466,7 +466,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 			// segments. This ensures that we always leave some space for the inorder
 			// segments to arrive allowing pending segments to be processed and
 			// delivered to the user.
-			if r.ep.receiveBufferAvailable() > 0 && r.PendingBufUsed < r.ep.receiveBufferSize()>>2 {
+			if rcvBufSize := r.ep.ops.GetReceiveBufferSize(); rcvBufSize > 0 && r.PendingBufUsed < int(rcvBufSize)>>2 {
 				r.ep.rcvQueueInfo.rcvQueueMu.Lock()
 				r.PendingBufUsed += s.segMemSize()
 				r.ep.rcvQueueInfo.rcvQueueMu.Unlock()

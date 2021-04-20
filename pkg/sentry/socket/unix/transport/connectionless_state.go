@@ -16,5 +16,5 @@ package transport
 
 // afterLoad is invoked by stateify.
 func (e *connectionlessEndpoint) afterLoad() {
-	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits)
+	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 }
