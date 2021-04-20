@@ -39,6 +39,7 @@ func (fs *filesystem) StateFields() []string {
 		"lowerMount",
 		"rootDentry",
 		"alg",
+		"action",
 		"opts",
 	}
 }
@@ -54,7 +55,8 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fs.lowerMount)
 	stateSinkObject.Save(4, &fs.rootDentry)
 	stateSinkObject.Save(5, &fs.alg)
-	stateSinkObject.Save(6, &fs.opts)
+	stateSinkObject.Save(6, &fs.action)
+	stateSinkObject.Save(7, &fs.opts)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -67,7 +69,8 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &fs.lowerMount)
 	stateSourceObject.Load(4, &fs.rootDentry)
 	stateSourceObject.Load(5, &fs.alg)
-	stateSourceObject.Load(6, &fs.opts)
+	stateSourceObject.Load(6, &fs.action)
+	stateSourceObject.Load(7, &fs.opts)
 }
 
 func (i *InternalFilesystemOptions) StateTypeName() string {
