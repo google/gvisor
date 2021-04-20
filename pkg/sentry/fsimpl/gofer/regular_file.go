@@ -204,17 +204,18 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 
 	d := fd.dentry()
+
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+
 	// If the fd was opened with O_APPEND, make sure the file size is updated.
 	// There is a possible race here if size is modified externally after
 	// metadata cache is updated.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
-		if err := d.updateFromGetattr(ctx); err != nil {
+		if err := d.refreshSizeLocked(ctx); err != nil {
 			return 0, offset, err
 		}
 	}
-
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
 
 	// Set offset to file size if the fd was opened with O_APPEND.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
