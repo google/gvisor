@@ -60,6 +60,7 @@ def _syscall_test(
         file_access = "exclusive",
         overlay = False,
         add_uds_tree = False,
+        lisafs = False,
         fuse = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
@@ -73,6 +74,8 @@ def _syscall_test(
         name += "_overlay"
     if fuse:
         name += "_fuse"
+    if lisafs:
+        name += "_lisafs"
     if network != "none":
         name += "_" + network + "net"
 
@@ -110,6 +113,7 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-uds-tree=" + str(add_uds_tree),
+        "--lisafs=" + str(lisafs),
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
@@ -131,6 +135,7 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
+        add_lisafs = True,
         fuse = False,
         allow_native = True,
         debug = True,
@@ -144,6 +149,7 @@ def syscall_test(
       add_overlay: add an overlay test.
       add_uds_tree: add a UDS test.
       add_hostinet: add a hostinet test.
+      add_lisafs: add a lisafs test.
       fuse: enable FUSE support.
       allow_native: generate a native test variant.
       debug: enable debug output.
@@ -177,6 +183,19 @@ def syscall_test(
             **kwargs
         )
 
+    if add_lisafs:
+        # Generate a *_lisafs variant with the default platform.
+        _syscall_test(
+            test = test,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = platforms[default_platform] + tags + ["lisafs"],
+            debug = debug,
+            fuse = fuse,
+            lisafs = True,
+            **kwargs
+        )
     if add_overlay:
         _syscall_test(
             test = test,
