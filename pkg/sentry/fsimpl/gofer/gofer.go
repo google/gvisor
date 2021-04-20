@@ -987,36 +987,63 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 }
 
 // Preconditions: !d.isSynthetic().
+// Preconditions: d.metadataMu is locked.
+func (d *dentry) refreshSizeLocked(ctx context.Context) error {
+	d.handleMu.RLock()
+
+	if d.writeFD < 0 {
+		d.handleMu.RUnlock()
+		// Ask the gofer if we don't have a host FD.
+		return d.updateFromGetattrLocked(ctx)
+	}
+
+	var stat unix.Statx_t
+	err := unix.Statx(int(d.writeFD), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
+	d.handleMu.RUnlock() // must be released before updateSizeLocked()
+	if err != nil {
+		return err
+	}
+	d.updateSizeLocked(stat.Size)
+	return nil
+}
+
+// Preconditions: !d.isSynthetic().
 func (d *dentry) updateFromGetattr(ctx context.Context) error {
-	// Use d.readFile or d.writeFile, which represent 9P fids that have been
+	// d.metadataMu must be locked *before* we getAttr so that we do not end up
+	// updating stale attributes in d.updateFromP9AttrsLocked().
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+	return d.updateFromGetattrLocked(ctx)
+}
+
+// Preconditions:
+// * !d.isSynthetic().
+// * d.metadataMu is locked.
+func (d *dentry) updateFromGetattrLocked(ctx context.Context) error {
+	// Use d.readFile or d.writeFile, which represent 9P FIDs that have been
 	// opened, in preference to d.file, which represents a 9P fid that has not.
 	// This may be significantly more efficient in some implementations. Prefer
 	// d.writeFile over d.readFile since some filesystem implementations may
 	// update a writable handle's metadata after writes to that handle, without
 	// making metadata updates immediately visible to read-only handles
 	// representing the same file.
-	var (
-		file            p9file
-		handleMuRLocked bool
-	)
-	// d.metadataMu must be locked *before* we getAttr so that we do not end up
-	// updating stale attributes in d.updateFromP9AttrsLocked().
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
 	d.handleMu.RLock()
-	if !d.writeFile.isNil() {
+	handleMuRLocked := true
+	var file p9file
+	switch {
+	case !d.writeFile.isNil():
 		file = d.writeFile
-		handleMuRLocked = true
-	} else if !d.readFile.isNil() {
+	case !d.readFile.isNil():
 		file = d.readFile
-		handleMuRLocked = true
-	} else {
+	default:
 		file = d.file
 		d.handleMu.RUnlock()
+		handleMuRLocked = false
 	}
+
 	_, attrMask, attr, err := file.getAttr(ctx, dentryAttrMask())
 	if handleMuRLocked {
-		d.handleMu.RUnlock()
+		d.handleMu.RUnlock() // must be released before updateFromP9AttrsLocked()
 	}
 	if err != nil {
 		return err
