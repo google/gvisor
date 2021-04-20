@@ -98,9 +98,6 @@ const (
 )
 
 var (
-	// action specifies the action towards detected violation.
-	action ViolationAction
-
 	// verityMu synchronizes concurrent operations that enable verity and perform
 	// verification checks.
 	verityMu sync.RWMutex
@@ -179,6 +176,9 @@ type filesystem struct {
 	// system.
 	alg HashAlgorithm
 
+	// action specifies the action towards detected violation.
+	action ViolationAction
+
 	// opts is the string mount options passed to opts.Data.
 	opts string
 
@@ -235,8 +235,8 @@ func (FilesystemType) Release(ctx context.Context) {}
 // alertIntegrityViolation alerts a violation of integrity, which usually means
 // unexpected modification to the file system is detected. In ErrorOnViolation
 // mode, it returns EIO, otherwise it panic.
-func alertIntegrityViolation(msg string) error {
-	if action == ErrorOnViolation {
+func (fs *filesystem) alertIntegrityViolation(msg string) error {
+	if fs.action == ErrorOnViolation {
 		return syserror.EIO
 	}
 	panic(msg)
@@ -288,7 +288,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Action:             ErrorOnViolation,
 		}
 	}
-	action = iopts.Action
 
 	var lowerMount *vfs.Mount
 	var mountedLowerVD vfs.VirtualDentry
@@ -336,6 +335,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		creds:              creds.Fork(),
 		alg:                iopts.Alg,
 		lowerMount:         lowerMount,
+		action:             iopts.Action,
 		opts:               opts.Data,
 		allowRuntimeEnable: iopts.AllowRuntimeEnable,
 	}
@@ -389,7 +389,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		// the root Merkle file, or it's never generated.
 		fs.vfsfs.DecRef(ctx)
 		d.DecRef(ctx)
-		return nil, nil, alertIntegrityViolation("Failed to find root Merkle file")
+		return nil, nil, fs.alertIntegrityViolation("Failed to find root Merkle file")
 	}
 
 	// Clear the Merkle tree file if they are to be generated at runtime.
@@ -452,7 +452,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Size: sizeOfStringInt32,
 		})
 		if err == syserror.ENOENT || err == syserror.ENODATA {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenOffsetXattr, err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenOffsetXattr, err))
 		}
 		if err != nil {
 			return nil, nil, err
@@ -460,7 +460,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 		off, err := strconv.Atoi(offString)
 		if err != nil {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenOffsetXattr, err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenOffsetXattr, err))
 		}
 
 		sizeString, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
@@ -471,14 +471,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Size: sizeOfStringInt32,
 		})
 		if err == syserror.ENOENT || err == syserror.ENODATA {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenSizeXattr, err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenSizeXattr, err))
 		}
 		if err != nil {
 			return nil, nil, err
 		}
 		size, err := strconv.Atoi(sizeString)
 		if err != nil {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenSizeXattr, err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", childrenSizeXattr, err))
 		}
 
 		lowerMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
@@ -488,7 +488,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Flags: linux.O_RDONLY,
 		})
 		if err == syserror.ENOENT {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to open root Merkle file: %v", err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to open root Merkle file: %v", err))
 		}
 		if err != nil {
 			return nil, nil, err
@@ -498,11 +498,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 		childrenNames := make([]byte, size)
 		if _, err := lowerMerkleFD.PRead(ctx, usermem.BytesIOSequence(childrenNames), int64(off), vfs.ReadOptions{}); err != nil {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to read root children map: %v", err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to read root children map: %v", err))
 		}
 
 		if err := json.Unmarshal(childrenNames, &d.childrenNames); err != nil {
-			return nil, nil, alertIntegrityViolation(fmt.Sprintf("Failed to deserialize childrenNames: %v", err))
+			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to deserialize childrenNames: %v", err))
 		}
 
 		if err := fs.verifyStatAndChildrenLocked(ctx, d, stat); err != nil {
@@ -879,7 +879,7 @@ func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCa
 			// Verify that the child is expected.
 			if dirent.Name != "." && dirent.Name != ".." {
 				if _, ok := fd.d.childrenNames[dirent.Name]; !ok {
-					return alertIntegrityViolation(fmt.Sprintf("Unexpected children %s", dirent.Name))
+					return fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Unexpected children %s", dirent.Name))
 				}
 			}
 		}
@@ -893,7 +893,7 @@ func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCa
 
 	// The result should contain all children plus "." and "..".
 	if fd.d.verityEnabled() && len(ds) != len(fd.d.childrenNames)+2 {
-		return alertIntegrityViolation(fmt.Sprintf("Unexpected children number %d", len(ds)))
+		return fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Unexpected children number %d", len(ds)))
 	}
 
 	for fd.off < int64(len(ds)) {
@@ -1065,7 +1065,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 	// or directory other than the root, the parent Merkle tree file should
 	// have also been initialized.
 	if fd.lowerFD == nil || fd.merkleReader == nil || fd.merkleWriter == nil || (fd.parentMerkleWriter == nil && fd.d != fd.d.fs.rootDentry) {
-		return 0, alertIntegrityViolation("Unexpected verity fd: missing expected underlying fds")
+		return 0, fd.d.fs.alertIntegrityViolation("Unexpected verity fd: missing expected underlying fds")
 	}
 
 	hash, dataSize, err := fd.generateMerkleLocked(ctx)
@@ -1138,7 +1138,7 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest hosta
 		if fd.d.fs.allowRuntimeEnable {
 			return 0, syserror.ENODATA
 		}
-		return 0, alertIntegrityViolation("Ioctl measureVerity: no hash found")
+		return 0, fd.d.fs.alertIntegrityViolation("Ioctl measureVerity: no hash found")
 	}
 
 	// The first part of VerityDigest is the metadata.
@@ -1228,7 +1228,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	// contains the expected xattrs. If the xattr does not exist, it
 	// indicates unexpected modifications to the file system.
 	if err == syserror.ENODATA {
-		return 0, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
+		return 0, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
 	}
 	if err != nil {
 		return 0, err
@@ -1238,7 +1238,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	// unexpected modifications to the file system.
 	size, err := strconv.Atoi(dataSize)
 	if err != nil {
-		return 0, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
+		return 0, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
 	}
 
 	dataReader := FileReadWriteSeeker{
@@ -1271,7 +1271,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	})
 	fd.d.hashMu.RUnlock()
 	if err != nil {
-		return 0, alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
+		return 0, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
 	}
 	return n, err
 }
@@ -1346,7 +1346,7 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 	// contains the expected xattrs. If the xattr does not exist, it
 	// indicates unexpected modifications to the file system.
 	if err == syserror.ENODATA {
-		return ts, alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
+		return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
 	}
 	if err != nil {
 		return ts, err
@@ -1356,7 +1356,7 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 	// unexpected modifications to the file system.
 	size, err := strconv.Atoi(dataSize)
 	if err != nil {
-		return ts, alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
+		return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
 	}
 
 	merkleReader := FileReadWriteSeeker{
@@ -1389,7 +1389,7 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 			DataAndTreeInSameFile: false,
 		})
 		if err != nil {
-			return ts, alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
+			return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
 		}
 	}
 	return ts, err
