@@ -259,8 +259,10 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 	}
 	parent.cacheNewChildLocked(child, name)
 	// For now, child has 0 references, so our caller should call
-	// child.checkCachingLocked().
+	// child.checkCachingLocked(). parent gained a ref so we should also call
+	// parent.checkCachingLocked() so it can be removed from the cache if needed.
 	*ds = appendDentry(*ds, child)
+	*ds = appendDentry(*ds, parent)
 	return child, nil
 }
 
@@ -621,6 +623,8 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 		}
 	}
 	d.IncRef()
+	// Call d.checkCachingLocked() so it can be removed from the cache if needed.
+	ds = appendDentry(ds, d)
 	return &d.vfsd, nil
 }
 
@@ -635,6 +639,8 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 		return nil, err
 	}
 	d.IncRef()
+	// Call d.checkCachingLocked() so it can be removed from the cache if needed.
+	ds = appendDentry(ds, d)
 	return &d.vfsd, nil
 }
 
@@ -673,7 +679,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, _ **[]*dentry) error {
+	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		// If the parent is a setgid directory, use the parent's GID
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
@@ -693,6 +699,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				kuid: creds.EffectiveKUID,
 				kgid: creds.EffectiveKGID,
 			})
+			*ds = appendDentry(*ds, parent)
 		}
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
@@ -746,6 +753,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				kgid:     creds.EffectiveKGID,
 				endpoint: opts.Endpoint,
 			})
+			*ds = appendDentry(*ds, parent)
 			return nil
 		case linux.S_IFIFO:
 			parent.createSyntheticChildLocked(&createSyntheticOpts{
@@ -755,6 +763,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				kgid: creds.EffectiveKGID,
 				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
 			})
+			*ds = appendDentry(*ds, parent)
 			return nil
 		}
 		// Retain error from gofer if synthetic file cannot be created internally.
@@ -803,6 +812,8 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		start.IncRef()
 		defer start.DecRef(ctx)
 		unlock()
+		// start is intentionally not added to ds (which would remove it from the
+		// cache) because doing so regresses performance in practice.
 		return start.open(ctx, rp, &opts)
 	}
 
@@ -859,6 +870,8 @@ afterTrailingSymlink:
 	child.IncRef()
 	defer child.DecRef(ctx)
 	unlock()
+	// child is intentionally not added to ds (which would remove it from the
+	// cache) because doing so regresses performance in practice.
 	return child.open(ctx, rp, &opts)
 }
 
@@ -1106,6 +1119,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	// Insert the dentry into the tree.
 	d.cacheNewChildLocked(child, name)
+	*ds = appendDentry(*ds, d)
 	if d.cachedMetadataAuthoritative() {
 		d.touchCMtime()
 		d.dirents = nil
@@ -1302,6 +1316,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParent.decRefNoCaching()
 		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
+		ds = appendDentry(ds, newParent)
 		if renamed.isSynthetic() {
 			oldParent.syntheticChildren--
 			newParent.syntheticChildren++
@@ -1445,6 +1460,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if d.isSocket() {
 		if !d.isSynthetic() {
 			d.IncRef()
+			ds = appendDentry(ds, d)
 			return &endpoint{
 				dentry: d,
 				path:   opts.Addr,
