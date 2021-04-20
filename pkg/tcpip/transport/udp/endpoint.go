@@ -1255,20 +1255,29 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // verifyChecksum verifies the checksum unless RX checksum offload is enabled.
-// On IPv4, UDP checksum is optional, and a zero value means the transmitter
-// omitted the checksum generation (RFC768).
-// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
 func verifyChecksum(hdr header.UDP, pkt *stack.PacketBuffer) bool {
-	if !pkt.RXTransportChecksumValidated &&
-		(hdr.Checksum() != 0 || pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber) {
-		netHdr := pkt.Network()
-		xsum := header.PseudoHeaderChecksum(ProtocolNumber, netHdr.DestinationAddress(), netHdr.SourceAddress(), hdr.Length())
-		for _, v := range pkt.Data().Views() {
-			xsum = header.Checksum(v, xsum)
-		}
-		return hdr.CalculateChecksum(xsum) == 0xffff
+	if pkt.RXTransportChecksumValidated {
+		return true
 	}
-	return true
+
+	// On IPv4, UDP checksum is optional, and a zero value means the transmitter
+	// omitted the checksum generation, as per RFC 768:
+	//
+	//   An all zero transmitted checksum value means that the transmitter
+	//   generated  no checksum  (for debugging or for higher level protocols that
+	//   don't care).
+	//
+	// On IPv6, UDP checksum is not optional, as per RFC 2460 Section 8.1:
+	//
+	//   Unlike IPv4, when UDP packets are originated by an IPv6 node, the UDP
+	//   checksum is not optional.
+	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber && hdr.Checksum() == 0 {
+		return true
+	}
+
+	netHdr := pkt.Network()
+	payloadChecksum := pkt.Data().AsRange().Checksum()
+	return hdr.IsChecksumValid(netHdr.SourceAddress(), netHdr.DestinationAddress(), payloadChecksum)
 }
 
 // HandlePacket is called by the stack when new packets arrive to this transport
@@ -1284,7 +1293,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 
 	if !verifyChecksum(hdr, pkt) {
-		// Checksum Error.
 		e.stack.Stats().UDP.ChecksumErrors.Increment()
 		e.stats.ReceiveErrors.ChecksumErrors.Increment()
 		return
