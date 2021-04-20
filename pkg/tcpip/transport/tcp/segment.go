@@ -236,20 +236,14 @@ func (s *segment) parse(skipChecksumValidation bool) bool {
 
 	s.options = []byte(s.hdr[header.TCPMinimumSize:])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
-
-	verifyChecksum := true
 	if skipChecksumValidation {
 		s.csumValid = true
-		verifyChecksum = false
-	}
-	if verifyChecksum {
+	} else {
 		s.csum = s.hdr.Checksum()
-		xsum := header.PseudoHeaderChecksum(ProtocolNumber, s.srcAddr, s.dstAddr, uint16(s.data.Size()+len(s.hdr)))
-		xsum = s.hdr.CalculateChecksum(xsum)
-		xsum = header.ChecksumVV(s.data, xsum)
-		s.csumValid = xsum == 0xffff
+		payloadChecksum := header.ChecksumVV(s.data, 0)
+		payloadLength := uint16(s.data.Size())
+		s.csumValid = s.hdr.IsChecksumValid(s.srcAddr, s.dstAddr, payloadChecksum, payloadLength)
 	}
-
 	s.sequenceNumber = seqnum.Value(s.hdr.SequenceNumber())
 	s.ackNumber = seqnum.Value(s.hdr.AckNumber())
 	s.flags = s.hdr.Flags()

@@ -53,9 +53,8 @@ func IPv4(t *testing.T, b []byte, checkers ...NetworkChecker) {
 		t.Error("Not a valid IPv4 packet")
 	}
 
-	xsum := ipv4.CalculateChecksum()
-	if xsum != 0 && xsum != 0xffff {
-		t.Errorf("Bad checksum: 0x%x, checksum in packet: 0x%x", xsum, ipv4.Checksum())
+	if !ipv4.IsChecksumValid() {
+		t.Errorf("Bad checksum, got = %d", ipv4.Checksum())
 	}
 
 	for _, f := range checkers {
@@ -400,18 +399,11 @@ func TCP(checkers ...TransportChecker) NetworkChecker {
 			t.Errorf("Bad protocol, got = %d, want = %d", p, header.TCPProtocolNumber)
 		}
 
-		// Verify the checksum.
 		tcp := header.TCP(last.Payload())
-		l := uint16(len(tcp))
-
-		xsum := header.Checksum([]byte(first.SourceAddress()), 0)
-		xsum = header.Checksum([]byte(first.DestinationAddress()), xsum)
-		xsum = header.Checksum([]byte{0, byte(last.TransportProtocol())}, xsum)
-		xsum = header.Checksum([]byte{byte(l >> 8), byte(l)}, xsum)
-		xsum = header.Checksum(tcp, xsum)
-
-		if xsum != 0 && xsum != 0xffff {
-			t.Errorf("Bad checksum: 0x%x, checksum in segment: 0x%x", xsum, tcp.Checksum())
+		payload := tcp.Payload()
+		payloadChecksum := header.Checksum(payload, 0)
+		if !tcp.IsChecksumValid(first.SourceAddress(), first.DestinationAddress(), payloadChecksum, uint16(len(payload))) {
+			t.Errorf("Bad checksum, got = %d", tcp.Checksum())
 		}
 
 		// Run the transport checkers.
