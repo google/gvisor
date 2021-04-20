@@ -50,11 +50,11 @@ func TestRACKUpdate(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
 
-	var xmitTime time.Time
+	var xmitTimeNS int64
 	probeDone := make(chan struct{})
 	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
 		// Validate that the endpoint Sender.RACKState is what we expect.
-		if state.Sender.RACKState.XmitTime.Before(xmitTime) {
+		if state.Sender.RACKState.XmitMonotonicTimeNS < xmitTimeNS {
 			t.Fatalf("RACK transmit time failed to update when an ACK is received")
 		}
 
@@ -79,7 +79,7 @@ func TestRACKUpdate(t *testing.T) {
 	}
 
 	// Write the data.
-	xmitTime = time.Now()
+	xmitTimeNS = c.Stack().Clock().NowMonotonic()
 	var r bytes.Reader
 	r.Reset(data)
 	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {

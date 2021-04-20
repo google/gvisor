@@ -1538,7 +1538,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		}
 
 		// Add data to the send queue.
-		s := newOutgoingSegment(e.TransportEndpointInfo.ID, v)
+		s := newOutgoingSegment(e.stack.Clock(), e.TransportEndpointInfo.ID, v)
 		e.sndQueueInfo.SndBufUsed += len(v)
 		e.sndQueueInfo.SndBufInQueue += seqnum.Size(len(v))
 		e.sndQueueInfo.sndQueue.PushBack(s)
@@ -2364,7 +2364,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newOutgoingSegment(e.TransportEndpointInfo.ID, nil)
+			s := newOutgoingSegment(e.stack.Clock(), e.TransportEndpointInfo.ID, nil)
 			e.sndQueueInfo.sndQueue.PushBack(s)
 			e.sndQueueInfo.SndBufInQueue++
 			// Mark endpoint as closed.
@@ -2843,17 +2843,33 @@ func (e *endpoint) maybeEnableTimestamp(synOpts *header.TCPSynOptions) {
 	}
 }
 
+func nsTimeDifference(afterNS, beforeNS int64) time.Duration {
+	return time.Duration(afterNS-beforeNS) * time.Nanosecond
+}
+
+func (e *endpoint) sinceNowMonotonicTimeNS(before int64) time.Duration {
+	return nsTimeDifference(e.monotonicTimeNS(), before)
+}
+
+func nsToMS(ns int64) uint32 {
+	return uint32(time.Duration(ns) * time.Nanosecond / time.Millisecond)
+}
+
+func (e *endpoint) monotonicTimeNS() int64 {
+	return e.stack.Clock().NowMonotonic()
+}
+
 // timestamp returns the timestamp value to be used in the TSVal field of the
 // timestamp option for outgoing TCP segments for a given endpoint.
 func (e *endpoint) timestamp() uint32 {
-	return tcpTimeStamp(time.Now(), e.TSOffset)
+	return tcpTimeStamp(nsToMS(e.monotonicTimeNS()), e.TSOffset)
 }
 
 // tcpTimeStamp returns a timestamp offset by the provided offset. This is
 // not inlined above as it's used when SYN cookies are in use and endpoint
 // is not created at the time when the SYN cookie is sent.
-func tcpTimeStamp(curTime time.Time, offset uint32) uint32 {
-	return uint32(curTime.Unix()*1000+int64(curTime.Nanosecond()/1e6)) + offset
+func tcpTimeStamp(timeMS uint32, offset uint32) uint32 {
+	return timeMS + offset
 }
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending

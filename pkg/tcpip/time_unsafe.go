@@ -42,6 +42,17 @@ func (*StdClock) NowNanoseconds() int64 {
 
 // NowMonotonic implements Clock.NowMonotonic.
 func (*StdClock) NowMonotonic() int64 {
+	// There is no explicit documentation for time.now that states that the
+	// monotonic value is held in units of nanoseconds, but the documentation for
+	// time.Time (https://golang.org/pkg/time/#Time) states that:
+	//
+	//   A Time represents an instant in time with nanosecond precision.
+	//
+	// Also, we can see that the runtime uses nanotime to get the monotonic time:
+	// https://github.com/golang/go/blob/b8a359d984b9b/src/runtime/timestub.go#L18
+	//
+	// Given the above, we can assume that the monotonic time increments once
+	// every nanosecond as tcpip.Clock expects.
 	_, _, mono := now()
 	return mono
 }

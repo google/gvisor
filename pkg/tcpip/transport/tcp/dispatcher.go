@@ -175,7 +175,7 @@ func (d *dispatcher) wait() {
 func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	ep := stackEP.(*endpoint)
 
-	s := newIncomingSegment(id, pkt)
+	s := newIncomingSegment(ep.stack.Clock(), id, pkt)
 	if !s.parse(pkt.RXTransportChecksumValidated) {
 		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.InvalidSegmentsReceived.Increment()

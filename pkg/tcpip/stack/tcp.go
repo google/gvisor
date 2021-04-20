@@ -76,9 +76,9 @@ type TCPCubicState struct {
 //
 // +stateify savable
 type TCPRACKState struct {
-	// XmitTime is the transmission timestamp of the most recent
-	// acknowledged segment.
-	XmitTime time.Time `state:".(unixTime)"`
+	// XmitMonotonicTimeNS is the transmission monotonic timestamp of the most
+	// recent acknowledged segment.
+	XmitMonotonicTimeNS int64
 
 	// EndSequence is the ending TCP sequence number of the most recent
 	// acknowledged segment.

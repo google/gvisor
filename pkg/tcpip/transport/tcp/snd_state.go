@@ -14,10 +14,6 @@
 
 package tcp
 
-import (
-	"time"
-)
-
 // +stateify savable
 type unixTime struct {
 	second int64
@@ -29,14 +25,4 @@ func (s *sender) afterLoad() {
 	s.resendTimer.init(&s.resendWaker)
 	s.reorderTimer.init(&s.reorderWaker)
 	s.probeTimer.init(&s.probeWaker)
-}
-
-// saveFirstRetransmittedSegXmitTime is invoked by stateify.
-func (s *sender) saveFirstRetransmittedSegXmitTime() unixTime {
-	return unixTime{s.firstRetransmittedSegXmitTime.Unix(), s.firstRetransmittedSegXmitTime.UnixNano()}
-}
-
-// loadFirstRetransmittedSegXmitTime is invoked by stateify.
-func (s *sender) loadFirstRetransmittedSegXmitTime(unix unixTime) {
-	s.firstRetransmittedSegXmitTime = time.Unix(unix.second, unix.nano)
 }

@@ -74,6 +74,8 @@ type Clock interface {
 	NowNanoseconds() int64
 
 	// NowMonotonic returns a monotonic time value.
+	//
+	// The value increments once every nanosecond.
 	NowMonotonic() int64
 
 	// AfterFunc waits for the duration to elapse and then calls f in its own
