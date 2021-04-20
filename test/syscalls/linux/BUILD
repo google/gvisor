@@ -1,4 +1,5 @@
 load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "gbenchmark", "gtest", "select_arch", "select_system")
+load("//test/syscalls:defs.bzl", "targets")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -88,23 +89,6 @@ cc_binary(
     testonly = 1,
     srcs = [
         "priority_execve.cc",
-    ],
-)
-
-cc_library(
-    name = "base_poll_test",
-    testonly = 1,
-    srcs = ["base_poll_test.cc"],
-    hdrs = ["base_poll_test.h"],
-    deps = [
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-        gtest,
-        "//test/util:logging",
-        "//test/util:signal_util",
-        "//test/util:test_util",
-        "//test/util:thread_util",
     ],
 )
 
@@ -1614,7 +1598,6 @@ cc_binary(
     srcs = ["poll.cc"],
     linkstatic = 1,
     deps = [
-        ":base_poll_test",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/synchronization",
@@ -1624,6 +1607,7 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
+        "//test/util:timer_util",
     ],
 )
 
@@ -1633,12 +1617,12 @@ cc_binary(
     srcs = ["ppoll.cc"],
     linkstatic = 1,
     deps = [
-        ":base_poll_test",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:timer_util",
     ],
 )
 
@@ -1870,12 +1854,12 @@ cc_binary(
     srcs = ["pselect.cc"],
     linkstatic = 1,
     deps = [
-        ":base_poll_test",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:timer_util",
     ],
 )
 
@@ -2172,7 +2156,6 @@ cc_binary(
     srcs = ["select.cc"],
     linkstatic = 1,
     deps = [
-        ":base_poll_test",
         "//test/util:file_descriptor",
         "@com_google_absl//absl/time",
         gtest,
@@ -2182,6 +2165,7 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:timer_util",
     ],
 )
 
@@ -4361,5 +4345,18 @@ cc_binary(
         "//test/util:thread_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+    ],
+)
+
+targets(
+    name = "targets",
+    testonly = 1,
+    # Note that there are some helper workloads and other binaries in this
+    # directory, which will not be covered by the tests. These are exlucded
+    # using a simple name heuristic.
+    defined = [
+        x
+        for x in existing_rules()
+        if x.endswith("_test")
     ],
 )

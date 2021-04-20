@@ -15,8 +15,10 @@
 #ifndef GVISOR_TEST_UTIL_SIGNAL_UTIL_H_
 #define GVISOR_TEST_UTIL_SIGNAL_UTIL_H_
 
-#include <signal.h>
+#ifdef __linux__
 #include <sys/syscall.h>
+#endif
+#include <signal.h>
 #include <unistd.h>
 
 #include <ostream>
@@ -36,7 +38,11 @@ static constexpr int kMaxSignal = 64;
 
 // Wrapper for the tgkill(2) syscall, which glibc does not provide.
 inline int tgkill(pid_t tgid, pid_t tid, int sig) {
+#ifdef __linux__
   return syscall(__NR_tgkill, tgid, tid, sig);
+#else
+  abort();
+#endif
 }
 
 // Installs the passed sigaction and returns a cleanup function to restore the

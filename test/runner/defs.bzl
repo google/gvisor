@@ -1,6 +1,7 @@
 """Defines a rule for syscall test targets."""
 
 load("//tools:defs.bzl", "default_platform", "platforms")
+load("//test/syscalls:defs.bzl", "SyscallTargetInfo")
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
@@ -31,7 +32,10 @@ def _runner_test_impl(ctx):
         collect_default = True,
         collect_data = True,
     )
-    return [DefaultInfo(executable = runner, runfiles = runfiles)]
+    return [
+        DefaultInfo(executable = runner, runfiles = runfiles),
+        SyscallTargetInfo(covered = [ctx.attr.test]),
+    ]
 
 _runner_test = rule(
     attrs = {

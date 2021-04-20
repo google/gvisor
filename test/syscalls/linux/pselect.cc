@@ -17,9 +17,9 @@
 
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -44,14 +44,8 @@ int syscallPselect6(int nfds, fd_set* readfds, fd_set* writefds,
                  mask_with_size);
 }
 
-class PselectTest : public BasePollTest {
- protected:
-  void SetUp() override { BasePollTest::SetUp(); }
-  void TearDown() override { BasePollTest::TearDown(); }
-};
-
 // See that when there are no FD sets, pselect behaves like sleep.
-TEST_F(PselectTest, NullFds) {
+TEST(PselectTest, NullFds) {
   struct timespec timeout = absl::ToTimespec(absl::Milliseconds(10));
   ASSERT_THAT(syscallPselect6(0, nullptr, nullptr, nullptr, &timeout, nullptr),
               SyscallSucceeds());
@@ -65,7 +59,7 @@ TEST_F(PselectTest, NullFds) {
   EXPECT_EQ(timeout.tv_nsec, 0);
 }
 
-TEST_F(PselectTest, ClosedFds) {
+TEST(PselectTest, ClosedFds) {
   fd_set read_set;
   FD_ZERO(&read_set);
   int fd;
@@ -78,7 +72,7 @@ TEST_F(PselectTest, ClosedFds) {
       SyscallFailsWithErrno(EBADF));
 }
 
-TEST_F(PselectTest, ZeroTimeout) {
+TEST(PselectTest, ZeroTimeout) {
   struct timespec timeout = {};
   ASSERT_THAT(syscallPselect6(1, nullptr, nullptr, nullptr, &timeout, nullptr),
               SyscallSucceeds());
@@ -88,16 +82,17 @@ TEST_F(PselectTest, ZeroTimeout) {
 
 // If random S/R interrupts the pselect, SIGALRM may be delivered before pselect
 // restarts, causing the pselect to hang forever.
-TEST_F(PselectTest, NoTimeout) {
+TEST(PselectTest, NoTimeout) {
   // When there's no timeout, pselect may never return so set a timer.
-  SetTimer(absl::Milliseconds(100));
+  Alarm a;
+  a.SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.
   ASSERT_THAT(syscallPselect6(1, nullptr, nullptr, nullptr, nullptr, nullptr),
               SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
 }
 
-TEST_F(PselectTest, InvalidTimeoutNegative) {
+TEST(PselectTest, InvalidTimeoutNegative) {
   struct timespec timeout = absl::ToTimespec(absl::Seconds(-1));
   ASSERT_THAT(syscallPselect6(1, nullptr, nullptr, nullptr, &timeout, nullptr),
               SyscallFailsWithErrno(EINVAL));
@@ -105,7 +100,7 @@ TEST_F(PselectTest, InvalidTimeoutNegative) {
   EXPECT_EQ(timeout.tv_nsec, 0);
 }
 
-TEST_F(PselectTest, InvalidTimeoutNotNormalized) {
+TEST(PselectTest, InvalidTimeoutNotNormalized) {
   struct timespec timeout = {0, 1000000001};
   ASSERT_THAT(syscallPselect6(1, nullptr, nullptr, nullptr, &timeout, nullptr),
               SyscallFailsWithErrno(EINVAL));
@@ -113,21 +108,21 @@ TEST_F(PselectTest, InvalidTimeoutNotNormalized) {
   EXPECT_EQ(timeout.tv_nsec, 1000000001);
 }
 
-TEST_F(PselectTest, EmptySigMaskInvalidMaskSize) {
+TEST(PselectTest, EmptySigMaskInvalidMaskSize) {
   struct timespec timeout = {};
   MaskWithSize invalid = {nullptr, 7};
   EXPECT_THAT(syscallPselect6(0, nullptr, nullptr, nullptr, &timeout, &invalid),
               SyscallSucceeds());
 }
 
-TEST_F(PselectTest, EmptySigMaskValidMaskSize) {
+TEST(PselectTest, EmptySigMaskValidMaskSize) {
   struct timespec timeout = {};
   MaskWithSize invalid = {nullptr, 8};
   EXPECT_THAT(syscallPselect6(0, nullptr, nullptr, nullptr, &timeout, &invalid),
               SyscallSucceeds());
 }
 
-TEST_F(PselectTest, InvalidMaskSize) {
+TEST(PselectTest, InvalidMaskSize) {
   struct timespec timeout = {};
   sigset_t sigmask;
   ASSERT_THAT(sigemptyset(&sigmask), SyscallSucceeds());
@@ -138,7 +133,7 @@ TEST_F(PselectTest, InvalidMaskSize) {
 
 // Verify that signals blocked by the pselect mask (that would otherwise be
 // allowed) do not interrupt pselect.
-TEST_F(PselectTest, SignalMaskBlocksSignal) {
+TEST(PselectTest, SignalMaskBlocksSignal) {
   absl::Duration duration(absl::Seconds(30));
   struct timespec timeout = absl::ToTimespec(duration);
   absl::Duration timer_duration(absl::Seconds(10));
@@ -149,19 +144,20 @@ TEST_F(PselectTest, SignalMaskBlocksSignal) {
   ASSERT_THAT(sigprocmask(0, nullptr, &mask), SyscallSucceeds());
   ASSERT_THAT(sigaddset(&mask, SIGALRM), SyscallSucceeds());
   MaskWithSize mask_with_size = {&mask, kSigsetSize};
-  SetTimer(timer_duration);
+  Alarm a;
+  a.SetTimer(timer_duration);
   MaybeSave();
-  ASSERT_FALSE(TimerFired());
+  ASSERT_FALSE(a.TimerFired());
   ASSERT_THAT(
       syscallPselect6(1, nullptr, nullptr, nullptr, &timeout, &mask_with_size),
       SyscallSucceeds());
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
   EXPECT_EQ(absl::DurationFromTimespec(timeout), absl::Duration());
 }
 
 // Verify that signals allowed by the pselect mask (that would otherwise be
 // blocked) interrupt pselect.
-TEST_F(PselectTest, SignalMaskAllowsSignal) {
+TEST(PselectTest, SignalMaskAllowsSignal) {
   absl::Duration duration = absl::Seconds(30);
   struct timespec timeout = absl::ToTimespec(duration);
   absl::Duration timer_duration = absl::Seconds(10);
@@ -175,13 +171,14 @@ TEST_F(PselectTest, SignalMaskAllowsSignal) {
 
   // Call with a mask that unblocks SIGALRM. See that pselect is interrupted.
   MaskWithSize mask_with_size = {&mask, kSigsetSize};
-  SetTimer(timer_duration);
+  Alarm a;
+  a.SetTimer(timer_duration);
   MaybeSave();
-  ASSERT_FALSE(TimerFired());
+  ASSERT_FALSE(a.TimerFired());
   ASSERT_THAT(
       syscallPselect6(1, nullptr, nullptr, nullptr, &timeout, &mask_with_size),
       SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
   EXPECT_GT(absl::DurationFromTimespec(timeout), absl::Duration());
 }
 

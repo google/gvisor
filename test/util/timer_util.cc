@@ -14,6 +14,8 @@
 
 #include "test/util/timer_util.h"
 
+#include "absl/memory/memory.h"
+
 namespace gvisor {
 namespace testing {
 
@@ -37,6 +39,39 @@ PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
   }
   MaybeSave();
   return IntervalTimer(timerid);
+}
+
+static volatile int timer_fired = 0;
+static void SigAlarmHandler(int, siginfo_t*, void*) { timer_fired = 1; }
+
+Alarm::Alarm() {
+  // Register our SIGALRM handler, but save the original so we can restore in
+  // the destructor.
+  struct sigaction sa = {};
+  sa.sa_sigaction = SigAlarmHandler;
+  sigfillset(&sa.sa_mask);
+  TEST_PCHECK(sigaction(SIGALRM, &sa, &original_alarm_sa_) == 0);
+}
+
+Alarm::~Alarm() {
+  ClearTimer();
+  TEST_PCHECK(sigaction(SIGALRM, &original_alarm_sa_, nullptr) == 0);
+}
+
+void Alarm::SetTimer(absl::Duration duration) {
+  pid_t tgid = getpid();
+  pid_t tid = gettid();
+  ClearTimer();
+
+  // Create a new timer thread.
+  timer_ = absl::make_unique<TimerThread>(absl::Now() + duration, tgid, tid);
+}
+
+bool Alarm::TimerFired() const { return timer_fired; }
+
+void Alarm::ClearTimer() {
+  timer_.reset();
+  timer_fired = 0;
 }
 
 #endif  // __linux__

@@ -17,18 +17,27 @@
 
 #include <errno.h>
 #ifdef __linux__
+#include <signal.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
+#include <syscall.h>
+#include <time.h>
+#include <unistd.h>
 #endif
 #include <sys/time.h>
 
 #include <functional>
+#include <memory>
 
 #include "gmock/gmock.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -160,6 +169,64 @@ class IntervalTimer {
 // A wrapper around timer_create(2).
 PosixErrorOr<IntervalTimer> TimerCreate(clockid_t clockid,
                                         const struct sigevent& sev);
+
+// TimerThread is a cancelable timer.
+class TimerThread {
+ public:
+  TimerThread(absl::Time deadline, pid_t tgid, pid_t tid)
+      : thread_([=] {
+          mu_.Lock();
+          mu_.AwaitWithDeadline(absl::Condition(&cancel_), deadline);
+          if (!cancel_) {
+            TEST_PCHECK(tgkill(tgid, tid, SIGALRM) == 0);
+          }
+          mu_.Unlock();
+        }) {}
+
+  ~TimerThread() { Cancel(); }
+
+  void Cancel() {
+    absl::MutexLock ml(&mu_);
+    cancel_ = true;
+  }
+
+ private:
+  mutable absl::Mutex mu_;
+  bool cancel_ ABSL_GUARDED_BY(mu_) = false;
+
+  // Must be last to ensure that the destructor for the thread is run before
+  // any other member of the object is destroyed.
+  ScopedThread thread_;
+};
+
+// RAII wrapper around SIGALARM.
+class Alarm {
+ public:
+  Alarm();
+  ~Alarm();
+
+  // Sets a timer that will send a signal to the calling thread after
+  // `duration`.
+  void SetTimer(absl::Duration duration);
+
+  // Returns true if the timer has fired.
+  bool TimerFired() const;
+
+  // Stops the pending timer (if any) and clear the "fired" state.
+  void ClearTimer();
+
+ private:
+  // Thread that implements the timer. If the timer is stopped, timer_ is null.
+  //
+  // We have to use a thread for this purpose because tests using this fixture
+  // expect to be interrupted by the timer signal, but itimers/alarm(2) send
+  // thread-group-directed signals, which may be handled by any thread in the
+  // test process.
+  std::unique_ptr<TimerThread> timer_;
+
+  // The original SIGALRM handler, to restore in destructor.
+  struct sigaction original_alarm_sa_;
+};
 
 #endif  // __linux__
 

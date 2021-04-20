@@ -23,26 +23,20 @@
 
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/rlimit_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
 
-class SelectTest : public BasePollTest {
- protected:
-  void SetUp() override { BasePollTest::SetUp(); }
-  void TearDown() override { BasePollTest::TearDown(); }
-};
-
 // See that when there are no FD sets, select behaves like sleep.
-TEST_F(SelectTest, NullFds) {
+TEST(SelectTest, NullFds) {
   struct timeval timeout = absl::ToTimeval(absl::Milliseconds(10));
   ASSERT_THAT(select(0, nullptr, nullptr, nullptr, &timeout),
               SyscallSucceeds());
@@ -56,7 +50,7 @@ TEST_F(SelectTest, NullFds) {
   EXPECT_EQ(timeout.tv_usec, 0);
 }
 
-TEST_F(SelectTest, NegativeNfds) {
+TEST(SelectTest, NegativeNfds) {
   EXPECT_THAT(select(-1, nullptr, nullptr, nullptr, nullptr),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(select(-100000, nullptr, nullptr, nullptr, nullptr),
@@ -65,7 +59,7 @@ TEST_F(SelectTest, NegativeNfds) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_F(SelectTest, ClosedFds) {
+TEST(SelectTest, ClosedFds) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDONLY));
@@ -89,7 +83,7 @@ TEST_F(SelectTest, ClosedFds) {
               IsPosixErrorOkAndHolds(0));
 }
 
-TEST_F(SelectTest, ZeroTimeout) {
+TEST(SelectTest, ZeroTimeout) {
   struct timeval timeout = {};
   EXPECT_THAT(select(1, nullptr, nullptr, nullptr, &timeout),
               SyscallSucceeds());
@@ -98,16 +92,17 @@ TEST_F(SelectTest, ZeroTimeout) {
 
 // If random S/R interrupts the select, SIGALRM may be delivered before select
 // restarts, causing the select to hang forever.
-TEST_F(SelectTest, NoTimeout) {
+TEST(SelectTest, NoTimeout) {
   // When there's no timeout, select may never return so set a timer.
-  SetTimer(absl::Milliseconds(100));
+  Alarm a;
+  a.SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.
   ASSERT_THAT(select(1, nullptr, nullptr, nullptr, nullptr),
               SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
 }
 
-TEST_F(SelectTest, InvalidTimeoutNegative) {
+TEST(SelectTest, InvalidTimeoutNegative) {
   struct timeval timeout = absl::ToTimeval(absl::Microseconds(-1));
   EXPECT_THAT(select(1, nullptr, nullptr, nullptr, &timeout),
               SyscallFailsWithErrno(EINVAL));
@@ -118,18 +113,19 @@ TEST_F(SelectTest, InvalidTimeoutNegative) {
 //
 // If random S/R interrupts the select, SIGALRM may be delivered before select
 // restarts, causing the select to hang forever.
-TEST_F(SelectTest, InterruptedBySignal) {
+TEST(SelectTest, InterruptedBySignal) {
   absl::Duration duration(absl::Seconds(5));
   struct timeval timeout = absl::ToTimeval(duration);
-  SetTimer(absl::Milliseconds(100));
-  ASSERT_FALSE(TimerFired());
+  Alarm a;
+  a.SetTimer(absl::Milliseconds(100));
+  ASSERT_FALSE(a.TimerFired());
   ASSERT_THAT(select(1, nullptr, nullptr, nullptr, &timeout),
               SyscallFailsWithErrno(EINTR));
-  EXPECT_TRUE(TimerFired());
+  EXPECT_TRUE(a.TimerFired());
   // Ignore timeout as its value is now undefined.
 }
 
-TEST_F(SelectTest, IgnoreBitsAboveNfds) {
+TEST(SelectTest, IgnoreBitsAboveNfds) {
   // fd_set is a bit array with at least FD_SETSIZE bits. Test that bits
   // corresponding to file descriptors above nfds are ignored.
   fd_set read_set;
@@ -147,7 +143,7 @@ TEST_F(SelectTest, IgnoreBitsAboveNfds) {
 // This test illustrates Linux's behavior of 'select' calls passing after
 // setrlimit RLIMIT_NOFILE is called. In particular, versions of sshd rely on
 // this behavior. See b/122318458.
-TEST_F(SelectTest, SetrlimitCallNOFILE) {
+TEST(SelectTest, SetrlimitCallNOFILE) {
   fd_set read_set;
   FD_ZERO(&read_set);
   timeval timeout = {};
