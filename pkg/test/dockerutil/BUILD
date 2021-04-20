@@ -36,8 +36,8 @@ go_test(
     tags = [
         # Requires docker and runsc to be configured before test runs.
         # Also requires the test to be run as root.
-        "manual",
         "local",
+        "manual",
     ],
     visibility = ["//:sandbox"],
 )

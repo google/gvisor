@@ -212,10 +212,7 @@ cc_binary(
 cc_binary(
     name = "32bit_test",
     testonly = 1,
-    srcs = select_arch(
-        amd64 = ["32bit.cc"],
-        arm64 = [],
-    ),
+    srcs = ["32bit.cc"],
     linkstatic = 1,
     deps = [
         "@com_google_absl//absl/base:core_headers",

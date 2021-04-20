@@ -22,14 +22,12 @@
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
-#ifndef __x86_64__
-#error "This test is x86-64 specific."
-#endif
-
 namespace gvisor {
 namespace testing {
 
 namespace {
+
+#ifdef __x86_64__
 
 constexpr char kInt3 = '\xcc';
 constexpr char kInt80[2] = {'\xcd', '\x80'};
@@ -243,6 +241,8 @@ TEST(Call32Bit, Disallowed) {
 }
 
 }  // namespace
+
+#endif
 
 }  // namespace testing
 }  // namespace gvisor

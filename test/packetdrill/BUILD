@@ -41,6 +41,7 @@ packetdrill_test(
 test_suite(
     name = "all_tests",
     tags = [
+        "local",
         "manual",
         "packetdrill",
     ],

@@ -85,17 +85,8 @@ def _syscall_test(
 
     # Add the full_platform and file access in a tag to make it easier to run
     # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
+    tags = list(tags)
     tags += [full_platform, "file_" + file_access]
-
-    # Hash this target into one of 15 buckets. This can be used to
-    # randomly split targets between different workflows.
-    hash15 = hash(native.package_name() + name) % 15
-    tags.append("hash15:" + str(hash15))
-
-    # TODO(b/139838000): Tests using hostinet must be disabled on Guitar until
-    # we figure out how to request ipv4 sockets on Guitar machines.
-    if network == "host":
-        tags.append("noguitar")
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")
@@ -157,43 +148,31 @@ def syscall_test(
     if not tags:
         tags = []
 
-    vfs2_tags = list(tags)
-    if vfs2:
-        # Add tag to easily run VFS2 tests with --test_tag_filters=vfs2
-        vfs2_tags.append("vfs2")
-        if fuse:
-            vfs2_tags.append("fuse")
+    if vfs2 and not fuse:
+        # Generate a vfs1 plain test. Most testing will now be
+        # biased towards vfs2, with only a single vfs1 case.
+        _syscall_test(
+            test = test,
+            platform = default_platform,
+            use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
+            tags = tags + platforms[default_platform],
+            debug = debug,
+            vfs2 = False,
+            **kwargs
+        )
 
-    else:
-        # Don't automatically run tests tests not yet passing.
-        vfs2_tags.append("manual")
-        vfs2_tags.append("noguitar")
-        vfs2_tags.append("notap")
-
-    _syscall_test(
-        test = test,
-        platform = default_platform,
-        use_tmpfs = use_tmpfs,
-        add_uds_tree = add_uds_tree,
-        tags = platforms[default_platform] + vfs2_tags,
-        debug = debug,
-        vfs2 = True,
-        fuse = fuse,
-        **kwargs
-    )
-    if fuse:
-        # Only generate *_vfs2_fuse target if fuse parameter is enabled.
-        return
-
-    _syscall_test(
-        test = test,
-        platform = "native",
-        use_tmpfs = False,
-        add_uds_tree = add_uds_tree,
-        tags = list(tags),
-        debug = debug,
-        **kwargs
-    )
+    if not fuse:
+        # Generate a native test if fuse is not required.
+        _syscall_test(
+            test = test,
+            platform = "native",
+            use_tmpfs = False,
+            add_uds_tree = add_uds_tree,
+            tags = tags,
+            debug = debug,
+            **kwargs
+        )
 
     for (platform, platform_tags) in platforms.items():
         _syscall_test(
@@ -202,6 +181,8 @@ def syscall_test(
             use_tmpfs = use_tmpfs,
             add_uds_tree = add_uds_tree,
             tags = platform_tags + tags,
+            fuse = fuse,
+            vfs2 = vfs2,
             debug = debug,
             **kwargs
         )
@@ -214,27 +195,11 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
             debug = debug,
+            fuse = fuse,
+            vfs2 = vfs2,
             overlay = True,
             **kwargs
         )
-
-        # TODO(gvisor.dev/issue/4407): Remove tags to enable VFS2 overlay tests.
-        overlay_vfs2_tags = list(vfs2_tags)
-        overlay_vfs2_tags.append("manual")
-        overlay_vfs2_tags.append("noguitar")
-        overlay_vfs2_tags.append("notap")
-        _syscall_test(
-            test = test,
-            platform = default_platform,
-            use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + overlay_vfs2_tags,
-            debug = debug,
-            overlay = True,
-            vfs2 = True,
-            **kwargs
-        )
-
     if add_hostinet:
         _syscall_test(
             test = test,
@@ -244,9 +209,10 @@ def syscall_test(
             add_uds_tree = add_uds_tree,
             tags = platforms[default_platform] + tags,
             debug = debug,
+            fuse = fuse,
+            vfs2 = vfs2,
             **kwargs
         )
-
     if not use_tmpfs:
         # Also test shared gofer access.
         _syscall_test(
@@ -257,16 +223,7 @@ def syscall_test(
             tags = platforms[default_platform] + tags,
             debug = debug,
             file_access = "shared",
-            **kwargs
-        )
-        _syscall_test(
-            test = test,
-            platform = default_platform,
-            use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + vfs2_tags,
-            debug = debug,
-            file_access = "shared",
-            vfs2 = True,
+            fuse = fuse,
+            vfs2 = vfs2,
             **kwargs
         )

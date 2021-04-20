@@ -120,7 +120,7 @@ def _nogo_stdlib_impl(ctx):
         Srcs = [f.path for f in go_ctx.stdlib_srcs],
         GOOS = go_ctx.goos,
         GOARCH = go_ctx.goarch,
-        Tags = go_ctx.tags,
+        Tags = go_ctx.gotags,
     )
     config_file = ctx.actions.declare_file(ctx.label.name + ".cfg")
     ctx.actions.write(config_file, config.to_json())
@@ -286,7 +286,7 @@ def _nogo_aspect_impl(target, ctx):
         NonGoFiles = [src.path for src in srcs if not src.path.endswith(".go")],
         GOOS = go_ctx.goos,
         GOARCH = go_ctx.goarch,
-        Tags = go_ctx.tags,
+        Tags = go_ctx.gotags,
         FactMap = fact_map,
         ImportMap = import_map,
         StdlibFacts = stdlib_facts.path,
