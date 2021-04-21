@@ -26,7 +26,7 @@ const (
 	//
 	// Clients are expected to start requesting this version number and
 	// to continuously decrement it until a Tversion request succeeds.
-	highestSupportedVersion uint32 = 13
+	highestSupportedVersion uint32 = 12
 
 	// lowestSupportedVersion is the lowest supported version X in a
 	// version string of the format 9P2000.L.Google.X.
@@ -178,10 +178,4 @@ func versionSupportsListRemoveXattr(v uint32) bool {
 // the Tsetattrclunk message.
 func versionSupportsTsetattrclunk(v uint32) bool {
 	return v >= 12
-}
-
-// versionSupportsTmultiGetAttr returns true if version v supports
-// the TmultiGetAttr message.
-func versionSupportsTmultiGetAttr(v uint32) bool {
-	return v >= 13
 }

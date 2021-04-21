@@ -121,22 +121,6 @@ func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, At
 	return rwalkgetattr.QIDs, c.client.newFile(FID(fid)), rwalkgetattr.Valid, rwalkgetattr.Attr, nil
 }
 
-func (c *clientFile) MultiGetAttr(names []string) ([]FullStat, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
-		return nil, unix.EBADF
-	}
-
-	if !versionSupportsTmultiGetAttr(c.client.version) {
-		return DefaultMultiGetAttr(c, names)
-	}
-
-	rmultigetattr := Rmultigetattr{}
-	if err := c.client.sendRecv(&Tmultigetattr{FID: c.fid, Names: names}, &rmultigetattr); err != nil {
-		return nil, err
-	}
-	return rmultigetattr.Stats, nil
-}
-
 // StatFS implements File.StatFS.
 func (c *clientFile) StatFS() (FSStat, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
