@@ -557,6 +557,59 @@ func (r *dirRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
+func (c *jobController) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.jobController"
+}
+
+func (c *jobController) StateFields() []string {
+	return []string{
+		"controllerCommon",
+		"id",
+	}
+}
+
+func (c *jobController) beforeSave() {}
+
+// +checklocksignore
+func (c *jobController) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.controllerCommon)
+	stateSinkObject.Save(1, &c.id)
+}
+
+func (c *jobController) afterLoad() {}
+
+// +checklocksignore
+func (c *jobController) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.controllerCommon)
+	stateSourceObject.Load(1, &c.id)
+}
+
+func (d *jobIDData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.jobIDData"
+}
+
+func (d *jobIDData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *jobIDData) beforeSave() {}
+
+// +checklocksignore
+func (d *jobIDData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *jobIDData) afterLoad() {}
+
+// +checklocksignore
+func (d *jobIDData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
 func (c *memoryController) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.memoryController"
 }
@@ -627,6 +680,8 @@ func init() {
 	state.Register((*cpuacctUsageSysData)(nil))
 	state.Register((*cpusetController)(nil))
 	state.Register((*dirRefs)(nil))
+	state.Register((*jobController)(nil))
+	state.Register((*jobIDData)(nil))
 	state.Register((*memoryController)(nil))
 	state.Register((*memoryUsageInBytesData)(nil))
 }
