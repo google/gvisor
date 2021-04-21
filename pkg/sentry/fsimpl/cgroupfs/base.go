@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -26,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -230,4 +232,30 @@ func (d *tasksData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 func (d *tasksData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	// TODO(b/183137098): Payload is the pid for a process to add to this cgroup.
 	return src.NumBytes(), nil
+}
+
+// parseInt64FromString interprets src as string encoding a int64 value, and
+// returns the parsed value.
+func parseInt64FromString(ctx context.Context, src usermem.IOSequence, offset int64) (val, len int64, err error) {
+	const maxInt64StrLen = 20 // i.e. len(fmt.Sprintf("%d", math.MinInt64)) == 20
+
+	t := kernel.TaskFromContext(ctx)
+	src = src.DropFirst64(offset)
+
+	buf := t.CopyScratchBuffer(maxInt64StrLen)
+	n, err := src.CopyIn(ctx, buf)
+	if err != nil {
+		return 0, int64(n), err
+	}
+	buf = buf[:n]
+
+	val, err = strconv.ParseInt(string(buf), 10, 64)
+	if err != nil {
+		// Note: This also handles zero-len writes if offset is beyond the end
+		// of src, or src is empty.
+		ctx.Warningf("cgroupfs.parseInt64FromString: failed to parse %q: %v", string(buf), err)
+		return 0, int64(n), syserror.EINVAL
+	}
+
+	return val, int64(n), nil
 }

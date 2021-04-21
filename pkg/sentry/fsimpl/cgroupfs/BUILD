@@ -23,6 +23,7 @@ go_library(
         "cpuacct.go",
         "cpuset.go",
         "dir_refs.go",
+        "job.go",
         "memory.go",
     ],
     visibility = ["//pkg/sentry:internal"],

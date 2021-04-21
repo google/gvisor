@@ -45,6 +45,14 @@ class Cgroup {
   // to parse it as an integer.
   PosixErrorOr<int64_t> ReadIntegerControlFile(absl::string_view name) const;
 
+  // Writes a string to a cgroup control file.
+  PosixError WriteControlFile(absl::string_view name,
+                              const std::string& value) const;
+
+  // Writes an integer value to a cgroup control file.
+  PosixError WriteIntegerControlFile(absl::string_view name,
+                                     int64_t value) const;
+
   // Returns the thread ids of the leaders of thread groups managed by this
   // cgroup.
   PosixErrorOr<absl::flat_hash_set<pid_t>> Procs() const;
