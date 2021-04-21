@@ -210,6 +210,13 @@ func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth
 //
 // Preconditions: mnt must be disconnected.
 func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Credentials, mnt *Mount, target *PathOperation) error {
+	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
+	// point and the mount root are directories, or neither are, and returns
+	// ENOTDIR if this is not the case.
+	//
+	// File bind-mounts are not supported yet, so target has to be a directory.
+	target.Path.Dir = true
+
 	// We can't hold vfs.mountMu while calling FilesystemImpl methods due to
 	// lock ordering.
 	vd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{})
@@ -252,9 +259,6 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		}
 		vdDentry.mu.Lock()
 	}
-	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
-	// point and the mount root are directories, or neither are, and returns
-	// ENOTDIR if this is not the case.
 	mntns := vd.mount.ns
 	vfs.mounts.seq.BeginWrite()
 	vfs.connectLocked(mnt, vd, mntns)

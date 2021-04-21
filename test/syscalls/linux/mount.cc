@@ -61,6 +61,14 @@ TEST(MountTest, MountInvalidTarget) {
               SyscallFailsWithErrno(ENOENT));
 }
 
+TEST(MountTest, MountFileTargetFailWithENOTDIR) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  EXPECT_THAT(mount("", file.path().c_str(), "tmpfs", 0, ""),
+              SyscallFailsWithErrno(ENOTDIR));
+}
+
 TEST(MountTest, MountPermDenied) {
   // Clear CAP_SYS_ADMIN.
   if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
