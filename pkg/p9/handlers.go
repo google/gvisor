@@ -1421,31 +1421,3 @@ func (t *Tchannel) handle(cs *connState) message {
 	}
 	return rchannel
 }
-
-// handle implements handler.handle.
-func (t *Tmultigetattr) handle(cs *connState) message {
-	for i, name := range t.Names {
-		if len(name) == 0 && i == 0 {
-			// Empty name is allowed on the first entry to indicate that the current
-			// FID needs to be included in the result.
-			continue
-		}
-		if err := checkSafeName(name); err != nil {
-			return newErr(err)
-		}
-	}
-	ref, ok := cs.LookupFID(t.FID)
-	if !ok {
-		return newErr(unix.EBADF)
-	}
-	defer ref.DecRef()
-
-	var stats []FullStat
-	if err := ref.safelyRead(func() (err error) {
-		stats, err = ref.file.MultiGetAttr(t.Names)
-		return err
-	}); err != nil {
-		return newErr(err)
-	}
-	return &Rmultigetattr{Stats: stats}
-}

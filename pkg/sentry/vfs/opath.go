@@ -121,7 +121,7 @@ func (fd *opathFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, err
 		Start: fd.vfsfd.vd,
 	})
 	stat, err := fd.vfsfd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
-	rp.Release(ctx)
+	vfsObj.putResolvingPath(ctx, rp)
 	return stat, err
 }
 
@@ -134,6 +134,6 @@ func (fd *opathFD) StatFS(ctx context.Context) (linux.Statfs, error) {
 		Start: fd.vfsfd.vd,
 	})
 	statfs, err := fd.vfsfd.vd.mount.fs.impl.StatFSAt(ctx, rp)
-	rp.Release(ctx)
+	vfsObj.putResolvingPath(ctx, rp)
 	return statfs, err
 }

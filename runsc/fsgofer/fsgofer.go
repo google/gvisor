@@ -21,7 +21,6 @@
 package fsgofer
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -59,6 +58,9 @@ var verityXattrs = map[string]struct{}{
 
 // join is equivalent to path.Join() but skips path.Clean() which is expensive.
 func join(parent, child string) string {
+	if child == "." || child == ".." {
+		panic(fmt.Sprintf("invalid child path %q", child))
+	}
 	return parent + "/" + child
 }
 
@@ -1223,57 +1225,4 @@ func (l *localFile) checkROMount() error {
 		return unix.EROFS
 	}
 	return nil
-}
-
-func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
-	stats := make([]p9.FullStat, 0, len(names))
-
-	if len(names) > 0 && names[0] == "" {
-		qid, valid, attr, err := l.GetAttr(p9.AttrMask{})
-		if err != nil {
-			return nil, err
-		}
-		stats = append(stats, p9.FullStat{
-			QID:   qid,
-			Valid: valid,
-			Attr:  attr,
-		})
-		names = names[1:]
-	}
-
-	parent := l.file.FD()
-	for _, name := range names {
-		child, err := unix.Openat(parent, name, openFlags|unix.O_PATH, 0)
-		if parent != l.file.FD() {
-			// Parent is no longer needed.
-			_ = unix.Close(parent)
-		}
-		if err != nil {
-			if errors.Is(err, unix.ENOENT) {
-				// No pont in continuing any further.
-				break
-			}
-			return nil, err
-		}
-
-		var stat unix.Stat_t
-		if err := unix.Fstat(child, &stat); err != nil {
-			_ = unix.Close(child)
-			return nil, err
-		}
-		valid, attr := l.fillAttr(&stat)
-		stats = append(stats, p9.FullStat{
-			QID:   l.attachPoint.makeQID(&stat),
-			Valid: valid,
-			Attr:  attr,
-		})
-		if (stat.Mode & unix.S_IFMT) != unix.S_IFDIR {
-			// Doesn't need to continue if entry is not a dir. Including symlinks
-			// that cannot be followed.
-			_ = unix.Close(child)
-			break
-		}
-		parent = child
-	}
-	return stats, nil
 }

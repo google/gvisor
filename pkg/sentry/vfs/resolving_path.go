@@ -120,8 +120,6 @@ var resolvingPathPool = sync.Pool{
 	},
 }
 
-// getResolvingPath gets a new ResolvingPath from the pool. Caller must call
-// ResolvingPath.Release() when done.
 func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) *ResolvingPath {
 	rp := resolvingPathPool.Get().(*ResolvingPath)
 	rp.vfs = vfs
@@ -144,30 +142,7 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 	return rp
 }
 
-// Copy creates another ResolvingPath with the same state as the original.
-// Copies are independent, using the copy does not change the original and
-// vice-versa.
-//
-// Caller must call Resease() when done.
-func (rp *ResolvingPath) Copy() *ResolvingPath {
-	copy := resolvingPathPool.Get().(*ResolvingPath)
-	*copy = *rp // All fields all shallow copiable.
-
-	// Take extra reference for the copy if the original had them.
-	if copy.flags&rpflagsHaveStartRef != 0 {
-		copy.start.IncRef()
-	}
-	if copy.flags&rpflagsHaveMountRef != 0 {
-		copy.mount.IncRef()
-	}
-	// Reset error state.
-	copy.nextStart = nil
-	copy.nextMount = nil
-	return copy
-}
-
-// Release decrements references if needed and returns the object to the pool.
-func (rp *ResolvingPath) Release(ctx context.Context) {
+func (vfs *VirtualFilesystem) putResolvingPath(ctx context.Context, rp *ResolvingPath) {
 	rp.root = VirtualDentry{}
 	rp.decRefStartAndMount(ctx)
 	rp.mount = nil
