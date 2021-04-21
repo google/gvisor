@@ -38,6 +38,7 @@ go_test(
     name = "buffer_test",
     size = "small",
     srcs = [
+        "buffer_test.go",
         "pool_test.go",
         "safemem_test.go",
         "view_test.go",
