@@ -703,6 +703,16 @@ func TestWalkNotFound(t *testing.T) {
 	})
 }
 
+func TestWalkPanic(t *testing.T) {
+	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
+		for _, name := range []string{".", ".."} {
+			assertPanic(t, func() {
+				s.file.Walk([]string{name})
+			})
+		}
+	})
+}
+
 func TestWalkDup(t *testing.T) {
 	runAll(t, func(t *testing.T, s state) {
 		_, dup, err := s.file.Walk([]string{})
