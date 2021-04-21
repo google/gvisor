@@ -30,16 +30,6 @@ func (t *TCPCubicState) loadT(unix unixTime) {
 	t.T = time.Unix(unix.second, unix.nano)
 }
 
-// saveXmitTime is invoked by stateify.
-func (t *TCPRACKState) saveXmitTime() unixTime {
-	return unixTime{t.XmitTime.Unix(), t.XmitTime.UnixNano()}
-}
-
-// loadXmitTime is invoked by stateify.
-func (t *TCPRACKState) loadXmitTime(unix unixTime) {
-	t.XmitTime = time.Unix(unix.second, unix.nano)
-}
-
 // saveLastSendTime is invoked by stateify.
 func (t *TCPSenderState) saveLastSendTime() unixTime {
 	return unixTime{t.LastSendTime.Unix(), t.LastSendTime.UnixNano()}

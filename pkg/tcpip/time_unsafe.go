@@ -34,19 +34,30 @@ var _ Clock = (*StdClock)(nil)
 //go:linkname now time.now
 func now() (sec int64, nsec int32, mono int64)
 
-// NowNanoseconds implements Clock.NowNanoseconds.
+// NowNanoseconds implements Clock.
 func (*StdClock) NowNanoseconds() int64 {
 	sec, nsec, _ := now()
 	return sec*1e9 + int64(nsec)
 }
 
-// NowMonotonic implements Clock.NowMonotonic.
-func (*StdClock) NowMonotonic() int64 {
+// NowMonotonicNS implements Clock..
+func (*StdClock) NowMonotonicNS() int64 {
+	// There is no explicit documentation for time.now that states that the
+	// monotonic value is held in units of nanoseconds, but the documentation for
+	// time.Time (https://golang.org/pkg/time/#Time) states that:
+	//
+	//   A Time represents an instant in time with nanosecond precision.
+	//
+	// Also, we can see that the runtime uses nanotime to get the monotonic time:
+	// https://github.com/golang/go/blob/b8a359d984b9b/src/runtime/timestub.go#L18
+	//
+	// Given the above, we can assume that the monotonic time increments once
+	// every nanosecond as tcpip.Clock expects.
 	_, _, mono := now()
 	return mono
 }
 
-// AfterFunc implements Clock.AfterFunc.
+// AfterFunc implements Clock.
 func (*StdClock) AfterFunc(d time.Duration, f func()) Timer {
 	return &stdTimer{
 		t: time.AfterFunc(d, f),

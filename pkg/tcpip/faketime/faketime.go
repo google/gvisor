@@ -29,17 +29,17 @@ type NullClock struct{}
 
 var _ tcpip.Clock = (*NullClock)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
+// NowNanoseconds implements tcpip.Clock.
 func (*NullClock) NowNanoseconds() int64 {
 	return 0
 }
 
-// NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (*NullClock) NowMonotonic() int64 {
+// NowMonotonicNS implements tcpip.Clock.
+func (*NullClock) NowMonotonicNS() int64 {
 	return 0
 }
 
-// AfterFunc implements tcpip.Clock.AfterFunc.
+// AfterFunc implements tcpip.Clock.
 func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
 	return nil
 }
@@ -118,19 +118,19 @@ func NewManualClock() *ManualClock {
 
 var _ tcpip.Clock = (*ManualClock)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
+// NowNanoseconds implements tcpip.Clock.
 func (mc *ManualClock) NowNanoseconds() int64 {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.mu.now.UnixNano()
 }
 
-// NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (mc *ManualClock) NowMonotonic() int64 {
+// NowMonotonicNS implements tcpip.Clock.
+func (mc *ManualClock) NowMonotonicNS() int64 {
 	return mc.NowNanoseconds()
 }
 
-// AfterFunc implements tcpip.Clock.AfterFunc.
+// AfterFunc implements tcpip.Clock.
 func (mc *ManualClock) AfterFunc(d time.Duration, f func()) tcpip.Timer {
 	mt := &manualTimer{
 		clock: mc,

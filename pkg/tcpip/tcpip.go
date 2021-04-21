@@ -73,8 +73,10 @@ type Clock interface {
 	// nanoseconds since the Unix epoch.
 	NowNanoseconds() int64
 
-	// NowMonotonic returns a monotonic time value.
-	NowMonotonic() int64
+	// NowMonotonicNS returns a monotonic time value.
+	//
+	// The value increments once every nanosecond.
+	NowMonotonicNS() int64
 
 	// AfterFunc waits for the duration to elapse and then calls f in its own
 	// goroutine. It returns a Timer that can be used to cancel the call using

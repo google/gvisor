@@ -49,7 +49,7 @@ type reassembler struct {
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
 	r := &reassembler{
 		id:           id,
-		creationTime: clock.NowMonotonic(),
+		creationTime: clock.NowMonotonicNS(),
 	}
 	r.holes = append(r.holes, hole{
 		first:  0,

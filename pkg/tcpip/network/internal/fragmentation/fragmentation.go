@@ -243,7 +243,7 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 // schedules the job to call back itself for the remaining reassemblers if
 // any. This function must be called with f.mu locked.
 func (f *Fragmentation) releaseReassemblersLocked() {
-	now := f.clock.NowMonotonic()
+	now := f.clock.NowMonotonicNS()
 	for {
 		// The reassembler at the end of the list is the oldest.
 		r := f.rList.Back()

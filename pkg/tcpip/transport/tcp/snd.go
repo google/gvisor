@@ -82,6 +82,12 @@ type lossRecovery interface {
 	DoRecovery(rcvdSeg *segment, fastRetransmit bool)
 }
 
+// +stateify savable
+type segmentXmitRetransmitTime struct {
+	hasRetransmitted bool
+	ns               int64
+}
+
 // sender holds the state necessary to send TCP segments.
 //
 // +stateify savable
@@ -94,7 +100,7 @@ type sender struct {
 
 	// firstRetransmittedSegXmitTime is the original transmit time of
 	// the first segment that was retransmitted due to RTO expiration.
-	firstRetransmittedSegXmitTime time.Time `state:".(unixTime)"`
+	firstRetransmittedSegXmitTime segmentXmitRetransmitTime
 
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
@@ -441,16 +447,17 @@ func (s *sender) retransmitTimerExpired() bool {
 	// timeout since the first retransmission.
 	uto := s.ep.userTimeout
 
-	if s.firstRetransmittedSegXmitTime.IsZero() {
+	if !s.firstRetransmittedSegXmitTime.hasRetransmitted {
 		// We store the original xmitTime of the segment that we are
 		// about to retransmit as the retransmission time. This is
 		// required as by the time the retransmitTimer has expired the
 		// segment has already been sent and unacked for the RTO at the
 		// time the segment was sent.
-		s.firstRetransmittedSegXmitTime = s.writeList.Front().xmitTime
+		s.firstRetransmittedSegXmitTime.hasRetransmitted = true
+		s.firstRetransmittedSegXmitTime.ns = s.writeList.Front().xmitMonotonicTimeNS
 	}
 
-	elapsed := time.Since(s.firstRetransmittedSegXmitTime)
+	elapsed := s.ep.sinceNowMonotonicTimeNS(s.firstRetransmittedSegXmitTime.ns)
 	remaining := s.maxRTO
 	if uto != 0 {
 		// Cap to the user specified timeout if one is specified.
@@ -867,8 +874,9 @@ func (s *sender) enableZeroWindowProbing() {
 	// We piggyback the probing on the retransmit timer with the
 	// current retranmission interval, as we may start probing while
 	// segment retransmissions.
-	if s.firstRetransmittedSegXmitTime.IsZero() {
-		s.firstRetransmittedSegXmitTime = time.Now()
+	if !s.firstRetransmittedSegXmitTime.hasRetransmitted {
+		s.firstRetransmittedSegXmitTime.hasRetransmitted = true
+		s.firstRetransmittedSegXmitTime.ns = s.ep.monotonicTimeNS()
 	}
 	s.resendTimer.enable(s.RTO)
 }
@@ -876,7 +884,7 @@ func (s *sender) enableZeroWindowProbing() {
 func (s *sender) disableZeroWindowProbing() {
 	s.zeroWindowProbing = false
 	s.unackZeroWindowProbes = 0
-	s.firstRetransmittedSegXmitTime = time.Time{}
+	s.firstRetransmittedSegXmitTime = segmentXmitRetransmitTime{}
 	s.resendTimer.disable()
 }
 
@@ -1444,8 +1452,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// RFC 6298 Rule 5.3
 		if s.SndUna == s.SndNxt {
 			s.Outstanding = 0
-			// Reset firstRetransmittedSegXmitTime to the zero value.
-			s.firstRetransmittedSegXmitTime = time.Time{}
+			s.firstRetransmittedSegXmitTime = segmentXmitRetransmitTime{}
 			s.resendTimer.disable()
 			s.probeTimer.disable()
 		}
@@ -1461,7 +1468,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// After the reorder window is calculated, detect any loss by checking
 		// if the time elapsed after the segments are sent is greater than the
 		// reorder window.
-		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.FastRecovery.Active {
+		if numLost := s.rc.detectLoss(rcvdSeg.rcvdMonotonicTimeNS); numLost > 0 && !s.FastRecovery.Active {
 			// If any segment is marked as lost by
 			// RACK, enter recovery and retransmit
 			// the lost segments.
@@ -1503,7 +1510,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
 	}
-	seg.xmitTime = time.Now()
+	seg.xmitMonotonicTimeNS = s.ep.monotonicTimeNS()
 	seg.xmitCount++
 	seg.lost = false
 	err := s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
