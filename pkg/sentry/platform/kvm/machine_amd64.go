@@ -213,6 +213,11 @@ func (c *vCPU) setSystemTime() error {
 	// capabilities as it is emulated in KVM. We don't actually use this
 	// capability, but it means that this method should be robust to
 	// different hardware configurations.
+
+	// if tsc scaling is not supported, fallback to legacy mode
+	if !c.machine.tscControl {
+		return c.setSystemTimeLegacy()
+	}
 	rawFreq, err := c.getTSCFreq()
 	if err != nil {
 		return c.setSystemTimeLegacy()
