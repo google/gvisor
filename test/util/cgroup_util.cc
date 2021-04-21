@@ -17,6 +17,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "test/util/fs_util.h"
 #include "test/util/mount_util.h"
@@ -48,6 +49,18 @@ PosixErrorOr<int64_t> Cgroup::ReadIntegerControlFile(
   ASSIGN_OR_RETURN_ERRNO(const std::string buf, ReadControlFile(name));
   ASSIGN_OR_RETURN_ERRNO(const int64_t val, Atoi<int64_t>(buf));
   return val;
+}
+
+PosixError Cgroup::WriteControlFile(absl::string_view name,
+                                    const std::string& value) const {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(Relpath(name), O_WRONLY));
+  RETURN_ERROR_IF_SYSCALL_FAIL(WriteFd(fd.get(), value.c_str(), value.size()));
+  return NoError();
+}
+
+PosixError Cgroup::WriteIntegerControlFile(absl::string_view name,
+                                           int64_t value) const {
+  return WriteControlFile(name, absl::StrCat(value));
 }
 
 PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::Procs() const {

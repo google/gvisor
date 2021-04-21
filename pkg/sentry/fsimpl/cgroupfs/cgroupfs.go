@@ -81,13 +81,20 @@ const (
 	controllerCPU     = kernel.CgroupControllerType("cpu")
 	controllerCPUAcct = kernel.CgroupControllerType("cpuacct")
 	controllerCPUSet  = kernel.CgroupControllerType("cpuset")
+	controllerJob     = kernel.CgroupControllerType("job")
 	controllerMemory  = kernel.CgroupControllerType("memory")
 )
 
-var allControllers = []kernel.CgroupControllerType{controllerCPU, controllerCPUAcct, controllerCPUSet, controllerMemory}
+var allControllers = []kernel.CgroupControllerType{
+	controllerCPU,
+	controllerCPUAcct,
+	controllerCPUSet,
+	controllerJob,
+	controllerMemory,
+}
 
 // SupportedMountOptions is the set of supported mount options for cgroupfs.
-var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "memory"}
+var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "job", "memory"}
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -171,6 +178,10 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "cpuset")
 		wantControllers = append(wantControllers, controllerCPUSet)
 	}
+	if _, ok := mopts["job"]; ok {
+		delete(mopts, "job")
+		wantControllers = append(wantControllers, controllerJob)
+	}
 	if _, ok := mopts["memory"]; ok {
 		delete(mopts, "memory")
 		wantControllers = append(wantControllers, controllerMemory)
@@ -235,14 +246,16 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	for _, ty := range wantControllers {
 		var c controller
 		switch ty {
-		case controllerMemory:
-			c = newMemoryController(fs, defaults)
 		case controllerCPU:
 			c = newCPUController(fs, defaults)
 		case controllerCPUAcct:
 			c = newCPUAcctController(fs)
 		case controllerCPUSet:
 			c = newCPUSetController(fs)
+		case controllerJob:
+			c = newJobController(fs)
+		case controllerMemory:
+			c = newMemoryController(fs, defaults)
 		default:
 			panic(fmt.Sprintf("Unreachable: unknown cgroup controller %q", ty))
 		}

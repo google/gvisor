@@ -15,6 +15,7 @@
 // All tests in this file rely on being about to mount and unmount cgroupfs,
 // which isn't expected to work, or be safe on a general linux system.
 
+#include <limits.h>
 #include <sys/mount.h>
 #include <unistd.h>
 
@@ -35,8 +36,9 @@ using ::testing::_;
 using ::testing::Ge;
 using ::testing::Gt;
 
-std::vector<std::string> known_controllers = {"cpu", "cpuset", "cpuacct",
-                                              "memory"};
+std::vector<std::string> known_controllers = {
+    "cpu", "cpuset", "cpuacct", "job", "memory",
+};
 
 bool CgroupsAvailable() {
   return IsRunningOnGvisor() && !IsRunningWithVFS1() &&
@@ -255,6 +257,35 @@ TEST(CPUAcctCgroup, CPUAcctStat) {
       StrSplit(lines[1], absl::ByChar(' '));
   EXPECT_EQ(sys_tokens[0], "system");
   EXPECT_THAT(Atoi<int64_t>(sys_tokens[1]), IsPosixErrorOkAndHolds(Ge(0)));
+}
+
+// WriteAndVerifyControlValue attempts to write val to a cgroup file at path,
+// and verify the value by reading it afterwards.
+PosixError WriteAndVerifyControlValue(const Cgroup& c, std::string_view path,
+                                      int64_t val) {
+  RETURN_IF_ERRNO(c.WriteIntegerControlFile(path, val));
+  ASSIGN_OR_RETURN_ERRNO(int64_t newval, c.ReadIntegerControlFile(path));
+  if (newval != val) {
+    return PosixError(
+        EINVAL,
+        absl::StrFormat(
+            "Unexpected value for control file '%s': expected %d, got %d", path,
+            val, newval));
+  }
+  return NoError();
+}
+
+TEST(JobCgroup, ReadWriteRead) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("job"));
+
+  EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(0));
+  EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", 1234));
+  EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", -1));
+  EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", LLONG_MIN));
+  EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", LLONG_MAX));
 }
 
 TEST(ProcCgroups, Empty) {
