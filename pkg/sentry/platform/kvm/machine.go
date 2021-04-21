@@ -67,6 +67,9 @@ type machine struct {
 	// maxSlots is the maximum number of memory slots supported by the machine.
 	maxSlots int
 
+	// tscControl checks whether cpu supports TSC scaling
+	tscControl bool
+
 	// usedSlots is the set of used physical addresses (sorted).
 	usedSlots []uintptr
 
@@ -213,6 +216,11 @@ func newMachine(vm int) (*machine, error) {
 	}
 	log.Debugf("The maximum number of slots is %d.", m.maxSlots)
 	m.usedSlots = make([]uintptr, m.maxSlots)
+
+	// Check TSC Scaling
+	hasTSCControl, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
+	m.tscControl = errno == 0 && hasTSCControl == 1
+	log.Debugf("TSC scaling support: %t.", m.tscControl)
 
 	// Create the upper shared pagetables and kernel(sentry) pagetables.
 	m.upperSharedPageTables = pagetables.New(newAllocator())
