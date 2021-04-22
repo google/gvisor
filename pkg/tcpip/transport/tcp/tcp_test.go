@@ -5736,7 +5736,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	}
 
 	// Test acceptance.
-	if err := c.EP.Listen(0); err != nil {
+	if err := c.EP.Listen(1); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
@@ -5837,7 +5837,7 @@ func TestListenBacklogFullSynCookieInUse(t *testing.T) {
 	}
 
 	// Test for SynCookies usage after filling up the backlog.
-	if err := c.EP.Listen(0); err != nil {
+	if err := c.EP.Listen(1); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 
@@ -6120,7 +6120,7 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
 	}
-	if err := c.EP.Listen(0); err != nil {
+	if err := c.EP.Listen(1); err != nil {
 		t.Fatalf("Listen failed: %s", err)
 	}
 

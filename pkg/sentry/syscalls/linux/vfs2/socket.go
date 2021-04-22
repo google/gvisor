@@ -387,11 +387,18 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		// Linux treats incoming backlog as uint with a limit defined by
 		// sysctl_somaxconn.
 		// https://github.com/torvalds/linux/blob/7acac4b3196/net/socket.c#L1666
-		//
-		// We use the backlog to allocate a channel of that size, hence enforce
-		// a hard limit for the backlog.
 		backlog = maxListenBacklog
 	}
+
+	// Accept one more than the configured listen backlog to keep in parity with
+	// Linux. Ref, because of missing equality check here:
+	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/sock.h#L937
+	//
+	// In case of unix domain sockets, the following check
+	// https://github.com/torvalds/linux/blob/7d6beb71da3/net/unix/af_unix.c#L1293
+	// will allow 1 connect through since it checks for a receive queue len >
+	// backlog and not >=.
+	backlog++
 
 	return 0, nil, s.Listen(t, int(backlog)).ToError()
 }
