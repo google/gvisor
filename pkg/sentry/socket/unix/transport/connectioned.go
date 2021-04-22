@@ -346,11 +346,11 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 
 		return nil
 	default:
-		// Busy; return ECONNREFUSED per spec.
+		// Busy; return EAGAIN per spec.
 		ne.Close(ctx)
 		e.Unlock()
 		ce.Unlock()
-		return syserr.ErrConnectionRefused
+		return syserr.ErrTryAgain
 	}
 }
 

@@ -2398,10 +2398,6 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 // Listen puts the endpoint in "listen" mode, which allows it to accept
 // new connections.
 func (e *endpoint) Listen(backlog int) tcpip.Error {
-	// Accept one more than the configured listen backlog to keep in parity with
-	// Linux. Ref, because of missing equality check here:
-	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/sock.h#L937
-	backlog++
 	err := e.listen(backlog)
 	if err != nil {
 		if !err.IgnoreStats() {
