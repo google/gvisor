@@ -103,6 +103,7 @@ func (c *CalibratedClock) resetLocked(str string, v ...interface{}) {
 	c.ready = false
 	c.ref.Reset()
 	fallbackMetric.Increment()
+	metric.WeirdnessMetric.Increment("fallback")
 }
 
 // updateParams updates the timekeeping parameters based on the passed

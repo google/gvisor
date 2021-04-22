@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -216,6 +217,8 @@ func New(args Args) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
+
+	metric.CreateSentryMetrics()
 
 	// Is this a VFSv2 kernel?
 	if args.Conf.VFS2 {

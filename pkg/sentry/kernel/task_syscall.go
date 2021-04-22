@@ -285,6 +285,7 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // task's next run state.
 func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 	vsyscallCount.Increment()
+	metric.WeirdnessMetric.Increment("vsyscall_count")
 
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))
