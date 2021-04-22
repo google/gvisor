@@ -39,6 +39,7 @@ var (
 // takes a variadic number of arguments.
 func incrementPartialResultMetric() {
 	partialResultMetric.Increment()
+	metric.WeirdnessMetric.Increment("partial_result")
 }
 
 // HandleIOErrorVFS2 handles special error cases for partial results. For some
