@@ -22,6 +22,7 @@
 #include <string>
 
 #include "gmock/gmock.h"
+#include "absl/container/flat_hash_map.h"
 #include "test/util/cleanup.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -44,6 +45,43 @@ inline PosixErrorOr<Cleanup> Mount(const std::string& source,
     EXPECT_THAT(umount2(target.c_str(), umountflags), SyscallSucceeds());
   });
 }
+
+struct ProcMountsEntry {
+  std::string spec;
+  std::string mount_point;
+  std::string fstype;
+  std::string mount_opts;
+  uint32_t dump;
+  uint32_t fsck;
+};
+
+// ProcSelfMountsEntries returns a parsed representation of /proc/self/mounts.
+PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntries();
+
+struct ProcMountInfoEntry {
+  uint64_t id;
+  uint64_t parent_id;
+  dev_t major;
+  dev_t minor;
+  std::string root;
+  std::string mount_point;
+  std::string mount_opts;
+  std::string optional;
+  std::string fstype;
+  std::string mount_source;
+  std::string super_opts;
+};
+
+// ProcSelfMountInfoEntries returns a parsed representation of
+// /proc/self/mountinfo.
+PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntries();
+
+// Interprets the input string mopts as a comma separated list of mount
+// options. A mount option can either be just a value, or a key=value pair. For
+// example, the string "rw,relatime,fd=7" will be parsed into a map like { "rw":
+// "", "relatime": "", "fd": "7" }.
+absl::flat_hash_map<std::string, std::string> ParseMountOptions(
+    std::string mopts);
 
 }  // namespace testing
 }  // namespace gvisor

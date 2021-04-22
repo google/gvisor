@@ -826,6 +826,9 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if mnt.Flags.NoExec {
 			opts += ",noexec"
 		}
+		if mopts := mnt.fs.Impl().MountOptions(); mopts != "" {
+			opts += "," + mopts
+		}
 
 		// Format:
 		// <special device or remote filesystem> <mount point> <filesystem type> <mount options> <needs dump> <fsck order>

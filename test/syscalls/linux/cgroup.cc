@@ -25,6 +25,7 @@
 #include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
 #include "test/util/cgroup_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -33,8 +34,11 @@ namespace testing {
 namespace {
 
 using ::testing::_;
+using ::testing::Contains;
 using ::testing::Ge;
 using ::testing::Gt;
+using ::testing::Key;
+using ::testing::Not;
 
 std::vector<std::string> known_controllers = {
     "cpu", "cpuset", "cpuacct", "job", "memory",
@@ -445,6 +449,54 @@ TEST(ProcCgroup, MultiControllerHierarchy) {
   // hierarchy ID. Note that the controllers are listed in alphabetical order.
   PIDCgroupEntry pid_e = pid_entries["cpu,memory"];
   EXPECT_EQ(pid_e.hierarchy, mem_e.hierarchy);
+}
+
+TEST(ProcCgroup, ProcfsReportsCgroupfsMountOptions) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  // Hierarchy with multiple controllers.
+  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory,cpu"));
+  // Hierarchy with a single controller.
+  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+
+  const std::vector<ProcMountsEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+
+  for (auto const& e : mounts) {
+    if (e.mount_point == c1.Path()) {
+      auto mopts = ParseMountOptions(e.mount_opts);
+      EXPECT_THAT(mopts, Contains(Key("memory")));
+      EXPECT_THAT(mopts, Contains(Key("cpu")));
+      EXPECT_THAT(mopts, Not(Contains(Key("cpuacct"))));
+    }
+
+    if (e.mount_point == c2.Path()) {
+      auto mopts = ParseMountOptions(e.mount_opts);
+      EXPECT_THAT(mopts, Contains(Key("cpuacct")));
+      EXPECT_THAT(mopts, Not(Contains(Key("cpu"))));
+      EXPECT_THAT(mopts, Not(Contains(Key("memory"))));
+    }
+  }
+
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+
+  for (auto const& e : mountinfo) {
+    if (e.mount_point == c1.Path()) {
+      auto mopts = ParseMountOptions(e.super_opts);
+      EXPECT_THAT(mopts, Contains(Key("memory")));
+      EXPECT_THAT(mopts, Contains(Key("cpu")));
+      EXPECT_THAT(mopts, Not(Contains(Key("cpuacct"))));
+    }
+
+    if (e.mount_point == c2.Path()) {
+      auto mopts = ParseMountOptions(e.super_opts);
+      EXPECT_THAT(mopts, Contains(Key("cpuacct")));
+      EXPECT_THAT(mopts, Not(Contains(Key("cpu"))));
+      EXPECT_THAT(mopts, Not(Contains(Key("memory"))));
+    }
+  }
 }
 
 }  // namespace

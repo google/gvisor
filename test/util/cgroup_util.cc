@@ -25,7 +25,7 @@
 namespace gvisor {
 namespace testing {
 
-Cgroup::Cgroup(std::string path) : cgroup_path_(path) {
+Cgroup::Cgroup(std::string_view path) : cgroup_path_(path) {
   id_ = ++Cgroup::next_id_;
   std::cerr << absl::StreamFormat("[cg#%d] <= %s", id_, cgroup_path_)
             << std::endl;

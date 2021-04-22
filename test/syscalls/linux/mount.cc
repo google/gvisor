@@ -26,6 +26,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
@@ -43,6 +44,9 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::testing::Contains;
+using ::testing::Pair;
 
 TEST(MountTest, MountBadFilesystem) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
@@ -343,6 +347,35 @@ TEST(MountTest, RenameRemoveMountPoint) {
               SyscallFailsWithErrno(EBUSY));
 
   ASSERT_THAT(rmdir(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
+}
+
+TEST(MountTest, MountInfo) {
+  SKIP_IF(IsRunningWithVFS1());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", MS_NOEXEC, "mode=0123", 0));
+  const std::vector<ProcMountsEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  for (const auto& e : mounts) {
+    if (e.mount_point == dir.path()) {
+      EXPECT_EQ(e.fstype, "tmpfs");
+      auto mopts = ParseMountOptions(e.mount_opts);
+      EXPECT_THAT(mopts, Contains(Pair("mode", "0123")));
+    }
+  }
+
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+
+  for (auto const& e : mountinfo) {
+    if (e.mount_point == dir.path()) {
+      EXPECT_EQ(e.fstype, "tmpfs");
+      auto mopts = ParseMountOptions(e.super_opts);
+      EXPECT_THAT(mopts, Contains(Pair("mode", "0123")));
+    }
+  }
 }
 
 }  // namespace
