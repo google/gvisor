@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -34,7 +35,7 @@ import (
 // RunTests is a helper that is called by main. It exists so that we can run
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
-func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Duration) int {
+func RunTests(lang, image, excludeFile string, filterRegex string, batchSize int, timeout time.Duration) int {
 	// TODO(gvisor.dev/issue/1624): Remove those tests from all exclude lists
 	// that only fail with VFS1.
 
@@ -42,6 +43,13 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 	excludes, err := getExcludes(excludeFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting exclude list: %s\n", err.Error())
+		return 1
+	}
+
+	// Build the filter regexp.
+	filterRe, err := regexp.Compile(filterRegex)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error compiling filter regexp: %s\n", err.Error())
 		return 1
 	}
 
@@ -58,7 +66,7 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(ctx, d, lang, image, batchSize, timeout, excludes)
+	tests, err := getTests(ctx, d, lang, image, batchSize, timeout, excludes, filterRe)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
@@ -69,7 +77,7 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 }
 
 // getTests executes all tests as table tests.
-func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeout time.Duration, excludes map[string]struct{}) ([]testing.InternalTest, error) {
+func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeout time.Duration, excludes map[string]struct{}, filterRe *regexp.Regexp) ([]testing.InternalTest, error) {
 	// Start the container.
 	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", image),
@@ -103,10 +111,14 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		for _, tc := range indices[i:end] {
 			// Add test if not excluded.
 			if _, ok := excludes[tests[tc]]; ok {
-				log.Infof("Skipping test case %s\n", tests[tc])
+				log.Infof("Skipping test case %s", tests[tc])
 				continue
 			}
-			tcs = append(tcs, tests[tc])
+			// Check that it is allowed.
+			if filterRe.MatchString(tests[tc]) {
+				log.Infof("Including test case %s", tests[tc])
+				tcs = append(tcs, tests[tc])
+			}
 		}
 		if len(tcs) == 0 {
 			// No tests to add to this batch.
@@ -131,6 +143,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				}
 
 				go func() {
+					// Provide a way to emulate the run.
 					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","))
 					close(done)
 				}()
@@ -138,7 +151,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				select {
 				case <-done:
 					if err == nil {
-						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
+						fmt.Printf("PASS: (%v) %d tests passed\n%s\n", time.Since(now), len(tcs), output)
 						return
 					}
 					t.Errorf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
