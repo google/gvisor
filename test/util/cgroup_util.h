@@ -30,9 +30,11 @@ namespace testing {
 // Cgroup represents a cgroup directory on a mounted cgroupfs.
 class Cgroup {
  public:
-  Cgroup(std::string path);
+  Cgroup(std::string_view path);
 
   uint64_t id() const { return id_; }
+
+  const std::string& Path() const { return cgroup_path_; }
 
   std::string Relpath(absl::string_view leaf) const {
     return JoinPath(cgroup_path_, leaf);

@@ -65,6 +65,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
@@ -2468,6 +2469,19 @@ TEST(ProcSelfMountinfo, RequiredFieldsArePresent) {
               R"([0-9]+ [0-9]+ [0-9]+:[0-9]+ / /proc rw.*- \S+ \S+ rw\S*)")));
 }
 
+TEST(ProcSelfMountinfo, ContainsProcfsEntry) {
+  const std::vector<ProcMountInfoEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  bool found = false;
+  for (const auto& e : entries) {
+    if (e.fstype == "proc") {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
 // Check that /proc/self/mounts looks something like a real mounts file.
 TEST(ProcSelfMounts, RequiredFieldsArePresent) {
   auto mounts = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/mounts"));
@@ -2477,6 +2491,19 @@ TEST(ProcSelfMounts, RequiredFieldsArePresent) {
                   ContainsRegex(R"(\S+ / \S+ (rw|ro)\S* [0-9]+ [0-9]+\s)"),
                   // Root mount.
                   ContainsRegex(R"(\S+ /proc \S+ rw\S* [0-9]+ [0-9]+\s)")));
+}
+
+TEST(ProcSelfMounts, ContainsProcfsEntry) {
+  const std::vector<ProcMountsEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  bool found = false;
+  for (const auto& e : entries) {
+    if (e.fstype == "proc") {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
 }
 
 void CheckDuplicatesRecursively(std::string path) {

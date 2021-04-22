@@ -137,11 +137,14 @@ cc_library(
 cc_library(
     name = "mount_util",
     testonly = 1,
+    srcs = ["mount_util.cc"],
     hdrs = ["mount_util.h"],
     deps = [
         ":cleanup",
         ":posix_error",
         ":test_util",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
         gtest,
     ],
 )
