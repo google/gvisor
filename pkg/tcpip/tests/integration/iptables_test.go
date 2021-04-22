@@ -347,7 +347,7 @@ type channelEndpointWithoutWritePacket struct {
 	t *testing.T
 }
 
-func (c *channelEndpointWithoutWritePacket) WritePacket(stack.RouteInfo, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
+func (c *channelEndpointWithoutWritePacket) WritePacket(stack.RouteInfo, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
 	c.t.Error("unexpectedly called WritePacket; all writes should go through WritePackets")
 	return &tcpip.ErrNotSupported{}
 }
@@ -627,7 +627,7 @@ func TestIPTableWritePackets(t *testing.T) {
 
 			pkts := test.genPacket(r)
 			pktsLen := pkts.Len()
-			if n, err := r.WritePackets(nil /* gso */, pkts, stack.NetworkHeaderParams{
+			if n, err := r.WritePackets(pkts, stack.NetworkHeaderParams{
 				Protocol: header.UDPProtocolNumber,
 				TTL:      64,
 			}); err != nil {

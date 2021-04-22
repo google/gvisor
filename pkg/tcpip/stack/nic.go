@@ -316,30 +316,30 @@ func (n *nic) IsLoopback() bool {
 }
 
 // WritePacket implements NetworkLinkEndpoint.
-func (n *nic) WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
-	_, err := n.enqueuePacketBuffer(r, gso, protocol, pkt)
+func (n *nic) WritePacket(r *Route, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+	_, err := n.enqueuePacketBuffer(r, protocol, pkt)
 	return err
 }
 
-func (n *nic) writePacketBuffer(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+func (n *nic) writePacketBuffer(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	switch pkt := pkt.(type) {
 	case *PacketBuffer:
-		if err := n.writePacket(r, gso, protocol, pkt); err != nil {
+		if err := n.writePacket(r, protocol, pkt); err != nil {
 			return 0, err
 		}
 		return 1, nil
 	case *PacketBufferList:
-		return n.writePackets(r, gso, protocol, *pkt)
+		return n.writePackets(r, protocol, *pkt)
 	default:
 		panic(fmt.Sprintf("unrecognized pending packet buffer type = %T", pkt))
 	}
 }
 
-func (n *nic) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
+func (n *nic) enqueuePacketBuffer(r *Route, protocol tcpip.NetworkProtocolNumber, pkt pendingPacketBuffer) (int, tcpip.Error) {
 	routeInfo, _, err := r.resolvedFields(nil)
 	switch err.(type) {
 	case nil:
-		return n.writePacketBuffer(routeInfo, gso, protocol, pkt)
+		return n.writePacketBuffer(routeInfo, protocol, pkt)
 	case *tcpip.ErrWouldBlock:
 		// As per relevant RFCs, we should queue packets while we wait for link
 		// resolution to complete.
@@ -358,28 +358,27 @@ func (n *nic) enqueuePacketBuffer(r *Route, gso *GSO, protocol tcpip.NetworkProt
 		//   SHOULD be limited to some small value. When a queue overflows, the new
 		//   arrival SHOULD replace the oldest entry. Once address resolution
 		//   completes, the node transmits any queued packets.
-		return n.linkResQueue.enqueue(r, gso, protocol, pkt)
+		return n.linkResQueue.enqueue(r, protocol, pkt)
 	default:
 		return 0, err
 	}
 }
 
 // WritePacketToRemote implements NetworkInterface.
-func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (n *nic) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	var r RouteInfo
 	r.NetProto = protocol
 	r.RemoteLinkAddress = remoteLinkAddr
-	return n.writePacket(r, gso, protocol, pkt)
+	return n.writePacket(r, protocol, pkt)
 }
 
-func (n *nic) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
+func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) tcpip.Error {
 	// WritePacket takes ownership of pkt, calculate numBytes first.
 	numBytes := pkt.Size()
 
 	pkt.EgressRoute = r
-	pkt.GSOOptions = gso
 	pkt.NetworkProtocolNumber = protocol
-	if err := n.LinkEndpoint.WritePacket(r, gso, protocol, pkt); err != nil {
+	if err := n.LinkEndpoint.WritePacket(r, protocol, pkt); err != nil {
 		return err
 	}
 
@@ -389,18 +388,17 @@ func (n *nic) writePacket(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolN
 }
 
 // WritePackets implements NetworkLinkEndpoint.
-func (n *nic) WritePackets(r *Route, gso *GSO, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return n.enqueuePacketBuffer(r, gso, protocol, &pkts)
+func (n *nic) WritePackets(r *Route, pkts PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
+	return n.enqueuePacketBuffer(r, protocol, &pkts)
 }
 
-func (n *nic) writePackets(r RouteInfo, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
+func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		pkt.EgressRoute = r
-		pkt.GSOOptions = gso
 		pkt.NetworkProtocolNumber = protocol
 	}
 
-	writtenPackets, err := n.LinkEndpoint.WritePackets(r, gso, pkts, protocol)
+	writtenPackets, err := n.LinkEndpoint.WritePackets(r, pkts, protocol)
 	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
