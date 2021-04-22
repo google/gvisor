@@ -207,18 +207,17 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 
 	// Write.
 	want := append(append(buffer.View(nil), b...), payload...)
-	var gso *stack.GSO
+	const l3HdrLen = header.IPv6MinimumSize
 	if gsoMaxSize != 0 {
-		gso = &stack.GSO{
+		pkt.GSOOptions = stack.GSO{
 			Type:       stack.GSOTCPv6,
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
-			MaxSize:    gsoMaxSize,
-			L3HdrLen:   header.IPv4MaximumHeaderSize,
+			L3HdrLen:   l3HdrLen,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 
@@ -235,7 +234,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 		if vnetHdr.flags&_VIRTIO_NET_HDR_F_NEEDS_CSUM == 0 {
 			t.Fatalf("virtioNetHdr.flags %v  doesn't contain %v", vnetHdr.flags, _VIRTIO_NET_HDR_F_NEEDS_CSUM)
 		}
-		csumStart := header.EthernetMinimumSize + gso.L3HdrLen
+		const csumStart = header.EthernetMinimumSize + l3HdrLen
 		if vnetHdr.csumStart != csumStart {
 			t.Fatalf("vnetHdr.csumStart = %v, want %v", vnetHdr.csumStart, csumStart)
 		}
@@ -243,7 +242,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			t.Fatalf("vnetHdr.csumOffset = %v, want %v", vnetHdr.csumOffset, csumOffset)
 		}
 		gsoType := uint8(0)
-		if int(gso.MSS) < plen {
+		if plen > gsoMSS {
 			gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
 		}
 		if vnetHdr.gsoType != gsoType {
@@ -333,7 +332,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
+	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 

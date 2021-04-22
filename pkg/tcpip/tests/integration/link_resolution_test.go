@@ -687,10 +687,10 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				TOS:      stack.DefaultTOS,
 			}
 
-			if n, err := r.WritePackets(nil /* gso */, pkts, params); err != nil {
-				t.Fatalf("r.WritePackets(nil, %#v, _): %s", params, err)
+			if n, err := r.WritePackets(pkts, params); err != nil {
+				t.Fatalf("r.WritePackets(_, %#v): %s", params, err)
 			} else if want := pkts.Len(); want != n {
-				t.Fatalf("got r.WritePackets(nil, %#v, _) = %d, want = %d", n, params, want)
+				t.Fatalf("got r.WritePackets(_, %#v) = %d, want = %d", params, n, want)
 			}
 
 			var writer bytes.Buffer

@@ -1242,7 +1242,6 @@ type fragmentInfo struct {
 var fragmentationTests = []struct {
 	description           string
 	mtu                   uint32
-	gso                   *stack.GSO
 	transportHeaderLength int
 	payloadSize           int
 	wantFragments         []fragmentInfo
@@ -1250,7 +1249,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "No fragmentation",
 		mtu:                   1280,
-		gso:                   nil,
 		transportHeaderLength: 0,
 		payloadSize:           1000,
 		wantFragments: []fragmentInfo{
@@ -1260,7 +1258,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented",
 		mtu:                   1280,
-		gso:                   nil,
 		transportHeaderLength: 0,
 		payloadSize:           2000,
 		wantFragments: []fragmentInfo{
@@ -1271,7 +1268,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with the minimum mtu",
 		mtu:                   header.IPv4MinimumMTU,
-		gso:                   nil,
 		transportHeaderLength: 0,
 		payloadSize:           100,
 		wantFragments: []fragmentInfo{
@@ -1283,7 +1279,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with mtu not a multiple of 8",
 		mtu:                   header.IPv4MinimumMTU + 1,
-		gso:                   nil,
 		transportHeaderLength: 0,
 		payloadSize:           100,
 		wantFragments: []fragmentInfo{
@@ -1295,7 +1290,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "No fragmentation with big header",
 		mtu:                   2000,
-		gso:                   nil,
 		transportHeaderLength: 100,
 		payloadSize:           1000,
 		wantFragments: []fragmentInfo{
@@ -1303,20 +1297,8 @@ var fragmentationTests = []struct {
 		},
 	},
 	{
-		description:           "Fragmented with gso none",
-		mtu:                   1280,
-		gso:                   &stack.GSO{Type: stack.GSONone},
-		transportHeaderLength: 0,
-		payloadSize:           1400,
-		wantFragments: []fragmentInfo{
-			{offset: 0, payloadSize: 1256, more: true},
-			{offset: 1256, payloadSize: 144, more: false},
-		},
-	},
-	{
 		description:           "Fragmented with big header",
 		mtu:                   1280,
-		gso:                   nil,
 		transportHeaderLength: 100,
 		payloadSize:           1200,
 		wantFragments: []fragmentInfo{
@@ -1327,7 +1309,6 @@ var fragmentationTests = []struct {
 	{
 		description:           "Fragmented with MTU smaller than header",
 		mtu:                   300,
-		gso:                   nil,
 		transportHeaderLength: 1000,
 		payloadSize:           500,
 		wantFragments: []fragmentInfo{
@@ -1350,13 +1331,13 @@ func TestFragmentationWritePacket(t *testing.T) {
 			r := buildRoute(t, ep)
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			source := pkt.Clone()
-			err := r.WritePacket(ft.gso, stack.NetworkHeaderParams{
+			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
 				TOS:      stack.DefaultTOS,
 			}, pkt)
 			if err != nil {
-				t.Fatalf("r.WritePacket(_, _, _) = %s", err)
+				t.Fatalf("r.WritePacket(...): %s", err)
 			}
 			if got := len(ep.WrittenPackets); got != len(ft.wantFragments) {
 				t.Errorf("got len(ep.WrittenPackets) = %d, want = %d", got, len(ft.wantFragments))
@@ -1422,7 +1403,7 @@ func TestFragmentationWritePackets(t *testing.T) {
 					r := buildRoute(t, ep)
 
 					wantTotalPackets := len(ft.wantFragments) + test.insertBefore + test.insertAfter
-					n, err := r.WritePackets(ft.gso, pkts, stack.NetworkHeaderParams{
+					n, err := r.WritePackets(pkts, stack.NetworkHeaderParams{
 						Protocol: tcp.ProtocolNumber,
 						TTL:      ttl,
 						TOS:      stack.DefaultTOS,
@@ -1529,7 +1510,7 @@ func TestFragmentationErrors(t *testing.T) {
 			pkt := testutil.MakeRandPkt(ft.transportHeaderLength, extraHeaderReserve+header.IPv4MinimumSize, []int{ft.payloadSize}, header.IPv4ProtocolNumber)
 			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			r := buildRoute(t, ep)
-			err := r.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{
+			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
 				TTL:      ttl,
 				TOS:      stack.DefaultTOS,
@@ -2729,7 +2710,7 @@ func TestWriteStats(t *testing.T) {
 			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
 				nWritten := 0
 				for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-					if err := rt.WritePacket(nil, stack.NetworkHeaderParams{}, pkt); err != nil {
+					if err := rt.WritePacket(stack.NetworkHeaderParams{}, pkt); err != nil {
 						return nWritten, err
 					}
 					nWritten++
@@ -2739,7 +2720,7 @@ func TestWriteStats(t *testing.T) {
 		}, {
 			name: "WritePackets",
 			writePackets: func(rt *stack.Route, pkts stack.PacketBufferList) (int, tcpip.Error) {
-				return rt.WritePackets(nil, pkts, stack.NetworkHeaderParams{})
+				return rt.WritePackets(pkts, stack.NetworkHeaderParams{})
 			},
 		},
 	}

@@ -451,12 +451,12 @@ type testLinkEndpoint struct {
 	writeErr tcpip.Error
 }
 
-func (t *testLinkEndpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testLinkEndpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if t.writeErr != nil {
 		return t.writeErr
 	}
 
-	return t.LinkEndpoint.WritePacket(r, gso, protocol, pkt)
+	return t.LinkEndpoint.WritePacket(r, protocol, pkt)
 }
 
 func TestLinkAddressRequest(t *testing.T) {

@@ -103,7 +103,7 @@ type PacketBuffer struct {
 	// The following fields are only set by the qdisc layer when the packet
 	// is added to a queue.
 	EgressRoute RouteInfo
-	GSOOptions  *GSO
+	GSOOptions  GSO
 
 	// NatDone indicates if the packet has been manipulated as per NAT
 	// iptables rule.
