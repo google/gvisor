@@ -35,6 +35,11 @@ var (
 	// ErrInitializationDone indicates that the caller tried to create a
 	// new metric after initialization.
 	ErrInitializationDone = errors.New("metric cannot be created after initialization is complete")
+
+	// WeirdnessMetric is a metric with fields created to track the number
+	// of weird occurrences such as clock fallback, partial_result and
+	// vsyscall count.
+	WeirdnessMetric *Uint64Metric
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
@@ -379,4 +384,17 @@ func EmitMetricUpdate() {
 	}
 
 	eventchannel.Emit(&m)
+}
+
+// CreateSentryMetrics creates the sentry metrics during kernel initialization.
+func CreateSentryMetrics() {
+	if WeirdnessMetric != nil {
+		return
+	}
+
+	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as clock fallback, partial result and vsyscalls invoked in the sandbox",
+		Field{
+			name:          "weirdness_type",
+			allowedValues: []string{"fallback", "partial_result", "vsyscall_count"},
+		})
 }
