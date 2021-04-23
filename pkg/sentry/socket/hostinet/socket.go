@@ -528,7 +528,9 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			switch unixCmsg.Header.Type {
 			case linux.SO_TIMESTAMP:
 				controlMessages.IP.HasTimestamp = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfTimeval], hostarch.ByteOrder, &controlMessages.IP.Timestamp)
+				ts := linux.Timeval{}
+				ts.UnmarshalBytes(unixCmsg.Data[:linux.SizeOfTimeval])
+				controlMessages.IP.Timestamp = ts.ToNsecCapped()
 			}
 
 		case linux.SOL_IP:

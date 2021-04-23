@@ -1529,10 +1529,6 @@ TEST_P(UdpSocketTest, ErrorQueue) {
 #endif  // __linux__
 
 TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
-  // TODO(gvisor.dev/issue/1202): SO_TIMESTAMP socket option not supported by
-  // hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   int v = -1;
   socklen_t optlen = sizeof(v);
   ASSERT_THAT(getsockopt(bind_.get(), SOL_SOCKET, SO_TIMESTAMP, &v, &optlen),
@@ -1542,10 +1538,6 @@ TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
 }
 
 TEST_P(UdpSocketTest, SoTimestamp) {
-  // TODO(gvisor.dev/issue/1202): ioctl() and SO_TIMESTAMP socket option are not
-  // supported by hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   ASSERT_NO_ERRNO(BindLoopback());
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
 
@@ -1555,8 +1547,8 @@ TEST_P(UdpSocketTest, SoTimestamp) {
 
   char buf[3];
   // Send zero length packet from sock to bind_.
-  ASSERT_THAT(RetryEINTR(write)(sock_.get(), buf, 0),
-              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(RetryEINTR(write)(sock_.get(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
 
   struct pollfd pfd = {bind_.get(), POLLIN, 0};
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
@@ -1586,9 +1578,13 @@ TEST_P(UdpSocketTest, SoTimestamp) {
 
   ASSERT_TRUE(tv.tv_sec != 0 || tv.tv_usec != 0);
 
-  // There should be nothing to get via ioctl.
-  ASSERT_THAT(ioctl(bind_.get(), SIOCGSTAMP, &tv),
-              SyscallFailsWithErrno(ENOENT));
+  // TODO(gvisor.dev/issue/1202): ioctl(SIOCGSTAMP) is not supported by
+  // hostinet.
+  if (!IsRunningWithHostinet()) {
+    // There should be nothing to get via ioctl.
+    ASSERT_THAT(ioctl(bind_.get(), SIOCGSTAMP, &tv),
+                SyscallFailsWithErrno(ENOENT));
+  }
 }
 
 TEST_P(UdpSocketTest, WriteShutdownNotConnected) {
