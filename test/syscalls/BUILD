@@ -3,6 +3,8 @@ load("//test/runner:defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])
 
+# Please keep syscall tests ordered alphabetically by name.
+
 syscall_test(
     test = "//test/syscalls/linux:32bit_test",
 )
@@ -56,17 +58,7 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:socket_test",
-)
-
-syscall_test(
-    test = "//test/syscalls/linux:socket_capability_test",
-)
-
-syscall_test(
-    size = "large",
-    shard_count = most_shards,
-    test = "//test/syscalls/linux:socket_stress_test",
+    test = "//test/syscalls/linux:cgroup_test",
 )
 
 syscall_test(
@@ -311,6 +303,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:mlock_test",
+)
+
+syscall_test(
     size = "medium",
     shard_count = more_shards,
     test = "//test/syscalls/linux:mmap_test",
@@ -319,10 +315,6 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:mount_test",
-)
-
-syscall_test(
-    test = "//test/syscalls/linux:verity_mount_test",
 )
 
 syscall_test(
@@ -612,6 +604,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_capability_test",
+)
+
+syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_domain_non_blocking_test",
 )
@@ -777,6 +773,16 @@ syscall_test(
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_stream_nonblock_local_test",
+)
+
+syscall_test(
+    size = "large",
+    shard_count = most_shards,
+    test = "//test/syscalls/linux:socket_stress_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:socket_test",
 )
 
 syscall_test(
@@ -1003,5 +1009,5 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:cgroup_test",
+    test = "//test/syscalls/linux:verity_mount_test",
 )
