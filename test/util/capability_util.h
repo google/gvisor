@@ -99,14 +99,23 @@ PosixErrorOr<bool> CanCreateUserNamespace();
 class AutoCapability {
  public:
   AutoCapability(int cap, bool set) : cap_(cap), set_(set) {
-    EXPECT_NO_ERRNO(SetCapability(cap_, set_));
+    const bool has = EXPECT_NO_ERRNO_AND_VALUE(HaveCapability(cap));
+    if (set != has) {
+      EXPECT_NO_ERRNO(SetCapability(cap_, set_));
+      applied_ = true;
+    }
   }
 
-  ~AutoCapability() { EXPECT_NO_ERRNO(SetCapability(cap_, !set_)); }
+  ~AutoCapability() {
+    if (applied_) {
+      EXPECT_NO_ERRNO(SetCapability(cap_, !set_));
+    }
+  }
 
  private:
   int cap_;
   bool set_;
+  bool applied_ = false;
 };
 
 }  // namespace testing

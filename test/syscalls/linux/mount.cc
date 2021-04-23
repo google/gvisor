@@ -67,9 +67,7 @@ TEST(MountTest, MountInvalidTarget) {
 
 TEST(MountTest, MountPermDenied) {
   // Clear CAP_SYS_ADMIN.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
-  }
+  AutoCapability cap(CAP_SYS_ADMIN, false);
 
   // Linux expects a valid target before checking capability.
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

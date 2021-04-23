@@ -438,6 +438,13 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
     std::move(_expr_result).ValueOrDie(); \
   })
 
+#define EXPECT_NO_ERRNO_AND_VALUE(expr)   \
+  ({                                      \
+    auto _expr_result = (expr);           \
+    EXPECT_NO_ERRNO(_expr_result);        \
+    std::move(_expr_result).ValueOrDie(); \
+  })
+
 }  // namespace testing
 }  // namespace gvisor
 
