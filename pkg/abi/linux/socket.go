@@ -527,6 +527,7 @@ type ControlMessageCredentials struct {
 //
 // ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
 //
+// +marshal
 // +stateify savable
 type ControlMessageIPPacketInfo struct {
 	NIC             int32

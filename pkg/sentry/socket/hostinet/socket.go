@@ -19,7 +19,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -529,55 +528,59 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 			case linux.SO_TIMESTAMP:
 				controlMessages.IP.HasTimestamp = true
 				ts := linux.Timeval{}
-				ts.UnmarshalBytes(unixCmsg.Data[:linux.SizeOfTimeval])
+				ts.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfTimeval])
 				controlMessages.IP.Timestamp = ts.ToNsecCapped()
 			}
 
 		case linux.SOL_IP:
 			switch unixCmsg.Header.Type {
 			case linux.IP_TOS:
+				var tos primitive.Uint8
+				tos.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfControlMessageTOS])
 				controlMessages.IP.HasTOS = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTOS], hostarch.ByteOrder, &controlMessages.IP.TOS)
+				controlMessages.IP.TOS = uint8(tos)
 
 			case linux.IP_PKTINFO:
 				controlMessages.IP.HasIPPacketInfo = true
-				var packetInfo linux.ControlMessageIPPacketInfo
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo], hostarch.ByteOrder, &packetInfo)
-				controlMessages.IP.PacketInfo = packetInfo
+				controlMessages.IP.PacketInfo.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfControlMessageIPPacketInfo])
 
 			case linux.IP_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet
-				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], hostarch.ByteOrder, &addr)
+				addr.UnmarshalUnsafe(unixCmsg.Data[:addr.SizeBytes()])
 				controlMessages.IP.OriginalDstAddress = &addr
 
 			case unix.IP_RECVERR:
 				var errCmsg linux.SockErrCMsgIPv4
-				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				errCmsg.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_IPV6:
 			switch unixCmsg.Header.Type {
 			case linux.IPV6_TCLASS:
+				var tClass primitive.Uint32
+				tClass.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfControlMessageTClass])
 				controlMessages.IP.HasTClass = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageTClass], hostarch.ByteOrder, &controlMessages.IP.TClass)
+				controlMessages.IP.TClass = uint32(tClass)
 
 			case linux.IPV6_RECVORIGDSTADDR:
 				var addr linux.SockAddrInet6
-				binary.Unmarshal(unixCmsg.Data[:addr.SizeBytes()], hostarch.ByteOrder, &addr)
+				addr.UnmarshalUnsafe(unixCmsg.Data[:addr.SizeBytes()])
 				controlMessages.IP.OriginalDstAddress = &addr
 
 			case unix.IPV6_RECVERR:
 				var errCmsg linux.SockErrCMsgIPv6
-				errCmsg.UnmarshalBytes(unixCmsg.Data)
+				errCmsg.UnmarshalUnsafe(unixCmsg.Data)
 				controlMessages.IP.SockErr = &errCmsg
 			}
 
 		case linux.SOL_TCP:
 			switch unixCmsg.Header.Type {
 			case linux.TCP_INQ:
+				var inq primitive.Int32
+				inq.UnmarshalUnsafe(unixCmsg.Data[:linux.SizeOfControlMessageInq])
 				controlMessages.IP.HasInq = true
-				binary.Unmarshal(unixCmsg.Data[:linux.SizeOfControlMessageInq], hostarch.ByteOrder, &controlMessages.IP.Inq)
+				controlMessages.IP.Inq = int32(inq)
 			}
 		}
 	}
@@ -691,7 +694,7 @@ func (s *socketOpsCommon) State() uint32 {
 		return 0
 	}
 
-	binary.Unmarshal(buf, hostarch.ByteOrder, &info)
+	info.UnmarshalUnsafe(buf)
 	return uint32(info.State)
 }
 
