@@ -148,11 +148,6 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call reload_docker)
 .PHONY: dev
 
-nogo: ## Surfaces all nogo findings.
-	@$(call build,--build_tag_filters nogo //...)
-	@$(call run,//tools/github $(foreach dir,$(BUILD_ROOTS),-path=$(CURDIR)/$(dir)) -dry-run nogo)
-.PHONY: nogo
-
 ##
 ## Canonical build and test targets.
 ##
