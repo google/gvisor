@@ -176,6 +176,7 @@ smoke-tests: ## Runs a simple smoke test after build runsc.
 .PHONY: smoke-tests
 
 nogo-tests:
+	@$(call build,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)
 	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo //:all pkg/... tools/...)
 .PHONY: nogo-tests
 
