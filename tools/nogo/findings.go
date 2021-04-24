@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"go/token"
 	"io/ioutil"
+	"sort"
 )
 
 // Finding is a single finding.
@@ -44,6 +45,33 @@ func WriteFindingsToFile(findings []Finding, filename string) error {
 
 // WriteFindingsToBytes serializes findings as bytes.
 func WriteFindingsToBytes(findings []Finding) ([]byte, error) {
+	// N.B. Sort all the findings in order to maximize cacheability.
+	sort.Slice(findings, func(i, j int) bool {
+		switch {
+		case findings[i].Position.Filename < findings[j].Position.Filename:
+			return true
+		case findings[i].Position.Filename > findings[j].Position.Filename:
+			return false
+		case findings[i].Position.Line < findings[j].Position.Line:
+			return true
+		case findings[i].Position.Line > findings[j].Position.Line:
+			return false
+		case findings[i].Position.Column < findings[j].Position.Column:
+			return true
+		case findings[i].Position.Column > findings[j].Position.Column:
+			return false
+		case findings[i].Category < findings[j].Category:
+			return true
+		case findings[i].Category > findings[j].Category:
+			return false
+		case findings[i].Message < findings[j].Message:
+			return true
+		case findings[i].Message > findings[j].Message:
+			return false
+		default:
+			return false
+		}
+	})
 	return json.Marshal(findings)
 }
 
