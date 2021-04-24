@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include <iomanip>
@@ -268,6 +269,72 @@ TEST_F(IoctlTest, ModifiedDirMerkle) {
   auto stat = ASSERT_NO_ERRNO_AND_VALUE(Fstat(fd.get()));
   ASSERT_NO_ERRNO(FlipRandomBit(fd.get(), stat.st_size));
 
+  EXPECT_THAT(open(JoinPath(verity_dir, filename_).c_str(), O_RDONLY, 0777),
+              SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(IoctlTest, Stat) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  struct stat st;
+  EXPECT_THAT(stat(JoinPath(verity_dir, filename_).c_str(), &st),
+              SyscallSucceeds());
+}
+
+TEST_F(IoctlTest, ModifiedStat) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  EXPECT_THAT(chmod(JoinPath(tmpfs_dir_.path(), filename_).c_str(), 0644),
+              SyscallSucceeds());
+  struct stat st;
+  EXPECT_THAT(stat(JoinPath(verity_dir, filename_).c_str(), &st),
+              SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(IoctlTest, DeleteFile) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  EXPECT_THAT(unlink(JoinPath(tmpfs_dir_.path(), filename_).c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(open(JoinPath(verity_dir, filename_).c_str(), O_RDONLY, 0777),
+              SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(IoctlTest, DeleteMerkle) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  EXPECT_THAT(
+      unlink(MerklePath(JoinPath(tmpfs_dir_.path(), filename_)).c_str()),
+      SyscallSucceeds());
+  EXPECT_THAT(open(JoinPath(verity_dir, filename_).c_str(), O_RDONLY, 0777),
+              SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(IoctlTest, RenameFile) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  std::string new_file_name = "renamed-" + filename_;
+  EXPECT_THAT(rename(JoinPath(tmpfs_dir_.path(), filename_).c_str(),
+                     JoinPath(tmpfs_dir_.path(), new_file_name).c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(open(JoinPath(verity_dir, filename_).c_str(), O_RDONLY, 0777),
+              SyscallFailsWithErrno(EIO));
+}
+
+TEST_F(IoctlTest, RenameMerkle) {
+  std::string verity_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+
+  std::string new_file_name = "renamed-" + filename_;
+  EXPECT_THAT(
+      rename(MerklePath(JoinPath(tmpfs_dir_.path(), filename_)).c_str(),
+             MerklePath(JoinPath(tmpfs_dir_.path(), new_file_name)).c_str()),
+      SyscallSucceeds());
   EXPECT_THAT(open(JoinPath(verity_dir, filename_).c_str(), O_RDONLY, 0777),
               SyscallFailsWithErrno(EIO));
 }
