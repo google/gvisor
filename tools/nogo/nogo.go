@@ -34,6 +34,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -75,6 +76,12 @@ type loader func(string) ([]byte, error)
 // saver is a fact-saver function.
 type saver func([]byte) error
 
+// stdlibFact is used for serialiation.
+type stdlibFact struct {
+	Package string
+	Facts   []byte
+}
+
 // factLoader returns a function that loads facts.
 //
 // This resolves all standard library facts and imported package facts up
@@ -90,9 +97,16 @@ func (c *PackageConfig) factLoader() (loader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error loading stdlib facts from %q: %w", c.StdlibFacts, err)
 		}
-		var stdlibFacts map[string][]byte
-		if err := json.Unmarshal(data, &stdlibFacts); err != nil {
+		var (
+			stdlibFactsSorted []stdlibFact
+			stdlibFacts       = make(map[string][]byte)
+		)
+		// See below re: sorted serialization.
+		if err := json.Unmarshal(data, &stdlibFactsSorted); err != nil {
 			return nil, fmt.Errorf("error loading stdlib facts: %w", err)
+		}
+		for _, stdlibFact := range stdlibFactsSorted {
+			stdlibFacts[stdlibFact.Package] = stdlibFact.Facts
 		}
 		for pkg, data := range stdlibFacts {
 			allFacts[pkg] = data
@@ -327,8 +341,19 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 		return nil, nil, fmt.Errorf("no stdlib facts found: misconfiguration?")
 	}
 
-	// Write out all findings.
-	factData, err := json.Marshal(stdlibFacts)
+	// Write out all findings. Note that the standard library facts
+	// must be serialized in a sorted order to ensure cacheability.
+	stdlibFactsSorted := make([]stdlibFact, 0, len(stdlibFacts))
+	for pkg, facts := range stdlibFacts {
+		stdlibFactsSorted = append(stdlibFactsSorted, stdlibFact{
+			Package: pkg,
+			Facts:   facts,
+		})
+	}
+	sort.Slice(stdlibFactsSorted, func(i, j int) bool {
+		return stdlibFactsSorted[i].Package < stdlibFactsSorted[j].Package
+	})
+	factData, err := json.Marshal(stdlibFactsSorted)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error saving stdlib facts: %w", err)
 	}
