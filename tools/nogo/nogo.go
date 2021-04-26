@@ -19,7 +19,8 @@
 package nogo
 
 import (
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -43,6 +44,7 @@ import (
 
 	// Special case: flags live here and change overall behavior.
 	"gvisor.dev/gvisor/tools/checkescape"
+	"gvisor.dev/gvisor/tools/worker"
 )
 
 // StdlibConfig is serialized as the configuration.
@@ -82,46 +84,94 @@ type stdlibFact struct {
 	Facts   []byte
 }
 
-// factLoader returns a function that loads facts.
-//
-// This resolves all standard library facts and imported package facts up
-// front. The returned loader function will never return an error, only
-// empty facts.
-//
-// This is done because all stdlib data is stored together, and we don't want
-// to load this data many times over.
-func (c *PackageConfig) factLoader() (loader, error) {
-	allFacts := make(map[string][]byte)
-	if c.StdlibFacts != "" {
-		data, err := ioutil.ReadFile(c.StdlibFacts)
-		if err != nil {
-			return nil, fmt.Errorf("error loading stdlib facts from %q: %w", c.StdlibFacts, err)
-		}
-		var (
-			stdlibFactsSorted []stdlibFact
-			stdlibFacts       = make(map[string][]byte)
-		)
-		// See below re: sorted serialization.
-		if err := json.Unmarshal(data, &stdlibFactsSorted); err != nil {
-			return nil, fmt.Errorf("error loading stdlib facts: %w", err)
-		}
-		for _, stdlibFact := range stdlibFactsSorted {
-			stdlibFacts[stdlibFact.Package] = stdlibFact.Facts
-		}
-		for pkg, data := range stdlibFacts {
-			allFacts[pkg] = data
-		}
+// stdlibFacts is a set of standard library facts.
+type stdlibFacts map[string][]byte
+
+// Size implements worker.Sizer.Size.
+func (sf stdlibFacts) Size() int64 {
+	size := int64(0)
+	for filename, data := range sf {
+		size += int64(len(filename))
+		size += int64(len(data))
 	}
-	for pkg, file := range c.FactMap {
-		data, err := ioutil.ReadFile(file)
-		if err != nil {
-			return nil, fmt.Errorf("error loading %q: %w", file, err)
-		}
-		allFacts[pkg] = data
+	return size
+}
+
+// EncodeTo serializes stdlibFacts.
+func (sf stdlibFacts) EncodeTo(w io.Writer) error {
+	stdlibFactsSorted := make([]stdlibFact, 0, len(sf))
+	for pkg, facts := range sf {
+		stdlibFactsSorted = append(stdlibFactsSorted, stdlibFact{
+			Package: pkg,
+			Facts:   facts,
+		})
 	}
-	return func(path string) ([]byte, error) {
-		return allFacts[path], nil
-	}, nil
+	sort.Slice(stdlibFactsSorted, func(i, j int) bool {
+		return stdlibFactsSorted[i].Package < stdlibFactsSorted[j].Package
+	})
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(stdlibFactsSorted); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecodeFrom deserializes stdlibFacts.
+func (sf stdlibFacts) DecodeFrom(r io.Reader) error {
+	var stdlibFactsSorted []stdlibFact
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&stdlibFactsSorted); err != nil {
+		return err
+	}
+	for _, stdlibFact := range stdlibFactsSorted {
+		sf[stdlibFact.Package] = stdlibFact.Facts
+	}
+	return nil
+}
+
+var (
+	// cachedFacts caches by file (just byte data).
+	cachedFacts = worker.NewCache("facts")
+
+	// stdlibCachedFacts caches the standard library (stdlibFacts).
+	stdlibCachedFacts = worker.NewCache("stdlib")
+)
+
+// factLoader loads facts.
+func (c *PackageConfig) factLoader(path string) (data []byte, err error) {
+	filename, ok := c.FactMap[path]
+	if ok {
+		cb := cachedFacts.Lookup([]string{filename}, func() worker.Sizer {
+			data, readErr := ioutil.ReadFile(filename)
+			if readErr != nil {
+				err = fmt.Errorf("error loading %q: %w", filename, readErr)
+				return nil
+			}
+			return worker.CacheBytes(data)
+		})
+		if cb != nil {
+			return []byte(cb.(worker.CacheBytes)), err
+		}
+		return nil, err
+	}
+	cb := stdlibCachedFacts.Lookup([]string{c.StdlibFacts}, func() worker.Sizer {
+		r, openErr := os.Open(c.StdlibFacts)
+		if openErr != nil {
+			err = fmt.Errorf("error loading stdlib facts from %q: %w", c.StdlibFacts, openErr)
+			return nil
+		}
+		defer r.Close()
+		sf := make(stdlibFacts)
+		if readErr := sf.DecodeFrom(r); readErr != nil {
+			err = fmt.Errorf("error loading stdlib facts: %w", readErr)
+			return nil
+		}
+		return sf
+	})
+	if cb != nil {
+		return (cb.(stdlibFacts))[path], err
+	}
+	return nil, err
 }
 
 // shouldInclude indicates whether the file should be included.
@@ -205,7 +255,7 @@ var ErrSkip = errors.New("skipped")
 //
 // Note that not all parts of the source are expected to build. We skip obvious
 // test files, and cmd files, which should not be dependencies.
-func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindings []Finding, facts []byte, err error) {
+func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindings FindingSet, facts []byte, err error) {
 	if len(config.Srcs) == 0 {
 		return nil, nil, nil
 	}
@@ -275,16 +325,16 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 	}
 
 	// Closure to check a single package.
-	stdlibFacts := make(map[string][]byte)
-	stdlibErrs := make(map[string]error)
+	localStdlibFacts := make(stdlibFacts)
+	localStdlibErrs := make(map[string]error)
 	var checkOne func(pkg string) error // Recursive.
 	checkOne = func(pkg string) error {
 		// Is this already done?
-		if _, ok := stdlibFacts[pkg]; ok {
+		if _, ok := localStdlibFacts[pkg]; ok {
 			return nil
 		}
 		// Did this fail previously?
-		if _, ok := stdlibErrs[pkg]; ok {
+		if _, ok := localStdlibErrs[pkg]; ok {
 			return nil
 		}
 
@@ -300,7 +350,7 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 			// If there's no binary for this package, it is likely
 			// not built with the distribution. That's fine, we can
 			// just skip analysis.
-			stdlibErrs[pkg] = err
+			localStdlibErrs[pkg] = err
 			return nil
 		}
 
@@ -317,10 +367,10 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 		if err != nil {
 			// If we can't analyze a package from the standard library,
 			// then we skip it. It will simply not have any findings.
-			stdlibErrs[pkg] = err
+			localStdlibErrs[pkg] = err
 			return nil
 		}
-		stdlibFacts[pkg] = factData
+		localStdlibFacts[pkg] = factData
 		allFindings = append(allFindings, findings...)
 		return nil
 	}
@@ -337,34 +387,23 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 	}
 
 	// Sanity check.
-	if len(stdlibFacts) == 0 {
+	if len(localStdlibFacts) == 0 {
 		return nil, nil, fmt.Errorf("no stdlib facts found: misconfiguration?")
 	}
 
-	// Write out all findings. Note that the standard library facts
-	// must be serialized in a sorted order to ensure cacheability.
-	stdlibFactsSorted := make([]stdlibFact, 0, len(stdlibFacts))
-	for pkg, facts := range stdlibFacts {
-		stdlibFactsSorted = append(stdlibFactsSorted, stdlibFact{
-			Package: pkg,
-			Facts:   facts,
-		})
-	}
-	sort.Slice(stdlibFactsSorted, func(i, j int) bool {
-		return stdlibFactsSorted[i].Package < stdlibFactsSorted[j].Package
-	})
-	factData, err := json.Marshal(stdlibFactsSorted)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error saving stdlib facts: %w", err)
+	// Write out all findings.
+	buf := bytes.NewBuffer(nil)
+	if err := localStdlibFacts.EncodeTo(buf); err != nil {
+		return nil, nil, fmt.Errorf("error serialized stdlib facts: %v", err)
 	}
 
 	// Write out all errors.
-	for pkg, err := range stdlibErrs {
+	for pkg, err := range localStdlibErrs {
 		log.Printf("WARNING: error while processing %v: %v", pkg, err)
 	}
 
 	// Return all findings.
-	return allFindings, factData, nil
+	return allFindings, buf.Bytes(), nil
 }
 
 // CheckPackage runs all given analyzers.
@@ -417,11 +456,7 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 	}
 
 	// Load all package facts.
-	loader, err := config.factLoader()
-	if err != nil {
-		return nil, nil, fmt.Errorf("error loading facts: %w", err)
-	}
-	facts, err := facts.Decode(types, loader)
+	facts, err := facts.Decode(types, config.factLoader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error decoding facts: %w", err)
 	}
@@ -495,4 +530,8 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 
 	// Return all findings.
 	return findings, facts.Encode(), nil
+}
+
+func init() {
+	gob.Register((*stdlibFact)(nil))
 }

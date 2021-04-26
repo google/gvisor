@@ -24,6 +24,7 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/tools/nogo"
+	"gvisor.dev/gvisor/tools/worker"
 )
 
 var (
@@ -49,9 +50,10 @@ func loadConfig(file string, config interface{}) interface{} {
 }
 
 func main() {
-	// Parse all flags.
-	flag.Parse()
+	worker.Work(run)
+}
 
+func run([]string) int {
 	var (
 		findings []nogo.Finding
 		factData []byte
@@ -90,7 +92,11 @@ func main() {
 
 	// Write all findings.
 	if *findingsOutput != "" {
-		if err := nogo.WriteFindingsToFile(findings, *findingsOutput); err != nil {
+		w, err := os.OpenFile(*findingsOutput, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatalf("error opening output file %q: %v", *findingsOutput, err)
+		}
+		if err := nogo.WriteFindingsTo(w, findings, false /* json */); err != nil {
 			log.Fatalf("error writing findings to %q: %v", *findingsOutput, err)
 		}
 	} else {
@@ -98,4 +104,6 @@ func main() {
 			fmt.Fprintf(os.Stdout, "%s\n", finding.String())
 		}
 	}
+
+	return 0
 }

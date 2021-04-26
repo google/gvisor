@@ -15,10 +15,13 @@
 package nogo
 
 import (
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"go/token"
-	"io/ioutil"
+	"io"
+	"os"
+	"reflect"
 	"sort"
 )
 
@@ -29,63 +32,96 @@ type Finding struct {
 	Message  string
 }
 
+// findingSize is the size of the finding struct itself.
+var findingSize = int64(reflect.TypeOf(Finding{}).Size())
+
+// Size implements worker.Sizer.Size.
+func (f *Finding) Size() int64 {
+	return int64(len(f.Category)) + int64(len(f.Message)) + findingSize
+}
+
 // String implements fmt.Stringer.String.
 func (f *Finding) String() string {
 	return fmt.Sprintf("%s: %s: %s", f.Category, f.Position.String(), f.Message)
 }
 
-// WriteFindingsToFile writes findings to a file.
-func WriteFindingsToFile(findings []Finding, filename string) error {
-	content, err := WriteFindingsToBytes(findings)
-	if err != nil {
-		return err
+// FindingSet is a collection of findings.
+type FindingSet []Finding
+
+// Size implmements worker.Sizer.Size.
+func (fs FindingSet) Size() int64 {
+	size := int64(0)
+	for _, finding := range fs {
+		size += finding.Size()
 	}
-	return ioutil.WriteFile(filename, content, 0644)
+	return size
 }
 
-// WriteFindingsToBytes serializes findings as bytes.
-func WriteFindingsToBytes(findings []Finding) ([]byte, error) {
-	// N.B. Sort all the findings in order to maximize cacheability.
-	sort.Slice(findings, func(i, j int) bool {
+// Sort sorts all findings.
+func (fs FindingSet) Sort() {
+	sort.Slice(fs, func(i, j int) bool {
 		switch {
-		case findings[i].Position.Filename < findings[j].Position.Filename:
+		case fs[i].Position.Filename < fs[j].Position.Filename:
 			return true
-		case findings[i].Position.Filename > findings[j].Position.Filename:
+		case fs[i].Position.Filename > fs[j].Position.Filename:
 			return false
-		case findings[i].Position.Line < findings[j].Position.Line:
+		case fs[i].Position.Line < fs[j].Position.Line:
 			return true
-		case findings[i].Position.Line > findings[j].Position.Line:
+		case fs[i].Position.Line > fs[j].Position.Line:
 			return false
-		case findings[i].Position.Column < findings[j].Position.Column:
+		case fs[i].Position.Column < fs[j].Position.Column:
 			return true
-		case findings[i].Position.Column > findings[j].Position.Column:
+		case fs[i].Position.Column > fs[j].Position.Column:
 			return false
-		case findings[i].Category < findings[j].Category:
+		case fs[i].Category < fs[j].Category:
 			return true
-		case findings[i].Category > findings[j].Category:
+		case fs[i].Category > fs[j].Category:
 			return false
-		case findings[i].Message < findings[j].Message:
+		case fs[i].Message < fs[j].Message:
 			return true
-		case findings[i].Message > findings[j].Message:
+		case fs[i].Message > fs[j].Message:
 			return false
 		default:
 			return false
 		}
 	})
-	return json.Marshal(findings)
+}
+
+// WriteFindingsTo serializes findings.
+func WriteFindingsTo(w io.Writer, findings FindingSet, asJSON bool) error {
+	// N.B. Sort all the findings in order to maximize cacheability.
+	findings.Sort()
+	if asJSON {
+		enc := json.NewEncoder(w)
+		return enc.Encode(findings)
+	}
+	enc := gob.NewEncoder(w)
+	return enc.Encode(findings)
 }
 
 // ExtractFindingsFromFile loads findings from a file.
-func ExtractFindingsFromFile(filename string) ([]Finding, error) {
-	content, err := ioutil.ReadFile(filename)
+func ExtractFindingsFromFile(filename string, asJSON bool) (FindingSet, error) {
+	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
-	return ExtractFindingsFromBytes(content)
+	defer r.Close()
+	return ExtractFindingsFrom(r, asJSON)
 }
 
 // ExtractFindingsFromBytes loads findings from bytes.
-func ExtractFindingsFromBytes(content []byte) (findings []Finding, err error) {
-	err = json.Unmarshal(content, &findings)
+func ExtractFindingsFrom(r io.Reader, asJSON bool) (findings FindingSet, err error) {
+	if asJSON {
+		dec := json.NewDecoder(r)
+		err = dec.Decode(&findings)
+	} else {
+		dec := gob.NewDecoder(r)
+		err = dec.Decode(&findings)
+	}
 	return findings, err
+}
+
+func init() {
+	gob.Register((*Finding)(nil))
+	gob.Register((*FindingSet)(nil))
 }

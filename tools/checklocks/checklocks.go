@@ -563,9 +563,7 @@ func (pc *passContext) checkFunctionCall(call *ssa.Call, isExempted bool, lh *lo
 	if !ok {
 		return
 	}
-
 	if fn.Object() == nil {
-		log.Warningf("fn w/ nil Object is: %+v", fn)
 		return
 	}
 
@@ -579,7 +577,6 @@ func (pc *passContext) checkFunctionCall(call *ssa.Call, isExempted bool, lh *lo
 			r := (*call.Value().Operands(nil)[fg.ParameterNumber+1])
 			guardObj := findField(r, fg.FieldNumber)
 			if guardObj == nil {
-				log.Infof("guardObj nil but funcFact: %+v", funcFact)
 				continue
 			}
 			var fieldFacts lockFieldFacts
