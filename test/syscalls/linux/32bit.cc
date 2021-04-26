@@ -240,9 +240,9 @@ TEST(Call32Bit, Disallowed) {
   }
 }
 
-}  // namespace
-
 #endif
+
+}  // namespace
 
 }  // namespace testing
 }  // namespace gvisor
