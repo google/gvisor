@@ -7,5 +7,8 @@ go_binary(
     srcs = ["main.go"],
     nogo = False,
     visibility = ["//visibility:public"],
-    deps = ["//tools/nogo"],
+    deps = [
+        "//tools/nogo",
+        "//tools/worker",
+    ],
 )

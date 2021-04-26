@@ -9,6 +9,7 @@ go_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//tools/nogo",
+        "//tools/worker",
         "@in_gopkg_yaml_v2//:go_default_library",
     ],
 )

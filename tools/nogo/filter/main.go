@@ -26,6 +26,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 	"gvisor.dev/gvisor/tools/nogo"
+	"gvisor.dev/gvisor/tools/worker"
 )
 
 type stringList []string
@@ -44,34 +45,44 @@ var (
 	configFiles stringList
 	outputFile  string
 	showConfig  bool
+	check       bool
 )
 
 func init() {
-	flag.Var(&inputFiles, "input", "findings input files")
-	flag.StringVar(&outputFile, "output", "", "findings output file")
+	flag.Var(&inputFiles, "input", "findings input files (gob format)")
+	flag.StringVar(&outputFile, "output", "", "findings output file (json format)")
 	flag.Var(&configFiles, "config", "findings configuration files")
 	flag.BoolVar(&showConfig, "show-config", false, "dump configuration only")
+	flag.BoolVar(&check, "check", false, "assume input is in json format")
 }
 
 func main() {
-	flag.Parse()
+	worker.Work(run)
+}
 
-	// Load all available findings.
-	var findings []nogo.Finding
-	for _, filename := range inputFiles {
-		inputFindings, err := nogo.ExtractFindingsFromFile(filename)
+var (
+	cachedFindings    = worker.NewCache("findings") // With nogo.FindingSet.
+	cachedFiltered    = worker.NewCache("filtered") // With nogo.FindingSet.
+	cachedConfigs     = worker.NewCache("configs")  // With nogo.Config.
+	cachedFullConfigs = worker.NewCache("compiled") // With nogo.Config.
+)
+
+func loadFindings(filename string) nogo.FindingSet {
+	return cachedFindings.Lookup([]string{filename}, func() worker.Sizer {
+		r, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("unable to open input %q: %v", filename, err)
+		}
+		inputFindings, err := nogo.ExtractFindingsFrom(r, check /* json */)
 		if err != nil {
 			log.Fatalf("unable to extract findings from %s: %v", filename, err)
 		}
-		findings = append(findings, inputFindings...)
-	}
+		return inputFindings
+	}).(nogo.FindingSet)
+}
 
-	// Open and merge all configuations.
-	config := &nogo.Config{
-		Global:    make(nogo.AnalyzerConfig),
-		Analyzers: make(map[nogo.AnalyzerName]nogo.AnalyzerConfig),
-	}
-	for _, filename := range configFiles {
+func loadConfig(filename string) *nogo.Config {
+	return cachedConfigs.Lookup([]string{filename}, func() worker.Sizer {
 		content, err := ioutil.ReadFile(filename)
 		if err != nil {
 			log.Fatalf("unable to read %s: %v", filename, err)
@@ -82,53 +93,98 @@ func main() {
 		if err := dec.Decode(&newConfig); err != nil {
 			log.Fatalf("unable to decode %s: %v", filename, err)
 		}
-		config.Merge(&newConfig)
 		if showConfig {
 			content, err := yaml.Marshal(&newConfig)
 			if err != nil {
 				log.Fatalf("error marshalling config: %v", err)
 			}
-			mergedBytes, err := yaml.Marshal(config)
-			if err != nil {
-				log.Fatalf("error marshalling config: %v", err)
-			}
 			fmt.Fprintf(os.Stdout, "Loaded configuration from %s:\n%s\n", filename, string(content))
-			fmt.Fprintf(os.Stdout, "Merged configuration:\n%s\n", string(mergedBytes))
 		}
-	}
-	if err := config.Compile(); err != nil {
-		log.Fatalf("error compiling config: %v", err)
-	}
+		return &newConfig
+	}).(*nogo.Config)
+}
+
+func loadConfigs(filenames []string) *nogo.Config {
+	return cachedFullConfigs.Lookup(filenames, func() worker.Sizer {
+		config := &nogo.Config{
+			Global:    make(nogo.AnalyzerConfig),
+			Analyzers: make(map[nogo.AnalyzerName]nogo.AnalyzerConfig),
+		}
+		for _, filename := range configFiles {
+			config.Merge(loadConfig(filename))
+			if showConfig {
+				mergedBytes, err := yaml.Marshal(config)
+				if err != nil {
+					log.Fatalf("error marshalling config: %v", err)
+				}
+				fmt.Fprintf(os.Stdout, "Merged configuration:\n%s\n", string(mergedBytes))
+			}
+		}
+		if err := config.Compile(); err != nil {
+			log.Fatalf("error compiling config: %v", err)
+		}
+		return config
+	}).(*nogo.Config)
+}
+
+func run([]string) int {
+	// Open and merge all configuations.
+	config := loadConfigs(configFiles)
 	if showConfig {
-		os.Exit(0)
+		return 0
 	}
 
-	// Filter the findings (and aggregate by group).
-	filteredFindings := make([]nogo.Finding, 0, len(findings))
-	for _, finding := range findings {
-		if ok := config.ShouldReport(finding); ok {
-			filteredFindings = append(filteredFindings, finding)
-		}
+	// Load and filer available findings.
+	var filteredFindings []nogo.Finding
+	for _, filename := range inputFiles {
+		// Note that this applies a caching strategy to the filtered
+		// findings, because *this is by far the most expensive part of
+		// evaluation*. The set of findings is large and applying the
+		// configuration is complex. Therefore, we segment this cache
+		// on each individual raw findings input file and the
+		// configuration files. Note that this cache is keyed on all
+		// the configuration files and each individual raw findings, so
+		// is guaranteed to be safe. This allows us to reuse the same
+		// filter result many times over, because e.g. all standard
+		// library findings will be available to all packages.
+		filteredFindings = append(filteredFindings,
+			cachedFiltered.Lookup(append(configFiles, filename), func() worker.Sizer {
+				inputFindings := loadFindings(filename)
+				filteredFindings := make(nogo.FindingSet, 0, len(inputFindings))
+				for _, finding := range inputFindings {
+					if ok := config.ShouldReport(finding); ok {
+						filteredFindings = append(filteredFindings, finding)
+					}
+				}
+				return filteredFindings
+			}).(nogo.FindingSet)...)
 	}
 
 	// Write the output (if required).
 	//
 	// If the outputFile is specified, then we exit here. Otherwise,
 	// we continue to write to stdout and treat like a test.
+	//
+	// Note that the output of the filter is always json, which is
+	// human readable and the format that is consumed by tricorder.
 	if outputFile != "" {
-		if err := nogo.WriteFindingsToFile(filteredFindings, outputFile); err != nil {
+		w, err := os.OpenFile(outputFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatalf("unable to open output file %q: %v", outputFile, err)
+		}
+		if err := nogo.WriteFindingsTo(w, filteredFindings, true /* json */); err != nil {
 			log.Fatalf("unable to write findings: %v", err)
 		}
-		return
+		return 0
 	}
 
 	// Treat the run as a test.
 	if len(filteredFindings) == 0 {
 		fmt.Fprintf(os.Stdout, "PASS\n")
-		os.Exit(0)
+		return 0
 	}
 	for _, finding := range filteredFindings {
 		fmt.Fprintf(os.Stdout, "%s\n", finding.String())
 	}
-	os.Exit(1)
+	return 1
 }

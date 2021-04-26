@@ -1,6 +1,9 @@
-load("//tools:defs.bzl", "bzl_library")
+load("//tools:defs.bzl", "bzl_library", "go_proto_library")
 
-package(licenses = ["notice"])
+package(
+    default_visibility = ["//:sandbox"],
+    licenses = ["notice"],
+)
 
 bzl_library(
     name = "platforms_bzl",
@@ -44,4 +47,10 @@ genrule(
     cmd = "cat bazel-out/stable-status.txt | grep STABLE_VERSION | cut -d' ' -f2- | sed 's/^[^[:digit:]]*//g' >$@",
     stamp = True,
     visibility = ["//:sandbox"],
+)
+
+go_proto_library(
+    name = "worker_protocol_go_proto",
+    importpath = "gvisor.dev/bazel/worker_protocol_go_proto",
+    proto = "@bazel_tools//src/main/protobuf:worker_protocol_proto",
 )

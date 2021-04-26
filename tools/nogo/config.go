@@ -73,15 +73,26 @@ type ItemConfig struct {
 }
 
 func compileRegexps(ss []string, rs *[]*regexp.Regexp) error {
-	*rs = make([]*regexp.Regexp, 0, len(ss))
-	for _, s := range ss {
+	*rs = make([]*regexp.Regexp, len(ss))
+	for i, s := range ss {
 		r, err := regexp.Compile(s)
 		if err != nil {
 			return err
 		}
-		*rs = append(*rs, r)
+		(*rs)[i] = r
 	}
 	return nil
+}
+
+// RegexpCount is used by AnalyzerConfig.RegexpCount.
+func (i *ItemConfig) RegexpCount() int64 {
+	if i == nil {
+		// See compile.
+		return 0
+	}
+	// Return the number of regular expressions compiled for these items.
+	// This is how the cache size of the configuration is measured.
+	return int64(len(i.exclude) + len(i.suppress))
 }
 
 func (i *ItemConfig) compile() error {
@@ -100,9 +111,25 @@ func (i *ItemConfig) compile() error {
 	return nil
 }
 
+func merge(a, b []string) []string {
+	found := make(map[string]struct{})
+	result := make([]string, 0, len(a)+len(b))
+	for _, elem := range a {
+		found[elem] = struct{}{}
+		result = append(result, elem)
+	}
+	for _, elem := range b {
+		if _, ok := found[elem]; ok {
+			continue
+		}
+		result = append(result, elem)
+	}
+	return result
+}
+
 func (i *ItemConfig) merge(other *ItemConfig) {
-	i.Exclude = append(i.Exclude, other.Exclude...)
-	i.Suppress = append(i.Suppress, other.Suppress...)
+	i.Exclude = merge(i.Exclude, other.Exclude)
+	i.Suppress = merge(i.Suppress, other.Suppress)
 }
 
 func (i *ItemConfig) shouldReport(fullPos, msg string) bool {
@@ -128,6 +155,15 @@ func (i *ItemConfig) shouldReport(fullPos, msg string) bool {
 // This map is keyed by individual Group names, to allow for different
 // configurations depending on what Group the file belongs to.
 type AnalyzerConfig map[GroupName]*ItemConfig
+
+// RegexpCount is used by Config.Size.
+func (a AnalyzerConfig) RegexpCount() int64 {
+	count := int64(0)
+	for _, gc := range a {
+		count += gc.RegexpCount()
+	}
+	return count
+}
 
 func (a AnalyzerConfig) compile() error {
 	for name, gc := range a {
@@ -179,22 +215,36 @@ type Config struct {
 	Analyzers map[AnalyzerName]AnalyzerConfig `yaml:"analyzers"`
 }
 
+// Size implements worker.Sizer.Size.
+func (c *Config) Size() int64 {
+	count := c.Global.RegexpCount()
+	for _, config := range c.Analyzers {
+		count += config.RegexpCount()
+	}
+	// The size is measured as the number of regexps that are compiled
+	// here. We multiply by 1k to produce an estimate.
+	return 1024 * count
+}
+
 // Merge merges two configurations.
 func (c *Config) Merge(other *Config) {
 	// Merge all groups.
+	//
+	// Select the other first, as the order provided in the second will
+	// provide precendence over the same group defined in the first one.
+	seenGroups := make(map[GroupName]struct{})
+	newGroups := make([]Group, 0, len(c.Groups)+len(other.Groups))
 	for _, g := range other.Groups {
-		// Is there a matching group? If yes, we just delete
-		// it. This will preserve the order provided in the
-		// overriding file, even if it differs.
-		for i := 0; i < len(c.Groups); i++ {
-			if g.Name == c.Groups[i].Name {
-				copy(c.Groups[i:], c.Groups[i+1:])
-				c.Groups = c.Groups[:len(c.Groups)-1]
-				break
-			}
-		}
-		c.Groups = append(c.Groups, g)
+		newGroups = append(newGroups, g)
+		seenGroups[g.Name] = struct{}{}
 	}
+	for _, g := range c.Groups {
+		if _, ok := seenGroups[g.Name]; ok {
+			continue
+		}
+		newGroups = append(newGroups, g)
+	}
+	c.Groups = newGroups
 
 	// Merge global configurations.
 	c.Global.merge(other.Global)
