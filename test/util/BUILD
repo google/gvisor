@@ -149,6 +149,18 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "mount_util_test",
+    size = "small",
+    srcs = ["mount_util_test.cc"],
+    deps = [
+        ":mount_util",
+        ":test_main",
+        ":test_util",
+        gtest,
+    ],
+)
+
 cc_library(
     name = "save_util",
     testonly = 1,
