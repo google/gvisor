@@ -58,6 +58,11 @@ struct ProcMountsEntry {
 // ProcSelfMountsEntries returns a parsed representation of /proc/self/mounts.
 PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntries();
 
+// ProcSelfMountsEntries returns a parsed representation of mounts from the
+// provided content.
+PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntriesFrom(
+    const std::string& content);
+
 struct ProcMountInfoEntry {
   uint64_t id;
   uint64_t parent_id;
@@ -75,6 +80,11 @@ struct ProcMountInfoEntry {
 // ProcSelfMountInfoEntries returns a parsed representation of
 // /proc/self/mountinfo.
 PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntries();
+
+// ProcSelfMountInfoEntriesFrom returns a parsed representation of
+// mountinfo from the provided content.
+PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntriesFrom(
+    const std::string&);
 
 // Interprets the input string mopts as a comma separated list of mount
 // options. A mount option can either be just a value, or a key=value pair. For

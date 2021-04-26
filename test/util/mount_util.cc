@@ -26,9 +26,14 @@ namespace testing {
 PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntries() {
   std::string content;
   RETURN_IF_ERRNO(GetContents("/proc/self/mounts", &content));
+  return ProcSelfMountsEntriesFrom(content);
+}
 
+PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntriesFrom(
+    const std::string& content) {
   std::vector<ProcMountsEntry> entries;
-  std::vector<std::string> lines = absl::StrSplit(content, '\n');
+  std::vector<std::string> lines =
+      absl::StrSplit(content, absl::ByChar('\n'), absl::AllowEmpty());
   std::cerr << "<contents of /proc/self/mounts>" << std::endl;
   for (const std::string& line : lines) {
     std::cerr << line << std::endl;
@@ -47,11 +52,11 @@ PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntries() {
 
     ProcMountsEntry entry;
     std::vector<std::string> fields =
-        absl::StrSplit(line, absl::ByChar(' '), absl::SkipEmpty());
+        absl::StrSplit(line, absl::ByChar(' '), absl::AllowEmpty());
     if (fields.size() != 6) {
-      return PosixError(EINVAL,
-                        absl::StrFormat("Not enough tokens, got %d, line: %s",
-                                        fields.size(), line));
+      return PosixError(
+          EINVAL, absl::StrFormat("Not enough tokens, got %d, content: <<%s>>",
+                                  fields.size(), content));
     }
 
     entry.spec = fields[0];
@@ -71,9 +76,14 @@ PosixErrorOr<std::vector<ProcMountsEntry>> ProcSelfMountsEntries() {
 PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntries() {
   std::string content;
   RETURN_IF_ERRNO(GetContents("/proc/self/mountinfo", &content));
+  return ProcSelfMountInfoEntriesFrom(content);
+}
 
+PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntriesFrom(
+    const std::string& content) {
   std::vector<ProcMountInfoEntry> entries;
-  std::vector<std::string> lines = absl::StrSplit(content, '\n');
+  std::vector<std::string> lines =
+      absl::StrSplit(content, absl::ByChar('\n'), absl::AllowEmpty());
   std::cerr << "<contents of /proc/self/mountinfo>" << std::endl;
   for (const std::string& line : lines) {
     std::cerr << line << std::endl;
@@ -92,12 +102,12 @@ PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntries() {
 
     ProcMountInfoEntry entry;
     std::vector<std::string> fields =
-        absl::StrSplit(line, absl::ByChar(' '), absl::SkipEmpty());
+        absl::StrSplit(line, absl::ByChar(' '), absl::AllowEmpty());
     if (fields.size() < 10 || fields.size() > 11) {
       return PosixError(
-          EINVAL,
-          absl::StrFormat("Unexpected number of tokens, got %d, line: %s",
-                          fields.size(), line));
+          EINVAL, absl::StrFormat(
+                      "Unexpected number of tokens, got %d, content: <<%s>>",
+                      fields.size(), content));
     }
 
     ASSIGN_OR_RETURN_ERRNO(entry.id, Atoi<uint64_t>(fields[0]));
@@ -142,7 +152,7 @@ absl::flat_hash_map<std::string, std::string> ParseMountOptions(
     std::string mopts) {
   absl::flat_hash_map<std::string, std::string> entries;
   const std::vector<std::string> tokens =
-      absl::StrSplit(mopts, absl::ByChar(','), absl::SkipEmpty());
+      absl::StrSplit(mopts, absl::ByChar(','), absl::AllowEmpty());
   for (const auto& token : tokens) {
     std::vector<std::string> kv =
         absl::StrSplit(token, absl::MaxSplits('=', 1));

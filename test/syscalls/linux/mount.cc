@@ -45,6 +45,7 @@ namespace testing {
 
 namespace {
 
+using ::testing::AnyOf;
 using ::testing::Contains;
 using ::testing::Pair;
 
@@ -360,7 +361,8 @@ TEST(MountTest, MountInfo) {
     if (e.mount_point == dir.path()) {
       EXPECT_EQ(e.fstype, "tmpfs");
       auto mopts = ParseMountOptions(e.mount_opts);
-      EXPECT_THAT(mopts, Contains(Pair("mode", "0123")));
+      EXPECT_THAT(mopts, AnyOf(Contains(Pair("mode", "0123")),
+                               Contains(Pair("mode", "123"))));
     }
   }
 
@@ -371,7 +373,8 @@ TEST(MountTest, MountInfo) {
     if (e.mount_point == dir.path()) {
       EXPECT_EQ(e.fstype, "tmpfs");
       auto mopts = ParseMountOptions(e.super_opts);
-      EXPECT_THAT(mopts, Contains(Pair("mode", "0123")));
+      EXPECT_THAT(mopts, AnyOf(Contains(Pair("mode", "0123")),
+                               Contains(Pair("mode", "123"))));
     }
   }
 }
