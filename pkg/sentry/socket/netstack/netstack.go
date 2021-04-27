@@ -26,6 +26,7 @@ package netstack
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -35,7 +36,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -375,9 +375,9 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 	}), nil
 }
 
-var sockAddrInetSize = int(binary.Size(linux.SockAddrInet{}))
-var sockAddrInet6Size = int(binary.Size(linux.SockAddrInet6{}))
-var sockAddrLinkSize = int(binary.Size(linux.SockAddrLink{}))
+var sockAddrInetSize = (*linux.SockAddrInet)(nil).SizeBytes()
+var sockAddrInet6Size = (*linux.SockAddrInet6)(nil).SizeBytes()
+var sockAddrLinkSize = (*linux.SockAddrLink)(nil).SizeBytes()
 
 // bytesToIPAddress converts an IPv4 or IPv6 address from the user to the
 // netstack representation taking any addresses into account.
@@ -613,7 +613,7 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		if len(sockaddr) < sockAddrLinkSize {
 			return syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(sockaddr[:sockAddrLinkSize], hostarch.ByteOrder, &a)
+		a.UnmarshalBytes(sockaddr[:sockAddrLinkSize])
 
 		if a.Protocol != uint16(s.protocol) {
 			return syserr.ErrInvalidArgument
@@ -1312,7 +1312,7 @@ func getSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 		return &v, nil
 
 	case linux.IP6T_ORIGINAL_DST:
-		if outLen < int(binary.Size(linux.SockAddrInet6{})) {
+		if outLen < sockAddrInet6Size {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -1509,7 +1509,7 @@ func getSockOptIP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name in
 		return &v, nil
 
 	case linux.SO_ORIGINAL_DST:
-		if outLen < int(binary.Size(linux.SockAddrInet{})) {
+		if outLen < sockAddrInetSize {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -1742,7 +1742,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		binary.Unmarshal(optVal[:linux.SizeOfTimeval], hostarch.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1755,7 +1755,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Timeval
-		binary.Unmarshal(optVal[:linux.SizeOfTimeval], hostarch.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfTimeval])
 		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
 			return syserr.ErrDomain
 		}
@@ -1791,7 +1791,11 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		var v linux.Linger
-		binary.Unmarshal(optVal[:linux.SizeOfLinger], hostarch.ByteOrder, &v)
+		v.UnmarshalBytes(optVal[:linux.SizeOfLinger])
+
+		if v != (linux.Linger{}) {
+			socket.SetSockOptEmitUnimplementedEvent(t, name)
+		}
 
 		ep.SocketOptions().SetLinger(tcpip.LingerOption{
 			Enabled: v.OnOff != 0,
@@ -2090,9 +2094,9 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 }
 
 var (
-	inetMulticastRequestSize        = int(binary.Size(linux.InetMulticastRequest{}))
-	inetMulticastRequestWithNICSize = int(binary.Size(linux.InetMulticastRequestWithNIC{}))
-	inet6MulticastRequestSize       = int(binary.Size(linux.Inet6MulticastRequest{}))
+	inetMulticastRequestSize        = (*linux.InetMulticastRequest)(nil).SizeBytes()
+	inetMulticastRequestWithNICSize = (*linux.InetMulticastRequestWithNIC)(nil).SizeBytes()
+	inet6MulticastRequestSize       = (*linux.Inet6MulticastRequest)(nil).SizeBytes()
 )
 
 // copyInMulticastRequest copies in a variable-size multicast request. The
@@ -2117,12 +2121,12 @@ func copyInMulticastRequest(optVal []byte, allowAddr bool) (linux.InetMulticastR
 
 	if len(optVal) >= inetMulticastRequestWithNICSize {
 		var req linux.InetMulticastRequestWithNIC
-		binary.Unmarshal(optVal[:inetMulticastRequestWithNICSize], hostarch.ByteOrder, &req)
+		req.UnmarshalUnsafe(optVal[:inetMulticastRequestWithNICSize])
 		return req, nil
 	}
 
 	var req linux.InetMulticastRequestWithNIC
-	binary.Unmarshal(optVal[:inetMulticastRequestSize], hostarch.ByteOrder, &req.InetMulticastRequest)
+	req.InetMulticastRequest.UnmarshalUnsafe(optVal[:inetMulticastRequestSize])
 	return req, nil
 }
 
@@ -2132,7 +2136,7 @@ func copyInMulticastV6Request(optVal []byte) (linux.Inet6MulticastRequest, *syse
 	}
 
 	var req linux.Inet6MulticastRequest
-	binary.Unmarshal(optVal[:inet6MulticastRequestSize], hostarch.ByteOrder, &req)
+	req.UnmarshalUnsafe(optVal[:inet6MulticastRequestSize])
 	return req, nil
 }
 
@@ -3101,8 +3105,8 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 				continue
 			}
 			// Populate ifr.ifr_netmask (type sockaddr).
-			hostarch.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
-			hostarch.ByteOrder.PutUint16(ifr.Data[2:4], 0)
+			hostarch.ByteOrder.PutUint16(ifr.Data[0:], uint16(linux.AF_INET))
+			hostarch.ByteOrder.PutUint16(ifr.Data[2:], 0)
 			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
 			// Netmask is expected to be returned as a big endian
 			// value.

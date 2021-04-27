@@ -18,8 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -141,10 +139,9 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 			return nil, syserr.ErrInvalidArgument
 		}
 		var entry linux.IPTEntry
-		buf := optVal[:linux.SizeOfIPTEntry]
-		binary.Unmarshal(buf, hostarch.ByteOrder, &entry)
+		entry.UnmarshalUnsafe(optVal[:entry.SizeBytes()])
 		initialOptValLen := len(optVal)
-		optVal = optVal[linux.SizeOfIPTEntry:]
+		optVal = optVal[entry.SizeBytes():]
 
 		if entry.TargetOffset < linux.SizeOfIPTEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)

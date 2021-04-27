@@ -18,8 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -79,7 +78,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	nflog("marshaling matcher %q", name)
 
 	// We have to pad this struct size to a multiple of 8 bytes.
-	size := binary.AlignUp(linux.SizeOfXTEntryMatch+len(data), 8)
+	size := bits.AlignUp(linux.SizeOfXTEntryMatch+len(data), 8)
 	matcher := linux.KernelXTEntryMatch{
 		XTEntryMatch: linux.XTEntryMatch{
 			MatchSize: uint16(size),
@@ -88,9 +87,11 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	}
 	copy(matcher.Name[:], name)
 
-	buf := make([]byte, 0, size)
-	buf = binary.Marshal(buf, hostarch.ByteOrder, matcher)
-	return append(buf, make([]byte, size-len(buf))...)
+	buf := make([]byte, size)
+	entryLen := matcher.XTEntryMatch.SizeBytes()
+	matcher.XTEntryMatch.MarshalUnsafe(buf[:entryLen])
+	copy(buf[entryLen:], matcher.Data)
+	return buf
 }
 
 func unmarshalMatcher(match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
