@@ -305,7 +305,7 @@ var linuxAMD64 = SyscallMap{
 	278: makeSyscallInfo("vmsplice", FD, Hex, Hex, Hex),
 	279: makeSyscallInfo("move_pages", Hex, Hex, Hex, Hex, Hex, Hex),
 	280: makeSyscallInfo("utimensat", FD, Path, UTimeTimespec, Hex),
-	281: makeSyscallInfo("epoll_pwait", FD, EpollEvents, Hex, Hex, SigSet, Hex),
+	281: makeSyscallInfo("epoll_pwait", FD, EpollEvents, Hex, Hex, SigSet),
 	282: makeSyscallInfo("signalfd", Hex, Hex, Hex),
 	283: makeSyscallInfo("timerfd_create", Hex, Hex),
 	284: makeSyscallInfo("eventfd", Hex),
