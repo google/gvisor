@@ -29,8 +29,7 @@ import (
 )
 
 var (
-	partialResultMetric = metric.MustCreateNewUint64Metric("/syscalls/partial_result", true /* sync */, "Whether or not a partial result has occurred for this sandbox.")
-	partialResultOnce   sync.Once
+	partialResultOnce sync.Once
 )
 
 // incrementPartialResultMetric increments PartialResultMetric by calling
@@ -38,7 +37,6 @@ var (
 // us to pass a function which does not take any arguments, whereas Increment()
 // takes a variadic number of arguments.
 func incrementPartialResultMetric() {
-	partialResultMetric.Increment()
 	metric.WeirdnessMetric.Increment("partial_result")
 }
 
