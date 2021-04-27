@@ -37,7 +37,7 @@ var (
 	ErrInitializationDone = errors.New("metric cannot be created after initialization is complete")
 
 	// WeirdnessMetric is a metric with fields created to track the number
-	// of weird occurrences such as clock fallback, partial_result and
+	// of weird occurrences such as time fallback, partial_result and
 	// vsyscall count.
 	WeirdnessMetric *Uint64Metric
 )
@@ -392,9 +392,9 @@ func CreateSentryMetrics() {
 		return
 	}
 
-	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as clock fallback, partial result and vsyscalls invoked in the sandbox",
+	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result and vsyscalls invoked in the sandbox",
 		Field{
 			name:          "weirdness_type",
-			allowedValues: []string{"fallback", "partial_result", "vsyscall_count"},
+			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count"},
 		})
 }

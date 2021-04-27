@@ -25,11 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// fallbackMetric tracks failed updates. It is not sync, as it is not critical
-// that all occurrences are captured and CalibratedClock may fallback many
-// times.
-var fallbackMetric = metric.MustCreateNewUint64Metric("/time/fallback", false /* sync */, "Incremented when a clock falls back to system calls due to a failed update")
-
 // CalibratedClock implements a clock that tracks a reference clock.
 //
 // Users should call Update at regular intervals of around approxUpdateInterval
@@ -102,8 +97,7 @@ func (c *CalibratedClock) resetLocked(str string, v ...interface{}) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
 	c.ready = false
 	c.ref.Reset()
-	fallbackMetric.Increment()
-	metric.WeirdnessMetric.Increment("fallback")
+	metric.WeirdnessMetric.Increment("time_fallback")
 }
 
 // updateParams updates the timekeeping parameters based on the passed

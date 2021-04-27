@@ -30,8 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-var vsyscallCount = metric.MustCreateNewUint64Metric("/kernel/vsyscall_count", false /* sync */, "Number of times vsyscalls were invoked by the application")
-
 // SyscallRestartBlock represents the restart block for a syscall restartable
 // with a custom function. It encapsulates the state required to restart a
 // syscall across a S/R.
@@ -284,7 +282,6 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
 func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
-	vsyscallCount.Increment()
 	metric.WeirdnessMetric.Increment("vsyscall_count")
 
 	// Grab the caller up front, to make sure there's a sensible stack.
