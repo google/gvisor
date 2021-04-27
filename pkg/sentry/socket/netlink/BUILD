@@ -14,7 +14,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/bits",
         "//pkg/context",
         "//pkg/hostarch",
         "//pkg/marshal",
@@ -50,5 +50,7 @@ go_test(
     deps = [
         ":netlink",
         "//pkg/abi/linux",
+        "//pkg/marshal",
+        "//pkg/marshal/primitive",
     ],
 )

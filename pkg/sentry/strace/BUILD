@@ -25,7 +25,6 @@ go_library(
         ":strace_go_proto",
         "//pkg/abi",
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/bits",
         "//pkg/eventchannel",
         "//pkg/hostarch",

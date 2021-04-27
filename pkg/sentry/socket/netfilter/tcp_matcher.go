@@ -18,8 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -47,8 +46,7 @@ func (tcpMarshaler) marshal(mr matcher) []byte {
 		DestinationPortStart: matcher.destinationPortStart,
 		DestinationPortEnd:   matcher.destinationPortEnd,
 	}
-	buf := make([]byte, 0, linux.SizeOfXTTCP)
-	return marshalEntryMatch(matcherNameTCP, binary.Marshal(buf, hostarch.ByteOrder, xttcp))
+	return marshalEntryMatch(matcherNameTCP, marshal.Marshal(&xttcp))
 }
 
 // unmarshal implements matchMaker.unmarshal.
@@ -60,7 +58,7 @@ func (tcpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Ma
 	// For alignment reasons, the match's total size may
 	// exceed what's strictly necessary to hold matchData.
 	var matchData linux.XTTCP
-	binary.Unmarshal(buf[:linux.SizeOfXTTCP], hostarch.ByteOrder, &matchData)
+	matchData.UnmarshalUnsafe(buf[:matchData.SizeBytes()])
 	nflog("parseMatchers: parsed XTTCP: %+v", matchData)
 
 	if matchData.Option != 0 ||

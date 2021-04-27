@@ -15,11 +15,12 @@
 package netfilter
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -189,8 +190,7 @@ func (*standardTargetMaker) marshal(target target) []byte {
 		Verdict: verdict,
 	}
 
-	ret := make([]byte, 0, linux.SizeOfXTStandardTarget)
-	return binary.Marshal(ret, hostarch.ByteOrder, xt)
+	return marshal.Marshal(&xt)
 }
 
 func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -199,8 +199,7 @@ func (*standardTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 	var standardTarget linux.XTStandardTarget
-	buf = buf[:linux.SizeOfXTStandardTarget]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &standardTarget)
+	standardTarget.UnmarshalUnsafe(buf[:standardTarget.SizeBytes()])
 
 	if standardTarget.Verdict < 0 {
 		// A Verdict < 0 indicates a non-jump verdict.
@@ -245,8 +244,7 @@ func (*errorTargetMaker) marshal(target target) []byte {
 	copy(xt.Name[:], errorName)
 	copy(xt.Target.Name[:], ErrorTargetName)
 
-	ret := make([]byte, 0, linux.SizeOfXTErrorTarget)
-	return binary.Marshal(ret, hostarch.ByteOrder, xt)
+	return marshal.Marshal(&xt)
 }
 
 func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -256,7 +254,7 @@ func (*errorTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 	}
 	var errTgt linux.XTErrorTarget
 	buf = buf[:linux.SizeOfXTErrorTarget]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &errTgt)
+	errTgt.UnmarshalUnsafe(buf)
 
 	// Error targets are used in 2 cases:
 	// * An actual error case. These rules have an error named
@@ -299,12 +297,11 @@ func (*redirectTargetMaker) marshal(target target) []byte {
 	}
 	copy(xt.Target.Name[:], RedirectTargetName)
 
-	ret := make([]byte, 0, linux.SizeOfXTRedirectTarget)
 	xt.NfRange.RangeSize = 1
 	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
 	xt.NfRange.RangeIPV4.MinPort = htons(rt.Port)
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
-	return binary.Marshal(ret, hostarch.ByteOrder, xt)
+	return marshal.Marshal(&xt)
 }
 
 func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -320,7 +317,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 
 	var rt linux.XTRedirectTarget
 	buf = buf[:linux.SizeOfXTRedirectTarget]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &rt)
+	rt.UnmarshalUnsafe(buf)
 
 	// Copy linux.XTRedirectTarget to stack.RedirectTarget.
 	target := redirectTarget{RedirectTarget: stack.RedirectTarget{
@@ -359,6 +356,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	return &target, nil
 }
 
+// +marshal
 type nfNATTarget struct {
 	Target linux.XTEntryTarget
 	Range  linux.NFNATRange
@@ -394,8 +392,7 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 	nt.Range.MinProto = htons(rt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
-	ret := make([]byte, 0, nfNATMarshalledSize)
-	return binary.Marshal(ret, hostarch.ByteOrder, nt)
+	return marshal.Marshal(&nt)
 }
 
 func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -411,7 +408,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 
 	var natRange linux.NFNATRange
 	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &natRange)
+	natRange.UnmarshalUnsafe(buf)
 
 	// We don't support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
@@ -468,8 +465,7 @@ func (*snatTargetMakerV4) marshal(target target) []byte {
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
 	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr)
 	copy(xt.NfRange.RangeIPV4.MaxIP[:], st.Addr)
-	ret := make([]byte, 0, linux.SizeOfXTSNATTarget)
-	return binary.Marshal(ret, hostarch.ByteOrder, xt)
+	return marshal.Marshal(&xt)
 }
 
 func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -485,7 +481,7 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 
 	var st linux.XTSNATTarget
 	buf = buf[:linux.SizeOfXTSNATTarget]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &st)
+	st.UnmarshalUnsafe(buf)
 
 	// Copy linux.XTSNATTarget to stack.SNATTarget.
 	target := snatTarget{SNATTarget: stack.SNATTarget{
@@ -550,8 +546,7 @@ func (*snatTargetMakerV6) marshal(target target) []byte {
 	nt.Range.MinProto = htons(st.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
-	ret := make([]byte, 0, nfNATMarshalledSize)
-	return binary.Marshal(ret, hostarch.ByteOrder, nt)
+	return marshal.Marshal(&nt)
 }
 
 func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
@@ -567,7 +562,7 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 
 	var natRange linux.NFNATRange
 	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &natRange)
+	natRange.UnmarshalUnsafe(buf)
 
 	// TODO(gvisor.dev/issue/5689): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
@@ -631,8 +626,7 @@ func parseTarget(filter stack.IPHeaderFilter, optVal []byte, ipv6 bool) (stack.T
 		return nil, syserr.ErrInvalidArgument
 	}
 	var target linux.XTEntryTarget
-	buf := optVal[:linux.SizeOfXTEntryTarget]
-	binary.Unmarshal(buf, hostarch.ByteOrder, &target)
+	target.UnmarshalUnsafe(optVal[:target.SizeBytes()])
 
 	return unmarshalTarget(target, filter, optVal)
 }

@@ -245,6 +245,8 @@ const SizeOfXTCounters = 16
 // include/uapi/linux/netfilter/x_tables.h. That struct contains a union
 // exposing different data to the user and kernel, but this struct holds only
 // the user data.
+//
+// +marshal
 type XTEntryMatch struct {
 	MatchSize uint16
 	Name      ExtensionName
@@ -284,6 +286,8 @@ const SizeOfXTGetRevision = 30
 // include/uapi/linux/netfilter/x_tables.h. That struct contains a union
 // exposing different data to the user and kernel, but this struct holds only
 // the user data.
+//
+// +marshal
 type XTEntryTarget struct {
 	TargetSize uint16
 	Name       ExtensionName
@@ -306,6 +310,8 @@ type KernelXTEntryTarget struct {
 // XTStandardTarget is a built-in target, one of ACCEPT, DROP, JUMP, QUEUE,
 // RETURN, or jump. It corresponds to struct xt_standard_target in
 // include/uapi/linux/netfilter/x_tables.h.
+//
+// +marshal
 type XTStandardTarget struct {
 	Target XTEntryTarget
 	// A positive verdict indicates a jump, and is the offset from the
@@ -322,6 +328,8 @@ const SizeOfXTStandardTarget = 40
 // beginning of user-defined chains by putting the name of the chain in
 // ErrorName. It corresponds to struct xt_error_target in
 // include/uapi/linux/netfilter/x_tables.h.
+//
+// +marshal
 type XTErrorTarget struct {
 	Target XTEntryTarget
 	Name   ErrorName
@@ -349,6 +357,8 @@ const (
 // NfNATIPV4Range corresponds to struct nf_nat_ipv4_range
 // in include/uapi/linux/netfilter/nf_nat.h. The fields are in
 // network byte order.
+//
+// +marshal
 type NfNATIPV4Range struct {
 	Flags   uint32
 	MinIP   [4]byte
@@ -359,6 +369,8 @@ type NfNATIPV4Range struct {
 
 // NfNATIPV4MultiRangeCompat corresponds to struct
 // nf_nat_ipv4_multi_range_compat in include/uapi/linux/netfilter/nf_nat.h.
+//
+// +marshal
 type NfNATIPV4MultiRangeCompat struct {
 	RangeSize uint32
 	RangeIPV4 NfNATIPV4Range
@@ -366,6 +378,8 @@ type NfNATIPV4MultiRangeCompat struct {
 
 // XTRedirectTarget triggers a redirect when reached.
 // Adding 4 bytes of padding to make the struct 8 byte aligned.
+//
+// +marshal
 type XTRedirectTarget struct {
 	Target  XTEntryTarget
 	NfRange NfNATIPV4MultiRangeCompat
@@ -377,6 +391,8 @@ const SizeOfXTRedirectTarget = 56
 
 // XTSNATTarget triggers Source NAT when reached.
 // Adding 4 bytes of padding to make the struct 8 byte aligned.
+//
+// +marshal
 type XTSNATTarget struct {
 	Target  XTEntryTarget
 	NfRange NfNATIPV4MultiRangeCompat
@@ -463,6 +479,8 @@ var _ marshal.Marshallable = (*KernelIPTGetEntries)(nil)
 // IPTReplace is the argument for the IPT_SO_SET_REPLACE sockopt. It
 // corresponds to struct ipt_replace in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
+//
+// +marshal
 type IPTReplace struct {
 	Name        TableName
 	ValidHooks  uint32
@@ -502,6 +520,8 @@ func (tn TableName) String() string {
 
 // ErrorName holds the name of a netfilter error. These can also hold
 // user-defined chains.
+//
+// +marshal
 type ErrorName [XT_FUNCTION_MAXNAMELEN]byte
 
 // String implements fmt.Stringer.
@@ -520,6 +540,8 @@ func goString(cstring []byte) string {
 
 // XTTCP holds data for matching TCP packets. It corresponds to struct xt_tcp
 // in include/uapi/linux/netfilter/xt_tcpudp.h.
+//
+// +marshal
 type XTTCP struct {
 	// SourcePortStart specifies the inclusive start of the range of source
 	// ports to which the matcher applies.
@@ -573,6 +595,8 @@ const (
 
 // XTUDP holds data for matching UDP packets. It corresponds to struct xt_udp
 // in include/uapi/linux/netfilter/xt_tcpudp.h.
+//
+// +marshal
 type XTUDP struct {
 	// SourcePortStart is the inclusive start of the range of source ports
 	// to which the matcher applies.
@@ -613,6 +637,8 @@ const (
 
 // IPTOwnerInfo holds data for matching packets with owner. It corresponds
 // to struct ipt_owner_info in libxt_owner.c of iptables binary.
+//
+// +marshal
 type IPTOwnerInfo struct {
 	// UID is user id which created the packet.
 	UID uint32
@@ -634,7 +660,7 @@ type IPTOwnerInfo struct {
 	Match uint8
 
 	// Invert flips the meaning of Match field.
-	Invert uint8
+	Invert uint8 `marshal:"unaligned"`
 }
 
 // SizeOfIPTOwnerInfo is the size of an XTOwnerMatchInfo.

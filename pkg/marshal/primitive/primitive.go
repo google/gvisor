@@ -125,6 +125,81 @@ func (b *ByteSlice) WriteTo(w io.Writer) (int64, error) {
 
 var _ marshal.Marshallable = (*ByteSlice)(nil)
 
+// The following set of functions are convenient shorthands for wrapping a
+// built-in type in a marshallable primitive type. For example:
+//
+// func useMarshallable(m marshal.Marshallable) { ... }
+//
+// // Compare:
+//
+// buf = []byte{...}
+// // useMarshallable(&primitive.ByteSlice(buf)) // Not allowed, can't address temp value.
+// bufP := primitive.ByteSlice(buf)
+// useMarshallable(&bufP)
+//
+// // Vs:
+//
+// useMarshallable(AsByteSlice(buf))
+//
+// Note that the argument to these function escapes, so avoid using them on very
+// hot code paths. But generally if a function accepts an interface as an
+// argument, the argument escapes anyways.
+
+// AllocateInt8 returns x as a marshallable.
+func AllocateInt8(x int8) marshal.Marshallable {
+	p := Int8(x)
+	return &p
+}
+
+// AllocateUint8 returns x as a marshallable.
+func AllocateUint8(x uint8) marshal.Marshallable {
+	p := Uint8(x)
+	return &p
+}
+
+// AllocateInt16 returns x as a marshallable.
+func AllocateInt16(x int16) marshal.Marshallable {
+	p := Int16(x)
+	return &p
+}
+
+// AllocateUint16 returns x as a marshallable.
+func AllocateUint16(x uint16) marshal.Marshallable {
+	p := Uint16(x)
+	return &p
+}
+
+// AllocateInt32 returns x as a marshallable.
+func AllocateInt32(x int32) marshal.Marshallable {
+	p := Int32(x)
+	return &p
+}
+
+// AllocateUint32 returns x as a marshallable.
+func AllocateUint32(x uint32) marshal.Marshallable {
+	p := Uint32(x)
+	return &p
+}
+
+// AllocateInt64 returns x as a marshallable.
+func AllocateInt64(x int64) marshal.Marshallable {
+	p := Int64(x)
+	return &p
+}
+
+// AllocateUint64 returns x as a marshallable.
+func AllocateUint64(x uint64) marshal.Marshallable {
+	p := Uint64(x)
+	return &p
+}
+
+// AsByteSlice returns b as a marshallable. Note that this allocates a new slice
+// header, but does not copy the slice contents.
+func AsByteSlice(b []byte) marshal.Marshallable {
+	bs := ByteSlice(b)
+	return &bs
+}
+
 // Below, we define some convenience functions for marshalling primitive types
 // using the newtypes above, without requiring superfluous casts.
 

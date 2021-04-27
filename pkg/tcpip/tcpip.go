@@ -1107,6 +1107,7 @@ const (
 // LingerOption is used by SetSockOpt/GetSockOpt to set/get the
 // duration for which a socket lingers before returning from Close.
 //
+// +marshal
 // +stateify savable
 type LingerOption struct {
 	Enabled bool

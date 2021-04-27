@@ -19,15 +19,17 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
 // alignPad returns the length of padding required for alignment.
 //
 // Preconditions: align is a power of two.
 func alignPad(length int, align uint) int {
-	return binary.AlignUp(length, align) - length
+	return bits.AlignUp(length, align) - length
 }
 
 // Message contains a complete serialized netlink message.
@@ -42,7 +44,7 @@ type Message struct {
 func NewMessage(hdr linux.NetlinkMessageHeader) *Message {
 	return &Message{
 		hdr: hdr,
-		buf: binary.Marshal(nil, hostarch.ByteOrder, hdr),
+		buf: marshal.Marshal(&hdr),
 	}
 }
 
@@ -58,7 +60,7 @@ func ParseMessage(buf []byte) (msg *Message, rest []byte, ok bool) {
 		return
 	}
 	var hdr linux.NetlinkMessageHeader
-	binary.Unmarshal(hdrBytes, hostarch.ByteOrder, &hdr)
+	hdr.UnmarshalUnsafe(hdrBytes)
 
 	// Msg portion.
 	totalMsgLen := int(hdr.Length)
@@ -92,7 +94,7 @@ func (m *Message) Header() linux.NetlinkMessageHeader {
 
 // GetData unmarshals the payload message header from this netlink message, and
 // returns the attributes portion.
-func (m *Message) GetData(msg interface{}) (AttrsView, bool) {
+func (m *Message) GetData(msg marshal.Marshallable) (AttrsView, bool) {
 	b := BytesView(m.buf)
 
 	_, ok := b.Extract(linux.NetlinkMessageHeaderSize)
@@ -100,12 +102,12 @@ func (m *Message) GetData(msg interface{}) (AttrsView, bool) {
 		return nil, false
 	}
 
-	size := int(binary.Size(msg))
+	size := msg.SizeBytes()
 	msgBytes, ok := b.Extract(size)
 	if !ok {
 		return nil, false
 	}
-	binary.Unmarshal(msgBytes, hostarch.ByteOrder, msg)
+	msg.UnmarshalUnsafe(msgBytes)
 
 	numPad := alignPad(linux.NetlinkMessageHeaderSize+size, linux.NLMSG_ALIGNTO)
 	// Linux permits the last message not being aligned, just consume all of it.
@@ -131,7 +133,7 @@ func (m *Message) Finalize() []byte {
 	// Align the message. Note that the message length in the header (set
 	// above) is the useful length of the message, not the total aligned
 	// length. See net/netlink/af_netlink.c:__nlmsg_put.
-	aligned := binary.AlignUp(len(m.buf), linux.NLMSG_ALIGNTO)
+	aligned := bits.AlignUp(len(m.buf), linux.NLMSG_ALIGNTO)
 	m.putZeros(aligned - len(m.buf))
 	return m.buf
 }
@@ -145,45 +147,45 @@ func (m *Message) putZeros(n int) {
 }
 
 // Put serializes v into the message.
-func (m *Message) Put(v interface{}) {
-	m.buf = binary.Marshal(m.buf, hostarch.ByteOrder, v)
+func (m *Message) Put(v marshal.Marshallable) {
+	m.buf = append(m.buf, marshal.Marshal(v)...)
 }
 
 // PutAttr adds v to the message as a netlink attribute.
 //
 // Preconditions: The serialized attribute (linux.NetlinkAttrHeaderSize +
-// binary.Size(v) fits in math.MaxUint16 bytes.
-func (m *Message) PutAttr(atype uint16, v interface{}) {
-	l := linux.NetlinkAttrHeaderSize + int(binary.Size(v))
+// v.SizeBytes()) fits in math.MaxUint16 bytes.
+func (m *Message) PutAttr(atype uint16, v marshal.Marshallable) {
+	l := linux.NetlinkAttrHeaderSize + v.SizeBytes()
 	if l > math.MaxUint16 {
 		panic(fmt.Sprintf("attribute too large: %d", l))
 	}
 
-	m.Put(linux.NetlinkAttrHeader{
+	m.Put(&linux.NetlinkAttrHeader{
 		Type:   atype,
 		Length: uint16(l),
 	})
 	m.Put(v)
 
 	// Align the attribute.
-	aligned := binary.AlignUp(l, linux.NLA_ALIGNTO)
+	aligned := bits.AlignUp(l, linux.NLA_ALIGNTO)
 	m.putZeros(aligned - l)
 }
 
 // PutAttrString adds s to the message as a netlink attribute.
 func (m *Message) PutAttrString(atype uint16, s string) {
 	l := linux.NetlinkAttrHeaderSize + len(s) + 1
-	m.Put(linux.NetlinkAttrHeader{
+	m.Put(&linux.NetlinkAttrHeader{
 		Type:   atype,
 		Length: uint16(l),
 	})
 
 	// String + NUL-termination.
-	m.Put([]byte(s))
+	m.Put(primitive.AsByteSlice([]byte(s)))
 	m.putZeros(1)
 
 	// Align the attribute.
-	aligned := binary.AlignUp(l, linux.NLA_ALIGNTO)
+	aligned := bits.AlignUp(l, linux.NLA_ALIGNTO)
 	m.putZeros(aligned - l)
 }
 
@@ -251,7 +253,7 @@ func (v AttrsView) ParseFirst() (hdr linux.NetlinkAttrHeader, value []byte, rest
 	if !ok {
 		return
 	}
-	binary.Unmarshal(hdrBytes, hostarch.ByteOrder, &hdr)
+	hdr.UnmarshalUnsafe(hdrBytes)
 
 	value, ok = b.Extract(int(hdr.Length) - linux.NetlinkAttrHeaderSize)
 	if !ok {
