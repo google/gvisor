@@ -18,8 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -59,8 +58,8 @@ func (ownerMarshaler) marshal(mr matcher) []byte {
 		}
 	}
 
-	buf := make([]byte, 0, linux.SizeOfIPTOwnerInfo)
-	return marshalEntryMatch(matcherNameOwner, binary.Marshal(buf, hostarch.ByteOrder, iptOwnerInfo))
+	buf := marshal.Marshal(&iptOwnerInfo)
+	return marshalEntryMatch(matcherNameOwner, buf)
 }
 
 // unmarshal implements matchMaker.unmarshal.
@@ -72,7 +71,7 @@ func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.
 	// For alignment reasons, the match's total size may
 	// exceed what's strictly necessary to hold matchData.
 	var matchData linux.IPTOwnerInfo
-	binary.Unmarshal(buf[:linux.SizeOfIPTOwnerInfo], hostarch.ByteOrder, &matchData)
+	matchData.UnmarshalUnsafe(buf[:linux.SizeOfIPTOwnerInfo])
 	nflog("parseMatchers: parsed IPTOwnerInfo: %+v", matchData)
 
 	var owner OwnerMatcher

@@ -20,11 +20,29 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 )
 
 type dummyNetlinkMsg struct {
+	marshal.StubMarshallable
 	Foo uint16
+}
+
+func (*dummyNetlinkMsg) SizeBytes() int {
+	return 2
+}
+
+func (m *dummyNetlinkMsg) MarshalUnsafe(dst []byte) {
+	p := primitive.Uint16(m.Foo)
+	p.MarshalUnsafe(dst)
+}
+
+func (m *dummyNetlinkMsg) UnmarshalUnsafe(src []byte) {
+	var p primitive.Uint16
+	p.UnmarshalUnsafe(src)
+	m.Foo = uint16(p)
 }
 
 func TestParseMessage(t *testing.T) {

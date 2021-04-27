@@ -264,6 +264,8 @@ const (
 
 // NFNATRange corresponds to struct nf_nat_range in
 // include/uapi/linux/netfilter/nf_nat.h.
+//
+// +marshal
 type NFNATRange struct {
 	Flags    uint32
 	MinAddr  Inet6Addr

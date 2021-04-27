@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/marshal"
 )
 
@@ -251,18 +250,24 @@ type SockAddrInet struct {
 }
 
 // Inet6MulticastRequest is struct ipv6_mreq, from uapi/linux/in6.h.
+//
+// +marshal
 type Inet6MulticastRequest struct {
 	MulticastAddr  Inet6Addr
 	InterfaceIndex int32
 }
 
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
+//
+// +marshal
 type InetMulticastRequest struct {
 	MulticastAddr InetAddr
 	InterfaceAddr InetAddr
 }
 
 // InetMulticastRequestWithNIC is struct ip_mreqn, from uapi/linux/in.h.
+//
+// +marshal
 type InetMulticastRequestWithNIC struct {
 	InetMulticastRequest
 	InterfaceIndex int32
@@ -491,7 +496,7 @@ type TCPInfo struct {
 }
 
 // SizeOfTCPInfo is the binary size of a TCPInfo struct.
-var SizeOfTCPInfo = int(binary.Size(TCPInfo{}))
+var SizeOfTCPInfo = (*TCPInfo)(nil).SizeBytes()
 
 // Control message types, from linux/socket.h.
 const (
@@ -502,6 +507,8 @@ const (
 // A ControlMessageHeader is the header for a socket control message.
 //
 // ControlMessageHeader represents struct cmsghdr from linux/socket.h.
+//
+// +marshal
 type ControlMessageHeader struct {
 	Length uint64
 	Level  int32
@@ -510,7 +517,7 @@ type ControlMessageHeader struct {
 
 // SizeOfControlMessageHeader is the binary size of a ControlMessageHeader
 // struct.
-var SizeOfControlMessageHeader = int(binary.Size(ControlMessageHeader{}))
+var SizeOfControlMessageHeader = (*ControlMessageHeader)(nil).SizeBytes()
 
 // A ControlMessageCredentials is an SCM_CREDENTIALS socket control message.
 //
@@ -527,6 +534,7 @@ type ControlMessageCredentials struct {
 //
 // ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
 //
+// +marshal
 // +stateify savable
 type ControlMessageIPPacketInfo struct {
 	NIC             int32
@@ -536,7 +544,7 @@ type ControlMessageIPPacketInfo struct {
 
 // SizeOfControlMessageCredentials is the binary size of a
 // ControlMessageCredentials struct.
-var SizeOfControlMessageCredentials = int(binary.Size(ControlMessageCredentials{}))
+var SizeOfControlMessageCredentials = (*ControlMessageCredentials)(nil).SizeBytes()
 
 // A ControlMessageRights is an SCM_RIGHTS socket control message.
 type ControlMessageRights []int32

@@ -24,7 +24,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -572,19 +571,19 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
 	case unix.AF_INET:
 		var addr linux.SockAddrInet
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet4], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case unix.AF_INET6:
 		var addr linux.SockAddrInet6
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet6], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case unix.AF_UNIX:
 		var addr linux.SockAddrUnix
-		binary.Unmarshal(data[:unix.SizeofSockaddrUnix], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	case unix.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		binary.Unmarshal(data[:unix.SizeofSockaddrNetlink], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data[:addr.SizeBytes()])
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
@@ -716,7 +715,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInetSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInetSize], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr[:sockAddrInetSize])
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -729,7 +728,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInet6Size {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInet6Size], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr[:sockAddrInet6Size])
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -745,7 +744,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrLinkSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrLinkSize], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr[:sockAddrLinkSize])
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
