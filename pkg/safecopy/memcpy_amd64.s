@@ -51,8 +51,8 @@ TEXT ·memcpy(SB), NOSPLIT, $0-36
 	// handleMemcpyFault will store a different value in this address.
 	MOVL	$0, sig+32(FP)
 
-	MOVQ	to+0(FP), DI
-	MOVQ	from+8(FP), SI
+	MOVQ	dst+0(FP), DI
+	MOVQ	src+8(FP), SI
 	MOVQ	n+16(FP), BX
 
 tail:
