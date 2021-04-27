@@ -33,8 +33,8 @@ TEXT ·memcpy(SB), NOSPLIT, $-8-36
 	// handleMemcpyFault will store a different value in this address.
 	MOVW $0, sig+32(FP)
 
-	MOVD to+0(FP), R3
-	MOVD from+8(FP), R4
+	MOVD dst+0(FP), R3
+	MOVD src+8(FP), R4
 	MOVD n+16(FP), R5
 	CMP $0, R5
 	BNE check
