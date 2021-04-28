@@ -21,10 +21,12 @@ Update `/etc/containerd/config.toml`. Make sure `containerd-shim-runsc-v1` is in
 
 ```shell
 cat <<EOF | sudo tee /etc/containerd/config.toml
-disabled_plugins = ["restart"]
-[plugins.linux]
+version = 2
+[plugins."io.containerd.runtime.v1.linux"]
   shim_debug = true
-[plugins.cri.containerd.runtimes.runsc]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
   runtime_type = "io.containerd.runsc.v1"
 EOF
 ```
