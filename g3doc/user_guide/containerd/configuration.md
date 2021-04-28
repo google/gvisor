@@ -14,6 +14,7 @@ cat <<EOF | sudo tee /etc/containerd/runsc.toml
 option = "value"
 [runsc_config]
   flag = "value"
+EOF
 ```
 
 The set of options that can be configured can be found in
@@ -32,10 +33,12 @@ configuration. Here is an example:
 
 ```shell
 cat <<EOF | sudo tee /etc/containerd/config.toml
-disabled_plugins = ["restart"]
-[plugins.cri.containerd.runtimes.runsc]
+version = 2
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
   runtime_type = "io.containerd.runsc.v1"
-[plugins.cri.containerd.runtimes.runsc.options]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
   TypeUrl = "io.containerd.runsc.v1.options"
   ConfigPath = "/etc/containerd/runsc.toml"
 EOF
@@ -56,14 +59,16 @@ a containerd configuration file that enables both options:
 
 ```shell
 cat <<EOF | sudo tee /etc/containerd/config.toml
-disabled_plugins = ["restart"]
+version = 2
 [debug]
   level = "debug"
-[plugins.linux]
+[plugins."io.containerd.runtime.v1.linux"]
   shim_debug = true
-[plugins.cri.containerd.runtimes.runsc]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
   runtime_type = "io.containerd.runsc.v1"
-[plugins.cri.containerd.runtimes.runsc.options]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.option]
   TypeUrl = "io.containerd.runsc.v1.options"
   ConfigPath = "/etc/containerd/runsc.toml"
 EOF
@@ -93,4 +98,5 @@ log_level = "debug"
 [runsc_config]
   debug = "true"
   debug-log = "/var/log/runsc/%ID%/gvisor.%COMMAND%.log"
+EOF
 ```
