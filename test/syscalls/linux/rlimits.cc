@@ -41,9 +41,7 @@ TEST(RlimitTest, SetRlimitHigher) {
 
 TEST(RlimitTest, UnprivilegedSetRlimit) {
   // Drop privileges if necessary.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE))) {
-    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_RESOURCE, false));
-  }
+  AutoCapability cap(CAP_SYS_RESOURCE, false);
 
   struct rlimit rl = {};
   rl.rlim_cur = 1000;

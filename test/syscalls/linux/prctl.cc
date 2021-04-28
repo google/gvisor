@@ -184,10 +184,8 @@ TEST(PrctlTest, PDeathSig) {
 // This test is to validate that calling prctl with PR_SET_MM without the
 // CAP_SYS_RESOURCE returns EPERM.
 TEST(PrctlTest, InvalidPrSetMM) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_SYS_RESOURCE,
-                                  false));  // Drop capability to test below.
-  }
+  // Drop capability to test below.
+  AutoCapability cap(CAP_SYS_RESOURCE, false);
   ASSERT_THAT(prctl(PR_SET_MM, 0, 0, 0, 0), SyscallFailsWithErrno(EPERM));
 }
 

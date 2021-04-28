@@ -535,7 +535,7 @@ TEST(SemaphoreTest, SemCtlGetPidFork) {
 
 TEST(SemaphoreTest, SemIpcSet) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
 
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -560,7 +560,7 @@ TEST(SemaphoreTest, SemIpcSet) {
 
 TEST(SemaphoreTest, SemCtlIpcStat) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   const uid_t kUid = getuid();
   const gid_t kGid = getgid();
   time_t start_time = time(nullptr);
@@ -635,7 +635,7 @@ PosixErrorOr<int> WaitSemctl(int semid, int target, int cmd) {
 
 TEST(SemaphoreTest, SemopGetzcnt) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   // Create a write only semaphore set.
   AutoSem sem(semget(IPC_PRIVATE, 1, 0200 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -743,7 +743,7 @@ TEST(SemaphoreTest, SemopGetzcntOnSignal) {
 
 TEST(SemaphoreTest, SemopGetncnt) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   // Create a write only semaphore set.
   AutoSem sem(semget(IPC_PRIVATE, 1, 0200 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -853,7 +853,7 @@ TEST(SemaphoreTest, IpcInfo) {
   std::set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
     AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
     ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -923,7 +923,7 @@ TEST(SemaphoreTest, SemInfo) {
   std::set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
     AutoSem sem(semget(IPC_PRIVATE, kSemSetSize, 0600 | IPC_CREAT));
     ASSERT_THAT(sem.get(), SyscallSucceeds());

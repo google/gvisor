@@ -72,8 +72,8 @@ TEST_F(MkdirTest, HonorsUmask2) {
 
 TEST_F(MkdirTest, FailsOnDirWithoutWritePerms) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   ASSERT_THAT(mkdir(dirname_.c_str(), 0555), SyscallSucceeds());
   auto dir = JoinPath(dirname_.c_str(), "foo");
@@ -84,8 +84,8 @@ TEST_F(MkdirTest, FailsOnDirWithoutWritePerms) {
 
 TEST_F(MkdirTest, DirAlreadyExists) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   ASSERT_THAT(mkdir(dirname_.c_str(), 0777), SyscallSucceeds());
   auto dir = JoinPath(dirname_.c_str(), "foo");

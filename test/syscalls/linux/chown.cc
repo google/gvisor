@@ -91,9 +91,7 @@ using Chown =
 class ChownParamTest : public ::testing::TestWithParam<Chown> {};
 
 TEST_P(ChownParamTest, ChownFileSucceeds) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
-  }
+  AutoCapability cap(CAP_CHOWN, false);
 
   const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -135,9 +133,7 @@ TEST_P(ChownParamTest, ChownFilePermissionDenied) {
   // thread won't be able to open some log files after the test ends.
   ScopedThread([&] {
     // Drop privileges.
-    if (HaveCapability(CAP_CHOWN).ValueOrDie()) {
-      EXPECT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
-    }
+    AutoCapability cap(CAP_CHOWN, false);
 
     // Change EUID and EGID.
     //

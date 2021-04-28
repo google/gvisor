@@ -56,9 +56,7 @@ TEST(StickyTest, StickyBitPermDenied) {
   // thread won't be able to open some log files after the test ends.
   ScopedThread([&] {
     // Drop privileges.
-    if (HaveCapability(CAP_FOWNER).ValueOrDie()) {
-      EXPECT_NO_ERRNO(SetCapability(CAP_FOWNER, false));
-    }
+    AutoCapability cap(CAP_FOWNER, false);
 
     // Change EUID and EGID.
     EXPECT_THAT(
@@ -98,9 +96,7 @@ TEST(StickyTest, StickyBitSameUID) {
   // thread won't be able to open some log files after the test ends.
   ScopedThread([&] {
     // Drop privileges.
-    if (HaveCapability(CAP_FOWNER).ValueOrDie()) {
-      EXPECT_NO_ERRNO(SetCapability(CAP_FOWNER, false));
-    }
+    AutoCapability cap(CAP_FOWNER, false);
 
     // Change EGID.
     EXPECT_THAT(

@@ -100,8 +100,8 @@ TEST(SymlinkTest, CanCreateSymlinkDir) {
 
 TEST(SymlinkTest, CannotCreateSymlinkInReadOnlyDir) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   const std::string olddir = NewTempAbsPath();
   ASSERT_THAT(mkdir(olddir.c_str(), 0444), SyscallSucceeds());
@@ -250,8 +250,8 @@ TEST(SymlinkTest, PwriteToSymlink) {
 
 TEST(SymlinkTest, SymlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
@@ -301,8 +301,8 @@ TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
 
 TEST(SymlinkTest, ReadlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string oldpath = NewTempAbsPathInDir(dir.path());

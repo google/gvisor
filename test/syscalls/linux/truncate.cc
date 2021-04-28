@@ -181,7 +181,7 @@ TEST(TruncateTest, FtruncateDir) {
 TEST(TruncateTest, TruncateNonWriteable) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // always override write permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
   EXPECT_THAT(truncate(temp_file.path().c_str(), 0),
@@ -210,7 +210,7 @@ TEST(TruncateTest, FtruncateWithOpath) {
 // regardless of whether the file permissions allow writing.
 TEST(TruncateTest, FtruncateWithoutWritePermission) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   // The only time we can open a file with flags forbidden by its permissions
   // is when we are creating the file. We cannot re-open with the same flags,

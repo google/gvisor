@@ -170,10 +170,10 @@ TEST(TuntapStaticTest, NetTunExists) {
 class TuntapTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    have_net_admin_cap_ =
+    const bool have_net_admin_cap =
         ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN));
 
-    if (have_net_admin_cap_ && !IsRunningOnGvisor()) {
+    if (have_net_admin_cap && !IsRunningOnGvisor()) {
       // gVisor always creates enabled/up'd interfaces, while Linux does not (as
       // observed in b/110961832). Some of the tests require the Linux stack to
       // notify the socket of any link-address-resolution failures. Those
@@ -183,21 +183,12 @@ class TuntapTest : public ::testing::Test {
       ASSERT_NO_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
     }
   }
-
-  void TearDown() override {
-    if (have_net_admin_cap_) {
-      // Bring back capability if we had dropped it in test case.
-      ASSERT_NO_ERRNO(SetCapability(CAP_NET_ADMIN, true));
-    }
-  }
-
-  bool have_net_admin_cap_;
 };
 
 TEST_F(TuntapTest, CreateInterfaceNoCap) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  ASSERT_NO_ERRNO(SetCapability(CAP_NET_ADMIN, false));
+  AutoCapability cap(CAP_NET_ADMIN, false);
 
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
 
