@@ -177,10 +177,8 @@ TEST_F(RawHDRINCL, ConnectToLoopback) {
               SyscallSucceeds());
 }
 
-TEST_F(RawHDRINCL, SendWithoutConnectSucceeds) {
-  // FIXME(gvisor.dev/issue/3159): Test currently flaky.
-  SKIP_IF(true);
-
+// FIXME(gvisor.dev/issue/3159): Test currently flaky.
+TEST_F(RawHDRINCL, DISABLED_SendWithoutConnectSucceeds) {
   struct iphdr hdr = LoopbackHeader();
   ASSERT_THAT(send(socket_, &hdr, sizeof(hdr), 0),
               SyscallSucceedsWithValue(sizeof(hdr)));
