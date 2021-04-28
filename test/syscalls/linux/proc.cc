@@ -1849,8 +1849,8 @@ TEST(ProcPidSymlink, SubprocessRunning) {
 }
 
 TEST(ProcPidSymlink, SubprocessZombied) {
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   char buf[1];
 
@@ -2252,7 +2252,7 @@ TEST(ProcTask, VerifyTaskDir) {
 
 TEST(ProcTask, TaskDirCannotBeDeleted) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   EXPECT_THAT(rmdir("/proc/self/task"), SyscallFails());
   EXPECT_THAT(rmdir(absl::StrCat("/proc/self/task/", getpid()).c_str()),

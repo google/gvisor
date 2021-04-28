@@ -109,8 +109,8 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrReadOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
@@ -140,8 +140,8 @@ TEST_F(XattrTest, XattrReadOnly) {
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrWriteOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   DisableSave ds;
   ASSERT_NO_ERRNO(testing::Chmod(test_file_name_, S_IWUSR));
@@ -680,9 +680,7 @@ TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
 
   // Drop CAP_SYS_ADMIN if we have it.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
-  }
+  AutoCapability cap(CAP_SYS_ADMIN, false);
 
   const char* path = test_file_name_.c_str();
   const char name[] = "trusted.test";

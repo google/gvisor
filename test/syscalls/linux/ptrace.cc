@@ -175,7 +175,7 @@ TEST(PtraceTest, AttachSameThreadGroup) {
 
 TEST(PtraceTest, TraceParentNotAllowed) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) < 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   pid_t const child_pid = fork();
   if (child_pid == 0) {
@@ -193,7 +193,7 @@ TEST(PtraceTest, TraceParentNotAllowed) {
 
 TEST(PtraceTest, TraceNonDescendantNotAllowed) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) < 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   pid_t const tracee_pid = fork();
   if (tracee_pid == 0) {
@@ -259,7 +259,7 @@ TEST(PtraceTest, TraceNonDescendantWithCapabilityAllowed) {
 
 TEST(PtraceTest, TraceDescendantsAllowed) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use socket pair to communicate tids to this process from its grandchild.
   int sockets[2];
@@ -346,7 +346,7 @@ TEST(PtraceTest, PrctlSetPtracerInvalidPID) {
 TEST(PtraceTest, PrctlSetPtracerPID) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
 
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -410,7 +410,7 @@ TEST(PtraceTest, PrctlSetPtracerPID) {
 
 TEST(PtraceTest, PrctlSetPtracerAny) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -475,7 +475,7 @@ TEST(PtraceTest, PrctlSetPtracerAny) {
 
 TEST(PtraceTest, PrctlClearPtracer) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -543,7 +543,7 @@ TEST(PtraceTest, PrctlClearPtracer) {
 
 TEST(PtraceTest, PrctlReplacePtracer) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   pid_t const unused_pid = fork();
   if (unused_pid == 0) {
@@ -633,7 +633,7 @@ TEST(PtraceTest, PrctlReplacePtracer) {
 // thread group leader is still around.
 TEST(PtraceTest, PrctlSetPtracerPersistsPastTraceeThreadExit) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -703,7 +703,7 @@ TEST(PtraceTest, PrctlSetPtracerPersistsPastTraceeThreadExit) {
 // even if the tracee thread is terminated.
 TEST(PtraceTest, PrctlSetPtracerPersistsPastLeaderExec) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -770,7 +770,7 @@ TEST(PtraceTest, PrctlSetPtracerPersistsPastLeaderExec) {
 // exec.
 TEST(PtraceTest, PrctlSetPtracerDoesNotPersistPastNonLeaderExec) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -904,7 +904,7 @@ TEST(PtraceTest, PrctlSetPtracerDoesNotPersistPastTracerThreadExit) {
 
 [[noreturn]] void RunPrctlSetPtracerDoesNotPersistPastTracerThreadExit(
     int tracee_tid, int fd) {
-  TEST_PCHECK(SetCapability(CAP_SYS_PTRACE, false).ok());
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   ScopedThread t([fd] {
     pid_t const tracer_tid = gettid();
@@ -1033,7 +1033,7 @@ TEST(PtraceTest, PrctlSetPtracerRespectsTracerThreadID) {
 // attached.
 TEST(PtraceTest, PrctlClearPtracerDoesNotAffectCurrentTracer) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Use sockets to synchronize between tracer and tracee.
   int sockets[2];
@@ -1118,7 +1118,7 @@ TEST(PtraceTest, PrctlClearPtracerDoesNotAffectCurrentTracer) {
 
 TEST(PtraceTest, PrctlNotInherited) {
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) != 1);
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
 
   // Allow any ptracer. This should not affect the child processes.
   ASSERT_THAT(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY), SyscallSucceeds());
@@ -2302,7 +2302,7 @@ TEST(PtraceTest, SetYAMAPtraceScope) {
   EXPECT_STREQ(buf.data(), "0\n");
 
   // Test that a child can attach to its parent when ptrace_scope is 0.
-  ASSERT_NO_ERRNO(SetCapability(CAP_SYS_PTRACE, false));
+  AutoCapability cap(CAP_SYS_PTRACE, false);
   pid_t const child_pid = fork();
   if (child_pid == 0) {
     TEST_PCHECK(CheckPtraceAttach(getppid()) == 0);

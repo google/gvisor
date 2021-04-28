@@ -66,8 +66,8 @@ TEST(UnlinkTest, AtDir) {
 
 TEST(UnlinkTest, AtDirDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
@@ -86,8 +86,8 @@ TEST(UnlinkTest, AtDirDegradedPermissions) {
 // Files cannot be unlinked if the parent is not writable and executable.
 TEST(UnlinkTest, ParentDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));

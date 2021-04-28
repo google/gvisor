@@ -93,7 +93,8 @@ TEST(CreateTest, CreatFileWithOTruncAndReadOnly) {
 TEST(CreateTest, CreateFailsOnDirWithoutWritePerms) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // always override directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
+
   auto parent = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0555));
   auto file = JoinPath(parent.path(), "foo");
@@ -123,8 +124,8 @@ TEST(CreateTest, ChmodReadToWriteBetweenOpens) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions. CAP_DAC_READ_SEARCH needs to be
   // cleared for the same reason.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0400));
@@ -152,7 +153,7 @@ TEST(CreateTest, ChmodReadToWriteBetweenOpens) {
 TEST(CreateTest, ChmodWriteToReadBetweenOpens) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0200));
@@ -186,8 +187,8 @@ TEST(CreateTest, CreateWithReadFlagNotAllowedByMode) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions. CAP_DAC_READ_SEARCH needs to be
   // cleared for the same reason.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   // Create and open a file with read flag but without read permissions.
   const std::string path = NewTempAbsPath();
@@ -212,7 +213,7 @@ TEST(CreateTest, CreateWithWriteFlagNotAllowedByMode) {
 
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // override file read/write permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   // Create and open a file with write flag but without write permissions.
   const std::string path = NewTempAbsPath();

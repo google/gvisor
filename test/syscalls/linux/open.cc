@@ -433,7 +433,7 @@ TEST_F(OpenTest, CanTruncateReadOnly) {
 // O_TRUNC should fail.
 TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   const DisableSave ds;  // Permissions are dropped.
   ASSERT_THAT(chmod(test_file_name_.c_str(), S_IRUSR | S_IRGRP),
@@ -473,8 +473,8 @@ TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission) {
 }
 
 TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
   const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
   // Create a file without user permissions.
@@ -510,8 +510,8 @@ TEST_F(OpenTest, OpenWithStrangeFlags) {
 
 TEST_F(OpenTest, OpenWithOpath) {
   SKIP_IF(IsRunningWithVFS1());
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
   const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
 

@@ -259,8 +259,8 @@ TEST(RenameTest, DirectoryDoesNotOverwriteNonemptyDirectory) {
 
 TEST(RenameTest, FailsWhenOldParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -275,8 +275,8 @@ TEST(RenameTest, FailsWhenOldParentNotWritable) {
 
 TEST(RenameTest, FailsWhenNewParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -293,8 +293,8 @@ TEST(RenameTest, FailsWhenNewParentNotWritable) {
 // to overwrite.
 TEST(RenameTest, OverwriteFailsWhenNewParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -312,8 +312,8 @@ TEST(RenameTest, OverwriteFailsWhenNewParentNotWritable) {
 // because the user cannot determine if source exists.
 TEST(RenameTest, FileDoesNotExistWhenNewParentNotExecutable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   // No execute permission.
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(
