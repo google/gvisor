@@ -44,13 +44,10 @@ type ResolvingPath struct {
 	start *Dentry
 	pit   fspath.Iterator
 
-	flags         uint16
-	mustBeDir     bool // final file must be a directory?
-	mustBeDirOrig bool
-	symlinks      uint8 // number of symlinks traversed
-	symlinksOrig  uint8
-	curPart       uint8 // index into parts
-	numOrigParts  uint8
+	flags     uint16
+	mustBeDir bool  // final file must be a directory?
+	symlinks  uint8 // number of symlinks traversed
+	curPart   uint8 // index into parts
 
 	creds *auth.Credentials
 
@@ -60,14 +57,9 @@ type ResolvingPath struct {
 	nextStart        *Dentry // ref held if not nil
 	absSymlinkTarget fspath.Path
 
-	// ResolvingPath must track up to two relative paths: the "current"
-	// relative path, which is updated whenever a relative symlink is
-	// encountered, and the "original" relative path, which is updated from the
-	// current relative path by handleError() when resolution must change
-	// filesystems (due to reaching a mount boundary or absolute symlink) and
-	// overwrites the current relative path when Restart() is called.
-	parts     [1 + linux.MaxSymlinkTraversals]fspath.Iterator
-	origParts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
+	// ResolvingPath tracks relative paths, which is updated whenever a relative
+	// symlink is encountered.
+	parts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
 }
 
 const (
@@ -134,13 +126,10 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 		rp.flags |= rpflagsFollowFinalSymlink
 	}
 	rp.mustBeDir = pop.Path.Dir
-	rp.mustBeDirOrig = pop.Path.Dir
 	rp.symlinks = 0
 	rp.curPart = 0
-	rp.numOrigParts = 1
 	rp.creds = creds
 	rp.parts[0] = pop.Path.Begin
-	rp.origParts[0] = pop.Path.Begin
 	return rp
 }
 
@@ -263,25 +252,6 @@ func (rp *ResolvingPath) Advance() {
 		rp.curPart--
 		rp.pit = rp.parts[rp.curPart]
 	}
-}
-
-// Restart resets the stream of path components represented by rp to its state
-// on entry to the current FilesystemImpl method.
-func (rp *ResolvingPath) Restart(ctx context.Context) {
-	rp.pit = rp.origParts[rp.numOrigParts-1]
-	rp.mustBeDir = rp.mustBeDirOrig
-	rp.symlinks = rp.symlinksOrig
-	rp.curPart = rp.numOrigParts - 1
-	copy(rp.parts[:], rp.origParts[:rp.numOrigParts])
-	rp.releaseErrorState(ctx)
-}
-
-func (rp *ResolvingPath) relpathCommit() {
-	rp.mustBeDirOrig = rp.mustBeDir
-	rp.symlinksOrig = rp.symlinks
-	rp.numOrigParts = rp.curPart + 1
-	copy(rp.origParts[:rp.curPart], rp.parts[:])
-	rp.origParts[rp.curPart] = rp.pit
 }
 
 // CheckRoot is called before resolving the parent of the Dentry d. If the
@@ -430,11 +400,10 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.flags |= rpflagsHaveMountRef | rpflagsHaveStartRef
 		rp.nextMount = nil
 		rp.nextStart = nil
-		// Commit the previous FileystemImpl's progress through the relative
-		// path. (Don't consume the path component that caused us to traverse
+		// Don't consume the path component that caused us to traverse
 		// through the mount root - i.e. the ".." - because we still need to
-		// resolve the mount point's parent in the new FilesystemImpl.)
-		rp.relpathCommit()
+		// resolve the mount point's parent in the new FilesystemImpl.
+		//
 		// Restart path resolution on the new Mount. Don't bother calling
 		// rp.releaseErrorState() since we already set nextMount and nextStart
 		// to nil above.
@@ -450,9 +419,6 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.nextMount = nil
 		// Consume the path component that represented the mount point.
 		rp.Advance()
-		// Commit the previous FilesystemImpl's progress through the relative
-		// path.
-		rp.relpathCommit()
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
 		return true
@@ -467,9 +433,6 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.Advance()
 		// Prepend the symlink target to the relative path.
 		rp.relpathPrepend(rp.absSymlinkTarget)
-		// Commit the previous FilesystemImpl's progress through the relative
-		// path, including the symlink target we just prepended.
-		rp.relpathCommit()
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
 		return true
