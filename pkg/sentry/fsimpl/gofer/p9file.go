@@ -238,3 +238,10 @@ func (f p9file) connect(ctx context.Context, flags p9.ConnectFlags) (*fd.FD, err
 	ctx.UninterruptibleSleepFinish(false)
 	return fdobj, err
 }
+
+func (f p9file) multiGetAttr(ctx context.Context, names []string) ([]p9.FullStat, error) {
+	ctx.UninterruptibleSleepStart(false)
+	stats, err := f.file.MultiGetAttr(names)
+	ctx.UninterruptibleSleepFinish(false)
+	return stats, err
+}

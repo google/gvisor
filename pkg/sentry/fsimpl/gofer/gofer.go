@@ -32,9 +32,9 @@
 //   specialFileFD.mu
 //     specialFileFD.bufMu
 //
-// Locking dentry.dirMu in multiple dentries requires that either ancestor
-// dentries are locked before descendant dentries, or that filesystem.renameMu
-// is locked for writing.
+// Locking dentry.dirMu and dentry.metadataMu in multiple dentries requires that
+// either ancestor dentries are locked before descendant dentries, or that
+// filesystem.renameMu is locked for writing.
 package gofer
 
 import (
