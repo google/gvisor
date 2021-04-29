@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -118,13 +119,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 }
 
-// EpollWait implements Linux syscall epoll_wait(2).
-func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	epfd := args[0].Int()
-	eventsAddr := args[1].Pointer()
-	maxEvents := int(args[2].Int())
-	timeout := int(args[3].Int())
-
+func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
 	var _EP_MAX_EVENTS = math.MaxInt32 / sizeofEpollEvent // Linux: fs/eventpoll.c:EP_MAX_EVENTS
 	if maxEvents <= 0 || maxEvents > _EP_MAX_EVENTS {
 		return 0, nil, syserror.EINVAL
@@ -158,7 +153,7 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			}
 			return 0, nil, err
 		}
-		if timeout == 0 {
+		if timeoutInNanos == 0 {
 			return 0, nil, nil
 		}
 		// In the first iteration of this loop, register with the epoll
@@ -173,8 +168,8 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			defer epfile.EventUnregister(&w)
 		} else {
 			// Set up the timer if a timeout was specified.
-			if timeout > 0 && !haveDeadline {
-				timeoutDur := time.Duration(timeout) * time.Millisecond
+			if timeoutInNanos > 0 && !haveDeadline {
+				timeoutDur := time.Duration(timeoutInNanos) * time.Nanosecond
 				deadline = t.Kernel().MonotonicClock().Now().Add(timeoutDur)
 				haveDeadline = true
 			}
@@ -186,6 +181,17 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			}
 		}
 	}
+
+}
+
+// EpollWait implements Linux syscall epoll_wait(2).
+func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	epfd := args[0].Int()
+	eventsAddr := args[1].Pointer()
+	maxEvents := int(args[2].Int())
+	timeoutInNanos := int64(args[3].Int()) * 1000000
+
+	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
 
 // EpollPwait implements Linux syscall epoll_pwait(2).
@@ -198,4 +204,30 @@ func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	return EpollWait(t, args)
+}
+
+// EpollPwait2 implements Linux syscall epoll_pwait(2).
+func EpollPwait2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	epfd := args[0].Int()
+	eventsAddr := args[1].Pointer()
+	maxEvents := int(args[2].Int())
+	timeoutPtr := args[3].Pointer()
+	maskAddr := args[4].Pointer()
+	maskSize := uint(args[5].Uint())
+	haveTimeout := timeoutPtr != 0
+
+	var timeoutInNanos int64 = -1
+	if haveTimeout {
+		var timeout linux.Timespec
+		if _, err := timeout.CopyIn(t, timeoutPtr); err != nil {
+			return 0, nil, err
+		}
+		timeoutInNanos = timeout.ToNsec()
+	}
+
+	if err := setTempSignalSet(t, maskAddr, maskSize); err != nil {
+		return 0, nil, err
+	}
+
+	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
