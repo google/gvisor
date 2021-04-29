@@ -425,7 +425,6 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	rp := vfs.getResolvingPath(creds, pop)
 	if opts.Flags&linux.O_DIRECTORY != 0 {
 		rp.mustBeDir = true
-		rp.mustBeDirOrig = true
 	}
 	// Ignore O_PATH for verity, as verity performs extra operations on the fd for verification.
 	// The underlying filesystem that verity wraps opens the fd with O_PATH.
