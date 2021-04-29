@@ -38,6 +38,7 @@ go_library(
         "host_named_pipe.go",
         "p9file.go",
         "regular_file.go",
+        "revalidate.go",
         "save_restore.go",
         "socket.go",
         "special_file.go",
