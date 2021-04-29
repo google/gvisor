@@ -36,7 +36,6 @@ const (
 )
 
 // DigestSize returns the size (in bytes) of a digest.
-// TODO(b/156980949): Allow config SHA384.
 func DigestSize(hashAlgorithm int) int {
 	switch hashAlgorithm {
 	case linux.FS_VERITY_HASH_ALG_SHA256:
@@ -69,7 +68,6 @@ func InitLayout(dataSize int64, hashAlgorithms int, dataAndTreeInSameFile bool) 
 		blockSize: hostarch.PageSize,
 	}
 
-	// TODO(b/156980949): Allow config SHA384.
 	switch hashAlgorithms {
 	case linux.FS_VERITY_HASH_ALG_SHA256:
 		layout.digestSize = sha256DigestSize
@@ -429,8 +427,6 @@ func Verify(params *VerifyParams) (int64, error) {
 		}
 		// If this is the end of file, zero the remaining bytes in buf,
 		// otherwise they are still from the previous block.
-		// TODO(b/162908070): Investigate possible issues with zero
-		// padding the data.
 		if bytesRead < len(buf) {
 			for j := bytesRead; j < len(buf); j++ {
 				buf[j] = 0
