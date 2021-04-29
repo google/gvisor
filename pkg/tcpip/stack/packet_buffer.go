@@ -364,9 +364,10 @@ func (d PacketData) PullUp(size int) (buffer.View, bool) {
 	return d.pk.data.PullUp(size)
 }
 
-// TrimFront removes count from the beginning of d. It panics if count >
-// d.Size().
-func (d PacketData) TrimFront(count int) {
+// DeleteFront removes count from the beginning of d. It panics if count >
+// d.Size(). All backing storage references after the front of the d are
+// invalidated.
+func (d PacketData) DeleteFront(count int) {
 	d.pk.data.TrimFront(count)
 }
 

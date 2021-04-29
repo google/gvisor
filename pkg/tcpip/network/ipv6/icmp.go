@@ -181,10 +181,13 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 		return
 	}
 
+	// Keep needed information before trimming header.
+	p := hdr.TransportProtocol()
+	dstAddr := hdr.DestinationAddress()
+
 	// Skip the IP header, then handle the fragmentation header if there
 	// is one.
-	pkt.Data().TrimFront(header.IPv6MinimumSize)
-	p := hdr.TransportProtocol()
+	pkt.Data().DeleteFront(header.IPv6MinimumSize)
 	if p == header.IPv6FragmentHeader {
 		f, ok := pkt.Data().PullUp(header.IPv6FragmentHeaderSize)
 		if !ok {
@@ -196,14 +199,14 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 			// because they don't have the transport headers.
 			return
 		}
+		p = fragHdr.TransportProtocol()
 
 		// Skip fragmentation header and find out the actual protocol
 		// number.
-		pkt.Data().TrimFront(header.IPv6FragmentHeaderSize)
-		p = fragHdr.TransportProtocol()
+		pkt.Data().DeleteFront(header.IPv6FragmentHeaderSize)
 	}
 
-	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, transErr, pkt)
+	e.dispatcher.DeliverTransportError(srcAddr, dstAddr, ProtocolNumber, p, transErr, pkt)
 }
 
 // getLinkAddrOption searches NDP options for a given link address option using
@@ -327,11 +330,11 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			received.invalid.Increment()
 			return
 		}
-		pkt.Data().TrimFront(header.ICMPv6PacketTooBigMinimumSize)
 		networkMTU, err := calculateNetworkMTU(header.ICMPv6(hdr).MTU(), header.IPv6MinimumSize)
 		if err != nil {
 			networkMTU = 0
 		}
+		pkt.Data().DeleteFront(header.ICMPv6PacketTooBigMinimumSize)
 		e.handleControl(&icmpv6PacketTooBigSockError{mtu: networkMTU}, pkt)
 
 	case header.ICMPv6DstUnreachable:
@@ -341,8 +344,9 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			received.invalid.Increment()
 			return
 		}
-		pkt.Data().TrimFront(header.ICMPv6DstUnreachableMinimumSize)
-		switch header.ICMPv6(hdr).Code() {
+		code := header.ICMPv6(hdr).Code()
+		pkt.Data().DeleteFront(header.ICMPv6DstUnreachableMinimumSize)
+		switch code {
 		case header.ICMPv6NetworkUnreachable:
 			e.handleControl(&icmpv6DestinationNetworkUnreachableSockError{}, pkt)
 		case header.ICMPv6PortUnreachable:

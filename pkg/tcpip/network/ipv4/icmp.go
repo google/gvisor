@@ -163,10 +163,12 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 		return
 	}
 
-	// Skip the ip header, then deliver the error.
-	pkt.Data().TrimFront(hlen)
+	// Keep needed information before trimming header.
 	p := hdr.TransportProtocol()
-	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, errInfo, pkt)
+	dstAddr := hdr.DestinationAddress()
+	// Skip the ip header, then deliver the error.
+	pkt.Data().DeleteFront(hlen)
+	e.dispatcher.DeliverTransportError(srcAddr, dstAddr, ProtocolNumber, p, errInfo, pkt)
 }
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
@@ -336,14 +338,16 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	case header.ICMPv4DstUnreachable:
 		received.dstUnreachable.Increment()
 
-		pkt.Data().TrimFront(header.ICMPv4MinimumSize)
-		switch h.Code() {
+		mtu := h.MTU()
+		code := h.Code()
+		pkt.Data().DeleteFront(header.ICMPv4MinimumSize)
+		switch code {
 		case header.ICMPv4HostUnreachable:
 			e.handleControl(&icmpv4DestinationHostUnreachableSockError{}, pkt)
 		case header.ICMPv4PortUnreachable:
 			e.handleControl(&icmpv4DestinationPortUnreachableSockError{}, pkt)
 		case header.ICMPv4FragmentationNeeded:
-			networkMTU, err := calculateNetworkMTU(uint32(h.MTU()), header.IPv4MinimumSize)
+			networkMTU, err := calculateNetworkMTU(uint32(mtu), header.IPv4MinimumSize)
 			if err != nil {
 				networkMTU = 0
 			}
