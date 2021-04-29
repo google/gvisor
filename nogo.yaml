@@ -89,6 +89,7 @@ analyzers:
         - pkg/sentry/fsimpl/gofer/filesystem.go                            # unsupported usage.
         - pkg/sentry/fsimpl/gofer/gofer.go                                 # unsupported usage.
         - pkg/sentry/fsimpl/gofer/regular_file.go                          # unsupported usage.
+        - pkg/sentry/fsimpl/gofer/revalidate.go                            # unsupported usage.
         - pkg/sentry/fsimpl/gofer/special_file.go                          # unsupported usage.
         - pkg/sentry/fsimpl/gofer/symlink.go                               # unsupported usage.
         - pkg/sentry/fsimpl/overlay/copy_up.go                             # unsupported usage.
