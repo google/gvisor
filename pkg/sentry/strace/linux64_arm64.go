@@ -46,7 +46,7 @@ var linuxARM64 = SyscallMap{
 	19:  makeSyscallInfo("eventfd2", Hex, Hex),
 	20:  makeSyscallInfo("epoll_create1", Hex),
 	21:  makeSyscallInfo("epoll_ctl", FD, EpollCtlOp, FD, EpollEvent),
-	22:  makeSyscallInfo("epoll_pwait", FD, EpollEvents, Hex, Hex, SigSet),
+	22:  makeSyscallInfo("epoll_pwait", FD, EpollEvents, Hex, Hex, SigSet, Hex),
 	23:  makeSyscallInfo("dup", FD),
 	24:  makeSyscallInfo("dup3", FD, FD, Hex),
 	25:  makeSyscallInfo("fcntl", FD, Hex, Hex),
