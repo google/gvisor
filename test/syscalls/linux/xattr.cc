@@ -632,7 +632,7 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
   // Trusted namespace not supported in VFS1.
   SKIP_IF(IsRunningWithVFS1());
 
-  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  // TODO(b/166162845): Only gVisor tmpfs currently supports trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
 

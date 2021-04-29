@@ -101,7 +101,7 @@ func (f *fwdTestNetworkEndpoint) HandlePacket(pkt *PacketBuffer) {
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               vv.ToView().ToVectorisedView(),
 	})
-	// TODO(b/143425874) Decrease the TTL field in forwarded packets.
+	// TODO(gvisor.dev/issue/1085) Decrease the TTL field in forwarded packets.
 	_ = r.WriteHeaderIncludedPacket(pkt)
 }
 
