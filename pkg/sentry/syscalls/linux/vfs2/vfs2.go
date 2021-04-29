@@ -159,6 +159,7 @@ func Override() {
 	s.Table[327] = syscalls.Supported("preadv2", Preadv2)
 	s.Table[328] = syscalls.Supported("pwritev2", Pwritev2)
 	s.Table[332] = syscalls.Supported("statx", Statx)
+	s.Table[441] = syscalls.Supported("epoll_pwait2", EpollPwait2)
 	s.Init()
 
 	// Override ARM64.
@@ -269,6 +270,7 @@ func Override() {
 	s.Table[286] = syscalls.Supported("preadv2", Preadv2)
 	s.Table[287] = syscalls.Supported("pwritev2", Pwritev2)
 	s.Table[291] = syscalls.Supported("statx", Statx)
+	s.Table[441] = syscalls.Supported("epoll_pwait2", EpollPwait2)
 
 	s.Init()
 }

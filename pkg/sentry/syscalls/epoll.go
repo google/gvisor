@@ -119,7 +119,7 @@ func RemoveEpoll(t *kernel.Task, epfd int32, fd int32) error {
 }
 
 // WaitEpoll implements the epoll_wait(2) linux syscall.
-func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]linux.EpollEvent, error) {
+func WaitEpoll(t *kernel.Task, fd int32, max int, timeoutInNanos int64) ([]linux.EpollEvent, error) {
 	// Get epoll from the file descriptor.
 	epollfile := t.GetFile(fd)
 	if epollfile == nil {
@@ -136,7 +136,7 @@ func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]linux.EpollEve
 	// Try to read events and return right away if we got them or if the
 	// caller requested a non-blocking "wait".
 	r := e.ReadEvents(max)
-	if len(r) != 0 || timeout == 0 {
+	if len(r) != 0 || timeoutInNanos == 0 {
 		return r, nil
 	}
 
@@ -144,8 +144,8 @@ func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]linux.EpollEve
 	// and register with the epoll object for readability events.
 	var haveDeadline bool
 	var deadline ktime.Time
-	if timeout > 0 {
-		timeoutDur := time.Duration(timeout) * time.Millisecond
+	if timeoutInNanos > 0 {
+		timeoutDur := time.Duration(timeoutInNanos) * time.Nanosecond
 		deadline = t.Kernel().MonotonicClock().Now().Add(timeoutDur)
 		haveDeadline = true
 	}

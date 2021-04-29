@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
@@ -104,14 +105,8 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 }
 
-// EpollWait implements the epoll_wait(2) linux syscall.
-func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	epfd := args[0].Int()
-	eventsAddr := args[1].Pointer()
-	maxEvents := int(args[2].Int())
-	timeout := int(args[3].Int())
-
-	r, err := syscalls.WaitEpoll(t, epfd, maxEvents, timeout)
+func waitEpoll(t *kernel.Task, fd int32, eventsAddr hostarch.Addr, max int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
+	r, err := syscalls.WaitEpoll(t, fd, max, timeoutInNanos)
 	if err != nil {
 		return 0, nil, syserror.ConvertIntr(err, syserror.EINTR)
 	}
@@ -123,6 +118,17 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	return uintptr(len(r)), nil, nil
+
+}
+
+// EpollWait implements the epoll_wait(2) linux syscall.
+func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	epfd := args[0].Int()
+	eventsAddr := args[1].Pointer()
+	maxEvents := int(args[2].Int())
+	// Convert milliseconds to nanoseconds.
+	timeoutInNanos := int64(args[3].Int()) * 1000000
+	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
 
 // EpollPwait implements the epoll_pwait(2) linux syscall.
@@ -142,6 +148,40 @@ func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	return EpollWait(t, args)
+}
+
+// EpollPwait2 implements the epoll_pwait(2) linux syscall.
+func EpollPwait2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	epfd := args[0].Int()
+	eventsAddr := args[1].Pointer()
+	maxEvents := int(args[2].Int())
+	timeoutPtr := args[3].Pointer()
+	maskAddr := args[4].Pointer()
+	maskSize := uint(args[5].Uint())
+	haveTimeout := timeoutPtr != 0
+
+	var timeoutInNanos int64 = -1
+	if haveTimeout {
+		timeout, err := copyTimespecIn(t, timeoutPtr)
+		if err != nil {
+			return 0, nil, err
+		}
+		timeoutInNanos = timeout.ToNsec()
+
+	}
+
+	if maskAddr != 0 {
+		mask, err := CopyInSigSet(t, maskAddr, maskSize)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		oldmask := t.SignalMask()
+		t.SetSignalMask(mask)
+		t.SetSavedSignalMask(oldmask)
+	}
+
+	return waitEpoll(t, epfd, eventsAddr, maxEvents, timeoutInNanos)
 }
 
 // LINT.ThenChange(vfs2/epoll.go)

@@ -39,6 +39,15 @@ namespace {
 constexpr int kFDsPerEpoll = 3;
 constexpr uint64_t kMagicConstant = 0x0102030405060708;
 
+#ifndef SYS_epoll_pwait2
+#define SYS_epoll_pwait2 441
+#endif
+
+int epoll_pwait2(int fd, struct epoll_event* events, int maxevents,
+                 const struct timespec* timeout, const sigset_t* sigset) {
+  return syscall(SYS_epoll_pwait2, fd, events, maxevents, timeout, sigset);
+}
+
 TEST(EpollTest, AllWritable) {
   auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
   std::vector<FileDescriptor> eventfds;
@@ -142,6 +151,50 @@ TEST(EpollTest, Timeout) {
   // Check the lower bound on the timeout.  Checking for an upper bound is
   // fragile because Linux can overrun the timeout due to scheduling delays.
   EXPECT_GT(ms_elapsed(begin, end), kTimeoutMs - 1);
+}
+
+TEST(EpollTest, EpollPwait2Timeout) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  // 200 milliseconds.
+  constexpr int kTimeoutNs = 200000000;
+  struct timespec timeout;
+  timeout.tv_sec = 0;
+  timeout.tv_nsec = 0;
+  struct timespec begin;
+  struct timespec end;
+  struct epoll_event result[kFDsPerEpoll];
+
+  std::vector<FileDescriptor> eventfds;
+  for (int i = 0; i < kFDsPerEpoll; i++) {
+    eventfds.push_back(ASSERT_NO_ERRNO_AND_VALUE(NewEventFD()));
+    ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), eventfds[i].get(), EPOLLIN,
+                                    kMagicConstant + i));
+  }
+
+  // Pass valid arguments so that the syscall won't be blocked indefinitely
+  // nor return errno EINVAL.
+  //
+  // The syscall returns immediately when timeout is zero,
+  // even if no events are available.
+  SKIP_IF(!IsRunningOnGvisor() &&
+          epoll_pwait2(epollfd.get(), result, kFDsPerEpoll, &timeout, nullptr) <
+              0 &&
+          errno == ENOSYS);
+
+  {
+    const DisableSave ds;  // Timing-related.
+    EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &begin), SyscallSucceeds());
+
+    timeout.tv_nsec = kTimeoutNs;
+    ASSERT_THAT(RetryEINTR(epoll_pwait2)(epollfd.get(), result, kFDsPerEpoll,
+                                         &timeout, nullptr),
+                SyscallSucceedsWithValue(0));
+    EXPECT_THAT(clock_gettime(CLOCK_MONOTONIC, &end), SyscallSucceeds());
+  }
+
+  // Check the lower bound on the timeout.  Checking for an upper bound is
+  // fragile because Linux can overrun the timeout due to scheduling delays.
+  EXPECT_GT(ns_elapsed(begin, end), kTimeoutNs - 1);
 }
 
 void* writer(void* arg) {

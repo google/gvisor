@@ -404,6 +404,7 @@ var AMD64 = &kernel.SyscallTable{
 		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
 		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
+		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{
 		0xffffffffff600000: 96,  // vsyscall gettimeofday(2)
@@ -722,6 +723,7 @@ var ARM64 = &kernel.SyscallTable{
 		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
 		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
 		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
+		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {

@@ -272,10 +272,15 @@ PosixErrorOr<std::vector<OpenFd>> GetOpenFDs();
 // Returns the number of hard links to a path.
 PosixErrorOr<uint64_t> Links(const std::string& path);
 
+inline uint64_t ns_elapsed(const struct timespec& begin,
+                           const struct timespec& end) {
+  return (end.tv_sec - begin.tv_sec) * 1000000000 +
+         (end.tv_nsec - begin.tv_nsec);
+}
+
 inline uint64_t ms_elapsed(const struct timespec& begin,
                            const struct timespec& end) {
-  return (end.tv_sec - begin.tv_sec) * 1000 +
-         (end.tv_nsec - begin.tv_nsec) / 1000000;
+  return ns_elapsed(begin, end) / 1000000;
 }
 
 namespace internal {

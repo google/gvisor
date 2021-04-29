@@ -371,6 +371,7 @@ var linuxAMD64 = SyscallMap{
 	433: makeSyscallInfo("fspick", FD, Path, Hex),
 	434: makeSyscallInfo("pidfd_open", Hex, Hex),
 	435: makeSyscallInfo("clone3", Hex, Hex),
+	441: makeSyscallInfo("epoll_pwait2", FD, EpollEvents, Hex, Timespec, SigSet),
 }
 
 func init() {
