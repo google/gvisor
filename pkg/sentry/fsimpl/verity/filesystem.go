@@ -168,10 +168,6 @@ afterSymlink:
 // Preconditions:
 // * fs.renameMu must be locked.
 // * d.dirMu must be locked.
-//
-// TODO(b/166474175): Investigate all possible errors returned in this
-// function, and make sure we differentiate all errors that indicate unexpected
-// modifications to the file system from the ones that are not harmful.
 func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, child *dentry) (*dentry, error) {
 	vfsObj := fs.vfsfs.VirtualFilesystem()
 
@@ -278,16 +274,15 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 	var buf bytes.Buffer
 	parent.hashMu.RLock()
 	_, err = merkletree.Verify(&merkletree.VerifyParams{
-		Out:      &buf,
-		File:     &fdReader,
-		Tree:     &fdReader,
-		Size:     int64(parentSize),
-		Name:     parent.name,
-		Mode:     uint32(parentStat.Mode),
-		UID:      parentStat.UID,
-		GID:      parentStat.GID,
-		Children: parent.childrenNames,
-		//TODO(b/156980949): Support passing other hash algorithms.
+		Out:                   &buf,
+		File:                  &fdReader,
+		Tree:                  &fdReader,
+		Size:                  int64(parentSize),
+		Name:                  parent.name,
+		Mode:                  uint32(parentStat.Mode),
+		UID:                   parentStat.UID,
+		GID:                   parentStat.GID,
+		Children:              parent.childrenNames,
 		HashAlgorithms:        fs.alg.toLinuxHashAlg(),
 		ReadOffset:            int64(offset),
 		ReadSize:              int64(merkletree.DigestSize(fs.alg.toLinuxHashAlg())),
@@ -409,15 +404,14 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 	var buf bytes.Buffer
 	d.hashMu.RLock()
 	params := &merkletree.VerifyParams{
-		Out:      &buf,
-		Tree:     &fdReader,
-		Size:     int64(size),
-		Name:     d.name,
-		Mode:     uint32(stat.Mode),
-		UID:      stat.UID,
-		GID:      stat.GID,
-		Children: d.childrenNames,
-		//TODO(b/156980949): Support passing other hash algorithms.
+		Out:            &buf,
+		Tree:           &fdReader,
+		Size:           int64(size),
+		Name:           d.name,
+		Mode:           uint32(stat.Mode),
+		UID:            stat.UID,
+		GID:            stat.GID,
+		Children:       d.childrenNames,
 		HashAlgorithms: fs.alg.toLinuxHashAlg(),
 		ReadOffset:     0,
 		// Set read size to 0 so only the metadata is verified.
@@ -991,8 +985,6 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
-// TODO(b/170157489): Investigate whether stats other than Mode/UID/GID should
-// be verified.
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()

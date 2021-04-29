@@ -840,7 +840,6 @@ func (fd *fileDescription) Release(ctx context.Context) {
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
-	// TODO(b/162788573): Add integrity check for metadata.
 	stat, err := fd.lowerFD.Stat(ctx, opts)
 	if err != nil {
 		return linux.Statx{}, err
@@ -960,10 +959,9 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 	}
 
 	params := &merkletree.GenerateParams{
-		TreeReader: &merkleReader,
-		TreeWriter: &merkleWriter,
-		Children:   fd.d.childrenNames,
-		//TODO(b/156980949): Support passing other hash algorithms.
+		TreeReader:     &merkleReader,
+		TreeWriter:     &merkleWriter,
+		Children:       fd.d.childrenNames,
 		HashAlgorithms: fd.d.fs.alg.toLinuxHashAlg(),
 		Name:           fd.d.name,
 		Mode:           uint32(stat.Mode),
@@ -1192,8 +1190,6 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 	case linux.FS_IOC_GETFLAGS:
 		return fd.verityFlags(ctx, args[2].Pointer())
 	default:
-		// TODO(b/169682228): Investigate which ioctl commands should
-		// be allowed.
 		return 0, syserror.ENOSYS
 	}
 }
@@ -1253,16 +1249,15 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 
 	fd.d.hashMu.RLock()
 	n, err := merkletree.Verify(&merkletree.VerifyParams{
-		Out:      dst.Writer(ctx),
-		File:     &dataReader,
-		Tree:     &merkleReader,
-		Size:     int64(size),
-		Name:     fd.d.name,
-		Mode:     fd.d.mode,
-		UID:      fd.d.uid,
-		GID:      fd.d.gid,
-		Children: fd.d.childrenNames,
-		//TODO(b/156980949): Support passing other hash algorithms.
+		Out:                   dst.Writer(ctx),
+		File:                  &dataReader,
+		Tree:                  &merkleReader,
+		Size:                  int64(size),
+		Name:                  fd.d.name,
+		Mode:                  fd.d.mode,
+		UID:                   fd.d.uid,
+		GID:                   fd.d.gid,
+		Children:              fd.d.childrenNames,
 		HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 		ReadOffset:            offset,
 		ReadSize:              dst.NumBytes(),
