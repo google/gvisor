@@ -397,11 +397,11 @@ func TestPacketBufferData(t *testing.T) {
 				}
 			})
 
-			// TrimFront
+			// DeleteFront
 			for _, n := range []int{1, len(tc.data)} {
-				t.Run(fmt.Sprintf("TrimFront%d", n), func(t *testing.T) {
+				t.Run(fmt.Sprintf("DeleteFront%d", n), func(t *testing.T) {
 					pkt := tc.makePkt(t)
-					pkt.Data().TrimFront(n)
+					pkt.Data().DeleteFront(n)
 
 					checkData(t, pkt, []byte(tc.data)[n:])
 				})
