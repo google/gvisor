@@ -364,21 +364,40 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
 
-	child, err := fs.getChildLocked(ctx, parent, name, &ds)
-	switch {
-	case err != nil && err != syserror.ENOENT:
-		return err
-	case child != nil:
+	if len(name) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+	// Check for existence only if caching information is available. Otherwise,
+	// don't check for existence just yet. We will check for existence if the
+	// checks for writability fail below. Existence check is done by the creation
+	// RPCs themselves.
+	if child, ok := parent.children[name]; ok && child != nil {
 		return syserror.EEXIST
+	}
+	checkExistence := func() error {
+		if child, err := fs.getChildLocked(ctx, parent, name, &ds); err != nil && err != syserror.ENOENT {
+			return err
+		} else if child != nil {
+			return syserror.EEXIST
+		}
+		return nil
 	}
 
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
+		// Existence check takes precedence.
+		if existenceErr := checkExistence(); existenceErr != nil {
+			return existenceErr
+		}
 		return err
 	}
 	defer mnt.EndWrite()
 
 	if err := parent.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
+		// Existence check takes precedence.
+		if existenceErr := checkExistence(); existenceErr != nil {
+			return existenceErr
+		}
 		return err
 	}
 	if !dir && rp.MustBeDir() {
