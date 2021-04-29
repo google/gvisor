@@ -1733,17 +1733,13 @@ func (rp *ResolvingPath) StateFields() []string {
 		"pit",
 		"flags",
 		"mustBeDir",
-		"mustBeDirOrig",
 		"symlinks",
-		"symlinksOrig",
 		"curPart",
-		"numOrigParts",
 		"creds",
 		"nextMount",
 		"nextStart",
 		"absSymlinkTarget",
 		"parts",
-		"origParts",
 	}
 }
 
@@ -1759,17 +1755,13 @@ func (rp *ResolvingPath) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &rp.pit)
 	stateSinkObject.Save(5, &rp.flags)
 	stateSinkObject.Save(6, &rp.mustBeDir)
-	stateSinkObject.Save(7, &rp.mustBeDirOrig)
-	stateSinkObject.Save(8, &rp.symlinks)
-	stateSinkObject.Save(9, &rp.symlinksOrig)
-	stateSinkObject.Save(10, &rp.curPart)
-	stateSinkObject.Save(11, &rp.numOrigParts)
-	stateSinkObject.Save(12, &rp.creds)
-	stateSinkObject.Save(13, &rp.nextMount)
-	stateSinkObject.Save(14, &rp.nextStart)
-	stateSinkObject.Save(15, &rp.absSymlinkTarget)
-	stateSinkObject.Save(16, &rp.parts)
-	stateSinkObject.Save(17, &rp.origParts)
+	stateSinkObject.Save(7, &rp.symlinks)
+	stateSinkObject.Save(8, &rp.curPart)
+	stateSinkObject.Save(9, &rp.creds)
+	stateSinkObject.Save(10, &rp.nextMount)
+	stateSinkObject.Save(11, &rp.nextStart)
+	stateSinkObject.Save(12, &rp.absSymlinkTarget)
+	stateSinkObject.Save(13, &rp.parts)
 }
 
 func (rp *ResolvingPath) afterLoad() {}
@@ -1783,17 +1775,13 @@ func (rp *ResolvingPath) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &rp.pit)
 	stateSourceObject.Load(5, &rp.flags)
 	stateSourceObject.Load(6, &rp.mustBeDir)
-	stateSourceObject.Load(7, &rp.mustBeDirOrig)
-	stateSourceObject.Load(8, &rp.symlinks)
-	stateSourceObject.Load(9, &rp.symlinksOrig)
-	stateSourceObject.Load(10, &rp.curPart)
-	stateSourceObject.Load(11, &rp.numOrigParts)
-	stateSourceObject.Load(12, &rp.creds)
-	stateSourceObject.Load(13, &rp.nextMount)
-	stateSourceObject.Load(14, &rp.nextStart)
-	stateSourceObject.Load(15, &rp.absSymlinkTarget)
-	stateSourceObject.Load(16, &rp.parts)
-	stateSourceObject.Load(17, &rp.origParts)
+	stateSourceObject.Load(7, &rp.symlinks)
+	stateSourceObject.Load(8, &rp.curPart)
+	stateSourceObject.Load(9, &rp.creds)
+	stateSourceObject.Load(10, &rp.nextMount)
+	stateSourceObject.Load(11, &rp.nextStart)
+	stateSourceObject.Load(12, &rp.absSymlinkTarget)
+	stateSourceObject.Load(13, &rp.parts)
 }
 
 func (r *resolveMountRootOrJumpError) StateTypeName() string {
