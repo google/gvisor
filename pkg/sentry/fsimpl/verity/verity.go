@@ -1328,7 +1328,7 @@ func (fd *fileDescription) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t
 func (fd *fileDescription) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	ts, err := fd.lowerMappable.Translate(ctx, required, optional, at)
 	if err != nil {
-		return ts, err
+		return nil, err
 	}
 
 	// dataSize is the size of the whole file.
@@ -1341,17 +1341,17 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 	// contains the expected xattrs. If the xattr does not exist, it
 	// indicates unexpected modifications to the file system.
 	if err == syserror.ENODATA {
-		return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
+		return nil, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
 	}
 	if err != nil {
-		return ts, err
+		return nil, err
 	}
 
 	// The dataSize xattr should be an integer. If it's not, it indicates
 	// unexpected modifications to the file system.
 	size, err := strconv.Atoi(dataSize)
 	if err != nil {
-		return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
+		return nil, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to convert xattr %s to int: %v", merkleSizeXattr, err))
 	}
 
 	merkleReader := FileReadWriteSeeker{
@@ -1384,7 +1384,7 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 			DataAndTreeInSameFile: false,
 		})
 		if err != nil {
-			return ts, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
+			return nil, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Verification failed: %v", err))
 		}
 	}
 	return ts, err
