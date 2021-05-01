@@ -117,6 +117,17 @@ func appendDentry(ds *[]*dentry, d *dentry) *[]*dentry {
 	return ds
 }
 
+// Precondition: !parent.isSynthetic() && !child.isSynthetic().
+func appendNewChildDentry(ds **[]*dentry, parent *dentry, child *dentry) {
+	// The new child was added to parent and took a ref on the parent (hence
+	// parent can be removed from cache). A new child has 0 refs for now. So
+	// checkCachingLocked() should be called on both. Call it first on the parent
+	// as it may create space in the cache for child to be inserted - hence
+	// avoiding a cache eviction.
+	*ds = appendDentry(*ds, parent)
+	*ds = appendDentry(*ds, child)
+}
+
 // Preconditions: ds != nil.
 func putDentrySlice(ds *[]*dentry) {
 	// Allow dentries to be GC'd.
@@ -258,11 +269,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 		return nil, err
 	}
 	parent.cacheNewChildLocked(child, name)
-	// For now, child has 0 references, so our caller should call
-	// child.checkCachingLocked(). parent gained a ref so we should also call
-	// parent.checkCachingLocked() so it can be removed from the cache if needed.
-	*ds = appendDentry(*ds, child)
-	*ds = appendDentry(*ds, parent)
+	appendNewChildDentry(ds, parent, child)
 	return child, nil
 }
 
@@ -1114,7 +1121,6 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		return nil, err
 	}
-	*ds = appendDentry(*ds, child)
 	// Incorporate the fid that was opened by lcreate.
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
@@ -1138,7 +1144,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	// Insert the dentry into the tree.
 	d.cacheNewChildLocked(child, name)
-	*ds = appendDentry(*ds, d)
+	appendNewChildDentry(ds, d, child)
 	if d.cachedMetadataAuthoritative() {
 		d.touchCMtime()
 		d.dirents = nil
@@ -1333,9 +1339,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// parent isn't actually changing.
 	if oldParent != newParent {
 		oldParent.decRefNoCaching()
-		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
 		ds = appendDentry(ds, newParent)
+		ds = appendDentry(ds, oldParent)
 		if renamed.isSynthetic() {
 			oldParent.syntheticChildren--
 			newParent.syntheticChildren++
