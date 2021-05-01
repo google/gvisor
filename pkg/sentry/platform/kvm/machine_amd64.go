@@ -351,6 +351,10 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	// allocations occur.
 	entersyscall()
 	bluepill(c)
+	// The root table physical page has to be mapped to not fault in iret
+	// or sysret after switching into a user address space.  sysret and
+	// iret are in the upper half that is global and already mapped.
+	switchOpts.PageTables.PrefaultRootTable()
 	prefaultFloatingPointState(switchOpts.FloatingPointState)
 	vector = c.CPU.SwitchToUser(switchOpts)
 	exitsyscall()
