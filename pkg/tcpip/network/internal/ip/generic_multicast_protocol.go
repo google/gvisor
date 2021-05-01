@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ip holds IPv4/IPv6 common utilities.
 package ip
 
 import (
