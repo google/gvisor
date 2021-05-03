@@ -612,16 +612,24 @@ afterTrailingSymlink:
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
 func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
-	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
-	defer fs.mu.RUnlock()
+
+	fs.mu.RLock()
 	d, err := fs.walkExistingLocked(ctx, rp)
 	if err != nil {
+		fs.mu.RUnlock()
 		return "", err
 	}
 	if !d.isSymlink() {
+		fs.mu.RUnlock()
 		return "", syserror.EINVAL
 	}
+
+	// Inode.Readlink() cannot be called holding fs locks.
+	d.IncRef()
+	defer d.DecRef(ctx)
+	fs.mu.RUnlock()
+
 	return d.inode.Readlink(ctx, rp.Mount())
 }
 

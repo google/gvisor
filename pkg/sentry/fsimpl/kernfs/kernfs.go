@@ -534,6 +534,9 @@ func (d *Dentry) FSLocalPath() string {
 // - Checking that dentries passed to methods are of the appropriate file type.
 // - Checking permissions.
 //
+// Inode functions may be called holding filesystem wide locks and are not
+// allowed to call vfs functions that may reenter, unless otherwise noted.
+//
 // Specific responsibilities of implementations are documented below.
 type Inode interface {
 	// Methods related to reference counting. A generic implementation is
@@ -680,6 +683,9 @@ type inodeDirectory interface {
 type inodeSymlink interface {
 	// Readlink returns the target of a symbolic link. If an inode is not a
 	// symlink, the implementation should return EINVAL.
+	//
+	// Readlink is called with no kernfs locks held, so it may reenter if needed
+	// to resolve symlink targets.
 	Readlink(ctx context.Context, mnt *vfs.Mount) (string, error)
 
 	// Getlink returns the target of a symbolic link, as used by path

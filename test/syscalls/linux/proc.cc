@@ -2698,6 +2698,14 @@ TEST(Proc, Statfs) {
   EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
+// Tests that /proc/[pid]/fd/[num] can resolve to a path inside /proc.
+TEST(Proc, ResolveSymlinkToProc) {
+  const auto proc = ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/cmdline", 0));
+  const auto path = JoinPath("/proc/self/fd/", absl::StrCat(proc.get()));
+  const auto target = ASSERT_NO_ERRNO_AND_VALUE(ReadLink(path));
+  EXPECT_EQ(target, JoinPath("/proc/", absl::StrCat(getpid()), "/cmdline"));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
