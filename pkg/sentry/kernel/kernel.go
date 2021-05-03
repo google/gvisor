@@ -34,6 +34,7 @@ package kernel
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"path/filepath"
 	"sync/atomic"
 	"time"
@@ -293,6 +294,9 @@ type Kernel struct {
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
 	// the system.
 	cgroupRegistry *CgroupRegistry
+
+	// maxNumberofFileHandles is the current value of fs.nr_open, which is the upper limit of file handls a task can allocate.
+	maxNumberOfFileHandles uint32
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -393,6 +397,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
 	k.YAMAPtraceScope = linux.YAMA_SCOPE_RELATIONAL
+	k.maxNumberOfFileHandles = 1024 * 1024
 
 	if VFS2Enabled {
 		ctx := k.SupervisorContext()
@@ -1500,6 +1505,23 @@ func (k *Kernel) GenerateInotifyCookie() uint32 {
 // NetlinkPorts returns the netlink port manager.
 func (k *Kernel) NetlinkPorts() *port.Manager {
 	return k.netlinkPorts
+}
+
+// MaxNumberOfFileHandles returns the current value of k.maxNumberOfFileHandles.
+func (k *Kernel) MaxNumberOfFileHandles() uint32 {
+	return atomic.LoadUint32(&k.maxNumberOfFileHandles)
+}
+
+const maxNumberOfFileHandlesMin = bits.UintSize
+
+// SetMaxNumberOfFileHandles sets the value of k.maxNumberOfFileHandles and
+// returns true on success.
+func (k *Kernel) SetMaxNumberOfFileHandles(maxNumberOfFileHandles uint32) bool {
+	if maxNumberOfFileHandles < maxNumberOfFileHandlesMin {
+		return false
+	}
+	atomic.SwapUint32(&k.maxNumberOfFileHandles, maxNumberOfFileHandles)
+	return true
 }
 
 var (

@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/limits.h>
 #include <linux/magic.h>
 #include <linux/sem.h>
 #include <sched.h>
@@ -2471,6 +2472,34 @@ TEST(ProcFilesystems, PresenceOfSem) {
 TEST(ProcMounts, IsSymlink) {
   auto link = ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/mounts"));
   EXPECT_EQ(link, "self/mounts");
+}
+
+constexpr char kNrOpenPath[] = "/proc/sys/fs/nr_open";
+
+TEST(ProcSysFs, FsNrOpenExists) {
+  SKIP_IF(IsRunningWithVFS1());
+  EXPECT_THAT(open("/proc/sys/fs/nr_open", O_RDONLY), SyscallSucceeds());
+}
+
+constexpr int kNrOpenDefault = 1024 * 1024;
+
+TEST(ProcSysFs, FsNrOpenCanReadAndWrite) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  std::string buf = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kNrOpenPath));
+  ASSERT_FALSE(buf.empty());
+  uint32_t nr_open = 0;
+  ASSERT_TRUE(absl::SimpleAtoi(buf, &nr_open));
+  EXPECT_GE(nr_open, kNrOpenDefault);
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kNrOpenPath, O_RDWR));
+
+  std::string to_write = "123";
+  EXPECT_THAT(PwriteFd(fd.get(), to_write.data(), to_write.length(), 0),
+              SyscallSucceedsWithValue(to_write.length()));
+  buf = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kNrOpenPath));
+  EXPECT_EQ(absl::StrCat(to_write, "\n"), buf);
 }
 
 TEST(ProcSelfMountinfo, RequiredFieldsArePresent) {
