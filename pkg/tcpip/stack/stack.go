@@ -322,7 +322,7 @@ func (*TransportEndpointInfo) IsEndpointInfo() {}
 func New(opts Options) *Stack {
 	clock := opts.Clock
 	if clock == nil {
-		clock = &tcpip.StdClock{}
+		clock = tcpip.NewStdClock()
 	}
 
 	if opts.UniqueID == nil {
