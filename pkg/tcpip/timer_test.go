@@ -29,7 +29,7 @@ const (
 )
 
 func TestJobReschedule(t *testing.T) {
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var wg sync.WaitGroup
 	var lock sync.Mutex
 
@@ -43,7 +43,7 @@ func TestJobReschedule(t *testing.T) {
 			// that has an active timer (even if it has been stopped as a stopped
 			// timer may be blocked on a lock before it can check if it has been
 			// stopped while another goroutine holds the same lock).
-			job := tcpip.NewJob(&clock, &lock, func() {
+			job := tcpip.NewJob(clock, &lock, func() {
 				wg.Done()
 			})
 			job.Schedule(shortDuration)
@@ -56,11 +56,11 @@ func TestJobReschedule(t *testing.T) {
 func TestJobExecution(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
-	job := tcpip.NewJob(&clock, &lock, func() {
+	job := tcpip.NewJob(clock, &lock, func() {
 		ch <- struct{}{}
 	})
 	job.Schedule(shortDuration)
@@ -83,11 +83,11 @@ func TestJobExecution(t *testing.T) {
 func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
-	job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+	job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 	job.Schedule(middleDuration)
 
 	lock.Lock()
@@ -114,12 +114,12 @@ func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 func TestJobRescheduleFromShortDuration(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
 	lock.Lock()
-	job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+	job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 	job.Schedule(shortDuration)
 	job.Cancel()
 	lock.Unlock()
@@ -151,13 +151,13 @@ func TestJobRescheduleFromShortDuration(t *testing.T) {
 func TestJobImmediatelyCancel(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
 	for i := 0; i < 1000; i++ {
 		lock.Lock()
-		job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+		job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 		job.Schedule(shortDuration)
 		job.Cancel()
 		lock.Unlock()
@@ -174,12 +174,12 @@ func TestJobImmediatelyCancel(t *testing.T) {
 func TestJobCancelledRescheduleWithoutLock(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
 	lock.Lock()
-	job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+	job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 	job.Schedule(shortDuration)
 	job.Cancel()
 	lock.Unlock()
@@ -206,12 +206,12 @@ func TestJobCancelledRescheduleWithoutLock(t *testing.T) {
 func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
 	lock.Lock()
-	job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+	job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 	job.Schedule(shortDuration)
 	for i := 0; i < 10; i++ {
 		// Sleep until the timer fires and gets blocked trying to take the lock.
@@ -239,12 +239,12 @@ func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 func TestManyJobReschedulesUnderLock(t *testing.T) {
 	t.Parallel()
 
-	var clock tcpip.StdClock
+	clock := tcpip.NewStdClock()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
 	lock.Lock()
-	job := tcpip.NewJob(&clock, &lock, func() { ch <- struct{}{} })
+	job := tcpip.NewJob(clock, &lock, func() { ch <- struct{}{} })
 	job.Schedule(shortDuration)
 	for i := 0; i < 10; i++ {
 		job.Cancel()

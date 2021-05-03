@@ -1556,7 +1556,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 func BenchmarkCacheClear(b *testing.B) {
 	b.StopTimer()
 	config := DefaultNUDConfigurations()
-	clock := &tcpip.StdClock{}
+	clock := tcpip.NewStdClock()
 	linkRes := newTestNeighborResolver(nil, config, clock)
 	linkRes.delay = 0
 
