@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -60,7 +61,16 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
 		}),
 		"net": fs.newSysNetDir(ctx, root, k),
+		"fs":  fs.newSysFsDir(ctx, root, k),
 	})
+}
+
+// newSysNetDir returns the dentry corresponding to /proc/sys/FS directory.
+func (fs *filesystem) newSysFsDir(ctx context.Context, root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
+	contents := map[string]kernfs.Inode{
+		"nr_open": fs.newNrOpenFile(ctx, k, root),
+	}
+	return fs.newStaticDir(ctx, root, contents)
 }
 
 // newSysNetDir returns the dentry corresponding to /proc/sys/net directory.
@@ -152,6 +162,71 @@ var _ dynamicInode = (*mmapMinAddrData)(nil)
 func (d *mmapMinAddrData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "%d\n", d.k.Platform.MinUserAddress())
 	return nil
+}
+
+// parseUint32FromString interprets src as string encoding a uint32 value, and
+// returns the parsed value.
+func parseUint32FromString(ctx context.Context, src usermem.IOSequence, offset int64) (uint32, int64, error) {
+	const maxUint32StrLen = 10 // i.e. len(fmt.Sprintf("%d", math.MaxUint32)) == 10
+
+	t := kernel.TaskFromContext(ctx)
+	src = src.DropFirst64(offset)
+
+	buf := t.CopyScratchBuffer(maxUint32StrLen)
+	n, err := src.CopyIn(ctx, buf)
+	if err != nil {
+		return 0, int64(n), err
+	}
+	buf = buf[:n]
+	val, err := strconv.ParseUint(string(buf), 10, 32)
+	if err != nil {
+		return 0, int64(n), err
+	}
+	return uint32(val), int64(n), nil
+}
+
+// maxNumberofFileHandles implements vfs.DynamicBytesSource for
+// /proc/sys/fs/nr_open
+//
+// +stateify savable
+type maxNumberOfFileHandles struct {
+	kernfs.DynamicBytesFile
+
+	k *kernel.Kernel
+}
+
+func (fs *filesystem) newNrOpenFile(ctx context.Context, k *kernel.Kernel, creds *auth.Credentials) kernfs.Inode {
+	f := &maxNumberOfFileHandles{k: k}
+	f.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), f, 0644)
+	return f
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *maxNumberOfFileHandles) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\n", d.k.MaxNumberOfFileHandles())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *maxNumberOfFileHandles) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit the amount of memory allocated.
+	src = src.TakeFirst(hostarch.PageSize - 1)
+
+	val, n, err := parseUint32FromString(ctx, src, offset)
+	if err != nil {
+		return 0, err
+	}
+	if !d.k.SetMaxNumberOfFileHandles(val) {
+		return 0, linuxerr.EINVAL
+	}
+	return n, nil
 }
 
 // hostnameData implements vfs.DynamicBytesSource for /proc/sys/kernel/hostname.

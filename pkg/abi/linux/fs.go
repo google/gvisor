@@ -39,6 +39,11 @@ const (
 	PATH_MAX = 4096
 )
 
+// Filesystem file descriptor limits, from uapi/linux/limits.h.
+const (
+	NR_OPEN = 1024
+)
+
 // Statfs is struct statfs, from uapi/asm-generic/statfs.h.
 //
 // +marshal
