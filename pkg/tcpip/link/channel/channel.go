@@ -123,6 +123,9 @@ func (q *queue) RemoveNotify(handle *NotificationHandle) {
 	q.notify = notify
 }
 
+var _ stack.LinkEndpoint = (*Endpoint)(nil)
+var _ stack.GSOEndpoint = (*Endpoint)(nil)
+
 // Endpoint is link layer endpoint that stores outbound packets in a channel
 // and allows injection of inbound packets.
 type Endpoint struct {
@@ -130,6 +133,7 @@ type Endpoint struct {
 	mtu                uint32
 	linkAddr           tcpip.LinkAddress
 	LinkEPCapabilities stack.LinkEndpointCapabilities
+	SupportedGSOKind   stack.SupportedGSO
 
 	// Outbound packet queue.
 	q *queue
@@ -211,9 +215,14 @@ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return e.LinkEPCapabilities
 }
 
-// GSOMaxSize returns the maximum GSO packet size.
+// GSOMaxSize implements stack.GSOEndpoint.
 func (*Endpoint) GSOMaxSize() uint32 {
 	return 1 << 15
+}
+
+// SupportedGSO implements stack.GSOEndpoint.
+func (e *Endpoint) SupportedGSO() stack.SupportedGSO {
+	return e.SupportedGSOKind
 }
 
 // MaxHeaderLength returns the maximum size of the link layer header. Given it
