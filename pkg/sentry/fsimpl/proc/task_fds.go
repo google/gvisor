@@ -221,6 +221,8 @@ func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) 
 	defer file.DecRef(ctx)
 	root := vfs.RootFromContext(ctx)
 	defer root.DecRef(ctx)
+
+	// Note: it's safe to reenter kernfs from Readlink if needed to resolve path.
 	return s.task.Kernel().VFS().PathnameWithDeleted(ctx, root, file.VirtualDentry())
 }
 
