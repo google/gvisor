@@ -128,7 +128,7 @@ type readVDispatcher struct {
 
 func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	d := &readVDispatcher{fd: fd, e: e}
-	skipsVnetHdr := d.e.Capabilities()&stack.CapabilityHardwareGSO != 0
+	skipsVnetHdr := d.e.gsoKind == stack.HWGSOSupported
 	d.buf = newIovecBuffer(BufConfig, skipsVnetHdr)
 	return d, nil
 }
@@ -212,7 +212,7 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		bufs:    make([]*iovecBuffer, MaxMsgsPerRecv),
 		msgHdrs: make([]rawfile.MMsgHdr, MaxMsgsPerRecv),
 	}
-	skipsVnetHdr := d.e.Capabilities()&stack.CapabilityHardwareGSO != 0
+	skipsVnetHdr := d.e.gsoKind == stack.HWGSOSupported
 	for i := range d.bufs {
 		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
 	}
