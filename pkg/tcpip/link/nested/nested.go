@@ -135,6 +135,14 @@ func (e *Endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
+// SupportedGSO implements stack.GSOEndpoint.
+func (e *Endpoint) SupportedGSO() stack.SupportedGSO {
+	if e, ok := e.child.(stack.GSOEndpoint); ok {
+		return e.SupportedGSO()
+	}
+	return stack.GSONotSupported
+}
+
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
 func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return e.child.ARPHardwareType()

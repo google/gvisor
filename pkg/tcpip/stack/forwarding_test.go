@@ -264,6 +264,8 @@ type fwdTestPacketInfo struct {
 	Pkt               *PacketBuffer
 }
 
+var _ LinkEndpoint = (*fwdTestLinkEndpoint)(nil)
+
 type fwdTestLinkEndpoint struct {
 	dispatcher NetworkDispatcher
 	mtu        uint32
@@ -304,11 +306,6 @@ func (e *fwdTestLinkEndpoint) MTU() uint32 {
 func (e fwdTestLinkEndpoint) Capabilities() LinkEndpointCapabilities {
 	caps := LinkEndpointCapabilities(0)
 	return caps | CapabilityResolutionRequired
-}
-
-// GSOMaxSize returns the maximum GSO packet size.
-func (*fwdTestLinkEndpoint) GSOMaxSize() uint32 {
-	return 1 << 15
 }
 
 // MaxHeaderLength returns the maximum size of the link layer header. Given it

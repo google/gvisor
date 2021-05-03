@@ -300,12 +300,18 @@ func (r *Route) RequiresTXTransportChecksum() bool {
 
 // HasSoftwareGSOCapability returns true if the route supports software GSO.
 func (r *Route) HasSoftwareGSOCapability() bool {
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilitySoftwareGSO != 0
+	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
+		return gso.SupportedGSO() == SWGSOSupported
+	}
+	return false
 }
 
 // HasHardwareGSOCapability returns true if the route supports hardware GSO.
 func (r *Route) HasHardwareGSOCapability() bool {
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityHardwareGSO != 0
+	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
+		return gso.SupportedGSO() == HWGSOSupported
+	}
+	return false
 }
 
 // HasSaveRestoreCapability returns true if the route supports save/restore.

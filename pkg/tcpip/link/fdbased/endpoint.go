@@ -97,6 +97,9 @@ func (p PacketDispatchMode) String() string {
 	}
 }
 
+var _ stack.LinkEndpoint = (*endpoint)(nil)
+var _ stack.GSOEndpoint = (*endpoint)(nil)
+
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
@@ -133,6 +136,9 @@ type endpoint struct {
 
 	// wg keeps track of running goroutines.
 	wg sync.WaitGroup
+
+	// gsoKind is the supported kind of GSO.
+	gsoKind stack.SupportedGSO
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -254,9 +260,9 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
 				if opts.SoftwareGSOEnabled {
-					e.caps |= stack.CapabilitySoftwareGSO
+					e.gsoKind = stack.SWGSOSupported
 				} else {
-					e.caps |= stack.CapabilityHardwareGSO
+					e.gsoKind = stack.HWGSOSupported
 				}
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
@@ -469,7 +475,7 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocol
 	var builder iovec.Builder
 
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
-	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
+	if e.gsoKind == stack.HWGSOSupported {
 		vnetHdr := virtioNetHdr{}
 		if pkt.GSOOptions.Type != stack.GSONone {
 			vnetHdr.hdrLen = uint16(pkt.HeaderSize())
@@ -510,7 +516,7 @@ func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcp
 		}
 
 		var vnetHdrBuf []byte
-		if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
+		if e.gsoKind == stack.HWGSOSupported {
 			vnetHdr := virtioNetHdr{}
 			if pkt.GSOOptions.Type != stack.GSONone {
 				vnetHdr.hdrLen = uint16(pkt.HeaderSize())
@@ -630,9 +636,14 @@ func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) tcpip.Error {
 	}
 }
 
-// GSOMaxSize returns the maximum GSO packet size.
+// GSOMaxSize implements stack.GSOEndpoint.
 func (e *endpoint) GSOMaxSize() uint32 {
 	return e.gsoMaxSize
+}
+
+// SupportsHWGSO implements stack.GSOEndpoint.
+func (e *endpoint) SupportedGSO() stack.SupportedGSO {
+	return e.gsoKind
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.

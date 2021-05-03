@@ -25,6 +25,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+var _ stack.LinkEndpoint = (*endpoint)(nil)
+var _ stack.GSOEndpoint = (*endpoint)(nil)
+
 // endpoint represents a LinkEndpoint which implements a FIFO queue for all
 // outgoing packets. endpoint can have 1 or more underlying queueDispatchers.
 // All outgoing packets are consistenly hashed to a single underlying queue
@@ -141,12 +144,20 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.lower.LinkAddress()
 }
 
-// GSOMaxSize returns the maximum GSO packet size.
+// GSOMaxSize implements stack.GSOEndpoint.
 func (e *endpoint) GSOMaxSize() uint32 {
 	if gso, ok := e.lower.(stack.GSOEndpoint); ok {
 		return gso.GSOMaxSize()
 	}
 	return 0
+}
+
+// SupportedGSO implements stack.GSOEndpoint.
+func (e *endpoint) SupportedGSO() stack.SupportedGSO {
+	if gso, ok := e.lower.(stack.GSOEndpoint); ok {
+		return gso.SupportedGSO()
+	}
+	return stack.GSONotSupported
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket.
