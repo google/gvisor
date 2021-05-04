@@ -24,12 +24,12 @@ TEXT handleSwapUint32Fault(SB), NOSPLIT, $0-24
   MOVL DI, sig+20(FP)
   RET
 
-// swapUint32 atomically stores new into *addr and returns (the previous *addr
+// swapUint32 atomically stores new into *ptr and returns (the previous ptr*
 // value, 0). If a SIGSEGV or SIGBUS signal is received during the swap, the
 // value of old is unspecified, and sig is the number of the signal that was
 // received.
 //
-// Preconditions: addr must be aligned to a 4-byte boundary.
+// Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func swapUint32(ptr unsafe.Pointer, new uint32) (old uint32, sig int32)
 TEXT ·swapUint32(SB), NOSPLIT, $0-24
@@ -38,7 +38,7 @@ TEXT ·swapUint32(SB), NOSPLIT, $0-24
   // handleSwapUint32Fault will store a different value in this address.
   MOVL $0, sig+20(FP)
 
-  MOVQ addr+0(FP), DI
+  MOVQ ptr+0(FP), DI
   MOVL new+8(FP), AX
   XCHGL AX, 0(DI)
   MOVL AX, old+16(FP)
@@ -60,12 +60,12 @@ TEXT handleSwapUint64Fault(SB), NOSPLIT, $0-28
   MOVL DI, sig+24(FP)
   RET
 
-// swapUint64 atomically stores new into *addr and returns (the previous *addr
+// swapUint64 atomically stores new into *ptr and returns (the previous *ptr
 // value, 0). If a SIGSEGV or SIGBUS signal is received during the swap, the
 // value of old is unspecified, and sig is the number of the signal that was
 // received.
 //
-// Preconditions: addr must be aligned to a 8-byte boundary.
+// Preconditions: ptr must be aligned to a 8-byte boundary.
 //
 //func swapUint64(ptr unsafe.Pointer, new uint64) (old uint64, sig int32)
 TEXT ·swapUint64(SB), NOSPLIT, $0-28
@@ -74,7 +74,7 @@ TEXT ·swapUint64(SB), NOSPLIT, $0-28
   // handleSwapUint64Fault will store a different value in this address.
   MOVL $0, sig+24(FP)
 
-  MOVQ addr+0(FP), DI
+  MOVQ ptr+0(FP), DI
   MOVQ new+8(FP), AX
   XCHGQ AX, 0(DI)
   MOVQ AX, old+16(FP)
@@ -97,11 +97,11 @@ TEXT handleCompareAndSwapUint32Fault(SB), NOSPLIT, $0-24
   RET
 
 // compareAndSwapUint32 is like sync/atomic.CompareAndSwapUint32, but returns
-// (the value previously stored at addr, 0). If a SIGSEGV or SIGBUS signal is
+// (the value previously stored at ptr, 0). If a SIGSEGV or SIGBUS signal is
 // received during the operation, the value of prev is unspecified, and sig is
 // the number of the signal that was received.
 //
-// Preconditions: addr must be aligned to a 4-byte boundary.
+// Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func compareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (prev uint32, sig int32)
 TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
@@ -111,7 +111,7 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
   // address.
   MOVL $0, sig+20(FP)
 
-  MOVQ addr+0(FP), DI
+  MOVQ ptr+0(FP), DI
   MOVL old+8(FP), AX
   MOVL new+12(FP), DX
   LOCK
@@ -135,11 +135,11 @@ TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
   MOVL DI, sig+12(FP)
   RET
 
-// loadUint32 atomically loads *addr and returns it. If a SIGSEGV or SIGBUS
+// loadUint32 atomically loads *ptr and returns it. If a SIGSEGV or SIGBUS
 // signal is received, the value returned is unspecified, and sig is the number
 // of the signal that was received.
 //
-// Preconditions: addr must be aligned to a 4-byte boundary.
+// Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 TEXT ·loadUint32(SB), NOSPLIT, $0-16
@@ -148,7 +148,7 @@ TEXT ·loadUint32(SB), NOSPLIT, $0-16
   // handleLoadUint32Fault will store a different value in this address.
   MOVL $0, sig+12(FP)
 
-  MOVQ addr+0(FP), AX
+  MOVQ ptr+0(FP), AX
   MOVL (AX), BX
   MOVL BX, val+8(FP)
   RET
