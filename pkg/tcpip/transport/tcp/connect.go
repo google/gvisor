@@ -415,7 +415,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		// If the segment has data then requeue it for the receiver
 		// to process it again once main loop is started.
 		if s.data.Size() > 0 {
-			s.incRef()
+			s.IncRef()
 			h.ep.enqueueSegment(s)
 		}
 		return nil
@@ -449,7 +449,7 @@ func (h *handshake) processSegments() tcpip.Error {
 		}
 
 		err := h.handleSegment(s)
-		s.decRef()
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -573,7 +573,7 @@ func (h *handshake) complete() tcpip.Error {
 				for !h.ep.segmentQueue.empty() {
 					s := h.ep.segmentQueue.dequeue()
 					err := h.handleSegment(s)
-					s.decRef()
+					s.DecRef()
 					if err != nil {
 						return err
 					}
@@ -1050,7 +1050,7 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	}
 	if ep == nil {
 		replyWithReset(e.stack, s, stack.DefaultTOS, 0 /* ttl */)
-		s.decRef()
+		s.DecRef()
 		return
 	}
 
@@ -1140,7 +1140,7 @@ func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 		}
 
 		cont, err := e.handleSegmentLocked(s)
-		s.decRef()
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -1646,7 +1646,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 					if EndpointState(tcpEP.State()) == StateListen {
 						reuseTW = func() {
 							if !tcpEP.enqueueSegment(s) {
-								s.decRef()
+								s.DecRef()
 								return
 							}
 							tcpEP.newSegmentWaker.Assert()
@@ -1663,7 +1663,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		if extTW {
 			extendTimeWait = true
 		}
-		s.decRef()
+		s.DecRef()
 	}
 	if checkRequeue && !e.segmentQueue.empty() {
 		e.newSegmentWaker.Assert()

@@ -270,7 +270,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 		for i := first; i < len(r.pendingRcvdSegments); i++ {
 			r.PendingBufUsed -= r.pendingRcvdSegments[i].segMemSize()
-			r.pendingRcvdSegments[i].decRef()
+			r.pendingRcvdSegments[i].DecRef()
 
 			// Note that slice truncation does not allow garbage collection of
 			// truncated items, thus truncated items must be set to nil to avoid
@@ -470,7 +470,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 				r.ep.rcvQueueInfo.rcvQueueMu.Lock()
 				r.PendingBufUsed += s.segMemSize()
 				r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
-				s.incRef()
+				s.IncRef()
 				heap.Push(&r.pendingRcvdSegments, s)
 				UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.RcvNxt)
 			}
@@ -506,7 +506,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		r.ep.rcvQueueInfo.rcvQueueMu.Lock()
 		r.PendingBufUsed -= s.segMemSize()
 		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
-		s.decRef()
+		s.DecRef()
 	}
 	return false, nil
 }

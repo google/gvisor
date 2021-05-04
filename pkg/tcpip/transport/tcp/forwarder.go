@@ -66,7 +66,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 	s := newIncomingSegment(id, pkt)
-	defer s.decRef()
+	defer s.DecRef()
 
 	// We only care about well-formed SYN packets.
 	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || s.flags != header.TCPFlagSyn {
@@ -90,7 +90,7 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 
 	// Launch a new goroutine to handle the request.
 	f.inFlight[id] = struct{}{}
-	s.incRef()
+	s.IncRef()
 	go f.handler(&ForwarderRequest{ // S/R-SAFE: not used by Sentry.
 		forwarder:  f,
 		segment:    s,
@@ -136,7 +136,7 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 	}
 
 	// Release all resources.
-	r.segment.decRef()
+	r.segment.DecRef()
 	r.segment = nil
 	r.forwarder = nil
 }
