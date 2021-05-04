@@ -402,7 +402,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	ctx := k.SupervisorContext()
 	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, kernel.VFS2Enabled)
 	if kernel.VFS2Enabled {
-		ctx, err = mntr.configureRestore(ctx, cm.l.root.conf)
+		ctx, err = mntr.configureRestore(ctx)
 		if err != nil {
 			return fmt.Errorf("configuring filesystem restore: %v", err)
 		}

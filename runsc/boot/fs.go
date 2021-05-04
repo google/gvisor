@@ -232,7 +232,7 @@ func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
 
 // mountDevice returns a device string based on the fs type and target
 // of the mount.
-func mountDevice(m specs.Mount) string {
+func mountDevice(m *specs.Mount) string {
 	if m.Type == bind {
 		// Make a device string that includes the target, which is consistent across
 		// S/R and uniquely identifies the connection.
@@ -256,6 +256,8 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 			mf.NoAtime = true
 		case "noexec":
 			mf.NoExec = true
+		case "bind", "rbind":
+			// These are the same as a mount with type="bind".
 		default:
 			log.Warningf("ignoring unknown mount option %q", o)
 		}
@@ -486,9 +488,9 @@ func (m *mountHint) isSupported() bool {
 // For now enforce that all options are the same. Once bind mount is properly
 // supported, then we should ensure the master is less restrictive than the
 // container, e.g. master can be 'rw' while container mounts as 'ro'.
-func (m *mountHint) checkCompatible(mount specs.Mount) error {
+func (m *mountHint) checkCompatible(mount *specs.Mount) error {
 	// Remove options that don't affect to mount's behavior.
-	masterOpts := filterUnsupportedOptions(m.mount)
+	masterOpts := filterUnsupportedOptions(&m.mount)
 	replicaOpts := filterUnsupportedOptions(mount)
 
 	if len(masterOpts) != len(replicaOpts) {
@@ -512,7 +514,7 @@ func (m *mountHint) fileAccessType() config.FileAccessType {
 	return config.FileAccessShared
 }
 
-func filterUnsupportedOptions(mount specs.Mount) []string {
+func filterUnsupportedOptions(mount *specs.Mount) []string {
 	rv := make([]string, 0, len(mount.Options))
 	for _, o := range mount.Options {
 		if isSupportedMountFlag(mount.Type, o) {
@@ -576,7 +578,7 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 	return &podMountHints{mounts: mnts}, nil
 }
 
-func (p *podMountHints) findMount(mount specs.Mount) *mountHint {
+func (p *podMountHints) findMount(mount *specs.Mount) *mountHint {
 	for _, m := range p.mounts {
 		if m.mount.Source == mount.Source {
 			return m
@@ -679,7 +681,8 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 	root := mns.Root()
 	defer root.DecRef(ctx)
 
-	for _, m := range c.mounts {
+	for i := range c.mounts {
+		m := &c.mounts[i]
 		log.Debugf("Mounting %q to %q, type: %s, options: %s", m.Source, m.Destination, m.Type, m.Options)
 		if hint := c.hints.findMount(m); hint != nil && hint.isSupported() {
 			if err := c.mountSharedSubmount(ctx, mns, root, m, hint); err != nil {
@@ -714,7 +717,7 @@ func (c *containerMounter) checkDispenser() error {
 func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, hint *mountHint) (*fs.Inode, error) {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
-	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, hint.mount)
+	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, &hint.mount)
 	if err != nil {
 		return nil, err
 	}
@@ -734,7 +737,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 		mf.ReadOnly = true
 	}
 
-	inode, err := filesystem.Mount(ctx, mountDevice(hint.mount), mf, strings.Join(opts, ","), nil)
+	inode, err := filesystem.Mount(ctx, mountDevice(&hint.mount), mf, strings.Join(opts, ","), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount %q: %v", hint.name, err)
 	}
@@ -796,13 +799,14 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.Mount) (string, []string, bool, error) {
+func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *specs.Mount) (string, []string, bool, error) {
+	specutils.MaybeConvertToBindMount(m)
+
 	var (
 		fsName     string
 		opts       []string
 		useOverlay bool
 	)
-
 	switch m.Type {
 	case devpts.Name, devtmpfs.Name, procvfs2.Name, sysvfs2.Name:
 		fsName = m.Type
@@ -836,7 +840,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m specs.M
 	return fsName, opts, useOverlay, nil
 }
 
-func (c *containerMounter) getMountAccessType(conf *config.Config, mount specs.Mount) config.FileAccessType {
+func (c *containerMounter) getMountAccessType(conf *config.Config, mount *specs.Mount) config.FileAccessType {
 	if hint := c.hints.findMount(mount); hint != nil {
 		return hint.fileAccessType()
 	}
@@ -847,7 +851,7 @@ func (c *containerMounter) getMountAccessType(conf *config.Config, mount specs.M
 // be readonly, a lower ramfs overlay is added to create the mount point dir.
 // Another overlay is added with tmpfs on top if Config.Overlay is true.
 // 'm.Destination' must be an absolute path with '..' and symlinks resolved.
-func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Config, mns *fs.MountNamespace, root *fs.Dirent, m specs.Mount) error {
+func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Config, mns *fs.MountNamespace, root *fs.Dirent, m *specs.Mount) error {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, m)
@@ -921,7 +925,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
-func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.MountNamespace, root *fs.Dirent, mount specs.Mount, source *mountHint) error {
+func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.MountNamespace, root *fs.Dirent, mount *specs.Mount, source *mountHint) error {
 	if err := source.checkCompatible(mount); err != nil {
 		return err
 	}
@@ -946,7 +950,7 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.Moun
 
 // addRestoreMount adds a mount to the MountSources map used for restoring a
 // checkpointed container.
-func (c *containerMounter) addRestoreMount(conf *config.Config, renv *fs.RestoreEnvironment, m specs.Mount) error {
+func (c *containerMounter) addRestoreMount(conf *config.Config, renv *fs.RestoreEnvironment, m *specs.Mount) error {
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, m)
 	if err != nil {
 		return err
@@ -994,7 +998,8 @@ func (c *containerMounter) createRestoreEnvironment(conf *config.Config) (*fs.Re
 
 	// Add submounts.
 	var tmpMounted bool
-	for _, m := range c.mounts {
+	for i := range c.mounts {
+		m := &c.mounts[i]
 		if err := c.addRestoreMount(conf, renv, m); err != nil {
 			return nil, err
 		}
@@ -1009,7 +1014,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *config.Config) (*fs.Re
 			Type:        tmpfsvfs2.Name,
 			Destination: "/tmp",
 		}
-		if err := c.addRestoreMount(conf, renv, tmpMount); err != nil {
+		if err := c.addRestoreMount(conf, renv, &tmpMount); err != nil {
 			return nil, err
 		}
 	}
@@ -1068,7 +1073,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, mn
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		return c.mountSubmount(ctx, conf, mns, root, tmpMount)
+		return c.mountSubmount(ctx, conf, mns, root, &tmpMount)
 
 	default:
 		return err

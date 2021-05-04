@@ -335,7 +335,25 @@ func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.
 // Is9PMount returns true if the given mount can be mounted as an external
 // gofer.
 func Is9PMount(m specs.Mount, vfs2Enabled bool) bool {
+	MaybeConvertToBindMount(&m)
 	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m, vfs2Enabled)
+}
+
+// MaybeConvertToBindMount converts mount type to "bind" in case any of the
+// mount options are either "bind" or "rbind" as required by the OCI spec.
+//
+// "For bind mounts (when options include either bind or rbind), the type is a
+// dummy, often "none" (not listed in /proc/filesystems)."
+func MaybeConvertToBindMount(m *specs.Mount) {
+	if m.Type == "bind" {
+		return
+	}
+	for _, opt := range m.Options {
+		if opt == "bind" || opt == "rbind" {
+			m.Type = "bind"
+			return
+		}
+	}
 }
 
 // IsSupportedDevMount returns true if m.Destination does not specify a

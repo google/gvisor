@@ -2449,6 +2449,27 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 	}
 }
 
+func TestBindMountByOption(t *testing.T) {
+	for name, conf := range configs(t, all...) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "bind-mount")
+			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
+			if err != nil {
+				t.Fatalf("ioutil.TempDir(): %v", err)
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir,
+				Source:      dir,
+				Type:        "none",
+				Options:     []string{"rw", "bind"},
+			})
+			if err := run(spec, conf); err != nil {
+				t.Fatalf("error running sandbox: %v", err)
+			}
+		})
+	}
+}
+
 func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
 	args := &control.ExecArgs{
 		Filename: name,

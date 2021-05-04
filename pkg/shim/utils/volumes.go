@@ -91,11 +91,9 @@ func isVolumePath(volume, path string) (bool, error) {
 // UpdateVolumeAnnotations add necessary OCI annotations for gvisor
 // volume optimization.
 func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
-	var (
-		uid string
-		err error
-	)
+	var uid string
 	if IsSandbox(s) {
+		var err error
 		uid, err = podUID(s)
 		if err != nil {
 			// Skip if we can't get pod UID, because this doesn't work
@@ -123,21 +121,18 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		} else {
 			// This is a container.
 			for i := range s.Mounts {
-				// An error is returned for sandbox if source
-				// annotation is not successfully applied, so
-				// it is guaranteed that the source annotation
-				// for sandbox has already been successfully
-				// applied at this point.
+				// An error is returned for sandbox if source annotation is not
+				// successfully applied, so it is guaranteed that the source annotation
+				// for sandbox has already been successfully applied at this point.
 				//
-				// The volume name is unique inside a pod, so
-				// matching without podUID is fine here.
+				// The volume name is unique inside a pod, so matching without podUID
+				// is fine here.
 				//
-				// TODO: Pass podUID down to shim for containers to do
-				// more accurate matching.
+				// TODO: Pass podUID down to shim for containers to do more accurate
+				// matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
-					// gVisor requires the container mount type to match
-					// sandbox mount type.
-					s.Mounts[i].Type = v
+					// Container mount type must match the sandbox's mount type.
+					changeMountType(&s.Mounts[i], v)
 					updated = true
 				}
 			}
@@ -152,4 +147,23 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		return err
 	}
 	return ioutil.WriteFile(filepath.Join(bundle, "config.json"), b, 0666)
+}
+
+func changeMountType(m *specs.Mount, newType string) {
+	m.Type = newType
+
+	// OCI spec allows bind mounts to be specified in options only. So if new type
+	// is not bind, remove bind/rbind from options.
+	//
+	// "For bind mounts (when options include either bind or rbind), the type is
+	// a dummy, often "none" (not listed in /proc/filesystems)."
+	if newType != "bind" {
+		newOpts := make([]string, 0, len(m.Options))
+		for _, opt := range m.Options {
+			if opt != "rbind" && opt != "bind" {
+				newOpts = append(newOpts, opt)
+			}
+		}
+		m.Options = newOpts
+	}
 }
