@@ -22,7 +22,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -47,10 +46,10 @@ const (
 
 var (
 	// header64Size is the size of elf.Header64.
-	header64Size = int(binary.Size(elf.Header64{}))
+	header64Size = (*linux.ElfHeader64)(nil).SizeBytes()
 
 	// Prog64Size is the size of elf.Prog64.
-	prog64Size = int(binary.Size(elf.Prog64{}))
+	prog64Size = (*linux.ElfProg64)(nil).SizeBytes()
 )
 
 func progFlagsAsPerms(f elf.ProgFlag) hostarch.AccessType {
@@ -136,7 +135,6 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		log.Infof("Unsupported ELF endianness: %v", endian)
 		return elfInfo{}, syserror.ENOEXEC
 	}
-	byteOrder := binary.LittleEndian
 
 	if version := elf.Version(ident[elf.EI_VERSION]); version != elf.EV_CURRENT {
 		log.Infof("Unsupported ELF version: %v", version)
@@ -145,7 +143,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	// EI_OSABI is ignored by Linux, which is the only OS supported.
 	os := abi.Linux
 
-	var hdr elf.Header64
+	var hdr linux.ElfHeader64
 	hdrBuf := make([]byte, header64Size)
 	_, err = f.ReadFull(ctx, usermem.BytesIOSequence(hdrBuf), 0)
 	if err != nil {
@@ -156,7 +154,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		}
 		return elfInfo{}, err
 	}
-	binary.Unmarshal(hdrBuf, byteOrder, &hdr)
+	hdr.UnmarshalUnsafe(hdrBuf)
 
 	// We support amd64 and arm64.
 	var a arch.Arch
@@ -213,8 +211,8 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 
 	phdrs := make([]elf.ProgHeader, hdr.Phnum)
 	for i := range phdrs {
-		var prog64 elf.Prog64
-		binary.Unmarshal(phdrBuf[:prog64Size], byteOrder, &prog64)
+		var prog64 linux.ElfProg64
+		prog64.UnmarshalUnsafe(phdrBuf[:prog64Size])
 		phdrBuf = phdrBuf[prog64Size:]
 		phdrs[i] = elf.ProgHeader{
 			Type:   elf.ProgType(prog64.Type),
