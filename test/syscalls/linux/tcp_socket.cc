@@ -27,7 +27,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "absl/strings/str_split.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -1145,17 +1144,6 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv) {
 }
 
 TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
-  // Ensure the write size is not larger than the write buffer.
-  size_t write_size = 512 << 10;  // 512 KiB.
-  constexpr char kWMem[] = "/proc/sys/net/ipv4/tcp_wmem";
-  std::string wmem = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kWMem));
-  std::vector<std::string> vals = absl::StrSplit(wmem, absl::ByAnyChar("\t "));
-  size_t max_wmem;
-  ASSERT_TRUE(absl::SimpleAtoi(vals.back(), &max_wmem));
-  if (write_size > max_wmem) {
-    write_size = max_wmem;
-  }
-
   // Initialize address to the loopback one.
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
@@ -1175,6 +1163,12 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
               SyscallSucceeds());
   ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallSucceeds());
+
+  // Ensure the write buffer is large enough not to block on a single write.
+  size_t write_size = 512 << 10;  // 512 KiB.
+  EXPECT_THAT(setsockopt(s.get(), SOL_SOCKET, SO_SNDBUF, &write_size,
+                         sizeof(write_size)),
+              SyscallSucceedsWithValue(0));
 
   std::vector<char> writebuf(write_size);
 
