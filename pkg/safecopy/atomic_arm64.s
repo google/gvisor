@@ -25,7 +25,7 @@ TEXT ·swapUint32(SB), NOSPLIT, $0-24
 	// handleSwapUint32Fault will store a different value in this address.
 	MOVW $0, sig+20(FP)
 again:
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVW new+8(FP), R1
 	LDAXRW (R0), R2
 	STLXRW R1, (R0), R3
@@ -60,7 +60,7 @@ TEXT ·swapUint64(SB), NOSPLIT, $0-28
 	// handleSwapUint64Fault will store a different value in this address.
 	MOVW $0, sig+24(FP)
 again:
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVD new+8(FP), R1
 	LDAXR (R0), R2
 	STLXR R1, (R0), R3
@@ -96,7 +96,7 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
 	// address.
 	MOVW $0, sig+20(FP)
 
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVW old+8(FP), R1
 	MOVW new+12(FP), R2
 again:
@@ -125,11 +125,11 @@ TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
 	MOVW R1, sig+12(FP)
 	RET
 
-// loadUint32 atomically loads *addr and returns it. If a SIGSEGV or SIGBUS
+// loadUint32 atomically loads *ptr and returns it. If a SIGSEGV or SIGBUS
 // signal is received, the value returned is unspecified, and sig is the number
 // of the signal that was received.
 //
-// Preconditions: addr must be aligned to a 4-byte boundary.
+// Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 TEXT ·loadUint32(SB), NOSPLIT, $0-16
@@ -138,7 +138,7 @@ TEXT ·loadUint32(SB), NOSPLIT, $0-16
 	// handleLoadUint32Fault will store a different value in this address.
 	MOVW $0, sig+12(FP)
 
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	LDARW (R0), R1
 	MOVW R1, val+8(FP)
 	RET
