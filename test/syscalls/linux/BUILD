@@ -3710,7 +3710,6 @@ cc_binary(
     deps = [
         ":socket_test_util",
         "//test/util:file_descriptor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:posix_error",
