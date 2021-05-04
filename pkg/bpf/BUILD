@@ -26,6 +26,7 @@ go_test(
     library = ":bpf",
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/hostarch",
+        "//pkg/marshal",
     ],
 )
