@@ -106,3 +106,53 @@ const (
 	// NT_ARM_TLS is for ARM TLS register.
 	NT_ARM_TLS = 0x401
 )
+
+// ElfHeader64 is the ELF64 file header.
+//
+// +marshal
+type ElfHeader64 struct {
+	Ident     [16]byte // File identification.
+	Type      uint16   // File type.
+	Machine   uint16   // Machine architecture.
+	Version   uint32   // ELF format version.
+	Entry     uint64   // Entry point.
+	Phoff     uint64   // Program header file offset.
+	Shoff     uint64   // Section header file offset.
+	Flags     uint32   // Architecture-specific flags.
+	Ehsize    uint16   // Size of ELF header in bytes.
+	Phentsize uint16   // Size of program header entry.
+	Phnum     uint16   // Number of program header entries.
+	Shentsize uint16   // Size of section header entry.
+	Shnum     uint16   // Number of section header entries.
+	Shstrndx  uint16   // Section name strings section.
+}
+
+// ElfSection64 is the ELF64 Section header.
+//
+// +marshal
+type ElfSection64 struct {
+	Name      uint32 // Section name (index into the section header string table).
+	Type      uint32 // Section type.
+	Flags     uint64 // Section flags.
+	Addr      uint64 // Address in memory image.
+	Off       uint64 // Offset in file.
+	Size      uint64 // Size in bytes.
+	Link      uint32 // Index of a related section.
+	Info      uint32 // Depends on section type.
+	Addralign uint64 // Alignment in bytes.
+	Entsize   uint64 // Size of each entry in section.
+}
+
+// ElfProg64 is the ELF64 Program header.
+//
+// +marshal
+type ElfProg64 struct {
+	Type   uint32 // Entry type.
+	Flags  uint32 // Access permission flags.
+	Off    uint64 // File offset of contents.
+	Vaddr  uint64 // Virtual address in memory image.
+	Paddr  uint64 // Physical address (not used).
+	Filesz uint64 // Size of contents in file.
+	Memsz  uint64 // Size of contents in memory.
+	Align  uint64 // Alignment in memory and file.
+}

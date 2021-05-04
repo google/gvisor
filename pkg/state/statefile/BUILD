@@ -7,7 +7,6 @@ go_library(
     srcs = ["statefile.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/binary",
         "//pkg/compressio",
         "//pkg/state/wire",
     ],

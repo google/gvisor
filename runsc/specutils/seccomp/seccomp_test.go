@@ -20,20 +20,15 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
 )
 
-type seccompData struct {
-	nr                 uint32
-	arch               uint32
-	instructionPointer uint64
-	args               [6]uint64
-}
-
-// asInput converts a seccompData to a bpf.Input.
-func asInput(d seccompData) bpf.Input {
-	return bpf.InputBytes{binary.Marshal(nil, binary.LittleEndian, d), binary.LittleEndian}
+// asInput converts a linux.SeccompData to a bpf.Input.
+func asInput(d *linux.SeccompData) bpf.Input {
+	return bpf.InputBytes{marshal.Marshal(d), hostarch.ByteOrder}
 }
 
 // testInput creates an Input struct with given seccomp input values.
@@ -49,13 +44,13 @@ func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
 		args = &argArray
 	}
 
-	data := seccompData{
-		nr:   syscallNo,
-		arch: arch,
-		args: *args,
+	data := linux.SeccompData{
+		Nr:   int32(syscallNo),
+		Arch: arch,
+		Args: *args,
 	}
 
-	return asInput(data)
+	return asInput(&data)
 }
 
 // testCase holds a seccomp test case.
@@ -100,7 +95,7 @@ var (
 			},
 			// Syscall matches but the arch is AUDIT_ARCH_X86 so the return
 			// value is the bad arch action.
-			input:    asInput(seccompData{nr: 183, arch: 0x40000003}), //
+			input:    asInput(&linux.SeccompData{Nr: 183, Arch: 0x40000003}), //
 			expected: uint32(killThreadAction),
 		},
 		{
