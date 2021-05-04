@@ -83,7 +83,7 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
 
   uint64_t anon_after_alloc = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
   EXPECT_THAT(anon_after_alloc,
-              EquivalentWithin(anon_initial + map_bytes, 0.03));
+              EquivalentWithin(anon_initial + map_bytes, 0.04));
 
   // We have many implicit S/R cycles from scraping /proc/meminfo throughout the
   // test, but throw an explicit S/R in here as well.
@@ -91,7 +91,7 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
 
   // Usage should remain the same across S/R.
   uint64_t anon_after_sr = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
-  EXPECT_THAT(anon_after_sr, EquivalentWithin(anon_after_alloc, 0.03));
+  EXPECT_THAT(anon_after_sr, EquivalentWithin(anon_after_alloc, 0.04));
 }
 
 }  // namespace
