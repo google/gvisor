@@ -16,6 +16,8 @@ package stack
 
 import (
 	"fmt"
+	"math"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -201,7 +203,8 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			return nil, &tcpip.ErrDuplicateAddress{}
 		}
 
-		if addrState.mu.refs == 0 {
+		v := atomic.AddInt32(&addrState.refs, 1)
+		if v <= 1 {
 			panic(fmt.Sprintf("found an address that should have been released (ref count == 0); address = %s", addrState.addr))
 		}
 
@@ -237,6 +240,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 			// results in allocations on every call.
 			subnet: addr.Subnet(),
 		}
+		atomic.AddInt32(&addrState.refs, 1)
 		a.mu.endpoints[addr.Address] = addrState
 		addrState.mu.Lock()
 		// We never promote an address to temporary - it can only be added as such.
@@ -257,11 +261,10 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 
 		// Primary addresses are biased by 1.
-		addrState.mu.refs++
+		atomic.AddInt32(&addrState.refs, 1)
 		addrState.mu.kind = Permanent
 	}
 	// Acquire the address before returning it.
-	addrState.mu.refs++
 	addrState.mu.deprecated = deprecated
 	addrState.mu.configType = configType
 
@@ -335,34 +338,32 @@ func (a *AddressableEndpointState) removePermanentEndpointLocked(addrState *addr
 	}
 
 	addrState.SetKind(PermanentExpired)
-	a.decAddressRefLocked(addrState)
+	a.decAddressRef(addrState, true /*locked*/)
 	return nil
 }
 
 // decAddressRef decrements the address's reference count and releases it once
 // the reference count hits 0.
-func (a *AddressableEndpointState) decAddressRef(addrState *addressState) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.decAddressRefLocked(addrState)
-}
-
-// decAddressRefLocked is like decAddressRef but with locking requirements.
-//
-// Precondition: a.mu must be write locked.
-func (a *AddressableEndpointState) decAddressRefLocked(addrState *addressState) {
-	addrState.mu.Lock()
-	defer addrState.mu.Unlock()
-
-	if addrState.mu.refs == 0 {
-		panic(fmt.Sprintf("attempted to decrease ref count for AddressEndpoint w/ addr = %s when it is already released", addrState.addr))
-	}
-
-	addrState.mu.refs--
-
-	if addrState.mu.refs != 0 {
+func (a *AddressableEndpointState) decAddressRef(addrState *addressState, locked bool) {
+	v := atomic.AddInt32(&addrState.refs, -1)
+	if v > 0 {
 		return
 	}
+	if v < 0 {
+		panic(fmt.Sprintf("attempted to decrease ref count for AddressEndpoint w/ addr = %s when it is already released", addrState.addr))
+	}
+	if v == 0 {
+		if !atomic.CompareAndSwapInt32(&addrState.refs, 0, math.MinInt32+1) {
+			return
+		}
+	}
+
+	if !locked {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+	}
+	addrState.mu.Lock()
+	defer addrState.mu.Unlock()
 
 	// A non-expired permanent address must not have its reference count dropped
 	// to 0.
@@ -386,7 +387,7 @@ func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 	}
 
 	addr := ep.AddressWithPrefix()
-	a.decAddressRefLocked(ep)
+	a.decAddressRef(ep, true /*locked*/)
 	return addr
 }
 
@@ -408,7 +409,7 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*ad
 				// If we kept track of a deprecated endpoint, decrement its reference
 				// count since it was incremented when we decided to keep track of it.
 				if deprecatedEndpoint != nil {
-					a.decAddressRefLocked(deprecatedEndpoint)
+					a.decAddressRef(deprecatedEndpoint, true /*locked*/)
 					deprecatedEndpoint = nil
 				}
 
@@ -440,33 +441,54 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*ad
 // Regardless how the address was obtained, it will be acquired before it is
 // returned.
 func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	lookup := func() *addressState {
+		if addrState, ok := a.mu.endpoints[localAddr]; ok {
+			if !addrState.IsAssigned(allowTemp) {
+				return nil
+			}
 
-	if addrState, ok := a.mu.endpoints[localAddr]; ok {
-		if !addrState.IsAssigned(allowTemp) {
-			return nil
+			if !addrState.IncRef() {
+				panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
+			}
+
+			return addrState
 		}
 
-		if !addrState.IncRef() {
-			panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
-		}
-
-		return addrState
-	}
-
-	if f != nil {
-		for _, addrState := range a.mu.endpoints {
-			if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.IncRef() {
-				return addrState
+		if f != nil {
+			for _, addrState := range a.mu.endpoints {
+				if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.IncRef() {
+					return addrState
+				}
 			}
 		}
+		return nil
+	}
+	// Avoid exclusive lock on mu unless we need to add a new address.
+	a.mu.RLock()
+	ep := lookup()
+	a.mu.RUnlock()
+
+	if ep != nil {
+		return ep
 	}
 
 	if !allowTemp {
 		return nil
 	}
 
+	// Acquire state lock in exclusive mode as we need to add a new temporary
+	// endpoint.
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Do the lookup again in case another goroutine added the address in the time
+	// we released and acquired the lock.
+	ep = lookup()
+	if ep != nil {
+		return ep
+	}
+
+	// Proceed to add a new temporary endpoint.
 	addr := localAddr.WithPrefix()
 	ep, err := a.addAndAcquireAddressLocked(addr, tempPEB, AddressConfigStatic, false /* deprecated */, false /* permanent */)
 	if err != nil {
@@ -475,6 +497,7 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 		// expect no error.
 		panic(fmt.Sprintf("a.addAndAcquireAddressLocked(%s, %d, %d, false, false): %s", addr, tempPEB, AddressConfigStatic, err))
 	}
+
 	// From https://golang.org/doc/faq#nil_error:
 	//
 	// Under the covers, interfaces are implemented as two elements, a type T and
@@ -591,6 +614,7 @@ type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
 	subnet                   tcpip.Subnet
+	refs                     int32
 	// Lock ordering (from outer to inner lock ordering):
 	//
 	// AddressableEndpointState.mu
@@ -598,7 +622,6 @@ type addressState struct {
 	mu struct {
 		sync.RWMutex
 
-		refs       uint32
 		kind       AddressKind
 		configType AddressConfigType
 		deprecated bool
@@ -647,19 +670,18 @@ func (a *addressState) IsAssigned(allowExpired bool) bool {
 
 // IncRef implements AddressEndpoint.
 func (a *addressState) IncRef() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.mu.refs == 0 {
+	v := atomic.AddInt32(&a.refs, 1)
+	if v < 0 {
+		atomic.AddInt32(&a.refs, -1)
 		return false
 	}
 
-	a.mu.refs++
 	return true
 }
 
 // DecRef implements AddressEndpoint.
 func (a *addressState) DecRef() {
-	a.addressableEndpointState.decAddressRef(a)
+	a.addressableEndpointState.decAddressRef(a, false /*locked*/)
 }
 
 // ConfigType implements AddressEndpoint.
