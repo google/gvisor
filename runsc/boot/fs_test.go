@@ -244,7 +244,7 @@ func TestGetMountAccessType(t *testing.T) {
 			}
 			mounter := containerMounter{hints: podHints}
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
-			if got := mounter.getMountAccessType(conf, specs.Mount{Source: source}); got != tst.want {
+			if got := mounter.getMountAccessType(conf, &specs.Mount{Source: source}); got != tst.want {
 				t.Errorf("getMountAccessType(), want: %v, got: %v", tst.want, got)
 			}
 		})
