@@ -30,6 +30,9 @@ import (
 
 // RefCounter is the interface to be implemented by objects that are reference
 // counted.
+//
+// TODO(gvisor.dev/issue/1624): Get rid of most of this package and replace it
+// with refsvfs2.
 type RefCounter interface {
 	// IncRef increments the reference counter on the object.
 	IncRef()
@@ -181,6 +184,9 @@ func (w *WeakRef) zap() {
 // AtomicRefCount keeps a reference count using atomic operations and calls the
 // destructor when the count reaches zero.
 //
+// Do not use AtomicRefCount for new ref-counted objects! It is deprecated in
+// favor of the refsvfs2 package.
+//
 // N.B. To allow the zero-object to be initialized, the count is offset by
 //      1, that is, when refCount is n, there are really n+1 references.
 //
@@ -215,8 +221,8 @@ type AtomicRefCount struct {
 // LeakMode configures the leak checker.
 type LeakMode uint32
 
-// TODO(gvisor.dev/issue/1624): Simplify down to two modes once vfs1 ref
-// counting is gone.
+// TODO(gvisor.dev/issue/1624): Simplify down to two modes (on/off) once vfs1
+// ref counting is gone.
 const (
 	// UninitializedLeakChecking indicates that the leak checker has not yet been initialized.
 	UninitializedLeakChecking LeakMode = iota
