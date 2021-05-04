@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,8 +38,8 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 
 	// Start connection attempt, it must fail.
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if _, ok := err.(*tcpip.ErrNoRoute); !ok {
-		t.Fatalf("Unexpected return value from Connect: %v", err)
+	if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+		t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 	}
 }
 
@@ -49,8 +50,8 @@ func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV4MappedAddr, Port: context.TestPort})
-	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-		t.Fatalf("Unexpected return value from Connect: %v", err)
+	if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		t.Fatalf("c.EP.Connect(...) mismatch (-want +got):\n%s", d)
 	}
 
 	// Receive SYN packet.
@@ -156,8 +157,8 @@ func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.Network
 	defer c.WQ.EventUnregister(&we)
 
 	err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort})
-	if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
-		t.Fatalf("Unexpected return value from Connect: %v", err)
+	if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+		t.Fatalf("Connect(...) mismatch (-want +got):\n%s", d)
 	}
 
 	// Receive SYN packet.
@@ -391,7 +392,7 @@ func testV4Accept(t *testing.T, c *context.Context) {
 	defer c.WQ.EventUnregister(&we)
 
 	nep, _, err := c.EP.Accept(nil)
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -525,7 +526,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 	var addr tcpip.FullAddress
 	_, _, err := c.EP.Accept(&addr)
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
@@ -611,7 +612,7 @@ func testV4ListenClose(t *testing.T, c *context.Context) {
 	c.WQ.EventRegister(&we, waiter.ReadableEvents)
 	defer c.WQ.EventUnregister(&we)
 	nep, _, err := c.EP.Accept(nil)
-	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
 		select {
 		case <-ch:
