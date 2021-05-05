@@ -4629,8 +4629,110 @@ func TestNDPDNSSearchListDispatch(t *testing.T) {
 	}
 }
 
-// TestCleanupNDPState tests that all discovered routers and prefixes, and
-// auto-generated addresses are invalidated when a NIC becomes a router.
+func TestNoCleanupNDPStateWhenForwardingEnabled(t *testing.T) {
+	const (
+		lifetimeSeconds = 999
+		nicID           = 1
+	)
+
+	ndpDisp := ndpDispatcher{
+		routerC:        make(chan ndpRouterEvent, 1),
+		rememberRouter: true,
+		prefixC:        make(chan ndpPrefixEvent, 1),
+		rememberPrefix: true,
+		autoGenAddrC:   make(chan ndpAutoGenAddrEvent, 1),
+	}
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+			AutoGenLinkLocal: true,
+			NDPConfigs: ipv6.NDPConfigurations{
+				HandleRAs:              true,
+				DiscoverDefaultRouters: true,
+				DiscoverOnLinkPrefixes: true,
+				AutoGenGlobalAddresses: true,
+			},
+			NDPDisp: &ndpDisp,
+		})},
+	})
+
+	e1 := channel.New(0, header.IPv6MinimumMTU, linkAddr1)
+	if err := s.CreateNIC(nicID, e1); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+	}
+	llAddr := tcpip.AddressWithPrefix{Address: llAddr1, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}
+	select {
+	case e := <-ndpDisp.autoGenAddrC:
+		if diff := checkAutoGenAddrEvent(e, llAddr, newAddr); diff != "" {
+			t.Errorf("auto-gen addr mismatch (-want +got):\n%s", diff)
+		}
+	default:
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", llAddr, nicID)
+	}
+
+	prefix, subnet, addr := prefixSubnetAddr(0, linkAddr1)
+	e1.InjectInbound(
+		header.IPv6ProtocolNumber,
+		raBufWithPI(
+			llAddr3,
+			lifetimeSeconds,
+			prefix,
+			true, /* onLink */
+			true, /* auto */
+			lifetimeSeconds,
+			lifetimeSeconds,
+		),
+	)
+	select {
+	case e := <-ndpDisp.routerC:
+		if diff := checkRouterEvent(e, llAddr3, true /* discovered */); diff != "" {
+			t.Errorf("router event mismatch (-want +got):\n%s", diff)
+		}
+	default:
+		t.Errorf("expected router event for %s on NIC(%d)", llAddr3, nicID)
+	}
+	select {
+	case e := <-ndpDisp.prefixC:
+		if diff := checkPrefixEvent(e, subnet, true /* discovered */); diff != "" {
+			t.Errorf("router event mismatch (-want +got):\n%s", diff)
+		}
+	default:
+		t.Errorf("expected prefix event for %s on NIC(%d)", prefix, nicID)
+	}
+	select {
+	case e := <-ndpDisp.autoGenAddrC:
+		if diff := checkAutoGenAddrEvent(e, addr, newAddr); diff != "" {
+			t.Errorf("auto-gen addr mismatch (-want +got):\n%s", diff)
+		}
+	default:
+		t.Errorf("expected auto-gen addr event for %s on NIC(%d)", addr, nicID)
+	}
+
+	// Enabling or disabling forwarding should not invalidate discovered prefixes
+	// or routers, or auto-generated address.
+	for _, forwarding := range [...]bool{true, false} {
+		t.Run(fmt.Sprintf("Transition forwarding to %t", forwarding), func(t *testing.T) {
+			if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
+				t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+			}
+			select {
+			case e := <-ndpDisp.routerC:
+				t.Errorf("unexpected router event = %#v", e)
+			default:
+			}
+			select {
+			case e := <-ndpDisp.prefixC:
+				t.Errorf("unexpected prefix event = %#v", e)
+			default:
+			}
+			select {
+			case e := <-ndpDisp.autoGenAddrC:
+				t.Errorf("unexpected auto-gen addr event = %#v", e)
+			default:
+			}
+		})
+	}
+}
+
 func TestCleanupNDPState(t *testing.T) {
 	const (
 		lifetimeSeconds          = 5
@@ -4659,18 +4761,6 @@ func TestCleanupNDPState(t *testing.T) {
 		maxAutoGenAddrEvents int
 		skipFinalAddrCheck   bool
 	}{
-		// A NIC should still keep its auto-generated link-local address when
-		// becoming a router.
-		{
-			name: "Enable forwarding",
-			cleanupFn: func(t *testing.T, s *stack.Stack) {
-				t.Helper()
-				s.SetForwarding(ipv6.ProtocolNumber, true)
-			},
-			keepAutoGenLinkLocal: true,
-			maxAutoGenAddrEvents: 4,
-		},
-
 		// A NIC should cleanup all NDP state when it is disabled.
 		{
 			name: "Disable NIC",
