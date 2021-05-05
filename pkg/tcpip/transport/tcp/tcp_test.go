@@ -159,6 +159,76 @@ func TestGiveUpConnect(t *testing.T) {
 	}
 }
 
+// Test for ICMP error handling without completing handshake.
+func TestConnectICMPError(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	var wq waiter.Queue
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&waitEntry, waiter.EventHUp)
+	defer wq.EventUnregister(&waitEntry)
+
+	{
+		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
+		if d := cmp.Diff(&tcpip.ErrConnectStarted{}, err); d != "" {
+			t.Fatalf("ep.Connect(...) mismatch (-want +got):\n%s", d)
+		}
+	}
+
+	syn := c.GetPacket()
+	checker.IPv4(t, syn, checker.TCP(checker.TCPFlags(header.TCPFlagSyn)))
+
+	wep := ep.(interface {
+		StopWork()
+		ResumeWork()
+		LastErrorLocked() tcpip.Error
+	})
+
+	// Stop the protocol loop, ensure that the ICMP error is processed and
+	// the last ICMP error is read before the loop is resumed. This sanity
+	// tests the handshake completion logic on ICMP errors.
+	wep.StopWork()
+
+	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4HostUnreachable, nil, syn, defaultMTU)
+
+	for {
+		if err := wep.LastErrorLocked(); err != nil {
+			if d := cmp.Diff(&tcpip.ErrNoRoute{}, err); d != "" {
+				t.Errorf("ep.LastErrorLocked() mismatch (-want +got):\n%s", d)
+			}
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	wep.ResumeWork()
+
+	<-notifyCh
+
+	// The stack would have unregistered the endpoint because of the ICMP error.
+	// Expect a RST for any subsequent packets sent to the endpoint.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seqnum.Value(context.TestInitialSequenceNumber) + 1,
+		AckNum:  c.IRS + 1,
+	})
+
+	checker.IPv4(t, c.GetPacket(), checker.TCP(
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPSeqNum(uint32(c.IRS+1)),
+		checker.TCPAckNum(0),
+		checker.TCPFlags(header.TCPFlagRst)))
+}
+
 func TestConnectIncrementActiveConnection(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

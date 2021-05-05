@@ -252,6 +252,9 @@ ALL_TESTS = [
         name = "tcp_syncookie",
     ),
     PacketimpactTestInfo(
+        name = "tcp_connect_icmp_error",
+    ),
+    PacketimpactTestInfo(
         name = "icmpv6_param_problem",
     ),
     PacketimpactTestInfo(

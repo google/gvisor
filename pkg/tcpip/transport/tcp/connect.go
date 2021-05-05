@@ -586,8 +586,14 @@ func (h *handshake) complete() tcpip.Error {
 				<-h.ep.undrain
 				h.ep.mu.Lock()
 			}
+			// Check for any ICMP errors notified to us.
 			if n&notifyError != 0 {
-				return h.ep.lastErrorLocked()
+				if err := h.ep.lastErrorLocked(); err != nil {
+					return err
+				}
+				// Flag the handshake failure as aborted if the lastError is
+				// cleared because of a socket layer call.
+				return &tcpip.ErrConnectionAborted{}
 			}
 		case wakerForNewSegment:
 			if err := h.processSegments(); err != nil {
@@ -1362,8 +1368,24 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 	}
 
 	// Reaching this point means that we successfully completed the 3-way
-	// handshake with our peer.
-	//
+	// handshake with our peer. The current endpoint state could be any state
+	// post ESTABLISHED, including CLOSED or ERROR if the endpoint processes a
+	// RST from the peer via the dispatcher fast path, before the loop is
+	// started.
+	if s := e.EndpointState(); !s.connected() {
+		switch s {
+		case StateClose, StateError:
+			// If the endpoint is in CLOSED/ERROR state, sender state has to be
+			// initialized if the endpoint was previously established.
+			if e.snd != nil {
+				break
+			}
+			fallthrough
+		default:
+			panic("endpoint was not established, current state " + s.String())
+		}
+	}
+
 	// Completing the 3-way handshake is an indication that the route is valid
 	// and the remote is reachable as the only way we can complete a handshake
 	// is if our SYN reached the remote and their ACK reached us.
