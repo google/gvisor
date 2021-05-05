@@ -94,8 +94,13 @@ def _deps_test_impl(ctx):
     )
     return []
 
-# Checks that library and its deps only depends on gVisor and an allowlist of
-# other dependencies.
+# Checks that targets only depend on an allowlist of other targets. Targets can
+# be specified directly, or prefixes can be used to allow entire packages or
+# directory trees.
+#
+# This recursively checks the "deps" attribute of each target, dependencies
+# expressed other ways are not checked. For example, protobuf targets pull in
+# protobuf code, but aren't analyzed by deps_test.
 deps_test = rule(
     implementation = _deps_test_impl,
     attrs = {

@@ -5,9 +5,7 @@ licenses(["notice"])
 go_binary(
     name = "go_marshal",
     srcs = ["main.go"],
-    visibility = [
-        "//:sandbox",
-    ],
+    visibility = ["//:sandbox"],
     deps = [
         "//tools/go_marshal/gomarshal",
     ],
@@ -16,6 +14,7 @@ go_binary(
 config_setting(
     name = "marshal_config_verbose",
     values = {"define": "gomarshal=verbose"},
+    visibility = ["//:sandbox"],
 )
 
 bzl_library(
