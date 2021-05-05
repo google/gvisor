@@ -1528,6 +1528,30 @@ type IGMPStats struct {
 	// LINT.ThenChange(network/ipv4/stats.go:multiCounterIGMPStats)
 }
 
+// IPForwardingStats collects stats related to IP forwarding (both v4 and v6).
+type IPForwardingStats struct {
+	// Unrouteable is the number of IP packets received which were dropped
+	// because the netstack could not construct a route to their
+	// destination.
+	Unrouteable *StatCounter
+
+	// ExhaustedTTL is the number of IP packets received which were dropped
+	// because their TTL was exhausted.
+	ExhaustedTTL *StatCounter
+
+	// LinkLocalSource is the number of IP packets which were dropped
+	// because they contained a link-local source address.
+	LinkLocalSource *StatCounter
+
+	// LinkLocalDestination is the number of IP packets which were dropped
+	// because they contained a link-local destination address.
+	LinkLocalDestination *StatCounter
+
+	// Errors is the number of IP packets received which could not be
+	// successfully forwarded.
+	Errors *StatCounter
+}
+
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
 	// LINT.IfChange(IPStats)
@@ -1595,6 +1619,9 @@ type IPStats struct {
 
 	// OptionUnknownReceived is the number of unknown IP options seen.
 	OptionUnknownReceived *StatCounter
+
+	// Forwarding collects stats related to IP forwarding.
+	Forwarding IPForwardingStats
 
 	// LINT.ThenChange(network/internal/ip/stats.go:MultiCounterIPStats)
 }

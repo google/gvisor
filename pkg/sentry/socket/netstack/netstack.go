@@ -199,6 +199,13 @@ var Metrics = tcpip.Stats{
 		OptionRecordRouteReceived:           mustCreateMetric("/netstack/ip/options/record_route_received", "Number of record route options found in received IP packets."),
 		OptionRouterAlertReceived:           mustCreateMetric("/netstack/ip/options/router_alert_received", "Number of router alert options found in received IP packets."),
 		OptionUnknownReceived:               mustCreateMetric("/netstack/ip/options/unknown_received", "Number of unknown options found in received IP packets."),
+		Forwarding: tcpip.IPForwardingStats{
+			Unrouteable:          mustCreateMetric("/netstack/ip/forwarding/unrouteable", "Number of IP packets received which couldn't be routed and thus were not forwarded."),
+			ExhaustedTTL:         mustCreateMetric("/netstack/ip/forwarding/exhausted_ttl", "Number of IP packets received which could not be forwarded due to an exhausted TTL."),
+			LinkLocalSource:      mustCreateMetric("/netstack/ip/forwarding/link_local_source_address", "Number of IP packets received which could not be forwarded due to a link-local source address."),
+			LinkLocalDestination: mustCreateMetric("/netstack/ip/forwarding/link_local_destination_address", "Number of IP packets received which could not be forwarded due to a link-local destination address."),
+			Errors:               mustCreateMetric("/netstack/ip/forwarding/errors", "Number of IP packets which couldn't be forwarded."),
+		},
 	},
 	ARP: tcpip.ARPStats{
 		PacketsReceived:                                 mustCreateMetric("/netstack/arp/packets_received", "Number of ARP packets received from the link layer."),

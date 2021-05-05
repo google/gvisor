@@ -131,48 +131,69 @@ func TestForwarding(t *testing.T) {
 	}
 	remoteIPv4Addr1 := tcpip.Address(net.ParseIP("10.0.0.2").To4())
 	remoteIPv4Addr2 := tcpip.Address(net.ParseIP("11.0.0.2").To4())
+	unreachableIPv4Addr := tcpip.Address(net.ParseIP("12.0.0.2").To4())
+	multicastIPv4Addr := tcpip.Address(net.ParseIP("225.0.0.0").To4())
+	linkLocalIPv4Addr := tcpip.Address(net.ParseIP("169.254.0.0").To4())
 
 	tests := []struct {
-		name             string
-		TTL              uint8
-		expectErrorICMP  bool
-		options          header.IPv4Options
-		forwardedOptions header.IPv4Options
-		icmpType         header.ICMPv4Type
-		icmpCode         header.ICMPv4Code
+		name                         string
+		TTL                          uint8
+		sourceAddr                   tcpip.Address
+		destAddr                     tcpip.Address
+		expectErrorICMP              bool
+		expectPacketForwarded        bool
+		options                      header.IPv4Options
+		forwardedOptions             header.IPv4Options
+		icmpType                     header.ICMPv4Type
+		icmpCode                     header.ICMPv4Code
+		expectPacketUnrouteableError bool
+		expectLinkLocalSourceError   bool
+		expectLinkLocalDestError     bool
 	}{
 		{
 			name:            "TTL of zero",
 			TTL:             0,
+			sourceAddr:      remoteIPv4Addr1,
+			destAddr:        remoteIPv4Addr2,
 			expectErrorICMP: true,
 			icmpType:        header.ICMPv4TimeExceeded,
 			icmpCode:        header.ICMPv4TTLExceeded,
 		},
 		{
-			name:            "TTL of one",
-			TTL:             1,
-			expectErrorICMP: false,
+			name:                  "TTL of one",
+			TTL:                   1,
+			sourceAddr:            remoteIPv4Addr1,
+			destAddr:              remoteIPv4Addr2,
+			expectPacketForwarded: true,
 		},
 		{
-			name:            "TTL of two",
-			TTL:             2,
-			expectErrorICMP: false,
+			name:                  "TTL of two",
+			TTL:                   2,
+			sourceAddr:            remoteIPv4Addr1,
+			destAddr:              remoteIPv4Addr2,
+			expectPacketForwarded: true,
 		},
 		{
-			name:            "Max TTL",
-			TTL:             math.MaxUint8,
-			expectErrorICMP: false,
+			name:                  "Max TTL",
+			TTL:                   math.MaxUint8,
+			sourceAddr:            remoteIPv4Addr1,
+			destAddr:              remoteIPv4Addr2,
+			expectPacketForwarded: true,
 		},
 		{
-			name:             "four EOL options",
-			TTL:              2,
-			expectErrorICMP:  false,
-			options:          header.IPv4Options{0, 0, 0, 0},
-			forwardedOptions: header.IPv4Options{0, 0, 0, 0},
+			name:                  "four EOL options",
+			TTL:                   2,
+			sourceAddr:            remoteIPv4Addr1,
+			destAddr:              remoteIPv4Addr2,
+			expectPacketForwarded: true,
+			options:               header.IPv4Options{0, 0, 0, 0},
+			forwardedOptions:      header.IPv4Options{0, 0, 0, 0},
 		},
 		{
-			name: "TS type 1 full",
-			TTL:  2,
+			name:       "TS type 1 full",
+			TTL:        2,
+			sourceAddr: remoteIPv4Addr1,
+			destAddr:   remoteIPv4Addr2,
 			options: header.IPv4Options{
 				68, 12, 13, 0xF1,
 				192, 168, 1, 12,
@@ -183,8 +204,10 @@ func TestForwarding(t *testing.T) {
 			icmpCode:        header.ICMPv4UnusedCode,
 		},
 		{
-			name: "TS type 0",
-			TTL:  2,
+			name:       "TS type 0",
+			TTL:        2,
+			sourceAddr: remoteIPv4Addr1,
+			destAddr:   remoteIPv4Addr2,
 			options: header.IPv4Options{
 				68, 24, 21, 0x00,
 				1, 2, 3, 4,
@@ -201,10 +224,13 @@ func TestForwarding(t *testing.T) {
 				13, 14, 15, 16,
 				0x00, 0xad, 0x1c, 0x40, // time we expect from fakeclock
 			},
+			expectPacketForwarded: true,
 		},
 		{
-			name: "end of options list",
-			TTL:  2,
+			name:       "end of options list",
+			TTL:        2,
+			sourceAddr: remoteIPv4Addr1,
+			destAddr:   remoteIPv4Addr2,
 			options: header.IPv4Options{
 				68, 12, 13, 0x11,
 				192, 168, 1, 12,
@@ -220,6 +246,37 @@ func TestForwarding(t *testing.T) {
 				0, 0, 0, // 7 bytes unknown option removed.
 				0, 0, 0, 0,
 			},
+			expectPacketForwarded: true,
+		},
+		{
+			name:                         "Network unreachable",
+			TTL:                          2,
+			sourceAddr:                   remoteIPv4Addr1,
+			destAddr:                     unreachableIPv4Addr,
+			expectErrorICMP:              true,
+			icmpType:                     header.ICMPv4DstUnreachable,
+			icmpCode:                     header.ICMPv4NetUnreachable,
+			expectPacketUnrouteableError: true,
+		},
+		{
+			name:                         "Multicast destination",
+			TTL:                          2,
+			destAddr:                     multicastIPv4Addr,
+			expectPacketUnrouteableError: true,
+		},
+		{
+			name:                     "Link local destination",
+			TTL:                      2,
+			sourceAddr:               remoteIPv4Addr1,
+			destAddr:                 linkLocalIPv4Addr,
+			expectLinkLocalDestError: true,
+		},
+		{
+			name:                       "Link local source",
+			TTL:                        2,
+			sourceAddr:                 linkLocalIPv4Addr,
+			destAddr:                   remoteIPv4Addr2,
+			expectLinkLocalSourceError: true,
 		},
 	}
 	for _, test := range tests {
@@ -287,8 +344,8 @@ func TestForwarding(t *testing.T) {
 				TotalLength: totalLen,
 				Protocol:    uint8(header.ICMPv4ProtocolNumber),
 				TTL:         test.TTL,
-				SrcAddr:     remoteIPv4Addr1,
-				DstAddr:     remoteIPv4Addr2,
+				SrcAddr:     test.sourceAddr,
+				DstAddr:     test.destAddr,
 			})
 			if len(test.options) != 0 {
 				ip.SetHeaderLength(uint8(ipHeaderLength))
@@ -305,15 +362,15 @@ func TestForwarding(t *testing.T) {
 			})
 			e1.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 
+			reply, ok := e1.Read()
 			if test.expectErrorICMP {
-				reply, ok := e1.Read()
 				if !ok {
 					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
 				}
 
 				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
 					checker.SrcAddr(ipv4Addr1.Address),
-					checker.DstAddr(remoteIPv4Addr1),
+					checker.DstAddr(test.sourceAddr),
 					checker.TTL(ipv4.DefaultTTL),
 					checker.ICMPv4(
 						checker.ICMPv4Checksum(),
@@ -326,15 +383,19 @@ func TestForwarding(t *testing.T) {
 				if n := e2.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
 				}
-			} else {
-				reply, ok := e2.Read()
+			} else if ok {
+				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
+			}
+
+			reply, ok = e2.Read()
+			if test.expectPacketForwarded {
 				if !ok {
 					t.Fatal("expected ICMP Echo packet through outgoing NIC")
 				}
 
 				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
-					checker.SrcAddr(remoteIPv4Addr1),
-					checker.DstAddr(remoteIPv4Addr2),
+					checker.SrcAddr(test.sourceAddr),
+					checker.DstAddr(test.destAddr),
 					checker.TTL(test.TTL-1),
 					checker.IPv4Options(test.forwardedOptions),
 					checker.ICMPv4(
@@ -348,6 +409,39 @@ func TestForwarding(t *testing.T) {
 				if n := e1.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
 				}
+			} else if ok {
+				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
+			}
+
+			boolToInt := func(val bool) uint64 {
+				if val {
+					return 1
+				}
+				return 0
+			}
+
+			if got, want := s.Stats().IP.Forwarding.LinkLocalSource.Value(), boolToInt(test.expectLinkLocalSourceError); got != want {
+				t.Errorf("got s.Stats().IP.Forwarding.LinkLocalSource.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.LinkLocalDestination.Value(), boolToInt(test.expectLinkLocalDestError); got != want {
+				t.Errorf("got s.Stats().IP.Forwarding.LinkLocalDestination.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), boolToInt(test.icmpType == header.ICMPv4ParamProblem); got != want {
+				t.Errorf("got s.Stats().IP.MalformedPacketsReceived.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.ExhaustedTTL.Value(), boolToInt(test.TTL <= 0); got != want {
+				t.Errorf("got s.Stats().IP.Forwarding.ExhaustedTTL.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.Unrouteable.Value(), boolToInt(test.expectPacketUnrouteableError); got != want {
+				t.Errorf("got s.Stats().IP.Forwarding.Unrouteable.Value() = %d, want = %d", got, want)
+			}
+
+			if got, want := s.Stats().IP.Forwarding.Errors.Value(), boolToInt(!test.expectPacketForwarded); got != want {
+				t.Errorf("got s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
 			}
 		})
 	}
