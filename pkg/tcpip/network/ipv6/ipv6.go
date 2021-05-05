@@ -420,11 +420,7 @@ func (e *endpoint) transitionForwarding(forwarding bool) {
 	defer e.mu.Unlock()
 
 	if forwarding {
-		// When transitioning into an IPv6 router, host-only state (NDP discovered
-		// routers, discovered on-link prefixes, and auto-generated addresses) is
-		// cleaned up/invalidated and NDP router solicitations are stopped.
 		e.mu.ndp.stopSolicitingRouters()
-		e.mu.ndp.cleanupState(true /* hostOnly */)
 
 		// As per RFC 4291 section 2.8:
 		//
@@ -613,7 +609,7 @@ func (e *endpoint) disableLocked() {
 
 		return true
 	})
-	e.mu.ndp.cleanupState(false /* hostOnly */)
+	e.mu.ndp.cleanupState()
 
 	// The endpoint may have already left the multicast group.
 	switch err := e.leaveGroupLocked(header.IPv6AllNodesMulticastAddress).(type) {
