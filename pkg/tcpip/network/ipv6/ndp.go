@@ -48,7 +48,7 @@ const (
 
 	// defaultHandleRAs is the default configuration for whether or not to
 	// handle incoming Router Advertisements as a host.
-	defaultHandleRAs = true
+	defaultHandleRAs = HandlingRAsEnabledWhenForwardingDisabled
 
 	// defaultDiscoverDefaultRouters is the default configuration for
 	// whether or not to discover default routers from incoming Router
@@ -301,6 +301,39 @@ type NDPDispatcher interface {
 	OnDHCPv6Configuration(tcpip.NICID, DHCPv6ConfigurationFromNDPRA)
 }
 
+var _ fmt.Stringer = HandleRAsConfiguration(0)
+
+// HandleRAsConfiguration enumerates when RAs may be handled.
+type HandleRAsConfiguration int
+
+const (
+	// HandlingRAsDisabled indicates that Router Advertisements will not be
+	// handled.
+	HandlingRAsDisabled HandleRAsConfiguration = iota
+
+	// HandlingRAsEnabledWhenForwardingDisabled indicates that router
+	// advertisements will only be handled when forwarding is disabled.
+	HandlingRAsEnabledWhenForwardingDisabled
+
+	// HandlingRAsAlwaysEnabled indicates that Router Advertisements will always
+	// be handled, even when forwarding is enabled.
+	HandlingRAsAlwaysEnabled
+)
+
+// String implements fmt.Stringer.
+func (c HandleRAsConfiguration) String() string {
+	switch c {
+	case HandlingRAsDisabled:
+		return "HandlingRAsDisabled"
+	case HandlingRAsEnabledWhenForwardingDisabled:
+		return "HandlingRAsEnabledWhenForwardingDisabled"
+	case HandlingRAsAlwaysEnabled:
+		return "HandlingRAsAlwaysEnabled"
+	default:
+		return fmt.Sprintf("HandleRAsConfiguration(%d)", c)
+	}
+}
+
 // NDPConfigurations is the NDP configurations for the netstack.
 type NDPConfigurations struct {
 	// The number of Router Solicitation messages to send when the IPv6 endpoint
@@ -318,8 +351,9 @@ type NDPConfigurations struct {
 	// Must be greater than or equal to 0s.
 	MaxRtrSolicitationDelay time.Duration
 
-	// HandleRAs determines whether or not Router Advertisements are processed.
-	HandleRAs bool
+	// HandleRAs is the configuration for when Router Advertisements should be
+	// handled.
+	HandleRAs HandleRAsConfiguration
 
 	// DiscoverDefaultRouters determines whether or not default routers are
 	// discovered from Router Advertisements, as per RFC 4861 section 6. This
@@ -654,8 +688,18 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// per-interface basis; it is a protocol-wide configuration, so we check the
 	// protocol's forwarding flag to determine if the IPv6 endpoint is forwarding
 	// packets.
-	if !ndp.configs.HandleRAs || ndp.ep.protocol.Forwarding() {
+	switch ndp.configs.HandleRAs {
+	case HandlingRAsDisabled:
+		ndp.ep.stats.localStats.UnhandledRouterAdvertisements.Increment()
 		return
+	case HandlingRAsEnabledWhenForwardingDisabled:
+		if ndp.ep.protocol.Forwarding() {
+			ndp.ep.stats.localStats.UnhandledRouterAdvertisements.Increment()
+			return
+		}
+	case HandlingRAsAlwaysEnabled:
+	default:
+		panic(fmt.Sprintf("unhandled HandleRAs configuration = %d", ndp.configs.HandleRAs))
 	}
 
 	// Only worry about the DHCPv6 configuration if we have an NDPDispatcher as we

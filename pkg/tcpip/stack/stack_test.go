@@ -3022,7 +3022,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPConfigs: ipv6.NDPConfigurations{
-						HandleRAs:                  true,
+						HandleRAs:                  ipv6.HandlingRAsEnabledWhenForwardingDisabled,
 						AutoGenGlobalAddresses:     true,
 						AutoGenTempGlobalAddresses: true,
 					},
