@@ -924,16 +924,19 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 }
 
 // forwardPacket attempts to forward a packet to its final destination.
-func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	h := header.IPv6(pkt.NetworkHeader().View())
 
 	dstAddr := h.DestinationAddress()
-	if header.IsV6LinkLocalUnicastAddress(h.SourceAddress()) || header.IsV6LinkLocalUnicastAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
-		// As per RFC 4291 section 2.5.6,
-		//
-		//   Routers must not forward any packets with Link-Local source or
-		//   destination addresses to other links.
-		return nil
+	// As per RFC 4291 section 2.5.6,
+	//
+	//   Routers must not forward any packets with Link-Local source or
+	//   destination addresses to other links.
+	if header.IsV6LinkLocalUnicastAddress(h.SourceAddress()) {
+		return &ip.ErrLinkLocalSourceAddress{}
+	}
+	if header.IsV6LinkLocalUnicastAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
+		return &ip.ErrLinkLocalDestinationAddress{}
 	}
 
 	hopLimit := h.HopLimit()
@@ -945,7 +948,12 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 		//   packet and originate an ICMPv6 Time Exceeded message with Code 0 to
 		//   the source of the packet.  This indicates either a routing loop or
 		//   too small an initial Hop Limit value.
-		return e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt)
+		//
+		// We return the original error rather than the result of returning
+		// the ICMP packet because the original error is more relevant to
+		// the caller.
+		_ = e.protocol.returnError(&icmpReasonHopLimitExceeded{}, pkt)
+		return &ip.ErrTTLExceeded{}
 	}
 
 	// Check if the destination is owned by the stack.
@@ -955,8 +963,16 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 
 	r, err := e.protocol.stack.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return err
+	switch err.(type) {
+	case nil:
+	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
+		// We return the original error rather than the result of returning
+		// the ICMP packet because the original error is more relevant to
+		// the caller.
+		_ = e.protocol.returnError(&icmpReasonNetUnreachable{}, pkt)
+		return &ip.ErrNoRoute{}
+	default:
+		return &ip.ErrOther{Err: err}
 	}
 	defer r.Release()
 
@@ -971,10 +987,13 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	//                       each node that forwards the packet.
 	newHdr.SetHopLimit(hopLimit - 1)
 
-	return r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+	if err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               buffer.View(newHdr).ToVectorisedView(),
-	}))
+	})); err != nil {
+		return &ip.ErrOther{Err: err}
+	}
+	return nil
 }
 
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
@@ -1075,8 +1094,21 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer)
 			stats.InvalidDestinationAddressesReceived.Increment()
 			return
 		}
-
-		_ = e.forwardPacket(pkt)
+		switch err := e.forwardPacket(pkt); err.(type) {
+		case nil:
+			return
+		case *ip.ErrLinkLocalSourceAddress:
+			e.stats.ip.Forwarding.LinkLocalSource.Increment()
+		case *ip.ErrLinkLocalDestinationAddress:
+			e.stats.ip.Forwarding.LinkLocalDestination.Increment()
+		case *ip.ErrTTLExceeded:
+			e.stats.ip.Forwarding.ExhaustedTTL.Increment()
+		case *ip.ErrNoRoute:
+			e.stats.ip.Forwarding.Unrouteable.Increment()
+		default:
+			panic(fmt.Sprintf("unexpected error %s while trying to forward packet: %#v", err, pkt))
+		}
+		e.stats.ip.Forwarding.Errors.Increment()
 		return
 	}
 

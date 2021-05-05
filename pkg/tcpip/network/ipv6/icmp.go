@@ -955,6 +955,7 @@ func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 // icmpReason is a marker interface for IPv6 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
+	isForwarding() bool
 }
 
 // icmpReasonParameterProblem is an error during processing of extension headers
@@ -986,6 +987,9 @@ type icmpReasonParameterProblem struct {
 }
 
 func (*icmpReasonParameterProblem) isICMPReason() {}
+func (*icmpReasonParameterProblem) isForwarding() bool {
+	return false
+}
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
@@ -993,11 +997,43 @@ type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
+func (*icmpReasonPortUnreachable) isForwarding() bool {
+	return false
+}
+
+// icmpReasonNetUnreachable is an error where no route can be found to the
+// network of the final destination.
+type icmpReasonNetUnreachable struct{}
+
+func (*icmpReasonNetUnreachable) isICMPReason() {}
+
+func (*icmpReasonNetUnreachable) isForwarding() bool {
+	// If we hit a Network Unreachable error, then we also know we are
+	// operating as a router. As per RFC 4443 section 3.1:
+	//
+	//   If the reason for the failure to deliver is lack of a matching
+	//   entry in the forwarding node's routing table, the Code field is
+	//   set to 0 (Network Unreachable).
+	return true
+}
+
 // icmpReasonHopLimitExceeded is an error where a packet's hop limit exceeded in
 // transit to its final destination, as per RFC 4443 section 3.3.
 type icmpReasonHopLimitExceeded struct{}
 
 func (*icmpReasonHopLimitExceeded) isICMPReason() {}
+
+func (*icmpReasonHopLimitExceeded) isForwarding() bool {
+	// If we hit a Hop Limit Exceeded error, then we know we are operating
+	// as a router. As per RFC 4443 section 3.3:
+	//
+	//   If a router receives a packet with a Hop Limit of zero, or if a
+	//   router decrements a packet's Hop Limit to zero, it MUST discard
+	//   the packet and originate an ICMPv6 Time Exceeded message with Code
+	//   0 to the source of the packet.  This indicates either a routing
+	//   loop or too small an initial Hop Limit value.
+	return true
+}
 
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
@@ -1005,6 +1041,10 @@ func (*icmpReasonHopLimitExceeded) isICMPReason() {}
 type icmpReasonReassemblyTimeout struct{}
 
 func (*icmpReasonReassemblyTimeout) isICMPReason() {}
+
+func (*icmpReasonReassemblyTimeout) isForwarding() bool {
+	return false
+}
 
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
@@ -1044,15 +1084,6 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		return nil
 	}
 
-	// If we hit a Hop Limit Exceeded error, then we know we are operating as a
-	// router. As per RFC 4443 section 3.3:
-	//
-	//   If a router receives a packet with a Hop Limit of zero, or if a
-	//   router decrements a packet's Hop Limit to zero, it MUST discard the
-	//   packet and originate an ICMPv6 Time Exceeded message with Code 0 to
-	//   the source of the packet.  This indicates either a routing loop or
-	//   too small an initial Hop Limit value.
-	//
 	// If we are operating as a router, do not use the packet's destination
 	// address as the response's source address as we should not own the
 	// destination address of a packet we are forwarding.
@@ -1062,7 +1093,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	// packet as "multicast addresses must not be used as source addresses in IPv6
 	// packets", as per RFC 4291 section 2.7.
 	localAddr := origIPHdrDst
-	if _, ok := reason.(*icmpReasonHopLimitExceeded); ok || isOrigDstMulticast {
+	if reason.isForwarding() || isOrigDstMulticast {
 		localAddr = ""
 	}
 	// Even if we were able to receive a packet from some remote, we may not have
@@ -1150,6 +1181,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	case *icmpReasonPortUnreachable:
 		icmpHdr.SetType(header.ICMPv6DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv6PortUnreachable)
+		counter = sent.dstUnreachable
+	case *icmpReasonNetUnreachable:
+		icmpHdr.SetType(header.ICMPv6DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv6NetworkUnreachable)
 		counter = sent.dstUnreachable
 	case *icmpReasonHopLimitExceeded:
 		icmpHdr.SetType(header.ICMPv6TimeExceeded)

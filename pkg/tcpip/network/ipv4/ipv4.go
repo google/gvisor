@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/network/hash"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation"
+	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -599,22 +600,25 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 }
 
 // forwardPacket attempts to forward a packet to its final destination.
-func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
+func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	h := header.IPv4(pkt.NetworkHeader().View())
 
 	dstAddr := h.DestinationAddress()
-	if header.IsV4LinkLocalUnicastAddress(h.SourceAddress()) || header.IsV4LinkLocalUnicastAddress(dstAddr) || header.IsV4LinkLocalMulticastAddress(dstAddr) {
-		// As per RFC 3927 section 7,
-		//
-		//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
-		//   destination address, irrespective of the router's default route
-		//   configuration or routes obtained from dynamic routing protocols.
-		//
-		//   A router which receives a packet with an IPv4 Link-Local source or
-		//   destination address MUST NOT forward the packet.  This prevents
-		//   forwarding of packets back onto the network segment from which they
-		//   originated, or to any other segment.
-		return nil
+	// As per RFC 3927 section 7,
+	//
+	//   A router MUST NOT forward a packet with an IPv4 Link-Local source or
+	//   destination address, irrespective of the router's default route
+	//   configuration or routes obtained from dynamic routing protocols.
+	//
+	//   A router which receives a packet with an IPv4 Link-Local source or
+	//   destination address MUST NOT forward the packet.  This prevents
+	//   forwarding of packets back onto the network segment from which they
+	//   originated, or to any other segment.
+	if header.IsV4LinkLocalUnicastAddress(h.SourceAddress()) {
+		return &ip.ErrLinkLocalSourceAddress{}
+	}
+	if header.IsV4LinkLocalUnicastAddress(dstAddr) || header.IsV4LinkLocalMulticastAddress(dstAddr) {
+		return &ip.ErrLinkLocalDestinationAddress{}
 	}
 
 	ttl := h.TTL()
@@ -624,7 +628,12 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 		//  If the gateway processing a datagram finds the time to live field
 		//  is zero it must discard the datagram.  The gateway may also notify
 		//  the source host via the time exceeded message.
-		return e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt)
+		//
+		// We return the original error rather than the result of returning
+		// the ICMP packet because the original error is more relevant to
+		// the caller.
+		_ = e.protocol.returnError(&icmpReasonTTLExceeded{}, pkt)
+		return &ip.ErrTTLExceeded{}
 	}
 
 	if opts := h.Options(); len(opts) != 0 {
@@ -635,10 +644,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 					pointer:    optProblem.Pointer,
 					forwarding: true,
 				}, pkt)
-				e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
-				e.stats.ip.MalformedPacketsReceived.Increment()
 			}
-			return nil // option problems are not reported locally.
+			return &ip.ErrIPOptProblem{}
 		}
 		copied := copy(opts, newOpts)
 		if copied != len(newOpts) {
@@ -662,8 +669,16 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	}
 
 	r, err := e.protocol.stack.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		return err
+	switch err.(type) {
+	case nil:
+	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
+		// We return the original error rather than the result of returning
+		// the ICMP packet because the original error is more relevant to
+		// the caller.
+		_ = e.protocol.returnError(&icmpReasonNetworkUnreachable{}, pkt)
+		return &ip.ErrNoRoute{}
+	default:
+		return &ip.ErrOther{Err: err}
 	}
 	defer r.Release()
 
@@ -680,10 +695,13 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) tcpip.Error {
 	//   spent, the field must be decremented by 1.
 	newHdr.SetTTL(ttl - 1)
 
-	return r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+	if err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               buffer.View(newHdr).ToVectorisedView(),
-	}))
+	})); err != nil {
+		return &ip.ErrOther{Err: err}
+	}
+	return nil
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
@@ -798,7 +816,24 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 			stats.ip.InvalidDestinationAddressesReceived.Increment()
 			return
 		}
-		_ = e.forwardPacket(pkt)
+		switch err := e.forwardPacket(pkt); err.(type) {
+		case nil:
+			return
+		case *ip.ErrLinkLocalSourceAddress:
+			stats.ip.Forwarding.LinkLocalSource.Increment()
+		case *ip.ErrLinkLocalDestinationAddress:
+			stats.ip.Forwarding.LinkLocalDestination.Increment()
+		case *ip.ErrTTLExceeded:
+			stats.ip.Forwarding.ExhaustedTTL.Increment()
+		case *ip.ErrNoRoute:
+			stats.ip.Forwarding.Unrouteable.Increment()
+		case *ip.ErrIPOptProblem:
+			e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
+			stats.ip.MalformedPacketsReceived.Increment()
+		default:
+			panic(fmt.Sprintf("unexpected error %s while trying to forward packet: %#v", err, pkt))
+		}
+		stats.ip.Forwarding.Errors.Increment()
 		return
 	}
 
