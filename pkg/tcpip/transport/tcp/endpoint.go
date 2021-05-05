@@ -1280,6 +1280,12 @@ func (e *endpoint) LastError() tcpip.Error {
 	return e.lastErrorLocked()
 }
 
+// LastErrorLocked reads and clears lastError with e.mu held.
+// Only to be used in tests.
+func (e *endpoint) LastErrorLocked() tcpip.Error {
+	return e.lastErrorLocked()
+}
+
 // UpdateLastError implements tcpip.SocketOptionsHandler.UpdateLastError.
 func (e *endpoint) UpdateLastError(err tcpip.Error) {
 	e.LockUser()
