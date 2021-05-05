@@ -3,7 +3,7 @@ load("//tools/nogo:defs.bzl", "nogo_config")
 load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
 
-package(licenses = ["notice"])
+licenses(["notice"])
 
 exports_files(["LICENSE"])
 
