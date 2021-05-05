@@ -29,6 +29,10 @@ type Stats struct {
 
 	// ICMP holds ICMPv6 statistics.
 	ICMP tcpip.ICMPv6Stats
+
+	// UnhandledRouterAdvertisements is the number of Router Advertisements that
+	// were observed but not handled.
+	UnhandledRouterAdvertisements *tcpip.StatCounter
 }
 
 // IsNetworkEndpointStats implements stack.NetworkEndpointStats.
