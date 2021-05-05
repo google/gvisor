@@ -82,10 +82,15 @@ func (p *profile) createProcess(c *Container) error {
 	}
 
 	// The root directory of this container's runtime.
-	root := fmt.Sprintf("--root=/var/run/docker/runtime-%s/moby", c.runtime)
+	rootDir := fmt.Sprintf("/var/run/docker/runtime-%s/moby", c.runtime)
+	if _, err := os.Stat(rootDir); os.IsNotExist(err) {
+		// In docker v20+, due to https://github.com/moby/moby/issues/42345 the
+		// rootDir seems to always be the following.
+		rootDir = "/var/run/docker/runtime-runc/moby"
+	}
 
-	// Format is `runsc --root=rootdir debug --profile-*=file --duration=24h containerID`.
-	args := []string{root, "debug"}
+	// Format is `runsc --root=rootDir debug --profile-*=file --duration=24h containerID`.
+	args := []string{fmt.Sprintf("--root=%s", rootDir), "debug"}
 	for _, profileArg := range p.Types {
 		outputPath := filepath.Join(p.BasePath, fmt.Sprintf("%s.pprof", profileArg))
 		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))
