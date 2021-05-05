@@ -446,6 +446,23 @@ func (r *icmpReasonParamProblem) isForwarding() bool {
 	return r.forwarding
 }
 
+// icmpReasonNetworkUnreachable is an error in which the network specified in
+// the internet destination field of the datagram is unreachable.
+type icmpReasonNetworkUnreachable struct{}
+
+func (*icmpReasonNetworkUnreachable) isICMPReason() {}
+func (*icmpReasonNetworkUnreachable) isForwarding() bool {
+	// If we hit a Net Unreachable error, then we know we are operating as
+	// a router. As per RFC 792 page 5, Destination Unreachable Message,
+	//
+	//  If, according to the information in the gateway's routing tables,
+	//  the network specified in the internet destination field of a
+	//  datagram is unreachable, e.g., the distance to the network is
+	//  infinity, the gateway may send a destination unreachable message to
+	//  the internet source host of the datagram.
+	return true
+}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv4 and sends it back to the remote device that sent
 // the problematic packet. It incorporates as much of that packet as
@@ -613,6 +630,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	case *icmpReasonProtoUnreachable:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4ProtoUnreachable)
+		counter = sent.dstUnreachable
+	case *icmpReasonNetworkUnreachable:
+		icmpHdr.SetType(header.ICMPv4DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv4NetUnreachable)
 		counter = sent.dstUnreachable
 	case *icmpReasonTTLExceeded:
 		icmpHdr.SetType(header.ICMPv4TimeExceeded)

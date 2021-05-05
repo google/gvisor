@@ -6,6 +6,7 @@ go_library(
     name = "ip",
     srcs = [
         "duplicate_address_detection.go",
+        "errors.go",
         "generic_multicast_protocol.go",
         "stats.go",
     ],
