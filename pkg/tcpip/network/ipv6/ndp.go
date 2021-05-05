@@ -1609,44 +1609,16 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[t
 	delete(tempAddrs, tempAddr)
 }
 
-// removeSLAACAddresses removes all SLAAC addresses.
-//
-// If keepLinkLocal is false, the SLAAC generated link-local address is removed.
-//
-// The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) removeSLAACAddresses(keepLinkLocal bool) {
-	linkLocalSubnet := header.IPv6LinkLocalPrefix.Subnet()
-	var linkLocalPrefixes int
-	for prefix, state := range ndp.slaacPrefixes {
-		// RFC 4862 section 5 states that routers are also expected to generate a
-		// link-local address so we do not invalidate them if we are cleaning up
-		// host-only state.
-		if keepLinkLocal && prefix == linkLocalSubnet {
-			linkLocalPrefixes++
-			continue
-		}
-
-		ndp.invalidateSLAACPrefix(prefix, state)
-	}
-
-	if got := len(ndp.slaacPrefixes); got != linkLocalPrefixes {
-		panic(fmt.Sprintf("ndp: still have non-linklocal SLAAC prefixes after cleaning up; found = %d prefixes, of which %d are link-local", got, linkLocalPrefixes))
-	}
-}
-
 // cleanupState cleans up ndp's state.
-//
-// If hostOnly is true, then only host-specific state is cleaned up.
 //
 // This function invalidates all discovered on-link prefixes, discovered
 // routers, and auto-generated addresses.
 //
-// If hostOnly is true, then the link-local auto-generated address aren't
-// invalidated as routers are also expected to generate a link-local address.
-//
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) cleanupState(hostOnly bool) {
-	ndp.removeSLAACAddresses(hostOnly /* keepLinkLocal */)
+func (ndp *ndpState) cleanupState() {
+	for prefix, state := range ndp.slaacPrefixes {
+		ndp.invalidateSLAACPrefix(prefix, state)
+	}
 
 	for prefix := range ndp.onLinkPrefixes {
 		ndp.invalidateOnLinkPrefix(prefix)
