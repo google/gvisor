@@ -5428,7 +5428,7 @@ func TestListenBacklogFull(t *testing.T) {
 	}
 
 	lastPortOffset := uint16(0)
-	for ; int(lastPortOffset) < listenBacklog+1; lastPortOffset++ {
+	for ; int(lastPortOffset) < listenBacklog; lastPortOffset++ {
 		executeHandshake(t, c, context.TestPort+lastPortOffset, false /*synCookieInUse */)
 	}
 
