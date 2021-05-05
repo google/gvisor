@@ -35,39 +35,6 @@ var (
 	filterBenchmarkFlag = "--benchmark_filter"
 )
 
-// BuildTestArgs builds arguments to be passed to the test binary to execute
-// only the test cases in `indices`.
-func BuildTestArgs(indices []int, testCases []TestCase) []string {
-	var testFilter, benchFilter string
-	for _, tci := range indices {
-		tc := testCases[tci]
-		if tc.all {
-			// No argument will make all tests run.
-			return nil
-		}
-		if tc.benchmark {
-			if len(benchFilter) > 0 {
-				benchFilter += "|"
-			}
-			benchFilter += "^" + tc.Name + "$"
-		} else {
-			if len(testFilter) > 0 {
-				testFilter += ":"
-			}
-			testFilter += tc.FullName()
-		}
-	}
-
-	var args []string
-	if len(testFilter) > 0 {
-		args = append(args, fmt.Sprintf("%s=%s", filterTestFlag, testFilter))
-	}
-	if len(benchFilter) > 0 {
-		args = append(args, fmt.Sprintf("%s=%s", filterBenchmarkFlag, benchFilter))
-	}
-	return args
-}
-
 // TestCase is a single gtest test case.
 type TestCase struct {
 	// Suite is the suite for this test.
@@ -92,6 +59,22 @@ func (tc TestCase) FullName() string {
 	return fmt.Sprintf("%s.%s", tc.Suite, tc.Name)
 }
 
+// Args returns arguments to be passed when invoking the test.
+func (tc TestCase) Args() []string {
+	if tc.all {
+		return []string{} // No arguments.
+	}
+	if tc.benchmark {
+		return []string{
+			fmt.Sprintf("%s=^%s$", filterBenchmarkFlag, tc.Name),
+			fmt.Sprintf("%s=", filterTestFlag),
+		}
+	}
+	return []string{
+		fmt.Sprintf("%s=%s", filterTestFlag, tc.FullName()),
+	}
+}
+
 // ParseTestCases calls a gtest test binary to list its test and returns a
 // slice with the name and suite of each test.
 //
@@ -107,7 +90,6 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 		// We failed to list tests with the given flags. Just
 		// return something that will run the binary with no
 		// flags, which should execute all tests.
-		fmt.Printf("failed to get test list: %v\n", err)
 		return []TestCase{
 			{
 				Suite: "Default",

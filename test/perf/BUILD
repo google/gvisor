@@ -1,3 +1,4 @@
+load("//tools:defs.bzl", "more_shards")
 load("//test/runner:defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])
@@ -37,6 +38,7 @@ syscall_test(
 syscall_test(
     size = "large",
     debug = False,
+    shard_count = more_shards,
     tags = ["nogotsan"],
     test = "//test/perf/linux:getdents_benchmark",
 )
