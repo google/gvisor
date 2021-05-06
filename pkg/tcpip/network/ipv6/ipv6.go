@@ -420,8 +420,6 @@ func (e *endpoint) transitionForwarding(forwarding bool) {
 	defer e.mu.Unlock()
 
 	if forwarding {
-		e.mu.ndp.stopSolicitingRouters()
-
 		// As per RFC 4291 section 2.8:
 		//
 		//   A router is required to recognize all addresses that a host is
@@ -445,28 +443,19 @@ func (e *endpoint) transitionForwarding(forwarding bool) {
 				panic(fmt.Sprintf("e.joinGroupLocked(%s): %s", g, err))
 			}
 		}
-
-		return
-	}
-
-	for _, g := range allRoutersGroups {
-		switch err := e.leaveGroupLocked(g).(type) {
-		case nil:
-		case *tcpip.ErrBadLocalAddress:
-			// The endpoint may have already left the multicast group.
-		default:
-			panic(fmt.Sprintf("e.leaveGroupLocked(%s): %s", g, err))
+	} else {
+		for _, g := range allRoutersGroups {
+			switch err := e.leaveGroupLocked(g).(type) {
+			case nil:
+			case *tcpip.ErrBadLocalAddress:
+				// The endpoint may have already left the multicast group.
+			default:
+				panic(fmt.Sprintf("e.leaveGroupLocked(%s): %s", g, err))
+			}
 		}
 	}
 
-	// When transitioning into an IPv6 host, NDP router solicitations are
-	// started if the endpoint is enabled.
-	//
-	// If the endpoint is not currently enabled, routers will be solicited when
-	// the endpoint becomes enabled (if it is still a host).
-	if e.Enabled() {
-		e.mu.ndp.startSolicitingRouters()
-	}
+	e.mu.ndp.forwardingChanged(forwarding)
 }
 
 // Enable implements stack.NetworkEndpoint.
@@ -548,17 +537,7 @@ func (e *endpoint) Enable() tcpip.Error {
 		e.mu.ndp.doSLAAC(header.IPv6LinkLocalPrefix.Subnet(), header.NDPInfiniteLifetime, header.NDPInfiniteLifetime)
 	}
 
-	// If we are operating as a router, then do not solicit routers since we
-	// won't process the RAs anyway.
-	//
-	// Routers do not process Router Advertisements (RA) the same way a host
-	// does. That is, routers do not learn from RAs (e.g. on-link prefixes
-	// and default routers). Therefore, soliciting RAs from other routers on
-	// a link is unnecessary for routers.
-	if !e.protocol.Forwarding() {
-		e.mu.ndp.startSolicitingRouters()
-	}
-
+	e.mu.ndp.startSolicitingRouters()
 	return nil
 }
 
