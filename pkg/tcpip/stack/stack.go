@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -65,10 +66,10 @@ type ResumableEndpoint interface {
 }
 
 // uniqueIDGenerator is a default unique ID generator.
-type uniqueIDGenerator uint64
+type uniqueIDGenerator atomicbitops.AlignedAtomicUint64
 
 func (u *uniqueIDGenerator) UniqueID() uint64 {
-	return atomic.AddUint64((*uint64)(u), 1)
+	return ((*atomicbitops.AlignedAtomicUint64)(u)).Add(1)
 }
 
 // Stack is a networking stack, with all supported protocols, NICs, and route
