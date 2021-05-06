@@ -334,10 +334,27 @@ func (c HandleRAsConfiguration) String() string {
 	}
 }
 
+// enabled returns true iff Router Advertisements may be handled given the
+// specified forwarding status.
+func (c HandleRAsConfiguration) enabled(forwarding bool) bool {
+	switch c {
+	case HandlingRAsDisabled:
+		return false
+	case HandlingRAsEnabledWhenForwardingDisabled:
+		return !forwarding
+	case HandlingRAsAlwaysEnabled:
+		return true
+	default:
+		panic(fmt.Sprintf("unhandled HandleRAsConfiguration = %d", c))
+	}
+}
+
 // NDPConfigurations is the NDP configurations for the netstack.
 type NDPConfigurations struct {
 	// The number of Router Solicitation messages to send when the IPv6 endpoint
 	// becomes enabled.
+	//
+	// Ignored unless configured to handle Router Advertisements.
 	MaxRtrSolicitations uint8
 
 	// The amount of time between transmitting Router Solicitation messages.
@@ -688,18 +705,9 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// per-interface basis; it is a protocol-wide configuration, so we check the
 	// protocol's forwarding flag to determine if the IPv6 endpoint is forwarding
 	// packets.
-	switch ndp.configs.HandleRAs {
-	case HandlingRAsDisabled:
+	if !ndp.configs.HandleRAs.enabled(ndp.ep.protocol.Forwarding()) {
 		ndp.ep.stats.localStats.UnhandledRouterAdvertisements.Increment()
 		return
-	case HandlingRAsEnabledWhenForwardingDisabled:
-		if ndp.ep.protocol.Forwarding() {
-			ndp.ep.stats.localStats.UnhandledRouterAdvertisements.Increment()
-			return
-		}
-	case HandlingRAsAlwaysEnabled:
-	default:
-		panic(fmt.Sprintf("unhandled HandleRAs configuration = %d", ndp.configs.HandleRAs))
 	}
 
 	// Only worry about the DHCPv6 configuration if we have an NDPDispatcher as we
@@ -1686,6 +1694,10 @@ func (ndp *ndpState) cleanupState() {
 // startSolicitingRouters starts soliciting routers, as per RFC 4861 section
 // 6.3.7. If routers are already being solicited, this function does nothing.
 //
+// If ndp is not configured to handle Router Advertisements, routers will not
+// be solicited as there is no point soliciting routers if we don't handle their
+// advertisements.
+//
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) startSolicitingRouters() {
 	if ndp.rtrSolicitTimer.timer != nil {
@@ -1695,6 +1707,10 @@ func (ndp *ndpState) startSolicitingRouters() {
 
 	remaining := ndp.configs.MaxRtrSolicitations
 	if remaining == 0 {
+		return
+	}
+
+	if !ndp.configs.HandleRAs.enabled(ndp.ep.protocol.Forwarding()) {
 		return
 	}
 
@@ -1787,6 +1803,32 @@ func (ndp *ndpState) startSolicitingRouters() {
 
 			ndp.rtrSolicitTimer.timer.Reset(ndp.configs.RtrSolicitationInterval)
 		}),
+	}
+}
+
+// forwardingChanged handles a change in forwarding configuration.
+//
+// If transitioning to a host, router solicitation will be started. Otherwise,
+// router solicitation will be stopped if NDP is not configured to handle RAs
+// as a router.
+//
+// Precondition: ndp.ep.mu must be locked.
+func (ndp *ndpState) forwardingChanged(forwarding bool) {
+	if forwarding {
+		if ndp.configs.HandleRAs.enabled(forwarding) {
+			return
+		}
+
+		ndp.stopSolicitingRouters()
+		return
+	}
+
+	// Solicit routers when transitioning to a host.
+	//
+	// If the endpoint is not currently enabled, routers will be solicited when
+	// the endpoint becomes enabled (if it is still a host).
+	if ndp.ep.Enabled() {
+		ndp.startSolicitingRouters()
 	}
 }
 
