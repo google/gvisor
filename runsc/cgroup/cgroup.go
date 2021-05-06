@@ -40,23 +40,24 @@ const (
 	cgroupRoot = "/sys/fs/cgroup"
 )
 
-var controllers = map[string]config{
-	"blkio":    {ctrlr: &blockIO{}},
-	"cpu":      {ctrlr: &cpu{}},
-	"cpuset":   {ctrlr: &cpuSet{}},
-	"hugetlb":  {ctrlr: &hugeTLB{}, optional: true},
-	"memory":   {ctrlr: &memory{}},
-	"net_cls":  {ctrlr: &networkClass{}},
-	"net_prio": {ctrlr: &networkPrio{}},
-	"pids":     {ctrlr: &pids{}},
+var controllers = map[string]controller{
+	"blkio":    &blockIO{},
+	"cpu":      &cpu{},
+	"cpuset":   &cpuSet{},
+	"hugetlb":  &hugeTLB{},
+	"memory":   &memory{},
+	"net_cls":  &networkClass{},
+	"net_prio": &networkPrio{},
+	"pids":     &pids{},
 
 	// These controllers either don't have anything in the OCI spec or is
 	// irrelevant for a sandbox.
-	"devices":    {ctrlr: &noop{}},
-	"freezer":    {ctrlr: &noop{}},
-	"perf_event": {ctrlr: &noop{}},
-	"rdma":       {ctrlr: &noop{}, optional: true},
-	"systemd":    {ctrlr: &noop{}},
+	"cpuacct":    &noop{},
+	"devices":    &noop{},
+	"freezer":    &noop{},
+	"perf_event": &noop{},
+	"rdma":       &noop{isOptional: true},
+	"systemd":    &noop{},
 }
 
 // IsOnlyV2 checks whether cgroups V2 is enabled and V1 is not.
@@ -201,31 +202,26 @@ func countCpuset(cpuset string) (int, error) {
 	return count, nil
 }
 
-// LoadPaths loads cgroup paths for given 'pid', may be set to 'self'.
-func LoadPaths(pid string) (map[string]string, error) {
-	f, err := os.Open(filepath.Join("/proc", pid, "cgroup"))
+// loadPaths loads cgroup paths for given 'pid', may be set to 'self'.
+func loadPaths(pid string) (map[string]string, error) {
+	procCgroup, err := os.Open(filepath.Join("/proc", pid, "cgroup"))
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer procCgroup.Close()
 
-	return loadPathsHelper(f)
-}
-
-func loadPathsHelper(cgroup io.Reader) (map[string]string, error) {
-	// For nested containers, in /proc/self/cgroup we see paths from host,
-	// which don't exist in container, so recover the container paths here by
-	// double-checking with /proc/pid/mountinfo
-	mountinfo, err := os.Open("/proc/self/mountinfo")
+	// Load mountinfo for the current process, because it's where cgroups is
+	// being accessed from.
+	mountinfo, err := os.Open(filepath.Join("/proc/self/mountinfo"))
 	if err != nil {
 		return nil, err
 	}
 	defer mountinfo.Close()
 
-	return loadPathsHelperWithMountinfo(cgroup, mountinfo)
+	return loadPathsHelper(procCgroup, mountinfo)
 }
 
-func loadPathsHelperWithMountinfo(cgroup, mountinfo io.Reader) (map[string]string, error) {
+func loadPathsHelper(cgroup, mountinfo io.Reader) (map[string]string, error) {
 	paths := make(map[string]string)
 
 	scanner := bufio.NewScanner(cgroup)
@@ -242,34 +238,51 @@ func loadPathsHelperWithMountinfo(cgroup, mountinfo io.Reader) (map[string]strin
 		for _, ctrlr := range strings.Split(tokens[1], ",") {
 			// Remove prefix for cgroups with no controller, eg. systemd.
 			ctrlr = strings.TrimPrefix(ctrlr, "name=")
-			paths[ctrlr] = tokens[2]
+			// Discard unknown controllers.
+			if _, ok := controllers[ctrlr]; ok {
+				paths[ctrlr] = tokens[2]
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	mfScanner := bufio.NewScanner(mountinfo)
-	for mfScanner.Scan() {
-		txt := mfScanner.Text()
-		fields := strings.Fields(txt)
+	// For nested containers, in /proc/[pid]/cgroup we see paths from host,
+	// which don't exist in container, so recover the container paths here by
+	// double-checking with /proc/[pid]/mountinfo
+	mountScanner := bufio.NewScanner(mountinfo)
+	for mountScanner.Scan() {
+		// Format: ID parent major:minor root mount-point options opt-fields - fs-type source super-options
+		// Example: 39 32 0:34 / /sys/fs/cgroup/devices rw,noexec shared:18 - cgroup cgroup rw,devices
+		fields := strings.Fields(mountScanner.Text())
 		if len(fields) < 9 || fields[len(fields)-3] != "cgroup" {
+			// Skip mounts that are not cgroup mounts.
 			continue
 		}
-		for _, opt := range strings.Split(fields[len(fields)-1], ",") {
+		// Cgroup controller type is in the super-options field.
+		superOptions := strings.Split(fields[len(fields)-1], ",")
+		for _, opt := range superOptions {
 			// Remove prefix for cgroups with no controller, eg. systemd.
 			opt = strings.TrimPrefix(opt, "name=")
+
+			// Only considers cgroup controllers that are registered, and skip other
+			// irrelevant options, e.g. rw.
 			if cgroupPath, ok := paths[opt]; ok {
-				root := fields[3]
-				relCgroupPath, err := filepath.Rel(root, cgroupPath)
-				if err != nil {
-					return nil, err
+				rootDir := fields[3]
+				if rootDir != "/" {
+					// When cgroup is in submount, remove repeated path components from
+					// cgroup path to avoid duplicating them.
+					relCgroupPath, err := filepath.Rel(rootDir, cgroupPath)
+					if err != nil {
+						return nil, err
+					}
+					paths[opt] = relCgroupPath
 				}
-				paths[opt] = relCgroupPath
 			}
 		}
 	}
-	if err := mfScanner.Err(); err != nil {
+	if err := mountScanner.Err(); err != nil {
 		return nil, err
 	}
 
@@ -279,37 +292,50 @@ func loadPathsHelperWithMountinfo(cgroup, mountinfo io.Reader) (map[string]strin
 // Cgroup represents a group inside all controllers. For example:
 //   Name='/foo/bar' maps to /sys/fs/cgroup/<controller>/foo/bar on
 //   all controllers.
+//
+// If Name is relative, it uses the parent cgroup path to determine the
+// location. For example:
+//   Name='foo/bar' and Parent[ctrl]="/user.slice", then it will map to
+//   /sys/fs/cgroup/<ctrl>/user.slice/foo/bar
 type Cgroup struct {
 	Name    string            `json:"name"`
 	Parents map[string]string `json:"parents"`
 	Own     map[string]bool   `json:"own"`
 }
 
-// New creates a new Cgroup instance if the spec includes a cgroup path.
-// Returns nil otherwise.
-func New(spec *specs.Spec) (*Cgroup, error) {
+// NewFromSpec creates a new Cgroup instance if the spec includes a cgroup path.
+// Returns nil otherwise. Cgroup paths are loaded based on the current process.
+func NewFromSpec(spec *specs.Spec) (*Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
 		return nil, nil
 	}
-	return NewFromPath(spec.Linux.CgroupsPath)
+	return new("self", spec.Linux.CgroupsPath)
 }
 
-// NewFromPath creates a new Cgroup instance.
-func NewFromPath(cgroupsPath string) (*Cgroup, error) {
+// NewFromPid loads cgroup for the given process.
+func NewFromPid(pid int) (*Cgroup, error) {
+	return new(strconv.Itoa(pid), "")
+}
+
+func new(pid, cgroupsPath string) (*Cgroup, error) {
 	var parents map[string]string
+
+	// If path is relative, load cgroup paths for the process to build the
+	// relative paths.
 	if !filepath.IsAbs(cgroupsPath) {
 		var err error
-		parents, err = LoadPaths("self")
+		parents, err = loadPaths(pid)
 		if err != nil {
 			return nil, fmt.Errorf("finding current cgroups: %w", err)
 		}
 	}
-	own := make(map[string]bool)
-	return &Cgroup{
+	cg := &Cgroup{
 		Name:    cgroupsPath,
 		Parents: parents,
-		Own:     own,
-	}, nil
+		Own:     make(map[string]bool),
+	}
+	log.Debugf("New cgroup for pid: %s, %+v", pid, cg)
+	return cg, nil
 }
 
 // Install creates and configures cgroups according to 'res'. If cgroup path
@@ -323,8 +349,8 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	for key, cfg := range controllers {
-		path := c.makePath(key)
+	for key, ctrlr := range controllers {
+		path := c.MakePath(key)
 		if _, err := os.Stat(path); err == nil {
 			// If cgroup has already been created; it has been setup by caller. Don't
 			// make any changes to configuration, just join when sandbox/gofer starts.
@@ -336,13 +362,16 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 		c.Own[key] = true
 
 		if err := os.MkdirAll(path, 0755); err != nil {
-			if cfg.optional && errors.Is(err, unix.EROFS) {
+			if ctrlr.optional() && errors.Is(err, unix.EROFS) {
+				if err := ctrlr.skip(res); err != nil {
+					return err
+				}
 				log.Infof("Skipping cgroup %q", key)
 				continue
 			}
 			return err
 		}
-		if err := cfg.ctrlr.set(res, path); err != nil {
+		if err := ctrlr.set(res, path); err != nil {
 			return err
 		}
 	}
@@ -359,7 +388,7 @@ func (c *Cgroup) Uninstall() error {
 			// cgroup is managed by caller, don't touch it.
 			continue
 		}
-		path := c.makePath(key)
+		path := c.MakePath(key)
 		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)
 
 		// If we try to remove the cgroup too soon after killing the
@@ -387,7 +416,7 @@ func (c *Cgroup) Uninstall() error {
 func (c *Cgroup) Join() (func(), error) {
 	// First save the current state so it can be restored.
 	undo := func() {}
-	paths, err := LoadPaths("self")
+	paths, err := loadPaths("self")
 	if err != nil {
 		return undo, err
 	}
@@ -414,14 +443,13 @@ func (c *Cgroup) Join() (func(), error) {
 	}
 
 	// Now join the cgroups.
-	for key, cfg := range controllers {
-		path := c.makePath(key)
+	for key, ctrlr := range controllers {
+		path := c.MakePath(key)
 		log.Debugf("Joining cgroup %q", path)
-		// Writing the value 0 to a cgroup.procs file causes the
-		// writing process to be moved to the corresponding cgroup.
-		// - cgroups(7).
+		// Writing the value 0 to a cgroup.procs file causes the writing process to
+		// be moved to the corresponding cgroup - cgroups(7).
 		if err := setValue(path, "cgroup.procs", "0"); err != nil {
-			if cfg.optional && os.IsNotExist(err) {
+			if ctrlr.optional() && os.IsNotExist(err) {
 				continue
 			}
 			return undo, err
@@ -432,7 +460,7 @@ func (c *Cgroup) Join() (func(), error) {
 
 // CPUQuota returns the CFS CPU quota.
 func (c *Cgroup) CPUQuota() (float64, error) {
-	path := c.makePath("cpu")
+	path := c.MakePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")
 	if err != nil {
 		return -1, err
@@ -449,7 +477,7 @@ func (c *Cgroup) CPUQuota() (float64, error) {
 
 // CPUUsage returns the total CPU usage of the cgroup.
 func (c *Cgroup) CPUUsage() (uint64, error) {
-	path := c.makePath("cpuacct")
+	path := c.MakePath("cpuacct")
 	usage, err := getValue(path, "cpuacct.usage")
 	if err != nil {
 		return 0, err
@@ -459,7 +487,7 @@ func (c *Cgroup) CPUUsage() (uint64, error) {
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.
 func (c *Cgroup) NumCPU() (int, error) {
-	path := c.makePath("cpuset")
+	path := c.MakePath("cpuset")
 	cpuset, err := getValue(path, "cpuset.cpus")
 	if err != nil {
 		return 0, err
@@ -469,7 +497,7 @@ func (c *Cgroup) NumCPU() (int, error) {
 
 // MemoryLimit returns the memory limit.
 func (c *Cgroup) MemoryLimit() (uint64, error) {
-	path := c.makePath("memory")
+	path := c.MakePath("memory")
 	limStr, err := getValue(path, "memory.limit_in_bytes")
 	if err != nil {
 		return 0, err
@@ -477,7 +505,8 @@ func (c *Cgroup) MemoryLimit() (uint64, error) {
 	return strconv.ParseUint(strings.TrimSpace(limStr), 10, 64)
 }
 
-func (c *Cgroup) makePath(controllerName string) string {
+// MakePath builds a path to the given controller.
+func (c *Cgroup) MakePath(controllerName string) string {
 	path := c.Name
 	if parent, ok := c.Parents[controllerName]; ok {
 		path = filepath.Join(parent, c.Name)
@@ -485,22 +514,48 @@ func (c *Cgroup) makePath(controllerName string) string {
 	return filepath.Join(cgroupRoot, controllerName, path)
 }
 
-type config struct {
-	ctrlr    controller
-	optional bool
-}
-
 type controller interface {
+	// optional controllers don't fail if not found.
+	optional() bool
+	// set applies resource limits to controller.
 	set(*specs.LinuxResources, string) error
+	// skip is called when controller is not found to check if it can be safely
+	// skipped or not based on the spec.
+	skip(*specs.LinuxResources) error
 }
 
-type noop struct{}
+type noop struct {
+	isOptional bool
+}
+
+func (n *noop) optional() bool {
+	return n.isOptional
+}
 
 func (*noop) set(*specs.LinuxResources, string) error {
 	return nil
 }
 
-type memory struct{}
+func (n *noop) skip(*specs.LinuxResources) error {
+	if !n.isOptional {
+		panic("cgroup controller is not optional")
+	}
+	return nil
+}
+
+type mandatory struct{}
+
+func (*mandatory) optional() bool {
+	return false
+}
+
+func (*mandatory) skip(*specs.LinuxResources) error {
+	panic("cgroup controller is not optional")
+}
+
+type memory struct {
+	mandatory
+}
 
 func (*memory) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Memory == nil {
@@ -533,7 +588,9 @@ func (*memory) set(spec *specs.LinuxResources, path string) error {
 	return nil
 }
 
-type cpu struct{}
+type cpu struct {
+	mandatory
+}
 
 func (*cpu) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.CPU == nil {
@@ -554,7 +611,9 @@ func (*cpu) set(spec *specs.LinuxResources, path string) error {
 	return setOptionalValueInt(path, "cpu.rt_runtime_us", spec.CPU.RealtimeRuntime)
 }
 
-type cpuSet struct{}
+type cpuSet struct {
+	mandatory
+}
 
 func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
 	// cpuset.cpus and mems are required fields, but are not set on a new cgroup.
@@ -576,7 +635,9 @@ func (*cpuSet) set(spec *specs.LinuxResources, path string) error {
 	return setValue(path, "cpuset.mems", spec.CPU.Mems)
 }
 
-type blockIO struct{}
+type blockIO struct {
+	mandatory
+}
 
 func (*blockIO) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.BlockIO == nil {
@@ -628,6 +689,10 @@ func setThrottle(path, name string, devs []specs.LinuxThrottleDevice) error {
 
 type networkClass struct{}
 
+func (*networkClass) optional() bool {
+	return true
+}
+
 func (*networkClass) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Network == nil {
 		return nil
@@ -635,7 +700,18 @@ func (*networkClass) set(spec *specs.LinuxResources, path string) error {
 	return setOptionalValueUint32(path, "net_cls.classid", spec.Network.ClassID)
 }
 
+func (*networkClass) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.Network != nil && spec.Network.ClassID != nil {
+		return fmt.Errorf("Network.ClassID set but net_cls cgroup controller not found")
+	}
+	return nil
+}
+
 type networkPrio struct{}
+
+func (*networkPrio) optional() bool {
+	return true
+}
 
 func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Network == nil {
@@ -650,7 +726,16 @@ func (*networkPrio) set(spec *specs.LinuxResources, path string) error {
 	return nil
 }
 
-type pids struct{}
+func (*networkPrio) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.Network != nil && len(spec.Network.Priorities) > 0 {
+		return fmt.Errorf("Network.Priorities set but net_prio cgroup controller not found")
+	}
+	return nil
+}
+
+type pids struct {
+	mandatory
+}
 
 func (*pids) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil || spec.Pids == nil || spec.Pids.Limit <= 0 {
@@ -661,6 +746,17 @@ func (*pids) set(spec *specs.LinuxResources, path string) error {
 }
 
 type hugeTLB struct{}
+
+func (*hugeTLB) optional() bool {
+	return true
+}
+
+func (*hugeTLB) skip(spec *specs.LinuxResources) error {
+	if spec != nil && len(spec.HugepageLimits) > 0 {
+		return fmt.Errorf("HugepageLimits set but hugetlb cgroup controller not found")
+	}
+	return nil
+}
 
 func (*hugeTLB) set(spec *specs.LinuxResources, path string) error {
 	if spec == nil {

@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -1917,9 +1918,9 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 	defer cleanup()
 
-	for _, cont := range containers {
-		t.Logf("Running containerd %s", cont.ID)
-	}
+	t.Logf("Running container sleep %s", containers[0].ID)
+	t.Logf("Running container busy %s", containers[1].ID)
+	t.Logf("Running container quick %s", containers[2].ID)
 
 	// Wait for last container to stabilize the process count that is
 	// checked further below.
@@ -1940,50 +1941,61 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 
 	// Check events for running containers.
-	var prevUsage uint64
 	for _, cont := range containers[:2] {
 		ret, err := cont.Event()
 		if err != nil {
-			t.Errorf("Container.Events(): %v", err)
+			t.Errorf("Container.Event(%q): %v", cont.ID, err)
 		}
 		evt := ret.Event
 		if want := "stats"; evt.Type != want {
-			t.Errorf("Wrong event type, want: %s, got: %s", want, evt.Type)
+			t.Errorf("Wrong event type, cid: %q, want: %s, got: %s", cont.ID, want, evt.Type)
 		}
 		if cont.ID != evt.ID {
 			t.Errorf("Wrong container ID, want: %s, got: %s", cont.ID, evt.ID)
 		}
 		// One process per remaining container.
 		if got, want := evt.Data.Pids.Current, uint64(2); got != want {
-			t.Errorf("Wrong number of PIDs, want: %d, got: %d", want, got)
+			t.Errorf("Wrong number of PIDs, cid: %q, want: %d, got: %d", cont.ID, want, got)
 		}
 
-		// Both remaining containers should have nonzero usage, and
-		// 'busy' should have higher usage than 'sleep'.
-		usage := evt.Data.CPU.Usage.Total
-		if usage == 0 {
-			t.Errorf("Running container should report nonzero CPU usage, but got %d", usage)
-		}
-		if usage <= prevUsage {
-			t.Errorf("Expected container %s to use more than %d ns of CPU, but used %d", cont.ID, prevUsage, usage)
-		}
-		t.Logf("Container %s usage: %d", cont.ID, usage)
-		prevUsage = usage
-
-		// The exited container should have a usage of zero.
+		// The exited container should always have a usage of zero.
 		if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
-			t.Errorf("Exited container should report 0 CPU usage, but got %d", exited)
+			t.Errorf("Exited container should report 0 CPU usage, got: %d", exited)
 		}
 	}
 
-	// Check that stop and destroyed containers return error.
+	// Check that CPU reported by busy container is higher than sleep.
+	cb := func() error {
+		sleepEvt, err := containers[0].Event()
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		sleepUsage := sleepEvt.Event.Data.CPU.Usage.Total
+
+		busyEvt, err := containers[1].Event()
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		busyUsage := busyEvt.Event.Data.CPU.Usage.Total
+
+		if busyUsage <= sleepUsage {
+			t.Logf("Busy container usage lower than sleep (busy: %d, sleep: %d), retrying...", busyUsage, sleepUsage)
+			return fmt.Errorf("Busy container should have higher usage than sleep, busy: %d, sleep: %d", busyUsage, sleepUsage)
+		}
+		return nil
+	}
+	// Give time for busy container to run and use more CPU than sleep.
+	if err := testutil.Poll(cb, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that stopped and destroyed containers return error.
 	if err := containers[1].Destroy(); err != nil {
 		t.Fatalf("container.Destroy: %v", err)
 	}
 	for _, cont := range containers[1:] {
-		_, err := cont.Event()
-		if err == nil {
-			t.Errorf("Container.Events() should have failed, cid:%s, state: %v", cont.ID, cont.Status)
+		if _, err := cont.Event(); err == nil {
+			t.Errorf("Container.Event() should have failed, cid: %q, state: %v", cont.ID, cont.Status)
 		}
 	}
 }

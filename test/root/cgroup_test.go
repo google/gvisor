@@ -308,8 +308,8 @@ func TestCgroup(t *testing.T) {
 	}
 }
 
-// TestCgroupParent sets the "CgroupParent" option and checks that the child and parent's
-// cgroups are created correctly relative to each other.
+// TestCgroupParent sets the "CgroupParent" option and checks that the child and
+// parent's cgroups are created correctly relative to each other.
 func TestCgroupParent(t *testing.T) {
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
@@ -343,15 +343,19 @@ func TestCgroupParent(t *testing.T) {
 	// Finds cgroup for the sandbox's parent process to check that cgroup is
 	// created in the right location relative to the parent.
 	cmd := fmt.Sprintf("grep PPid: /proc/%d/status | sed 's/PPid:\\s//'", pid)
-	ppid, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	ppidStr, err := exec.Command("bash", "-c", cmd).CombinedOutput()
 	if err != nil {
 		t.Fatalf("Executing %q: %v", cmd, err)
 	}
-	cgroups, err := cgroup.LoadPaths(strings.TrimSpace(string(ppid)))
+	ppid, err := strconv.Atoi(strings.TrimSpace(string(ppidStr)))
 	if err != nil {
-		t.Fatalf("cgroup.LoadPath(%s): %v", ppid, err)
+		t.Fatalf("invalid PID (%s): %v", ppidStr, err)
 	}
-	path := filepath.Join("/sys/fs/cgroup/memory", cgroups["memory"], parent, gid, "cgroup.procs")
+	cgroups, err := cgroup.NewFromPid(ppid)
+	if err != nil {
+		t.Fatalf("cgroup.NewFromPid(%d): %v", ppid, err)
+	}
+	path := filepath.Join(cgroups.MakePath("cpuacct"), parent, gid, "cgroup.procs")
 	if err := verifyPid(pid, path); err != nil {
 		t.Errorf("cgroup control %q processes: %v", "memory", err)
 	}
