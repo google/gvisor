@@ -233,7 +233,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
-		cg, err := cgroup.New(args.Spec)
+		cg, err := cgroup.NewFromSpec(args.Spec)
 		if err != nil {
 			return nil, err
 		}
@@ -1132,7 +1132,7 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	// account for the full cgroup CPU usage. We split cgroup usage
 	// proportionally according to the sentry-internal usage measurements,
 	// only counting Running containers.
-	log.Warningf("event.ContainerUsage: %v", event.ContainerUsage)
+	log.Debugf("event.ContainerUsage: %v", event.ContainerUsage)
 	var containerUsage uint64
 	var allContainersUsage uint64
 	for ID, usage := range event.ContainerUsage {
@@ -1142,7 +1142,7 @@ func (c *Container) populateStats(event *boot.EventOut) {
 		}
 	}
 
-	cgroup, err := c.Sandbox.FindCgroup()
+	cgroup, err := c.Sandbox.NewCGroup()
 	if err != nil {
 		// No cgroup, so rely purely on the sentry's accounting.
 		log.Warningf("events: no cgroups")
@@ -1159,17 +1159,18 @@ func (c *Container) populateStats(event *boot.EventOut) {
 		return
 	}
 
-	// If the sentry reports no memory usage, fall back on cgroups and
-	// split usage equally across containers.
+	// If the sentry reports no CPU usage, fall back on cgroups and split usage
+	// equally across containers.
 	if allContainersUsage == 0 {
 		log.Warningf("events: no sentry CPU usage reported")
 		allContainersUsage = cgroupsUsage
 		containerUsage = cgroupsUsage / uint64(len(event.ContainerUsage))
 	}
 
-	log.Warningf("%f, %f, %f", containerUsage, cgroupsUsage, allContainersUsage)
 	// Scaling can easily overflow a uint64 (e.g. a containerUsage and
 	// cgroupsUsage of 16 seconds each will overflow), so use floats.
-	event.Event.Data.CPU.Usage.Total = uint64(float64(containerUsage) * (float64(cgroupsUsage) / float64(allContainersUsage)))
+	total := float64(containerUsage) * (float64(cgroupsUsage) / float64(allContainersUsage))
+	log.Debugf("Usage, container: %d, cgroups: %d, all: %d, total: %.0f", containerUsage, cgroupsUsage, allContainersUsage, total)
+	event.Event.Data.CPU.Usage.Total = uint64(total)
 	return
 }

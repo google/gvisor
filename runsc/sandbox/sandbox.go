@@ -310,20 +310,9 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	return pl, nil
 }
 
-// FindCgroup returns the sandbox's Cgroup, or an error if it does not have one.
-func (s *Sandbox) FindCgroup() (*cgroup.Cgroup, error) {
-	paths, err := cgroup.LoadPaths(strconv.Itoa(s.Pid))
-	if err != nil {
-		return nil, err
-	}
-	// runsc places sandboxes in the same cgroup for each controller, so we
-	// pick an arbitrary controller here to get the cgroup path.
-	const controller = "cpuacct"
-	controllerPath, ok := paths[controller]
-	if !ok {
-		return nil, fmt.Errorf("no %q controller found", controller)
-	}
-	return cgroup.NewFromPath(controllerPath)
+// NewCGroup returns the sandbox's Cgroup, or an error if it does not have one.
+func (s *Sandbox) NewCGroup() (*cgroup.Cgroup, error) {
+	return cgroup.NewFromPid(s.Pid)
 }
 
 // Execute runs the specified command in the container. It returns the PID of
