@@ -6,6 +6,7 @@ go_library(
     name = "bigquery",
     testonly = 1,
     srcs = ["bigquery.go"],
+    nogo = False,  # FIXME(b/184974218): Analysis failing for cloud libraries.
     visibility = [
         "//:sandbox",
     ],
