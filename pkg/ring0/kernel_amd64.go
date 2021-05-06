@@ -227,7 +227,7 @@ func IsCanonical(addr uint64) bool {
 // +checkescape:all
 //
 //go:nosplit
-func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
+func (c *CPU) SwitchToUser(switchOpts *SwitchOpts) (vector Vector) {
 	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
 	c.kernelCR3 = uintptr(c.kernel.PageTables.CR3(true, switchOpts.KernelPCID))
 

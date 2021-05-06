@@ -72,7 +72,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac a
 	}
 
 	// Take the blue pill.
-	at, err := cpu.SwitchToUser(switchOpts, &c.info)
+	at, err := cpu.SwitchToUser(&switchOpts, &c.info)
 
 	// Clear the address space.
 	cpu.active.set(nil)

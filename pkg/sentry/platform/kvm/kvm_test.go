@@ -158,7 +158,7 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 func TestApplicationSyscall(t *testing.T) {
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -172,7 +172,7 @@ func TestApplicationSyscall(t *testing.T) {
 	})
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -189,7 +189,7 @@ func TestApplicationFault(t *testing.T) {
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -204,7 +204,7 @@ func TestApplicationFault(t *testing.T) {
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -222,7 +222,7 @@ func TestRegistersSyscall(t *testing.T) {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -245,7 +245,7 @@ func TestRegistersFault(t *testing.T) {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -271,7 +271,7 @@ func TestBounce(t *testing.T) {
 			c.BounceToKernel()
 		}()
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -286,7 +286,7 @@ func TestBounce(t *testing.T) {
 			c.BounceToKernel()
 		}()
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -318,7 +318,7 @@ func TestBounceStress(t *testing.T) {
 			}()
 			randomSleep()
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -339,7 +339,7 @@ func TestInvalidate(t *testing.T) {
 		testutil.SetTouchTarget(regs, &data) // Read legitimate value.
 		for {
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -354,7 +354,7 @@ func TestInvalidate(t *testing.T) {
 		pt.Unmap(hostarch.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(hostarch.PageSize-1)), hostarch.PageSize)
 		for {
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -378,7 +378,7 @@ func IsFault(err error, si *arch.SignalInfo) bool {
 func TestEmptyAddressSpace(t *testing.T) {
 	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -392,7 +392,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 	})
 	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -468,7 +468,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 	)
 	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,
@@ -505,7 +505,7 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 	)
 	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		if _, err := c.SwitchToUser(ring0.SwitchOpts{
+		if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,

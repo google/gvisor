@@ -209,7 +209,7 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts *ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Pc) {
 		return nonCanonical(regs.Pc, int32(unix.SIGSEGV), info)

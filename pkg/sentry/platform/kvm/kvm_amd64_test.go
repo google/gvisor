@@ -31,7 +31,7 @@ func TestSegments(t *testing.T) {
 		testutil.SetTestSegments(regs)
 		for {
 			var si arch.SignalInfo
-			if _, err := c.SwitchToUser(ring0.SwitchOpts{
+			if _, err := c.SwitchToUser(&ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
 				PageTables:         pt,
@@ -56,7 +56,7 @@ func stmxcsr(addr *uint32)
 func TestMXCSR(t *testing.T) {
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si arch.SignalInfo
-		switchOpts := ring0.SwitchOpts{
+		switchOpts := &ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
 			PageTables:         pt,

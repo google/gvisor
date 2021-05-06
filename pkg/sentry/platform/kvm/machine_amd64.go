@@ -321,8 +321,29 @@ func prefaultFloatingPointState(data *fpu.State) {
 	loadByte(&(*data)[size-1])
 }
 
+//go:nosplit
+func (c *vCPU) switchToUser(switchOpts *ring0.SwitchOpts) ring0.Vector {
+	var vector ring0.Vector
+
+	// Past this point, stack growth can cause system calls (and a break
+	// from guest mode). So we need to ensure that between the bluepill
+	// call here and the switch call immediately below, no additional
+	// allocations occur.
+	entersyscall()
+	bluepill(c)
+	// The root table physical page has to be mapped to not fault in iret
+	// or sysret after switching into a user address space.  sysret and
+	// iret are in the upper half that is global and already mapped.
+	switchOpts.PageTables.PrefaultRootTable()
+	prefaultFloatingPointState(switchOpts.FloatingPointState)
+	vector = c.CPU.SwitchToUser(switchOpts)
+	exitsyscall()
+
+	return vector
+}
+
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts *ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
 		return nonCanonical(regs.Rip, int32(unix.SIGSEGV), info)
@@ -342,22 +363,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		switchOpts.Flush = switchOpts.Flush || requireFlushPCID
 	}
 
-	// See below.
-	var vector ring0.Vector
-
-	// Past this point, stack growth can cause system calls (and a break
-	// from guest mode). So we need to ensure that between the bluepill
-	// call here and the switch call immediately below, no additional
-	// allocations occur.
-	entersyscall()
-	bluepill(c)
-	// The root table physical page has to be mapped to not fault in iret
-	// or sysret after switching into a user address space.  sysret and
-	// iret are in the upper half that is global and already mapped.
-	switchOpts.PageTables.PrefaultRootTable()
-	prefaultFloatingPointState(switchOpts.FloatingPointState)
-	vector = c.CPU.SwitchToUser(switchOpts)
-	exitsyscall()
+	vector := c.switchToUser(switchOpts)
 
 	switch vector {
 	case ring0.Syscall, ring0.SyscallInt80:

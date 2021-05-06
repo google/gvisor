@@ -60,7 +60,7 @@ func IsCanonical(addr uint64) bool {
 // +checkescape:all
 //
 //go:nosplit
-func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
+func (c *CPU) SwitchToUser(switchOpts *SwitchOpts) (vector Vector) {
 	storeAppASID(uintptr(switchOpts.UserASID))
 	storeEl0Fpstate(switchOpts.FloatingPointState.BytePointer())
 
