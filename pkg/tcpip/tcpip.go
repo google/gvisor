@@ -37,7 +37,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -1236,7 +1235,7 @@ func (s *StatCounter) Decrement() {
 
 // Value returns the current value of the counter.
 func (s *StatCounter) Value(name ...string) uint64 {
-	return atomic.LoadUint64(&s.count)
+	return s.count.Load()
 }
 
 // IncrementBy increments the counter by v.
