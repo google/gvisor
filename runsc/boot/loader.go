@@ -230,6 +230,33 @@ func New(args Args) (*Loader, error) {
 		vfs2.Override()
 	}
 
+	// Make host FDs stable between invocations. Host FDs must map to the exact
+	// same number when the sandbox is restored. Otherwise the wrong FD will be
+	// used.
+	info := containerInfo{}
+	newfd := startingStdioFD
+
+	for _, stdioFD := range args.StdioFDs {
+		// Check that newfd is unused to avoid clobbering over it.
+		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
+			if err != nil {
+				return nil, fmt.Errorf("error checking for FD (%d) conflict: %w", newfd, err)
+			}
+			return nil, fmt.Errorf("unable to remap stdios, FD %d is already in use", newfd)
+		}
+
+		err := unix.Dup3(stdioFD, newfd, unix.O_CLOEXEC)
+		if err != nil {
+			return nil, fmt.Errorf("dup3 of stdios failed: %w", err)
+		}
+		info.stdioFDs = append(info.stdioFDs, fd.New(newfd))
+		_ = unix.Close(stdioFD)
+		newfd++
+	}
+	for _, goferFD := range args.GoferFDs {
+		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
+	}
+
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {
@@ -349,6 +376,7 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %v", err)
 	}
+	info.procArgs = procArgs
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %v", err)
@@ -358,6 +386,9 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %v", err)
 	}
+
+	info.conf = args.Conf
+	info.spec = args.Spec
 
 	if kernel.VFS2Enabled {
 		// Set up host mount that will be used for imported fds.
@@ -371,37 +402,6 @@ func New(args Args) (*Loader, error) {
 			return nil, fmt.Errorf("failed to create hostfs mount: %v", err)
 		}
 		k.SetHostMount(hostMount)
-	}
-
-	info := containerInfo{
-		conf:     args.Conf,
-		spec:     args.Spec,
-		procArgs: procArgs,
-	}
-
-	// Make host FDs stable between invocations. Host FDs must map to the exact
-	// same number when the sandbox is restored. Otherwise the wrong FD will be
-	// used.
-	newfd := startingStdioFD
-	for _, stdioFD := range args.StdioFDs {
-		// Check that newfd is unused to avoid clobbering over it.
-		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
-			if err != nil {
-				return nil, fmt.Errorf("error checking for FD (%d) conflict: %w", newfd, err)
-			}
-			return nil, fmt.Errorf("unable to remap stdios, FD %d is already in use", newfd)
-		}
-
-		err := unix.Dup3(stdioFD, newfd, unix.O_CLOEXEC)
-		if err != nil {
-			return nil, fmt.Errorf("dup3 of stdios failed: %w", err)
-		}
-		info.stdioFDs = append(info.stdioFDs, fd.New(newfd))
-		_ = unix.Close(stdioFD)
-		newfd++
-	}
-	for _, goferFD := range args.GoferFDs {
-		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
 	}
 
 	eid := execID{cid: args.ID}

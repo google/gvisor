@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
 
 type kvmVcpuInit struct {
@@ -47,6 +48,19 @@ func (m *machine) initArchState() error {
 		uintptr(unsafe.Pointer(&vcpuInit))); errno != 0 {
 		panic(fmt.Sprintf("error setting KVM_ARM_PREFERRED_TARGET failed: %v", errno))
 	}
+
+	// Initialize all vCPUs on ARM64, while this does not happen on x86_64.
+	// The reason for the difference is that ARM64 and x86_64 have different KVM timer mechanisms.
+	// If we create vCPU dynamically on ARM64, the timer for vCPU would mess up for a short time.
+	// For more detail, please refer to https://github.com/google/gvisor/issues/5739
+	m.initialvCPUs = make(map[int]*vCPU)
+	m.mu.Lock()
+	for int(m.nextID) < m.maxVCPUs-1 {
+		c := m.newVCPU()
+		c.state = 0
+		m.initialvCPUs[c.id] = c
+	}
+	m.mu.Unlock()
 	return nil
 }
 
@@ -174,9 +188,58 @@ func (c *vCPU) setTSC(value uint64) error {
 	return nil
 }
 
+// getTSC gets the counter Physical Counter minus Virtual Offset.
+func (c *vCPU) getTSC() error {
+	var (
+		reg  kvmOneReg
+		data uint64
+	)
+
+	reg.addr = uint64(reflect.ValueOf(&data).Pointer())
+	reg.id = _KVM_ARM64_REGS_TIMER_CNT
+
+	if err := c.getOneRegister(&reg); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // setSystemTime sets the vCPU to the system time.
 func (c *vCPU) setSystemTime() error {
-	return c.setSystemTimeLegacy()
+	const minIterations = 10
+	minimum := uint64(0)
+	for iter := 0; ; iter++ {
+		// Use get the TSC to an estimate of where it will be
+		// on the host during a "fast" system call iteration.
+		// replace getTSC to another setOneRegister syscall can get more accurate value?
+		start := uint64(ktime.Rdtsc())
+		if err := c.getTSC(); err != nil {
+			return err
+		}
+		// See if this is our new minimum call time. Note that this
+		// serves two functions: one, we make sure that we are
+		// accurately predicting the offset we need to set. Second, we
+		// don't want to do the final set on a slow call, which could
+		// produce a really bad result.
+		end := uint64(ktime.Rdtsc())
+		if end < start {
+			continue // Totally bogus: unstable TSC?
+		}
+		current := end - start
+		if current < minimum || iter == 0 {
+			minimum = current // Set our new minimum.
+		}
+		// Is this past minIterations and within ~10% of minimum?
+		upperThreshold := (((minimum << 3) + minimum) >> 3)
+		if iter >= minIterations && (current <= upperThreshold || minimum < 50) {
+			// Try to set the TSC
+			if err := c.setTSC(end + (minimum / 2)); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
 }
 
 //go:nosplit
@@ -203,7 +266,7 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 		uintptr(c.fd),
 		_KVM_GET_ONE_REG,
 		uintptr(unsafe.Pointer(reg))); errno != 0 {
-		return fmt.Errorf("error setting one register: %v", errno)
+		return fmt.Errorf("error getting one register: %v", errno)
 	}
 	return nil
 }
