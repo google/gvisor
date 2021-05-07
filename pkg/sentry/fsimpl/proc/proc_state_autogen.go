@@ -1977,6 +1977,31 @@ func (c *cgroupsData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.dynamicBytesFileSetAttr)
 }
 
+func (c *cmdLineData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.cmdLineData"
+}
+
+func (c *cmdLineData) StateFields() []string {
+	return []string{
+		"dynamicBytesFileSetAttr",
+	}
+}
+
+func (c *cmdLineData) beforeSave() {}
+
+// +checklocksignore
+func (c *cmdLineData) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.dynamicBytesFileSetAttr)
+}
+
+func (c *cmdLineData) afterLoad() {}
+
+// +checklocksignore
+func (c *cmdLineData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.dynamicBytesFileSetAttr)
+}
+
 func (r *tasksInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.tasksInodeRefs"
 }
@@ -2309,6 +2334,7 @@ func init() {
 	state.Register((*versionData)(nil))
 	state.Register((*filesystemsData)(nil))
 	state.Register((*cgroupsData)(nil))
+	state.Register((*cmdLineData)(nil))
 	state.Register((*tasksInodeRefs)(nil))
 	state.Register((*tcpMemDir)(nil))
 	state.Register((*mmapMinAddrData)(nil))
