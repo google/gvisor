@@ -1201,6 +1201,15 @@ TEST(ProcSelfCwd, Absolute) {
   EXPECT_EQ(exe[0], '/');
 }
 
+// Sanity check that /proc/cmdline is present.
+TEST(ProcCmdline, IsPresent) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  std::string proc_cmdline =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cmdline"));
+  ASSERT_FALSE(proc_cmdline.empty());
+}
+
 // Sanity check for /proc/cpuinfo fields that must be present.
 TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   std::string proc_cpuinfo =
