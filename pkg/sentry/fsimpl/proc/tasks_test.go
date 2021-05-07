@@ -47,6 +47,7 @@ var (
 
 var (
 	tasksStaticFiles = map[string]testutil.DirentType{
+		"cmdline":     linux.DT_REG,
 		"cpuinfo":     linux.DT_REG,
 		"filesystems": linux.DT_REG,
 		"loadavg":     linux.DT_REG,

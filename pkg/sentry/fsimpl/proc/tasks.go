@@ -65,6 +65,7 @@ var _ kernfs.Inode = (*tasksInode)(nil)
 func (fs *filesystem) newTasksInode(ctx context.Context, k *kernel.Kernel, pidns *kernel.PIDNamespace, fakeCgroupControllers map[string]string) *tasksInode {
 	root := auth.NewRootCredentials(pidns.UserNamespace())
 	contents := map[string]kernfs.Inode{
+		"cmdline":     fs.newInode(ctx, root, 0444, &cmdLineData{}),
 		"cpuinfo":     fs.newInode(ctx, root, 0444, newStaticFileSetStat(cpuInfoData(k))),
 		"filesystems": fs.newInode(ctx, root, 0444, &filesystemsData{}),
 		"loadavg":     fs.newInode(ctx, root, 0444, &loadavgData{}),
