@@ -40,7 +40,7 @@ func (aa *AlignedAtomicInt64) ptr() *int64 {
 	// In the 15-byte aa.value, there are guaranteed to be 8 contiguous
 	// bytes with 64-bit alignment. We find an address in this range by
 	// adding 7, then clear the 3 least significant bits to get its start.
-	return (*int64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 7) &^ 7))
+	return (*int64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value[0])) + 7) &^ 7))
 }
 
 // Load is analagous to atomic.LoadInt64.
@@ -77,7 +77,7 @@ func (aa *AlignedAtomicUint64) ptr() *uint64 {
 	// In the 15-byte aa.value, there are guaranteed to be 8 contiguous
 	// bytes with 64-bit alignment. We find an address in this range by
 	// adding 7, then clear the 3 least significant bits to get its start.
-	return (*uint64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 7) &^ 7))
+	return (*uint64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value[0])) + 7) &^ 7))
 }
 
 // Load is analagous to atomic.LoadUint64.
