@@ -14,7 +14,7 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         stale-issue-label: 'stale'
         stale-pr-label: 'stale'
-        exempt-issue-labels: 'exported, type: bug, type: cleanup, type: enhancement, type: process, type: proposal, type: question'
+        exempt-issue-labels: 'revived, exported, type: bug, type: cleanup, type: enhancement, type: process, type: proposal, type: question'
         exempt-pr-labels: 'ready to pull, exported'
         stale-issue-message: 'This issue is stale because it has been open 90 days with no activity. Remove the stale label or comment or this will be closed in 30 days.'
         stale-pr-message: 'This pull request is stale because it has been open 90 days with no activity. Remove the stale label or comment or this will be closed in 30 days.'
