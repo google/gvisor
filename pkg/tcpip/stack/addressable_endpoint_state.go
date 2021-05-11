@@ -440,33 +440,54 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(isValid func(*ad
 // Regardless how the address was obtained, it will be acquired before it is
 // returned.
 func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	lookup := func() *addressState {
+		if addrState, ok := a.mu.endpoints[localAddr]; ok {
+			if !addrState.IsAssigned(allowTemp) {
+				return nil
+			}
 
-	if addrState, ok := a.mu.endpoints[localAddr]; ok {
-		if !addrState.IsAssigned(allowTemp) {
-			return nil
+			if !addrState.IncRef() {
+				panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
+			}
+
+			return addrState
 		}
 
-		if !addrState.IncRef() {
-			panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
-		}
-
-		return addrState
-	}
-
-	if f != nil {
-		for _, addrState := range a.mu.endpoints {
-			if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.IncRef() {
-				return addrState
+		if f != nil {
+			for _, addrState := range a.mu.endpoints {
+				if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.IncRef() {
+					return addrState
+				}
 			}
 		}
+		return nil
+	}
+	// Avoid exclusive lock on mu unless we need to add a new address.
+	a.mu.RLock()
+	ep := lookup()
+	a.mu.RUnlock()
+
+	if ep != nil {
+		return ep
 	}
 
 	if !allowTemp {
 		return nil
 	}
 
+	// Acquire state lock in exclusive mode as we need to add a new temporary
+	// endpoint.
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Do the lookup again in case another goroutine added the address in the time
+	// we released and acquired the lock.
+	ep = lookup()
+	if ep != nil {
+		return ep
+	}
+
+	// Proceed to add a new temporary endpoint.
 	addr := localAddr.WithPrefix()
 	ep, err := a.addAndAcquireAddressLocked(addr, tempPEB, AddressConfigStatic, false /* deprecated */, false /* permanent */)
 	if err != nil {
@@ -475,6 +496,7 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 		// expect no error.
 		panic(fmt.Sprintf("a.addAndAcquireAddressLocked(%s, %d, %d, false, false): %s", addr, tempPEB, AddressConfigStatic, err))
 	}
+
 	// From https://golang.org/doc/faq#nil_error:
 	//
 	// Under the covers, interfaces are implemented as two elements, a type T and
