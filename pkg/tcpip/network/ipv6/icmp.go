@@ -984,11 +984,15 @@ type icmpReasonParameterProblem struct {
 	//                  packet if the field in error is beyond what can fit
 	//                  in the maximum size of an ICMPv6 error message.
 	pointer uint32
+
+	// forwarding indicates that the problem arose while we were trying to forward
+	// a packet.
+	forwarding bool
 }
 
 func (*icmpReasonParameterProblem) isICMPReason() {}
-func (*icmpReasonParameterProblem) isForwarding() bool {
-	return false
+func (p *icmpReasonParameterProblem) isForwarding() bool {
+	return p.forwarding
 }
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no

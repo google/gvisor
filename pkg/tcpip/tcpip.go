@@ -1530,9 +1530,10 @@ type IGMPStats struct {
 
 // IPForwardingStats collects stats related to IP forwarding (both v4 and v6).
 type IPForwardingStats struct {
+	// LINT.IfChange(IPForwardingStats)
+
 	// Unrouteable is the number of IP packets received which were dropped
-	// because the netstack could not construct a route to their
-	// destination.
+	// because a route to their destination could not be constructed.
 	Unrouteable *StatCounter
 
 	// ExhaustedTTL is the number of IP packets received which were dropped
@@ -1547,9 +1548,16 @@ type IPForwardingStats struct {
 	// because they contained a link-local destination address.
 	LinkLocalDestination *StatCounter
 
+	// ExtensionHeaderProblem is the number of IP packets which were dropped
+	// because of a problem encountered when processing an IPv6 extension
+	// header.
+	ExtensionHeaderProblem *StatCounter
+
 	// Errors is the number of IP packets received which could not be
 	// successfully forwarded.
 	Errors *StatCounter
+
+	// LINT.ThenChange(network/internal/ip/stats.go:multiCounterIPForwardingStats)
 }
 
 // IPStats collects IP-specific stats (both v4 and v6).
