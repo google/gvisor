@@ -45,6 +45,7 @@ go_test(
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",

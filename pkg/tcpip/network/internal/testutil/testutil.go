@@ -19,8 +19,6 @@ package testutil
 import (
 	"fmt"
 	"math/rand"
-	"reflect"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -128,70 +126,4 @@ func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSi
 		panic(fmt.Sprintf("rand.Read: %s", err))
 	}
 	return pkt
-}
-
-func checkFieldCounts(ref, multi reflect.Value) error {
-	refTypeName := ref.Type().Name()
-	multiTypeName := multi.Type().Name()
-	refNumField := ref.NumField()
-	multiNumField := multi.NumField()
-
-	if refNumField != multiNumField {
-		return fmt.Errorf("type %s has an incorrect number of fields: got = %d, want = %d (same as type %s)", multiTypeName, multiNumField, refNumField, refTypeName)
-	}
-
-	return nil
-}
-
-func validateField(ref reflect.Value, refName string, m tcpip.MultiCounterStat, multiName string) error {
-	s, ok := ref.Addr().Interface().(**tcpip.StatCounter)
-	if !ok {
-		return fmt.Errorf("expected ref type's to be *StatCounter, but its type is %s", ref.Type().Elem().Name())
-	}
-
-	// The field names are expected to match (case insensitive).
-	if !strings.EqualFold(refName, multiName) {
-		return fmt.Errorf("wrong field name: got = %s, want = %s", multiName, refName)
-	}
-
-	base := (*s).Value()
-	m.Increment()
-	if (*s).Value() != base+1 {
-		return fmt.Errorf("updates to the '%s MultiCounterStat' counters are not reflected in the '%s CounterStat'", multiName, refName)
-	}
-
-	return nil
-}
-
-// ValidateMultiCounterStats verifies that every counter stored in multi is
-// correctly tracking its counterpart in the given counters.
-func ValidateMultiCounterStats(multi reflect.Value, counters []reflect.Value) error {
-	for _, c := range counters {
-		if err := checkFieldCounts(c, multi); err != nil {
-			return err
-		}
-	}
-
-	for i := 0; i < multi.NumField(); i++ {
-		multiName := multi.Type().Field(i).Name
-		multiUnsafe := unsafeExposeUnexportedFields(multi.Field(i))
-
-		if m, ok := multiUnsafe.Addr().Interface().(*tcpip.MultiCounterStat); ok {
-			for _, c := range counters {
-				if err := validateField(unsafeExposeUnexportedFields(c.Field(i)), c.Type().Field(i).Name, *m, multiName); err != nil {
-					return err
-				}
-			}
-		} else {
-			var countersNextField []reflect.Value
-			for _, c := range counters {
-				countersNextField = append(countersNextField, c.Field(i))
-			}
-			if err := ValidateMultiCounterStats(multi.Field(i), countersNextField); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }

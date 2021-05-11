@@ -31,8 +31,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
-	"gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
+	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -2603,7 +2604,7 @@ func TestWriteStats(t *testing.T) {
 		t.Run(writer.name, func(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
-					ep := testutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
+					ep := iptestutil.NewMockLinkEndpoint(header.IPv6MinimumMTU, &tcpip.ErrInvalidEndpointState{}, test.allowPackets)
 					rt := buildRoute(t, ep)
 					var pkts stack.PacketBufferList
 					for i := 0; i < nPackets; i++ {
@@ -2802,9 +2803,9 @@ func TestFragmentationWritePacket(t *testing.T) {
 
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
-			pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
 			source := pkt.Clone()
-			ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
+			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
 			r := buildRoute(t, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,
@@ -2858,7 +2859,7 @@ func TestFragmentationWritePackets(t *testing.T) {
 			insertAfter:  1,
 		},
 	}
-	tinyPacket := testutil.MakeRandPkt(header.TCPMinimumSize, extraHeaderReserve+header.IPv6MinimumSize, []int{1}, header.IPv6ProtocolNumber)
+	tinyPacket := iptestutil.MakeRandPkt(header.TCPMinimumSize, extraHeaderReserve+header.IPv6MinimumSize, []int{1}, header.IPv6ProtocolNumber)
 
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
@@ -2868,14 +2869,14 @@ func TestFragmentationWritePackets(t *testing.T) {
 					for i := 0; i < test.insertBefore; i++ {
 						pkts.PushBack(tinyPacket.Clone())
 					}
-					pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+					pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
 					source := pkt
 					pkts.PushBack(pkt.Clone())
 					for i := 0; i < test.insertAfter; i++ {
 						pkts.PushBack(tinyPacket.Clone())
 					}
 
-					ep := testutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
+					ep := iptestutil.NewMockLinkEndpoint(ft.mtu, nil, math.MaxInt32)
 					r := buildRoute(t, ep)
 
 					wantTotalPackets := len(ft.wantFragments) + test.insertBefore + test.insertAfter
@@ -2980,8 +2981,8 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range tests {
 		t.Run(ft.description, func(t *testing.T) {
-			pkt := testutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
-			ep := testutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
+			pkt := iptestutil.MakeRandPkt(ft.transHdrLen, extraHeaderReserve+header.IPv6MinimumSize, []int{ft.payloadSize}, header.IPv6ProtocolNumber)
+			ep := iptestutil.NewMockLinkEndpoint(ft.mtu, ft.mockError, ft.allowPackets)
 			r := buildRoute(t, ep)
 			err := r.WritePacket(stack.NetworkHeaderParams{
 				Protocol: tcp.ProtocolNumber,

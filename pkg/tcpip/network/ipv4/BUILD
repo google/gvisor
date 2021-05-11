@@ -62,7 +62,7 @@ go_test(
     library = ":ipv4",
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
     ],
 )
