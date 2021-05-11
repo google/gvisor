@@ -5,7 +5,10 @@ package(licenses = ["notice"])
 go_library(
     name = "testutil",
     testonly = True,
-    srcs = ["testutil.go"],
+    srcs = [
+        "testutil.go",
+        "testutil_unsafe.go",
+    ],
     visibility = ["//visibility:public"],
     deps = ["//pkg/tcpip"],
 )

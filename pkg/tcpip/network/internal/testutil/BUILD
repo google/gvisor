@@ -4,10 +4,7 @@ package(licenses = ["notice"])
 
 go_library(
     name = "testutil",
-    srcs = [
-        "testutil.go",
-        "testutil_unsafe.go",
-    ],
+    srcs = ["testutil.go"],
     visibility = [
         "//pkg/tcpip/network/arp:__pkg__",
         "//pkg/tcpip/network/internal/fragmentation:__pkg__",
