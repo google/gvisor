@@ -34,13 +34,13 @@ func (*ErrTTLExceeded) isForwardingError() {}
 
 func (*ErrTTLExceeded) String() string { return "ttl exceeded" }
 
-// ErrIPOptProblem indicates the received packet had a problem with an IP
-// option.
-type ErrIPOptProblem struct{}
+// ErrParameterProblem indicates the received packet had a problem with an IP
+// parameter.
+type ErrParameterProblem struct{}
 
-func (*ErrIPOptProblem) isForwardingError() {}
+func (*ErrParameterProblem) isForwardingError() {}
 
-func (*ErrIPOptProblem) String() string { return "ip option problem" }
+func (*ErrParameterProblem) String() string { return "parameter problem" }
 
 // ErrLinkLocalSourceAddress indicates the received packet had a link-local
 // source address.
