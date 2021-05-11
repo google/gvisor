@@ -11,7 +11,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       if: github.repository == 'google/gvisor'
-    - run: make run TARGETS="//tools/github" ARGS="revive"
+    - run: make run TARGETS="//tools/github" ARGS="-path=. revive"
       if: github.repository == 'google/gvisor'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

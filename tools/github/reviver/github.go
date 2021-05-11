@@ -110,6 +110,11 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 		return true, fmt.Errorf("failed to reactivate issue %d: %v", id, err)
 	}
 
+	_, _, err = b.client.Issues.AddLabelsToIssue(ctx, b.owner, b.repo, id, []string{"revived"})
+	if err != nil {
+		return true, fmt.Errorf("failed to set label on issue %d: %v", id, err)
+	}
+
 	cmt := &github.IssueComment{
 		Body:      github.String(comment.String()),
 		Reactions: &github.Reactions{Confused: github.Int(1)},
