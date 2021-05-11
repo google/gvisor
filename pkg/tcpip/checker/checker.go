@@ -1607,6 +1607,17 @@ func IPv6RouterAlert(want header.IPv6RouterAlertValue) IPv6ExtHdrOptionChecker {
 	}
 }
 
+// IPv6UnknownOption validates that an extension header option is the
+// unknown header option.
+func IPv6UnknownOption() IPv6ExtHdrOptionChecker {
+	return func(t *testing.T, opt header.IPv6ExtHdrOption) {
+		_, ok := opt.(*header.IPv6UnknownExtHdrOption)
+		if !ok {
+			t.Errorf("got = %T, want = header.IPv6UnknownExtHdrOption", opt)
+		}
+	}
+}
+
 // IgnoreCmpPath returns a cmp.Option that ignores listed field paths.
 func IgnoreCmpPath(paths ...string) cmp.Option {
 	ignores := map[string]struct{}{}

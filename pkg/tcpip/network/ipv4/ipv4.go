@@ -645,7 +645,7 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 					forwarding: true,
 				}, pkt)
 			}
-			return &ip.ErrIPOptProblem{}
+			return &ip.ErrParameterProblem{}
 		}
 		copied := copy(opts, newOpts)
 		if copied != len(newOpts) {
@@ -827,7 +827,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 			stats.ip.Forwarding.ExhaustedTTL.Increment()
 		case *ip.ErrNoRoute:
 			stats.ip.Forwarding.Unrouteable.Increment()
-		case *ip.ErrIPOptProblem:
+		case *ip.ErrParameterProblem:
 			e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 			stats.ip.MalformedPacketsReceived.Increment()
 		default:
