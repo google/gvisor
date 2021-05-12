@@ -387,6 +387,8 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 // icmpReason is a marker interface for IPv4 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
+	// isForwarding indicates whether or not the error arose while attempting to
+	// forward a packet.
 	isForwarding() bool
 }
 
@@ -460,6 +462,22 @@ func (*icmpReasonNetworkUnreachable) isForwarding() bool {
 	//  datagram is unreachable, e.g., the distance to the network is
 	//  infinity, the gateway may send a destination unreachable message to
 	//  the internet source host of the datagram.
+	return true
+}
+
+// icmpReasonFragmentationNeeded is an error where a packet requires
+// fragmentation while also having the Don't Fragment flag set, as per RFC 792
+// page 3, Destination Unreachable Message.
+type icmpReasonFragmentationNeeded struct{}
+
+func (*icmpReasonFragmentationNeeded) isICMPReason() {}
+func (*icmpReasonFragmentationNeeded) isForwarding() bool {
+	// If we hit a Don't Fragment error, then we know we are operating as a router.
+	// As per RFC 792 page 4, Destination Unreachable Message,
+	//
+	//   Another case is when a datagram must be fragmented to be forwarded by a
+	//   gateway yet the Don't Fragment flag is on. In this case the gateway must
+	//   discard the datagram and may return a destination unreachable message.
 	return true
 }
 
@@ -634,6 +652,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	case *icmpReasonNetworkUnreachable:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4NetUnreachable)
+		counter = sent.dstUnreachable
+	case *icmpReasonFragmentationNeeded:
+		icmpHdr.SetType(header.ICMPv4DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv4FragmentationNeeded)
 		counter = sent.dstUnreachable
 	case *icmpReasonTTLExceeded:
 		icmpHdr.SetType(header.ICMPv4TimeExceeded)

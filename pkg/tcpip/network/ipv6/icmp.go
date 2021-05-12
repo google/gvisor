@@ -955,25 +955,25 @@ func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 // icmpReason is a marker interface for IPv6 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
+	// isForwarding indicates whether or not the error arose while attempting to
+	// forward a packet.
 	isForwarding() bool
+	// respondToMulticast indicates whether this error falls under the exception
+	// outlined by RFC 4443 section 2.4 point e.3 exception 2:
+	//
+	//   (e.3) A packet destined to an IPv6 multicast address. (There are two
+	//   exceptions to this rule: (1) the Packet Too Big Message (Section 3.2) to
+	//   allow Path MTU discovery to work for IPv6 multicast, and (2) the Parameter
+	//   Problem Message, Code 2 (Section 3.4) reporting an unrecognized IPv6
+	//   option (see Section 4.2 of [IPv6]) that has the Option Type highest-
+	//   order two bits set to 10).
+	respondsToMulticast() bool
 }
 
 // icmpReasonParameterProblem is an error during processing of extension headers
 // or the fixed header defined in RFC 4443 section 3.4.
 type icmpReasonParameterProblem struct {
 	code header.ICMPv6Code
-
-	// respondToMulticast indicates that we are sending a packet that falls under
-	// the exception outlined by RFC 4443 section 2.4 point e.3 exception 2:
-	//
-	//       (e.3) A packet destined to an IPv6 multicast address.  (There are
-	//             two exceptions to this rule: (1) the Packet Too Big Message
-	//             (Section 3.2) to allow Path MTU discovery to work for IPv6
-	//             multicast, and (2) the Parameter Problem Message, Code 2
-	//             (Section 3.4) reporting an unrecognized IPv6 option (see
-	//             Section 4.2 of [IPv6]) that has the Option Type highest-
-	//             order two bits set to 10).
-	respondToMulticast bool
 
 	// pointer is defined in the RFC 4443 setion 3.4 which reads:
 	//
@@ -985,14 +985,18 @@ type icmpReasonParameterProblem struct {
 	//                  in the maximum size of an ICMPv6 error message.
 	pointer uint32
 
-	// forwarding indicates that the problem arose while we were trying to forward
-	// a packet.
 	forwarding bool
+
+	respondToMulticast bool
 }
 
 func (*icmpReasonParameterProblem) isICMPReason() {}
 func (p *icmpReasonParameterProblem) isForwarding() bool {
 	return p.forwarding
+}
+
+func (p *icmpReasonParameterProblem) respondsToMulticast() bool {
+	return p.respondToMulticast
 }
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no
@@ -1002,6 +1006,10 @@ type icmpReasonPortUnreachable struct{}
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
 func (*icmpReasonPortUnreachable) isForwarding() bool {
+	return false
+}
+
+func (*icmpReasonPortUnreachable) respondsToMulticast() bool {
 	return false
 }
 
@@ -1018,6 +1026,30 @@ func (*icmpReasonNetUnreachable) isForwarding() bool {
 	//   If the reason for the failure to deliver is lack of a matching
 	//   entry in the forwarding node's routing table, the Code field is
 	//   set to 0 (Network Unreachable).
+	return true
+}
+
+func (*icmpReasonNetUnreachable) respondsToMulticast() bool {
+	return false
+}
+
+// icmpReasonFragmentationNeeded is an error where a packet is to big to be sent
+// out through the outgoing MTU, as per RFC 4443 page 9, Packet Too Big Message.
+type icmpReasonPacketTooBig struct{}
+
+func (*icmpReasonPacketTooBig) isICMPReason() {}
+
+func (*icmpReasonPacketTooBig) isForwarding() bool {
+	// If we hit a Packet Too Big error, then we know we are operating as a router.
+	// As per RFC 4443 section 3.2:
+	//
+	//   A Packet Too Big MUST be sent by a router in response to a packet that it
+	//   cannot forward because the packet is larger than the MTU of the outgoing
+	//   link.
+	return true
+}
+
+func (*icmpReasonPacketTooBig) respondsToMulticast() bool {
 	return true
 }
 
@@ -1039,6 +1071,10 @@ func (*icmpReasonHopLimitExceeded) isForwarding() bool {
 	return true
 }
 
+func (*icmpReasonHopLimitExceeded) respondsToMulticast() bool {
+	return false
+}
+
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
 // the reception of the first-arriving fragment of that packet.
@@ -1047,6 +1083,10 @@ type icmpReasonReassemblyTimeout struct{}
 func (*icmpReasonReassemblyTimeout) isICMPReason() {}
 
 func (*icmpReasonReassemblyTimeout) isForwarding() bool {
+	return false
+}
+
+func (*icmpReasonReassemblyTimeout) respondsToMulticast() bool {
 	return false
 }
 
@@ -1078,11 +1118,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	//             Section 4.2 of [IPv6]) that has the Option Type highest-
 	//             order two bits set to 10).
 	//
-	var allowResponseToMulticast bool
-	if reason, ok := reason.(*icmpReasonParameterProblem); ok {
-		allowResponseToMulticast = reason.respondToMulticast
-	}
-
+	allowResponseToMulticast := reason.respondsToMulticast()
 	isOrigDstMulticast := header.IsV6MulticastAddress(origIPHdrDst)
 	if (!allowResponseToMulticast && isOrigDstMulticast) || origIPHdrSrc == header.IPv6Any {
 		return nil
@@ -1190,6 +1226,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 		icmpHdr.SetType(header.ICMPv6DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv6NetworkUnreachable)
 		counter = sent.dstUnreachable
+	case *icmpReasonPacketTooBig:
+		icmpHdr.SetType(header.ICMPv6PacketTooBig)
+		icmpHdr.SetCode(header.ICMPv6UnusedCode)
+		counter = sent.packetTooBig
 	case *icmpReasonHopLimitExceeded:
 		icmpHdr.SetType(header.ICMPv6TimeExceeded)
 		icmpHdr.SetCode(header.ICMPv6HopLimitExceeded)

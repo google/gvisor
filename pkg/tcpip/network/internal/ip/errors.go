@@ -58,13 +58,21 @@ func (*ErrLinkLocalDestinationAddress) isForwardingError() {}
 
 func (*ErrLinkLocalDestinationAddress) String() string { return "link local destination address" }
 
-// ErrNoRoute indicates the Netstack couldn't find a route for the
-// received packet.
+// ErrNoRoute indicates that a route for the received packet couldn't be found.
 type ErrNoRoute struct{}
 
 func (*ErrNoRoute) isForwardingError() {}
 
 func (*ErrNoRoute) String() string { return "no route" }
+
+// ErrMessageTooLong indicates the packet was too big for the outgoing MTU.
+//
+// +stateify savable
+type ErrMessageTooLong struct{}
+
+func (*ErrMessageTooLong) isForwardingError() {}
+
+func (*ErrMessageTooLong) String() string { return "message too long" }
 
 // ErrOther indicates the packet coould not be forwarded for a reason
 // captured by the contained error.
