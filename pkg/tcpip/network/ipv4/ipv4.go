@@ -434,6 +434,12 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, headerIn
 	}
 
 	if packetMustBeFragmented(pkt, networkMTU) {
+		h := header.IPv4(pkt.NetworkHeader().View())
+		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
+			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
+			// is set but the packet must be fragmented for the non-forwarding case.
+			return &tcpip.ErrMessageTooLong{}
+		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, func(fragPkt *stack.PacketBuffer) tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
 			// fragment one by one using WritePacket() (current strategy) or if we
@@ -695,13 +701,28 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	//   spent, the field must be decremented by 1.
 	newHdr.SetTTL(ttl - 1)
 
-	if err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+	switch err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               buffer.View(newHdr).ToVectorisedView(),
-	})); err != nil {
+		IsForwardedPacket:  true,
+	})); err.(type) {
+	case nil:
+		return nil
+	case *tcpip.ErrMessageTooLong:
+		// As per RFC 792, page 4, Destination Unreachable:
+		//
+		//   Another case is when a datagram must be fragmented to be forwarded by a
+		//   gateway yet the Don't Fragment flag is on. In this case the gateway must
+		//   discard the datagram and may return a destination unreachable message.
+		//
+		// WriteHeaderIncludedPacket checks for the presence of the Don't Fragment bit
+		// while sending the packet and returns this error iff fragmentation is
+		// necessary and the bit is also set.
+		_ = e.protocol.returnError(&icmpReasonFragmentationNeeded{}, pkt)
+		return &ip.ErrMessageTooLong{}
+	default:
 		return &ip.ErrOther{Err: err}
 	}
-	return nil
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
@@ -830,6 +851,8 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 		case *ip.ErrParameterProblem:
 			e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 			stats.ip.MalformedPacketsReceived.Increment()
+		case *ip.ErrMessageTooLong:
+			stats.ip.Forwarding.PacketTooBig.Increment()
 		default:
 			panic(fmt.Sprintf("unexpected error %s while trying to forward packet: %#v", err, pkt))
 		}

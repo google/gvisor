@@ -55,6 +55,9 @@ type NetworkPacketInfo struct {
 	// LocalAddressBroadcast is true if the packet's local address is a broadcast
 	// address.
 	LocalAddressBroadcast bool
+
+	// IsForwardedPacket is true if the packet is being forwarded.
+	IsForwardedPacket bool
 }
 
 // TransportErrorKind enumerates error types that are handled by the transport

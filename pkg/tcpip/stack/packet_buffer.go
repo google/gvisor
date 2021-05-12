@@ -40,6 +40,10 @@ type PacketBufferOptions struct {
 	// Data is the initial unparsed data for the new packet. If set, it will be
 	// owned by the new packet.
 	Data buffer.VectorisedView
+
+	// IsForwardedPacket identifies that the PacketBuffer being created is for a
+	// forwarded packet.
+	IsForwardedPacket bool
 }
 
 // A PacketBuffer contains all the data of a network packet.
@@ -131,6 +135,9 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	}
 	if opts.ReserveHeaderBytes != 0 {
 		pk.header = buffer.NewPrependable(opts.ReserveHeaderBytes)
+	}
+	if opts.IsForwardedPacket {
+		pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	}
 	return pk
 }
