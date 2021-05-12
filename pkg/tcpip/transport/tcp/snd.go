@@ -716,15 +716,14 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			// triggering bugs in poorly written DNS
 			// implementations.
 			var nextTooBig bool
-			for seg.Next() != nil && seg.Next().data.Size() != 0 {
-				if seg.data.Size()+seg.Next().data.Size() > available {
+			for nSeg := seg.Next(); nSeg != nil && nSeg.data.Size() != 0; nSeg = seg.Next() {
+				if seg.data.Size()+nSeg.data.Size() > available {
 					nextTooBig = true
 					break
 				}
-				seg.data.Append(seg.Next().data)
-
-				// Consume the segment that we just merged in.
-				s.writeList.Remove(seg.Next())
+				seg.merge(nSeg)
+				s.writeList.Remove(nSeg)
+				nSeg.decRef()
 			}
 			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.

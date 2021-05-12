@@ -140,6 +140,15 @@ func (s *segment) clone() *segment {
 	return t
 }
 
+// merge merges data in oth and clears oth.
+func (s *segment) merge(oth *segment) {
+	s.data.Append(oth.data)
+	s.dataMemSize = s.data.Size()
+
+	oth.data = buffer.VectorisedView{}
+	oth.dataMemSize = oth.data.Size()
+}
+
 // flagIsSet checks if at least one flag in flags is set in s.flags.
 func (s *segment) flagIsSet(flags header.TCPFlags) bool {
 	return s.flags&flags != 0
