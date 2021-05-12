@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package refs_template defines a template that can be used by reference
-// counted objects.
+// counted objects. The template comes with leak checking capabilities.
 package refs_template
 
 import (
@@ -39,6 +39,14 @@ var obj *T
 
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
+//
+// NOTE: Do not introduce additional fields to the Refs struct. It is used by
+// many filesystem objects, and we want to keep it as small as possible (i.e.,
+// the same size as using an int64 directly) to avoid taking up extra cache
+// space. In general, this template should not be extended at the cost of
+// performance. If it does not offer enough flexibility for a particular object
+// (example: b/187877947), we should implement the RefCounter/CheckedObject
+// interfaces manually.
 //
 // +stateify savable
 type Refs struct {
