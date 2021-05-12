@@ -34,24 +34,19 @@ type Error struct {
 	// linux.Errno.
 	noTranslation bool
 
-	// errno is the linux.Errno this Error should be translated to. nil means
-	// that this Error should be translated to a nil linux.Errno.
-	errno *linux.Errno
+	// errno is the linux.Errno this Error should be translated to.
+	errno linux.Errno
 }
 
 // New creates a new Error and adds a translation for it.
 //
 // New must only be called at init.
-func New(message string, linuxTranslation *linux.Errno) *Error {
+func New(message string, linuxTranslation linux.Errno) *Error {
 	err := &Error{message: message, errno: linuxTranslation}
 
-	if linuxTranslation == nil {
-		return err
-	}
-
 	// TODO(b/34162363): Remove this.
-	errno := linuxTranslation.Number()
-	if errno <= 0 || errno >= len(linuxBackwardsTranslations) {
+	errno := linuxTranslation
+	if errno < 0 || int(errno) >= len(linuxBackwardsTranslations) {
 		panic(fmt.Sprint("invalid errno: ", errno))
 	}
 
@@ -74,7 +69,7 @@ func New(message string, linuxTranslation *linux.Errno) *Error {
 // NewDynamic should only be used sparingly and not be used for static error
 // messages. Errors with static error messages should be declared with New as
 // global variables.
-func NewDynamic(message string, linuxTranslation *linux.Errno) *Error {
+func NewDynamic(message string, linuxTranslation linux.Errno) *Error {
 	return &Error{message: message, errno: linuxTranslation}
 }
 
@@ -87,7 +82,7 @@ func NewWithoutTranslation(message string) *Error {
 	return &Error{message: message, noTranslation: true}
 }
 
-func newWithHost(message string, linuxTranslation *linux.Errno, hostErrno unix.Errno) *Error {
+func newWithHost(message string, linuxTranslation linux.Errno, hostErrno unix.Errno) *Error {
 	e := New(message, linuxTranslation)
 	addLinuxHostTranslation(hostErrno, e)
 	return e
@@ -119,10 +114,10 @@ func (e *Error) ToError() error {
 	if e.noTranslation {
 		panic(fmt.Sprintf("error %q does not support translation", e.message))
 	}
-	if e.errno == nil {
+	errno := int(e.errno)
+	if errno == linux.NOERRNO {
 		return nil
 	}
-	errno := e.errno.Number()
 	if errno <= 0 || errno >= len(linuxBackwardsTranslations) || !linuxBackwardsTranslations[errno].ok {
 		panic(fmt.Sprintf("unknown error %q (%d)", e.message, errno))
 	}
@@ -131,7 +126,7 @@ func (e *Error) ToError() error {
 
 // ToLinux converts the Error to a Linux ABI error that can be returned to the
 // application.
-func (e *Error) ToLinux() *linux.Errno {
+func (e *Error) ToLinux() linux.Errno {
 	if e.noTranslation {
 		panic(fmt.Sprintf("No Linux ABI translation available for %q", e.message))
 	}
