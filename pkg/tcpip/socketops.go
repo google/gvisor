@@ -18,6 +18,7 @@ import (
 	"math"
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -213,7 +214,7 @@ type SocketOptions struct {
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
 	// sendBufferSize determines the send buffer size for this socket.
-	sendBufferSize int64
+	sendBufferSize atomicbitops.AlignedAtomicInt64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
 	// max size for receive buffer. It is initialized at the creation time and
@@ -612,7 +613,7 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 
 // GetSendBufferSize gets value for SO_SNDBUF option.
 func (so *SocketOptions) GetSendBufferSize() int64 {
-	return atomic.LoadInt64(&so.sendBufferSize)
+	return so.sendBufferSize.Load()
 }
 
 // SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
@@ -621,7 +622,7 @@ func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
 	v := sendBufferSize
 
 	if !notify {
-		atomic.StoreInt64(&so.sendBufferSize, v)
+		so.sendBufferSize.Store(v)
 		return
 	}
 
@@ -647,7 +648,7 @@ func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
 
 	// Notify endpoint about change in buffer size.
 	newSz := so.handler.OnSetSendBufferSize(v)
-	atomic.StoreInt64(&so.sendBufferSize, newSz)
+	so.sendBufferSize.Store(newSz)
 }
 
 // GetReceiveBufferSize gets value for SO_RCVBUF option.
