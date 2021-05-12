@@ -99,6 +99,14 @@ steps:
     label: ":docker: Containerd 1.4.3 tests"
     command: make containerd-test-1.4.3
 
+  - <<: *common
+    label: ":test_tube: cgroupv2 tests"
+    commands:
+      - ln -sf tools/Vagrantfile Vagrantfile
+      # Retry if it fails (download.fedoraproject.org returns 404 sometimes)
+      - vagrant up || vagrant up
+      - vagrant ssh -c 'cd /vagrant && make containerd-test-1.4.3'
+
   # Check the website builds.
   - <<: *common
     label: ":earth_americas: Website tests"
