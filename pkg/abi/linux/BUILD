@@ -85,6 +85,8 @@ go_library(
 go_test(
     name = "linux_test",
     size = "small",
-    srcs = ["netfilter_test.go"],
+    srcs = [
+        "netfilter_test.go",
+    ],
     library = ":linux",
 )
