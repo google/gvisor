@@ -38,7 +38,7 @@ var (
 	ErrPortInUse             = New((&tcpip.ErrPortInUse{}).String(), linux.EADDRINUSE)
 	ErrBadLocalAddress       = New((&tcpip.ErrBadLocalAddress{}).String(), linux.EADDRNOTAVAIL)
 	ErrClosedForSend         = New((&tcpip.ErrClosedForSend{}).String(), linux.EPIPE)
-	ErrClosedForReceive      = New((&tcpip.ErrClosedForReceive{}).String(), nil)
+	ErrClosedForReceive      = New((&tcpip.ErrClosedForReceive{}).String(), linux.NOERRNO)
 	ErrTimeout               = New((&tcpip.ErrTimeout{}).String(), linux.ETIMEDOUT)
 	ErrAborted               = New((&tcpip.ErrAborted{}).String(), linux.EPIPE)
 	ErrConnectStarted        = New((&tcpip.ErrConnectStarted{}).String(), linux.EINPROGRESS)

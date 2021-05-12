@@ -656,7 +656,7 @@ func dumpErrorMesage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr
 		Type: linux.NLMSG_ERROR,
 	})
 	m.Put(&linux.NetlinkErrorMessage{
-		Error:  int32(-err.ToLinux().Number()),
+		Error:  int32(-err.ToLinux()),
 		Header: hdr,
 	})
 }

@@ -851,7 +851,7 @@ func getSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, fam
 			return &optP, nil
 		}
 
-		optP := primitive.Int32(syserr.TranslateNetstackError(err).ToLinux().Number())
+		optP := primitive.Int32(syserr.TranslateNetstackError(err).ToLinux())
 		return &optP, nil
 
 	case linux.SO_PEERCRED:
