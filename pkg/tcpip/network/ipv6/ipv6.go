@@ -761,6 +761,12 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 	}
 
 	if packetMustBeFragmented(pkt, networkMTU) {
+		if pkt.NetworkPacketInfo.IsForwardedPacket {
+			// As per RFC 2460, section 4.5:
+			//   Unlike IPv4, fragmentation in IPv6 is performed only by source nodes,
+			//   not by routers along a packet's delivery path.
+			return &tcpip.ErrMessageTooLong{}
+		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
 			// TODO(gvisor.dev/issue/3884): Evaluate whether we want to send each
 			// fragment one by one using WritePacket() (current strategy) or if we
@@ -950,9 +956,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	switch err.(type) {
 	case nil:
 	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
-		// We return the original error rather than the result of returning
-		// the ICMP packet because the original error is more relevant to
-		// the caller.
+		// We return the original error rather than the result of returning the
+		// ICMP packet because the original error is more relevant to the caller.
 		_ = e.protocol.returnError(&icmpReasonNetUnreachable{}, pkt)
 		return &ip.ErrNoRoute{}
 	default:
@@ -971,13 +976,23 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 	//                       each node that forwards the packet.
 	newHdr.SetHopLimit(hopLimit - 1)
 
-	if err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
+	switch err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
 		Data:               buffer.View(newHdr).ToVectorisedView(),
-	})); err != nil {
+		IsForwardedPacket:  true,
+	})); err.(type) {
+	case nil:
+		return nil
+	case *tcpip.ErrMessageTooLong:
+		// As per RFC 4443, section 3.2:
+		//   A Packet Too Big MUST be sent by a router in response to a packet that
+		//   it cannot forward because the packet is larger than the MTU of the
+		//   outgoing link.
+		_ = e.protocol.returnError(&icmpReasonPacketTooBig{}, pkt)
+		return &ip.ErrMessageTooLong{}
+	default:
 		return &ip.ErrOther{Err: err}
 	}
-	return nil
 }
 
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
@@ -1091,6 +1106,8 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer)
 			e.stats.ip.Forwarding.Unrouteable.Increment()
 		case *ip.ErrParameterProblem:
 			e.stats.ip.Forwarding.ExtensionHeaderProblem.Increment()
+		case *ip.ErrMessageTooLong:
+			e.stats.ip.Forwarding.PacketTooBig.Increment()
 		default:
 			panic(fmt.Sprintf("unexpected error %s while trying to forward packet: %#v", err, pkt))
 		}

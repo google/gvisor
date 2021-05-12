@@ -1548,6 +1548,10 @@ type IPForwardingStats struct {
 	// because they contained a link-local destination address.
 	LinkLocalDestination *StatCounter
 
+	// PacketTooBig is the number of IP packets which were dropped because they
+	// were too big for the outgoing MTU.
+	PacketTooBig *StatCounter
+
 	// ExtensionHeaderProblem is the number of IP packets which were dropped
 	// because of a problem encountered when processing an IPv6 extension
 	// header.
