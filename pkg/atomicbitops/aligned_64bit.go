@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64 arm64
+// +build !arm,!mips,!386
 
 package atomicbitops
 
 import "sync/atomic"
 
 // AlignedAtomicInt64 is an atomic int64 that is guaranteed to be 64-bit
-// aligned, even on 32-bit systems. On 64-bit machines, it's just a regular
+// aligned, even on 32-bit systems. On most architectures, it's just a regular
 // int64.
 //
 // See aligned_unsafe.go in this directory for justification.
@@ -45,7 +45,7 @@ func (aa *AlignedAtomicInt64) Add(v int64) int64 {
 }
 
 // AlignedAtomicUint64 is an atomic uint64 that is guaranteed to be 64-bit
-// aligned, even on 32-bit systems. On 64-bit machines, it's just a regular
+// aligned, even on 32-bit systems. On most architectures, it's just a regular
 // uint64.
 //
 // See aligned_unsafe.go in this directory for justification.
