@@ -126,7 +126,15 @@ go_test(
 go_test(
     name = "tcp_test",
     size = "small",
-    srcs = ["timer_test.go"],
+    srcs = [
+        "segment_test.go",
+        "timer_test.go",
+    ],
     library = ":tcp",
-    deps = ["//pkg/sleep"],
+    deps = [
+        "//pkg/sleep",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/stack",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
 )
