@@ -564,7 +564,7 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	buf = buf[linux.SizeOfXTEntryTarget:nfNATMarshalledSize]
 	natRange.UnmarshalUnsafe(buf)
 
-	// TODO(gvisor.dev/issue/5689): Support port or address ranges.
+	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
 		nflog("snatTargetMakerV6: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument

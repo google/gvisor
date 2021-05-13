@@ -36,7 +36,7 @@ const Name = "devtmpfs"
 //
 // +stateify savable
 type FilesystemType struct {
-	initOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1664): not yet supported.
+	initOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 	initErr  error
 
 	// fs is the tmpfs filesystem that backs all mounts of this FilesystemType.
