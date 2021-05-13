@@ -343,6 +343,8 @@ const (
 var (
 	noOverlay = append(platformOptions, nonExclusiveFS)
 	all       = append(noOverlay, overlay)
+	checkKVM  sync.Once
+	hasKVM    bool
 )
 
 func configsHelper(t *testing.T, opts ...configOption) map[string]*config.Config {
@@ -359,8 +361,17 @@ func configsHelper(t *testing.T, opts ...configOption) map[string]*config.Config
 			c.Platform = platforms.Ptrace
 			cs["ptrace"] = c
 		case kvm:
-			c.Platform = platforms.KVM
-			cs["kvm"] = c
+			checkKVM.Do(func() {
+				if _, err := os.Stat("/dev/kvm"); err == nil {
+					hasKVM = true
+				}
+			})
+			if !hasKVM {
+				t.Skip("Machine does not support KVM")
+			} else {
+				c.Platform = platforms.KVM
+				cs["kvm"] = c
+			}
 		case nonExclusiveFS:
 			c.FileAccess = config.FileAccessShared
 			cs["non-exclusive"] = c
