@@ -1247,6 +1247,7 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 		if parent != l.file.FD() {
 			// Parent is no longer needed.
 			_ = unix.Close(parent)
+			parent = -1
 		}
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
@@ -1274,6 +1275,9 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 			break
 		}
 		parent = child
+	}
+	if parent != -1 && parent != l.file.FD() {
+		_ = unix.Close(parent)
 	}
 	return stats, nil
 }
