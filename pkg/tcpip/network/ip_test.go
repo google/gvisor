@@ -1996,8 +1996,8 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
 					}
 
-					if err := s.SetForwarding(test.netProto, true); err != nil {
-						t.Fatalf("s.SetForwarding(%d, true): %s", test.netProto, err)
+					if err := s.SetForwardingDefaultAndAllNICs(test.netProto, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", test.netProto, err)
 					}
 					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
 						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
@@ -2005,8 +2005,8 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = false, want = true", nicID, test.allRoutersAddr)
 					}
 
-					if err := s.SetForwarding(test.netProto, false); err != nil {
-						t.Fatalf("s.SetForwarding(%d, false): %s", test.netProto, err)
+					if err := s.SetForwardingDefaultAndAllNICs(test.netProto, false); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, false): %s", test.netProto, err)
 					}
 					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
 						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)

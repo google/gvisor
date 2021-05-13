@@ -3329,8 +3329,8 @@ func TestForwarding(t *testing.T) {
 				},
 			})
 
-			if err := s.SetForwarding(ProtocolNumber, true); err != nil {
-				t.Fatalf("SetForwarding(%d, true): %s", ProtocolNumber, err)
+			if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
 			}
 
 			transportProtocol := header.ICMPv6ProtocolNumber

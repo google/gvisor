@@ -714,11 +714,11 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 			}
 
 			if test.forwarding {
-				if err := s.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-					t.Fatalf("SetForwarding(%d, true): %s", ipv4.ProtocolNumber, err)
+				if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
 				}
-				if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-					t.Fatalf("SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
 				}
 			}
 

@@ -470,11 +470,8 @@ func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
 
 // SetForwarding implements inet.Stack.SetForwarding.
 func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
-	switch protocol {
-	case ipv4.ProtocolNumber, ipv6.ProtocolNumber:
-		s.Stack.SetForwarding(protocol, enable)
-	default:
-		panic(fmt.Sprintf("SetForwarding(%v) failed: unsupported protocol", protocol))
+	if err := s.Stack.SetForwardingDefaultAndAllNICs(protocol, enable); err != nil {
+		return fmt.Errorf("SetForwardingDefaultAndAllNICs(%d, %t): %s", protocol, enable, err)
 	}
 	return nil
 }

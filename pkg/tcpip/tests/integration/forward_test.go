@@ -475,11 +475,11 @@ func TestMulticastForwarding(t *testing.T) {
 				t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address, err)
 			}
 
-			if err := s.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-				t.Fatalf("s.SetForwarding(%d, true): %s", ipv4.ProtocolNumber, err)
+			if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
 			}
-			if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-				t.Fatalf("s.SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+			if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+				t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
