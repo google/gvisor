@@ -74,6 +74,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/buffer",
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/rand",

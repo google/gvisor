@@ -167,8 +167,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt *s
 
 	resPkt := r.holes[0].pkt
 	for i := 1; i < len(r.holes); i++ {
-		fragData := r.holes[i].pkt.Data()
-		resPkt.Data().ReadFromData(fragData, fragData.Size())
+		stack.MergeFragment(resPkt, r.holes[i].pkt)
 	}
 	return resPkt, r.proto, true, memConsumed, nil
 }

@@ -444,23 +444,8 @@ func TestPacketBufferData(t *testing.T) {
 				checkData(t, pkt, []byte(tc.data+s))
 			})
 
-			// ReadFromData/VV
+			// ReadFromVV
 			for _, n := range []int{0, 1, 2, 7, 10, 14, 20} {
-				t.Run(fmt.Sprintf("ReadFromData%d", n), func(t *testing.T) {
-					s := "TO READ"
-					otherPkt := NewPacketBuffer(PacketBufferOptions{
-						Data: vv(s, s),
-					})
-					s += s
-
-					pkt := tc.makePkt(t)
-					pkt.Data().ReadFromData(otherPkt.Data(), n)
-
-					if n < len(s) {
-						s = s[:n]
-					}
-					checkData(t, pkt, []byte(tc.data+s))
-				})
 				t.Run(fmt.Sprintf("ReadFromVV%d", n), func(t *testing.T) {
 					s := "TO READ"
 					srcVV := vv(s, s)
@@ -486,16 +471,6 @@ func TestPacketBufferData(t *testing.T) {
 				if !bytes.Equal(got, want) {
 					t.Errorf("pkt.Data().ExtractVV().ToOwnedView() = %q, want %q", got, want)
 				}
-			})
-
-			// Replace
-			t.Run("Replace", func(t *testing.T) {
-				s := "REPLACED"
-
-				pkt := tc.makePkt(t)
-				pkt.Data().Replace(vv(s))
-
-				checkData(t, pkt, []byte(s))
 			})
 		})
 	}
@@ -568,7 +543,7 @@ func checkViewEqual(t *testing.T, what string, got, want buffer.View) {
 func checkData(t *testing.T, pkt *PacketBuffer, want []byte) {
 	t.Helper()
 	if got := concatViews(pkt.Data().Views()...); !bytes.Equal(got, want) {
-		t.Errorf("pkt.Data().Views() = %x, want %x", got, want)
+		t.Errorf("pkt.Data().Views() = 0x%x, want 0x%x", got, want)
 	}
 	if got := pkt.Data().Size(); got != len(want) {
 		t.Errorf("pkt.Data().Size() = %d, want %d", got, len(want))

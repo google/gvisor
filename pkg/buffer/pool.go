@@ -42,6 +42,13 @@ type pool struct {
 
 // get gets a new buffer from p.
 func (p *pool) get() *buffer {
+	buf := p.getNoInit()
+	buf.init(p.bufferSize)
+	return buf
+}
+
+// get gets a new buffer from p without initializing it.
+func (p *pool) getNoInit() *buffer {
 	if p.avail == nil {
 		p.avail = p.embeddedStorage[:]
 	}
@@ -52,7 +59,6 @@ func (p *pool) get() *buffer {
 		p.bufferSize = defaultBufferSize
 	}
 	buf := &p.avail[0]
-	buf.init(p.bufferSize)
 	p.avail = p.avail[1:]
 	return buf
 }
@@ -62,6 +68,7 @@ func (p *pool) put(buf *buffer) {
 	// Remove reference to the underlying storage, allowing it to be garbage
 	// collected.
 	buf.data = nil
+	buf.Reset()
 }
 
 // setBufferSize sets the size of underlying storage buffer for future

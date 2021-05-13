@@ -33,10 +33,38 @@ func (b *buffer) init(size int) {
 	b.data = make([]byte, size)
 }
 
+// initWithData initializes b with data, taking ownership.
+func (b *buffer) initWithData(data []byte) {
+	b.data = data
+	b.read = 0
+	b.write = len(data)
+}
+
 // Reset resets read and write locations, effectively emptying the buffer.
 func (b *buffer) Reset() {
 	b.read = 0
 	b.write = 0
+}
+
+// Remove removes r from the unread portion. It returns false if r does not
+// fully reside in b.
+func (b *buffer) Remove(r Range) bool {
+	sz := b.ReadSize()
+	switch {
+	case r.Len() != r.Intersect(Range{end: sz}).Len():
+		return false
+	case r.Len() == 0:
+		// Noop
+	case r.begin == 0:
+		b.read += r.end
+	case r.end == sz:
+		b.write -= r.Len()
+	default:
+		// Remove from the middle of b.data.
+		copy(b.data[b.read+r.begin:], b.data[b.read+r.end:b.write])
+		b.write -= r.Len()
+	}
+	return true
 }
 
 // Full indicates the buffer is full.

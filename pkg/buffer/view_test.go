@@ -17,7 +17,9 @@ package buffer
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -234,6 +236,18 @@ func TestView(t *testing.T) {
 			output: strings.Repeat("1", bufferSize-1) + strings.Repeat("0", bufferSize*3),
 			op: func(t *testing.T, v *View) {
 				v.Append([]byte(strings.Repeat("0", bufferSize*3)))
+			},
+		},
+
+		// AppendOwned.
+		{
+			name:   "append-owned",
+			input:  "hello",
+			output: "hello world",
+			op: func(t *testing.T, v *View) {
+				b := []byte("Xworld")
+				v.AppendOwned(b)
+				b[0] = ' '
 			},
 		},
 
@@ -495,6 +509,267 @@ func TestView(t *testing.T) {
 	}
 }
 
+func TestViewPullUp(t *testing.T) {
+	for _, tc := range []struct {
+		desc   string
+		inputs []string
+		offset int
+		length int
+		output string
+		failed bool
+		// lengths is the lengths of each buffer node after the pull up.
+		lengths []int
+	}{
+		{
+			desc: "whole empty view",
+		},
+		{
+			desc:    "zero pull",
+			inputs:  []string{"hello", " world"},
+			lengths: []int{5, 6},
+		},
+		{
+			desc:    "whole view",
+			inputs:  []string{"hello", " world"},
+			offset:  0,
+			length:  11,
+			output:  "hello world",
+			lengths: []int{11},
+		},
+		{
+			desc:    "middle to end aligned",
+			inputs:  []string{"0123", "45678", "9abcd"},
+			offset:  4,
+			length:  10,
+			output:  "456789abcd",
+			lengths: []int{4, 10},
+		},
+		{
+			desc:    "middle to end unaligned",
+			inputs:  []string{"0123", "45678", "9abcd"},
+			offset:  6,
+			length:  8,
+			output:  "6789abcd",
+			lengths: []int{4, 10},
+		},
+		{
+			desc:    "middle aligned",
+			inputs:  []string{"0123", "45678", "9abcd", "efgh"},
+			offset:  6,
+			length:  5,
+			output:  "6789a",
+			lengths: []int{4, 10, 4},
+		},
+
+		// Failed cases.
+		{
+			desc:   "empty view - length too long",
+			offset: 0,
+			length: 1,
+			failed: true,
+		},
+		{
+			desc:   "empty view - offset too large",
+			offset: 1,
+			length: 1,
+			failed: true,
+		},
+		{
+			desc:    "length too long",
+			inputs:  []string{"0123", "45678", "9abcd"},
+			offset:  4,
+			length:  100,
+			failed:  true,
+			lengths: []int{4, 5, 5},
+		},
+		{
+			desc:    "offset too large",
+			inputs:  []string{"0123", "45678", "9abcd"},
+			offset:  100,
+			length:  1,
+			failed:  true,
+			lengths: []int{4, 5, 5},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			var v View
+			for _, s := range tc.inputs {
+				v.AppendOwned([]byte(s))
+			}
+
+			got, gotOk := v.PullUp(tc.offset, tc.length)
+			want, wantOk := []byte(tc.output), !tc.failed
+			if gotOk != wantOk || !bytes.Equal(got, want) {
+				t.Errorf("v.PullUp(%d, %d) = %q, %t; %q, %t", tc.offset, tc.length, got, gotOk, want, wantOk)
+			}
+
+			var gotLengths []int
+			for buf := v.data.Front(); buf != nil; buf = buf.Next() {
+				gotLengths = append(gotLengths, buf.ReadSize())
+			}
+			if !reflect.DeepEqual(gotLengths, tc.lengths) {
+				t.Errorf("lengths = %v; want %v", gotLengths, tc.lengths)
+			}
+		})
+	}
+}
+
+func TestViewRemove(t *testing.T) {
+	// Success cases
+	for _, tc := range []struct {
+		desc string
+		// before is the contents for each buffer node initially.
+		before []string
+		// after is the contents for each buffer node after removal.
+		after  []string
+		offset int
+		length int
+	}{
+		{
+			desc: "empty view",
+		},
+		{
+			desc:   "nothing removed",
+			before: []string{"hello", " world"},
+			after:  []string{"hello", " world"},
+		},
+		{
+			desc:   "whole view",
+			before: []string{"hello", " world"},
+			offset: 0,
+			length: 11,
+		},
+		{
+			desc:   "beginning to middle aligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"9abcd"},
+			offset: 0,
+			length: 9,
+		},
+		{
+			desc:   "beginning to middle unaligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"678", "9abcd"},
+			offset: 0,
+			length: 6,
+		},
+		{
+			desc:   "middle to end aligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"0123"},
+			offset: 4,
+			length: 10,
+		},
+		{
+			desc:   "middle to end unaligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"0123", "45"},
+			offset: 6,
+			length: 8,
+		},
+		{
+			desc:   "middle aligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"0123", "9abcd"},
+			offset: 4,
+			length: 5,
+		},
+		{
+			desc:   "middle unaligned",
+			before: []string{"0123", "45678", "9abcd"},
+			after:  []string{"0123", "4578", "9abcd"},
+			offset: 6,
+			length: 1,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			var v View
+			for _, s := range tc.before {
+				v.AppendOwned([]byte(s))
+			}
+
+			if ok := v.Remove(tc.offset, tc.length); !ok {
+				t.Errorf("v.Remove(%d, %d) = false, want true", tc.offset, tc.length)
+			}
+
+			var got []string
+			for buf := v.data.Front(); buf != nil; buf = buf.Next() {
+				got = append(got, string(buf.ReadSlice()))
+			}
+			if !reflect.DeepEqual(got, tc.after) {
+				t.Errorf("after = %v; want %v", got, tc.after)
+			}
+		})
+	}
+
+	// Failure cases
+	for _, tc := range []struct {
+		desc string
+		// before is the contents for each buffer node initially.
+		before []string
+		offset int
+		length int
+	}{
+		{
+			desc:   "offset out-of-range",
+			before: []string{"hello", " world"},
+			offset: -1,
+			length: 3,
+		},
+		{
+			desc:   "length too long",
+			before: []string{"hello", " world"},
+			offset: 0,
+			length: 12,
+		},
+		{
+			desc:   "length too long with positive offset",
+			before: []string{"hello", " world"},
+			offset: 3,
+			length: 9,
+		},
+		{
+			desc:   "length negative",
+			before: []string{"hello", " world"},
+			offset: 0,
+			length: -1,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			var v View
+			for _, s := range tc.before {
+				v.AppendOwned([]byte(s))
+			}
+			if ok := v.Remove(tc.offset, tc.length); ok {
+				t.Errorf("v.Remove(%d, %d) = true, want false", tc.offset, tc.length)
+			}
+		})
+	}
+}
+
+func TestViewSubApply(t *testing.T) {
+	var v View
+	v.AppendOwned([]byte("0123"))
+	v.AppendOwned([]byte("45678"))
+	v.AppendOwned([]byte("9abcd"))
+
+	data := []byte("0123456789abcd")
+
+	for i := 0; i <= len(data); i++ {
+		for j := i; j <= len(data); j++ {
+			t.Run(fmt.Sprintf("SubApply(%d,%d)", i, j), func(t *testing.T) {
+				var got []byte
+				v.SubApply(i, j-i, func(b []byte) {
+					got = append(got, b...)
+				})
+				if want := data[i:j]; !bytes.Equal(got, want) {
+					t.Errorf("got = %q; want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
 func doSaveAndLoad(t *testing.T, toSave, toLoad *View) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -540,5 +815,86 @@ func TestSaveRestoreView(t *testing.T) {
 	}
 	if got := v.Flatten(); !bytes.Equal(got, data) {
 		t.Errorf("v.Flatten() = %x, want %x", got, data)
+	}
+}
+
+func TestRangeIntersect(t *testing.T) {
+	for _, tc := range []struct {
+		desc       string
+		x, y, want Range
+	}{
+		{
+			desc: "empty intersects empty",
+		},
+		{
+			desc: "empty intersection",
+			x:    Range{end: 10},
+			y:    Range{begin: 10, end: 20},
+		},
+		{
+			desc: "some intersection",
+			x:    Range{begin: 5, end: 20},
+			y:    Range{end: 10},
+			want: Range{begin: 5, end: 10},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := tc.x.Intersect(tc.y); got != tc.want {
+				t.Errorf("(%#v).Intersect(%#v) = %#v; want %#v", tc.x, tc.y, got, tc.want)
+			}
+			if got := tc.y.Intersect(tc.x); got != tc.want {
+				t.Errorf("(%#v).Intersect(%#v) = %#v; want %#v", tc.y, tc.x, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRangeOffset(t *testing.T) {
+	for _, tc := range []struct {
+		input  Range
+		offset int
+		output Range
+	}{
+		{
+			input:  Range{},
+			offset: 0,
+			output: Range{},
+		},
+		{
+			input:  Range{},
+			offset: -1,
+			output: Range{begin: -1, end: -1},
+		},
+		{
+			input:  Range{begin: 10, end: 20},
+			offset: -1,
+			output: Range{begin: 9, end: 19},
+		},
+		{
+			input:  Range{begin: 10, end: 20},
+			offset: 2,
+			output: Range{begin: 12, end: 22},
+		},
+	} {
+		if got := tc.input.Offset(tc.offset); got != tc.output {
+			t.Errorf("(%#v).Offset(%d) = %#v, want %#v", tc.input, tc.offset, got, tc.output)
+		}
+	}
+}
+
+func TestRangeLen(t *testing.T) {
+	for _, tc := range []struct {
+		r    Range
+		want int
+	}{
+		{r: Range{}, want: 0},
+		{r: Range{begin: 1, end: 1}, want: 0},
+		{r: Range{begin: -1, end: -1}, want: 0},
+		{r: Range{end: 10}, want: 10},
+		{r: Range{begin: 5, end: 10}, want: 5},
+	} {
+		if got := tc.r.Len(); got != tc.want {
+			t.Errorf("(%#v).Len() = %d, want %d", tc.r, got, tc.want)
+		}
 	}
 }
