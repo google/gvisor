@@ -224,11 +224,11 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 		t.Fatalf("host2Stack.CreateNIC(%d, _): %s", Host2NICID, err)
 	}
 
-	if err := routerStack.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-		t.Fatalf("routerStack.SetForwarding(%d): %s", ipv4.ProtocolNumber, err)
+	if err := routerStack.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+		t.Fatalf("routerStack.SetForwardingDefaultAndAllNICs(%d): %s", ipv4.ProtocolNumber, err)
 	}
-	if err := routerStack.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-		t.Fatalf("routerStack.SetForwarding(%d): %s", ipv6.ProtocolNumber, err)
+	if err := routerStack.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+		t.Fatalf("routerStack.SetForwardingDefaultAndAllNICs(%d): %s", ipv6.ProtocolNumber, err)
 	}
 
 	if err := host1Stack.AddProtocolAddress(Host1NICID, Host1IPv4Addr); err != nil {

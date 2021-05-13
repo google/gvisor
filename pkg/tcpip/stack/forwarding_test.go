@@ -367,8 +367,10 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (ep1, ep2 *f
 		}},
 	})
 
-	// Enable forwarding.
-	s.SetForwarding(proto.Number(), true)
+	protoNum := proto.Number()
+	if err := s.SetForwardingDefaultAndAllNICs(protoNum, true); err != nil {
+		t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", protoNum, err)
+	}
 
 	// NIC 1 has the link address "a", and added the network address 1.
 	ep1 = &fwdTestLinkEndpoint{

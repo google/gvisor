@@ -673,8 +673,9 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 					NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 				})
 				if isRouter {
-					// Enabling forwarding makes the stack act as a router.
-					s.SetForwarding(ProtocolNumber, true)
+					if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
+						t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
+					}
 				}
 				if err := s.CreateNIC(nicID, e); err != nil {
 					t.Fatalf("CreateNIC(_, _) = %s", err)

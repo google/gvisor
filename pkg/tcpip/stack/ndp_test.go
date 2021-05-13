@@ -1220,8 +1220,8 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 							NDPDisp:    &ndpDisp,
 						})},
 					})
-					if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
-						t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+					if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+						t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
 					}
 
 					e := channel.New(1, 1280, linkAddr1)
@@ -1424,8 +1424,8 @@ func TestRouterDiscovery(t *testing.T) {
 			}
 		}
 
-		if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
-			t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+		if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+			t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
 		}
 
 		if err := s.CreateNIC(1, e); err != nil {
@@ -1626,8 +1626,8 @@ func TestPrefixDiscovery(t *testing.T) {
 			}
 		}
 
-		if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
-			t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+		if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+			t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
 		}
 
 		// Receive an RA with prefix1 in an NDP Prefix Information option (PI)
@@ -1893,8 +1893,8 @@ func TestAutoGenAddr(t *testing.T) {
 			})},
 		})
 
-		if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
-			t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+		if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+			t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
 		}
 
 		if err := s.CreateNIC(1, e); err != nil {
@@ -4771,8 +4771,8 @@ func TestNoCleanupNDPStateWhenForwardingEnabled(t *testing.T) {
 	// or routers, or auto-generated address.
 	for _, forwarding := range [...]bool{true, false} {
 		t.Run(fmt.Sprintf("Transition forwarding to %t", forwarding), func(t *testing.T) {
-			if err := s.SetForwarding(ipv6.ProtocolNumber, forwarding); err != nil {
-				t.Fatalf("SetForwarding(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+			if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
 			}
 			select {
 			case e := <-ndpDisp.routerC:
@@ -5353,8 +5353,8 @@ func TestRouterSolicitation(t *testing.T) {
 			name:      "Handle RAs always",
 			handleRAs: ipv6.HandlingRAsAlwaysEnabled,
 			afterFirstRS: func(t *testing.T, s *stack.Stack) {
-				if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-					t.Fatalf("SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
 				}
 			},
 		},
@@ -5481,11 +5481,17 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			name: "Enable and disable forwarding",
 			startFn: func(t *testing.T, s *stack.Stack) {
 				t.Helper()
-				s.SetForwarding(ipv6.ProtocolNumber, false)
+
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, false); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, false): %s", ipv6.ProtocolNumber, err)
+				}
 			},
 			stopFn: func(t *testing.T, s *stack.Stack, _ bool) {
 				t.Helper()
-				s.SetForwarding(ipv6.ProtocolNumber, true)
+
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
+				}
 			},
 		},
 

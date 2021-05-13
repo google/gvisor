@@ -389,8 +389,8 @@ func TestForwarding(t *testing.T) {
 				},
 			})
 
-			if err := s.SetForwarding(header.IPv4ProtocolNumber, true); err != nil {
-				t.Fatalf("SetForwarding(%d, true): %s", header.IPv4ProtocolNumber, err)
+			if err := s.SetForwardingDefaultAndAllNICs(header.IPv4ProtocolNumber, true); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", header.IPv4ProtocolNumber, err)
 			}
 
 			ipHeaderLength := header.IPv4MinimumSize + len(test.options)

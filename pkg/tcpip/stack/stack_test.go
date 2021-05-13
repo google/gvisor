@@ -4220,8 +4220,8 @@ func TestFindRouteWithForwarding(t *testing.T) {
 				t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, test.netCfg.proto, test.netCfg.nic2Addr, err)
 			}
 
-			if err := s.SetForwarding(test.netCfg.proto, test.forwardingEnabled); err != nil {
-				t.Fatalf("SetForwarding(%d, %t): %s", test.netCfg.proto, test.forwardingEnabled, err)
+			if err := s.SetForwardingDefaultAndAllNICs(test.netCfg.proto, test.forwardingEnabled); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", test.netCfg.proto, test.forwardingEnabled, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{{Destination: test.netCfg.remoteAddr.WithPrefix().Subnet(), NIC: nicID2}})
@@ -4275,8 +4275,8 @@ func TestFindRouteWithForwarding(t *testing.T) {
 
 			// Disabling forwarding when the route is dependent on forwarding being
 			// enabled should make the route invalid.
-			if err := s.SetForwarding(test.netCfg.proto, false); err != nil {
-				t.Fatalf("SetForwarding(%d, false): %s", test.netCfg.proto, err)
+			if err := s.SetForwardingDefaultAndAllNICs(test.netCfg.proto, false); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, false): %s", test.netCfg.proto, err)
 			}
 			{
 				err := send(r, data)
