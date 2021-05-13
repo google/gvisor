@@ -92,7 +92,7 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	fmt.Fprintln(&comment, "There are TODOs still referencing this issue:")
 	for _, l := range todo.Locations {
 		fmt.Fprintf(&comment,
-			"1. [%s:%d](https://github.com/%s/%s/blob/HEAD/%s#%d): %s\n",
+			"1. [%s:%d](https://github.com/%s/%s/blob/HEAD/%s#L%d): %s\n",
 			l.File, l.Line, b.owner, b.repo, l.File, l.Line, l.Comment)
 	}
 	fmt.Fprintf(&comment,
