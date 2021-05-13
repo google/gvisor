@@ -1472,13 +1472,19 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffe
 			// If the last header in the payload isn't a known IPv6 extension header,
 			// handle it as if it is transport layer data.
 
+			// Calculate the number of octets parsed from data. We want to remove all
+			// the data except the unparsed portion located at the end, which its size
+			// is extHdr.Buf.Size().
+			trim := pkt.Data().Size() - extHdr.Buf.Size()
+
 			// For unfragmented packets, extHdr still contains the transport header.
 			// Get rid of it.
 			//
 			// For reassembled fragments, pkt.TransportHeader is unset, so this is a
 			// no-op and pkt.Data begins with the transport header.
-			extHdr.Buf.TrimFront(pkt.TransportHeader().View().Size())
-			pkt.Data().Replace(extHdr.Buf)
+			trim += pkt.TransportHeader().View().Size()
+
+			pkt.Data().DeleteFront(trim)
 
 			stats.PacketsDelivered.Increment()
 			if p := tcpip.TransportProtocolNumber(extHdr.Identifier); p == header.ICMPv6ProtocolNumber {
