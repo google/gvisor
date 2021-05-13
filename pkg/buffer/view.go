@@ -19,6 +19,9 @@ import (
 	"io"
 )
 
+// Buffer is an alias to View.
+type Buffer = View
+
 // View is a non-linear buffer.
 //
 // All methods are thread compatible.
@@ -37,6 +40,51 @@ func (v *View) TrimFront(count int64) {
 	} else {
 		v.advanceRead(count)
 	}
+}
+
+// Remove deletes data at specified location in v. It returns false if specified
+// range does not fully reside in v.
+func (v *View) Remove(offset, length int) bool {
+	if offset < 0 || length < 0 {
+		return false
+	}
+	tgt := Range{begin: offset, end: offset + length}
+	if tgt.Len() != tgt.Intersect(Range{end: int(v.size)}).Len() {
+		return false
+	}
+
+	// Scan through each buffer and remove intersections.
+	var curr Range
+	for buf := v.data.Front(); buf != nil; {
+		origLen := buf.ReadSize()
+		curr.end = curr.begin + origLen
+
+		if x := curr.Intersect(tgt); x.Len() > 0 {
+			if !buf.Remove(x.Offset(-curr.begin)) {
+				panic("buf.Remove() failed")
+			}
+			if buf.ReadSize() == 0 {
+				// buf fully removed, removing it from the list.
+				oldBuf := buf
+				buf = buf.Next()
+				v.data.Remove(oldBuf)
+				v.pool.put(oldBuf)
+			} else {
+				// Only partial data intersects, moving on to next one.
+				buf = buf.Next()
+			}
+			v.size -= int64(x.Len())
+		} else {
+			// This buffer is not in range, moving on to next one.
+			buf = buf.Next()
+		}
+
+		curr.begin += origLen
+		if curr.begin >= tgt.end {
+			break
+		}
+	}
+	return true
 }
 
 // ReadAt implements io.ReaderAt.ReadAt.
@@ -81,7 +129,6 @@ func (v *View) advanceRead(count int64) {
 		oldBuf := buf
 		buf = buf.Next() // Iterate.
 		v.data.Remove(oldBuf)
-		oldBuf.Reset()
 		v.pool.put(oldBuf)
 
 		// Update counts.
@@ -118,7 +165,6 @@ func (v *View) Truncate(length int64) {
 
 		// Drop the buffer completely; see above.
 		v.data.Remove(buf)
-		buf.Reset()
 		v.pool.put(buf)
 		v.size -= sz
 	}
@@ -224,6 +270,78 @@ func (v *View) Append(data []byte) {
 	}
 }
 
+// AppendOwned takes ownership of data and appends it to v.
+func (v *View) AppendOwned(data []byte) {
+	if len(data) > 0 {
+		buf := v.pool.getNoInit()
+		buf.initWithData(data)
+		v.data.PushBack(buf)
+		v.size += int64(len(data))
+	}
+}
+
+// PullUp makes the specified range contiguous and returns the backing memory.
+func (v *View) PullUp(offset, length int) ([]byte, bool) {
+	if length == 0 {
+		return nil, true
+	}
+	tgt := Range{begin: offset, end: offset + length}
+	if tgt.Intersect(Range{end: int(v.size)}).Len() != length {
+		return nil, false
+	}
+
+	curr := Range{}
+	buf := v.data.Front()
+	for ; buf != nil; buf = buf.Next() {
+		origLen := buf.ReadSize()
+		curr.end = curr.begin + origLen
+
+		if x := curr.Intersect(tgt); x.Len() == tgt.Len() {
+			// buf covers the whole requested target range.
+			sub := x.Offset(-curr.begin)
+			return buf.ReadSlice()[sub.begin:sub.end], true
+		} else if x.Len() > 0 {
+			// buf is pointing at the starting buffer we want to merge.
+			break
+		}
+
+		curr.begin += origLen
+	}
+
+	// Calculate the total merged length.
+	totLen := 0
+	for n := buf; n != nil; n = n.Next() {
+		totLen += n.ReadSize()
+		if curr.begin+totLen >= tgt.end {
+			break
+		}
+	}
+
+	// Merge the buffers.
+	data := make([]byte, totLen)
+	off := 0
+	for n := buf; n != nil && off < totLen; {
+		copy(data[off:], n.ReadSlice())
+		off += n.ReadSize()
+
+		// Remove buffers except for the first one, which will be reused.
+		if n == buf {
+			n = n.Next()
+		} else {
+			old := n
+			n = n.Next()
+			v.data.Remove(old)
+			v.pool.put(old)
+		}
+	}
+
+	// Update the first buffer with merged data.
+	buf.initWithData(data)
+
+	r := tgt.Offset(-curr.begin)
+	return buf.data[r.begin:r.end], true
+}
+
 // Flatten returns a flattened copy of this data.
 //
 // This method should not be used in any performance-sensitive paths. It may
@@ -264,6 +382,27 @@ func (v *View) Copy() (other View) {
 func (v *View) Apply(fn func([]byte)) {
 	for buf := v.data.Front(); buf != nil; buf = buf.Next() {
 		fn(buf.ReadSlice())
+	}
+}
+
+// SubApply applies fn to a given range of data in v. Any part of the range
+// outside of v is ignored.
+func (v *View) SubApply(offset, length int, fn func([]byte)) {
+	for buf := v.data.Front(); length > 0 && buf != nil; buf = buf.Next() {
+		d := buf.ReadSlice()
+		if offset >= len(d) {
+			offset -= len(d)
+			continue
+		}
+		if offset > 0 {
+			d = d[offset:]
+			offset = 0
+		}
+		if length < len(d) {
+			d = d[:length]
+		}
+		fn(d)
+		length -= len(d)
 	}
 }
 
@@ -388,4 +527,40 @@ func (v *View) ReadToWriter(w io.Writer, count int64) (int64, error) {
 		offset = 0
 	}
 	return done, err
+}
+
+// A Range specifies a range of buffer.
+type Range struct {
+	begin int
+	end   int
+}
+
+// Intersect returns the intersection of x and y.
+func (x Range) Intersect(y Range) Range {
+	if x.begin < y.begin {
+		x.begin = y.begin
+	}
+	if x.end > y.end {
+		x.end = y.end
+	}
+	if x.begin >= x.end {
+		return Range{}
+	}
+	return x
+}
+
+// Offset returns x offset by off.
+func (x Range) Offset(off int) Range {
+	x.begin += off
+	x.end += off
+	return x
+}
+
+// Len returns the length of x.
+func (x Range) Len() int {
+	l := x.end - x.begin
+	if l < 0 {
+		l = 0
+	}
+	return l
 }
