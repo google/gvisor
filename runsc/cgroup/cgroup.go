@@ -342,25 +342,31 @@ func new(pid, cgroupsPath string) (*Cgroup, error) {
 // already exists, it means that the caller has already provided a
 // pre-configured cgroups, and 'res' is ignored.
 func (c *Cgroup) Install(res *specs.LinuxResources) error {
-	log.Debugf("Creating cgroup %q", c.Name)
+	log.Debugf("Installing cgroup path %q", c.Name)
 
-	// The Cleanup object cleans up partially created cgroups when an error occurs.
-	// Errors occuring during cleanup itself are ignored.
+	// Clean up partially created cgroups on error. Errors during cleanup itself
+	// are ignored.
 	clean := cleanup.Make(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
-	for key, ctrlr := range controllers {
+	// Controllers can be symlinks to a group of controllers (e.g. cpu,cpuacct).
+	// So first check what directories need to be created. Otherwise, when
+	// the directory for one of the controllers in a group is created, it will
+	// make it seem like the directory already existed and it's not owned by the
+	// other controllers in the group.
+	var missing []string
+	for key := range controllers {
 		path := c.MakePath(key)
-		if _, err := os.Stat(path); err == nil {
-			// If cgroup has already been created; it has been setup by caller. Don't
-			// make any changes to configuration, just join when sandbox/gofer starts.
-			log.Debugf("Using pre-created cgroup %q", path)
-			continue
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, key)
+		} else {
+			log.Debugf("Using pre-created cgroup %q: %q", key, path)
 		}
-
-		// Mark that cgroup resources are owned by me.
-		c.Own[key] = true
-
+	}
+	for _, key := range missing {
+		ctrlr := controllers[key]
+		path := c.MakePath(key)
+		log.Debugf("Creating cgroup %q: %q", key, path)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			if ctrlr.optional() && errors.Is(err, unix.EROFS) {
 				if err := ctrlr.skip(res); err != nil {
@@ -371,6 +377,9 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 			}
 			return err
 		}
+
+		// Only set controllers that were created by me.
+		c.Own[key] = true
 		if err := ctrlr.set(res, path); err != nil {
 			return err
 		}
