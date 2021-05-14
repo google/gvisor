@@ -261,7 +261,7 @@ func (pk *PacketBuffer) consume(typ headerType, size int) (v tcpipbuffer.View, c
 	if h.length > 0 {
 		panic(fmt.Sprintf("consume must not be called twice: type %s", typ))
 	}
-	if pk.headerOffset()+pk.consumed+size > int(pk.buf.Size()) {
+	if pk.reserved+pk.consumed+size > int(pk.buf.Size()) {
 		return nil, false
 	}
 	h.offset = pk.consumed
