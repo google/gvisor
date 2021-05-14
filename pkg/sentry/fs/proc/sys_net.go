@@ -403,7 +403,7 @@ type ipForwarding struct {
 	// enabled stores the IPv4 forwarding state on save.
 	// We must save/restore this here, since a netstack instance
 	// is created on restore.
-	enabled *bool
+	enabled bool
 }
 
 func newIPForwardingInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
@@ -461,13 +461,8 @@ func (f *ipForwardingFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		return 0, io.EOF
 	}
 
-	if f.ipf.enabled == nil {
-		enabled := f.stack.Forwarding(ipv4.ProtocolNumber)
-		f.ipf.enabled = &enabled
-	}
-
 	val := "0\n"
-	if *f.ipf.enabled {
+	if f.ipf.enabled {
 		// Technically, this is not quite compatible with Linux. Linux
 		// stores these as an integer, so if you write "2" into
 		// ip_forward, you should get 2 back.
@@ -494,11 +489,8 @@ func (f *ipForwardingFile) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	if err != nil {
 		return n, err
 	}
-	if f.ipf.enabled == nil {
-		f.ipf.enabled = new(bool)
-	}
-	*f.ipf.enabled = v != 0
-	return n, f.stack.SetForwarding(ipv4.ProtocolNumber, *f.ipf.enabled)
+	f.ipf.enabled = v != 0
+	return n, f.stack.SetForwarding(ipv4.ProtocolNumber, f.ipf.enabled)
 }
 
 // portRangeInode implements fs.InodeOperations. It provides and allows
