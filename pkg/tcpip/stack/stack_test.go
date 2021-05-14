@@ -84,7 +84,8 @@ type fakeNetworkEndpoint struct {
 	mu struct {
 		sync.RWMutex
 
-		enabled bool
+		enabled    bool
+		forwarding bool
 	}
 
 	nic        stack.NetworkInterface
@@ -227,11 +228,6 @@ type fakeNetworkProtocol struct {
 	packetCount     [10]int
 	sendPacketCount [10]int
 	defaultTTL      uint8
-
-	mu struct {
-		sync.RWMutex
-		forwarding bool
-	}
 }
 
 func (*fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -300,15 +296,15 @@ func (*fakeNetworkProtocol) Parse(pkt *stack.PacketBuffer) (tcpip.TransportProto
 	return tcpip.TransportProtocolNumber(hdr[protocolNumberOffset]), true, true
 }
 
-// Forwarding implements stack.ForwardingNetworkProtocol.
-func (f *fakeNetworkProtocol) Forwarding() bool {
+// Forwarding implements stack.ForwardingNetworkEndpoint.
+func (f *fakeNetworkEndpoint) Forwarding() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.mu.forwarding
 }
 
-// SetForwarding implements stack.ForwardingNetworkProtocol.
-func (f *fakeNetworkProtocol) SetForwarding(v bool) {
+// SetForwarding implements stack.ForwardingNetworkEndpoint.
+func (f *fakeNetworkEndpoint) SetForwarding(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mu.forwarding = v

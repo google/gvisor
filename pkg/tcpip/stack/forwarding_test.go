@@ -54,6 +54,11 @@ type fwdTestNetworkEndpoint struct {
 	nic        NetworkInterface
 	proto      *fwdTestNetworkProtocol
 	dispatcher TransportDispatcher
+
+	mu struct {
+		sync.RWMutex
+		forwarding bool
+	}
 }
 
 func (*fwdTestNetworkEndpoint) Enable() tcpip.Error {
@@ -169,11 +174,6 @@ type fwdTestNetworkProtocol struct {
 	addrResolveDelay       time.Duration
 	onLinkAddressResolved  func(*neighborCache, tcpip.Address, tcpip.LinkAddress)
 	onResolveStaticAddress func(tcpip.Address) (tcpip.LinkAddress, bool)
-
-	mu struct {
-		sync.RWMutex
-		forwarding bool
-	}
 }
 
 func (*fwdTestNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -242,16 +242,16 @@ func (*fwdTestNetworkEndpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber
 	return fwdTestNetNumber
 }
 
-// Forwarding implements stack.ForwardingNetworkProtocol.
-func (f *fwdTestNetworkProtocol) Forwarding() bool {
+// Forwarding implements stack.ForwardingNetworkEndpoint.
+func (f *fwdTestNetworkEndpoint) Forwarding() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.mu.forwarding
 
 }
 
-// SetForwarding implements stack.ForwardingNetworkProtocol.
-func (f *fwdTestNetworkProtocol) SetForwarding(v bool) {
+// SetForwarding implements stack.ForwardingNetworkEndpoint.
+func (f *fwdTestNetworkEndpoint) SetForwarding(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mu.forwarding = v

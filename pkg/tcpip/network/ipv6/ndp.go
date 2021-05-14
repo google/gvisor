@@ -705,7 +705,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// per-interface basis; it is a protocol-wide configuration, so we check the
 	// protocol's forwarding flag to determine if the IPv6 endpoint is forwarding
 	// packets.
-	if !ndp.configs.HandleRAs.enabled(ndp.ep.protocol.Forwarding()) {
+	if !ndp.configs.HandleRAs.enabled(ndp.ep.Forwarding()) {
 		ndp.ep.stats.localStats.UnhandledRouterAdvertisements.Increment()
 		return
 	}
@@ -1710,7 +1710,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 		return
 	}
 
-	if !ndp.configs.HandleRAs.enabled(ndp.ep.protocol.Forwarding()) {
+	if !ndp.configs.HandleRAs.enabled(ndp.ep.Forwarding()) {
 		return
 	}
 

@@ -732,15 +732,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 }
 
 func TestNDPValidation(t *testing.T) {
-	setup := func(t *testing.T) (*stack.Stack, stack.NetworkEndpoint) {
-		t.Helper()
-
-		// Create a stack with the assigned link-local address lladdr0
-		// and an endpoint to lladdr1.
-		s, ep := setupStackAndEndpoint(t, lladdr0, lladdr1)
-
-		return s, ep
-	}
+	const nicID = 1
 
 	handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint) {
 		var extHdrs header.IPv6ExtHdrSerializer
@@ -865,6 +857,11 @@ func TestNDPValidation(t *testing.T) {
 		},
 	}
 
+	subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr0))))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, typ := range types {
 		for _, isRouter := range []bool{false, true} {
 			name := typ.name
@@ -875,13 +872,34 @@ func TestNDPValidation(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				for _, test := range subTests {
 					t.Run(test.name, func(t *testing.T) {
-						s, ep := setup(t)
+						s := stack.New(stack.Options{
+							NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+							TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+						})
 
 						if isRouter {
 							if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
 								t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
 							}
 						}
+
+						if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+							t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+						}
+
+						if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
+							t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, lladdr0, err)
+						}
+
+						ep, err := s.GetNetworkEndpoint(nicID, ProtocolNumber)
+						if err != nil {
+							t.Fatal("cannot find network endpoint instance for IPv6")
+						}
+
+						s.SetRouteTable([]tcpip.Route{{
+							Destination: subnet,
+							NIC:         nicID,
+						}})
 
 						stats := s.Stats().ICMP.V6.PacketsReceived
 						invalid := stats.Invalid
@@ -907,12 +925,12 @@ func TestNDPValidation(t *testing.T) {
 
 						// Invalid count should initially be 0.
 						if got := invalid.Value(); got != 0 {
-							t.Errorf("got invalid = %d, want = 0", got)
+							t.Errorf("got invalid.Value() = %d, want = 0", got)
 						}
 
-						// RouterOnlyPacketsReceivedByHost count should initially be 0.
+						// Should initially not have dropped any packets.
 						if got := routerOnly.Value(); got != 0 {
-							t.Errorf("got RouterOnlyPacketsReceivedByHost = %d, want = 0", got)
+							t.Errorf("got routerOnly.Value() = %d, want = 0", got)
 						}
 
 						if t.Failed() {
@@ -932,18 +950,18 @@ func TestNDPValidation(t *testing.T) {
 							want = 1
 						}
 						if got := invalid.Value(); got != want {
-							t.Errorf("got invalid = %d, want = %d", got, want)
+							t.Errorf("got invalid.Value() = %d, want = %d", got, want)
 						}
 
 						want = 0
 						if test.valid && !isRouter && typ.routerOnly {
-							// RouterOnlyPacketsReceivedByHost count should have increased.
+							// Router only packets are expected to be dropped when operating
+							// as a host.
 							want = 1
 						}
 						if got := routerOnly.Value(); got != want {
-							t.Errorf("got RouterOnlyPacketsReceivedByHost = %d, want = %d", got, want)
+							t.Errorf("got routerOnly.Value() = %d, want = %d", got, want)
 						}
-
 					})
 				}
 			})
