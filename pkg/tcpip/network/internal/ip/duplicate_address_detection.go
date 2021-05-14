@@ -83,6 +83,8 @@ func (d *DAD) Init(protocolMU sync.Locker, configs stack.DADConfigurations, opts
 		panic(fmt.Sprintf("given a non-zero value for NonceSize (%d) but zero for ExtendDADTransmits", opts.NonceSize))
 	}
 
+	configs.Validate()
+
 	*d = DAD{
 		opts:       opts,
 		configs:    configs,
