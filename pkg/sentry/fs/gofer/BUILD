@@ -29,6 +29,7 @@ go_library(
         "//pkg/fd",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
         "//pkg/safemem",

@@ -54,6 +54,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
         "//pkg/refsvfs2",
