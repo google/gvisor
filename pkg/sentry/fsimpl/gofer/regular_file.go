@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -60,6 +61,7 @@ func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, 
 	}
 	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
 		fsmetric.GoferOpensWX.Increment()
+		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
 	if atomic.LoadInt32(&d.mmapFD) >= 0 {
 		fsmetric.GoferOpensHost.Increment()

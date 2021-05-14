@@ -312,7 +312,7 @@ func (w *Watchdog) runTurn() {
 					// New stuck task detected.
 					//
 					// Note that tasks blocked doing IO may be considered stuck in kernel,
-					// unless they are surrounded b
+					// unless they are surrounded by
 					// Task.UninterruptibleSleepStart/Finish.
 					tc = &offender{lastUpdateTime: lastUpdateTime}
 					stuckTasks.Increment()
