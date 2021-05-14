@@ -280,9 +280,18 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 		return matchIfName(inNicName, fl.InputInterface, fl.InputInterfaceInvert)
 	case Output:
 		return matchIfName(outNicName, fl.OutputInterface, fl.OutputInterfaceInvert)
-	case Forward, Postrouting:
-		// TODO(gvisor.dev/issue/170): Add the check for FORWARD and POSTROUTING
-		// hooks after supported.
+	case Forward:
+		if !matchIfName(inNicName, fl.InputInterface, fl.InputInterfaceInvert) {
+			return false
+		}
+
+		if !matchIfName(outNicName, fl.OutputInterface, fl.OutputInterfaceInvert) {
+			return false
+		}
+
+		return true
+	case Postrouting:
+		// TODO(gvisor.dev/issue/170): Add the check for POSTROUTING.
 		return true
 	default:
 		panic(fmt.Sprintf("unknown hook: %d", hook))

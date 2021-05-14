@@ -668,13 +668,23 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		}
 	}
 
+	stk := e.protocol.stack
+
 	// Check if the destination is owned by the stack.
 	if ep := e.protocol.findEndpointWithAddress(dstAddr); ep != nil {
+		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		outNicName := stk.FindNICNameFromID(ep.nic.ID())
+		if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+			// iptables is telling us to drop the packet.
+			e.stats.ip.IPTablesForwardDropped.Increment()
+			return nil
+		}
+
 		ep.handleValidatedPacket(h, pkt)
 		return nil
 	}
 
-	r, err := e.protocol.stack.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
+	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
 	switch err.(type) {
 	case nil:
 	case *tcpip.ErrNoRoute, *tcpip.ErrNetworkUnreachable:
@@ -687,6 +697,14 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 		return &ip.ErrOther{Err: err}
 	}
 	defer r.Release()
+
+	inNicName := stk.FindNICNameFromID(e.nic.ID())
+	outNicName := stk.FindNICNameFromID(r.NICID())
+	if ok := stk.IPTables().Check(stack.Forward, pkt, nil, "" /* preroutingAddr */, inNicName, outNicName); !ok {
+		// iptables is telling us to drop the packet.
+		e.stats.ip.IPTablesForwardDropped.Increment()
+		return nil
+	}
 
 	// We need to do a deep copy of the IP packet because
 	// WriteHeaderIncludedPacket takes ownership of the packet buffer, but we do
@@ -803,6 +821,7 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer) {
 	pkt.NICID = e.nic.ID()
 	stats := e.stats
+	stats.ip.ValidPacketsReceived.Increment()
 
 	srcAddr := h.SourceAddress()
 	dstAddr := h.DestinationAddress()
