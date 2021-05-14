@@ -658,9 +658,9 @@ type IPNetworkEndpointStats interface {
 	IPStats() *tcpip.IPStats
 }
 
-// ForwardingNetworkProtocol is a NetworkProtocol that may forward packets.
-type ForwardingNetworkProtocol interface {
-	NetworkProtocol
+// ForwardingNetworkEndpoint is a network endpoint that may forward packets.
+type ForwardingNetworkEndpoint interface {
+	NetworkEndpoint
 
 	// Forwarding returns the forwarding configuration.
 	Forwarding() bool
