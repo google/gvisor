@@ -132,7 +132,7 @@ func TestConfigureIPForwarding(t *testing.T) {
 		t.Run(c.comment, func(t *testing.T) {
 			s.IPForwarding = c.initial
 
-			file := &ipForwarding{stack: s, enabled: &c.initial}
+			file := &ipForwarding{stack: s, enabled: c.initial}
 
 			// Write the values.
 			src := usermem.BytesIOSequence([]byte(c.str))

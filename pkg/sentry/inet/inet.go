@@ -88,9 +88,6 @@ type Stack interface {
 	// for restoring a stack after a save.
 	RestoreCleanupEndpoints([]stack.TransportEndpoint)
 
-	// Forwarding returns if packet forwarding between NICs is enabled.
-	Forwarding(protocol tcpip.NetworkProtocolNumber) bool
-
 	// SetForwarding enables or disables packet forwarding between NICs.
 	SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error
 

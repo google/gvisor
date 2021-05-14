@@ -365,27 +365,22 @@ func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 }
 
 // ipForwarding implements vfs.WritableDynamicBytesSource for
-// /proc/sys/net/ipv4/ip_forwarding.
+// /proc/sys/net/ipv4/ip_forward.
 //
 // +stateify savable
 type ipForwarding struct {
 	kernfs.DynamicBytesFile
 
 	stack   inet.Stack `state:"wait"`
-	enabled *bool
+	enabled bool
 }
 
 var _ vfs.WritableDynamicBytesSource = (*ipForwarding)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if ipf.enabled == nil {
-		enabled := ipf.stack.Forwarding(ipv4.ProtocolNumber)
-		ipf.enabled = &enabled
-	}
-
 	val := "0\n"
-	if *ipf.enabled {
+	if ipf.enabled {
 		// Technically, this is not quite compatible with Linux. Linux stores these
 		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
 		// Tough luck.
@@ -414,11 +409,8 @@ func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offs
 	if err != nil {
 		return 0, err
 	}
-	if ipf.enabled == nil {
-		ipf.enabled = new(bool)
-	}
-	*ipf.enabled = v != 0
-	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
+	ipf.enabled = v != 0
+	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, ipf.enabled); err != nil {
 		return 0, err
 	}
 	return n, nil
