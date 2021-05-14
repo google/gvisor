@@ -401,3 +401,16 @@ cc_library(
         "@com_google_absl//absl/strings",
     ],
 )
+
+cc_library(
+    name = "verity_util",
+    testonly = 1,
+    srcs = ["verity_util.cc"],
+    hdrs = ["verity_util.h"],
+    deps = [
+        ":fs_util",
+        ":mount_util",
+        ":posix_error",
+        ":temp_path",
+    ],
+)
