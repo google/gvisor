@@ -177,6 +177,7 @@ func DefaultTables() *IPTables {
 		priorities: [NumHooks][]TableID{
 			Prerouting:  {MangleID, NATID},
 			Input:       {NATID, FilterID},
+			Forward:     {FilterID},
 			Output:      {MangleID, NATID, FilterID},
 			Postrouting: {MangleID, NATID},
 		},
