@@ -1601,7 +1601,7 @@ func (e *endpoint) selectWindow() (wnd seqnum.Size) {
 //
 // For large receive buffers, the threshold is aMSS - once reader reads more
 // than aMSS we'll send ACK. For tiny receive buffers, the threshold is half of
-// receive buffer size. This is chosen arbitrairly.
+// receive buffer size. This is chosen arbitrarily.
 // crossed will be true if the window size crossed the ACK threshold.
 // above will be true if the new window is >= ACK threshold and false
 // otherwise.

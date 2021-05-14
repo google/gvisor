@@ -148,6 +148,18 @@ func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 		}
 		newWnd = curWnd
 	}
+
+	// Apply silly-window avoidance when recovering from zero-window situation.
+	// Keep advertising zero receive window up until the new window reaches a
+	// threshold.
+	if r.rcvWnd == 0 && newWnd != 0 {
+		r.ep.rcvQueueInfo.rcvQueueMu.Lock()
+		if crossed, above := r.ep.windowCrossedACKThresholdLocked(int(newWnd), int(r.ep.ops.GetReceiveBufferSize())); !crossed && !above {
+			newWnd = 0
+		}
+		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+	}
+
 	// Stash away the non-scaled receive window as we use it for measuring
 	// receiver's estimated RTT.
 	r.rcvWnd = newWnd

@@ -57,6 +57,11 @@ type DUTUname struct {
 	OperatingSystem string
 }
 
+// IsLinux returns true if we are running natively on Linux.
+func (n *DUTUname) IsLinux() bool {
+	return Native && n.OperatingSystem == "GNU/Linux"
+}
+
 // DUTTestNet describes the test network setup on dut and how the testbench
 // should connect with an existing DUT.
 type DUTTestNet struct {
