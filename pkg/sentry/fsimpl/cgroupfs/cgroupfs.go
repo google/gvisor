@@ -109,7 +109,7 @@ type InternalData struct {
 	DefaultControlValues map[string]int64
 }
 
-// filesystem implements vfs.FilesystemImpl.
+// filesystem implements vfs.FilesystemImpl and kernel.cgroupFS.
 //
 // +stateify savable
 type filesystem struct {
@@ -137,6 +137,11 @@ type filesystem struct {
 	// tasksMu serializes task membership changes across all cgroups within a
 	// filesystem.
 	tasksMu sync.RWMutex `state:"nosave"`
+}
+
+// InitializeHierarchyID implements kernel.cgroupFS.InitializeHierarchyID.
+func (fs *filesystem) InitializeHierarchyID(hid uint32) {
+	fs.hierarchyID = hid
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -284,14 +289,12 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Register controllers. The registry may be modified concurrently, so if we
 	// get an error, we raced with someone else who registered the same
 	// controllers first.
-	hid, err := r.Register(fs.kcontrollers)
-	if err != nil {
+	if err := r.Register(fs.kcontrollers, fs); err != nil {
 		ctx.Infof("cgroupfs.FilesystemType.GetFilesystem: failed to register new hierarchy with controllers %v: %v", wantControllers, err)
 		rootD.DecRef(ctx)
 		fs.VFSFilesystem().DecRef(ctx)
 		return nil, nil, syserror.EBUSY
 	}
-	fs.hierarchyID = hid
 
 	// Move all existing tasks to the root of the new hierarchy.
 	k.PopulateNewCgroupHierarchy(fs.rootCgroup())

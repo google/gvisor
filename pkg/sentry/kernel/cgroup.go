@@ -48,10 +48,6 @@ type CgroupController interface {
 	// attached to. Returned value is valid for the lifetime of the controller.
 	HierarchyID() uint32
 
-	// Filesystem returns the filesystem this controller is attached to.
-	// Returned value is valid for the lifetime of the controller.
-	Filesystem() *vfs.Filesystem
-
 	// RootCgroup returns the root cgroup for this controller. Returned value is
 	// valid for the lifetime of the controller.
 	RootCgroup() Cgroup
@@ -124,6 +120,19 @@ func (h *hierarchy) match(ctypes []CgroupControllerType) bool {
 	return true
 }
 
+// cgroupFS is the public interface to cgroupfs. This lets the kernel package
+// refer to cgroupfs.filesystem methods without directly depending on the
+// cgroupfs package, which would lead to a circular dependency.
+type cgroupFS interface {
+	// Returns the vfs.Filesystem for the cgroupfs.
+	VFSFilesystem() *vfs.Filesystem
+
+	// InitializeHierarchyID sets the hierarchy ID for this filesystem during
+	// filesystem creation. May only be called before the filesystem is visible
+	// to the vfs layer.
+	InitializeHierarchyID(hid uint32)
+}
+
 // CgroupRegistry tracks the active set of cgroup controllers on the system.
 //
 // +stateify savable
@@ -182,31 +191,35 @@ func (r *CgroupRegistry) FindHierarchy(ctypes []CgroupControllerType) *vfs.Files
 
 // Register registers the provided set of controllers with the registry as a new
 // hierarchy. If any controller is already registered, the function returns an
-// error without modifying the registry. The hierarchy can be later referenced
-// by the returned id.
-func (r *CgroupRegistry) Register(cs []CgroupController) (uint32, error) {
+// error without modifying the registry. Register sets the hierarchy ID for the
+// filesystem on success.
+func (r *CgroupRegistry) Register(cs []CgroupController, fs cgroupFS) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if len(cs) == 0 {
-		return InvalidCgroupHierarchyID, fmt.Errorf("can't register hierarchy with no controllers")
+		return fmt.Errorf("can't register hierarchy with no controllers")
 	}
 
 	for _, c := range cs {
 		if _, ok := r.controllers[c.Type()]; ok {
-			return InvalidCgroupHierarchyID, fmt.Errorf("controllers may only be mounted on a single hierarchy")
+			return fmt.Errorf("controllers may only be mounted on a single hierarchy")
 		}
 	}
 
 	hid, err := r.nextHierarchyID()
 	if err != nil {
-		return hid, err
+		return err
 	}
+
+	// Must not fail below here, once we publish the hierarchy ID.
+
+	fs.InitializeHierarchyID(hid)
 
 	h := hierarchy{
 		id:          hid,
 		controllers: make(map[CgroupControllerType]CgroupController),
-		fs:          cs[0].Filesystem(),
+		fs:          fs.VFSFilesystem(),
 	}
 	for _, c := range cs {
 		n := c.Type()
@@ -214,7 +227,7 @@ func (r *CgroupRegistry) Register(cs []CgroupController) (uint32, error) {
 		h.controllers[n] = c
 	}
 	r.hierarchies[hid] = h
-	return hid, nil
+	return nil
 }
 
 // Unregister removes a previously registered hierarchy from the registry. If
@@ -253,6 +266,11 @@ func (r *CgroupRegistry) computeInitialGroups(inherit map[Cgroup]struct{}) map[C
 	for name, ctl := range r.controllers {
 		if _, ok := ctlSet[name]; !ok {
 			cg := ctl.RootCgroup()
+			// Multiple controllers may share the same hierarchy, so may have
+			// the same root cgroup. Grab a single ref per hierarchy root.
+			if _, ok := cgset[cg]; ok {
+				continue
+			}
 			cg.IncRef() // Ref transferred to caller.
 			cgset[cg] = struct{}{}
 		}

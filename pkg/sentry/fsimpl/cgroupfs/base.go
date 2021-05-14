@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -66,11 +65,6 @@ func (c *controllerCommon) NumCgroups() uint64 {
 // Controllers are currently always enabled.
 func (c *controllerCommon) Enabled() bool {
 	return true
-}
-
-// Filesystem implements kernel.CgroupController.Filesystem.
-func (c *controllerCommon) Filesystem() *vfs.Filesystem {
-	return c.fs.VFSFilesystem()
 }
 
 // RootCgroup implements kernel.CgroupController.RootCgroup.
