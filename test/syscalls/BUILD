@@ -313,6 +313,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:verity_mmap_test",
+)
+
+syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:mount_test",
 )
