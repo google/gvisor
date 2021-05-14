@@ -316,13 +316,11 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 	})
 }
 
-// RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
-// the provided endpoint.
-func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func rxICMPv4Echo(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) {
 	totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
 	hdr := buffer.NewPrependable(totalLen)
 	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
-	pkt.SetType(header.ICMPv4Echo)
+	pkt.SetType(ty)
 	pkt.SetCode(header.ICMPv4UnusedCode)
 	pkt.SetChecksum(0)
 	pkt.SetChecksum(^header.Checksum(pkt, 0))
@@ -341,13 +339,23 @@ func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 	}))
 }
 
-// RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on
+// RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
 // the provided endpoint.
-func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+	rxICMPv4Echo(e, src, dst, ttl, header.ICMPv4Echo)
+}
+
+// RxICMPv4EchoReply constructs and injects an ICMPv4 echo reply packet on
+// the provided endpoint.
+func RxICMPv4EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+	rxICMPv4Echo(e, src, dst, ttl, header.ICMPv4EchoReply)
+}
+
+func rxICMPv6Echo(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8, ty header.ICMPv6Type) {
 	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
 	hdr := buffer.NewPrependable(totalLen)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
-	pkt.SetType(header.ICMPv6EchoRequest)
+	pkt.SetType(ty)
 	pkt.SetCode(header.ICMPv6UnusedCode)
 	pkt.SetChecksum(0)
 	pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
@@ -367,4 +375,16 @@ func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Data: hdr.View().ToVectorisedView(),
 	}))
+}
+
+// RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on
+// the provided endpoint.
+func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+	rxICMPv6Echo(e, src, dst, ttl, header.ICMPv6EchoRequest)
+}
+
+// RxICMPv6EchoReply constructs and injects an ICMPv6 echo reply packet on
+// the provided endpoint.
+func RxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+	rxICMPv6Echo(e, src, dst, ttl, header.ICMPv6EchoReply)
 }

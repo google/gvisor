@@ -31,12 +31,14 @@ go_test(
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/tests/utils",
+        "//pkg/tcpip/testutil",
         "//pkg/tcpip/transport/udp",
     ],
 )

@@ -1571,6 +1571,10 @@ type IPStats struct {
 	// PacketsReceived is the number of IP packets received from the link layer.
 	PacketsReceived *StatCounter
 
+	// ValidPacketsReceived is the number of valid IP packets that reached the IP
+	// layer.
+	ValidPacketsReceived *StatCounter
+
 	// DisabledPacketsReceived is the number of IP packets received from the link
 	// layer when the IP layer is disabled.
 	DisabledPacketsReceived *StatCounter
@@ -1609,6 +1613,10 @@ type IPStats struct {
 	// IPTablesInputDropped is the number of IP packets dropped in the Input
 	// chain.
 	IPTablesInputDropped *StatCounter
+
+	// IPTablesForwardDropped is the number of IP packets dropped in the Forward
+	// chain.
+	IPTablesForwardDropped *StatCounter
 
 	// IPTablesOutputDropped is the number of IP packets dropped in the Output
 	// chain.
