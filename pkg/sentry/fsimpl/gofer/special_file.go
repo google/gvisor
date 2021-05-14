@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
@@ -101,6 +102,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 	d.fs.syncMu.Unlock()
 	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
 		fsmetric.GoferOpensWX.Increment()
+		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
 	if h.fd >= 0 {
 		fsmetric.GoferOpensHost.Increment()

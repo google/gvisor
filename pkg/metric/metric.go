@@ -36,10 +36,17 @@ var (
 	// new metric after initialization.
 	ErrInitializationDone = errors.New("metric cannot be created after initialization is complete")
 
+	// createdSentryMetrics indicates that the sentry metrics are created.
+	createdSentryMetrics = false
+
 	// WeirdnessMetric is a metric with fields created to track the number
 	// of weird occurrences such as time fallback, partial_result and
 	// vsyscall count.
 	WeirdnessMetric *Uint64Metric
+
+	// SuspiciousOperationsMetric is a metric with fields created to detect
+	// operations such as opening an executable file to write from a gofer.
+	SuspiciousOperationsMetric *Uint64Metric
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
@@ -388,13 +395,21 @@ func EmitMetricUpdate() {
 
 // CreateSentryMetrics creates the sentry metrics during kernel initialization.
 func CreateSentryMetrics() {
-	if WeirdnessMetric != nil {
+	if createdSentryMetrics {
 		return
 	}
 
-	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result and vsyscalls invoked in the sandbox",
+	createdSentryMetrics = true
+
+	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result and vsyscalls invoked in the sandbox.",
 		Field{
 			name:          "weirdness_type",
 			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count"},
+		})
+
+	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
+		Field{
+			name:          "operation_type",
+			allowedValues: []string{"opened_write_execute_file"},
 		})
 }
