@@ -154,11 +154,6 @@ func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
 func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
-// Forwarding implements inet.Stack.Forwarding.
-func (s *TestStack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
-	return s.IPForwarding
-}
-
 // SetForwarding implements inet.Stack.SetForwarding.
 func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
 	s.IPForwarding = enable

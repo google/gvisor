@@ -47,9 +47,7 @@ func (s *tcpSack) afterLoad() {
 
 // afterLoad is invoked by stateify.
 func (ipf *ipForwarding) afterLoad() {
-	if ipf.enabled != nil {
-		if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
-			panic(fmt.Sprintf("failed to set IPv4 forwarding [%v]: %v", *ipf.enabled, err))
-		}
+	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, ipf.enabled); err != nil {
+		panic(fmt.Sprintf("ipf.stack.SetForwarding(%d, %t): %s", ipv4.ProtocolNumber, ipf.enabled, err))
 	}
 }
