@@ -446,7 +446,7 @@ func (r *Route) isValidForOutgoingRLocked() bool {
 
 	// If the source NIC and outgoing NIC are different, make sure the stack has
 	// forwarding enabled, or the packet will be handled locally.
-	if r.outgoingNIC != r.localAddressNIC && !r.outgoingNIC.stack.Forwarding(r.NetProto()) && (!r.outgoingNIC.stack.handleLocal || !r.outgoingNIC.hasAddress(r.NetProto(), r.RemoteAddress())) {
+	if r.outgoingNIC != r.localAddressNIC && !isNICForwarding(r.localAddressNIC, r.NetProto()) && (!r.outgoingNIC.stack.handleLocal || !r.outgoingNIC.hasAddress(r.NetProto(), r.RemoteAddress())) {
 		return false
 	}
 
