@@ -961,7 +961,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		return &fd.vfsfd, nil
 	case linux.S_IFLNK:
-		// Can't open symlinks without O_PATH (which is unimplemented).
+		// Can't open symlinks without O_PATH, which is handled at the VFS layer.
 		return nil, syserror.ELOOP
 	case linux.S_IFSOCK:
 		if d.isSynthetic() {

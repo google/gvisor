@@ -413,6 +413,11 @@ type LockFD struct {
 	locks *FileLocks
 }
 
+// SupportsLocks implements FileDescriptionImpl.SupportsLocks.
+func (LockFD) SupportsLocks() bool {
+	return true
+}
+
 // Init initializes fd with FileLocks to use.
 func (fd *LockFD) Init(locks *FileLocks) {
 	fd.locks = locks
@@ -423,28 +428,28 @@ func (fd *LockFD) Locks() *FileLocks {
 	return fd.locks
 }
 
-// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
+// LockBSD implements FileDescriptionImpl.LockBSD.
 func (fd *LockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
 	return fd.locks.LockBSD(ctx, uid, ownerPID, t, block)
 }
 
-// UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
+// UnlockBSD implements FileDescriptionImpl.UnlockBSD.
 func (fd *LockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 	fd.locks.UnlockBSD(uid)
 	return nil
 }
 
-// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+// LockPOSIX implements FileDescriptionImpl.LockPOSIX.
 func (fd *LockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
 	return fd.locks.LockPOSIX(ctx, uid, ownerPID, t, r, block)
 }
 
-// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+// UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
 func (fd *LockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
 	return fd.locks.UnlockPOSIX(ctx, uid, r)
 }
 
-// TestPOSIX implements vfs.FileDescriptionImpl.TestPOSIX.
+// TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (fd *LockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
 	return fd.locks.TestPOSIX(ctx, uid, t, r)
 }
@@ -455,27 +460,68 @@ func (fd *LockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.L
 // +stateify savable
 type NoLockFD struct{}
 
-// LockBSD implements vfs.FileDescriptionImpl.LockBSD.
+// SupportsLocks implements FileDescriptionImpl.SupportsLocks.
+func (NoLockFD) SupportsLocks() bool {
+	return false
+}
+
+// LockBSD implements FileDescriptionImpl.LockBSD.
 func (NoLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
 	return syserror.ENOLCK
 }
 
-// UnlockBSD implements vfs.FileDescriptionImpl.UnlockBSD.
+// UnlockBSD implements FileDescriptionImpl.UnlockBSD.
 func (NoLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
 	return syserror.ENOLCK
 }
 
-// LockPOSIX implements vfs.FileDescriptionImpl.LockPOSIX.
+// LockPOSIX implements FileDescriptionImpl.LockPOSIX.
 func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
 	return syserror.ENOLCK
 }
 
-// UnlockPOSIX implements vfs.FileDescriptionImpl.UnlockPOSIX.
+// UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
 func (NoLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
 	return syserror.ENOLCK
 }
 
-// TestPOSIX implements vfs.FileDescriptionImpl.TestPOSIX.
+// TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (NoLockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
 	return linux.Flock{}, syserror.ENOLCK
+}
+
+// BadLockFD implements Lock*/Unlock* portion of FileDescriptionImpl interface
+// returning EBADF.
+//
+// +stateify savable
+type BadLockFD struct{}
+
+// SupportsLocks implements FileDescriptionImpl.SupportsLocks.
+func (BadLockFD) SupportsLocks() bool {
+	return false
+}
+
+// LockBSD implements FileDescriptionImpl.LockBSD.
+func (BadLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
+	return syserror.EBADF
+}
+
+// UnlockBSD implements FileDescriptionImpl.UnlockBSD.
+func (BadLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
+	return syserror.EBADF
+}
+
+// LockPOSIX implements FileDescriptionImpl.LockPOSIX.
+func (BadLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
+	return syserror.EBADF
+}
+
+// UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
+func (BadLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
+	return syserror.EBADF
+}
+
+// TestPOSIX implements FileDescriptionImpl.TestPOSIX.
+func (BadLockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
+	return linux.Flock{}, syserror.EBADF
 }

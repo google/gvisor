@@ -1299,6 +1299,11 @@ func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
+// SupportsLocks implements vfs.FileDescriptionImpl.SupportsLocks.
+func (fd *fileDescription) SupportsLocks() bool {
+	return fd.lowerFD.SupportsLocks()
+}
+
 // LockBSD implements vfs.FileDescriptionImpl.LockBSD.
 func (fd *fileDescription) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
 	return fd.lowerFD.LockBSD(ctx, ownerPID, t, block)
