@@ -717,6 +717,27 @@ func (n *NoLockFD) afterLoad() {}
 func (n *NoLockFD) StateLoad(stateSourceObject state.Source) {
 }
 
+func (b *BadLockFD) StateTypeName() string {
+	return "pkg/sentry/vfs.BadLockFD"
+}
+
+func (b *BadLockFD) StateFields() []string {
+	return []string{}
+}
+
+func (b *BadLockFD) beforeSave() {}
+
+// +checklocksignore
+func (b *BadLockFD) StateSave(stateSinkObject state.Sink) {
+	b.beforeSave()
+}
+
+func (b *BadLockFD) afterLoad() {}
+
+// +checklocksignore
+func (b *BadLockFD) StateLoad(stateSourceObject state.Source) {
+}
+
 func (r *FileDescriptionRefs) StateTypeName() string {
 	return "pkg/sentry/vfs.FileDescriptionRefs"
 }
@@ -1260,7 +1281,7 @@ func (fd *opathFD) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
-		"NoLockFD",
+		"BadLockFD",
 	}
 }
 
@@ -1271,7 +1292,7 @@ func (fd *opathFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
-	stateSinkObject.Save(2, &fd.NoLockFD)
+	stateSinkObject.Save(2, &fd.BadLockFD)
 }
 
 func (fd *opathFD) afterLoad() {}
@@ -1280,7 +1301,7 @@ func (fd *opathFD) afterLoad() {}
 func (fd *opathFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
-	stateSourceObject.Load(2, &fd.NoLockFD)
+	stateSourceObject.Load(2, &fd.BadLockFD)
 }
 
 func (g *GetDentryOptions) StateTypeName() string {
@@ -1985,6 +2006,7 @@ func init() {
 	state.Register((*DynamicBytesFileDescriptionImpl)(nil))
 	state.Register((*LockFD)(nil))
 	state.Register((*NoLockFD)(nil))
+	state.Register((*BadLockFD)(nil))
 	state.Register((*FileDescriptionRefs)(nil))
 	state.Register((*Filesystem)(nil))
 	state.Register((*PrependPathAtVFSRootError)(nil))
