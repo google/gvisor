@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "textflag.h"
+//+build amd64
 
-TEXT ·Rdtsc(SB),NOSPLIT,$0-8
-	// Get the virtual counter.
-	ISB	$15
-	WORD	$0xd53be040     //MRS	CNTVCT_EL0, R0
-	MOVD	R0, ret+0(FP)
-	RET
+package time
 
-TEXT ·getCNTFRQ(SB),NOSPLIT,$0-8
-	// Get the virtual counter frequency.
-	WORD	$0xd53be000     //MRS	CNTFRQ_EL0, R0
-	MOVD	R0, ret+0(FP)
-	RET
+const(
+	// defaultOverheadTSC is the default estimated syscall overhead in TSC cycles.
+	// It is further refined as syscalls are made.
+	defaultOverheadCycles = 1 * 1000
+
+	// maxOverheadCycles is the maximum allowed syscall overhead in TSC cycles.
+	maxOverheadCycles = 100 * defaultOverheadCycles
+)

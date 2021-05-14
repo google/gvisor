@@ -25,6 +25,8 @@ go_library(
         "muldiv_arm64.s",
         "parameters.go",
         "sampler.go",
+        "sampler_amd64.go",
+        "sampler_arm64.go",
         "sampler_unsafe.go",
         "seqatomic_parameters_unsafe.go",
         "tsc_amd64.s",
