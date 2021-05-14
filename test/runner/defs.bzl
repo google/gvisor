@@ -88,6 +88,12 @@ def _syscall_test(
     tags = list(tags)
     tags += [full_platform, "file_" + file_access]
 
+    # Hash this target into one of 15 buckets. This can be used to
+    # randomly split targets between different workflows.
+    hash15 = hash(native.package_name() + name) % 15
+    tags.append("hash15:" + str(hash15))
+    tags.append("hash15")
+
     # Disable off-host networking.
     tags.append("requires-net:loopback")
     tags.append("requires-net:ipv4")
