@@ -21,7 +21,6 @@ go_library(
         "buffer.go",
         "buffer_list.go",
         "pool.go",
-        "safemem.go",
         "view.go",
         "view_unsafe.go",
     ],
@@ -29,8 +28,6 @@ go_library(
     deps = [
         "//pkg/context",
         "//pkg/log",
-        "//pkg/safemem",
-        "//pkg/usermem",
     ],
 )
 
@@ -40,12 +37,10 @@ go_test(
     srcs = [
         "buffer_test.go",
         "pool_test.go",
-        "safemem_test.go",
         "view_test.go",
     ],
     library = ":buffer",
     deps = [
-        "//pkg/safemem",
         "//pkg/state",
     ],
 )
