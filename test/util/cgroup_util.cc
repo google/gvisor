@@ -142,6 +142,20 @@ PosixError Mounter::Unmount(const Cgroup& c) {
   return NoError();
 }
 
+void Mounter::release(const Cgroup& c) {
+  auto mp = mountpoints_.find(c.id());
+  if (mp != mountpoints_.end()) {
+    mp->second.release();
+    mountpoints_.erase(mp);
+  }
+
+  auto m = mounts_.find(c.id());
+  if (m != mounts_.end()) {
+    m->second.Release();
+    mounts_.erase(m);
+  }
+}
+
 constexpr char kProcCgroupsHeader[] =
     "#subsys_name\thierarchy\tnum_cgroups\tenabled";
 

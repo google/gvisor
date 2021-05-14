@@ -25,9 +25,11 @@
 #include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
 #include "test/util/cgroup_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/mount_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -190,6 +192,56 @@ TEST(Cgroup, MoptAllMustBeExclusive) {
   EXPECT_THAT(
       mount("none", mountpoint.path().c_str(), "cgroup", 0, mopts.c_str()),
       SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Cgroup, MountRace) {
+  SKIP_IF(!CgroupsAvailable());
+
+  TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const DisableSave ds;  // Too many syscalls.
+
+  auto mount_thread = [&mountpoint]() {
+    for (int i = 0; i < 100; ++i) {
+      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
+    }
+  };
+  std::list<ScopedThread> threads;
+  for (int i = 0; i < 10; ++i) {
+    threads.emplace_back(mount_thread);
+  }
+  for (auto& t : threads) {
+    t.Join();
+  }
+
+  auto cleanup = Cleanup([&mountpoint] {
+    // We need 1 umount call per successful mount. If some of the mount calls
+    // were unsuccessful, their corresponding umount will silently fail.
+    for (int i = 0; i < (10 * 100) + 1; ++i) {
+      umount(mountpoint.path().c_str());
+    }
+  });
+
+  Cgroup c = Cgroup(mountpoint.path());
+  // c should be a valid cgroup.
+  EXPECT_NO_ERRNO(c.ContainsCallingProcess());
+}
+
+TEST(Cgroup, UnmountRepeated) {
+  SKIP_IF(!CgroupsAvailable());
+
+  const DisableSave ds;  // Too many syscalls.
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  // First unmount should succeed.
+  EXPECT_THAT(umount(c.Path().c_str()), SyscallSucceeds());
+
+  // We just manually unmounted, so release managed resources.
+  m.release(c);
+
+  EXPECT_THAT(umount(c.Path().c_str()), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(MemoryCgroup, MemoryUsageInBytes) {

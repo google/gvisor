@@ -83,6 +83,8 @@ class Mounter {
 
   PosixError Unmount(const Cgroup& c);
 
+  void release(const Cgroup& c);
+
  private:
   // The destruction order of these members avoids errors during cleanup. We
   // first unmount (by executing the mounts_ cleanups), then delete the
