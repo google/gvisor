@@ -45,34 +45,111 @@ func TestZeroReceiveWindow(t *testing.T) {
 
 			dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 
-			samplePayload := &testbench.Payload{Bytes: testbench.GenerateRandomPayload(t, payloadLen)}
-			// Expect the DUT to eventually advertise zero receive window.
-			// The test would timeout otherwise.
-			for readOnce := false; ; {
-				conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
-				gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
-				if err != nil {
-					t.Fatalf("expected packet was not received: %s", err)
-				}
-				// Read once to trigger the subsequent window update from the
-				// DUT to grow the right edge of the receive window from what
-				// was advertised in the SYN-ACK. This ensures that we test
-				// for the full default buffer size (1MB on gVisor at the time
-				// of writing this comment), thus testing for cases when the
-				// scaled receive window size ends up > 65535 (0xffff).
-				if !readOnce {
-					if got := dut.Recv(t, acceptFd, int32(payloadLen), 0); len(got) != payloadLen {
-						t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, payloadLen, len(got), payloadLen)
-					}
-					readOnce = true
-				}
-				windowSize := *gotTCP.WindowSize
-				t.Logf("got window size = %d", windowSize)
-				if windowSize == 0 {
-					break
-				}
-			}
+			fillRecvBuffer(t, &conn, &dut, acceptFd, payloadLen)
 		})
+	}
+}
+
+func fillRecvBuffer(t *testing.T, conn *testbench.TCPIPv4, dut *testbench.DUT, acceptFd int32, payloadLen int) {
+	// Expect the DUT to eventually advertise zero receive window.
+	// The test would timeout otherwise.
+	for readOnce := false; ; {
+		samplePayload := &testbench.Payload{Bytes: testbench.GenerateRandomPayload(t, payloadLen)}
+		conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh)}, samplePayload)
+		gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
+		if err != nil {
+			t.Fatalf("expected packet was not received: %s", err)
+		}
+		// Read once to trigger the subsequent window update from the
+		// DUT to grow the right edge of the receive window from what
+		// was advertised in the SYN-ACK. This ensures that we test
+		// for the full default buffer size (1MB on gVisor at the time
+		// of writing this comment), thus testing for cases when the
+		// scaled receive window size ends up > 65535 (0xffff).
+		if !readOnce {
+			if got := dut.Recv(t, acceptFd, int32(payloadLen), 0); len(got) != payloadLen {
+				t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, payloadLen, len(got), payloadLen)
+			}
+			readOnce = true
+		}
+		windowSize := *gotTCP.WindowSize
+		t.Logf("got window size = %d", windowSize)
+		if windowSize == 0 {
+			break
+		}
+		if payloadLen > int(windowSize) {
+			payloadLen = int(windowSize)
+		}
+	}
+}
+
+func TestZeroToNonZeroWindowUpdate(t *testing.T) {
+	dut := testbench.NewDUT(t)
+	listenFd, remotePort := dut.CreateListener(t, unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
+	defer dut.Close(t, listenFd)
+	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{DstPort: &remotePort}, testbench.TCP{SrcPort: &remotePort})
+	defer conn.Close(t)
+
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn)})
+	synAck, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	if err != nil {
+		t.Fatalf("didn't get synack during handshake: %s", err)
+	}
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+
+	acceptFd, _ := dut.Accept(t, listenFd)
+	defer dut.Close(t, acceptFd)
+
+	dut.SetSockOptInt(t, acceptFd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+
+	mss := header.ParseSynOptions(synAck.Options, true).MSS
+	fillRecvBuffer(t, &conn, &dut, acceptFd, int(mss))
+
+	// Read < mss worth of data from the receive buffer and expect the DUT to
+	// not send a non-zero window update.
+	payloadLen := mss - 1
+	if got := dut.Recv(t, acceptFd, int32(payloadLen), 0); len(got) != int(payloadLen) {
+		t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, payloadLen, len(got), payloadLen)
+	}
+	// Send a zero-window-probe to force an ACK from the receiver with any
+	// window updates.
+	conn.Send(t, testbench.TCP{SeqNum: testbench.Uint32(uint32(*conn.LocalSeqNum(t) - 1)), Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
+	if err != nil {
+		t.Fatalf("expected packet was not received: %s", err)
+	}
+	if windowSize := *gotTCP.WindowSize; windowSize != 0 {
+		t.Fatalf("got non zero window = %d", windowSize)
+	}
+
+	// Now, ensure that the DUT eventually sends non-zero window update.
+	seqNum := testbench.Uint32(uint32(*conn.LocalSeqNum(t) - 1))
+	ackNum := testbench.Uint32(uint32(*conn.LocalSeqNum(t)))
+	recvCheckWindowUpdate := func(readLen int) uint16 {
+		if got := dut.Recv(t, acceptFd, int32(readLen), 0); len(got) != readLen {
+			t.Fatalf("got dut.Recv(t, %d, %d, 0) = %d, want %d", acceptFd, readLen, len(got), readLen)
+		}
+		conn.Send(t, testbench.TCP{SeqNum: seqNum, Flags: testbench.TCPFlags(header.TCPFlagPsh | header.TCPFlagAck)}, &testbench.Payload{Bytes: make([]byte, 1)})
+		gotTCP, err := conn.Expect(t, testbench.TCP{AckNum: ackNum, Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
+		if err != nil {
+			t.Fatalf("expected packet was not received: %s", err)
+		}
+		return *gotTCP.WindowSize
+	}
+
+	if !dut.Uname.IsLinux() {
+		if win := recvCheckWindowUpdate(1); win == 0 {
+			t.Fatal("expected non-zero window update")
+		}
+	} else {
+		// Linux stack takes additional socket reads to send out window update,
+		// its a function of sysctl_tcp_rmem among other things.
+		// https://github.com/torvalds/linux/blob/7acac4b3196/net/ipv4/tcp_input.c#L687
+		for {
+			if win := recvCheckWindowUpdate(int(payloadLen)); win != 0 {
+				break
+			}
+		}
 	}
 }
 
