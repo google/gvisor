@@ -454,6 +454,9 @@ type FileDescriptionImpl interface {
 	// RemoveXattr removes the given extended attribute from the file.
 	RemoveXattr(ctx context.Context, name string) error
 
+	// SupportsLocks indicates whether file locks are supported.
+	SupportsLocks() bool
+
 	// LockBSD tries to acquire a BSD-style advisory file lock.
 	LockBSD(ctx context.Context, uid lock.UniqueID, ownerPID int32, t lock.LockType, block lock.Blocker) error
 
@@ -816,6 +819,11 @@ func (fd *FileDescription) InodeID() uint64 {
 // Msync implements memmap.MappingIdentity.Msync.
 func (fd *FileDescription) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	return fd.Sync(ctx)
+}
+
+// SupportsLocks indicates whether file locks are supported.
+func (fd *FileDescription) SupportsLocks() bool {
+	return fd.impl.SupportsLocks()
 }
 
 // LockBSD tries to acquire a BSD-style advisory file lock.

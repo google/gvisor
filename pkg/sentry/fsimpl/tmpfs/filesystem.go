@@ -465,7 +465,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		return &fd.vfsfd, nil
 	case *symlink:
-		// TODO(gvisor.dev/issue/2782): Can't open symlinks without O_PATH.
+		// Can't open symlinks without O_PATH, which is handled at the VFS layer.
 		return nil, syserror.ELOOP
 	case *namedPipe:
 		return impl.pipe.Open(ctx, rp.Mount(), &d.vfsd, opts.Flags, &d.inode.locks)

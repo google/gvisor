@@ -662,9 +662,7 @@ TEST(FlockTestNoFixture, FlockDir) {
 }
 
 TEST(FlockTestNoFixture, FlockSymlink) {
-  // TODO(gvisor.dev/issue/2782): Replace with IsRunningWithVFS1() when O_PATH
-  // is supported.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithVFS1());
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto symlink = ASSERT_NO_ERRNO_AND_VALUE(

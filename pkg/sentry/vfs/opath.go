@@ -24,96 +24,96 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// opathFD implements vfs.FileDescriptionImpl for a file description opened with O_PATH.
+// opathFD implements FileDescriptionImpl for a file description opened with O_PATH.
 //
 // +stateify savable
 type opathFD struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
-	NoLockFD
+	BadLockFD
 }
 
-// Release implements vfs.FileDescriptionImpl.Release.
+// Release implements FileDescriptionImpl.Release.
 func (fd *opathFD) Release(context.Context) {
 	// noop
 }
 
-// Allocate implements vfs.FileDescriptionImpl.Allocate.
+// Allocate implements FileDescriptionImpl.Allocate.
 func (fd *opathFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	return syserror.EBADF
 }
 
-// PRead implements vfs.FileDescriptionImpl.PRead.
+// PRead implements FileDescriptionImpl.PRead.
 func (fd *opathFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
 	return 0, syserror.EBADF
 }
 
-// Read implements vfs.FileDescriptionImpl.Read.
+// Read implements FileDescriptionImpl.Read.
 func (fd *opathFD) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
 	return 0, syserror.EBADF
 }
 
-// PWrite implements vfs.FileDescriptionImpl.PWrite.
+// PWrite implements FileDescriptionImpl.PWrite.
 func (fd *opathFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
 	return 0, syserror.EBADF
 }
 
-// Write implements vfs.FileDescriptionImpl.Write.
+// Write implements FileDescriptionImpl.Write.
 func (fd *opathFD) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
 	return 0, syserror.EBADF
 }
 
-// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+// Ioctl implements FileDescriptionImpl.Ioctl.
 func (fd *opathFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	return 0, syserror.EBADF
 }
 
-// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
+// IterDirents implements FileDescriptionImpl.IterDirents.
 func (fd *opathFD) IterDirents(ctx context.Context, cb IterDirentsCallback) error {
 	return syserror.EBADF
 }
 
-// Seek implements vfs.FileDescriptionImpl.Seek.
+// Seek implements FileDescriptionImpl.Seek.
 func (fd *opathFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	return 0, syserror.EBADF
 }
 
-// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+// ConfigureMMap implements FileDescriptionImpl.ConfigureMMap.
 func (fd *opathFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return syserror.EBADF
 }
 
-// ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+// ListXattr implements FileDescriptionImpl.ListXattr.
 func (fd *opathFD) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 	return nil, syserror.EBADF
 }
 
-// GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+// GetXattr implements FileDescriptionImpl.GetXattr.
 func (fd *opathFD) GetXattr(ctx context.Context, opts GetXattrOptions) (string, error) {
 	return "", syserror.EBADF
 }
 
-// SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+// SetXattr implements FileDescriptionImpl.SetXattr.
 func (fd *opathFD) SetXattr(ctx context.Context, opts SetXattrOptions) error {
 	return syserror.EBADF
 }
 
-// RemoveXattr implements vfs.FileDescriptionImpl.RemoveXattr.
+// RemoveXattr implements FileDescriptionImpl.RemoveXattr.
 func (fd *opathFD) RemoveXattr(ctx context.Context, name string) error {
 	return syserror.EBADF
 }
 
-// Sync implements vfs.FileDescriptionImpl.Sync.
+// Sync implements FileDescriptionImpl.Sync.
 func (fd *opathFD) Sync(ctx context.Context) error {
 	return syserror.EBADF
 }
 
-// SetStat implements vfs.FileDescriptionImpl.SetStat.
+// SetStat implements FileDescriptionImpl.SetStat.
 func (fd *opathFD) SetStat(ctx context.Context, opts SetStatOptions) error {
 	return syserror.EBADF
 }
 
-// Stat implements vfs.FileDescriptionImpl.Stat.
+// Stat implements FileDescriptionImpl.Stat.
 func (fd *opathFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
 	vfsObj := fd.vfsfd.vd.mount.vfs
 	rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{

@@ -657,7 +657,6 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 		Start: root,
 		Path:  fspath.Parse("/tmp"),
 	}
-	// TODO(gvisor.dev/issue/2782): Use O_PATH when available.
 	fd, err := c.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
 	switch err {
 	case nil:
