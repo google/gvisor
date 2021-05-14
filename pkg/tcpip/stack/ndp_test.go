@@ -481,13 +481,9 @@ func TestDADResolve(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
-				dadC: make(chan ndpDADEvent),
+				dadC: make(chan ndpDADEvent, 1),
 			}
 
 			e := channelLinkWithHeaderLength{
@@ -499,7 +495,9 @@ func TestDADResolve(t *testing.T) {
 			var secureRNG bytes.Reader
 			secureRNG.Reset(secureRNGBytes)
 
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
+				Clock:     clock,
 				SecureRNG: &secureRNG,
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp: &ndpDisp,
@@ -529,14 +527,10 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("AddAddressWithPrefix(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addrWithPrefix, err)
 			}
 
-			// Address should not be considered bound to the NIC yet (DAD ongoing).
-			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
-				t.Fatal(err)
-			}
-
 			// Make sure the address does not resolve before the resolution time has
 			// passed.
-			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - defaultAsyncNegativeEventTimeout)
+			const delta = time.Nanosecond
+			clock.Advance(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - delta)
 			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
 				t.Error(err)
 			}
@@ -566,13 +560,14 @@ func TestDADResolve(t *testing.T) {
 			}
 
 			// Wait for DAD to resolve.
+			clock.Advance(delta)
 			select {
-			case <-time.After(defaultAsyncPositiveEventTimeout):
-				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr1, &stack.DADSucceeded{}); diff != "" {
 					t.Errorf("DAD event mismatch (-want +got):\n%s", diff)
 				}
+			default:
+				t.Fatalf("expected DAD event for %s on NIC(%d)", addr1, nicID)
 			}
 			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, addrWithPrefix); err != nil {
 				t.Error(err)
