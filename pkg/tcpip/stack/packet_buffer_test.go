@@ -259,6 +259,37 @@ func TestPacketHeaderPushConsumeMixed(t *testing.T) {
 	})
 }
 
+func TestPacketHeaderPushConsumeMixedTooLong(t *testing.T) {
+	link := makeView(10)
+	network := makeView(20)
+	data := makeView(30)
+
+	initData := concatViews(network, data)
+	pk := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: len(link),
+		Data:               buffer.NewViewFromBytes(initData).ToVectorisedView(),
+	})
+
+	// 1. Push link header
+	copy(pk.LinkHeader().Push(len(link)), link)
+
+	checkPacketContents(t, "" /* prefix */, pk, packetContents{
+		link: link,
+		data: initData,
+	})
+
+	// 2. Consume network header, with a number of bytes too large.
+	gotNetwork, ok := pk.NetworkHeader().Consume(len(initData) + 1)
+	if ok {
+		t.Fatalf("pk.NetworkHeader().Consume(%d) = %q, true; want _, false", len(initData)+1, gotNetwork)
+	}
+
+	checkPacketContents(t, "" /* prefix */, pk, packetContents{
+		link: link,
+		data: initData,
+	})
+}
+
 func TestPacketHeaderPushCalledAtMostOnce(t *testing.T) {
 	const headerSize = 10
 
