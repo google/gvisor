@@ -243,6 +243,7 @@ func (w *Watchdog) waitForStart() {
 	}
 
 	stuckStartup.Increment()
+	metric.WeirdnessMetric.Increment("watchdog_stuck_startup")
 
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
@@ -316,6 +317,7 @@ func (w *Watchdog) runTurn() {
 					// Task.UninterruptibleSleepStart/Finish.
 					tc = &offender{lastUpdateTime: lastUpdateTime}
 					stuckTasks.Increment()
+					metric.WeirdnessMetric.Increment("watchdog_stuck_tasks")
 					newTaskFound = true
 				}
 				newOffenders[t] = tc

@@ -40,8 +40,8 @@ var (
 	createdSentryMetrics = false
 
 	// WeirdnessMetric is a metric with fields created to track the number
-	// of weird occurrences such as time fallback, partial_result and
-	// vsyscall count.
+	// of weird occurrences such as time fallback, partial_result, vsyscall
+	// count, watchdog startup timeouts and stuck tasks.
 	WeirdnessMetric *Uint64Metric
 
 	// SuspiciousOperationsMetric is a metric with fields created to detect
@@ -401,10 +401,10 @@ func CreateSentryMetrics() {
 
 	createdSentryMetrics = true
 
-	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result and vsyscalls invoked in the sandbox.",
+	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result, vsyscalls invoked in the sandbox, watchdog startup timeouts and stuck tasks.",
 		Field{
 			name:          "weirdness_type",
-			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count"},
+			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count", "watchdog_stuck_startup", "watchdog_stuck_tasks"},
 		})
 
 	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
