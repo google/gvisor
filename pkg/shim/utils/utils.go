@@ -18,19 +18,16 @@ package utils
 import (
 	"encoding/json"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
+const configFilename = "config.json"
+
 // ReadSpec reads OCI spec from the bundle directory.
 func ReadSpec(bundle string) (*specs.Spec, error) {
-	f, err := os.Open(filepath.Join(bundle, "config.json"))
-	if err != nil {
-		return nil, err
-	}
-	b, err := ioutil.ReadAll(f)
+	b, err := ioutil.ReadFile(filepath.Join(bundle, configFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -41,9 +38,18 @@ func ReadSpec(bundle string) (*specs.Spec, error) {
 	return &spec, nil
 }
 
+// WriteSpec writes OCI spec to the bundle directory.
+func WriteSpec(bundle string, spec *specs.Spec) error {
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filepath.Join(bundle, configFilename), b, 0666)
+}
+
 // IsSandbox checks whether a container is a sandbox container.
 func IsSandbox(spec *specs.Spec) bool {
-	t, ok := spec.Annotations[containerTypeAnnotation]
+	t, ok := spec.Annotations[ContainerTypeAnnotation]
 	return !ok || t == containerTypeSandbox
 }
 

@@ -15,9 +15,7 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"path/filepath"
 	"strings"
 
@@ -89,8 +87,8 @@ func isVolumePath(volume, path string) (bool, error) {
 }
 
 // UpdateVolumeAnnotations add necessary OCI annotations for gvisor
-// volume optimization.
-func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
+// volume optimization. Returns true if the spec was modified.
+func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 	var uid string
 	if IsSandbox(s) {
 		var err error
@@ -98,7 +96,7 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 		if err != nil {
 			// Skip if we can't get pod UID, because this doesn't work
 			// for containerd 1.1.
-			return nil
+			return false, nil
 		}
 	}
 	var updated bool
@@ -114,7 +112,7 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 			// This is a sandbox.
 			path, err := volumePath(volume, uid)
 			if err != nil {
-				return fmt.Errorf("get volume path for %q: %w", volume, err)
+				return false, fmt.Errorf("get volume path for %q: %w", volume, err)
 			}
 			s.Annotations[volumeSourceKey(volume)] = path
 			updated = true
@@ -138,15 +136,7 @@ func UpdateVolumeAnnotations(bundle string, s *specs.Spec) error {
 			}
 		}
 	}
-	if !updated {
-		return nil
-	}
-	// Update bundle.
-	b, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(filepath.Join(bundle, "config.json"), b, 0666)
+	return updated, nil
 }
 
 func changeMountType(m *specs.Mount, newType string) {

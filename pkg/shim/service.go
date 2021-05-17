@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 	"github.com/containerd/containerd/sys/reaper"
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -944,9 +946,19 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	if err != nil {
 		return nil, fmt.Errorf("read oci spec: %w", err)
 	}
-	if err := utils.UpdateVolumeAnnotations(r.Bundle, spec); err != nil {
+
+	updated, err := utils.UpdateVolumeAnnotations(spec)
+	if err != nil {
 		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
+	updated = updateCgroup(spec) || updated
+
+	if updated {
+		if err := utils.WriteSpec(r.Bundle, spec); err != nil {
+			return nil, err
+		}
+	}
+
 	runsc.FormatRunscLogPath(r.ID, options.RunscConfig)
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
@@ -965,4 +977,40 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = reaper.Default
 	return p, nil
+}
+
+// updateCgroup updates cgroup path for the sandbox to make the sandbox join the
+// pod cgroup and not the pause container cgroup. Returns true if the spec was
+// modified. Ex.:
+//   /kubepods/burstable/pod123/abc => kubepods/burstable/pod123
+//
+func updateCgroup(spec *specs.Spec) bool {
+	if !utils.IsSandbox(spec) {
+		return false
+	}
+	if spec.Linux == nil || len(spec.Linux.CgroupsPath) == 0 {
+		return false
+	}
+
+	// Search backwards for the pod cgroup path to make the sandbox use it,
+	// instead of the pause container's cgroup.
+	parts := strings.Split(spec.Linux.CgroupsPath, string(filepath.Separator))
+	for i := len(parts) - 1; i >= 0; i-- {
+		if strings.HasPrefix(parts[i], "pod") {
+			var path string
+			for j := 0; j <= i; j++ {
+				path = filepath.Join(path, parts[j])
+			}
+			// Add back the initial '/' that may have been lost above.
+			if filepath.IsAbs(spec.Linux.CgroupsPath) {
+				path = string(filepath.Separator) + path
+			}
+			if spec.Linux.CgroupsPath == path {
+				return false
+			}
+			spec.Linux.CgroupsPath = path
+			return true
+		}
+	}
+	return false
 }
