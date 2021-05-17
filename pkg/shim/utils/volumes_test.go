@@ -15,11 +15,9 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -58,7 +56,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			spec: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation:                       testLogDirPath,
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -67,7 +65,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			expected: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation:                       testLogDirPath,
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -81,7 +79,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			spec: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation:                       testLegacyLogDirPath,
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -90,7 +88,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			expected: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation:                       testLegacyLogDirPath,
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -117,7 +115,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -139,7 +137,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -159,7 +157,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "container",
 					volumeKeyPrefix + testVolumeName + ".type":    "bind",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -175,7 +173,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "container",
 					volumeKeyPrefix + testVolumeName + ".type":    "bind",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -187,7 +185,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			name: "should not return error without pod log directory",
 			spec: &specs.Spec{
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -195,7 +193,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeSandbox,
+					ContainerTypeAnnotation:                       containerTypeSandbox,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -207,7 +205,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			spec: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation:              testLogDirPath,
-					containerTypeAnnotation:              containerTypeSandbox,
+					ContainerTypeAnnotation:              containerTypeSandbox,
 					volumeKeyPrefix + "notexist.share":   "pod",
 					volumeKeyPrefix + "notexist.type":    "tmpfs",
 					volumeKeyPrefix + "notexist.options": "ro",
@@ -220,13 +218,13 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			spec: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation: testLogDirPath,
-					containerTypeAnnotation: containerTypeSandbox,
+					ContainerTypeAnnotation: containerTypeSandbox,
 				},
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
 					sandboxLogDirAnnotation: testLogDirPath,
-					containerTypeAnnotation: containerTypeSandbox,
+					ContainerTypeAnnotation: containerTypeSandbox,
 				},
 			},
 		},
@@ -248,7 +246,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation: containerTypeContainer,
+					ContainerTypeAnnotation: ContainerTypeContainer,
 				},
 			},
 			expected: &specs.Spec{
@@ -267,7 +265,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 					},
 				},
 				Annotations: map[string]string{
-					containerTypeAnnotation: containerTypeContainer,
+					ContainerTypeAnnotation: ContainerTypeContainer,
 				},
 			},
 		},
@@ -275,7 +273,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			name: "bind options removed",
 			spec: &specs.Spec{
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -292,7 +290,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					containerTypeAnnotation:                       containerTypeContainer,
+					ContainerTypeAnnotation:                       ContainerTypeContainer,
 					volumeKeyPrefix + testVolumeName + ".share":   "pod",
 					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
 					volumeKeyPrefix + testVolumeName + ".options": "ro",
@@ -311,11 +309,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			bundle, err := ioutil.TempDir(dir, "test-bundle")
-			if err != nil {
-				t.Fatalf("Create test bundle: %v", err)
-			}
-			err = UpdateVolumeAnnotations(bundle, test.spec)
+			updated, err := UpdateVolumeAnnotations(test.spec)
 			if test.expectErr {
 				if err == nil {
 					t.Fatal("Expected error, but got nil")
@@ -328,18 +322,8 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			if !reflect.DeepEqual(test.expected, test.spec) {
 				t.Fatalf("Expected %+v, got %+v", test.expected, test.spec)
 			}
-			if test.expectUpdate {
-				b, err := ioutil.ReadFile(filepath.Join(bundle, "config.json"))
-				if err != nil {
-					t.Fatalf("Read spec from bundle: %v", err)
-				}
-				var spec specs.Spec
-				if err := json.Unmarshal(b, &spec); err != nil {
-					t.Fatalf("Unmarshal spec: %v", err)
-				}
-				if !reflect.DeepEqual(test.expected, &spec) {
-					t.Fatalf("Expected %+v, got %+v", test.expected, &spec)
-				}
+			if test.expectUpdate != updated {
+				t.Errorf("Expected %v, got %v", test.expected, updated)
 			}
 		})
 	}

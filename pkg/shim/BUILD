@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -41,7 +41,19 @@ go_library(
         "@com_github_containerd_fifo//:go_default_library",
         "@com_github_containerd_typeurl//:go_default_library",
         "@com_github_gogo_protobuf//types:go_default_library",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_sirupsen_logrus//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "shim_test",
+    size = "small",
+    srcs = ["service_test.go"],
+    library = ":shim",
+    deps = [
+        "//pkg/shim/utils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
