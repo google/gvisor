@@ -118,27 +118,27 @@ type forwardedPacket struct {
 
 func TestForwarding(t *testing.T) {
 	const (
-		nicID1           = 1
-		nicID2           = 2
+		incomingNICID    = 1
+		outgoingNICID    = 2
 		randomSequence   = 123
 		randomIdent      = 42
 		randomTimeOffset = 0x10203040
 	)
 
-	ipv4Addr1 := tcpip.AddressWithPrefix{
+	incomingIPv4Addr := tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
 		PrefixLen: 8,
 	}
-	ipv4Addr2 := tcpip.AddressWithPrefix{
+	outgoingIPv4Addr := tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("11.0.0.1").To4()),
 		PrefixLen: 8,
 	}
-	linkAddr2 := tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
-	remoteIPv4Addr1 := tcpip.Address(net.ParseIP("10.0.0.2").To4())
-	remoteIPv4Addr2 := tcpip.Address(net.ParseIP("11.0.0.2").To4())
-	unreachableIPv4Addr := tcpip.Address(net.ParseIP("12.0.0.2").To4())
-	multicastIPv4Addr := tcpip.Address(net.ParseIP("225.0.0.0").To4())
-	linkLocalIPv4Addr := tcpip.Address(net.ParseIP("169.254.0.0").To4())
+	outgoingLinkAddr := tcpip.LinkAddress("\x02\x03\x03\x04\x05\x06")
+	remoteIPv4Addr1 := tcptestutil.MustParse4("10.0.0.2")
+	remoteIPv4Addr2 := tcptestutil.MustParse4("11.0.0.2")
+	unreachableIPv4Addr := tcptestutil.MustParse4("12.0.0.2")
+	multicastIPv4Addr := tcptestutil.MustParse4("225.0.0.0")
+	linkLocalIPv4Addr := tcptestutil.MustParse4("169.254.0.0")
 
 	tests := []struct {
 		name                         string
@@ -345,6 +345,7 @@ func TestForwarding(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clock := faketime.NewManualClock()
+
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
@@ -356,36 +357,36 @@ func TestForwarding(t *testing.T) {
 			clock.Advance(time.Millisecond * randomTimeOffset)
 
 			// We expect at most a single packet in response to our ICMP Echo Request.
-			e1 := channel.New(1, test.mtu, "")
-			if err := s.CreateNIC(nicID1, e1); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			incomingEndpoint := channel.New(1, test.mtu, "")
+			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
 			}
-			ipv4ProtoAddr1 := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr1}
-			if err := s.AddProtocolAddress(nicID1, ipv4ProtoAddr1); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID1, ipv4ProtoAddr1, err)
+			incomingIPv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: incomingIPv4Addr}
+			if err := s.AddProtocolAddress(incomingNICID, incomingIPv4ProtoAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", incomingNICID, incomingIPv4ProtoAddr, err)
 			}
 
 			expectedEmittedPacketCount := 1
 			if len(test.expectedFragmentsForwarded) > expectedEmittedPacketCount {
 				expectedEmittedPacketCount = len(test.expectedFragmentsForwarded)
 			}
-			e2 := channel.New(expectedEmittedPacketCount, test.mtu, linkAddr2)
-			if err := s.CreateNIC(nicID2, e2); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+			outgoingEndpoint := channel.New(expectedEmittedPacketCount, test.mtu, outgoingLinkAddr)
+			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
 			}
-			ipv4ProtoAddr2 := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: ipv4Addr2}
-			if err := s.AddProtocolAddress(nicID2, ipv4ProtoAddr2); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID2, ipv4ProtoAddr2, err)
+			outgoingIPv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: outgoingIPv4Addr}
+			if err := s.AddProtocolAddress(outgoingNICID, outgoingIPv4ProtoAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", outgoingNICID, outgoingIPv4ProtoAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
 				{
-					Destination: ipv4Addr1.Subnet(),
-					NIC:         nicID1,
+					Destination: incomingIPv4Addr.Subnet(),
+					NIC:         incomingNICID,
 				},
 				{
-					Destination: ipv4Addr2.Subnet(),
-					NIC:         nicID2,
+					Destination: outgoingIPv4Addr.Subnet(),
+					NIC:         outgoingNICID,
 				},
 			})
 
@@ -431,9 +432,10 @@ func TestForwarding(t *testing.T) {
 				Data: hdr.View().ToVectorisedView(),
 			})
 			requestPkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
-			e1.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
+			incomingEndpoint.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 
-			reply, ok := e1.Read()
+			reply, ok := incomingEndpoint.Read()
+
 			if test.expectErrorICMP {
 				if !ok {
 					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
@@ -452,7 +454,7 @@ func TestForwarding(t *testing.T) {
 				}
 
 				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
-					checker.SrcAddr(ipv4Addr1.Address),
+					checker.SrcAddr(incomingIPv4Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(ipv4.DefaultTTL),
 					checker.ICMPv4(
@@ -470,7 +472,7 @@ func TestForwarding(t *testing.T) {
 				if len(test.expectedFragmentsForwarded) != 0 {
 					fragmentedPackets := []*stack.PacketBuffer{}
 					for i := 0; i < len(test.expectedFragmentsForwarded); i++ {
-						reply, ok = e2.Read()
+						reply, ok = outgoingEndpoint.Read()
 						if !ok {
 							t.Fatal("expected ICMP Echo fragment through outgoing NIC")
 						}
@@ -489,7 +491,7 @@ func TestForwarding(t *testing.T) {
 						t.Error(err)
 					}
 				} else {
-					reply, ok = e2.Read()
+					reply, ok = outgoingEndpoint.Read()
 					if !ok {
 						t.Fatal("expected ICMP Echo packet through outgoing NIC")
 					}
@@ -508,11 +510,10 @@ func TestForwarding(t *testing.T) {
 					)
 				}
 			} else {
-				if reply, ok = e2.Read(); ok {
+				if reply, ok = outgoingEndpoint.Read(); ok {
 					t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
-
 			boolToInt := func(val bool) uint64 {
 				if val {
 					return 1

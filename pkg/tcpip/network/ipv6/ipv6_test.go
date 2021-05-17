@@ -3004,17 +3004,17 @@ func TestFragmentationErrors(t *testing.T) {
 
 func TestForwarding(t *testing.T) {
 	const (
-		nicID1         = 1
-		nicID2         = 2
+		incomingNICID  = 1
+		outgoingNICID  = 2
 		randomSequence = 123
 		randomIdent    = 42
 	)
 
-	ipv6Addr1 := tcpip.AddressWithPrefix{
+	incomingIPv6Addr := tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("10::1").To16()),
 		PrefixLen: 64,
 	}
-	ipv6Addr2 := tcpip.AddressWithPrefix{
+	outgoingIPv6Addr := tcpip.AddressWithPrefix{
 		Address:   tcpip.Address(net.ParseIP("11::1").To16()),
 		PrefixLen: 64,
 	}
@@ -3022,6 +3022,7 @@ func TestForwarding(t *testing.T) {
 		Address:   tcpip.Address(net.ParseIP("ff00::").To16()),
 		PrefixLen: 64,
 	}
+
 	remoteIPv6Addr1 := tcpip.Address(net.ParseIP("10::2").To16())
 	remoteIPv6Addr2 := tcpip.Address(net.ParseIP("11::2").To16())
 	unreachableIPv6Addr := tcpip.Address(net.ParseIP("12::2").To16())
@@ -3296,36 +3297,36 @@ func TestForwarding(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
 			})
 			// We expect at most a single packet in response to our ICMP Echo Request.
-			e1 := channel.New(1, header.IPv6MinimumMTU, "")
-			if err := s.CreateNIC(nicID1, e1); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+			incomingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(incomingNICID, incomingEndpoint); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", incomingNICID, err)
 			}
-			ipv6ProtoAddr1 := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: ipv6Addr1}
-			if err := s.AddProtocolAddress(nicID1, ipv6ProtoAddr1); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID1, ipv6ProtoAddr1, err)
+			incomingIPv6ProtoAddr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: incomingIPv6Addr}
+			if err := s.AddProtocolAddress(incomingNICID, incomingIPv6ProtoAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", incomingNICID, incomingIPv6ProtoAddr, err)
 			}
 
-			e2 := channel.New(1, header.IPv6MinimumMTU, "")
-			if err := s.CreateNIC(nicID2, e2); err != nil {
-				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+			outgoingEndpoint := channel.New(1, header.IPv6MinimumMTU, "")
+			if err := s.CreateNIC(outgoingNICID, outgoingEndpoint); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", outgoingNICID, err)
 			}
-			ipv6ProtoAddr2 := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: ipv6Addr2}
-			if err := s.AddProtocolAddress(nicID2, ipv6ProtoAddr2); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID2, ipv6ProtoAddr2, err)
+			outgoingIPv6ProtoAddr := tcpip.ProtocolAddress{Protocol: ProtocolNumber, AddressWithPrefix: outgoingIPv6Addr}
+			if err := s.AddProtocolAddress(outgoingNICID, outgoingIPv6ProtoAddr); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %#v): %s", outgoingNICID, outgoingIPv6ProtoAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
 				{
-					Destination: ipv6Addr1.Subnet(),
-					NIC:         nicID1,
+					Destination: incomingIPv6Addr.Subnet(),
+					NIC:         incomingNICID,
 				},
 				{
-					Destination: ipv6Addr2.Subnet(),
-					NIC:         nicID2,
+					Destination: outgoingIPv6Addr.Subnet(),
+					NIC:         outgoingNICID,
 				},
 				{
 					Destination: multicastIPv6Addr.Subnet(),
-					NIC:         nicID2,
+					NIC:         outgoingNICID,
 				},
 			})
 
@@ -3372,9 +3373,10 @@ func TestForwarding(t *testing.T) {
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: hdr.View().ToVectorisedView(),
 			})
-			e1.InjectInbound(ProtocolNumber, requestPkt)
+			incomingEndpoint.InjectInbound(ProtocolNumber, requestPkt)
 
-			reply, ok := e1.Read()
+			reply, ok := incomingEndpoint.Read()
+
 			if test.expectErrorICMP {
 				if !ok {
 					t.Fatalf("expected ICMP packet type %d through incoming NIC", test.icmpType)
@@ -3394,7 +3396,7 @@ func TestForwarding(t *testing.T) {
 				}
 
 				checker.IPv6(t, header.IPv6(stack.PayloadSince(reply.Pkt.NetworkHeader())),
-					checker.SrcAddr(ipv6Addr1.Address),
+					checker.SrcAddr(incomingIPv6Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(DefaultTTL),
 					checker.ICMPv6(
@@ -3404,14 +3406,14 @@ func TestForwarding(t *testing.T) {
 					),
 				)
 
-				if n := e2.Drain(); n != 0 {
+				if n := outgoingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e2.Drain() = %d, want = 0", n)
 				}
 			} else if ok {
 				t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
-			reply, ok = e2.Read()
+			reply, ok = outgoingEndpoint.Read()
 			if test.expectPacketForwarded {
 				if !ok {
 					t.Fatal("expected ICMP Echo Request packet through outgoing NIC")
@@ -3429,7 +3431,7 @@ func TestForwarding(t *testing.T) {
 					),
 				)
 
-				if n := e1.Drain(); n != 0 {
+				if n := incomingEndpoint.Drain(); n != 0 {
 					t.Fatalf("got e1.Drain() = %d, want = 0", n)
 				}
 			} else if ok {
