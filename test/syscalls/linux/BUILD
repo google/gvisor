@@ -1489,6 +1489,7 @@ cc_binary(
         "//test/util:cleanup",
         "//test/util:posix_error",
         "//test/util:pty_util",
+        "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",

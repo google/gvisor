@@ -40,6 +40,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -387,6 +388,22 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
 }
 
 TEST(PtyTrunc, Truncate) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  // setsid either puts us in a new session or fails because we're already the
+  // session leader. Either way, this ensures we're the session leader and have
+  // no controlling terminal.
+  setsid();
+
+  // Make sure we're ignoring SIGHUP, which will be sent to this process once we
+  // disconnect the TTY.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  const Cleanup cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGHUP, sa));
+
   // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
   // (f)truncate should.
   FileDescriptor master =
@@ -395,6 +412,7 @@ TEST(PtyTrunc, Truncate) {
   std::string spath = absl::StrCat("/dev/pts/", n);
   FileDescriptor replica =
       ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NONBLOCK | O_TRUNC));
+  ASSERT_THAT(ioctl(replica.get(), TIOCNOTTY), SyscallSucceeds());
 
   EXPECT_THAT(truncate(kMasterPath, 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(truncate(spath.c_str(), 0), SyscallFailsWithErrno(EINVAL));
@@ -467,7 +485,7 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
   setsid();
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sa = {};
   sa.sa_handler = SIG_IGN;
   sa.sa_flags = 0;
@@ -1405,7 +1423,7 @@ TEST_F(JobControlTest, ReleaseTTY) {
   ASSERT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sa = {};
   sa.sa_handler = SIG_IGN;
   sa.sa_flags = 0;
@@ -1526,7 +1544,7 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   EXPECT_THAT(setpgid(diff_pgrp_child, diff_pgrp_child), SyscallSucceeds());
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sighup_sa = {};
   sighup_sa.sa_handler = SIG_IGN;
   sighup_sa.sa_flags = 0;
