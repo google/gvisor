@@ -4,6 +4,9 @@
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
 [![code search](https://img.shields.io/badge/code-search-blue)](https://cs.opensource.google/gvisor/gvisor)
 
+[![Issue reviver](https://github.com/google/gvisor/actions/workflows/issue_reviver.yml/badge.svg)](https://github.com/google/gvisor/actions/workflows/issue_reviver.yml)
+[![Stale issues](https://github.com/google/gvisor/actions/workflows/stale.yml/badge.svg)](https://github.com/google/gvisor/actions/workflows/stale.yml)
+
 ## What is gVisor?
 
 **gVisor** is an application kernel, written in Go, that implements a
