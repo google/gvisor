@@ -245,10 +245,10 @@ func (pk *PacketBuffer) dataOffset() int {
 func (pk *PacketBuffer) push(typ headerType, size int) tcpipbuffer.View {
 	h := &pk.headers[typ]
 	if h.length > 0 {
-		panic(fmt.Sprintf("push must not be called twice: type %s", typ))
+		panic(fmt.Sprintf("push(%s, %d) called after previous push", typ, size))
 	}
 	if pk.pushed+size > pk.reserved {
-		panic("not enough headroom reserved")
+		panic(fmt.Sprintf("push(%s, %d) overflows; pushed=%d reserved=%d", typ, size, pk.pushed, pk.reserved))
 	}
 	pk.pushed += size
 	h.offset = -pk.pushed
