@@ -101,7 +101,6 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 	d.fs.specialFileFDs[fd] = struct{}{}
 	d.fs.syncMu.Unlock()
 	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
-		fsmetric.GoferOpensWX.Increment()
 		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
 	if h.fd >= 0 {

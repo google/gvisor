@@ -92,7 +92,6 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 	}
 	if flags.Write {
 		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Execute: true}); err == nil {
-			fsmetric.GoferOpensWX.Increment()
 			metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 			log.Warningf("Opened a writable executable: %q", name)
 		}
