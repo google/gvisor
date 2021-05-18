@@ -22,11 +22,11 @@ import (
 
 // EcdsaVerify verifies the signature in r, s of hash using ECDSA and the
 // public key, pub. Its return value records whether the signature is valid.
-func EcdsaVerify(pub *ecdsa.PublicKey, hash []byte, r, s *big.Int) (bool, error) {
-	return ecdsa.Verify(pub, hash, r, s), nil
+func EcdsaVerify(pub *ecdsa.PublicKey, hash []byte, r, s *big.Int) bool {
+	return ecdsa.Verify(pub, hash, r, s)
 }
 
 // SumSha384 returns the SHA384 checksum of the data.
-func SumSha384(data []byte) ([sha512.Size384]byte, error) {
-	return sha512.Sum384(data), nil
+func SumSha384(data []byte) (sum384 [sha512.Size384]byte) {
+	return sha512.Sum384(data)
 }
