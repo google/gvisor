@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -30,7 +31,13 @@ func BenchmarkAssignErrno(b *testing.B) {
 	}
 }
 
-func BenchmarkAssignError(b *testing.B) {
+func BenchmarkLinuxerrAssignError(b *testing.B) {
+	for i := b.N; i > 0; i-- {
+		globalError = linuxerr.EINVAL
+	}
+}
+
+func BenchmarkAssignSyserrorError(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		globalError = syserror.EINVAL
 	}
@@ -46,7 +53,17 @@ func BenchmarkCompareErrno(b *testing.B) {
 	}
 }
 
-func BenchmarkCompareError(b *testing.B) {
+func BenchmarkCompareLinuxerrError(b *testing.B) {
+	globalError = linuxerr.E2BIG
+	j := 0
+	for i := b.N; i > 0; i-- {
+		if globalError == linuxerr.EINVAL {
+			j++
+		}
+	}
+}
+
+func BenchmarkCompareSyserrorError(b *testing.B) {
 	globalError = syserror.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -62,7 +79,7 @@ func BenchmarkSwitchErrno(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		switch globalError {
 		case unix.EINVAL:
-			j += 1
+			j++
 		case unix.EINTR:
 			j += 2
 		case unix.EAGAIN:
@@ -71,13 +88,28 @@ func BenchmarkSwitchErrno(b *testing.B) {
 	}
 }
 
-func BenchmarkSwitchError(b *testing.B) {
+func BenchmarkSwitchLinuxerrError(b *testing.B) {
+	globalError = linuxerr.EPERM
+	j := 0
+	for i := b.N; i > 0; i-- {
+		switch globalError {
+		case linuxerr.EINVAL:
+			j++
+		case linuxerr.EINTR:
+			j += 2
+		case linuxerr.EAGAIN:
+			j += 3
+		}
+	}
+}
+
+func BenchmarkSwitchSyserrorError(b *testing.B) {
 	globalError = syserror.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
 		switch globalError {
 		case syserror.EINVAL:
-			j += 1
+			j++
 		case syserror.EINTR:
 			j += 2
 		case syserror.EAGAIN:
