@@ -60,7 +60,6 @@ func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, 
 		return nil, err
 	}
 	if fd.vfsfd.IsWritable() && (atomic.LoadUint32(&d.mode)&0111 != 0) {
-		fsmetric.GoferOpensWX.Increment()
 		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
 	}
 	if atomic.LoadInt32(&d.mmapFD) >= 0 {
