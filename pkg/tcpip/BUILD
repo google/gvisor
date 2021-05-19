@@ -39,12 +39,30 @@ go_library(
 deps_test(
     name = "netstack_deps_test",
     allowed = [
+        # gVisor deps.
+        "//pkg/atomicbitops",
+        "//pkg/buffer",
+        "//pkg/context",
+        "//pkg/gohacks",
+        "//pkg/goid",
+        "//pkg/ilist",
+        "//pkg/iovec",
+        "//pkg/linewriter",
+        "//pkg/log",
+        "//pkg/rand",
+        "//pkg/sleep",
+        "//pkg/state",
+        "//pkg/state/wire",
+        "//pkg/sync",
+        "//pkg/waiter",
+
+        # Other deps.
         "@com_github_google_btree//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
         "@org_golang_x_time//rate:go_default_library",
     ],
     allowed_prefixes = [
-        "//",
+        "//pkg/tcpip",
         "@org_golang_x_sys//internal/unsafeheader",
     ],
     targets = [
