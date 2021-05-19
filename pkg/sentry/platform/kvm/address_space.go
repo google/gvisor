@@ -85,15 +85,6 @@ type addressSpace struct {
 	dirtySet *dirtySet
 }
 
-// invalidate is the implementation for Invalidate.
-func (as *addressSpace) invalidate() {
-	as.dirtySet.forEach(as.machine, func(c *vCPU) {
-		if c.active.get() == as { // If this happens to be active,
-			c.BounceToKernel() // ... force a kernel transition.
-		}
-	})
-}
-
 // Invalidate interrupts all dirty contexts.
 func (as *addressSpace) Invalidate() {
 	as.mu.Lock()
