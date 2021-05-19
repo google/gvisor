@@ -481,6 +481,22 @@ func (*icmpReasonFragmentationNeeded) isForwarding() bool {
 	return true
 }
 
+// icmpReasonHostUnreachable is an error in which the host specified in the
+// internet destination field of the datagram is unreachable.
+type icmpReasonHostUnreachable struct{}
+
+func (*icmpReasonHostUnreachable) isICMPReason() {}
+func (*icmpReasonHostUnreachable) isForwarding() bool {
+	// If we hit a Host Unreachable error, then we know we are operating as a
+	// router. As per RFC 792 page 5, Destination Unreachable Message,
+	//
+	//   In addition, in some networks, the gateway may be able to determine
+	//   if the internet destination host is unreachable.  Gateways in these
+	//   networks may send destination unreachable messages to the source host
+	//   when the destination host is unreachable.
+	return true
+}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv4 and sends it back to the remote device that sent
 // the problematic packet. It incorporates as much of that packet as
@@ -537,7 +553,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	defer route.Release()
 
 	p.mu.Lock()
-	netEP, ok := p.mu.eps[pkt.NICID]
+	// We retrieve an endpoint using the newly constructed route's NICID rather
+	// than the packet's NICID. The packet's NICID corresponds to the NIC on
+	// which it arrived, which isn't necessarily the same as the NIC on which it
+	// will be transmitted. On the other hand, the route's NIC *is* guaranteed
+	// to be the NIC on which the packet will be transmitted.
+	netEP, ok := p.mu.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
 		return &tcpip.ErrNotConnected{}
@@ -652,6 +673,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	case *icmpReasonNetworkUnreachable:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv4NetUnreachable)
+		counter = sent.dstUnreachable
+	case *icmpReasonHostUnreachable:
+		icmpHdr.SetType(header.ICMPv4DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv4HostUnreachable)
 		counter = sent.dstUnreachable
 	case *icmpReasonFragmentationNeeded:
 		icmpHdr.SetType(header.ICMPv4DstUnreachable)

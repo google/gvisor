@@ -42,6 +42,10 @@ type MultiCounterIPForwardingStats struct {
 	// were too big for the outgoing MTU.
 	PacketTooBig tcpip.MultiCounterStat
 
+	// HostUnreachable is the number of IP packets received which could not be
+	// successfully forwarded due to an unresolvable next hop.
+	HostUnreachable tcpip.MultiCounterStat
+
 	// ExtensionHeaderProblem is the number of IP packets which were dropped
 	// because of a problem encountered when processing an IPv6 extension
 	// header.
@@ -61,6 +65,7 @@ func (m *MultiCounterIPForwardingStats) Init(a, b *tcpip.IPForwardingStats) {
 	m.ExtensionHeaderProblem.Init(a.ExtensionHeaderProblem, b.ExtensionHeaderProblem)
 	m.PacketTooBig.Init(a.PacketTooBig, b.PacketTooBig)
 	m.ExhaustedTTL.Init(a.ExhaustedTTL, b.ExhaustedTTL)
+	m.HostUnreachable.Init(a.HostUnreachable, b.HostUnreachable)
 }
 
 // LINT.ThenChange(:MultiCounterIPForwardingStats, ../../../tcpip.go:IPForwardingStats)

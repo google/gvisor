@@ -307,7 +307,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 		// a shared lock.
 		e.mu.timer = timer{
 			done: &done,
-			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
+			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
 				var err tcpip.Error = &tcpip.ErrTimeout{}
 				if remaining != 0 {
 					err = e.cache.linkRes.LinkAddressRequest(addr, "" /* localAddr */, linkAddr)
@@ -378,7 +378,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		// a shared lock.
 		e.mu.timer = timer{
 			done: &done,
-			timer: e.cache.nic.stack.Clock().AfterFunc(0, func() {
+			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
 				var err tcpip.Error = &tcpip.ErrTimeout{}
 				if remaining != 0 {
 					// As per RFC 4861 section 7.2.2:

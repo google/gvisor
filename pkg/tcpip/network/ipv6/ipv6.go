@@ -282,6 +282,16 @@ func (*endpoint) DuplicateAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
 func (e *endpoint) HandleLinkResolutionFailure(pkt *stack.PacketBuffer) {
+	// If we are operating as a router, we should return an ICMP error to the
+	// original packet's sender.
+	if pkt.NetworkPacketInfo.IsForwardedPacket {
+		// TODO(gvisor.dev/issue/6005): Propagate asynchronously generated ICMP
+		// errors to local endpoints.
+		e.protocol.returnError(&icmpReasonHostUnreachable{}, pkt)
+		e.stats.ip.Forwarding.Errors.Increment()
+		e.stats.ip.Forwarding.HostUnreachable.Increment()
+		return
+	}
 	// handleControl expects the entire offending packet to be in the packet
 	// buffer's data field.
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{

@@ -1029,6 +1029,26 @@ func (*icmpReasonNetUnreachable) respondsToMulticast() bool {
 	return false
 }
 
+// icmpReasonHostUnreachable is an error in which the host specified in the
+// internet destination field of the datagram is unreachable.
+type icmpReasonHostUnreachable struct{}
+
+func (*icmpReasonHostUnreachable) isICMPReason() {}
+func (*icmpReasonHostUnreachable) isForwarding() bool {
+	// If we hit a Host Unreachable error, then we know we are operating as a
+	// router. As per RFC 4443 page 8, Destination Unreachable Message,
+	//
+	//   If the reason for the failure to deliver cannot be mapped to any of
+	//   other codes, the Code field is set to 3.  Example of such cases are
+	//   an inability to resolve the IPv6 destination address into a
+	//   corresponding link address, or a link-specific problem of some sort.
+	return true
+}
+
+func (*icmpReasonHostUnreachable) respondsToMulticast() bool {
+	return false
+}
+
 // icmpReasonFragmentationNeeded is an error where a packet is to big to be sent
 // out through the outgoing MTU, as per RFC 4443 page 9, Packet Too Big Message.
 type icmpReasonPacketTooBig struct{}
@@ -1143,7 +1163,12 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	defer route.Release()
 
 	p.mu.Lock()
-	netEP, ok := p.mu.eps[pkt.NICID]
+	// We retrieve an endpoint using the newly constructed route's NICID rather
+	// than the packet's NICID. The packet's NICID corresponds to the NIC on
+	// which it arrived, which isn't necessarily the same as the NIC on which it
+	// will be transmitted. On the other hand, the route's NIC *is* guaranteed
+	// to be the NIC on which the packet will be transmitted.
+	netEP, ok := p.mu.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
 		return &tcpip.ErrNotConnected{}
@@ -1221,6 +1246,10 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	case *icmpReasonNetUnreachable:
 		icmpHdr.SetType(header.ICMPv6DstUnreachable)
 		icmpHdr.SetCode(header.ICMPv6NetworkUnreachable)
+		counter = sent.dstUnreachable
+	case *icmpReasonHostUnreachable:
+		icmpHdr.SetType(header.ICMPv6DstUnreachable)
+		icmpHdr.SetCode(header.ICMPv6AddressUnreachable)
 		counter = sent.dstUnreachable
 	case *icmpReasonPacketTooBig:
 		icmpHdr.SetType(header.ICMPv6PacketTooBig)

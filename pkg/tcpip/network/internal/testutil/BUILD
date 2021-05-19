@@ -10,10 +10,12 @@ go_library(
         "//pkg/tcpip/network/internal/fragmentation:__pkg__",
         "//pkg/tcpip/network/ipv4:__pkg__",
         "//pkg/tcpip/network/ipv6:__pkg__",
+        "//pkg/tcpip/tests/integration:__pkg__",
     ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],

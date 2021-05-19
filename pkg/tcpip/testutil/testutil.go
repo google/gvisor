@@ -109,3 +109,15 @@ func ValidateMultiCounterStats(multi reflect.Value, counters []reflect.Value) er
 
 	return nil
 }
+
+// MustParseLink parses a Link string into a tcpip.LinkAddress, panicking on
+// error.
+//
+// The string must be in the format aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff.
+func MustParseLink(addr string) tcpip.LinkAddress {
+	parsed, err := tcpip.ParseMACAddress(addr)
+	if err != nil {
+		panic(fmt.Sprintf("tcpip.ParseMACAddress(%s): %s", addr, err))
+	}
+	return parsed
+}
