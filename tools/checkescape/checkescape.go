@@ -709,8 +709,13 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 					return
 				}
 
-				// Recursively collect information from
-				// the other analyzers.
+				// If this package is the atomic package, the implementation
+				// may be replaced by instrinsics that don't have analysis.
+				if x.Pkg.Pkg.Path() == "sync/atomic" {
+					return
+				}
+
+				// Recursively collect information.
 				var imp packageEscapeFacts
 				if !pass.ImportPackageFact(x.Pkg.Pkg, &imp) {
 					// Unable to import the dependency; we must
