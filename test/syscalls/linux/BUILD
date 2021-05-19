@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "gtest", "select_arch", "select_system")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "gbenchmark", "gtest", "select_arch", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -3785,10 +3785,9 @@ cc_binary(
     srcs = ["timers.cc"],
     linkstatic = 1,
     deps = [
-        "//test/util:cleanup",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/time",
+        gbenchmark,
         gtest,
+        "//test/util:cleanup",
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
@@ -3796,6 +3795,8 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:thread_util",
         "//test/util:timer_util",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/time",
     ],
 )
 
