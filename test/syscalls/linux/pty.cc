@@ -393,7 +393,7 @@ TEST(PtyTrunc, Truncate) {
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader and have
   // no controlling terminal.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect the TTY.
@@ -482,7 +482,7 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
   SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect the TTY.
@@ -509,7 +509,7 @@ TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
   SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
 
   // Opening master does not set the controlling TTY, and therefore we are
@@ -521,7 +521,7 @@ TEST(BasicPtyTest, OpenNOCTTY) {
   SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(
       OpenReplica(master, O_NOCTTY | O_NONBLOCK | O_RDWR));
