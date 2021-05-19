@@ -1552,6 +1552,10 @@ type IPForwardingStats struct {
 	// were too big for the outgoing MTU.
 	PacketTooBig *StatCounter
 
+	// HostUnreachable is the number of IP packets received which could not be
+	// successfully forwarded due to an unresolvable next hop.
+	HostUnreachable *StatCounter
+
 	// ExtensionHeaderProblem is the number of IP packets which were dropped
 	// because of a problem encountered when processing an IPv6 extension
 	// header.
