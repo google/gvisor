@@ -15,6 +15,8 @@
 package dev
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -85,6 +87,15 @@ func (n *netTunFileOperations) Release(ctx context.Context) {
 	n.device.Release(ctx)
 }
 
+func ifaceNameExists(name string, stack *netstack.Stack) bool {
+	for _, iface := range stack.Interfaces() {
+		if iface.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Ioctl implements fs.FileOperations.Ioctl.
 func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	request := args[1].Uint()
@@ -115,6 +126,41 @@ func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io user
 		if err != nil {
 			return 0, err
 		}
+
+		if req.Name() == "" {
+			var prefixFmt string
+			if flags.TUN {
+				prefixFmt = "tun%d"
+			} else if flags.TAP {
+				prefixFmt = "tap%d"
+			} else {
+				return 0, syserror.EINVAL
+			}
+
+			for i := 0; i < len(stack.Interfaces())+1; i++ {
+				dev := fmt.Sprintf(prefixFmt, i)
+				if !ifaceNameExists(dev, stack) {
+					req.SetName(dev)
+					break
+				}
+			}
+
+			// Populate if_name with the new name: Note that the character pointer becomes
+			// overwritten with the real device name (e.g. "tun0")
+			_, err := req.CopyOut(t, data)
+			if err != nil {
+				return 0, err
+			}
+		}
+
+		// Note that this check is also required if req.Name() == "",
+		// in case the %d somehow exceeds the buffer size and therefore "chopped"
+		// to the buffer length, which causes the resulted name to be equal to an existed
+		// interface name.
+		if ifaceNameExists(req.Name(), stack) {
+			return 0, syserror.EINVAL
+		}
+
 		return 0, n.device.SetIff(stack.Stack, req.Name(), flags)
 
 	case linux.TUNGETIFF:

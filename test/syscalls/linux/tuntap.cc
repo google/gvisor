@@ -23,6 +23,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <cstring>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -490,5 +491,26 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
   write(sock, "hello", 5);
 }
 
+// EmptyInterfaceName tests empty interface name at creation of tun/tap.
+TEST_F(TuntapTest, EmptyInterfaceName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Interface creation.
+  FileDescriptor fd_tap = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  FileDescriptor fd_tun = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+
+  struct ifreq ifr_set = {};
+  int tmp = 0;
+  ifr_set.ifr_flags = IFF_TAP;
+  ASSERT_THAT(ioctl(fd_tap.get(), TUNSETIFF, &ifr_set), SyscallSucceeds());
+  EXPECT_EQ(sscanf(ifr_set.ifr_name, "tap%d", &tmp), 1);
+  EXPECT_TRUE(ifr_set.ifr_name[IFNAMSIZ-1] == '\0');
+
+  ifr_set = {};
+  ifr_set.ifr_flags = IFF_TUN;
+  ASSERT_THAT(ioctl(fd_tun.get(), TUNSETIFF, &ifr_set), SyscallSucceeds());
+  EXPECT_EQ(sscanf(ifr_set.ifr_name, "tun%d", &tmp), 1);
+  EXPECT_TRUE(ifr_set.ifr_name[IFNAMSIZ-1] == '\0');
+}
 }  // namespace testing
 }  // namespace gvisor
