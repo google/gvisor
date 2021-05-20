@@ -181,7 +181,23 @@ func (r *CgroupRegistry) FindHierarchy(ctypes []CgroupControllerType) *vfs.Files
 
 	for _, h := range r.hierarchies {
 		if h.match(ctypes) {
-			h.fs.IncRef()
+			if !h.fs.TryIncRef() {
+				// Racing with filesystem destruction, namely h.fs.Release.
+				// Since we hold r.mu, we know the hierarchy hasn't been
+				// unregistered yet, but its associated filesystem is tearing
+				// down.
+				//
+				// If we simply indicate the hierarchy wasn't found without
+				// cleaning up the registry, the caller can race with the
+				// unregister and find itself temporarily unable to create a new
+				// hierarchy with a subset of the relevant controllers.
+				//
+				// To keep the result of FindHierarchy consistent with the
+				// uniqueness of controllers enforced by Register, drop the
+				// dying hierarchy now. The eventual unregister by the FS
+				// teardown will become a no-op.
+				return nil
+			}
 			return h.fs
 		}
 	}
@@ -230,12 +246,17 @@ func (r *CgroupRegistry) Register(cs []CgroupController, fs cgroupFS) error {
 	return nil
 }
 
-// Unregister removes a previously registered hierarchy from the registry. If
-// the controller was not previously registered, Unregister is a no-op.
+// Unregister removes a previously registered hierarchy from the registry. If no
+// such hierarchy is registered, Unregister is a no-op.
 func (r *CgroupRegistry) Unregister(hid uint32) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.unregisterLocked(hid)
+	r.mu.Unlock()
+}
 
+// Precondition: Caller must hold r.mu.
+// +checklocks:r.mu
+func (r *CgroupRegistry) unregisterLocked(hid uint32) {
 	if h, ok := r.hierarchies[hid]; ok {
 		for name, _ := range h.controllers {
 			delete(r.controllers, name)

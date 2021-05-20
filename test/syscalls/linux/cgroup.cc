@@ -227,6 +227,41 @@ TEST(Cgroup, MountRace) {
   EXPECT_NO_ERRNO(c.ContainsCallingProcess());
 }
 
+TEST(Cgroup, MountUnmountRace) {
+  SKIP_IF(!CgroupsAvailable());
+
+  TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const DisableSave ds;  // Too many syscalls.
+
+  auto mount_thread = [&mountpoint]() {
+    for (int i = 0; i < 100; ++i) {
+      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
+    }
+  };
+  auto unmount_thread = [&mountpoint]() {
+    for (int i = 0; i < 100; ++i) {
+      umount(mountpoint.path().c_str());
+    }
+  };
+  std::list<ScopedThread> threads;
+  for (int i = 0; i < 10; ++i) {
+    threads.emplace_back(mount_thread);
+  }
+  for (int i = 0; i < 10; ++i) {
+    threads.emplace_back(unmount_thread);
+  }
+  for (auto& t : threads) {
+    t.Join();
+  }
+
+  // We don't know how many mount refs are remaining, since the count depends on
+  // the ordering of mount and umount calls. Keep calling unmount until it
+  // returns an error.
+  while (umount(mountpoint.path().c_str()) == 0) {
+  }
+}
+
 TEST(Cgroup, UnmountRepeated) {
   SKIP_IF(!CgroupsAvailable());
 
