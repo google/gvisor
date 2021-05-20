@@ -824,6 +824,8 @@ type ICMPv6 struct {
 	Type     *header.ICMPv6Type
 	Code     *header.ICMPv6Code
 	Checksum *uint16
+	Ident    *uint16 // Only in Echo Request/Reply.
+	Problem  *uint32 // Only in Parameter Problem.
 	Payload  []byte
 }
 
@@ -835,7 +837,7 @@ func (l *ICMPv6) String() string {
 
 // ToBytes implements Layer.ToBytes.
 func (l *ICMPv6) ToBytes() ([]byte, error) {
-	b := make([]byte, header.ICMPv6HeaderSize+len(l.Payload))
+	b := make([]byte, header.ICMPv6MinimumSize+len(l.Payload))
 	h := header.ICMPv6(b)
 	if l.Type != nil {
 		h.SetType(*l.Type)
@@ -843,27 +845,34 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
-	if n := copy(h.MessageBody(), l.Payload); n != len(l.Payload) {
+	if n := copy(h.Payload(), l.Payload); n != len(l.Payload) {
 		panic(fmt.Sprintf("copied %d bytes, expected to copy %d bytes", n, len(l.Payload)))
+	}
+	typ := h.Type()
+	switch typ {
+	case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
+		if l.Ident != nil {
+			h.SetIdent(*l.Ident)
+		}
+	case header.ICMPv6ParamProblem:
+		if l.Problem != nil {
+			h.SetTypeSpecific(*l.Problem)
+		}
 	}
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
 		// It is possible that the ICMPv6 header does not follow the IPv6 header
 		// immediately, there could be one or more extension headers in between.
-		// We need to search forward to find the IPv6 header.
-		for prev := l.Prev(); prev != nil; prev = prev.Prev() {
-			if ipv6, ok := prev.(*IPv6); ok {
-				payload, err := payload(l)
-				if err != nil {
-					return nil, err
-				}
+		// We need to search backwards to find the IPv6 header.
+		for layer := l.Prev(); layer != nil; layer = layer.Prev() {
+			if ipv6, ok := layer.(*IPv6); ok {
 				h.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
-					Header:      h,
+					Header:      h[:header.ICMPv6PayloadOffset],
 					Src:         *ipv6.SrcAddr,
 					Dst:         *ipv6.DstAddr,
-					PayloadCsum: header.ChecksumVV(payload, 0 /* initial */),
-					PayloadLen:  payload.Size(),
+					PayloadCsum: header.Checksum(l.Payload, 0 /* initial */),
+					PayloadLen:  len(l.Payload),
 				}))
 				break
 			}
@@ -884,20 +893,21 @@ func ICMPv6Code(v header.ICMPv6Code) *header.ICMPv6Code {
 	return &v
 }
 
-// Byte is a helper routine that allocates a new byte value to store
-// v and returns a pointer to it.
-func Byte(v byte) *byte {
-	return &v
-}
-
 // parseICMPv6 parses the bytes assuming that they start with an ICMPv6 header.
 func parseICMPv6(b []byte) (Layer, layerParser) {
 	h := header.ICMPv6(b)
+	msgType := h.Type()
 	icmpv6 := ICMPv6{
-		Type:     ICMPv6Type(h.Type()),
+		Type:     ICMPv6Type(msgType),
 		Code:     ICMPv6Code(h.Code()),
 		Checksum: Uint16(h.Checksum()),
-		Payload:  h.MessageBody(),
+		Payload:  h.Payload(),
+	}
+	switch msgType {
+	case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
+		icmpv6.Ident = Uint16(h.Ident())
+	case header.ICMPv6ParamProblem:
+		icmpv6.Problem = Uint32(h.TypeSpecific())
 	}
 	return &icmpv6, nil
 }
@@ -907,7 +917,7 @@ func (l *ICMPv6) match(other Layer) bool {
 }
 
 func (l *ICMPv6) length() int {
-	return header.ICMPv6HeaderSize + len(l.Payload)
+	return header.ICMPv6MinimumSize + len(l.Payload)
 }
 
 // merge overrides the values in l with the values from other but only in fields
@@ -954,8 +964,8 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Code != nil {
 		h.SetCode(*l.Code)
 	}
-	if copied := copy(h.Payload(), l.Payload); copied != len(l.Payload) {
-		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", len(h.Payload()), len(l.Payload)))
+	if n := copy(h.Payload(), l.Payload); n != len(l.Payload) {
+		panic(fmt.Sprintf("wrong number of bytes copied into h.Payload(): got = %d, want = %d", n, len(l.Payload)))
 	}
 	typ := h.Type()
 	switch typ {
@@ -977,16 +987,7 @@ func (l *ICMPv4) ToBytes() ([]byte, error) {
 	if l.Checksum != nil {
 		h.SetChecksum(*l.Checksum)
 	} else {
-		// Compute the checksum based on the ICMPv4.Payload and also the subsequent
-		// layers.
-		payload, err := payload(l)
-		if err != nil {
-			return nil, err
-		}
-		var vv buffer.VectorisedView
-		vv.AppendView(buffer.View(l.Payload))
-		vv.Append(payload)
-		h.SetChecksum(header.ICMPv4Checksum(h, header.ChecksumVV(vv, 0 /* initial */)))
+		h.SetChecksum(^header.Checksum(h, 0))
 	}
 
 	return h, nil
@@ -1019,7 +1020,7 @@ func (l *ICMPv4) match(other Layer) bool {
 }
 
 func (l *ICMPv4) length() int {
-	return header.ICMPv4MinimumSize
+	return header.ICMPv4MinimumSize + len(l.Payload)
 }
 
 // merge overrides the values in l with the values from other but only in fields

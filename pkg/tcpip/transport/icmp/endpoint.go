@@ -26,8 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// TODO(https://gvisor.dev/issues/5623): Unit test this package.
-
 // +stateify savable
 type icmpPacket struct {
 	icmpPacketEntry
@@ -133,7 +131,8 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		e.stack.UnregisterTransportEndpoint([]tcpip.NetworkProtocolNumber{e.NetProto}, e.TransProto, e.ID, e, ports.Flags{}, 0 /* bindToDevice */)
+		bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
+		e.stack.UnregisterTransportEndpoint([]tcpip.NetworkProtocolNumber{e.NetProto}, e.TransProto, e.ID, e, ports.Flags{}, bindToDevice)
 	}
 
 	// Close the receive list and drain it.
@@ -304,6 +303,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicID := to.NIC
+		if nicID == 0 {
+			nicID = tcpip.NICID(e.ops.GetBindToDevice())
+		}
 		if e.BindNICID != 0 {
 			if nicID != 0 && nicID != e.BindNICID {
 				return 0, &tcpip.ErrNoRoute{}
@@ -346,6 +348,13 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 
 	return int64(len(v)), nil
+}
+
+var _ tcpip.SocketOptionsHandler = (*endpoint)(nil)
+
+// HasNIC implements tcpip.SocketOptionsHandler.
+func (e *endpoint) HasNIC(id int32) bool {
+	return e.stack.HasNIC(tcpip.NICID(id))
 }
 
 // SetSockOpt sets a socket option.
@@ -607,17 +616,18 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 }
 
 func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, tcpip.Error) {
+	bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, 0 /* bindToDevice */)
+		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, bindToDevice)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
 	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, 0 /* bindtodevice */)
+		err := e.stack.RegisterTransportEndpoint(netProtos, e.TransProto, id, e, ports.Flags{}, bindToDevice)
 		switch err.(type) {
 		case nil:
 			return true, nil
