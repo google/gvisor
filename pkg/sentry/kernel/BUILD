@@ -282,6 +282,7 @@ go_library(
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
+        "@com_github_RoaringBitmap_roaring//:go_default_library",
     ],
 )
 

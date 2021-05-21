@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/RoaringBitmap/roaring"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -44,6 +45,7 @@ func (f *FDTable) initNoLeakCheck() {
 func (f *FDTable) init() {
 	f.initNoLeakCheck()
 	f.InitRefs()
+	f.fdBitmap = roaring.NewBitmap()
 }
 
 // get gets a file entry.
@@ -160,14 +162,6 @@ func (f *FDTable) setAll(ctx context.Context, fd int32, file *fs.File, fileVFS2 
 				desc.fileVFS2.IncRef()
 			}
 		}
-	}
-
-	// Adjust used.
-	switch {
-	case orig == nil && desc != nil:
-		atomic.AddInt32(&f.used, 1)
-	case orig != nil && desc == nil:
-		atomic.AddInt32(&f.used, -1)
 	}
 
 	if orig != nil {

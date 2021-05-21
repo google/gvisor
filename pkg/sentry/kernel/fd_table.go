@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync/atomic"
 
+	"github.com/RoaringBitmap/roaring"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -84,13 +84,8 @@ type FDTable struct {
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
-	// next is start position to find fd.
-	next int32
-
-	// used contains the number of non-nil entries. It must be accessed
-	// atomically. It may be read atomically without holding mu (but not
-	// written).
-	used int32
+	// open file bitmaps, showing which fds are already in use
+	fdBitmap *roaring.Bitmap
 
 	// descriptorTable holds descriptors.
 	descriptorTable `state:".(map[int32]descriptor)"`
@@ -111,12 +106,11 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	ctx := context.Background()
 	f.initNoLeakCheck() // Initialize table.
-	f.used = 0
 	for fd, d := range m {
 		if file, fileVFS2 := f.setAll(ctx, fd, d.file, d.fileVFS2, d.flags); file != nil || fileVFS2 != nil {
 			panic("VFS1 or VFS2 files set")
 		}
-
+		f.fdBitmap.Add(uint32(fd))
 		// Note that we do _not_ need to acquire a extra table reference here. The
 		// table reference will already be accounted for in the file, so we drop the
 		// reference taken by set above.
@@ -189,8 +183,10 @@ func (f *FDTable) DecRef(ctx context.Context) {
 func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags)) {
 	// retries tracks the number of failed TryIncRef attempts for the same FD.
 	retries := 0
-	fd := int32(0)
-	for {
+	fds := f.fdBitmap.ToArray()
+	// Iterate through the fdBitmap
+	for _, ufd := range fds{
+		fd := int32(ufd)
 		file, fileVFS2, flags, ok := f.getAll(fd)
 		if !ok {
 			break
@@ -218,7 +214,6 @@ func (f *FDTable) forEach(ctx context.Context, fn func(fd int32, file *fs.File, 
 			fileVFS2.DecRef(ctx)
 		}
 		retries = 0
-		fd++
 	}
 }
 
@@ -250,10 +245,10 @@ func (f *FDTable) String() string {
 }
 
 // NewFDs allocates new FDs guaranteed to be the lowest number available
-// greater than or equal to the fd parameter. All files will share the set
+// greater than or equal to the minfd parameter. All files will share the set
 // flags. Success is guaranteed to be all or none.
-func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags FDFlags) (fds []int32, err error) {
-	if fd < 0 {
+func (f *FDTable) NewFDs(ctx context.Context, minfd int32, files []*fs.File, flags FDFlags) (fds []int32, err error) {
+	if minfd < 0 {
 		// Don't accept negative FDs.
 		return nil, unix.EINVAL
 	}
@@ -267,24 +262,48 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 		if lim.Cur != limits.Infinity {
 			end = int32(lim.Cur)
 		}
-		if fd >= end {
+		if minfd >= end {
 			return nil, unix.EMFILE
 		}
 	}
 
 	f.mu.Lock()
 
-	// From f.next to find available fd.
-	if fd < f.next {
-		fd = f.next
+	// max is the largest bit in fdBitmap
+	max := int32(0)
+	// flipFdBitmap is flip of fdBitmap which is used to find free fd in fdBitmap
+	flipFdBitmap := roaring.NewBitmap()
+
+	if !f.fdBitmap.IsEmpty() {
+		max = int32(f.fdBitmap.Maximum() + 1)
+		flipFdBitmap = roaring.Flip(f.fdBitmap, 0, uint64(max))
+		// Remove 0 to (minfd-1) bit in flipFdBitmap, thus it will not use fd that is less than minfd
+		if minfd > 0 {
+			flipFdBitmap.RemoveRange(0, uint64(minfd - 1))
+		}
+	}
+	// Adjust max in case it is less than minfd
+	if max < minfd {
+		max = minfd
 	}
 
 	// Install all entries.
-	for i := fd; i < end && len(fds) < len(files); i++ {
-		if d, _, _ := f.get(i); d == nil {
-			// Set the descriptor.
-			f.set(ctx, i, files[len(fds)], flags)
-			fds = append(fds, i) // Record the file descriptor.
+	for len(fds) < len(files) {
+		// try to use free bit in fdBitmap
+		// if all bits in fdBitmap are used, expand fd to the max
+		if !flipFdBitmap.IsEmpty() {
+			fd := int32(flipFdBitmap.Minimum())
+			f.fdBitmap.Add(uint32(fd))
+			flipFdBitmap.Remove(uint32(fd))
+			f.set(ctx, fd, files[len(fds)], flags)
+			fds = append(fds, fd)
+		} else if max < end {
+			f.fdBitmap.Add(uint32(max))
+			f.set(ctx, max, files[len(fds)], flags)
+			fds = append(fds, max)
+			max = max + 1
+		} else {
+			break
 		}
 	}
 
@@ -292,6 +311,7 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	if len(fds) < len(files) {
 		for _, i := range fds {
 			f.set(ctx, i, nil, FDFlags{})
+			f.fdBitmap.Remove(uint32(i))
 		}
 		f.mu.Unlock()
 
@@ -305,20 +325,15 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 		return nil, unix.EMFILE
 	}
 
-	if fd == f.next {
-		// Update next search start position.
-		f.next = fds[len(fds)-1] + 1
-	}
-
 	f.mu.Unlock()
 	return fds, nil
 }
 
 // NewFDsVFS2 allocates new FDs guaranteed to be the lowest number available
-// greater than or equal to the fd parameter. All files will share the set
+// greater than or equal to the minfd parameter. All files will share the set
 // flags. Success is guaranteed to be all or none.
-func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDescription, flags FDFlags) (fds []int32, err error) {
-	if fd < 0 {
+func (f *FDTable) NewFDsVFS2(ctx context.Context, minfd int32, files []*vfs.FileDescription, flags FDFlags) (fds []int32, err error) {
+	if minfd < 0 {
 		// Don't accept negative FDs.
 		return nil, unix.EINVAL
 	}
@@ -332,31 +347,55 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 		if lim.Cur != limits.Infinity {
 			end = int32(lim.Cur)
 		}
-		if fd >= end {
+		if minfd >= end {
 			return nil, unix.EMFILE
 		}
 	}
 
 	f.mu.Lock()
 
-	// From f.next to find available fd.
-	if fd < f.next {
-		fd = f.next
-	}
+	// max is the largest bit in fdBitmap
+	max := int32(0)
+	// flipFdBitmap is flip of fdbitmap which is used to find free fd in fdBitmap
+	flipFdBitmap := roaring.NewBitmap()
 
-	// Install all entries.
-	for i := fd; i < end && len(fds) < len(files); i++ {
-		if d, _, _ := f.getVFS2(i); d == nil {
-			// Set the descriptor.
-			f.setVFS2(ctx, i, files[len(fds)], flags)
-			fds = append(fds, i) // Record the file descriptor.
+	if !f.fdBitmap.IsEmpty() {
+		max = int32(f.fdBitmap.Maximum() + 1)
+		flipFdBitmap = roaring.Flip(f.fdBitmap, 0, uint64(max))
+		// Remove 0 to (minfd-1) bit in flipFdBitmap, thus it will not use fd that is less than minfd
+		if minfd > 0 {
+			flipFdBitmap.RemoveRange(0, uint64(minfd - 1))
 		}
 	}
 
+	// Adjust max in case it is less than minfd
+	if max < minfd {
+		max = minfd
+	}
+
+	for len(fds) < len(files) {
+		// Try to use free bit in fdBitmap
+		// If all bits in fdBitmap are used, expand fd to the max
+		if !flipFdBitmap.IsEmpty() {
+			fd := int32(flipFdBitmap.Minimum())
+			f.fdBitmap.Add(uint32(fd))
+			flipFdBitmap.Remove(uint32(fd))
+			f.setVFS2(ctx, fd, files[len(fds)], flags)
+			fds = append(fds, fd)
+		} else if max < end {
+			f.fdBitmap.Add(uint32(max))
+			f.setVFS2(ctx, max, files[len(fds)], flags)
+			fds = append(fds, max)
+			max = max + 1
+		} else {
+			break
+		}
+	}
 	// Failure? Unwind existing FDs.
 	if len(fds) < len(files) {
 		for _, i := range fds {
 			f.setVFS2(ctx, i, nil, FDFlags{})
+			f.fdBitmap.Remove(uint32(i))
 		}
 		f.mu.Unlock()
 
@@ -368,11 +407,6 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, fd int32, files []*vfs.FileDes
 			file.DecRef(ctx)
 		}
 		return nil, unix.EMFILE
-	}
-
-	if fd == f.next {
-		// Update next search start position.
-		f.next = fds[len(fds)-1] + 1
 	}
 
 	f.mu.Unlock()
@@ -404,21 +438,39 @@ func (f *FDTable) NewFDVFS2(ctx context.Context, minfd int32, file *vfs.FileDesc
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// From f.next to find available fd.
-	fd := minfd
-	if fd < f.next {
-		fd = f.next
-	}
-	for fd < end {
-		if d, _, _ := f.getVFS2(fd); d == nil {
-			f.setVFS2(ctx, fd, file, flags)
-			if fd == f.next {
-				// Update next search start position.
-				f.next = fd + 1
-			}
-			return fd, nil
+	// max is the largest bit in fdBitmap
+	max := int32(0)
+	// flipFdBitmap is flip of fdBitmap which is used to find free fd in fdBitmap
+	flipFdBitmap := roaring.NewBitmap()
+
+	if !f.fdBitmap.IsEmpty() {
+		max = int32(f.fdBitmap.Maximum() + 1)
+		flipFdBitmap = roaring.Flip(f.fdBitmap, 0, uint64(max))
+		// Remove 0 to (minfd-1) bit in flipFdBitmap, thus it will not use fd that is less than minfd
+		if minfd > 0 {
+			flipFdBitmap.RemoveRange(0, uint64(minfd - 1))
 		}
-		fd++
+	}
+	// Make sure fd is less than or equal end
+	if minfd > end {
+		return -1, unix.EMFILE
+	}
+	// Adjust max in case it is less than minfd
+	if minfd > max {
+		max = minfd
+	}
+	// If flipFdBitmap is not empty, which means there is available fd bit in FdBitmap
+	// We use the minmum bits in flipFdBitmap to be fd number
+	// Otherwise expand fd to the max
+	if !flipFdBitmap.IsEmpty() {
+		fd := int32(flipFdBitmap.Minimum())
+		f.setVFS2(ctx, fd, file, flags)
+		f.fdBitmap.Add(uint32(fd))
+		return fd, nil
+	} else if max < end {
+		f.setVFS2(ctx, max, file, flags)
+		f.fdBitmap.Add(uint32(max))
+		return max, nil
 	}
 	return -1, unix.EMFILE
 }
@@ -469,6 +521,11 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *fs.File, fileVFS2
 	defer f.mu.Unlock()
 
 	df, dfVFS2 := f.setAll(ctx, fd, file, fileVFS2, flags)
+	// Add fd to fdBitmap
+	if file != nil || fileVFS2 != nil {
+		f.fdBitmap.Add(uint32(fd))
+	}
+
 	return df, dfVFS2, nil
 }
 
@@ -573,7 +630,7 @@ func (f *FDTable) GetVFS2(fd int32) (*vfs.FileDescription, FDFlags) {
 // Precondition: The caller must be running on the task goroutine, or Task.mu
 // must be locked.
 func (f *FDTable) GetFDs(ctx context.Context) []int32 {
-	fds := make([]int32, 0, int(atomic.LoadInt32(&f.used)))
+	fds := make([]int32, 0, int(f.fdBitmap.GetCardinality()))
 	f.forEach(ctx, func(fd int32, _ *fs.File, _ *vfs.FileDescription, _ FDFlags) {
 		fds = append(fds, fd)
 	})
@@ -590,6 +647,7 @@ func (f *FDTable) Fork(ctx context.Context) *FDTable {
 		if df, dfVFS2 := clone.setAll(ctx, fd, file, fileVFS2, flags); df != nil || dfVFS2 != nil {
 			panic("VFS1 or VFS2 files set")
 		}
+		clone.fdBitmap.Add(uint32(fd))
 	})
 	return clone
 }
@@ -604,11 +662,6 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDesc
 
 	f.mu.Lock()
 
-	// Update current available position.
-	if fd < f.next {
-		f.next = fd
-	}
-
 	orig, orig2, _, _ := f.getAll(fd)
 
 	// Add reference for caller.
@@ -621,6 +674,7 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) (*fs.File, *vfs.FileDesc
 
 	if orig != nil || orig2 != nil {
 		orig, orig2 = f.setAll(ctx, fd, nil, nil, FDFlags{}) // Zap entry.
+		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()
 
@@ -644,15 +698,12 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*fs.File, *vfs.FileDes
 	f.forEach(ctx, func(fd int32, file *fs.File, fileVFS2 *vfs.FileDescription, flags FDFlags) {
 		if cond(file, fileVFS2, flags) {
 			df, dfVFS2 := f.setAll(ctx, fd, nil, nil, FDFlags{}) // Clear from table.
+			f.fdBitmap.Remove(uint32(fd))
 			if df != nil {
 				files = append(files, df)
 			}
 			if dfVFS2 != nil {
 				filesVFS2 = append(filesVFS2, dfVFS2)
-			}
-			// Update current available position.
-			if fd < f.next {
-				f.next = fd
 			}
 		}
 	})

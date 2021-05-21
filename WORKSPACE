@@ -1322,6 +1322,12 @@ http_file(
 # pins that we have in go.mod or below. So order actually matters here.
 
 go_repository(
+    name = "com_github_RoaringBitmap_roaring",
+    importpath = "github.com/RoaringBitmap/roaring",
+    commit = "8316baf1c9c3b58455ae1fd92c31250fc64d918c",
+)
+
+go_repository(
     name = "com_github_sirupsen_logrus",
     importpath = "github.com/sirupsen/logrus",
     sum = "h1:ShrD1U9pZB12TX0cVy0DtePoCH97K8EtX+mg7ZARUtM=",
