@@ -17,6 +17,7 @@ package kernel
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -113,6 +114,10 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		return t.k.RealtimeClock()
 	case limits.CtxLimits:
 		return t.tg.limits
+	case linux.CtxSignalNoInfoFunc:
+		return func(sig linux.Signal) error {
+			return t.SendSignal(SignalInfoNoInfo(sig, t, t))
+		}
 	case pgalloc.CtxMemoryFile:
 		return t.k.mf
 	case pgalloc.CtxMemoryFileProvider:
