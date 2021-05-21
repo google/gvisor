@@ -14,6 +14,7 @@
 
 #include <fcntl.h> /* Obtain O_* constant definitions */
 #include <linux/magic.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/statfs.h>
 #include <sys/uio.h>
@@ -29,6 +30,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -43,6 +45,28 @@ constexpr int kTestValue = 0x12345678;
 
 // Used for synchronization in race tests.
 const absl::Duration syncDelay = absl::Seconds(2);
+
+std::atomic<int> global_num_signals_received = 0;
+void SigRecordingHandler(int signum, siginfo_t* siginfo,
+                         void* unused_ucontext) {
+  global_num_signals_received++;
+}
+
+PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
+  struct sigaction handler;
+  handler.sa_sigaction = SigRecordingHandler;
+  sigemptyset(&handler.sa_mask);
+  handler.sa_flags = SA_SIGINFO;
+  return ScopedSigaction(signum, handler);
+}
+
+void WaitForSignalDelivery(absl::Duration timeout, int max_expected) {
+  absl::Time wait_start = absl::Now();
+  while (global_num_signals_received < max_expected &&
+         absl::Now() - wait_start < timeout) {
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+}
 
 struct PipeCreator {
   std::string name_;
@@ -333,10 +357,16 @@ TEST_P(PipeTest, WriterSideClosesReadDataFirst) {
 TEST_P(PipeTest, ReaderSideCloses) {
   SKIP_IF(!CreateBlocking());
 
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
+
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
   int buf = kTestValue;
   EXPECT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
               SyscallFailsWithErrno(EPIPE));
+
+  WaitForSignalDelivery(absl::Seconds(1), 1);
+  ASSERT_EQ(global_num_signals_received, 1);
 }
 
 TEST_P(PipeTest, CloseTwice) {
@@ -355,6 +385,9 @@ TEST_P(PipeTest, CloseTwice) {
 TEST_P(PipeTest, BlockWriteClosed) {
   SKIP_IF(!CreateBlocking());
 
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
+
   absl::Notification notify;
   ScopedThread t([this, &notify]() {
     std::vector<char> buf(Size());
@@ -371,6 +404,10 @@ TEST_P(PipeTest, BlockWriteClosed) {
 
   notify.WaitForNotification();
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
+
+  WaitForSignalDelivery(absl::Seconds(1), 1);
+  ASSERT_EQ(global_num_signals_received, 1);
+
   t.Join();
 }
 
@@ -378,6 +415,9 @@ TEST_P(PipeTest, BlockWriteClosed) {
 // been written.
 TEST_P(PipeTest, BlockPartialWriteClosed) {
   SKIP_IF(!CreateBlocking());
+
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
 
   ScopedThread t([this]() {
     const int pipe_size = Size();
@@ -396,6 +436,10 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
 
   // Unblock the above.
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
+
+  WaitForSignalDelivery(absl::Seconds(1), 2);
+  ASSERT_EQ(global_num_signals_received, 2);
+
   t.Join();
 }
 

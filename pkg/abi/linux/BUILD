@@ -15,6 +15,7 @@ go_library(
         "bpf.go",
         "capability.go",
         "clone.go",
+        "context.go",
         "dev.go",
         "elf.go",
         "epoll.go",
@@ -77,6 +78,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/bits",
+        "//pkg/context",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
     ],

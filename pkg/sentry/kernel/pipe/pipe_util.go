@@ -86,6 +86,12 @@ func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error)
 	if n > 0 {
 		p.Notify(waiter.ReadableEvents)
 	}
+	if err == unix.EPIPE {
+		// If we are returning EPIPE send SIGPIPE to the task.
+		if sendSig := linux.SignalNoInfoFuncFromContext(ctx); sendSig != nil {
+			sendSig(linux.SIGPIPE)
+		}
+	}
 	return n, err
 }
 
