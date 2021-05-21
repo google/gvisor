@@ -21,8 +21,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -53,13 +51,10 @@ func TestTCPInfo(t *testing.T) {
 	}
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
-	info := linux.TCPInfo{}
-	infoBytes := dut.GetSockOpt(t, acceptFD, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
-	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
-		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
+	info := dut.GetSockOptTCPInfo(t, acceptFD)
+	if got, want := uint32(info.State), linux.TCP_ESTABLISHED; got != want {
+		t.Fatalf("got %d want %d", got, want)
 	}
-	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
-
 	rtt := time.Duration(info.RTT) * time.Microsecond
 	rttvar := time.Duration(info.RTTVar) * time.Microsecond
 	rto := time.Duration(info.RTO) * time.Microsecond
@@ -94,12 +89,7 @@ func TestTCPInfo(t *testing.T) {
 		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
 	}
 
-	info = linux.TCPInfo{}
-	infoBytes = dut.GetSockOpt(t, acceptFD, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
-	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
-		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
-	}
-	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
+	info = dut.GetSockOptTCPInfo(t, acceptFD)
 	if info.CaState != linux.TCP_CA_Loss {
 		t.Errorf("expected the connection to be in loss recovery, got: %v want: %v", info.CaState, linux.TCP_CA_Loss)
 	}

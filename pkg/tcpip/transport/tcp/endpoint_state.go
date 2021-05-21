@@ -154,7 +154,7 @@ func (e *endpoint) afterLoad() {
 	e.origEndpointState = e.state
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
-	e.state = StateInitial
+	e.state = uint32(StateInitial)
 	// Condition variables and mutexs are not S/R'ed so reinitialize
 	// acceptCond with e.acceptMu.
 	e.acceptCond = sync.NewCond(&e.acceptMu)
@@ -167,7 +167,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	e.stack = s
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
-	epState := e.origEndpointState
+	epState := EndpointState(e.origEndpointState)
 	switch epState {
 	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
 		var ss tcpip.TCPSendBufferSizeRangeOption
@@ -281,11 +281,11 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		}()
 	case epState == StateClose:
 		e.isPortReserved = false
-		e.state = StateClose
+		e.state = uint32(StateClose)
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	case epState == StateError:
-		e.state = StateError
+		e.state = uint32(StateError)
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}

@@ -104,8 +104,6 @@ packetimpact_testbench(
     srcs = ["tcp_retransmits_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
@@ -189,6 +187,7 @@ packetimpact_testbench(
     name = "tcp_synsent_reset",
     srcs = ["tcp_synsent_reset_test.go"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
@@ -353,8 +352,6 @@ packetimpact_testbench(
     srcs = ["tcp_rack_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//test/packetimpact/testbench",
@@ -367,8 +364,6 @@ packetimpact_testbench(
     srcs = ["tcp_info_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",

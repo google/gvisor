@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -29,7 +30,7 @@ func init() {
 }
 
 // dutSynSentState sets up the dut connection in SYN-SENT state.
-func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, uint16, uint16) {
+func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, int32, uint16, uint16) {
 	t.Helper()
 
 	dut := testbench.NewDUT(t)
@@ -46,26 +47,29 @@ func dutSynSentState(t *testing.T) (*testbench.DUT, *testbench.TCPIPv4, uint16, 
 		t.Fatalf("expected SYN\n")
 	}
 
-	return &dut, &conn, port, clientPort
+	return &dut, &conn, clientFD, port, clientPort
 }
 
 // TestTCPSynSentReset tests RFC793, p67: SYN-SENT to CLOSED transition.
 func TestTCPSynSentReset(t *testing.T) {
-	_, conn, _, _ := dutSynSentState(t)
+	dut, conn, fd, _, _ := dutSynSentState(t)
 	defer conn.Close(t)
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
 	// Expect the connection to have closed.
-	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
+	}
+	info := dut.GetSockOptTCPInfo(t, fd)
+	if got, want := uint32(info.State), linux.TCP_CLOSE; got != want {
+		t.Fatalf("got %d want %d", got, want)
 	}
 }
 
 // TestTCPSynSentRcvdReset tests RFC793, p70, SYN-SENT to SYN-RCVD to CLOSED
 // transitions.
 func TestTCPSynSentRcvdReset(t *testing.T) {
-	dut, c, remotePort, clientPort := dutSynSentState(t)
+	dut, c, fd, remotePort, clientPort := dutSynSentState(t)
 	defer c.Close(t)
 
 	conn := dut.Net.NewTCPIPv4(t, testbench.TCP{SrcPort: &remotePort, DstPort: &clientPort}, testbench.TCP{SrcPort: &clientPort, DstPort: &remotePort})
@@ -79,9 +83,12 @@ func TestTCPSynSentRcvdReset(t *testing.T) {
 	}
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)})
 	// Expect the connection to have transitioned SYN-RCVD to CLOSED.
-	// TODO(gvisor.dev/issue/478): Check for TCP_INFO on the dut side.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst)}, nil, time.Second); err != nil {
 		t.Fatalf("expected a TCP RST")
+	}
+	info := dut.GetSockOptTCPInfo(t, fd)
+	if got, want := uint32(info.State), linux.TCP_CLOSE; got != want {
+		t.Fatalf("got %d want %d", got, want)
 	}
 }

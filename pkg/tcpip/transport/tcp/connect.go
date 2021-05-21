@@ -1235,7 +1235,7 @@ func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 		// Now check if the received segment has caused us to transition
 		// to a CLOSED state, if yes then terminate processing and do
 		// not invoke the sender.
-		state := e.state
+		state := e.EndpointState()
 		if state == StateClose {
 			// When we get into StateClose while processing from the queue,
 			// return immediately and let the protocolMainloop handle it.

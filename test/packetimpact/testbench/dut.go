@@ -22,11 +22,13 @@ import (
 	"testing"
 	"time"
 
-	pb "gvisor.dev/gvisor/test/packetimpact/proto/posix_server_go_proto"
-
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	bin "gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	pb "gvisor.dev/gvisor/test/packetimpact/proto/posix_server_go_proto"
 )
 
 // DUT communicates with the DUT to force it to make POSIX calls.
@@ -426,6 +428,33 @@ func (dut *DUT) GetSockOptTimevalWithErrno(ctx context.Context, t *testing.T, so
 		Usec: tv.Timeval.Microseconds,
 	}
 	return ret, timeval, errno
+}
+
+// GetSockOptTCPInfo retreives TCPInfo for the given socket descriptor.
+func (dut *DUT) GetSockOptTCPInfo(t *testing.T, sockfd int32) linux.TCPInfo {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+	defer cancel()
+	ret, info, err := dut.GetSockOptTCPInfoWithErrno(ctx, t, sockfd)
+	if ret != 0 || err != unix.Errno(0) {
+		t.Fatalf("failed to GetSockOptTCPInfo: %s", err)
+	}
+	return info
+}
+
+// GetSockOptTCPInfoWithErrno retreives TCPInfo with any errno.
+func (dut *DUT) GetSockOptTCPInfoWithErrno(ctx context.Context, t *testing.T, sockfd int32) (int32, linux.TCPInfo, error) {
+	t.Helper()
+
+	info := linux.TCPInfo{}
+	ret, infoBytes, errno := dut.GetSockOptWithErrno(ctx, t, sockfd, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
+	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
+		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
+	}
+	bin.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
+
+	return ret, info, errno
 }
 
 // Listen calls listen on the DUT and causes a fatal test failure if it doesn't
