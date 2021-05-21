@@ -702,7 +702,9 @@ func (s *Set) checkPerms(creds *auth.Credentials, reqPerms fs.PermMask) bool {
 	return s.checkCapability(creds)
 }
 
-// destroy destroys the set. Caller must hold 's.mu'.
+// destroy destroys the set.
+//
+// Preconditions: Caller must hold 's.mu'.
 func (s *Set) destroy() {
 	// Notify all waiters. They will fail on the next attempt to execute
 	// operations and return error.
