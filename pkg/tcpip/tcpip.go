@@ -861,6 +861,9 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
+// EndpointState represents the state of an endpoint.
+type EndpointState uint8
+
 // CongestionControlState indicates the current congestion control state for
 // TCP sender.
 type CongestionControlState int
@@ -896,6 +899,9 @@ type TCPInfoOption struct {
 
 	// RTO is the retransmission timeout for the endpoint.
 	RTO time.Duration
+
+	// State is the current endpoint protocol state.
+	State EndpointState
 
 	// CcState is the congestion control state.
 	CcState CongestionControlState

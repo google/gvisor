@@ -1127,7 +1127,14 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 
 		// TODO(b/64800844): Translate fields once they are added to
 		// tcpip.TCPInfoOption.
-		info := linux.TCPInfo{}
+		info := linux.TCPInfo{
+			State:       uint8(v.State),
+			RTO:         uint32(v.RTO / time.Microsecond),
+			RTT:         uint32(v.RTT / time.Microsecond),
+			RTTVar:      uint32(v.RTTVar / time.Microsecond),
+			SndSsthresh: v.SndSsthresh,
+			SndCwnd:     v.SndCwnd,
+		}
 		switch v.CcState {
 		case tcpip.RTORecovery:
 			info.CaState = linux.TCP_CA_Loss
@@ -1138,11 +1145,6 @@ func getSockOptTCP(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name, 
 		case tcpip.Open:
 			info.CaState = linux.TCP_CA_Open
 		}
-		info.RTO = uint32(v.RTO / time.Microsecond)
-		info.RTT = uint32(v.RTT / time.Microsecond)
-		info.RTTVar = uint32(v.RTTVar / time.Microsecond)
-		info.SndSsthresh = v.SndSsthresh
-		info.SndCwnd = v.SndCwnd
 
 		// In netstack reorderSeen is updated only when RACK is enabled.
 		// We only track whether the reordering is seen, which is

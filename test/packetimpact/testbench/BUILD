@@ -16,6 +16,8 @@ go_library(
     ],
     visibility = ["//test/packetimpact:__subpackages__"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/binary",
         "//pkg/hostarch",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

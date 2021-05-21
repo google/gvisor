@@ -21,8 +21,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -69,12 +67,7 @@ func closeSACKConnection(t *testing.T, dut testbench.DUT, conn testbench.TCPIPv4
 }
 
 func getRTTAndRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rtt, rto time.Duration) {
-	info := linux.TCPInfo{}
-	infoBytes := dut.GetSockOpt(t, acceptFd, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
-	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
-		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
-	}
-	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
+	info := dut.GetSockOptTCPInfo(t, acceptFd)
 	return time.Duration(info.RTT) * time.Microsecond, time.Duration(info.RTO) * time.Microsecond
 }
 
@@ -402,12 +395,7 @@ func TestRACKWithLostRetransmission(t *testing.T) {
 	}
 
 	// Check the congestion control state.
-	info := linux.TCPInfo{}
-	infoBytes := dut.GetSockOpt(t, acceptFd, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
-	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
-		t.Fatalf("expected %T, got %d bytes want %d bytes", info, got, want)
-	}
-	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
+	info := dut.GetSockOptTCPInfo(t, acceptFd)
 	if info.CaState != linux.TCP_CA_Recovery {
 		t.Fatalf("expected connection to be in fast recovery, want: %v got: %v", linux.TCP_CA_Recovery, info.CaState)
 	}

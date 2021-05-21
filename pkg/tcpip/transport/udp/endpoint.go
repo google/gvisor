@@ -40,13 +40,14 @@ type udpPacket struct {
 }
 
 // EndpointState represents the state of a UDP endpoint.
-type EndpointState uint32
+type EndpointState tcpip.EndpointState
 
 // Endpoint states. Note that are represented in a netstack-specific manner and
 // may not be meaningful externally. Specifically, they need to be translated to
 // Linux's representation for these states if presented to userspace.
 const (
-	StateInitial EndpointState = iota
+	_ EndpointState = iota
+	StateInitial
 	StateBound
 	StateConnected
 	StateClosed
@@ -98,7 +99,7 @@ type endpoint struct {
 	mu sync.RWMutex `state:"nosave"`
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
-	state          EndpointState
+	state          uint32
 	route          *stack.Route `state:"manual"`
 	dstPort        uint16
 	ttl            uint8
@@ -176,7 +177,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		// Linux defaults to TTL=1.
 		multicastTTL:         1,
 		multicastMemberships: make(map[multicastMembership]struct{}),
-		state:                StateInitial,
+		state:                uint32(StateInitial),
 		uniqueID:             s.UniqueID(),
 	}
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
@@ -204,12 +205,12 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 //
 // Precondition: e.mu must be held to call this method.
 func (e *endpoint) setEndpointState(state EndpointState) {
-	atomic.StoreUint32((*uint32)(&e.state), uint32(state))
+	atomic.StoreUint32(&e.state, uint32(state))
 }
 
 // EndpointState() returns the current state of the endpoint.
 func (e *endpoint) EndpointState() EndpointState {
-	return EndpointState(atomic.LoadUint32((*uint32)(&e.state)))
+	return EndpointState(atomic.LoadUint32(&e.state))
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
