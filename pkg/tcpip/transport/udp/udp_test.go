@@ -2115,8 +2115,8 @@ func TestShortHeader(t *testing.T) {
 		Data: buf.ToVectorisedView(),
 	}))
 
-	if got, want := c.s.Stats().MalformedRcvdPackets.Value(), uint64(1); got != want {
-		t.Errorf("got c.s.Stats().MalformedRcvdPackets.Value() = %d, want = %d", got, want)
+	if got, want := c.s.Stats().NICs.MalformedL4RcvdPackets.Value(), uint64(1); got != want {
+		t.Errorf("got c.s.Stats().NIC.MalformedL4RcvdPackets.Value() = %d, want = %d", got, want)
 	}
 }
 

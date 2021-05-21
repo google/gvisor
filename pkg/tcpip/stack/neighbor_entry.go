@@ -361,7 +361,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			e.dispatchAddEventLocked()
 		case Unreachable:
 			e.dispatchChangeEventLocked()
-			e.cache.nic.stats.Neighbor.UnreachableEntryLookups.Increment()
+			e.cache.nic.stats.neighbor.unreachableEntryLookups.Increment()
 		}
 
 		config := e.nudState.Config()

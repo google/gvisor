@@ -77,9 +77,27 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 
 // Metrics contains metrics exported by netstack.
 var Metrics = tcpip.Stats{
-	UnknownProtocolRcvdPackets: mustCreateMetric("/netstack/unknown_protocol_received_packets", "Number of packets received that were for an unknown or unsupported protocol."),
-	MalformedRcvdPackets:       mustCreateMetric("/netstack/malformed_received_packets", "Number of packets received that were deemed malformed."),
-	DroppedPackets:             mustCreateMetric("/netstack/dropped_packets", "Number of packets dropped due to full queues."),
+	DroppedPackets: mustCreateMetric("/netstack/dropped_packets", "Number of packets dropped at the transport layer."),
+	NICs: tcpip.NICStats{
+		UnknownL3ProtocolRcvdPackets: mustCreateMetric("/netstack/nic/unknown_l3_protocol_received_packets", "Number of packets received that were for an unknown or unsupported L3 protocol."),
+		UnknownL4ProtocolRcvdPackets: mustCreateMetric("/netstack/nic/unknown_l4_protocol_received_packets", "Number of packets received that were for an unknown or unsupported L4 protocol."),
+		MalformedL4RcvdPackets:       mustCreateMetric("/netstack/nic/malformed_l4_received_packets", "Number of packets received that failed L4 header parsing."),
+		Tx: tcpip.NICPacketStats{
+			Packets: mustCreateMetric("/netstack/nic/tx/packets", "Number of packets transmitted."),
+			Bytes:   mustCreateMetric("/netstack/nic/tx/bytes", "Number of bytes transmitted."),
+		},
+		Rx: tcpip.NICPacketStats{
+			Packets: mustCreateMetric("/netstack/nic/rx/packets", "Number of packets received."),
+			Bytes:   mustCreateMetric("/netstack/nic/rx/bytes", "Number of bytes received."),
+		},
+		DisabledRx: tcpip.NICPacketStats{
+			Packets: mustCreateMetric("/netstack/nic/disabled_rx/packets", "Number of packets received on disabled NICs."),
+			Bytes:   mustCreateMetric("/netstack/nic/disabled_rx/bytes", "Number of bytes received on disabled NICs."),
+		},
+		Neighbor: tcpip.NICNeighborStats{
+			UnreachableEntryLookups: mustCreateMetric("/netstack/nic/neighbor/unreachable_entry_loopups", "Number of lookups performed on a neighbor entry in Unreachable state."),
+		},
+	},
 	ICMP: tcpip.ICMPStats{
 		V4: tcpip.ICMPv4Stats{
 			PacketsSent: tcpip.ICMPv4SentPacketStats{

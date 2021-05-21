@@ -15,11 +15,13 @@
 package stack
 
 import (
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 var _ AddressableEndpoint = (*testIPv6Endpoint)(nil)
@@ -171,19 +173,19 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 	// When the NIC is disabled, the only field that matters is the stats field.
 	// This test is limited to stats counter checks.
 	nic := nic{
-		stats: makeNICStats(),
+		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}
 
-	if got := nic.stats.DisabledRx.Packets.Value(); got != 0 {
+	if got := nic.stats.local.DisabledRx.Packets.Value(); got != 0 {
 		t.Errorf("got DisabledRx.Packets = %d, want = 0", got)
 	}
-	if got := nic.stats.DisabledRx.Bytes.Value(); got != 0 {
+	if got := nic.stats.local.DisabledRx.Bytes.Value(); got != 0 {
 		t.Errorf("got DisabledRx.Bytes = %d, want = 0", got)
 	}
-	if got := nic.stats.Rx.Packets.Value(); got != 0 {
+	if got := nic.stats.local.Rx.Packets.Value(); got != 0 {
 		t.Errorf("got Rx.Packets = %d, want = 0", got)
 	}
-	if got := nic.stats.Rx.Bytes.Value(); got != 0 {
+	if got := nic.stats.local.Rx.Bytes.Value(); got != 0 {
 		t.Errorf("got Rx.Bytes = %d, want = 0", got)
 	}
 
@@ -195,16 +197,28 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 		Data: buffer.View([]byte{1, 2, 3, 4}).ToVectorisedView(),
 	}))
 
-	if got := nic.stats.DisabledRx.Packets.Value(); got != 1 {
+	if got := nic.stats.local.DisabledRx.Packets.Value(); got != 1 {
 		t.Errorf("got DisabledRx.Packets = %d, want = 1", got)
 	}
-	if got := nic.stats.DisabledRx.Bytes.Value(); got != 4 {
+	if got := nic.stats.local.DisabledRx.Bytes.Value(); got != 4 {
 		t.Errorf("got DisabledRx.Bytes = %d, want = 4", got)
 	}
-	if got := nic.stats.Rx.Packets.Value(); got != 0 {
+	if got := nic.stats.local.Rx.Packets.Value(); got != 0 {
 		t.Errorf("got Rx.Packets = %d, want = 0", got)
 	}
-	if got := nic.stats.Rx.Bytes.Value(); got != 0 {
+	if got := nic.stats.local.Rx.Bytes.Value(); got != 0 {
 		t.Errorf("got Rx.Bytes = %d, want = 0", got)
+	}
+}
+
+func TestMultiCounterStatsInitialization(t *testing.T) {
+	global := tcpip.NICStats{}.FillIn()
+	nic := nic{
+		stats: makeNICStats(global),
+	}
+	multi := nic.stats.multiCounterNICStats
+	local := nic.stats.local
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&multi).Elem(), []reflect.Value{reflect.ValueOf(&local).Elem(), reflect.ValueOf(&global).Elem()}); err != nil {
+		t.Error(err)
 	}
 }

@@ -2248,46 +2248,87 @@ func TestNICStats(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
 	})
-	ep1 := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(1, ep1); err != nil {
-		t.Fatal("CreateNIC failed: ", err)
+
+	nics := []struct {
+		addr        tcpip.Address
+		txByteCount int
+		rxByteCount int
+	}{
+		{
+			addr:        "\x01",
+			txByteCount: 30,
+			rxByteCount: 10,
+		},
+		{
+			addr:        "\x02",
+			txByteCount: 50,
+			rxByteCount: 20,
+		},
 	}
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
-		t.Fatal("AddAddress failed:", err)
-	}
-	// Route all packets for address \x01 to NIC 1.
-	{
-		subnet, err := tcpip.NewSubnet("\x01", "\xff")
-		if err != nil {
-			t.Fatal(err)
+
+	var txBytesTotal, rxBytesTotal, txPacketsTotal, rxPacketsTotal int
+	for i, nic := range nics {
+		nicid := tcpip.NICID(i)
+		ep := channel.New(1, defaultMTU, "")
+		if err := s.CreateNIC(nicid, ep); err != nil {
+			t.Fatal("CreateNIC failed: ", err)
 		}
-		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+		if err := s.AddAddress(nicid, fakeNetNumber, nic.addr); err != nil {
+			t.Fatal("AddAddress failed:", err)
+		}
+
+		{
+			subnet, err := tcpip.NewSubnet(nic.addr, "\xff")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: nicid}})
+		}
+
+		nicStats := s.NICInfo()[nicid].Stats
+
+		// Inbound packet.
+		rxBuffer := buffer.NewView(nic.rxByteCount)
+		ep.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Data: rxBuffer.ToVectorisedView(),
+		}))
+		if got, want := nicStats.Rx.Packets.Value(), uint64(1); got != want {
+			t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
+		}
+		if got, want := nicStats.Rx.Bytes.Value(), uint64(nic.rxByteCount); got != want {
+			t.Errorf("got Rx.Bytes.Value() = %d, want = %d", got, want)
+		}
+		rxPacketsTotal++
+		rxBytesTotal += nic.rxByteCount
+
+		// Outbound packet.
+		txBuffer := buffer.NewView(nic.txByteCount)
+		actualTxLength := nic.txByteCount + fakeNetHeaderLen
+		if err := sendTo(s, nic.addr, txBuffer); err != nil {
+			t.Fatal("sendTo failed: ", err)
+		}
+		want := ep.Drain()
+		if got := nicStats.Tx.Packets.Value(); got != uint64(want) {
+			t.Errorf("got Tx.Packets.Value() = %d, ep.Drain() = %d", got, want)
+		}
+		if got, want := nicStats.Tx.Bytes.Value(), uint64(actualTxLength); got != want {
+			t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
+		}
+		txPacketsTotal += want
+		txBytesTotal += actualTxLength
 	}
 
-	// Send a packet to address 1.
-	buf := buffer.NewView(30)
-	ep1.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
-	}))
-	if got, want := s.NICInfo()[1].Stats.Rx.Packets.Value(), uint64(1); got != want {
-		t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
+	// Now verify that each NIC stats was correctly aggregated at the stack level.
+	if got, want := s.Stats().NICs.Rx.Packets.Value(), uint64(rxPacketsTotal); got != want {
+		t.Errorf("got s.Stats().NIC.Rx.Packets.Value() = %d, want = %d", got, want)
 	}
-
-	if got, want := s.NICInfo()[1].Stats.Rx.Bytes.Value(), uint64(len(buf)); got != want {
-		t.Errorf("got Rx.Bytes.Value() = %d, want = %d", got, want)
+	if got, want := s.Stats().NICs.Rx.Bytes.Value(), uint64(rxBytesTotal); got != want {
+		t.Errorf("got s.Stats().Rx.Bytes.Value() = %d, want = %d", got, want)
 	}
-
-	payload := buffer.NewView(10)
-	// Write a packet out via the address for NIC 1
-	if err := sendTo(s, "\x01", payload); err != nil {
-		t.Fatal("sendTo failed: ", err)
+	if got, want := s.Stats().NICs.Tx.Packets.Value(), uint64(txPacketsTotal); got != want {
+		t.Errorf("got Tx.Packets.Value() = %d, ep.Drain() = %d", got, want)
 	}
-	want := uint64(ep1.Drain())
-	if got := s.NICInfo()[1].Stats.Tx.Packets.Value(); got != want {
-		t.Errorf("got Tx.Packets.Value() = %d, ep1.Drain() = %d", got, want)
-	}
-
-	if got, want := s.NICInfo()[1].Stats.Tx.Bytes.Value(), uint64(len(payload)+fakeNetHeaderLen); got != want {
+	if got, want := s.Stats().NICs.Tx.Bytes.Value(), uint64(txBytesTotal); got != want {
 		t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
 	}
 }

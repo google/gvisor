@@ -804,7 +804,7 @@ type NICInfo struct {
 	// MTU is the maximum transmission unit.
 	MTU uint32
 
-	Stats NICStats
+	Stats tcpip.NICStats
 
 	// NetworkStats holds the stats of each NetworkEndpoint bound to the NIC.
 	NetworkStats map[tcpip.NetworkProtocolNumber]NetworkEndpointStats
@@ -856,7 +856,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			ProtocolAddresses: nic.primaryAddresses(),
 			Flags:             flags,
 			MTU:               nic.LinkEndpoint.MTU(),
-			Stats:             nic.stats,
+			Stats:             nic.stats.local,
 			NetworkStats:      netStats,
 			Context:           nic.context,
 			ARPHardwareType:   nic.LinkEndpoint.ARPHardwareType(),

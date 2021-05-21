@@ -219,7 +219,7 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 			nudConfigs:      c,
 			randomGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
 		},
-		stats: makeNICStats(),
+		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}
 	netEP := (&testIPv6Protocol{}).NewEndpoint(&nic, nil)
 	nic.networkEndpoints = map[tcpip.NetworkProtocolNumber]NetworkEndpoint{
