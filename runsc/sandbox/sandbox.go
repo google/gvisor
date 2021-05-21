@@ -131,8 +131,9 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := cleanup.Make(func() {
-		err := s.destroy()
-		log.Warningf("error destroying sandbox: %v", err)
+		if err := s.destroy(); err != nil {
+			log.Warningf("error destroying sandbox: %v", err)
+		}
 	})
 	defer c.Clean()
 
