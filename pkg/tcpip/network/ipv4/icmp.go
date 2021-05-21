@@ -222,7 +222,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
 					pointer: optProblem.Pointer,
 				}, pkt)
-				e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 				e.stats.ip.MalformedPacketsReceived.Increment()
 			}
 			return

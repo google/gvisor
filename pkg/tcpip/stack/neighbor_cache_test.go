@@ -95,7 +95,7 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 			randomGenerator: rng,
 		},
 		id:    1,
-		stats: makeNICStats(),
+		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}, linkRes)
 	return linkRes
 }

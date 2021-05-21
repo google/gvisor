@@ -56,6 +56,7 @@ go_library(
         "neighbor_entry_list.go",
         "neighborstate_string.go",
         "nic.go",
+        "nic_stats.go",
         "nud.go",
         "packet_buffer.go",
         "packet_buffer_list.go",

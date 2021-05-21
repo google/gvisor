@@ -177,7 +177,6 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 
 	s := newIncomingSegment(id, pkt)
 	if !s.parse(pkt.RXTransportChecksumValidated) {
-		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
 		ep.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		s.decRef()
@@ -185,7 +184,6 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 	}
 
 	if !s.csumValid {
-		ep.stack.Stats().MalformedRcvdPackets.Increment()
 		ep.stack.Stats().TCP.ChecksumErrors.Increment()
 		ep.stats.ReceiveErrors.ChecksumErrors.Increment()
 		s.decRef()
