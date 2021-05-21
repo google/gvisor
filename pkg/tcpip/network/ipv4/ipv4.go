@@ -908,7 +908,6 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 		case *ip.ErrNoRoute:
 			stats.ip.Forwarding.Unrouteable.Increment()
 		case *ip.ErrParameterProblem:
-			e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 			stats.ip.MalformedPacketsReceived.Increment()
 		case *ip.ErrMessageTooLong:
 			stats.ip.Forwarding.PacketTooBig.Increment()
@@ -945,7 +944,6 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 					_ = e.protocol.returnError(&icmpReasonParamProblem{
 						pointer: optProblem.Pointer,
 					}, pkt)
-					e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 					e.stats.ip.MalformedPacketsReceived.Increment()
 				}
 				return
@@ -1018,7 +1016,6 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 				_ = e.protocol.returnError(&icmpReasonParamProblem{
 					pointer: optProblem.Pointer,
 				}, pkt)
-				e.protocol.stack.Stats().MalformedRcvdPackets.Increment()
 				stats.ip.MalformedPacketsReceived.Increment()
 			}
 			return

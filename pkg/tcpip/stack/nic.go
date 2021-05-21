@@ -51,7 +51,7 @@ type nic struct {
 	name    string
 	context NICContext
 
-	stats NICStats
+	stats sharedStats
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
@@ -78,26 +78,13 @@ type nic struct {
 	}
 }
 
-// NICStats hold statistics for a NIC.
-type NICStats struct {
-	Tx DirectionStats
-	Rx DirectionStats
-
-	DisabledRx DirectionStats
-
-	Neighbor NeighborStats
-}
-
-func makeNICStats() NICStats {
-	var s NICStats
-	tcpip.InitStatCounters(reflect.ValueOf(&s).Elem())
-	return s
-}
-
-// DirectionStats includes packet and byte counts.
-type DirectionStats struct {
-	Packets *tcpip.StatCounter
-	Bytes   *tcpip.StatCounter
+// makeNICStats initializes the NIC statistics and associates them to the global
+// NIC statistics.
+func makeNICStats(global tcpip.NICStats) sharedStats {
+	var stats sharedStats
+	tcpip.InitStatCounters(reflect.ValueOf(&stats.local).Elem())
+	stats.init(&stats.local, &global)
+	return stats
 }
 
 type packetEndpointList struct {
@@ -150,7 +137,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		id:                        id,
 		name:                      name,
 		context:                   ctx,
-		stats:                     makeNICStats(),
+		stats:                     makeNICStats(stack.Stats().NICs),
 		networkEndpoints:          make(map[tcpip.NetworkProtocolNumber]NetworkEndpoint),
 		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
@@ -382,8 +369,8 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 		return err
 	}
 
-	n.stats.Tx.Packets.Increment()
-	n.stats.Tx.Bytes.IncrementBy(uint64(numBytes))
+	n.stats.tx.packets.Increment()
+	n.stats.tx.bytes.IncrementBy(uint64(numBytes))
 	return nil
 }
 
@@ -399,13 +386,13 @@ func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pk
 	}
 
 	writtenPackets, err := n.LinkEndpoint.WritePackets(r, pkts, protocol)
-	n.stats.Tx.Packets.IncrementBy(uint64(writtenPackets))
+	n.stats.tx.packets.IncrementBy(uint64(writtenPackets))
 	writtenBytes := 0
 	for i, pb := 0, pkts.Front(); i < writtenPackets && pb != nil; i, pb = i+1, pb.Next() {
 		writtenBytes += pb.Size()
 	}
 
-	n.stats.Tx.Bytes.IncrementBy(uint64(writtenBytes))
+	n.stats.tx.bytes.IncrementBy(uint64(writtenBytes))
 	return writtenPackets, err
 }
 
@@ -718,18 +705,18 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	if !enabled {
 		n.mu.RUnlock()
 
-		n.stats.DisabledRx.Packets.Increment()
-		n.stats.DisabledRx.Bytes.IncrementBy(uint64(pkt.Data().Size()))
+		n.stats.disabledRx.packets.Increment()
+		n.stats.disabledRx.bytes.IncrementBy(uint64(pkt.Data().Size()))
 		return
 	}
 
-	n.stats.Rx.Packets.Increment()
-	n.stats.Rx.Bytes.IncrementBy(uint64(pkt.Data().Size()))
+	n.stats.rx.packets.Increment()
+	n.stats.rx.bytes.IncrementBy(uint64(pkt.Data().Size()))
 
 	networkEndpoint, ok := n.networkEndpoints[protocol]
 	if !ok {
 		n.mu.RUnlock()
-		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
+		n.stats.unknownL3ProtocolRcvdPackets.Increment()
 		return
 	}
 
@@ -786,7 +773,7 @@ func (n *nic) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tc
 func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) TransportPacketDisposition {
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
-		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
+		n.stats.unknownL4ProtocolRcvdPackets.Increment()
 		return TransportPacketProtocolUnreachable
 	}
 
@@ -807,20 +794,20 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 			// ICMP packets may be longer, but until icmp.Parse is implemented, here
 			// we parse it using the minimum size.
 			if _, ok := pkt.TransportHeader().Consume(transProto.MinimumPacketSize()); !ok {
-				n.stack.stats.MalformedRcvdPackets.Increment()
+				n.stats.malformedL4RcvdPackets.Increment()
 				// We consider a malformed transport packet handled because there is
 				// nothing the caller can do.
 				return TransportPacketHandled
 			}
 		} else if !transProto.Parse(pkt) {
-			n.stack.stats.MalformedRcvdPackets.Increment()
+			n.stats.malformedL4RcvdPackets.Increment()
 			return TransportPacketHandled
 		}
 	}
 
 	srcPort, dstPort, err := transProto.ParsePorts(pkt.TransportHeader().View())
 	if err != nil {
-		n.stack.stats.MalformedRcvdPackets.Increment()
+		n.stats.malformedL4RcvdPackets.Increment()
 		return TransportPacketHandled
 	}
 
@@ -852,7 +839,7 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 	// If it doesn't handle it then we should do so.
 	switch res := transProto.HandleUnknownDestinationPacket(id, pkt); res {
 	case UnknownDestinationPacketMalformed:
-		n.stack.stats.MalformedRcvdPackets.Increment()
+		n.stats.malformedL4RcvdPackets.Increment()
 		return TransportPacketHandled
 	case UnknownDestinationPacketUnhandled:
 		return TransportPacketDestinationPortUnreachable

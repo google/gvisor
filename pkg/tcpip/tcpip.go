@@ -1845,37 +1845,104 @@ type UDPStats struct {
 	ChecksumErrors *StatCounter
 }
 
+// NICNeighborStats holds metrics for the neighbor table.
+type NICNeighborStats struct {
+	// LINT.IfChange(NICNeighborStats)
+
+	// UnreachableEntryLookups counts the number of lookups performed on an
+	// entry in Unreachable state.
+	UnreachableEntryLookups *StatCounter
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICNeighborStats)
+}
+
+// NICPacketStats holds basic packet statistics.
+type NICPacketStats struct {
+	// LINT.IfChange(NICPacketStats)
+
+	// Packets is the number of packets counted.
+	Packets *StatCounter
+
+	// Bytes is the number of bytes counted.
+	Bytes *StatCounter
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICPacketStats)
+}
+
+// NICStats holds NIC statistics.
+type NICStats struct {
+	// LINT.IfChange(NICStats)
+
+	// UnknownL3ProtocolRcvdPackets is the number of packets received that were
+	// for an unknown or unsupported network protocol.
+	UnknownL3ProtocolRcvdPackets *StatCounter
+
+	// UnknownL4ProtocolRcvdPackets is the number of packets received that were
+	// for an unknown or unsupported transport protocol.
+	UnknownL4ProtocolRcvdPackets *StatCounter
+
+	// MalformedL4RcvdPackets is the number of packets received by a NIC that
+	// could not be delivered to a transport endpoint because the L4 header could
+	// not be parsed.
+	MalformedL4RcvdPackets *StatCounter
+
+	// Tx contains statistics about transmitted packets.
+	Tx NICPacketStats
+
+	// Rx contains statistics about received packets.
+	Rx NICPacketStats
+
+	// DisabledRx contains statistics about received packets on disabled NICs.
+	DisabledRx NICPacketStats
+
+	// Neighbor contains statistics about neighbor entries.
+	Neighbor NICNeighborStats
+
+	// LINT.ThenChange(stack/nic_stats.go:multiCounterNICStats)
+}
+
+// FillIn returns a copy of s with nil fields initialized to new StatCounters.
+func (s NICStats) FillIn() NICStats {
+	InitStatCounters(reflect.ValueOf(&s).Elem())
+	return s
+}
+
 // Stats holds statistics about the networking stack.
-//
-// All fields are optional.
 type Stats struct {
-	// UnknownProtocolRcvdPackets is the number of packets received by the
-	// stack that were for an unknown or unsupported protocol.
-	UnknownProtocolRcvdPackets *StatCounter
+	// TODO(https://gvisor.dev/issues/5986): Make the DroppedPackets stat less
+	// ambiguous.
 
-	// MalformedRcvdPackets is the number of packets received by the stack
-	// that were deemed malformed.
-	MalformedRcvdPackets *StatCounter
-
-	// DroppedPackets is the number of packets dropped due to full queues.
+	// DroppedPackets is the number of packets dropped at the transport layer.
 	DroppedPackets *StatCounter
 
-	// ICMP breaks out ICMP-specific stats (both v4 and v6).
+	// NICs is an aggregation of every NIC's statistics. These should not be
+	// incremented using this field, but using the relevant NIC multicounters.
+	NICs NICStats
+
+	// ICMP is an aggregation of every NetworkEndpoint's ICMP statistics (both v4
+	// and v6). These should not be incremented using this field, but using the
+	// relevant NetworkEndpoint ICMP multicounters.
 	ICMP ICMPStats
 
-	// IGMP breaks out IGMP-specific stats.
+	// IGMP is an aggregation of every NetworkEndpoint's IGMP statistics. These
+	// should not be incremented using this field, but using the relevant
+	// NetworkEndpoint IGMP multicounters.
 	IGMP IGMPStats
 
-	// IP breaks out IP-specific stats (both v4 and v6).
+	// IP is an aggregation of every NetworkEndpoint's IP statistics. These should
+	// not be incremented using this field, but using the relevant NetworkEndpoint
+	// IP multicounters.
 	IP IPStats
 
-	// ARP breaks out ARP-specific stats.
+	// ARP is an aggregation of every NetworkEndpoint's ARP statistics. These
+	// should not be incremented using this field, but using the relevant
+	// NetworkEndpoint ARP multicounters.
 	ARP ARPStats
 
-	// TCP breaks out TCP-specific stats.
+	// TCP holds TCP-specific stats.
 	TCP TCPStats
 
-	// UDP breaks out UDP-specific stats.
+	// UDP holds UDP-specific stats.
 	UDP UDPStats
 }
 
