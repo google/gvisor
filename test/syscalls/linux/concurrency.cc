@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "benchmark/benchmark.h"
 #include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -106,6 +107,8 @@ TEST(ConcurrencyTest, MultiProcessConcurrency) {
   pid_t child_pid = fork();
   if (child_pid == 0) {
     while (true) {
+      int x = 0;
+      benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
     }
   }
   ASSERT_THAT(child_pid, SyscallSucceeds());
