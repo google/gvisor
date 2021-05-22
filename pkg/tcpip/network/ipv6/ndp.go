@@ -1754,7 +1754,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 					header.NDPSourceLinkLayerAddressOption(linkAddress),
 				}
 			}
-			payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + int(optsSerializer.Length())
+			payloadSize := header.ICMPv6HeaderSize + header.NDPRSMinimumSize + optsSerializer.Length()
 			icmpData := header.ICMPv6(buffer.NewView(payloadSize))
 			icmpData.SetType(header.ICMPv6RouterSolicit)
 			rs := header.NDPRouterSolicit(icmpData.MessageBody())

@@ -291,7 +291,7 @@ func (e *endpoint) Close() {
 }
 
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
-func (e *endpoint) ModerateRecvBuf(copied int) {}
+func (*endpoint) ModerateRecvBuf(int) {}
 
 // Read implements tcpip.Endpoint.Read.
 func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
@@ -802,8 +802,8 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	case *tcpip.MulticastInterfaceOption:
 		e.mu.Lock()
 		*o = tcpip.MulticastInterfaceOption{
-			e.multicastNICID,
-			e.multicastAddr,
+			NIC:           e.multicastNICID,
+			InterfaceAddr: e.multicastAddr,
 		}
 		e.mu.Unlock()
 
@@ -1302,12 +1302,12 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		senderAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,
-			Port: header.UDP(hdr).SourcePort(),
+			Port: hdr.SourcePort(),
 		},
 		destinationAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
 			Addr: id.LocalAddress,
-			Port: header.UDP(hdr).DestinationPort(),
+			Port: hdr.DestinationPort(),
 		},
 		data: pkt.Data().ExtractVV(),
 	}

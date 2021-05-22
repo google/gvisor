@@ -401,7 +401,7 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 
 	case *tcpip.TCPTimeWaitReuseOption:
 		p.mu.RLock()
-		*v = tcpip.TCPTimeWaitReuseOption(p.timeWaitReuse)
+		*v = p.timeWaitReuse
 		p.mu.RUnlock()
 		return nil
 

@@ -279,7 +279,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 //   been observed RACK uses reo_wnd of zero during loss recovery, in order to
 //   retransmit quickly, or when the number of DUPACKs exceeds the classic
 //   DUPACKthreshold.
-func (rc *rackControl) updateRACKReorderWindow(ackSeg *segment) {
+func (rc *rackControl) updateRACKReorderWindow() {
 	dsackSeen := rc.DSACKSeen
 	snd := rc.snd
 

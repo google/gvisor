@@ -137,9 +137,9 @@ func (r *receiver) getSendParams() (RcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 	// rcvWUP       RcvNxt         RcvAcc          new RcvAcc
 	//               <=====curWnd ===>
 	//               <========= newWnd > curWnd ========= >
-	if r.RcvNxt.Add(seqnum.Size(curWnd)).LessThan(r.RcvNxt.Add(seqnum.Size(newWnd))) && toGrow {
+	if r.RcvNxt.Add(curWnd).LessThan(r.RcvNxt.Add(newWnd)) && toGrow {
 		// If the new window moves the right edge, then update RcvAcc.
-		r.RcvAcc = r.RcvNxt.Add(seqnum.Size(newWnd))
+		r.RcvAcc = r.RcvNxt.Add(newWnd)
 	} else {
 		if newWnd == 0 {
 			// newWnd is zero but we can't advertise a zero as it would cause window
