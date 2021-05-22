@@ -243,7 +243,7 @@ func (s *segment) parse(skipChecksumValidation bool) bool {
 		return false
 	}
 
-	s.options = []byte(s.hdr[header.TCPMinimumSize:])
+	s.options = s.hdr[header.TCPMinimumSize:]
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 	if skipChecksumValidation {
 		s.csumValid = true
@@ -262,5 +262,5 @@ func (s *segment) parse(skipChecksumValidation bool) bool {
 
 // sackBlock returns a header.SACKBlock that represents this segment.
 func (s *segment) sackBlock() header.SACKBlock {
-	return header.SACKBlock{s.sequenceNumber, s.sequenceNumber.Add(s.logicalLen())}
+	return header.SACKBlock{Start: s.sequenceNumber, End: s.sequenceNumber.Add(s.logicalLen())}
 }

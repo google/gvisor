@@ -701,7 +701,7 @@ func TCPTimestampChecker(wantTS bool, wantTSVal uint32, wantTSEcr uint32) Transp
 		if !ok {
 			return
 		}
-		opts := []byte(tcp.Options())
+		opts := tcp.Options()
 		limit := len(opts)
 		foundTS := false
 		tsVal := uint32(0)
@@ -748,12 +748,6 @@ func TCPTimestampChecker(wantTS bool, wantTSVal uint32, wantTSEcr uint32) Transp
 	}
 }
 
-// TCPNoSACKBlockChecker creates a checker that verifies that the segment does
-// not contain any SACK blocks in the TCP options.
-func TCPNoSACKBlockChecker() TransportChecker {
-	return TCPSACKBlockChecker(nil)
-}
-
 // TCPSACKBlockChecker creates a checker that verifies that the segment does
 // contain the specified SACK blocks in the TCP options.
 func TCPSACKBlockChecker(sackBlocks []header.SACKBlock) TransportChecker {
@@ -765,7 +759,7 @@ func TCPSACKBlockChecker(sackBlocks []header.SACKBlock) TransportChecker {
 		}
 		var gotSACKBlocks []header.SACKBlock
 
-		opts := []byte(tcp.Options())
+		opts := tcp.Options()
 		limit := len(opts)
 		for i := 0; i < limit; {
 			switch opts[i] {

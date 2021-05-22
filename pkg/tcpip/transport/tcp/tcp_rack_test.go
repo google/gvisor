@@ -38,7 +38,7 @@ const (
 
 func setStackRACKPermitted(t *testing.T, c *context.Context) {
 	t.Helper()
-	opt := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
+	opt := tcpip.TCPRACKLossDetection
 	if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &opt); err != nil {
 		t.Fatalf("c.s.SetTransportProtocolOption(%d, &%v(%v)): %s", header.TCPProtocolNumber, opt, opt, err)
 	}

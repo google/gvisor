@@ -28,17 +28,15 @@ import (
 )
 
 const (
-	defaultBaseReachableTime           = 30 * time.Second
-	minimumBaseReachableTime           = time.Millisecond
-	defaultMinRandomFactor             = 0.5
-	defaultMaxRandomFactor             = 1.5
-	defaultRetransmitTimer             = time.Second
-	minimumRetransmitTimer             = time.Millisecond
-	defaultDelayFirstProbeTime         = 5 * time.Second
-	defaultMaxMulticastProbes          = 3
-	defaultMaxUnicastProbes            = 3
-	defaultMaxAnycastDelayTime         = time.Second
-	defaultMaxReachbilityConfirmations = 3
+	defaultBaseReachableTime   = 30 * time.Second
+	minimumBaseReachableTime   = time.Millisecond
+	defaultMinRandomFactor     = 0.5
+	defaultMaxRandomFactor     = 1.5
+	defaultRetransmitTimer     = time.Second
+	minimumRetransmitTimer     = time.Millisecond
+	defaultDelayFirstProbeTime = 5 * time.Second
+	defaultMaxMulticastProbes  = 3
+	defaultMaxUnicastProbes    = 3
 
 	defaultFakeRandomNum = 0.5
 )

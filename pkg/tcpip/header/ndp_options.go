@@ -77,12 +77,12 @@ const (
 
 	// ndpPrefixInformationOnLinkFlagMask is the mask of the On-Link Flag
 	// field in the flags byte within an NDPPrefixInformation.
-	ndpPrefixInformationOnLinkFlagMask = (1 << 7)
+	ndpPrefixInformationOnLinkFlagMask = 1 << 7
 
 	// ndpPrefixInformationAutoAddrConfFlagMask is the mask of the
 	// Autonomous Address-Configuration flag field in the flags byte within
 	// an NDPPrefixInformation.
-	ndpPrefixInformationAutoAddrConfFlagMask = (1 << 6)
+	ndpPrefixInformationAutoAddrConfFlagMask = 1 << 6
 
 	// ndpPrefixInformationReserved1FlagsMask is the mask of the Reserved1
 	// field in the flags byte within an NDPPrefixInformation.
@@ -451,7 +451,7 @@ func (o NDPNonceOption) String() string {
 
 // Nonce returns the nonce value this option holds.
 func (o NDPNonceOption) Nonce() []byte {
-	return []byte(o)
+	return o
 }
 
 // NDPSourceLinkLayerAddressOption is the NDP Source Link Layer Option

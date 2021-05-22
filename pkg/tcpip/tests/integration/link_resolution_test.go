@@ -404,9 +404,6 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 	const (
 		incomingNICID                     = 1
 		outgoingNICID                     = 2
-		randomSequence                    = 123
-		randomIdent                       = 42
-		randomTimeOffset                  = 0x10203040
 		ttl                               = 2
 		expectedHostUnreachableErrorCount = 1
 	)

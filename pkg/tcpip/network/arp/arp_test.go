@@ -396,7 +396,7 @@ func TestDirectRequest(t *testing.T) {
 				nicID:     nicID,
 				entry: stack.NeighborEntry{
 					Addr:     test.senderAddr,
-					LinkAddr: tcpip.LinkAddress(test.senderLinkAddr),
+					LinkAddr: test.senderLinkAddr,
 					State:    stack.Stale,
 				},
 			}

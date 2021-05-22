@@ -15,8 +15,6 @@
 package stack
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/rand"
@@ -47,9 +45,6 @@ const (
 	// testEntryBroadcastAddr is a special address that indicates a packet should
 	// be sent to all nodes.
 	testEntryBroadcastAddr = tcpip.Address("broadcast")
-
-	// testEntryLocalAddr is the source address of neighbor probes.
-	testEntryLocalAddr = tcpip.Address("local_addr")
 
 	// testEntryBroadcastLinkAddr is a special link address sent back to
 	// multicast neighbor probes.
@@ -106,20 +101,24 @@ type testEntryStore struct {
 	entriesMap map[tcpip.Address]NeighborEntry
 }
 
-func toAddress(i int) tcpip.Address {
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, uint8(1))
-	binary.Write(buf, binary.BigEndian, uint8(0))
-	binary.Write(buf, binary.BigEndian, uint16(i))
-	return tcpip.Address(buf.String())
+func toAddress(i uint16) tcpip.Address {
+	return tcpip.Address([]byte{
+		1,
+		0,
+		byte(i >> 8),
+		byte(i),
+	})
 }
 
-func toLinkAddress(i int) tcpip.LinkAddress {
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, uint8(1))
-	binary.Write(buf, binary.BigEndian, uint8(0))
-	binary.Write(buf, binary.BigEndian, uint32(i))
-	return tcpip.LinkAddress(buf.String())
+func toLinkAddress(i uint16) tcpip.LinkAddress {
+	return tcpip.LinkAddress([]byte{
+		1,
+		0,
+		0,
+		0,
+		byte(i >> 8),
+		byte(i),
+	})
 }
 
 // newTestEntryStore returns a testEntryStore pre-populated with entries.
@@ -127,7 +126,7 @@ func newTestEntryStore() *testEntryStore {
 	store := &testEntryStore{
 		entriesMap: make(map[tcpip.Address]NeighborEntry),
 	}
-	for i := 0; i < entryStoreSize; i++ {
+	for i := uint16(0); i < entryStoreSize; i++ {
 		addr := toAddress(i)
 		linkAddr := toLinkAddress(i)
 
@@ -140,15 +139,15 @@ func newTestEntryStore() *testEntryStore {
 }
 
 // size returns the number of entries in the store.
-func (s *testEntryStore) size() int {
+func (s *testEntryStore) size() uint16 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.entriesMap)
+	return uint16(len(s.entriesMap))
 }
 
 // entry returns the entry at index i. Returns an empty entry and false if i is
 // out of bounds.
-func (s *testEntryStore) entry(i int) (NeighborEntry, bool) {
+func (s *testEntryStore) entry(i uint16) (NeighborEntry, bool) {
 	return s.entryByAddr(toAddress(i))
 }
 
@@ -166,7 +165,7 @@ func (s *testEntryStore) entries() []NeighborEntry {
 	entries := make([]NeighborEntry, 0, len(s.entriesMap))
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for i := 0; i < entryStoreSize; i++ {
+	for i := uint16(0); i < entryStoreSize; i++ {
 		addr := toAddress(i)
 		if entry, ok := s.entriesMap[addr]; ok {
 			entries = append(entries, entry)
@@ -176,7 +175,7 @@ func (s *testEntryStore) entries() []NeighborEntry {
 }
 
 // set modifies the link addresses of an entry.
-func (s *testEntryStore) set(i int, linkAddr tcpip.LinkAddress) {
+func (s *testEntryStore) set(i uint16, linkAddr tcpip.LinkAddress) {
 	addr := toAddress(i)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -234,13 +233,6 @@ func (*testNeighborResolver) ResolveStaticAddress(addr tcpip.Address) (tcpip.Lin
 
 func (*testNeighborResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return 0
-}
-
-type entryEvent struct {
-	nicID    tcpip.NICID
-	address  tcpip.Address
-	linkAddr tcpip.LinkAddress
-	state    NeighborState
 }
 
 func TestNeighborCacheGetConfig(t *testing.T) {
@@ -461,7 +453,7 @@ func newTestContext(c NUDConfigurations) testContext {
 }
 
 type overflowOptions struct {
-	startAtEntryIndex int
+	startAtEntryIndex uint16
 	wantStaticEntries []NeighborEntry
 }
 
@@ -1068,7 +1060,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	// periodically refreshes the frequently used entry.
 
 	// Fill the neighbor cache to capacity
-	for i := 0; i < neighborCacheSize; i++ {
+	for i := uint16(0); i < neighborCacheSize; i++ {
 		entry, ok := linkRes.entries.entry(i)
 		if !ok {
 			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)
@@ -1084,7 +1076,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	}
 
 	// Keep adding more entries
-	for i := neighborCacheSize; i < linkRes.entries.size(); i++ {
+	for i := uint16(neighborCacheSize); i < linkRes.entries.size(); i++ {
 		// Periodically refresh the frequently used entry
 		if i%(neighborCacheSize/2) == 0 {
 			if _, _, err := linkRes.neigh.entry(frequentlyUsedEntry.Addr, "", nil); err != nil {
@@ -1561,9 +1553,9 @@ func BenchmarkCacheClear(b *testing.B) {
 	linkRes.delay = 0
 
 	// Clear for every possible size of the cache
-	for cacheSize := 0; cacheSize < neighborCacheSize; cacheSize++ {
+	for cacheSize := uint16(0); cacheSize < neighborCacheSize; cacheSize++ {
 		// Fill the neighbor cache to capacity.
-		for i := 0; i < cacheSize; i++ {
+		for i := uint16(0); i < cacheSize; i++ {
 			entry, ok := linkRes.entries.entry(i)
 			if !ok {
 				b.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)

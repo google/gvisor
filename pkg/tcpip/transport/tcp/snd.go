@@ -616,7 +616,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 		//     'S2' that meets the following 3 criteria for determinig
 		//     loss, the sequence range of one segment of up to SMSS
 		//     octects starting with S2 MUST be returned.
-		if !s.ep.scoreboard.IsSACKED(header.SACKBlock{segSeq, segSeq.Add(1)}) {
+		if !s.ep.scoreboard.IsSACKED(header.SACKBlock{Start: segSeq, End: segSeq.Add(1)}) {
 			// NextSeg():
 			//
 			//    (1.a) S2 is greater than HighRxt
@@ -1024,7 +1024,7 @@ func (s *sender) SetPipe() {
 			if segEnd.LessThan(endSeq) {
 				endSeq = segEnd
 			}
-			sb := header.SACKBlock{startSeq, endSeq}
+			sb := header.SACKBlock{Start: startSeq, End: endSeq}
 			// SetPipe():
 			//
 			// After initializing pipe to zero, the following steps are
@@ -1455,7 +1455,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
 		// * Upon receiving an ACK:
 		// * Step 4: Update RACK reordering window
-		s.rc.updateRACKReorderWindow(rcvdSeg)
+		s.rc.updateRACKReorderWindow()
 
 		// After the reorder window is calculated, detect any loss by checking
 		// if the time elapsed after the segments are sent is greater than the

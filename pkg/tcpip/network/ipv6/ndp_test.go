@@ -32,58 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
-// setupStackAndEndpoint creates a stack with a single NIC with a link-local
-// address llladdr and an IPv6 endpoint to a remote with link-local address
-// rlladdr
-func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address) (*stack.Stack, stack.NetworkEndpoint) {
-	t.Helper()
-
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-	})
-
-	if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
-		t.Fatalf("CreateNIC(_) = %s", err)
-	}
-	{
-		subnet, err := tcpip.NewSubnet(rlladdr, tcpip.AddressMask(strings.Repeat("\xff", len(rlladdr))))
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.SetRouteTable(
-			[]tcpip.Route{{
-				Destination: subnet,
-				NIC:         1,
-			}},
-		)
-	}
-
-	netProto := s.NetworkProtocolInstance(ProtocolNumber)
-	if netProto == nil {
-		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
-	}
-
-	ep := netProto.NewEndpoint(&testInterface{}, &stubDispatcher{})
-	if err := ep.Enable(); err != nil {
-		t.Fatalf("ep.Enable(): %s", err)
-	}
-	t.Cleanup(ep.Close)
-
-	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
-	if !ok {
-		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
-	}
-	addr := llladdr.WithPrefix()
-	if addressEP, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
-	} else {
-		addressEP.DecRef()
-	}
-
-	return s, ep
-}
-
 var _ NDPDispatcher = (*testNDPDispatcher)(nil)
 
 // testNDPDispatcher is an NDPDispatcher only allows default router discovery.
@@ -161,11 +109,6 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 	if ndpDisp.addr != lladdr1 {
 		t.Fatalf("got ndpDisp.addr = %s, want = %s", ndpDisp.addr, lladdr1)
 	}
-}
-
-type linkResolutionResult struct {
-	linkAddr tcpip.LinkAddress
-	ok       bool
 }
 
 // TestNeighborSolicitationWithSourceLinkLayerOption tests that receiving a

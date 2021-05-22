@@ -25,7 +25,6 @@ import (
 const (
 	shortDuration  = 1 * time.Nanosecond
 	middleDuration = 100 * time.Millisecond
-	longDuration   = 1 * time.Second
 )
 
 func TestJobReschedule(t *testing.T) {

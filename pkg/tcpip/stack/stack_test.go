@@ -166,10 +166,6 @@ func (f *fakeNetworkEndpoint) MaxHeaderLength() uint16 {
 	return f.nic.MaxHeaderLength() + fakeNetHeaderLen
 }
 
-func (*fakeNetworkEndpoint) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, dstAddr tcpip.Address) uint16 {
-	return 0
-}
-
 func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return f.proto.Number()
 }
@@ -197,11 +193,11 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHe
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*fakeNetworkEndpoint) WritePackets(r *stack.Route, pkts stack.PacketBufferList, params stack.NetworkHeaderParams) (int, tcpip.Error) {
+func (*fakeNetworkEndpoint) WritePackets(*stack.Route, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
 	panic("not implemented")
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -463,14 +459,14 @@ func testSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer
 	}
 }
 
-func testFailingSend(t *testing.T, r *stack.Route, ep *channel.Endpoint, payload buffer.View, wantErr tcpip.Error) {
+func testFailingSend(t *testing.T, r *stack.Route, payload buffer.View, wantErr tcpip.Error) {
 	t.Helper()
 	if gotErr := send(r, payload); gotErr != wantErr {
 		t.Errorf("send failed: got = %s, want = %s ", gotErr, wantErr)
 	}
 }
 
-func testFailingSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload buffer.View, wantErr tcpip.Error) {
+func testFailingSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, payload buffer.View, wantErr tcpip.Error) {
 	t.Helper()
 	if gotErr := sendTo(s, addr, payload); gotErr != wantErr {
 		t.Errorf("sendto failed: got = %s, want = %s ", gotErr, wantErr)
@@ -920,15 +916,15 @@ func TestRouteWithDownNIC(t *testing.T) {
 				if err := test.downFn(s, nicID1); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID1, err)
 				}
-				testFailingSend(t, r1, ep1, buf, &tcpip.ErrInvalidEndpointState{})
+				testFailingSend(t, r1, buf, &tcpip.ErrInvalidEndpointState{})
 				testSend(t, r2, ep2, buf)
 
 				// Writes with Routes that use NIC2 after being brought down should fail.
 				if err := test.downFn(s, nicID2); err != nil {
 					t.Fatalf("test.downFn(_, %d): %s", nicID2, err)
 				}
-				testFailingSend(t, r1, ep1, buf, &tcpip.ErrInvalidEndpointState{})
-				testFailingSend(t, r2, ep2, buf, &tcpip.ErrInvalidEndpointState{})
+				testFailingSend(t, r1, buf, &tcpip.ErrInvalidEndpointState{})
+				testFailingSend(t, r2, buf, &tcpip.ErrInvalidEndpointState{})
 
 				if upFn := test.upFn; upFn != nil {
 					// Writes with Routes that use NIC1 after being brought up should
@@ -941,7 +937,7 @@ func TestRouteWithDownNIC(t *testing.T) {
 						t.Fatalf("test.upFn(_, %d): %s", nicID1, err)
 					}
 					testSend(t, r1, ep1, buf)
-					testFailingSend(t, r2, ep2, buf, &tcpip.ErrInvalidEndpointState{})
+					testFailingSend(t, r2, buf, &tcpip.ErrInvalidEndpointState{})
 				}
 			})
 		}
@@ -1066,7 +1062,7 @@ func TestAddressRemoval(t *testing.T) {
 		t.Fatal("RemoveAddress failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
-	testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 
 	// Check that removing the same address fails.
 	err := s.RemoveAddress(1, localAddr)
@@ -1118,8 +1114,8 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 		t.Fatal("RemoveAddress failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, ep, buf)
-	testFailingSend(t, r, ep, nil, &tcpip.ErrInvalidEndpointState{})
-	testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+	testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
+	testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 
 	// Check that removing the same address fails.
 	{
@@ -1140,7 +1136,7 @@ func verifyAddress(t *testing.T, s *stack.Stack, nicID tcpip.NICID, addr tcpip.A
 		// No address given, verify that there is no address assigned to the NIC.
 		for _, a := range info.ProtocolAddresses {
 			if a.Protocol == fakeNetNumber && a.AddressWithPrefix != (tcpip.AddressWithPrefix{}) {
-				t.Errorf("verify no-address: got = %s, want = %s", a.AddressWithPrefix, (tcpip.AddressWithPrefix{}))
+				t.Errorf("verify no-address: got = %s, want = %s", a.AddressWithPrefix, tcpip.AddressWithPrefix{})
 			}
 		}
 		return
@@ -1220,7 +1216,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 				}
 
 				// 2. Add Address, everything should work.
@@ -1248,7 +1244,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 				}
 
 				// 4. Add Address back, everything should work again.
@@ -1287,8 +1283,8 @@ func TestEndpointExpiration(t *testing.T) {
 					testSend(t, r, ep, nil)
 					testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSend(t, r, ep, nil, &tcpip.ErrInvalidEndpointState{})
-					testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+					testFailingSend(t, r, nil, &tcpip.ErrInvalidEndpointState{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 				}
 
 				// 7. Add Address back, everything should work again.
@@ -1324,7 +1320,7 @@ func TestEndpointExpiration(t *testing.T) {
 					// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 					// testSendTo(t, s, remoteAddr, ep, nil)
 				} else {
-					testFailingSendTo(t, s, remoteAddr, ep, nil, &tcpip.ErrNoRoute{})
+					testFailingSendTo(t, s, remoteAddr, nil, &tcpip.ErrNoRoute{})
 				}
 			})
 		}
@@ -1574,7 +1570,7 @@ func TestSpoofingNoAddress(t *testing.T) {
 		t.Errorf("FindRoute succeeded with route %+v when it should have failed", r)
 	}
 	// Sending a packet fails.
-	testFailingSendTo(t, s, dstAddr, ep, nil, &tcpip.ErrNoRoute{})
+	testFailingSendTo(t, s, dstAddr, nil, &tcpip.ErrNoRoute{})
 
 	// With address spoofing enabled, FindRoute permits any address to be used
 	// as the source.
@@ -1615,7 +1611,7 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 		}
 	}
 
-	protoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: tcpip.AddressWithPrefix{header.IPv4Any, 0}}
+	protoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: header.IPv4Any}}
 	if err := s.AddProtocolAddress(1, protoAddr); err != nil {
 		t.Fatalf("AddProtocolAddress(1, %v) failed: %v", protoAddr, err)
 	}
@@ -1641,12 +1637,12 @@ func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 }
 
 func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
-	defaultAddr := tcpip.AddressWithPrefix{header.IPv4Any, 0}
+	defaultAddr := tcpip.AddressWithPrefix{Address: header.IPv4Any}
 	// Local subnet on NIC1: 192.168.1.58/24, gateway 192.168.1.1.
-	nic1Addr := tcpip.AddressWithPrefix{"\xc0\xa8\x01\x3a", 24}
+	nic1Addr := tcpip.AddressWithPrefix{Address: "\xc0\xa8\x01\x3a", PrefixLen: 24}
 	nic1Gateway := testutil.MustParse4("192.168.1.1")
 	// Local subnet on NIC2: 10.10.10.5/24, gateway 10.10.10.1.
-	nic2Addr := tcpip.AddressWithPrefix{"\x0a\x0a\x0a\x05", 24}
+	nic2Addr := tcpip.AddressWithPrefix{Address: "\x0a\x0a\x0a\x05", PrefixLen: 24}
 	nic2Gateway := testutil.MustParse4("10.10.10.1")
 
 	// Create a new stack with two NICs.
@@ -1660,12 +1656,12 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	if err := s.CreateNIC(2, ep); err != nil {
 		t.Fatalf("CreateNIC failed: %s", err)
 	}
-	nic1ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic1Addr}
+	nic1ProtoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: nic1Addr}
 	if err := s.AddProtocolAddress(1, nic1ProtoAddr); err != nil {
 		t.Fatalf("AddProtocolAddress(1, %v) failed: %v", nic1ProtoAddr, err)
 	}
 
-	nic2ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic2Addr}
+	nic2ProtoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: nic2Addr}
 	if err := s.AddProtocolAddress(2, nic2ProtoAddr); err != nil {
 		t.Fatalf("AddAddress(2, %v) failed: %v", nic2ProtoAddr, err)
 	}
@@ -1709,7 +1705,7 @@ func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
 	// 2. Case: Having an explicit route for broadcast will select that one.
 	rt = append(
 		[]tcpip.Route{
-			{Destination: tcpip.AddressWithPrefix{header.IPv4Broadcast, 8 * header.IPv4AddressSize}.Subnet(), NIC: 1},
+			{Destination: tcpip.AddressWithPrefix{Address: header.IPv4Broadcast, PrefixLen: 8 * header.IPv4AddressSize}.Subnet(), NIC: 1},
 		},
 		rt...,
 	)
@@ -2049,7 +2045,7 @@ func TestAddAddress(t *testing.T) {
 		}
 		expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
 			Protocol:          fakeNetNumber,
-			AddressWithPrefix: tcpip.AddressWithPrefix{address, fakeDefaultPrefixLen},
+			AddressWithPrefix: tcpip.AddressWithPrefix{Address: address, PrefixLen: fakeDefaultPrefixLen},
 		})
 	}
 
@@ -2113,7 +2109,7 @@ func TestAddAddressWithOptions(t *testing.T) {
 			}
 			expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
 				Protocol:          fakeNetNumber,
-				AddressWithPrefix: tcpip.AddressWithPrefix{address, fakeDefaultPrefixLen},
+				AddressWithPrefix: tcpip.AddressWithPrefix{Address: address, PrefixLen: fakeDefaultPrefixLen},
 			})
 		}
 	}
@@ -2234,7 +2230,7 @@ func TestCreateNICWithOptions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			s := stack.New(stack.Options{})
-			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			ep := channel.New(0, 0, "\x00\x00\x00\x00\x00\x00")
 			for _, call := range test.calls {
 				if got, want := s.CreateNICWithOptions(call.nicID, ep, call.opts), call.err; got != want {
 					t.Fatalf("CreateNICWithOptions(%v, _, %+v) = %v, want %v", call.nicID, call.opts, got, want)
@@ -2357,7 +2353,7 @@ func TestNICContextPreservation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := stack.New(stack.Options{})
 			id := tcpip.NICID(1)
-			ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+			ep := channel.New(0, 0, "\x00\x00\x00\x00\x00\x00")
 			if err := s.CreateNICWithOptions(id, ep, test.opts); err != nil {
 				t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, test.opts, err)
 			}
@@ -3878,8 +3874,6 @@ func TestGetMainNICAddressWhenNICDisabled(t *testing.T) {
 
 // TestAddRoute tests Stack.AddRoute
 func TestAddRoute(t *testing.T) {
-	const nicID = 1
-
 	s := stack.New(stack.Options{})
 
 	subnet1, err := tcpip.NewSubnet("\x00", "\x00")
@@ -3916,8 +3910,6 @@ func TestAddRoute(t *testing.T) {
 
 // TestRemoveRoutes tests Stack.RemoveRoutes
 func TestRemoveRoutes(t *testing.T) {
-	const nicID = 1
-
 	s := stack.New(stack.Options{})
 
 	addressToRemove := tcpip.Address("\x01")
@@ -4264,7 +4256,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			s.SetRouteTable([]tcpip.Route{{Destination: test.netCfg.remoteAddr.WithPrefix().Subnet(), NIC: nicID2}})
 
 			r, err := s.FindRoute(test.addrNIC, test.localAddr, test.netCfg.remoteAddr, test.netCfg.proto, false /* multicastLoop */)
-			if r != nil {
+			if err == nil {
 				defer r.Release()
 			}
 			if diff := cmp.Diff(test.findRouteErr, err); diff != "" {

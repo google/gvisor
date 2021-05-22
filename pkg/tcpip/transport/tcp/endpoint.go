@@ -818,7 +818,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		},
 		sndQueueInfo: sndQueueInfo{
 			TCPSndBufState: stack.TCPSndBufState{
-				SndMTU: int(math.MaxInt32),
+				SndMTU: math.MaxInt32,
 			},
 		},
 		waiterQueue: waiterQueue,
@@ -2748,7 +2748,7 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 	// We only notify when there is half the sendBufferSize available after
 	// a full buffer event occurs. This ensures that we don't wake up
 	// writers to queue just 1-2 segments and go back to sleep.
-	notify = notify && e.sndQueueInfo.SndBufUsed < int(sendBufferSize)>>1
+	notify = notify && e.sndQueueInfo.SndBufUsed < sendBufferSize>>1
 	e.sndQueueInfo.sndQueueMu.Unlock()
 
 	if notify {
