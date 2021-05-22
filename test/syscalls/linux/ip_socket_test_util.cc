@@ -174,13 +174,21 @@ SocketKind IPv6TCPUnboundSocket(int type) {
 
 PosixError IfAddrHelper::Load() {
   Release();
+#ifndef ANDROID
   RETURN_ERROR_IF_SYSCALL_FAIL(getifaddrs(&ifaddr_));
+#else
+  // Android does not support getifaddrs in r22.
+  return PosixError(ENOSYS, "getifaddrs");
+#endif
   return NoError();
 }
 
 void IfAddrHelper::Release() {
   if (ifaddr_) {
+#ifndef ANDROID
+    // Android does not support freeifaddrs in r22.
     freeifaddrs(ifaddr_);
+#endif
     ifaddr_ = nullptr;
   }
 }

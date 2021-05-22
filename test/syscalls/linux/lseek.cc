@@ -150,7 +150,7 @@ TEST(LseekTest, SeekCurrentDir) {
   // From include/linux/fs.h.
   constexpr loff_t MAX_LFS_FILESIZE = 0x7fffffffffffffff;
 
-  char* dir = get_current_dir_name();
+  char* dir = getcwd(NULL, 0);
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir, O_RDONLY));
 
   ASSERT_THAT(lseek(fd.get(), 0, SEEK_CUR), SyscallSucceeds());

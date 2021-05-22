@@ -1517,7 +1517,8 @@ cc_binary(
 cc_binary(
     name = "partial_bad_buffer_test",
     testonly = 1,
-    srcs = ["partial_bad_buffer.cc"],
+    # Android does not support preadv or pwritev in r22.
+    srcs = select_system(linux = ["partial_bad_buffer.cc"]),
     linkstatic = 1,
     deps = [
         ":socket_test_util",
@@ -3674,7 +3675,8 @@ cc_binary(
 cc_binary(
     name = "sync_test",
     testonly = 1,
-    srcs = ["sync.cc"],
+    # Android does not support syncfs in r22.
+    srcs = select_system(linux = ["sync.cc"]),
     linkstatic = 1,
     deps = [
         gtest,
@@ -3970,7 +3972,8 @@ cc_binary(
 cc_binary(
     name = "utimes_test",
     testonly = 1,
-    srcs = ["utimes.cc"],
+    # Android does not support futimesat in r22.
+    srcs = select_system(linux = ["utimes.cc"]),
     linkstatic = 1,
     deps = [
         "//test/util:file_descriptor",
@@ -4086,7 +4089,8 @@ cc_binary(
 cc_binary(
     name = "semaphore_test",
     testonly = 1,
-    srcs = ["semaphore.cc"],
+    # Android does not support XSI semaphores in r22.
+    srcs = select_system(linux = ["semaphore.cc"]),
     linkstatic = 1,
     deps = [
         "//test/util:capability_util",

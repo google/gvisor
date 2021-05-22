@@ -58,8 +58,10 @@ PosixErrorOr<std::unique_ptr<Tunnel>> Tunnel::New(string tunnel_name) {
 }
 
 std::unordered_set<string> GetInterfaceNames() {
-  struct if_nameindex* interfaces = if_nameindex();
   std::unordered_set<string> names;
+#ifndef ANDROID
+  // Android does not support if_nameindex in r22.
+  struct if_nameindex* interfaces = if_nameindex();
   if (interfaces == nullptr) {
     return names;
   }
@@ -68,6 +70,7 @@ std::unordered_set<string> GetInterfaceNames() {
     names.insert(interface->if_name);
   }
   if_freenameindex(interfaces);
+#endif
   return names;
 }
 
