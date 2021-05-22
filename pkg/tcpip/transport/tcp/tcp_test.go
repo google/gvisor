@@ -4259,7 +4259,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
-		SeqNum:  seqnum.Value(iss),
+		SeqNum:  iss,
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
@@ -5335,7 +5335,7 @@ func TestKeepalive(t *testing.T) {
 		checker.IPv4(t, b,
 			checker.TCP(
 				checker.DstPort(context.TestPort),
-				checker.TCPSeqNum(uint32(next-1)),
+				checker.TCPSeqNum(next-1),
 				checker.TCPAckNum(uint32(iss)),
 				checker.TCPFlags(header.TCPFlagAck),
 			),
@@ -5360,12 +5360,7 @@ func TestKeepalive(t *testing.T) {
 	})
 
 	checker.IPv4(t, c.GetPacket(),
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.TCPSeqNum(uint32(next)),
-			checker.TCPAckNum(uint32(0)),
-			checker.TCPFlags(header.TCPFlagRst),
-		),
+		checker.TCP(checker.DstPort(context.TestPort), checker.TCPSeqNum(next), checker.TCPAckNum(uint32(0)), checker.TCPFlags(header.TCPFlagRst)),
 	)
 
 	if got := c.Stack().Stats().TCP.EstablishedTimedout.Value(); got != 1 {
@@ -5507,7 +5502,7 @@ func TestListenBacklogFull(t *testing.T) {
 	// Now execute send one more SYN. The stack should not respond as the backlog
 	// is full at this point.
 	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort + uint16(lastPortOffset),
+		SrcPort: context.TestPort + lastPortOffset,
 		DstPort: context.StackPort,
 		Flags:   header.TCPFlagSyn,
 		SeqNum:  seqnum.Value(context.TestInitialSequenceNumber),
@@ -5884,7 +5879,7 @@ func TestListenSynRcvdQueueFull(t *testing.T) {
 	r.Reset(data)
 	newEP.Write(&r, tcpip.WriteOptions{})
 	pkt := c.GetPacket()
-	tcp = header.TCP(header.IPv4(pkt).Payload())
+	tcp = header.IPv4(pkt).Payload()
 	if string(tcp.Payload()) != data {
 		t.Fatalf("unexpected data: got %s, want %s", string(tcp.Payload()), data)
 	}
@@ -6118,7 +6113,7 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	}
 
 	pkt := c.GetPacket()
-	tcpHdr = header.TCP(header.IPv4(pkt).Payload())
+	tcpHdr = header.IPv4(pkt).Payload()
 	if string(tcpHdr.Payload()) != data {
 		t.Fatalf("unexpected data: got %s, want %s", string(tcpHdr.Payload()), data)
 	}
@@ -6375,7 +6370,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 
 	// Allocate a large enough payload for the test.
 	payloadSize := receiveBufferSize * 2
-	b := make([]byte, int(payloadSize))
+	b := make([]byte, payloadSize)
 
 	worker := (c.EP).(interface {
 		StopWork()
@@ -6429,7 +6424,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// ack, 1 for the non-zero window
 	p := c.GetPacket()
 	checker.IPv4(t, p, checker.TCP(
-		checker.TCPAckNum(uint32(wantAckNum)),
+		checker.TCPAckNum(wantAckNum),
 		func(t *testing.T, h header.Transport) {
 			tcp, ok := h.(header.TCP)
 			if !ok {
@@ -6484,14 +6479,14 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 	c.WindowScale = uint8(tcp.FindWndScale(maxReceiveBufferSize))
 
 	rawEP := c.CreateConnectedWithOptions(header.TCPSynOptions{TS: true, WS: 4})
-	tsVal := uint32(rawEP.TSVal)
+	tsVal := rawEP.TSVal
 	rawEP.NextSeqNum--
 	rawEP.SendPacketWithTS(nil, tsVal)
 	rawEP.NextSeqNum++
 	pkt := rawEP.VerifyAndReturnACKWithTS(tsVal)
 	curRcvWnd := int(header.TCP(header.IPv4(pkt).Payload()).WindowSize()) << c.WindowScale
 	scaleRcvWnd := func(rcvWnd int) uint16 {
-		return uint16(rcvWnd >> uint16(c.WindowScale))
+		return uint16(rcvWnd >> c.WindowScale)
 	}
 	// Allocate a large array to send to the endpoint.
 	b := make([]byte, receiveBufferSize*48)
@@ -6619,19 +6614,16 @@ func TestDelayEnabled(t *testing.T) {
 	defer c.Cleanup()
 	checkDelayOption(t, c, false, false) // Delay is disabled by default.
 
-	for _, v := range []struct {
-		delayEnabled    tcpip.TCPDelayEnabled
-		wantDelayOption bool
-	}{
-		{delayEnabled: false, wantDelayOption: false},
-		{delayEnabled: true, wantDelayOption: true},
-	} {
-		c := context.New(t, defaultMTU)
-		defer c.Cleanup()
-		if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &v.delayEnabled); err != nil {
-			t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, v.delayEnabled, v.delayEnabled, err)
-		}
-		checkDelayOption(t, c, v.delayEnabled, v.wantDelayOption)
+	for _, delayEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delayEnabled=%t", delayEnabled), func(t *testing.T) {
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+			opt := tcpip.TCPDelayEnabled(delayEnabled)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+				t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, delayEnabled, err)
+			}
+			checkDelayOption(t, c, opt, delayEnabled)
+		})
 	}
 }
 
@@ -7042,7 +7034,7 @@ func TestTCPTimeWaitNewSyn(t *testing.T) {
 
 	// Receive the SYN-ACK reply.
 	b = c.GetPacket()
-	tcpHdr = header.TCP(header.IPv4(b).Payload())
+	tcpHdr = header.IPv4(b).Payload()
 	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
 
 	ackHeaders = &context.Headers{
@@ -7467,7 +7459,7 @@ func TestTCPUserTimeout(t *testing.T) {
 	checker.IPv4(t, c.GetPacket(),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
-			checker.TCPSeqNum(uint32(next)),
+			checker.TCPSeqNum(next),
 			checker.TCPAckNum(uint32(0)),
 			checker.TCPFlags(header.TCPFlagRst),
 		),
@@ -7545,7 +7537,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
 		SeqNum:  iss,
-		AckNum:  seqnum.Value(c.IRS + 1),
+		AckNum:  c.IRS + 1,
 		RcvWnd:  30000,
 	})
 

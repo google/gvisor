@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -46,16 +45,12 @@ const (
 	defaultChannelSize = 1
 	defaultMTU         = 65536
 
-	// Extra time to use when waiting for an async event to occur.
-	defaultAsyncPositiveEventTimeout = 30 * time.Second
-
 	arbitraryHopLimit = 42
 )
 
 var (
 	lladdr0 = header.LinkLocalAddr(linkAddr0)
 	lladdr1 = header.LinkLocalAddr(linkAddr1)
-	lladdr2 = header.LinkLocalAddr(linkAddr2)
 )
 
 type stubLinkEndpoint struct {
@@ -1309,7 +1304,7 @@ func TestPacketQueing(t *testing.T) {
 					Length:  header.UDPMinimumSize,
 				})
 				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv6Addr.AddressWithPrefix.Address, host1IPv6Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
-				sum = header.Checksum(header.UDP([]byte{}), sum)
+				sum = header.Checksum(nil, sum)
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				payloadLength := hdr.UsedLength()
 				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))

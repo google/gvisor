@@ -112,10 +112,6 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 }
 
-type forwardedPacket struct {
-	fragments []fragmentInfo
-}
-
 func TestForwarding(t *testing.T) {
 	const (
 		incomingNICID    = 1
@@ -453,7 +449,7 @@ func TestForwarding(t *testing.T) {
 					return len(hdr.View())
 				}
 
-				checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+				checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
 					checker.SrcAddr(incomingIPv4Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(ipv4.DefaultTTL),
@@ -461,7 +457,7 @@ func TestForwarding(t *testing.T) {
 						checker.ICMPv4Checksum(),
 						checker.ICMPv4Type(test.icmpType),
 						checker.ICMPv4Code(test.icmpCode),
-						checker.ICMPv4Payload([]byte(hdr.View()[0:expectedICMPPayloadLength()])),
+						checker.ICMPv4Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
 			} else if ok {
@@ -470,7 +466,7 @@ func TestForwarding(t *testing.T) {
 
 			if test.expectPacketForwarded {
 				if len(test.expectedFragmentsForwarded) != 0 {
-					fragmentedPackets := []*stack.PacketBuffer{}
+					var fragmentedPackets []*stack.PacketBuffer
 					for i := 0; i < len(test.expectedFragmentsForwarded); i++ {
 						reply, ok = outgoingEndpoint.Read()
 						if !ok {
@@ -487,7 +483,7 @@ func TestForwarding(t *testing.T) {
 					// maximum IP header size and the maximum size allocated for link layer
 					// headers. In this case, no size is allocated for link layer headers.
 					expectedAvailableHeaderBytes := header.IPv4MaximumHeaderSize
-					if err := compareFragments(fragmentedPackets, requestPkt, uint32(test.mtu), test.expectedFragmentsForwarded, header.ICMPv4ProtocolNumber, true /* withIPHeader */, expectedAvailableHeaderBytes); err != nil {
+					if err := compareFragments(fragmentedPackets, requestPkt, test.mtu, test.expectedFragmentsForwarded, header.ICMPv4ProtocolNumber, true /* withIPHeader */, expectedAvailableHeaderBytes); err != nil {
 						t.Error(err)
 					}
 				} else {
@@ -496,7 +492,7 @@ func TestForwarding(t *testing.T) {
 						t.Fatal("expected ICMP Echo packet through outgoing NIC")
 					}
 
-					checker.IPv4(t, header.IPv4(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+					checker.IPv4(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
 						checker.SrcAddr(test.sourceAddr),
 						checker.DstAddr(test.destAddr),
 						checker.TTL(test.TTL-1),
@@ -1315,7 +1311,7 @@ func TestIPv4Sanity(t *testing.T) {
 						checker.ICMPv4Type(test.ICMPType),
 						checker.ICMPv4Code(test.ICMPCode),
 						checker.ICMPv4Pointer(test.paramProblemPointer),
-						checker.ICMPv4Payload([]byte(hdr.View())),
+						checker.ICMPv4Payload(hdr.View()),
 					),
 				)
 				return
@@ -1334,7 +1330,7 @@ func TestIPv4Sanity(t *testing.T) {
 					checker.ICMPv4(
 						checker.ICMPv4Type(test.ICMPType),
 						checker.ICMPv4Code(test.ICMPCode),
-						checker.ICMPv4Payload([]byte(hdr.View())),
+						checker.ICMPv4Payload(hdr.View()),
 					),
 				)
 				return
@@ -2301,7 +2297,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 					checker.ICMPv4Type(header.ICMPv4TimeExceeded),
 					checker.ICMPv4Code(header.ICMPv4ReassemblyTimeout),
 					checker.ICMPv4Checksum(),
-					checker.ICMPv4Payload([]byte(firstFragmentSent)),
+					checker.ICMPv4Payload(firstFragmentSent),
 				),
 			)
 		})
@@ -2705,7 +2701,7 @@ func TestReceiveFragments(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 				RawFactory:         raw.EndpointFactory{},
 			})
-			e := channel.New(0, 1280, tcpip.LinkAddress("\xf0\x00"))
+			e := channel.New(0, 1280, "\xf0\x00")
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
@@ -3074,7 +3070,7 @@ func TestPacketQueing(t *testing.T) {
 					Length:  header.UDPMinimumSize,
 				})
 				sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, host2IPv4Addr.AddressWithPrefix.Address, host1IPv4Addr.AddressWithPrefix.Address, header.UDPMinimumSize)
-				sum = header.Checksum(header.UDP([]byte{}), sum)
+				sum = header.Checksum(nil, sum)
 				u.SetChecksum(^u.CalculateChecksum(sum))
 				ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
@@ -3253,7 +3249,7 @@ func TestCloseLocking(t *testing.T) {
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	})
 
-	// Perform NAT so that the endoint tries to search for a sibling endpoint
+	// Perform NAT so that the endpoint tries to search for a sibling endpoint
 	// which ends up taking the protocol and endpoint lock (in that order).
 	table := stack.Table{
 		Rules: []stack.Rule{

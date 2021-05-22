@@ -36,11 +36,6 @@ const (
 
 	entryTestLinkAddr1 = tcpip.LinkAddress("\x0a\x00\x00\x00\x00\x01")
 	entryTestLinkAddr2 = tcpip.LinkAddress("\x0a\x00\x00\x00\x00\x02")
-
-	// entryTestNetDefaultMTU is the MTU, in bytes, used throughout the tests,
-	// except where another value is explicitly used. It is chosen to match the
-	// MTU of loopback interfaces on Linux systems.
-	entryTestNetDefaultMTU = 65536
 )
 
 var (
@@ -196,13 +191,13 @@ func (r *entryTestLinkResolver) LinkAddressRequest(targetAddr, localAddr tcpip.A
 
 // ResolveStaticAddress attempts to resolve address without sending requests.
 // It either resolves the name immediately or returns the empty LinkAddress.
-func (r *entryTestLinkResolver) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+func (*entryTestLinkResolver) ResolveStaticAddress(tcpip.Address) (tcpip.LinkAddress, bool) {
 	return "", false
 }
 
 // LinkAddressProtocol returns the network protocol of the addresses this
 // resolver can resolve.
-func (r *entryTestLinkResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
+func (*entryTestLinkResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 	return entryTestNetNumber
 }
 

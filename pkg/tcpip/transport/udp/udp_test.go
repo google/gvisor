@@ -1462,7 +1462,7 @@ func TestReadRecvOriginalDstAddr(t *testing.T) {
 			name:                    "IPv4 unicast",
 			proto:                   header.IPv4ProtocolNumber,
 			flow:                    unicastV4,
-			expectedOriginalDstAddr: tcpip.FullAddress{1, stackAddr, stackPort},
+			expectedOriginalDstAddr: tcpip.FullAddress{NIC: 1, Addr: stackAddr, Port: stackPort},
 		},
 		{
 			name:  "IPv4 multicast",
@@ -1474,7 +1474,7 @@ func TestReadRecvOriginalDstAddr(t *testing.T) {
 			// behaviour. We still include the test so that once the bug is
 			// resolved, this test will start to fail and the individual tasked
 			// with fixing this bug knows to also fix this test :).
-			expectedOriginalDstAddr: tcpip.FullAddress{1, multicastAddr, stackPort},
+			expectedOriginalDstAddr: tcpip.FullAddress{NIC: 1, Addr: multicastAddr, Port: stackPort},
 		},
 		{
 			name:  "IPv4 broadcast",
@@ -1486,13 +1486,13 @@ func TestReadRecvOriginalDstAddr(t *testing.T) {
 			// behaviour. We still include the test so that once the bug is
 			// resolved, this test will start to fail and the individual tasked
 			// with fixing this bug knows to also fix this test :).
-			expectedOriginalDstAddr: tcpip.FullAddress{1, broadcastAddr, stackPort},
+			expectedOriginalDstAddr: tcpip.FullAddress{NIC: 1, Addr: broadcastAddr, Port: stackPort},
 		},
 		{
 			name:                    "IPv6 unicast",
 			proto:                   header.IPv6ProtocolNumber,
 			flow:                    unicastV6,
-			expectedOriginalDstAddr: tcpip.FullAddress{1, stackV6Addr, stackPort},
+			expectedOriginalDstAddr: tcpip.FullAddress{NIC: 1, Addr: stackV6Addr, Port: stackPort},
 		},
 		{
 			name:  "IPv6 multicast",
@@ -1504,7 +1504,7 @@ func TestReadRecvOriginalDstAddr(t *testing.T) {
 			// behaviour. We still include the test so that once the bug is
 			// resolved, this test will start to fail and the individual tasked
 			// with fixing this bug knows to also fix this test :).
-			expectedOriginalDstAddr: tcpip.FullAddress{1, multicastV6Addr, stackPort},
+			expectedOriginalDstAddr: tcpip.FullAddress{NIC: 1, Addr: multicastV6Addr, Port: stackPort},
 		},
 	}
 
@@ -2124,25 +2124,27 @@ func TestShortHeader(t *testing.T) {
 // global and endpoint stats are incremented.
 func TestBadChecksumErrors(t *testing.T) {
 	for _, flow := range []testFlow{unicastV4, unicastV6} {
-		c := newDualTestContext(t, defaultMTU)
-		defer c.cleanup()
+		t.Run(flow.String(), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
 
-		c.createEndpoint(flow.sockProto())
-		// Bind to wildcard.
-		if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
-			c.t.Fatalf("Bind failed: %s", err)
-		}
+			c.createEndpoint(flow.sockProto())
+			// Bind to wildcard.
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				c.t.Fatalf("Bind failed: %s", err)
+			}
 
-		payload := newPayload()
-		c.injectPacket(flow, payload, true /* badChecksum */)
+			payload := newPayload()
+			c.injectPacket(flow, payload, true /* badChecksum */)
 
-		const want = 1
-		if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
-			t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
-		}
-		if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
-			t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
-		}
+			const want = 1
+			if got := c.s.Stats().UDP.ChecksumErrors.Value(); got != want {
+				t.Errorf("got stats.UDP.ChecksumErrors.Value() = %d, want = %d", got, want)
+			}
+			if got := c.ep.Stats().(*tcpip.TransportEndpointStats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+				t.Errorf("got EP Stats.ReceiveErrors.ChecksumErrors stats = %d, want = %d", got, want)
+			}
+		})
 	}
 }
 

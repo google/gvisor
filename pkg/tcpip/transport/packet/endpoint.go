@@ -159,7 +159,7 @@ func (ep *endpoint) Close() {
 }
 
 // ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
-func (ep *endpoint) ModerateRecvBuf(copied int) {}
+func (*endpoint) ModerateRecvBuf(int) {}
 
 // Read implements tcpip.Endpoint.Read.
 func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
@@ -220,19 +220,19 @@ func (*endpoint) Disconnect() tcpip.Error {
 
 // Connect implements tcpip.Endpoint.Connect. Packet sockets cannot be
 // connected, and this function always returnes *tcpip.ErrNotSupported.
-func (*endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
+func (*endpoint) Connect(tcpip.FullAddress) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 // Shutdown implements tcpip.Endpoint.Shutdown. Packet sockets cannot be used
 // with Shutdown, and this function always returns *tcpip.ErrNotSupported.
-func (*endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
+func (*endpoint) Shutdown(tcpip.ShutdownFlags) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
 // Listen implements tcpip.Endpoint.Listen. Packet sockets cannot be used with
 // Listen, and this function always returns *tcpip.ErrNotSupported.
-func (*endpoint) Listen(backlog int) tcpip.Error {
+func (*endpoint) Listen(int) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -318,7 +318,7 @@ func (ep *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 }
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
-func (ep *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
+func (*endpoint) SetSockOptInt(tcpip.SockOptInt, int) tcpip.Error {
 	return &tcpip.ErrUnknownProtocolOption{}
 }
 
@@ -339,7 +339,7 @@ func (ep *endpoint) UpdateLastError(err tcpip.Error) {
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
-func (ep *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
+func (*endpoint) GetSockOpt(tcpip.GettableSocketOption) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -484,7 +484,7 @@ func (ep *endpoint) Stats() tcpip.EndpointStats {
 }
 
 // SetOwner implements tcpip.Endpoint.SetOwner.
-func (ep *endpoint) SetOwner(owner tcpip.PacketOwner) {}
+func (*endpoint) SetOwner(tcpip.PacketOwner) {}
 
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {
