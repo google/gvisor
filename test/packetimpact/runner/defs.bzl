@@ -271,9 +271,6 @@ ALL_TESTS = [
         num_duts = 3,
     ),
     PacketimpactTestInfo(
-        name = "udp_send_recv_dgram",
-    ),
-    PacketimpactTestInfo(
         name = "tcp_linger",
     ),
     PacketimpactTestInfo(
@@ -288,6 +285,9 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_fin_retransmission",
+    ),
+    PacketimpactTestInfo(
+        name = "generic_dgram_socket_send_recv",
     ),
 ]
 

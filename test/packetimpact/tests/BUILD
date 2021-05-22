@@ -306,18 +306,6 @@ packetimpact_testbench(
 )
 
 packetimpact_testbench(
-    name = "udp_send_recv_dgram",
-    srcs = ["udp_send_recv_dgram_test.go"],
-    deps = [
-        "//pkg/tcpip",
-        "//pkg/tcpip/header",
-        "//test/packetimpact/testbench",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-packetimpact_testbench(
     name = "tcp_linger",
     srcs = ["tcp_linger_test.go"],
     deps = [
@@ -406,6 +394,20 @@ packetimpact_testbench(
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "generic_dgram_socket_send_recv",
+    size = "medium",
+    timeout = "long",
+    srcs = ["generic_dgram_socket_send_recv_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
