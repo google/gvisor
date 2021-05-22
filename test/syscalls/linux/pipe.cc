@@ -291,6 +291,9 @@ TEST_P(PipeTest, Seek) {
   }
 }
 
+#ifndef ANDROID
+// Android does not support preadv or pwritev in r22.
+
 TEST_P(PipeTest, OffsetCalls) {
   SKIP_IF(!CreateBlocking());
 
@@ -306,6 +309,8 @@ TEST_P(PipeTest, OffsetCalls) {
   EXPECT_THAT(preadv(wfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(pwritev(rfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
 }
+
+#endif  // ANDROID
 
 TEST_P(PipeTest, WriterSideCloses) {
   SKIP_IF(!CreateBlocking());

@@ -157,7 +157,8 @@ TEST_F(ReadTest, PartialReadSIGSEGV) {
           .iov_len = size,
       },
   };
-  EXPECT_THAT(preadv(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(readv(fd.get(), iov, ABSL_ARRAYSIZE(iov)),
               SyscallSucceedsWithValue(size));
 }
 

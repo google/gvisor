@@ -230,6 +230,8 @@ TEST(EpollTest, WaitThenUnblock) {
   EXPECT_THAT(pthread_detach(thread), SyscallSucceeds());
 }
 
+#ifndef ANDROID  // Android does not support pthread_cancel
+
 void sighandler(int s) {}
 
 void* signaler(void* arg) {
@@ -271,6 +273,8 @@ TEST(EpollTest, UnblockWithSignal) {
   EXPECT_THAT(pthread_cancel(thread), SyscallSucceeds());
   EXPECT_THAT(pthread_detach(thread), SyscallSucceeds());
 }
+
+#endif  // ANDROID
 
 TEST(EpollTest, TimeoutNoFds) {
   auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());

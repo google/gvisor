@@ -26,6 +26,8 @@
 
 #include "absl/strings/numbers.h"
 
+#ifndef ANDROID  // Conflicts with existing operator<< on Android.
+
 // Pretty-print a sigset_t.
 std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
   out << "{ ";
@@ -39,6 +41,8 @@ std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
   out << "}";
   return out;
 }
+
+#endif
 
 // Verify that the signo handler is handler.
 int CheckSigHandler(uint32_t signo, uintptr_t handler) {
