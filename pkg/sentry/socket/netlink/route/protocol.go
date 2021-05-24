@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // commandKind describes the operational class of a message type.
@@ -500,6 +501,79 @@ func (p *Protocol) delAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
+func fetchRoute(msg *netlink.Message) (*inet.Route, *syserr.Error) {
+	var rtMsg linux.RouteMessage
+	attrs, ok := msg.GetData(&rtMsg)
+	if !ok {
+		return nil, syserr.ErrInvalidArgument
+	}
+	if rtMsg.Table != linux.RT_TABLE_MAIN {
+		// Only the main table since we don't have multiple
+		// routing tables.
+		return nil, syserr.ErrInvalidArgument
+	}
+	route := inet.Route{
+		Family:   rtMsg.Family,
+		DstLen:   rtMsg.DstLen,
+		SrcLen:   rtMsg.SrcLen,
+		TOS:      rtMsg.TOS,
+		Table:    rtMsg.Table,
+		Protocol: rtMsg.Protocol,
+		Scope:    rtMsg.Scope,
+		Type:     rtMsg.Type,
+		Flags:    rtMsg.Flags,
+	}
+
+	attHdr, buff, rest, ok := attrs.ParseFirst()
+	for ok {
+		switch attHdr.Type {
+		case linux.RTA_DST:
+			route.DstAddr = buff
+		case linux.RTA_SRC:
+			route.SrcAddr = buff
+		case linux.RTA_GATEWAY:
+			route.GatewayAddr = buff
+		case linux.RTA_OIF:
+			// This conversion is also present in the kernel...
+			var outputIF primitive.Int32
+			outputIF.UnmarshalUnsafe(buff)
+			route.OutputInterface = int32(outputIF)
+		default:
+			// Other attributes are not implemented yet.
+			return nil, syserr.ErrInvalidArgument
+		}
+		attHdr, buff, rest, ok = rest.ParseFirst()
+	}
+	return &route, nil
+}
+
+// newRoute handles RTM_NEWROUTE requests.
+func (p *Protocol) newRoute(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network routes.
+		return nil
+	}
+	hdr := msg.Header()
+	flags := hdr.Flags&^(linux.NLM_F_REQUEST|linux.NLM_F_ACK)
+	if flags != linux.NLM_F_CREATE|linux.NLM_F_EXCL {
+		// TODO(gvisor.dev/issue/578)
+		return syserr.ErrInvalidArgument
+	}
+	route, sysErr := fetchRoute(msg)
+	if sysErr != nil {
+		return sysErr
+	}
+	err := stack.AddRoute(*route)
+	if err != nil {
+		if err == syserror.EEXIST {
+			return syserr.ErrExists
+		}
+		return syserr.ErrInvalidArgument
+	}
+	return nil
+}
+
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
 func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
 	hdr := msg.Header()
@@ -543,6 +617,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 			return p.newAddr(ctx, msg, ms)
 		case linux.RTM_DELADDR:
 			return p.delAddr(ctx, msg, ms)
+		case linux.RTM_NEWROUTE:
+			return p.newRoute(ctx, msg, ms)
 		default:
 			return syserr.ErrNotSupported
 		}

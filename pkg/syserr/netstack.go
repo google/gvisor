@@ -52,6 +52,8 @@ var (
 	ErrBadBuffer             = New((&tcpip.ErrBadBuffer{}).String(), linux.EFAULT)
 	ErrMalformedHeader       = New((&tcpip.ErrMalformedHeader{}).String(), linux.EINVAL)
 	ErrInvalidPortRange      = New((&tcpip.ErrInvalidPortRange{}).String(), linux.EINVAL)
+	ErrDuplicateRoute        = New((&tcpip.ErrDuplicateRoute{}).String(), linux.EEXIST)
+	ErrInvalidGateway        = New((&tcpip.ErrInvalidGateway{}).String(), linux.EINVAL)
 )
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry
@@ -138,6 +140,10 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrMalformedHeader
 	case *tcpip.ErrInvalidPortRange:
 		return ErrInvalidPortRange
+	case *tcpip.ErrDuplicateRoute:
+		return ErrDuplicateRoute
+	case *tcpip.ErrInvalidGateway:
+		return ErrInvalidGateway
 	default:
 		panic(fmt.Sprintf("unknown error %T", err))
 	}
