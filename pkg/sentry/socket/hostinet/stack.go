@@ -469,6 +469,11 @@ func (s *Stack) RouteTable() []inet.Route {
 	return append([]inet.Route(nil), s.routes...)
 }
 
+// AddRoute implements inet.Stack.AddRoute.
+func (s *Stack) AddRoute(route inet.Route) error {
+	return syserror.EACCES
+}
+
 // Resume implements inet.Stack.Resume.
 func (s *Stack) Resume() {}
 
