@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
-	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -599,7 +598,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 				t.Fatalf("s.NUDConfigurations(%d, %d): %s", outgoingNICID, test.networkProtocolNumber, err)
 			}
 			// Trigger the first packet on the endpoint.
-			iptestutil.RunImmediatelyScheduledJobs(clock)
+			clock.RunImmediatelyScheduledJobs()
 
 			for i := 0; i < int(nudConfigs.MaxMulticastProbes); i++ {
 				if request, ok = outgoingEndpoint.Read(); !ok {

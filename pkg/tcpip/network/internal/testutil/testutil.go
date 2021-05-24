@@ -19,26 +19,12 @@ package testutil
 import (
 	"fmt"
 	"math/rand"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-const (
-	// immediateDuration is a duration of zero for scheduling work that needs to
-	// be done immediately but asynchronously to avoid deadlock.
-	immediateDuration time.Duration = 0
-)
-
-// RunImmediatelyScheduledJobs runs all jobs scheduled to run at the current
-// time.
-func RunImmediatelyScheduledJobs(clock *faketime.ManualClock) {
-	clock.Advance(immediateDuration)
-}
 
 // MockLinkEndpoint is an endpoint used for testing, it stores packets written
 // to it and can mock errors.
