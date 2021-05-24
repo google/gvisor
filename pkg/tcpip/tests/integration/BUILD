@@ -57,7 +57,6 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/pipe",
         "//pkg/tcpip/network/arp",
-        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",

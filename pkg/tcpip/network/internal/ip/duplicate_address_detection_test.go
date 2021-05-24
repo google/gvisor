@@ -133,7 +133,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADDisabled)
 	}
 	// Wait for any initially fired timers to complete.
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check(nil); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -147,7 +147,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr1, handler(ch, addr1)); res != stack.DADStarting {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check([]tcpip.Address{addr1}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -156,7 +156,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr1, handler(ch, addr1)); res != stack.DADAlreadyRunning {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADAlreadyRunning)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check(nil); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -170,7 +170,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr2, handler(ch, addr2)); res != stack.DADStarting {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check([]tcpip.Address{addr2}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -208,7 +208,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr2, handler(ch, addr2)); res != stack.DADStarting {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check([]tcpip.Address{addr2, addr2}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -247,7 +247,7 @@ func TestDADStop(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr3, handler(ch, addr3)); res != stack.DADStarting {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr2, res, stack.DADStarting)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check([]tcpip.Address{addr1, addr2, addr3}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -272,7 +272,7 @@ func TestDADStop(t *testing.T) {
 	if res := dad.checkDuplicateAddress(addr1, handler(ch, addr1)); res != stack.DADStarting {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
 	}
-	clock.Advance(0)
+	clock.RunImmediatelyScheduledJobs()
 	if diff := dad.check([]tcpip.Address{addr1}); diff != "" {
 		t.Errorf("dad check mismatch (-want +got):\n%s", diff)
 	}
@@ -347,7 +347,7 @@ func TestNonce(t *testing.T) {
 				t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADStarting)
 			}
 
-			clock.Advance(0)
+			clock.RunImmediatelyScheduledJobs()
 			for i, want := range test.expectedResults {
 				if got := dad.extendIfNonceEqual(addr1, test.mockedReceivedNonce); got != want {
 					t.Errorf("(i=%d) got dad.extendIfNonceEqual(%s, _) = %d, want = %d", i, addr1, got, want)
