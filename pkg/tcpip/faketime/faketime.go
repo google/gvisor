@@ -218,6 +218,12 @@ func (mc *ManualClock) stopTimerLocked(mt *manualTimer) {
 	}
 }
 
+// RunImmediatelyScheduledJobs runs all jobs scheduled to run at the current
+// time.
+func (mc *ManualClock) RunImmediatelyScheduledJobs() {
+	mc.Advance(0)
+}
+
 // Advance executes all work that have been scheduled to execute within d from
 // the current time. Blocks until all work has completed execution.
 func (mc *ManualClock) Advance(d time.Duration) {
