@@ -1404,7 +1404,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			} else {
 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
 			}
-			seg.decRef()
+			seg.DecRef()
 			ackLeft -= datalen
 		}
 

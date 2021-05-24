@@ -27,6 +27,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "segment_refs",
+    out = "segment_refs.go",
+    package = "tcp",
+    prefix = "segment",
+    template = "//pkg/refsvfs2:refs_template",
+    types = {
+        "T": "segment",
+    },
+)
+
 go_library(
     name = "tcp",
     srcs = [
@@ -50,6 +61,7 @@ go_library(
         "segment.go",
         "segment_heap.go",
         "segment_queue.go",
+        "segment_refs.go",
         "segment_state.go",
         "segment_unsafe.go",
         "snd.go",
@@ -63,6 +75,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/refsvfs2",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",

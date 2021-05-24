@@ -493,7 +493,7 @@ func (e *endpoint) notifyAborted() {
 //
 // Precondition: if ctx.listenEP != nil, ctx.listenEP.mu must be locked.
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) tcpip.Error {
-	defer s.decRef()
+	defer s.DecRef()
 
 	h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
 	if err != nil {
@@ -570,7 +570,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		opts := parseSynSegmentOptions(s)
 		if !ctx.useSynCookies() {
-			s.incRef()
+			s.IncRef()
 			atomic.AddInt32(&e.synRcvdCount, 1)
 			return e.handleSynSegment(ctx, s, &opts)
 		}
@@ -806,7 +806,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 					// TODO(gvisor.dev/issue/4690): Better handle errors instead of
 					// silently dropping.
 					_ = e.handleListenSegment(ctx, s)
-					s.decRef()
+					s.DecRef()
 				}
 				close(e.drainDone)
 				e.mu.Unlock()
@@ -827,7 +827,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 				// TODO(gvisor.dev/issue/4690): Better handle errors instead of
 				// silently dropping.
 				_ = e.handleListenSegment(ctx, s)
-				s.decRef()
+				s.DecRef()
 			}
 
 			// If the queue is not empty, make sure we'll wake up
