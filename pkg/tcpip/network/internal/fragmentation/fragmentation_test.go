@@ -275,15 +275,23 @@ func TestMemoryLimits(t *testing.T) {
 	highLimit := 3 * lowLimit // Allow at most 3 such packets.
 	f := NewFragmentation(minBlockSize, highLimit, lowLimit, reassembleTimeout, &faketime.NullClock{}, nil)
 	// Send first fragment with id = 0.
-	f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, pkt(1, "0"))
+	if _, _, _, err := f.Process(FragmentID{ID: 0}, 0, 0, true, 0xFF, pkt(1, "0")); err != nil {
+		t.Fatal(err)
+	}
 	// Send first fragment with id = 1.
-	f.Process(FragmentID{ID: 1}, 0, 0, true, 0xFF, pkt(1, "1"))
+	if _, _, _, err := f.Process(FragmentID{ID: 1}, 0, 0, true, 0xFF, pkt(1, "1")); err != nil {
+		t.Fatal(err)
+	}
 	// Send first fragment with id = 2.
-	f.Process(FragmentID{ID: 2}, 0, 0, true, 0xFF, pkt(1, "2"))
+	if _, _, _, err := f.Process(FragmentID{ID: 2}, 0, 0, true, 0xFF, pkt(1, "2")); err != nil {
+		t.Fatal(err)
+	}
 
 	// Send first fragment with id = 3. This should caused id = 0 and id = 1 to be
 	// evicted.
-	f.Process(FragmentID{ID: 3}, 0, 0, true, 0xFF, pkt(1, "3"))
+	if _, _, _, err := f.Process(FragmentID{ID: 3}, 0, 0, true, 0xFF, pkt(1, "3")); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, ok := f.reassemblers[FragmentID{ID: 0}]; ok {
 		t.Errorf("Memory limits are not respected: id=0 has not been evicted.")
@@ -300,9 +308,13 @@ func TestMemoryLimitsIgnoresDuplicates(t *testing.T) {
 	memSize := pkt(1, "0").MemSize()
 	f := NewFragmentation(minBlockSize, memSize, 0, reassembleTimeout, &faketime.NullClock{}, nil)
 	// Send first fragment with id = 0.
-	f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0"))
+	if _, _, _, err := f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0")); err != nil {
+		t.Fatal(err)
+	}
 	// Send the same packet again.
-	f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0"))
+	if _, _, _, err := f.Process(FragmentID{}, 0, 0, true, 0xFF, pkt(1, "0")); err != nil {
+		t.Fatal(err)
+	}
 
 	if got, want := f.memSize, memSize; got != want {
 		t.Errorf("Wrong size, duplicates are not handled correctly: got=%d, want=%d.", got, want)
