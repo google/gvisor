@@ -115,8 +115,6 @@ class SetgidDirTest : public ::testing::Test {
   void SetUp() override {
     original_gid_ = getegid();
 
-    SKIP_IF(IsRunningWithVFS1());
-
     // If we can't find two usable groups, we're in an unsupporting environment.
     // Skip the test.
     PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
@@ -294,8 +292,8 @@ TEST_F(SetgidDirTest, ChownFileClears) {
   EXPECT_EQ(stats.st_mode & (S_ISUID | S_ISGID), 0);
 }
 
-// Chowning a file with setgid enabled, but not the group exec bit, does not
-// clear the setgid bit. Such files are mandatory locked.
+// Chowning a file with setgid enabled, but not the group exec bit, clears the
+// setuid bit and not the setgid bit. Such files are mandatory locked.
 TEST_F(SetgidDirTest, ChownNoExecFileDoesNotClear) {
   // Set group to G1, create a directory, and enable setgid.
   auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
@@ -345,7 +343,6 @@ struct FileModeTestcase {
 class FileModeTest : public ::testing::TestWithParam<FileModeTestcase> {};
 
 TEST_P(FileModeTest, WriteToFile) {
-  SKIP_IF(IsRunningWithVFS1());
   PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
   SKIP_IF(!groups.ok());
 
@@ -372,7 +369,6 @@ TEST_P(FileModeTest, WriteToFile) {
 }
 
 TEST_P(FileModeTest, TruncateFile) {
-  SKIP_IF(IsRunningWithVFS1());
   PosixErrorOr<std::pair<gid_t, gid_t>> groups = Groups();
   SKIP_IF(!groups.ok());
 

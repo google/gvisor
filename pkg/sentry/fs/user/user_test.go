@@ -104,7 +104,10 @@ func TestGetExecUserHome(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := contexttest.Context(t)
 			msrc := fs.NewPseudoMountSource(ctx)
-			rootInode := tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc)
+			rootInode, err := tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc, nil /* parent */)
+			if err != nil {
+				t.Fatalf("tmpfs.NewDir failed: %v", err)
+			}
 
 			mns, err := fs.NewMountNamespace(ctx, rootInode)
 			if err != nil {

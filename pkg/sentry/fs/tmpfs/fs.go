@@ -151,5 +151,5 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	}
 
 	// Construct the tmpfs root.
-	return NewDir(ctx, nil, owner, perms, msrc), nil
+	return NewDir(ctx, nil, owner, perms, msrc, nil /* parent */)
 }

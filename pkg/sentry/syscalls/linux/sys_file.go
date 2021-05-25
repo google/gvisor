@@ -1673,9 +1673,11 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 	if err != nil {
 		return err
 	}
+
 	c := t.Credentials()
 	hasCap := d.Inode.CheckCapability(t, linux.CAP_CHOWN)
 	isOwner := uattr.Owner.UID == c.EffectiveKUID
+	var clearPrivilege bool
 	if uid.Ok() {
 		kuid := c.UserNamespace.MapToKUID(uid)
 		// Valid UID must be supplied if UID is to be changed.
@@ -1691,6 +1693,11 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		isNoop := uattr.Owner.UID == kuid
 		if !(hasCap || (isOwner && isNoop)) {
 			return syserror.EPERM
+		}
+
+		// The setuid and setgid bits are cleared during a chown.
+		if uattr.Owner.UID != kuid {
+			clearPrivilege = true
 		}
 
 		owner.UID = kuid
@@ -1711,6 +1718,11 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 			return syserror.EPERM
 		}
 
+		// The setuid and setgid bits are cleared during a chown.
+		if uattr.Owner.GID != kgid {
+			clearPrivilege = true
+		}
+
 		owner.GID = kgid
 	}
 
@@ -1721,10 +1733,14 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 	if err := d.Inode.SetOwner(t, d, owner); err != nil {
 		return err
 	}
+	// Clear privilege bits if needed and they are set.
+	if clearPrivilege && uattr.Perms.HasSetUIDOrGID() && !fs.IsDir(d.Inode.StableAttr) {
+		uattr.Perms.DropSetUIDAndMaybeGID()
+		if !d.Inode.SetPermissions(t, d, uattr.Perms) {
+			return syserror.EPERM
+		}
+	}
 
-	// When the owner or group are changed by an unprivileged user,
-	// chown(2) also clears the set-user-ID and set-group-ID bits, but
-	// we do not support them.
 	return nil
 }
 

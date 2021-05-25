@@ -130,7 +130,16 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		panic(fmt.Sprintf("Create called with unknown or unset open flags: %v", flags))
 	}
 
+	// If the parent directory has setgid enabled, change the new file's owner.
 	owner := fs.FileOwnerFromContext(ctx)
+	parentUattr, err := dir.UnstableAttr(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if parentUattr.Perms.SetGID {
+		owner.GID = parentUattr.Owner.GID
+	}
+
 	hostFile, err := newFile.create(ctx, name, openFlags, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
 	if err != nil {
 		// Could not create the file.
@@ -225,7 +234,18 @@ func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s 
 		return syserror.ENAMETOOLONG
 	}
 
+	// If the parent directory has setgid enabled, change the new directory's
+	// owner and enable setgid.
 	owner := fs.FileOwnerFromContext(ctx)
+	parentUattr, err := dir.UnstableAttr(ctx)
+	if err != nil {
+		return err
+	}
+	if parentUattr.Perms.SetGID {
+		owner.GID = parentUattr.Owner.GID
+		perm.SetGID = true
+	}
+
 	if _, err := i.fileState.file.mkdir(ctx, s, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
 	}

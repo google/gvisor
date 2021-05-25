@@ -310,6 +310,12 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	now := ktime.NowFromContext(ctx)
 	masked := fs.AttrMask{Size: true}
 	attr := fs.UnstableAttr{Size: size}
+	if c.attr.Perms.HasSetUIDOrGID() {
+		masked.Perms = true
+		attr.Perms = c.attr.Perms
+		attr.Perms.DropSetUIDAndMaybeGID()
+		c.attr.Perms = attr.Perms
+	}
 	if err := c.backingFile.SetMaskedAttributes(ctx, masked, attr, false); err != nil {
 		c.dataMu.Unlock()
 		return err
@@ -685,13 +691,14 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	return done, nil
 }
 
-// maybeGrowFile grows the file's size if data has been written past the old
-// size.
+// maybeUpdateAttrs updates the file's attributes after a write. It updates
+// size if data has been written past the old size, and setuid/setgid if any
+// bytes were written.
 //
 // Preconditions:
 // * rw.c.attrMu must be locked.
 // * rw.c.dataMu must be locked.
-func (rw *inodeReadWriter) maybeGrowFile() {
+func (rw *inodeReadWriter) maybeUpdateAttrs(nwritten uint64) {
 	// If the write ends beyond the file's previous size, it causes the
 	// file to grow.
 	if rw.offset > rw.c.attr.Size {
@@ -704,6 +711,12 @@ func (rw *inodeReadWriter) maybeGrowFile() {
 		// filesystem's responsibility.)
 		rw.c.attr.Usage = rw.offset
 		rw.c.dirtyAttr.Usage = true
+	}
+
+	// If bytes were written, ensure setuid and setgid are cleared.
+	if nwritten > 0 && rw.c.attr.Perms.HasSetUIDOrGID() {
+		rw.c.dirtyAttr.Perms = true
+		rw.c.attr.Perms.DropSetUIDAndMaybeGID()
 	}
 }
 
@@ -732,7 +745,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 			segMR := seg.Range().Intersect(mr)
 			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), hostarch.Write)
 			if err != nil {
-				rw.maybeGrowFile()
+				rw.maybeUpdateAttrs(done)
 				rw.c.dataMu.Unlock()
 				return done, err
 			}
@@ -744,7 +757,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 			srcs = srcs.DropFirst64(n)
 			rw.c.dirty.MarkDirty(segMR)
 			if err != nil {
-				rw.maybeGrowFile()
+				rw.maybeUpdateAttrs(done)
 				rw.c.dataMu.Unlock()
 				return done, err
 			}
@@ -765,7 +778,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 			srcs = srcs.DropFirst64(n)
 			// Partial writes are fine. But we must stop writing.
 			if n != src.NumBytes() || err != nil {
-				rw.maybeGrowFile()
+				rw.maybeUpdateAttrs(done)
 				rw.c.dataMu.Unlock()
 				return done, err
 			}
@@ -774,7 +787,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 			seg, gap = gap.NextSegment(), FileRangeGapIterator{}
 		}
 	}
-	rw.maybeGrowFile()
+	rw.maybeUpdateAttrs(done)
 	rw.c.dataMu.Unlock()
 	return done, nil
 }

@@ -16,6 +16,7 @@
 package dev
 
 import (
+	"fmt"
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -90,6 +91,11 @@ func newSymlink(ctx context.Context, target string, msrc *fs.MountSource) *fs.In
 
 // New returns the root node of a device filesystem.
 func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	shm, err := tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc, nil /* parent */)
+	if err != nil {
+		panic(fmt.Sprintf("tmpfs.NewDir failed: %v", err))
+	}
+
 	contents := map[string]*fs.Inode{
 		"fd":     newSymlink(ctx, "/proc/self/fd", msrc),
 		"stdin":  newSymlink(ctx, "/proc/self/fd/0", msrc),
@@ -108,7 +114,7 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		"random":  newMemDevice(ctx, newRandomDevice(ctx, fs.RootOwner, 0444), msrc, randomDevMinor),
 		"urandom": newMemDevice(ctx, newRandomDevice(ctx, fs.RootOwner, 0444), msrc, urandomDevMinor),
 
-		"shm": tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc),
+		"shm": shm,
 
 		// A devpts is typically mounted at /dev/pts to provide
 		// pseudoterminal support. Place an empty directory there for

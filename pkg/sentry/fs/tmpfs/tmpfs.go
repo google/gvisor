@@ -87,7 +87,20 @@ type Dir struct {
 var _ fs.InodeOperations = (*Dir)(nil)
 
 // NewDir returns a new directory.
-func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
+func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource, parent *fs.Inode) (*fs.Inode, error) {
+	// If the parent has setgid enabled, the new directory enables it and changes
+	// its GID.
+	if parent != nil {
+		parentUattr, err := parent.UnstableAttr(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if parentUattr.Perms.SetGID {
+			owner.GID = parentUattr.Owner.GID
+			perms.SetGID = true
+		}
+	}
+
 	d := &Dir{
 		ramfsDir: ramfs.NewDir(ctx, contents, owner, perms),
 		kernel:   kernel.KernelFromContext(ctx),
@@ -101,7 +114,7 @@ func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwn
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: hostarch.PageSize,
 		Type:      fs.Directory,
-	})
+	}), nil
 }
 
 // afterLoad is invoked by stateify.
@@ -219,11 +232,21 @@ func (d *Dir) SetTimestamps(ctx context.Context, i *fs.Inode, ts fs.TimeSpec) er
 func (d *Dir) newCreateOps() *ramfs.CreateOps {
 	return &ramfs.CreateOps{
 		NewDir: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
-			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource), nil
+			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource, dir)
 		},
 		NewFile: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
+			// If the parent has setgid enabled, change the GID of the new file.
+			owner := fs.FileOwnerFromContext(ctx)
+			parentUattr, err := dir.UnstableAttr(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if parentUattr.Perms.SetGID {
+				owner.GID = parentUattr.Owner.GID
+			}
+
 			uattr := fs.WithCurrentTime(ctx, fs.UnstableAttr{
-				Owner: fs.FileOwnerFromContext(ctx),
+				Owner: owner,
 				Perms: perms,
 				// Always start unlinked.
 				Links: 0,
