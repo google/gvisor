@@ -64,17 +64,42 @@ func (e *ErrSaveRejection) Error() string {
 	return "save rejected due to unsupported networking state: " + e.Err.Error()
 }
 
+// MonotonicTime is a monotonic clock reading.
+//
+// +stateify savable
+type MonotonicTime struct {
+	nanoseconds int64
+}
+
+// Before reports whether the monotonic clock reading mt is before u.
+func (mt MonotonicTime) Before(u MonotonicTime) bool {
+	return mt.nanoseconds < u.nanoseconds
+}
+
+// Add returns the monotonic clock reading mt+d.
+func (mt MonotonicTime) Add(d time.Duration) MonotonicTime {
+	return MonotonicTime{
+		nanoseconds: time.Unix(0, mt.nanoseconds).Add(d).Sub(time.Unix(0, 0)).Nanoseconds(),
+	}
+}
+
+// Sub returns the duration mt-u. If the result exceeds the maximum (or minimum)
+// value that can be stored in a Duration, the maximum (or minimum) duration
+// will be returned. To compute t-d for a duration d, use t.Add(-d).
+func (mt MonotonicTime) Sub(u MonotonicTime) time.Duration {
+	return time.Unix(0, mt.nanoseconds).Sub(time.Unix(0, u.nanoseconds))
+}
+
 // A Clock provides the current time and schedules work for execution.
 //
 // Times returned by a Clock should always be used for application-visible
 // time. Only monotonic times should be used for netstack internal timekeeping.
 type Clock interface {
-	// NowNanoseconds returns the current real time as a number of
-	// nanoseconds since the Unix epoch.
-	NowNanoseconds() int64
+	// Now returns the current local time.
+	Now() time.Time
 
-	// NowMonotonic returns a monotonic time value at nanosecond resolution.
-	NowMonotonic() int64
+	// NowMonotonic returns the current monotonic clock reading.
+	NowMonotonic() MonotonicTime
 
 	// AfterFunc waits for the duration to elapse and then calls f in its own
 	// goroutine. It returns a Timer that can be used to cancel the call using

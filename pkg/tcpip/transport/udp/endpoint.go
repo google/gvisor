@@ -17,6 +17,7 @@ package udp
 import (
 	"io"
 	"sync/atomic"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -34,7 +35,7 @@ type udpPacket struct {
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
 	data               buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	timestamp          int64
+	receivedAt         time.Time             `state:".(int64)"`
 	// tos stores either the receiveTOS or receiveTClass value.
 	tos uint8
 }
@@ -321,7 +322,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	// Control Messages
 	cm := tcpip.ControlMessages{
 		HasTimestamp: true,
-		Timestamp:    p.timestamp,
+		Timestamp:    p.receivedAt.UnixNano(),
 	}
 	if e.ops.GetReceiveTOS() {
 		cm.HasTOS = true
@@ -1329,7 +1330,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	packet.packetInfo.LocalAddr = localAddr
 	packet.packetInfo.DestinationAddr = localAddr
 	packet.packetInfo.NIC = pkt.NICID
-	packet.timestamp = e.stack.Clock().NowNanoseconds()
+	packet.receivedAt = e.stack.Clock().Now()
 
 	e.rcvMu.Unlock()
 

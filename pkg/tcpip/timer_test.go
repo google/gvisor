@@ -15,12 +15,74 @@
 package tcpip_test
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+func TestMonotonicTimeBefore(t *testing.T) {
+	var mt tcpip.MonotonicTime
+	if mt.Before(mt) {
+		t.Errorf("%#v.Before(%#v)", mt, mt)
+	}
+
+	one := mt.Add(1)
+	if one.Before(mt) {
+		t.Errorf("%#v.Before(%#v)", one, mt)
+	}
+	if !mt.Before(one) {
+		t.Errorf("!%#v.Before(%#v)", mt, one)
+	}
+}
+
+func TestMonotonicTimeAddSub(t *testing.T) {
+	var mt tcpip.MonotonicTime
+	if one, two := mt.Add(2), mt.Add(1).Add(1); one != two {
+		t.Errorf("mt.Add(2) != mt.Add(1).Add(1) (%#v != %#v)", one, two)
+	}
+
+	min := mt.Add(math.MinInt64)
+	max := mt.Add(math.MaxInt64)
+
+	if overflow := mt.Add(1).Add(math.MaxInt64); overflow != max {
+		t.Errorf("mt.Add(math.MaxInt64) != mt.Add(1).Add(math.MaxInt64) (%#v != %#v)", max, overflow)
+	}
+	if underflow := mt.Add(-1).Add(math.MinInt64); underflow != min {
+		t.Errorf("mt.Add(math.MinInt64) != mt.Add(-1).Add(math.MinInt64) (%#v != %#v)", min, underflow)
+	}
+
+	if got, want := min.Sub(min), time.Duration(0); want != got {
+		t.Errorf("got min.Sub(min) = %d, want %d", got, want)
+	}
+	if got, want := max.Sub(max), time.Duration(0); want != got {
+		t.Errorf("got max.Sub(max) = %d, want %d", got, want)
+	}
+
+	if overflow, want := max.Sub(min), time.Duration(math.MaxInt64); overflow != want {
+		t.Errorf("mt.Add(math.MaxInt64).Sub(mt.Add(math.MinInt64) != %s (%#v)", want, overflow)
+	}
+	if underflow, want := min.Sub(max), time.Duration(math.MinInt64); underflow != want {
+		t.Errorf("mt.Add(math.MinInt64).Sub(mt.Add(math.MaxInt64) != %s (%#v)", want, underflow)
+	}
+}
+
+func TestMonotonicTimeSub(t *testing.T) {
+	var mt tcpip.MonotonicTime
+
+	if one, two := mt.Add(2), mt.Add(1).Add(1); one != two {
+		t.Errorf("mt.Add(2) != mt.Add(1).Add(1) (%#v != %#v)", one, two)
+	}
+
+	if max, overflow := mt.Add(math.MaxInt64), mt.Add(1).Add(math.MaxInt64); max != overflow {
+		t.Errorf("mt.Add(math.MaxInt64) != mt.Add(1).Add(math.MaxInt64) (%#v != %#v)", max, overflow)
+	}
+	if max, underflow := mt.Add(math.MinInt64), mt.Add(-1).Add(math.MinInt64); max != underflow {
+		t.Errorf("mt.Add(math.MinInt64) != mt.Add(-1).Add(math.MinInt64) (%#v != %#v)", max, underflow)
+	}
+}
 
 const (
 	shortDuration  = 1 * time.Nanosecond

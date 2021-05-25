@@ -293,10 +293,10 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           removedEntry.Addr,
-					LinkAddr:       removedEntry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: clock.NowNanoseconds(),
+					Addr:      removedEntry.Addr,
+					LinkAddr:  removedEntry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: clock.Now(),
 				},
 			})
 		}
@@ -305,10 +305,10 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 			EventType: entryTestAdded,
 			NICID:     1,
 			Entry: NeighborEntry{
-				Addr:           entry.Addr,
-				LinkAddr:       "",
-				State:          Incomplete,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entry.Addr,
+				LinkAddr:  "",
+				State:     Incomplete,
+				UpdatedAt: clock.Now(),
 			},
 		})
 
@@ -339,10 +339,10 @@ func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.Ma
 				EventType: entryTestChanged,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: clock.Now(),
 				},
 			},
 		}
@@ -411,10 +411,10 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: clock.Now(),
 				},
 			},
 		}
@@ -492,12 +492,12 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 		if !ok {
 			return fmt.Errorf("got c.linkRes.entries.entry(%d) = _, false, want = true", i)
 		}
-		durationReachableNanos := int64(c.linkRes.entries.size()-i-1) * typicalLatency.Nanoseconds()
+		durationReachableNanos := time.Duration(c.linkRes.entries.size()-i-1) * typicalLatency
 		wantEntry := NeighborEntry{
-			Addr:           entry.Addr,
-			LinkAddr:       entry.LinkAddr,
-			State:          Reachable,
-			UpdatedAtNanos: c.clock.NowNanoseconds() - durationReachableNanos,
+			Addr:      entry.Addr,
+			LinkAddr:  entry.LinkAddr,
+			State:     Reachable,
+			UpdatedAt: c.clock.Now().Add(-durationReachableNanos),
 		}
 		wantUnorderedEntries = append(wantUnorderedEntries, wantEntry)
 	}
@@ -563,10 +563,10 @@ func TestNeighborCacheRemoveEntryThenOverflow(t *testing.T) {
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -608,10 +608,10 @@ func TestNeighborCacheDuplicateStaticEntryWithSameLinkAddress(t *testing.T) {
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -655,10 +655,10 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -681,10 +681,10 @@ func TestNeighborCacheDuplicateStaticEntryWithDifferentLinkAddress(t *testing.T)
 				EventType: entryTestChanged,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -725,10 +725,10 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -750,10 +750,10 @@ func TestNeighborCacheRemoveStaticEntryThenOverflow(t *testing.T) {
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -806,20 +806,20 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 			{
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       staticLinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  staticLinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -836,10 +836,10 @@ func TestNeighborCacheOverwriteWithStaticEntryThenOverflow(t *testing.T) {
 		startAtEntryIndex: 1,
 		wantStaticEntries: []NeighborEntry{
 			{
-				Addr:           entry.Addr,
-				LinkAddr:       staticLinkAddr,
-				State:          Static,
-				UpdatedAtNanos: c.clock.NowNanoseconds(),
+				Addr:      entry.Addr,
+				LinkAddr:  staticLinkAddr,
+				State:     Static,
+				UpdatedAt: c.clock.Now(),
 			},
 		},
 	}
@@ -867,10 +867,10 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		t.Errorf("unexpected error from c.linkRes.neigh.entry(%s, \"\", nil): %s", entry.Addr, err)
 	}
 	want := NeighborEntry{
-		Addr:           entry.Addr,
-		LinkAddr:       entry.LinkAddr,
-		State:          Static,
-		UpdatedAtNanos: c.clock.NowNanoseconds(),
+		Addr:      entry.Addr,
+		LinkAddr:  entry.LinkAddr,
+		State:     Static,
+		UpdatedAt: c.clock.Now(),
 	}
 	if diff := cmp.Diff(want, e); diff != "" {
 		t.Errorf("c.linkRes.neigh.entry(%s, \"\", nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
@@ -882,10 +882,10 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Static,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Static,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -902,10 +902,10 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		startAtEntryIndex: 1,
 		wantStaticEntries: []NeighborEntry{
 			{
-				Addr:           entry.Addr,
-				LinkAddr:       entry.LinkAddr,
-				State:          Static,
-				UpdatedAtNanos: c.clock.NowNanoseconds(),
+				Addr:      entry.Addr,
+				LinkAddr:  entry.LinkAddr,
+				State:     Static,
+				UpdatedAt: c.clock.Now(),
 			},
 		},
 	}
@@ -939,10 +939,10 @@ func TestNeighborCacheClear(t *testing.T) {
 				EventType: entryTestAdded,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entryTestAddr1,
-					LinkAddr:       entryTestLinkAddr1,
-					State:          Static,
-					UpdatedAtNanos: clock.NowNanoseconds(),
+					Addr:      entryTestAddr1,
+					LinkAddr:  entryTestLinkAddr1,
+					State:     Static,
+					UpdatedAt: clock.Now(),
 				},
 			},
 		}
@@ -965,20 +965,20 @@ func TestNeighborCacheClear(t *testing.T) {
 			EventType: entryTestRemoved,
 			NICID:     1,
 			Entry: NeighborEntry{
-				Addr:           entry.Addr,
-				LinkAddr:       entry.LinkAddr,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entry.Addr,
+				LinkAddr:  entry.LinkAddr,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 		{
 			EventType: entryTestRemoved,
 			NICID:     1,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Static,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Static,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1019,10 +1019,10 @@ func TestNeighborCacheClearThenOverflow(t *testing.T) {
 				EventType: entryTestRemoved,
 				NICID:     1,
 				Entry: NeighborEntry{
-					Addr:           entry.Addr,
-					LinkAddr:       entry.LinkAddr,
-					State:          Reachable,
-					UpdatedAtNanos: c.clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  entry.LinkAddr,
+					State:     Reachable,
+					UpdatedAt: c.clock.Now(),
 				},
 			},
 		}
@@ -1054,7 +1054,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	clock := faketime.NewManualClock()
 	linkRes := newTestNeighborResolver(&nudDisp, config, clock)
 
-	startedAt := clock.NowNanoseconds()
+	startedAt := clock.Now()
 
 	// The following logic is very similar to overflowCache, but
 	// periodically refreshes the frequently used entry.
@@ -1110,7 +1110,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 			State:    Reachable,
 			// Can be inferred since the frequently used entry is the first to
 			// be created and transitioned to Reachable.
-			UpdatedAtNanos: startedAt + typicalLatency.Nanoseconds(),
+			UpdatedAt: startedAt.Add(typicalLatency),
 		},
 	}
 
@@ -1119,12 +1119,12 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		if !ok {
 			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)
 		}
-		durationReachableNanos := int64(linkRes.entries.size()-i-1) * typicalLatency.Nanoseconds()
+		durationReachableNanos := time.Duration(linkRes.entries.size()-i-1) * typicalLatency
 		wantUnsortedEntries = append(wantUnsortedEntries, NeighborEntry{
-			Addr:           entry.Addr,
-			LinkAddr:       entry.LinkAddr,
-			State:          Reachable,
-			UpdatedAtNanos: clock.NowNanoseconds() - durationReachableNanos,
+			Addr:      entry.Addr,
+			LinkAddr:  entry.LinkAddr,
+			State:     Reachable,
+			UpdatedAt: clock.Now().Add(-durationReachableNanos),
 		})
 	}
 
@@ -1182,12 +1182,12 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 		if !ok {
 			t.Errorf("got linkRes.entries.entry(%d) = _, false, want = true", i)
 		}
-		durationReachableNanos := int64(linkRes.entries.size()-i-1) * typicalLatency.Nanoseconds()
+		durationReachableNanos := time.Duration(linkRes.entries.size()-i-1) * typicalLatency
 		wantUnsortedEntries = append(wantUnsortedEntries, NeighborEntry{
-			Addr:           entry.Addr,
-			LinkAddr:       entry.LinkAddr,
-			State:          Reachable,
-			UpdatedAtNanos: clock.NowNanoseconds() - durationReachableNanos,
+			Addr:      entry.Addr,
+			LinkAddr:  entry.LinkAddr,
+			State:     Reachable,
+			UpdatedAt: clock.Now().Add(-durationReachableNanos),
 		})
 	}
 
@@ -1236,10 +1236,10 @@ func TestNeighborCacheReplace(t *testing.T) {
 			t.Fatalf("linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 		}
 		want := NeighborEntry{
-			Addr:           entry.Addr,
-			LinkAddr:       updatedLinkAddr,
-			State:          Delay,
-			UpdatedAtNanos: clock.NowNanoseconds(),
+			Addr:      entry.Addr,
+			LinkAddr:  updatedLinkAddr,
+			State:     Delay,
+			UpdatedAt: clock.Now(),
 		}
 		if diff := cmp.Diff(want, e); diff != "" {
 			t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
@@ -1255,10 +1255,10 @@ func TestNeighborCacheReplace(t *testing.T) {
 			t.Errorf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 		}
 		want := NeighborEntry{
-			Addr:           entry.Addr,
-			LinkAddr:       updatedLinkAddr,
-			State:          Reachable,
-			UpdatedAtNanos: clock.NowNanoseconds(),
+			Addr:      entry.Addr,
+			LinkAddr:  updatedLinkAddr,
+			State:     Reachable,
+			UpdatedAt: clock.Now(),
 		}
 		if diff := cmp.Diff(want, e); diff != "" {
 			t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
@@ -1293,10 +1293,10 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 		t.Fatalf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 	}
 	want := NeighborEntry{
-		Addr:           entry.Addr,
-		LinkAddr:       entry.LinkAddr,
-		State:          Reachable,
-		UpdatedAtNanos: clock.NowNanoseconds(),
+		Addr:      entry.Addr,
+		LinkAddr:  entry.LinkAddr,
+		State:     Reachable,
+		UpdatedAt: clock.Now(),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("linkRes.neigh.entry(%s, '', nil) mismatch (-want, +got):\n%s", entry.Addr, diff)
@@ -1397,10 +1397,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 					EventType: entryTestAdded,
 					NICID:     1,
 					Entry: NeighborEntry{
-						Addr:           entry.Addr,
-						LinkAddr:       "",
-						State:          Incomplete,
-						UpdatedAtNanos: clock.NowNanoseconds(),
+						Addr:      entry.Addr,
+						LinkAddr:  "",
+						State:     Incomplete,
+						UpdatedAt: clock.Now(),
 					},
 				},
 			}
@@ -1428,10 +1428,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 					EventType: entryTestChanged,
 					NICID:     1,
 					Entry: NeighborEntry{
-						Addr:           entry.Addr,
-						LinkAddr:       "",
-						State:          Unreachable,
-						UpdatedAtNanos: clock.NowNanoseconds(),
+						Addr:      entry.Addr,
+						LinkAddr:  "",
+						State:     Unreachable,
+						UpdatedAt: clock.Now(),
 					},
 				},
 			}
@@ -1447,10 +1447,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 		{
 			wantEntries := []NeighborEntry{
 				{
-					Addr:           entry.Addr,
-					LinkAddr:       "",
-					State:          Unreachable,
-					UpdatedAtNanos: clock.NowNanoseconds(),
+					Addr:      entry.Addr,
+					LinkAddr:  "",
+					State:     Unreachable,
+					UpdatedAt: clock.Now(),
 				},
 			}
 			if diff := cmp.Diff(linkRes.neigh.entries(), wantEntries, unorderedEntriesDiffOpts()...); diff != "" {
@@ -1480,10 +1480,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 					EventType: entryTestChanged,
 					NICID:     1,
 					Entry: NeighborEntry{
-						Addr:           entry.Addr,
-						LinkAddr:       "",
-						State:          Incomplete,
-						UpdatedAtNanos: clock.NowNanoseconds(),
+						Addr:      entry.Addr,
+						LinkAddr:  "",
+						State:     Incomplete,
+						UpdatedAt: clock.Now(),
 					},
 				},
 			}
@@ -1510,10 +1510,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 					EventType: entryTestChanged,
 					NICID:     1,
 					Entry: NeighborEntry{
-						Addr:           entry.Addr,
-						LinkAddr:       entry.LinkAddr,
-						State:          Reachable,
-						UpdatedAtNanos: clock.NowNanoseconds(),
+						Addr:      entry.Addr,
+						LinkAddr:  entry.LinkAddr,
+						State:     Reachable,
+						UpdatedAt: clock.Now(),
 					},
 				},
 			}
@@ -1533,10 +1533,10 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 			}
 
 			wantEntry := NeighborEntry{
-				Addr:           entry.Addr,
-				LinkAddr:       entry.LinkAddr,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entry.Addr,
+				LinkAddr:  entry.LinkAddr,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			}
 			if diff := cmp.Diff(gotEntry, wantEntry); diff != "" {
 				t.Fatalf("neighbor entry mismatch (-got, +want):\n%s", diff)

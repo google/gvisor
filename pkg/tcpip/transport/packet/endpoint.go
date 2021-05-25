@@ -27,6 +27,7 @@ package packet
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -41,9 +42,8 @@ type packet struct {
 	packetEntry
 	// data holds the actual packet data, including any headers and
 	// payload.
-	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	// timestampNS is the unix time at which the packet was received.
-	timestampNS int64
+	data       buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+	receivedAt time.Time             `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	// packetInfo holds additional information like the protocol
@@ -189,7 +189,7 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 		Total: packet.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    packet.timestampNS,
+			Timestamp:    packet.receivedAt.UnixNano(),
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -451,7 +451,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 		}
 	}
-	packet.timestampNS = ep.stack.Clock().NowNanoseconds()
+	packet.receivedAt = ep.stack.Clock().Now()
 
 	ep.rcvList.PushBack(&packet)
 	ep.rcvBufSize += packet.data.Size()

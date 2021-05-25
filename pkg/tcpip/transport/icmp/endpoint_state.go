@@ -15,10 +15,22 @@
 package icmp
 
 import (
+	"time"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// saveReceivedAt is invoked by stateify.
+func (p *icmpPacket) saveReceivedAt() int64 {
+	return p.receivedAt.UnixNano()
+}
+
+// loadReceivedAt is invoked by stateify.
+func (p *icmpPacket) loadReceivedAt(nsec int64) {
+	p.receivedAt = time.Unix(0, nsec)
+}
 
 // saveData saves icmpPacket.data field.
 func (p *icmpPacket) saveData() buffer.VectorisedView {

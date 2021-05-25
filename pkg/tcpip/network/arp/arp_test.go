@@ -126,7 +126,7 @@ func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.Neighbo
 func (d *arpDispatcher) waitForEvent(ctx context.Context, want eventInfo) error {
 	select {
 	case got := <-d.C:
-		if diff := cmp.Diff(want, got, cmp.AllowUnexported(got), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAtNanos")); diff != "" {
+		if diff := cmp.Diff(want, got, cmp.AllowUnexported(got), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
 			return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
 		}
 	case <-ctx.Done():
