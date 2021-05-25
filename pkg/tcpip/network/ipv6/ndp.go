@@ -16,7 +16,6 @@ package ipv6
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -1718,7 +1717,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 	// 4861 section 6.3.7.
 	var delay time.Duration
 	if ndp.configs.MaxRtrSolicitationDelay > 0 {
-		delay = time.Duration(rand.Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
+		delay = time.Duration(ndp.ep.protocol.stack.Rand().Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
 	}
 
 	// Protected by ndp.ep.mu.
@@ -1861,7 +1860,7 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 
 	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
 	if MaxDesyncFactor != 0 {
-		ndp.temporaryAddressDesyncFactor = time.Duration(rand.Int63n(int64(MaxDesyncFactor)))
+		ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.Rand().Int63n(int64(MaxDesyncFactor)))
 	}
 }
 
