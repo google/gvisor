@@ -15,10 +15,22 @@
 package packet
 
 import (
+	"time"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// saveReceivedAt is invoked by stateify.
+func (p *packet) saveReceivedAt() int64 {
+	return p.receivedAt.UnixNano()
+}
+
+// loadReceivedAt is invoked by stateify.
+func (p *packet) loadReceivedAt(nsec int64) {
+	p.receivedAt = time.Unix(0, nsec)
+}
 
 // saveData saves packet.data field.
 func (p *packet) saveData() buffer.VectorisedView {

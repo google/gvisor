@@ -31,10 +31,10 @@ const (
 
 // NeighborEntry describes a neighboring device in the local network.
 type NeighborEntry struct {
-	Addr           tcpip.Address
-	LinkAddr       tcpip.LinkAddress
-	State          NeighborState
-	UpdatedAtNanos int64
+	Addr      tcpip.Address
+	LinkAddr  tcpip.LinkAddress
+	State     NeighborState
+	UpdatedAt time.Time
 }
 
 // NeighborState defines the state of a NeighborEntry within the Neighbor
@@ -138,10 +138,10 @@ func newNeighborEntry(cache *neighborCache, remoteAddr tcpip.Address, nudState *
 // calling `setStateLocked`.
 func newStaticNeighborEntry(cache *neighborCache, addr tcpip.Address, linkAddr tcpip.LinkAddress, state *NUDState) *neighborEntry {
 	entry := NeighborEntry{
-		Addr:           addr,
-		LinkAddr:       linkAddr,
-		State:          Static,
-		UpdatedAtNanos: cache.nic.stack.clock.NowNanoseconds(),
+		Addr:      addr,
+		LinkAddr:  linkAddr,
+		State:     Static,
+		UpdatedAt: cache.nic.stack.clock.Now(),
 	}
 	n := &neighborEntry{
 		cache:    cache,
@@ -224,7 +224,7 @@ func (e *neighborEntry) cancelTimerLocked() {
 //
 // Precondition: e.mu MUST be locked.
 func (e *neighborEntry) removeLocked() {
-	e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+	e.mu.neigh.UpdatedAt = e.cache.nic.stack.clock.Now()
 	e.dispatchRemoveEventLocked()
 	e.cancelTimerLocked()
 	// TODO(https://gvisor.dev/issues/5583): test the case where this function is
@@ -246,7 +246,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 
 	prev := e.mu.neigh.State
 	e.mu.neigh.State = next
-	e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+	e.mu.neigh.UpdatedAt = e.cache.nic.stack.clock.Now()
 	config := e.nudState.Config()
 
 	switch next {
@@ -354,7 +354,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	case Unknown, Unreachable:
 		prev := e.mu.neigh.State
 		e.mu.neigh.State = Incomplete
-		e.mu.neigh.UpdatedAtNanos = e.cache.nic.stack.clock.NowNanoseconds()
+		e.mu.neigh.UpdatedAt = e.cache.nic.stack.clock.Now()
 
 		switch prev {
 		case Unknown:

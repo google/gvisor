@@ -4427,7 +4427,7 @@ func TestClearNeighborCacheOnNICDisable(t *testing.T) {
 		if neighbors, err := s.Neighbors(nicID, addr.proto); err != nil {
 			t.Fatalf("s.Neighbors(%d, %d): %s", nicID, addr.proto, err)
 		} else if diff := cmp.Diff(
-			[]stack.NeighborEntry{{Addr: addr.addr, LinkAddr: linkAddr, State: stack.Static, UpdatedAtNanos: clock.NowNanoseconds()}},
+			[]stack.NeighborEntry{{Addr: addr.addr, LinkAddr: linkAddr, State: stack.Static, UpdatedAt: clock.Now()}},
 			neighbors,
 		); diff != "" {
 			t.Fatalf("proto=%d neighbors mismatch (-want +got):\n%s", addr.proto, diff)

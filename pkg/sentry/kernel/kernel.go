@@ -1553,22 +1553,23 @@ func (k *Kernel) SetSaveError(err error) {
 
 var _ tcpip.Clock = (*Kernel)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
-func (k *Kernel) NowNanoseconds() int64 {
-	now, err := k.timekeeper.GetTime(sentrytime.Realtime)
+// Now implements tcpip.Clock.NowNanoseconds.
+func (k *Kernel) Now() time.Time {
+	nsec, err := k.timekeeper.GetTime(sentrytime.Realtime)
 	if err != nil {
-		panic("Kernel.NowNanoseconds: " + err.Error())
+		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
 	}
-	return now
+	return time.Unix(0, nsec)
 }
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (k *Kernel) NowMonotonic() int64 {
-	now, err := k.timekeeper.GetTime(sentrytime.Monotonic)
+func (k *Kernel) NowMonotonic() tcpip.MonotonicTime {
+	nsec, err := k.timekeeper.GetTime(sentrytime.Monotonic)
 	if err != nil {
-		panic("Kernel.NowMonotonic: " + err.Error())
+		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
 	}
-	return now
+	var mt tcpip.MonotonicTime
+	return mt.Add(time.Duration(nsec) * time.Nanosecond)
 }
 
 // AfterFunc implements tcpip.Clock.AfterFunc.

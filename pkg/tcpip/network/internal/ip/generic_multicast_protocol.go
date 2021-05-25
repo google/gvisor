@@ -611,7 +611,7 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressRLocked(groupAddr
 	//   If a timer for any address is already running, it is reset to the new
 	//   random value only if the requested Maximum Response Delay is less than
 	//   the remaining value of the running timer.
-	now := time.Unix(0 /* seconds */, g.opts.Clock.NowNanoseconds())
+	now := g.opts.Clock.Now()
 	if info.state == delayingMember {
 		if info.delayedReportJobFiresAt.IsZero() {
 			panic(fmt.Sprintf("delayed report unscheduled while in the delaying member state; group = %s", groupAddress))

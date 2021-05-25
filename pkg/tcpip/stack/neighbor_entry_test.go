@@ -349,10 +349,10 @@ func unknownToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       tcpip.LinkAddress(""),
-				State:          Incomplete,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  tcpip.LinkAddress(""),
+				State:     Incomplete,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -410,10 +410,10 @@ func unknownToStale(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entry
 			EventType: entryTestAdded,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -441,7 +441,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 
 	// UpdatedAt should remain the same during address resolution.
 	e.mu.Lock()
-	startedAt := e.mu.neigh.UpdatedAtNanos
+	startedAt := e.mu.neigh.UpdatedAt
 	e.mu.Unlock()
 
 	// Wait for the rest of the reachability probe transmissions, signifying
@@ -465,7 +465,7 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 		}
 
 		e.mu.Lock()
-		if got, want := e.mu.neigh.UpdatedAtNanos, startedAt; got != want {
+		if got, want := e.mu.neigh.UpdatedAt, startedAt; got != want {
 			t.Errorf("got e.mu.neigh.UpdatedAt = %q, want = %q", got, want)
 		}
 		e.mu.Unlock()
@@ -480,10 +480,10 @@ func TestEntryIncompleteToIncompleteDoesNotChangeUpdatedAt(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       tcpip.LinkAddress(""),
-				State:          Unreachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  tcpip.LinkAddress(""),
+				State:     Unreachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -542,10 +542,10 @@ func incompleteToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -639,10 +639,10 @@ func TestEntryIncompleteToStaleWhenUnsolicitedConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -673,10 +673,10 @@ func TestEntryIncompleteToStaleWhenProbe(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -752,10 +752,10 @@ func incompleteToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *tes
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       tcpip.LinkAddress(""),
-				State:          Unreachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  tcpip.LinkAddress(""),
+				State:     Unreachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -938,10 +938,10 @@ func reachableToStale(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDis
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -993,10 +993,10 @@ func TestEntryReachableToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1045,10 +1045,10 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddress(t *testing.T)
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1097,10 +1097,10 @@ func TestEntryReachableToStaleWhenConfirmationWithDifferentAddressAndOverride(t 
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1186,10 +1186,10 @@ func TestEntryStaleToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1238,10 +1238,10 @@ func TestEntryStaleToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1279,10 +1279,10 @@ func TestEntryStaleToStaleWhenOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1327,10 +1327,10 @@ func TestEntryStaleToStaleWhenProbeUpdateAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1386,10 +1386,10 @@ func staleToDelay(e *neighborEntry, nudDisp *testNUDDispatcher, linkRes *entryTe
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Delay,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Delay,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1438,10 +1438,10 @@ func TestEntryDelayToReachableWhenUpperLevelConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1493,10 +1493,10 @@ func TestEntryDelayToReachableWhenSolicitedOverrideConfirmation(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1548,10 +1548,10 @@ func TestEntryDelayToReachableWhenSolicitedConfirmationWithoutAddress(t *testing
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1640,10 +1640,10 @@ func TestEntryDelayToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1692,10 +1692,10 @@ func TestEntryDelayToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1765,10 +1765,10 @@ func delayToProbe(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDDispatc
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Probe,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Probe,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1822,10 +1822,10 @@ func TestEntryProbeToStaleWhenProbeWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1877,10 +1877,10 @@ func TestEntryProbeToStaleWhenConfirmationWithDifferentAddress(t *testing.T) {
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr2,
-				State:          Stale,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr2,
+				State:     Stale,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -1998,10 +1998,10 @@ func probeToReachableWithFlags(e *neighborEntry, nudDisp *testNUDDispatcher, lin
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       linkAddr,
-				State:          Reachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  linkAddr,
+				State:     Reachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -2150,10 +2150,10 @@ func probeToUnreachable(c NUDConfigurations, e *neighborEntry, nudDisp *testNUDD
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       entryTestLinkAddr1,
-				State:          Unreachable,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  entryTestLinkAddr1,
+				State:     Unreachable,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
@@ -2222,10 +2222,10 @@ func unreachableToIncomplete(e *neighborEntry, nudDisp *testNUDDispatcher, linkR
 			EventType: entryTestChanged,
 			NICID:     entryTestNICID,
 			Entry: NeighborEntry{
-				Addr:           entryTestAddr1,
-				LinkAddr:       tcpip.LinkAddress(""),
-				State:          Incomplete,
-				UpdatedAtNanos: clock.NowNanoseconds(),
+				Addr:      entryTestAddr1,
+				LinkAddr:  tcpip.LinkAddress(""),
+				State:     Incomplete,
+				UpdatedAt: clock.Now(),
 			},
 		},
 	}
