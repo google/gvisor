@@ -26,4 +26,7 @@ const (
 	IFF_TAP      = 0x0002
 	IFF_NO_PI    = 0x1000
 	IFF_NOFILTER = 0x1000
+
+	// According to linux/if_tun.h "This flag has no real effect"
+	IFF_ONE_QUEUE = 0x2000
 )
