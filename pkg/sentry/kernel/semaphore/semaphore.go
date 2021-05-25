@@ -35,10 +35,10 @@ const (
 	// Maximum number of semaphore sets.
 	setsMax = linux.SEMMNI
 
-	// Maximum number of semaphroes in a semaphore set.
+	// Maximum number of semaphores in a semaphore set.
 	semsMax = linux.SEMMSL
 
-	// Maximum number of semaphores in all semaphroe sets.
+	// Maximum number of semaphores in all semaphore sets.
 	semsTotalMax = linux.SEMMNS
 )
 
@@ -220,7 +220,7 @@ func (r *Registry) HighestIndex() int32 {
 	defer r.mu.Unlock()
 
 	// By default, highest used index is 0 even though
-	// there is no semaphroe set.
+	// there is no semaphore set.
 	var highestIndex int32
 	for index := range r.indexes {
 		if index > highestIndex {
