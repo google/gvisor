@@ -1346,6 +1346,7 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:verity_util",
     ],
 )
 

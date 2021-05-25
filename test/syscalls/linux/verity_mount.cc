@@ -22,13 +22,14 @@
 #include "test/util/capability_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/verity_util.h"
 
 namespace gvisor {
 namespace testing {
 
 namespace {
 
-// Mount verity file system on an existing gofer mount.
+// Mount verity file system on an existing tmpfs mount.
 TEST(MountTest, MountExisting) {
   // Verity is implemented in VFS2.
   SKIP_IF(IsRunningWithVFS1());
@@ -43,8 +44,11 @@ TEST(MountTest, MountExisting) {
   // Mount a verity file system on the existing gofer mount.
   auto const verity_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   std::string opts = "lower_path=" + tmpfs_dir.path();
-  EXPECT_THAT(mount("", verity_dir.path().c_str(), "verity", 0, opts.c_str()),
+  ASSERT_THAT(mount("", verity_dir.path().c_str(), "verity", 0, opts.c_str()),
               SyscallSucceeds());
+  auto const fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(verity_dir.path(), O_RDONLY, 0777));
+  EXPECT_THAT(ioctl(fd.get(), FS_IOC_ENABLE_VERITY), SyscallSucceeds());
 }
 
 }  // namespace
