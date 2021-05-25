@@ -207,9 +207,10 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 		return err
 	}
 
-	// Changing owners may clear one or both of the setuid and setgid bits,
-	// so we may have to update opts before setting d.mode.
-	if opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID) != 0 {
+	// Changing owners or truncating may clear one or both of the setuid and
+	// setgid bits, so we may have to update opts before setting d.mode.
+	inotifyMask := opts.Stat.Mask
+	if opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID|linux.STATX_SIZE) != 0 {
 		stat, err := wrappedFD.Stat(ctx, vfs.StatOptions{
 			Mask: linux.STATX_MODE,
 		})
@@ -218,10 +219,14 @@ func (fd *regularFileFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) e
 		}
 		opts.Stat.Mode = stat.Mode
 		opts.Stat.Mask |= linux.STATX_MODE
+		// Don't generate inotify IN_ATTRIB for size-only changes (truncations).
+		if opts.Stat.Mask&(linux.STATX_UID|linux.STATX_GID) != 0 {
+			inotifyMask |= linux.STATX_MODE
+		}
 	}
 
 	d.updateAfterSetStatLocked(&opts)
-	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+	if ev := vfs.InotifyEventFromStatMask(inotifyMask); ev != 0 {
 		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
 	}
 	return nil

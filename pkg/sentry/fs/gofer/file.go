@@ -237,10 +237,20 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 	// and availability of a host-mappable FD.
 	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
 		n, err = f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
-	} else if f.inodeOperations.fileState.hostMappable != nil {
-		n, err = f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
 	} else {
-		n, err = src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
+		uattr, e := f.UnstableAttr(ctx, file)
+		if e != nil {
+			return 0, e
+		}
+		if f.inodeOperations.fileState.hostMappable != nil {
+			n, err = f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset, uattr)
+		} else {
+			n, err = src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
+			if n > 0 && uattr.Perms.HasSetUIDOrGID() {
+				uattr.Perms.DropSetUIDAndMaybeGID()
+				f.inodeOperations.SetPermissions(ctx, file.Dirent.Inode, uattr.Perms)
+			}
+		}
 	}
 
 	if n == 0 {

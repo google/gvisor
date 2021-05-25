@@ -478,6 +478,20 @@ func (f FilePermissions) AnyRead() bool {
 	return f.User.Read || f.Group.Read || f.Other.Read
 }
 
+// HasSetUIDOrGID returns true if either the setuid or setgid bit is set.
+func (f FilePermissions) HasSetUIDOrGID() bool {
+	return f.SetUID || f.SetGID
+}
+
+// DropSetUIDAndMaybeGID turns off setuid, and turns off setgid if f allows
+// group execution.
+func (f *FilePermissions) DropSetUIDAndMaybeGID() {
+	f.SetUID = false
+	if f.Group.Execute {
+		f.SetGID = false
+	}
+}
+
 // FileOwner represents ownership of a file.
 //
 // +stateify savable

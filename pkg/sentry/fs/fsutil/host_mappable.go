@@ -155,12 +155,20 @@ func (h *HostMappable) DecRef(fr memmap.FileRange) {
 //   T2: Appends to file causing it to grow
 //   T2: Writes to mapped pages and COW happens
 //   T1: Continues and wronly invalidates the page mapped in step above.
-func (h *HostMappable) Truncate(ctx context.Context, newSize int64) error {
+func (h *HostMappable) Truncate(ctx context.Context, newSize int64, uattr fs.UnstableAttr) error {
 	h.truncateMu.Lock()
 	defer h.truncateMu.Unlock()
 
 	mask := fs.AttrMask{Size: true}
 	attr := fs.UnstableAttr{Size: newSize}
+
+	// Truncating a file clears privilege bits.
+	if uattr.Perms.HasSetUIDOrGID() {
+		mask.Perms = true
+		attr.Perms = uattr.Perms
+		attr.Perms.DropSetUIDAndMaybeGID()
+	}
+
 	if err := h.backingFile.SetMaskedAttributes(ctx, mask, attr, false); err != nil {
 		return err
 	}
@@ -193,10 +201,17 @@ func (h *HostMappable) Allocate(ctx context.Context, offset int64, length int64)
 }
 
 // Write writes to the file backing this mappable.
-func (h *HostMappable) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (h *HostMappable) Write(ctx context.Context, src usermem.IOSequence, offset int64, uattr fs.UnstableAttr) (int64, error) {
 	h.truncateMu.RLock()
+	defer h.truncateMu.RUnlock()
 	n, err := src.CopyInTo(ctx, &writer{ctx: ctx, hostMappable: h, off: offset})
-	h.truncateMu.RUnlock()
+	if n > 0 && uattr.Perms.HasSetUIDOrGID() {
+		mask := fs.AttrMask{Perms: true}
+		uattr.Perms.DropSetUIDAndMaybeGID()
+		if err := h.backingFile.SetMaskedAttributes(ctx, mask, uattr, false); err != nil {
+			return n, err
+		}
+	}
 	return n, err
 }
 

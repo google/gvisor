@@ -226,6 +226,12 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, _ *fs.Inode, size in
 		now := ktime.NowFromContext(ctx)
 		f.attr.ModificationTime = now
 		f.attr.StatusChangeTime = now
+
+		// Truncating clears privilege bits.
+		f.attr.Perms.SetUID = false
+		if f.attr.Perms.Group.Execute {
+			f.attr.Perms.SetGID = false
+		}
 	}
 	f.dataMu.Unlock()
 
@@ -363,7 +369,14 @@ func (f *fileInodeOperations) write(ctx context.Context, src usermem.IOSequence,
 	now := ktime.NowFromContext(ctx)
 	f.attr.ModificationTime = now
 	f.attr.StatusChangeTime = now
-	return src.CopyInTo(ctx, &fileReadWriter{f, offset})
+	nwritten, err := src.CopyInTo(ctx, &fileReadWriter{f, offset})
+
+	// Writing clears privilege bits.
+	if nwritten > 0 {
+		f.attr.Perms.DropSetUIDAndMaybeGID()
+	}
+
+	return nwritten, err
 }
 
 type fileReadWriter struct {

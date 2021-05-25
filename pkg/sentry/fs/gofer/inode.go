@@ -600,11 +600,25 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 	if i.session().cachePolicy.useCachingInodeOps(inode) {
 		return i.cachingInodeOps.Truncate(ctx, inode, length)
 	}
-	if i.session().cachePolicy == cacheRemoteRevalidating {
-		return i.fileState.hostMappable.Truncate(ctx, length)
+
+	uattr, err := i.fileState.unstableAttr(ctx)
+	if err != nil {
+		return err
 	}
 
-	return i.fileState.file.setAttr(ctx, p9.SetAttrMask{Size: true}, p9.SetAttr{Size: uint64(length)})
+	if i.session().cachePolicy == cacheRemoteRevalidating {
+		return i.fileState.hostMappable.Truncate(ctx, length, uattr)
+	}
+
+	mask := p9.SetAttrMask{Size: true}
+	attr := p9.SetAttr{Size: uint64(length)}
+	if uattr.Perms.HasSetUIDOrGID() {
+		mask.Permissions = true
+		uattr.Perms.DropSetUIDAndMaybeGID()
+		attr.Permissions = p9.FileMode(uattr.Perms.LinuxMode())
+	}
+
+	return i.fileState.file.setAttr(ctx, mask, attr)
 }
 
 // GetXattr implements fs.InodeOperations.GetXattr.
