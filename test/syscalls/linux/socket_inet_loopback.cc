@@ -532,7 +532,7 @@ TEST_P(SocketInetLoopbackTest, TCPInfoState) {
   int n = poll(&pfd, 1, kTimeout);
   ASSERT_GE(n, 0) << strerror(errno);
   ASSERT_EQ(n, 1);
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && GvisorPlatform() != Platform::kFuchsia) {
     // TODO(gvisor.dev/issue/6015): Notify POLLRDHUP on incoming FIN.
     ASSERT_EQ(pfd.revents, POLLIN);
   } else {
