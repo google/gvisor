@@ -16,6 +16,7 @@ package stack
 
 import (
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -313,15 +314,9 @@ func calcMaxRandomFactor(minRandomFactor float32) float32 {
 	return defaultMaxRandomFactor
 }
 
-// A Rand is a source of random numbers.
-type Rand interface {
-	// Float32 returns, as a float32, a pseudo-random number in [0.0,1.0).
-	Float32() float32
-}
-
 // NUDState stores states needed for calculating reachable time.
 type NUDState struct {
-	rng Rand
+	rng *rand.Rand
 
 	mu struct {
 		sync.RWMutex
@@ -342,7 +337,7 @@ type NUDState struct {
 
 // NewNUDState returns new NUDState using c as configuration and the specified
 // random number generator for use in recomputing ReachableTime.
-func NewNUDState(c NUDConfigurations, rng Rand) *NUDState {
+func NewNUDState(c NUDConfigurations, rng *rand.Rand) *NUDState {
 	s := &NUDState{
 		rng: rng,
 	}

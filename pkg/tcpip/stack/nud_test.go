@@ -16,6 +16,7 @@ package stack_test
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -46,11 +47,13 @@ type fakeRand struct {
 	num float32
 }
 
-var _ stack.Rand = (*fakeRand)(nil)
+var _ rand.Source = (*fakeRand)(nil)
 
-func (f *fakeRand) Float32() float32 {
-	return f.num
+func (f *fakeRand) Int63() int64 {
+	return int64(f.num * float32(1<<63))
 }
+
+func (*fakeRand) Seed(int64) {}
 
 func TestNUDFunctions(t *testing.T) {
 	const nicID = 1
@@ -708,7 +711,7 @@ func TestNUDStateReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, &rng)
+			s := stack.NewNUDState(c, rand.New(&rng))
 			if got, want := s.ReachableTime(), test.want; got != want {
 				t.Errorf("got ReachableTime = %q, want = %q", got, want)
 			}
@@ -780,7 +783,7 @@ func TestNUDStateRecomputeReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, &rng)
+			s := stack.NewNUDState(c, rand.New(&rng))
 			old := s.ReachableTime()
 
 			if got, want := s.ReachableTime(), old; got != want {

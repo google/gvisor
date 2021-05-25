@@ -184,7 +184,6 @@ type endpoint struct {
 	nic        stack.NetworkInterface
 	dispatcher stack.TransportDispatcher
 	protocol   *protocol
-	stack      *stack.Stack
 	stats      sharedStats
 
 	// enabled is set to 1 when the endpoint is enabled and 0 when it is
