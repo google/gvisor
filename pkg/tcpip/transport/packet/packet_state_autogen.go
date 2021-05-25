@@ -15,7 +15,7 @@ func (p *packet) StateFields() []string {
 	return []string{
 		"packetEntry",
 		"data",
-		"timestampNS",
+		"receivedAt",
 		"senderAddr",
 		"packetInfo",
 	}
@@ -28,8 +28,9 @@ func (p *packet) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var dataValue buffer.VectorisedView = p.saveData()
 	stateSinkObject.SaveValue(1, dataValue)
+	var receivedAtValue int64 = p.saveReceivedAt()
+	stateSinkObject.SaveValue(2, receivedAtValue)
 	stateSinkObject.Save(0, &p.packetEntry)
-	stateSinkObject.Save(2, &p.timestampNS)
 	stateSinkObject.Save(3, &p.senderAddr)
 	stateSinkObject.Save(4, &p.packetInfo)
 }
@@ -39,10 +40,10 @@ func (p *packet) afterLoad() {}
 // +checklocksignore
 func (p *packet) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.packetEntry)
-	stateSourceObject.Load(2, &p.timestampNS)
 	stateSourceObject.Load(3, &p.senderAddr)
 	stateSourceObject.Load(4, &p.packetInfo)
 	stateSourceObject.LoadValue(1, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(2, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (ep *endpoint) StateTypeName() string {

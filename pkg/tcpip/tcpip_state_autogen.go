@@ -1064,6 +1064,31 @@ func (s *stdClock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
+func (mt *MonotonicTime) StateTypeName() string {
+	return "pkg/tcpip.MonotonicTime"
+}
+
+func (mt *MonotonicTime) StateFields() []string {
+	return []string{
+		"nanoseconds",
+	}
+}
+
+func (mt *MonotonicTime) beforeSave() {}
+
+// +checklocksignore
+func (mt *MonotonicTime) StateSave(stateSinkObject state.Sink) {
+	mt.beforeSave()
+	stateSinkObject.Save(0, &mt.nanoseconds)
+}
+
+func (mt *MonotonicTime) afterLoad() {}
+
+// +checklocksignore
+func (mt *MonotonicTime) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mt.nanoseconds)
+}
+
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -1289,6 +1314,7 @@ func init() {
 	state.Register((*LocalSockError)(nil))
 	state.Register((*SockError)(nil))
 	state.Register((*stdClock)(nil))
+	state.Register((*MonotonicTime)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*LinkPacketInfo)(nil))

@@ -251,7 +251,7 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 			// The list is empty.
 			break
 		}
-		elapsed := time.Duration(now-r.creationTime) * time.Nanosecond
+		elapsed := now.Sub(r.createdAt)
 		if f.timeout > elapsed {
 			// If the oldest reassembler has not expired, schedule the release
 			// job so that this function is called back when it has expired.

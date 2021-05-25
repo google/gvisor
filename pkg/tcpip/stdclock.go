@@ -60,11 +60,11 @@ type stdClock struct {
 	// monotonicOffset is assigned maxMonotonic after restore so that the
 	// monotonic time will continue from where it "left off" before saving as part
 	// of S/R.
-	monotonicOffset int64 `state:"nosave"`
+	monotonicOffset MonotonicTime `state:"nosave"`
 
 	// monotonicMU protects maxMonotonic.
 	monotonicMU  sync.Mutex `state:"nosave"`
-	maxMonotonic int64
+	maxMonotonic MonotonicTime
 }
 
 // NewStdClock returns an instance of a clock that uses the time package.
@@ -76,25 +76,25 @@ func NewStdClock() Clock {
 
 var _ Clock = (*stdClock)(nil)
 
-// NowNanoseconds implements Clock.NowNanoseconds.
-func (*stdClock) NowNanoseconds() int64 {
-	return time.Now().UnixNano()
+// Now implements Clock.Now.
+func (*stdClock) Now() time.Time {
+	return time.Now()
 }
 
 // NowMonotonic implements Clock.NowMonotonic.
-func (s *stdClock) NowMonotonic() int64 {
+func (s *stdClock) NowMonotonic() MonotonicTime {
 	sinceBase := time.Since(s.baseTime)
 	if sinceBase < 0 {
 		panic(fmt.Sprintf("got negative duration = %s since base time = %s", sinceBase, s.baseTime))
 	}
 
-	monotonicValue := sinceBase.Nanoseconds() + s.monotonicOffset
+	monotonicValue := s.monotonicOffset.Add(sinceBase)
 
 	s.monotonicMU.Lock()
 	defer s.monotonicMU.Unlock()
 
 	// Monotonic time values must never decrease.
-	if monotonicValue > s.maxMonotonic {
+	if s.maxMonotonic.Before(monotonicValue) {
 		s.maxMonotonic = monotonicValue
 	}
 

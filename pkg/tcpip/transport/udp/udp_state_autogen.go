@@ -7,48 +7,49 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
-func (u *udpPacket) StateTypeName() string {
+func (p *udpPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/udp.udpPacket"
 }
 
-func (u *udpPacket) StateFields() []string {
+func (p *udpPacket) StateFields() []string {
 	return []string{
 		"udpPacketEntry",
 		"senderAddress",
 		"destinationAddress",
 		"packetInfo",
 		"data",
-		"timestamp",
+		"receivedAt",
 		"tos",
 	}
 }
 
-func (u *udpPacket) beforeSave() {}
+func (p *udpPacket) beforeSave() {}
 
 // +checklocksignore
-func (u *udpPacket) StateSave(stateSinkObject state.Sink) {
-	u.beforeSave()
-	var dataValue buffer.VectorisedView = u.saveData()
+func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	var dataValue buffer.VectorisedView = p.saveData()
 	stateSinkObject.SaveValue(4, dataValue)
-	stateSinkObject.Save(0, &u.udpPacketEntry)
-	stateSinkObject.Save(1, &u.senderAddress)
-	stateSinkObject.Save(2, &u.destinationAddress)
-	stateSinkObject.Save(3, &u.packetInfo)
-	stateSinkObject.Save(5, &u.timestamp)
-	stateSinkObject.Save(6, &u.tos)
+	var receivedAtValue int64 = p.saveReceivedAt()
+	stateSinkObject.SaveValue(5, receivedAtValue)
+	stateSinkObject.Save(0, &p.udpPacketEntry)
+	stateSinkObject.Save(1, &p.senderAddress)
+	stateSinkObject.Save(2, &p.destinationAddress)
+	stateSinkObject.Save(3, &p.packetInfo)
+	stateSinkObject.Save(6, &p.tos)
 }
 
-func (u *udpPacket) afterLoad() {}
+func (p *udpPacket) afterLoad() {}
 
 // +checklocksignore
-func (u *udpPacket) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &u.udpPacketEntry)
-	stateSourceObject.Load(1, &u.senderAddress)
-	stateSourceObject.Load(2, &u.destinationAddress)
-	stateSourceObject.Load(3, &u.packetInfo)
-	stateSourceObject.Load(5, &u.timestamp)
-	stateSourceObject.Load(6, &u.tos)
-	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { u.loadData(y.(buffer.VectorisedView)) })
+func (p *udpPacket) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.udpPacketEntry)
+	stateSourceObject.Load(1, &p.senderAddress)
+	stateSourceObject.Load(2, &p.destinationAddress)
+	stateSourceObject.Load(3, &p.packetInfo)
+	stateSourceObject.Load(6, &p.tos)
+	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(5, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (e *endpoint) StateTypeName() string {

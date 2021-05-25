@@ -35,21 +35,21 @@ type hole struct {
 
 type reassembler struct {
 	reassemblerEntry
-	id           FragmentID
-	memSize      int
-	proto        uint8
-	mu           sync.Mutex
-	holes        []hole
-	filled       int
-	done         bool
-	creationTime int64
-	pkt          *stack.PacketBuffer
+	id        FragmentID
+	memSize   int
+	proto     uint8
+	mu        sync.Mutex
+	holes     []hole
+	filled    int
+	done      bool
+	createdAt tcpip.MonotonicTime
+	pkt       *stack.PacketBuffer
 }
 
 func newReassembler(id FragmentID, clock tcpip.Clock) *reassembler {
 	r := &reassembler{
-		id:           id,
-		creationTime: clock.NowMonotonic(),
+		id:        id,
+		createdAt: clock.NowMonotonic(),
 	}
 	r.holes = append(r.holes, hole{
 		first:  0,

@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -813,9 +814,12 @@ const (
 
 // ipv4TimestampTime provides the current time as specified in RFC 791.
 func ipv4TimestampTime(clock tcpip.Clock) uint32 {
-	const millisecondsPerDay = 24 * 3600 * 1000
-	const nanoPerMilli = 1000000
-	return uint32((clock.NowNanoseconds() / nanoPerMilli) % millisecondsPerDay)
+	// Per RFC 791 page 21:
+	//   The Timestamp is a right-justified, 32-bit timestamp in
+	//   milliseconds since midnight UT.
+	now := clock.Now().UTC()
+	midnight := now.Truncate(24 * time.Hour)
+	return uint32(now.Sub(midnight).Milliseconds())
 }
 
 // IP Timestamp option fields.

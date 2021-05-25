@@ -16,6 +16,7 @@ package icmp
 
 import (
 	"io"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -33,7 +34,7 @@ type icmpPacket struct {
 	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	timestamp     int64
+	receivedAt    time.Time             `state:".(int64)"`
 }
 
 type endpointState int
@@ -193,7 +194,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		Total: p.data.Size(),
 		ControlMessages: tcpip.ControlMessages{
 			HasTimestamp: true,
-			Timestamp:    p.timestamp,
+			Timestamp:    p.receivedAt.UnixNano(),
 		},
 	}
 	if opts.NeedRemoteAddr {
@@ -800,7 +801,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	e.rcvList.PushBack(packet)
 	e.rcvBufSize += packet.data.Size()
 
-	packet.timestamp = e.stack.Clock().NowNanoseconds()
+	packet.receivedAt = e.stack.Clock().Now()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()
