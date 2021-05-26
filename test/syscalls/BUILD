@@ -216,6 +216,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:verity_getdents_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:getrandom_test",
 )
 

@@ -868,6 +868,10 @@ func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCa
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
+	if _, err := fd.lowerFD.Seek(ctx, fd.off, linux.SEEK_SET); err != nil {
+		return err
+	}
+
 	var ds []vfs.Dirent
 	err := fd.lowerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
 		// Do not include the Merkle tree files.
@@ -890,8 +894,8 @@ func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCa
 		return err
 	}
 
-	// The result should contain all children plus "." and "..".
-	if fd.d.verityEnabled() && len(ds) != len(fd.d.childrenNames)+2 {
+	// The result should be a part of all children plus "." and "..", counting from fd.off.
+	if fd.d.verityEnabled() && len(ds) != len(fd.d.childrenNames)+2-int(fd.off) {
 		return fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Unexpected children number %d", len(ds)))
 	}
 
