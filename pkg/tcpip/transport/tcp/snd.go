@@ -1132,7 +1132,7 @@ func (s *sender) isDupAck(seg *segment) bool {
 		// (b) The incoming acknowledgment carries no data.
 		seg.logicalLen() == 0 &&
 		// (c) The SYN and FIN bits are both off.
-		!seg.flagIsSet(header.TCPFlagFin) && !seg.flagIsSet(header.TCPFlagSyn) &&
+		!seg.flags.Intersects(header.TCPFlagFin|header.TCPFlagSyn) &&
 		// (d) the ACK number is equal to the greatest acknowledgment received on
 		// the given connection (TCP.UNA from RFC793).
 		seg.ackNumber == s.SndUna &&
