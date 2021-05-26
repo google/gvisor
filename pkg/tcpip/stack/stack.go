@@ -189,9 +189,9 @@ type Options struct {
 	// TransportProtocols lists the transport protocols to enable.
 	TransportProtocols []TransportProtocolFactory
 
-	// Clock is an optional clock source used for timestampping packets.
+	// Clock is an optional clock used for timekeeping.
 	//
-	// If no Clock is specified, the clock source will be time.Now.
+	// If Clock is nil, tcpip.NewStdClock() will be used.
 	Clock tcpip.Clock
 
 	// Stats are optional statistic counters.
