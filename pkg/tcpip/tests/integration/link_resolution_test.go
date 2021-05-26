@@ -24,7 +24,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -604,8 +603,6 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 
 			test.rx(incomingEndpoint, test.sourceAddr, test.destAddr)
 
-			var request channel.PacketInfo
-			var ok bool
 			nudConfigs, err := s.NUDConfigurations(outgoingNICID, test.networkProtocolNumber)
 			if err != nil {
 				t.Fatalf("s.NUDConfigurations(%d, %d): %s", outgoingNICID, test.networkProtocolNumber, err)
@@ -614,7 +611,8 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			clock.RunImmediatelyScheduledJobs()
 
 			for i := 0; i < int(nudConfigs.MaxMulticastProbes); i++ {
-				if request, ok = outgoingEndpoint.Read(); !ok {
+				request, ok := outgoingEndpoint.Read()
+				if !ok {
 					t.Fatal("expected ARP packet through outgoing NIC")
 				}
 
@@ -628,10 +626,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// necessary because outgoing packets are dequeued asynchronously when
 			// link resolution fails, and this dequeue is what triggers the ICMP
 			// error.
-			//
-			// TODO(gvisor.dev/issue/6012): Replace with asynchronous read after we
-			// have integrated the stack clock with the dequeuing code.
-			reply, ok := incomingEndpoint.ReadContext(context.Background())
+			reply, ok := incomingEndpoint.Read()
 			if !ok {
 				t.Fatal("expected ICMP packet through incoming NIC")
 			}
