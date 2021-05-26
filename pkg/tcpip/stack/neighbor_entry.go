@@ -166,14 +166,20 @@ func (e *neighborEntry) notifyCompletionLocked(err tcpip.Error) {
 	if ch := e.mu.done; ch != nil {
 		close(ch)
 		e.mu.done = nil
-		// Dequeue the pending packets in a new goroutine to not hold up the current
+		// Dequeue the pending packets asynchronously to not hold up the current
 		// goroutine as writing packets may be a costly operation.
 		//
 		// At the time of writing, when writing packets, a neighbor's link address
 		// is resolved (which ends up obtaining the entry's lock) while holding the
-		// link resolution queue's lock. Dequeuing packets in a new goroutine avoids
-		// a lock ordering violation.
-		go e.cache.nic.linkResQueue.dequeue(ch, e.mu.neigh.LinkAddr, err)
+		// link resolution queue's lock. Dequeuing packets asynchronously avoids a
+		// lock ordering violation.
+		//
+		// NB: this is equivalent to spawning a goroutine directly using the go
+		// keyword but allows tests that use manual clocks to deterministically
+		// wait for this work to complete.
+		e.cache.nic.stack.clock.AfterFunc(0, func() {
+			e.cache.nic.linkResQueue.dequeue(ch, e.mu.neigh.LinkAddr, err)
+		})
 	}
 }
 

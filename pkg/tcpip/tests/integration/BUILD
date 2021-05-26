@@ -48,7 +48,6 @@ go_test(
     size = "small",
     srcs = ["link_resolution_test.go"],
     deps = [
-        "//pkg/context",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/checker",
