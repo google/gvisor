@@ -125,6 +125,8 @@ type conn struct {
 	tcb tcpconntrack.TCB
 	// lastUsed is the last time the connection saw a relevant packet, and
 	// is updated by each packet on the connection. It is protected by mu.
+	//
+	// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
 	lastUsed time.Time `state:".(unixTime)"`
 }
 

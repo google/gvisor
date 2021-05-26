@@ -94,7 +94,7 @@ type sender struct {
 
 	// firstRetransmittedSegXmitTime is the original transmit time of
 	// the first segment that was retransmitted due to RTO expiration.
-	firstRetransmittedSegXmitTime time.Time `state:".(unixTime)"`
+	firstRetransmittedSegXmitTime tcpip.MonotonicTime
 
 	// zeroWindowProbing is set if the sender is currently probing
 	// for zero receive window.
@@ -169,7 +169,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			SndUna:           iss + 1,
 			SndNxt:           iss + 1,
 			RTTMeasureSeqNum: iss + 1,
-			LastSendTime:     time.Now(),
+			LastSendTime:     ep.stack.Clock().NowMonotonic(),
 			MaxPayloadSize:   maxPayloadSize,
 			MaxSentAck:       irs + 1,
 			FastRecovery: stack.TCPFastRecoveryState{
@@ -197,9 +197,9 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		s.SndWndScale = uint8(sndWndScale)
 	}
 
-	s.resendTimer.init(&s.resendWaker)
-	s.reorderTimer.init(&s.reorderWaker)
-	s.probeTimer.init(&s.probeWaker)
+	s.resendTimer.init(s.ep.stack.Clock(), &s.resendWaker)
+	s.reorderTimer.init(s.ep.stack.Clock(), &s.reorderWaker)
+	s.probeTimer.init(s.ep.stack.Clock(), &s.probeWaker)
 
 	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
 
@@ -441,7 +441,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	// timeout since the first retransmission.
 	uto := s.ep.userTimeout
 
-	if s.firstRetransmittedSegXmitTime.IsZero() {
+	if s.firstRetransmittedSegXmitTime == (tcpip.MonotonicTime{}) {
 		// We store the original xmitTime of the segment that we are
 		// about to retransmit as the retransmission time. This is
 		// required as by the time the retransmitTimer has expired the
@@ -450,7 +450,7 @@ func (s *sender) retransmitTimerExpired() bool {
 		s.firstRetransmittedSegXmitTime = s.writeList.Front().xmitTime
 	}
 
-	elapsed := time.Since(s.firstRetransmittedSegXmitTime)
+	elapsed := s.ep.stack.Clock().NowMonotonic().Sub(s.firstRetransmittedSegXmitTime)
 	remaining := s.maxRTO
 	if uto != 0 {
 		// Cap to the user specified timeout if one is specified.
@@ -866,8 +866,8 @@ func (s *sender) enableZeroWindowProbing() {
 	// We piggyback the probing on the retransmit timer with the
 	// current retranmission interval, as we may start probing while
 	// segment retransmissions.
-	if s.firstRetransmittedSegXmitTime.IsZero() {
-		s.firstRetransmittedSegXmitTime = time.Now()
+	if s.firstRetransmittedSegXmitTime == (tcpip.MonotonicTime{}) {
+		s.firstRetransmittedSegXmitTime = s.ep.stack.Clock().NowMonotonic()
 	}
 	s.resendTimer.enable(s.RTO)
 }
@@ -875,7 +875,7 @@ func (s *sender) enableZeroWindowProbing() {
 func (s *sender) disableZeroWindowProbing() {
 	s.zeroWindowProbing = false
 	s.unackZeroWindowProbes = 0
-	s.firstRetransmittedSegXmitTime = time.Time{}
+	s.firstRetransmittedSegXmitTime = tcpip.MonotonicTime{}
 	s.resendTimer.disable()
 }
 
@@ -925,7 +925,7 @@ func (s *sender) sendData() {
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
 	// the retrasmission timeout."
-	if !s.FastRecovery.Active && s.state != tcpip.RTORecovery && time.Now().Sub(s.LastSendTime) > s.RTO {
+	if !s.FastRecovery.Active && s.state != tcpip.RTORecovery && s.ep.stack.Clock().NowMonotonic().Sub(s.LastSendTime) > s.RTO {
 		if s.SndCwnd > InitialCwnd {
 			s.SndCwnd = InitialCwnd
 		}
@@ -1234,7 +1234,7 @@ func checkDSACK(rcvdSeg *segment) bool {
 func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
 	if !rcvdSeg.parsedOptions.TS && s.RTTMeasureSeqNum.LessThan(rcvdSeg.ackNumber) {
-		s.updateRTO(time.Now().Sub(s.RTTMeasureTime))
+		s.updateRTO(s.ep.stack.Clock().NowMonotonic().Sub(s.RTTMeasureTime))
 		s.RTTMeasureSeqNum = s.SndNxt
 	}
 
@@ -1444,7 +1444,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if s.SndUna == s.SndNxt {
 			s.Outstanding = 0
 			// Reset firstRetransmittedSegXmitTime to the zero value.
-			s.firstRetransmittedSegXmitTime = time.Time{}
+			s.firstRetransmittedSegXmitTime = tcpip.MonotonicTime{}
 			s.resendTimer.disable()
 			s.probeTimer.disable()
 		}
@@ -1502,7 +1502,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
 	}
-	seg.xmitTime = time.Now()
+	seg.xmitTime = s.ep.stack.Clock().NowMonotonic()
 	seg.xmitCount++
 	seg.lost = false
 	err := s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
@@ -1527,7 +1527,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 // sendSegmentFromView sends a new segment containing the given payload, flags
 // and sequence number.
 func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
-	s.LastSendTime = time.Now()
+	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
 		s.RTTMeasureTime = s.LastSendTime
 	}

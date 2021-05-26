@@ -316,7 +316,8 @@ func calcMaxRandomFactor(minRandomFactor float32) float32 {
 
 // NUDState stores states needed for calculating reachable time.
 type NUDState struct {
-	rng *rand.Rand
+	clock tcpip.Clock
+	rng   *rand.Rand
 
 	mu struct {
 		sync.RWMutex
@@ -337,9 +338,10 @@ type NUDState struct {
 
 // NewNUDState returns new NUDState using c as configuration and the specified
 // random number generator for use in recomputing ReachableTime.
-func NewNUDState(c NUDConfigurations, rng *rand.Rand) *NUDState {
+func NewNUDState(c NUDConfigurations, clock tcpip.Clock, rng *rand.Rand) *NUDState {
 	s := &NUDState{
-		rng: rng,
+		clock: clock,
+		rng:   rng,
 	}
 	s.mu.config = c
 	return s
@@ -367,7 +369,7 @@ func (s *NUDState) ReachableTime() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if time.Now().After(s.mu.expiration) ||
+	if s.clock.Now().After(s.mu.expiration) ||
 		s.mu.config.BaseReachableTime != s.mu.prevBaseReachableTime ||
 		s.mu.config.MinRandomFactor != s.mu.prevMinRandomFactor ||
 		s.mu.config.MaxRandomFactor != s.mu.prevMaxRandomFactor {
@@ -416,5 +418,5 @@ func (s *NUDState) recomputeReachableTimeLocked() {
 		s.mu.reachableTime = time.Duration(reachableTime)
 	}
 
-	s.mu.expiration = time.Now().Add(2 * time.Hour)
+	s.mu.expiration = s.clock.Now().Add(2 * time.Hour)
 }
