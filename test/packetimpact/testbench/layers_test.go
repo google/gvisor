@@ -596,7 +596,7 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 					Type:     ICMPv6Type(header.ICMPv6ParamProblem),
 					Code:     ICMPv6Code(header.ICMPv6ErroneousHeader),
 					Checksum: Uint16(0x5f98),
-					Payload:  []byte{0x00, 0x00, 0x00, 0x06},
+					Pointer:  Uint32(6),
 				},
 			},
 		},

@@ -33,17 +33,18 @@ func init() {
 func sendICMPError(t *testing.T, conn *testbench.TCPIPv4, tcp *testbench.TCP) {
 	t.Helper()
 
-	layers := conn.CreateFrame(t, nil)
-	layers = layers[:len(layers)-1]
-	ip, ok := tcp.Prev().(*testbench.IPv4)
-	if !ok {
-		t.Fatalf("expected %s to be IPv4", tcp.Prev())
+	icmpPayload := testbench.Layers{tcp.Prev(), tcp}
+	bytes, err := icmpPayload.ToBytes()
+	if err != nil {
+		t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
 	}
-	icmpErr := &testbench.ICMPv4{
-		Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
-		Code: testbench.ICMPv4Code(header.ICMPv4HostUnreachable)}
 
-	layers = append(layers, icmpErr, ip, tcp)
+	layers := conn.CreateFrame(t, nil)
+	layers[len(layers)-1] = &testbench.ICMPv4{
+		Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+		Code:    testbench.ICMPv4Code(header.ICMPv4HostUnreachable),
+		Payload: bytes,
+	}
 	conn.SendFrameStateless(t, layers)
 }
 
