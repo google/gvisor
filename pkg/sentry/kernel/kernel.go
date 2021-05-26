@@ -306,9 +306,6 @@ type InitKernelArgs struct {
 	// FeatureSet is the emulated CPU feature set.
 	FeatureSet *cpuid.FeatureSet
 
-	// Timekeeper manages time for all tasks in the system.
-	Timekeeper *Timekeeper
-
 	// RootUserNamespace is the root user namespace.
 	RootUserNamespace *auth.UserNamespace
 
@@ -348,18 +345,24 @@ type InitKernelArgs struct {
 	PIDNamespace *PIDNamespace
 }
 
+// SetTimekeeper sets Kernel.timekeeper. SetTimekeeper must be called before
+// Init.
+func (k *Kernel) SetTimekeeper(tk *Timekeeper) {
+	k.timekeeper = tk
+}
+
 // Init initialize the Kernel with no tasks.
 //
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
-// before calling Init.
+// and Kernel.SetTimekeeper before calling Init.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.FeatureSet == nil {
 		return fmt.Errorf("args.FeatureSet is nil")
 	}
-	if args.Timekeeper == nil {
-		return fmt.Errorf("args.Timekeeper is nil")
+	if k.timekeeper == nil {
+		return fmt.Errorf("timekeeper is nil")
 	}
-	if args.Timekeeper.clocks == nil {
+	if k.timekeeper.clocks == nil {
 		return fmt.Errorf("must call Timekeeper.SetClocks() before Kernel.Init()")
 	}
 	if args.RootUserNamespace == nil {
@@ -370,7 +373,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 
 	k.featureSet = args.FeatureSet
-	k.timekeeper = args.Timekeeper
 	k.tasks = newTaskSet(args.PIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace
 	k.rootUTSNamespace = args.RootUTSNamespace
@@ -395,8 +397,8 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
-	k.realtimeClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Realtime}
-	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
+	k.realtimeClock = &timekeeperClock{tk: k.timekeeper, c: sentrytime.Realtime}
+	k.monotonicClock = &timekeeperClock{tk: k.timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
