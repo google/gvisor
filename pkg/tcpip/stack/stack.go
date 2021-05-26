@@ -24,13 +24,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	mathrand "math/rand"
+	"math/rand"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/rand"
+	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -138,7 +138,7 @@ type Stack struct {
 
 	// randomGenerator is an injectable pseudo random generator that can be
 	// used when a random number is required.
-	randomGenerator *mathrand.Rand
+	randomGenerator *rand.Rand
 
 	// secureRNG is a cryptographically secure random number generator.
 	secureRNG io.Reader
@@ -218,10 +218,10 @@ type Options struct {
 
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
-	// returned by rand.Read().
+	// returned by the stack secure RNG.
 	//
 	// RandSource must be thread-safe.
-	RandSource mathrand.Source
+	RandSource rand.Source
 
 	// IPTables are the initial iptables rules. If nil, iptables will allow
 	// all traffic.
@@ -326,9 +326,9 @@ func New(opts Options) *Stack {
 
 	randSrc := opts.RandSource
 	if randSrc == nil {
-		// Source provided by mathrand.NewSource is not thread-safe so
+		// Source provided by rand.NewSource is not thread-safe so
 		// we wrap it in a simple thread-safe version.
-		randSrc = &lockedRandomSource{src: mathrand.NewSource(generateRandInt64())}
+		randSrc = &lockedRandomSource{src: rand.NewSource(generateRandInt64())}
 	}
 
 	if opts.IPTables == nil {
@@ -338,7 +338,7 @@ func New(opts Options) *Stack {
 	opts.NUDConfigs.resetInvalidFields()
 
 	if opts.SecureRNG == nil {
-		opts.SecureRNG = rand.Reader
+		opts.SecureRNG = cryptorand.Reader
 	}
 
 	s := &Stack{
@@ -357,7 +357,7 @@ func New(opts Options) *Stack {
 		nudConfigs:               opts.NUDConfigs,
 		uniqueIDGenerator:        opts.UniqueID,
 		nudDisp:                  opts.NUDDisp,
-		randomGenerator:          mathrand.New(randSrc),
+		randomGenerator:          rand.New(randSrc),
 		secureRNG:                opts.SecureRNG,
 		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
@@ -1812,7 +1812,7 @@ func (s *Stack) Seed() uint32 {
 
 // Rand returns a reference to a pseudo random generator that can be used
 // to generate random numbers as required.
-func (s *Stack) Rand() *mathrand.Rand {
+func (s *Stack) Rand() *rand.Rand {
 	return s.randomGenerator
 }
 
@@ -1824,7 +1824,7 @@ func (s *Stack) SecureRNG() io.Reader {
 
 func generateRandUint32() uint32 {
 	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := cryptorand.Read(b); err != nil {
 		panic(err)
 	}
 	return binary.LittleEndian.Uint32(b)
@@ -1832,7 +1832,7 @@ func generateRandUint32() uint32 {
 
 func generateRandInt64() int64 {
 	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := cryptorand.Read(b); err != nil {
 		panic(err)
 	}
 	buf := bytes.NewReader(b)
