@@ -149,7 +149,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 		return stack.UnknownDestinationPacketMalformed
 	}
 
-	if !s.flagIsSet(header.TCPFlagRst) {
+	if !s.flags.Contains(header.TCPFlagRst) {
 		replyWithReset(p.stack, s, stack.DefaultTOS, 0)
 	}
 
@@ -181,7 +181,7 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ttl uint8) tcpip.Error {
 	//   reset has sequence number zero and the ACK field is set to the sum
 	//   of the sequence number and segment length of the incoming segment.
 	//   The connection remains in the CLOSED state.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		seq = s.ackNumber
 	} else {
 		flags |= header.TCPFlagAck

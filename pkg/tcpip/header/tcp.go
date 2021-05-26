@@ -48,6 +48,16 @@ const (
 // TCPFlags is the dedicated type for TCP flags.
 type TCPFlags uint8
 
+// Intersects returns true iff there are flags common to both f and o.
+func (f TCPFlags) Intersects(o TCPFlags) bool {
+	return f&o != 0
+}
+
+// Contains returns true iff all the flags in o are contained within f.
+func (f TCPFlags) Contains(o TCPFlags) bool {
+	return f&o == o
+}
+
 // String implements Stringer.String.
 func (f TCPFlags) String() string {
 	flagsStr := []byte("FSRPAU")

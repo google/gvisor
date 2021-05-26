@@ -148,16 +148,6 @@ func (s *segment) merge(oth *segment) {
 	oth.dataMemSize = oth.data.Size()
 }
 
-// flagIsSet checks if at least one flag in flags is set in s.flags.
-func (s *segment) flagIsSet(flags header.TCPFlags) bool {
-	return s.flags&flags != 0
-}
-
-// flagsAreSet checks if all flags in flags are set in s.flags.
-func (s *segment) flagsAreSet(flags header.TCPFlags) bool {
-	return s.flags&flags == flags
-}
-
 // setOwner sets the owning endpoint for this segment. Its required
 // to be called to ensure memory accounting for receive/send buffer
 // queues is done properly.
@@ -197,10 +187,10 @@ func (s *segment) incRef() {
 // as the data length plus one for each of the SYN and FIN bits set.
 func (s *segment) logicalLen() seqnum.Size {
 	l := seqnum.Size(s.data.Size())
-	if s.flagIsSet(header.TCPFlagSyn) {
+	if s.flags.Contains(header.TCPFlagSyn) {
 		l++
 	}
-	if s.flagIsSet(header.TCPFlagFin) {
+	if s.flags.Contains(header.TCPFlagFin) {
 		l++
 	}
 	return l

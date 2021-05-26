@@ -212,7 +212,7 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 // a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in
 // response.
 func (h *handshake) checkAck(s *segment) bool {
-	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
+	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
 		// RFC 793, page 36, states that a reset must be generated when
 		// the connection is in any non-synchronized state and an
 		// incoming segment acknowledges something not yet sent. The
@@ -230,8 +230,8 @@ func (h *handshake) checkAck(s *segment) bool {
 func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// RFC 793, page 37, states that in the SYN-SENT state, a reset is
 	// acceptable if the ack field acknowledges the SYN.
-	if s.flagIsSet(header.TCPFlagRst) {
-		if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
+	if s.flags.Contains(header.TCPFlagRst) {
+		if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
 			// RFC 793, page 67, states that "If the RST bit is set [and] If the ACK
 			// was acceptable then signal the user "error: connection reset", drop
 			// the segment, enter CLOSED state, delete TCB, and return."
@@ -249,7 +249,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 	// We are in the SYN-SENT state. We only care about segments that have
 	// the SYN flag.
-	if !s.flagIsSet(header.TCPFlagSyn) {
+	if !s.flags.Contains(header.TCPFlagSyn) {
 		return nil
 	}
 
@@ -270,7 +270,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 	// If this is a SYN ACK response, we only need to acknowledge the SYN
 	// and the handshake is completed.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		h.state = handshakeCompleted
 
 		h.ep.transitionToStateEstablishedLocked(h)
@@ -316,7 +316,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
 func (h *handshake) synRcvdState(s *segment) tcpip.Error {
-	if s.flagIsSet(header.TCPFlagRst) {
+	if s.flags.Contains(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
 		// is acceptable if the sequence number is in the window.
 		if s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
@@ -340,13 +340,13 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		return nil
 	}
 
-	if s.flagIsSet(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
+	if s.flags.Contains(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
 		// We received two SYN segments with different sequence
 		// numbers, so we reset this and restart the whole
 		// process, except that we don't reset the timer.
 		ack := s.sequenceNumber.Add(s.logicalLen())
 		seq := seqnum.Value(0)
-		if s.flagIsSet(header.TCPFlagAck) {
+		if s.flags.Contains(header.TCPFlagAck) {
 			seq = s.ackNumber
 		}
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
@@ -378,7 +378,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 
 	// We have previously received (and acknowledged) the peer's SYN. If the
 	// peer acknowledges our SYN, the handshake is completed.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		// If deferAccept is not zero and this is a bare ACK and the
 		// timeout is not hit then drop the ACK.
 		if h.deferAccept != 0 && s.data.Size() == 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) < h.deferAccept {
@@ -426,7 +426,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
-	if !s.flagIsSet(header.TCPFlagSyn) && h.sndWndScale > 0 {
+	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
 		h.sndWnd <<= uint8(h.sndWndScale)
 	}
 
@@ -634,7 +634,7 @@ func (bt *backoffTimer) stop() {
 }
 
 func parseSynSegmentOptions(s *segment) header.TCPSynOptions {
-	synOpts := header.ParseSynOptions(s.options, s.flagIsSet(header.TCPFlagAck))
+	synOpts := header.ParseSynOptions(s.options, s.flags.Contains(header.TCPFlagAck))
 	if synOpts.TS {
 		s.parsedOptions.TSVal = synOpts.TSVal
 		s.parsedOptions.TSEcr = synOpts.TSEcr
@@ -1188,11 +1188,11 @@ func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 	// the TCPEndpointState after the segment is processed.
 	defer e.probeSegmentLocked()
 
-	if s.flagIsSet(header.TCPFlagRst) {
+	if s.flags.Contains(header.TCPFlagRst) {
 		if ok, err := e.handleReset(s); !ok {
 			return false, err
 		}
-	} else if s.flagIsSet(header.TCPFlagSyn) {
+	} else if s.flags.Contains(header.TCPFlagSyn) {
 		// See: https://tools.ietf.org/html/rfc5961#section-4.1
 		//   1) If the SYN bit is set, irrespective of the sequence number, TCP
 		//    MUST send an ACK (also referred to as challenge ACK) to the remote
@@ -1216,7 +1216,7 @@ func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 		// should then rely on SYN retransmission from the remote end to
 		// re-establish the connection.
 		e.snd.maybeSendOutOfWindowAck(s)
-	} else if s.flagIsSet(header.TCPFlagAck) {
+	} else if s.flags.Contains(header.TCPFlagAck) {
 		// Patch the window size in the segment according to the
 		// send window scale.
 		s.window <<= e.snd.SndWndScale
