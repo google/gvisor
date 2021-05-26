@@ -15,7 +15,6 @@
 package ipv6_unknown_options_action_test
 
 import (
-	"encoding/binary"
 	"flag"
 	"net"
 	"testing"
@@ -154,23 +153,22 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 			outgoing := conn.CreateFrame(t, outgoingOverride, tt.mkExtHdr(optionTypeFromAction(tt.action)))
 			conn.SendFrame(t, outgoing)
 			ipv6Sent := outgoing[1:]
-			invokingPacket, err := ipv6Sent.ToBytes()
+			icmpv6Payload, err := ipv6Sent.ToBytes()
 			if err != nil {
 				t.Fatalf("failed to serialize the outgoing packet: %s", err)
 			}
-			icmpv6Payload := make([]byte, 4)
-			// The pointer in the ICMPv6 parameter problem message should point to
-			// the option type of the unknown option. In our test case, it is the
-			// first option in the extension header whose option type is 2 bytes
-			// after the IPv6 header (after NextHeader and ExtHdrLen).
-			binary.BigEndian.PutUint32(icmpv6Payload, header.IPv6MinimumSize+2)
-			icmpv6Payload = append(icmpv6Payload, invokingPacket...)
 			gotICMPv6, err := conn.ExpectFrame(t, testbench.Layers{
 				&testbench.Ether{},
 				&testbench.IPv6{},
 				&testbench.ICMPv6{
-					Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
-					Code:    testbench.ICMPv6Code(header.ICMPv6UnknownOption),
+					Type: testbench.ICMPv6Type(header.ICMPv6ParamProblem),
+					Code: testbench.ICMPv6Code(header.ICMPv6UnknownOption),
+					// The pointer in the ICMPv6 parameter problem message
+					// should point to the option type of the unknown option. In
+					// our test case, it is the first option in the extension
+					// header whose option type is 2 bytes after the IPv6 header
+					// (after NextHeader and ExtHdrLen).
+					Pointer: testbench.Uint32(header.IPv6MinimumSize + 2),
 					Payload: icmpv6Payload,
 				},
 			}, time.Second)

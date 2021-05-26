@@ -58,16 +58,20 @@ func (e icmpError) String() string {
 	return "Unknown ICMP error"
 }
 
-func (e icmpError) ToICMPv4() *testbench.ICMPv4 {
+func (e icmpError) ToICMPv4(payload []byte) *testbench.ICMPv4 {
 	switch e {
 	case portUnreachable:
 		return &testbench.ICMPv4{
-			Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
-			Code: testbench.ICMPv4Code(header.ICMPv4PortUnreachable)}
+			Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+			Code:    testbench.ICMPv4Code(header.ICMPv4PortUnreachable),
+			Payload: payload,
+		}
 	case timeToLiveExceeded:
 		return &testbench.ICMPv4{
-			Type: testbench.ICMPv4Type(header.ICMPv4TimeExceeded),
-			Code: testbench.ICMPv4Code(header.ICMPv4TTLExceeded)}
+			Type:    testbench.ICMPv4Type(header.ICMPv4TimeExceeded),
+			Code:    testbench.ICMPv4Code(header.ICMPv4TTLExceeded),
+			Payload: payload,
+		}
 	}
 	return nil
 }
@@ -101,8 +105,6 @@ func wantErrno(c connectionMode, icmpErr icmpError) unix.Errno {
 func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp *testbench.UDP) {
 	t.Helper()
 
-	layers := conn.CreateFrame(t, nil)
-	layers = layers[:len(layers)-1]
 	ip, ok := udp.Prev().(*testbench.IPv4)
 	if !ok {
 		t.Fatalf("expected %s to be IPv4", udp.Prev())
@@ -113,12 +115,15 @@ func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp
 		// to 1.
 		ip.Checksum = nil
 	}
-	// Note that the ICMP payload is valid in this case because the UDP
-	// payload is empty. If the UDP payload were not empty, the packet
-	// length during serialization may not be calculated correctly,
-	// resulting in a mal-formed packet.
-	layers = append(layers, icmpErr.ToICMPv4(), ip, udp)
 
+	icmpPayload := testbench.Layers{ip, udp}
+	bytes, err := icmpPayload.ToBytes()
+	if err != nil {
+		t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
+	}
+
+	layers := conn.CreateFrame(t, nil)
+	layers[len(layers)-1] = icmpErr.ToICMPv4(bytes)
 	conn.SendFrameStateless(t, layers)
 }
 
