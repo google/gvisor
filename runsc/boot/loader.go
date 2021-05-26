@@ -287,6 +287,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating timekeeper: %w", err)
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
+	k.SetTimekeeper(tk)
 
 	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("enabling strace: %w", err)
@@ -335,7 +336,6 @@ func New(args Args) (*Loader, error) {
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
 		FeatureSet:                  cpuid.HostFeatureSet(),
-		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
 		RootNetworkNamespace:        netns,
 		ApplicationCores:            uint(args.NumCPU),
