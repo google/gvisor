@@ -65,7 +65,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	s := newIncomingSegment(id, pkt)
+	s := newIncomingSegment(id, f.stack.Clock(), pkt)
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.

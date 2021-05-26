@@ -41,7 +41,7 @@ type cubicState struct {
 func newCubicCC(s *sender) *cubicState {
 	return &cubicState{
 		TCPCubicState: stack.TCPCubicState{
-			T:    time.Now(),
+			T:    s.ep.stack.Clock().NowMonotonic(),
 			Beta: 0.7,
 			C:    0.4,
 		},
@@ -60,7 +60,7 @@ func (c *cubicState) enterCongestionAvoidance() {
 	// https://tools.ietf.org/html/rfc8312#section-4.8
 	if c.numCongestionEvents == 0 {
 		c.K = 0
-		c.T = time.Now()
+		c.T = c.s.ep.stack.Clock().NowMonotonic()
 		c.WLastMax = c.WMax
 		c.WMax = float64(c.s.SndCwnd)
 	}
@@ -115,14 +115,15 @@ func (c *cubicState) cubicCwnd(t float64) float64 {
 // getCwnd returns the current congestion window as computed by CUBIC.
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
 func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int {
-	elapsed := time.Since(c.T).Seconds()
+	elapsed := c.s.ep.stack.Clock().NowMonotonic().Sub(c.T)
+	elapsedSeconds := elapsed.Seconds()
 
 	// Compute the window as per Cubic after 'elapsed' time
 	// since last congestion event.
-	c.WC = c.cubicCwnd(elapsed - c.K)
+	c.WC = c.cubicCwnd(elapsedSeconds - c.K)
 
 	// Compute the TCP friendly estimate of the congestion window.
-	c.WEst = c.WMax*c.Beta + (3.0*((1.0-c.Beta)/(1.0+c.Beta)))*(elapsed/srtt.Seconds())
+	c.WEst = c.WMax*c.Beta + (3.0*((1.0-c.Beta)/(1.0+c.Beta)))*(elapsedSeconds/srtt.Seconds())
 
 	// Make sure in the TCP friendly region CUBIC performs at least
 	// as well as Reno.
@@ -134,7 +135,7 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 	// In Concave/Convex region of CUBIC, calculate what CUBIC window
 	// will be after 1 RTT and use that to grow congestion window
 	// for every ack.
-	tEst := (time.Since(c.T) + srtt).Seconds()
+	tEst := (elapsed + srtt).Seconds()
 	wtRtt := c.cubicCwnd(tEst - c.K)
 	// As per 4.3 for each received ACK cwnd must be incremented
 	// by (w_cubic(t+RTT) - cwnd/cwnd.
@@ -151,7 +152,7 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 func (c *cubicState) HandleLossDetected() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.5
 	c.numCongestionEvents++
-	c.T = time.Now()
+	c.T = c.s.ep.stack.Clock().NowMonotonic()
 	c.WLastMax = c.WMax
 	c.WMax = float64(c.s.SndCwnd)
 
@@ -162,7 +163,7 @@ func (c *cubicState) HandleLossDetected() {
 // HandleRTOExpired implements congestionContrl.HandleRTOExpired.
 func (c *cubicState) HandleRTOExpired() {
 	// See: https://tools.ietf.org/html/rfc8312#section-4.6
-	c.T = time.Now()
+	c.T = c.s.ep.stack.Clock().NowMonotonic()
 	c.numCongestionEvents = 0
 	c.WLastMax = c.WMax
 	c.WMax = float64(c.s.SndCwnd)
@@ -193,7 +194,7 @@ func (c *cubicState) fastConvergence() {
 
 // PostRecovery implemements congestionControl.PostRecovery.
 func (c *cubicState) PostRecovery() {
-	c.T = time.Now()
+	c.T = c.s.ep.stack.Clock().NowMonotonic()
 }
 
 // reduceSlowStartThreshold returns new SsThresh as described in

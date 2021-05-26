@@ -371,6 +371,7 @@ func (it *IPTables) startReaper(interval time.Duration) {
 			select {
 			case <-it.reaperDone:
 				return
+				// TODO(gvisor.dev/issue/5939): do not use the ambient clock.
 			case <-time.After(interval):
 				bucket, interval = it.connections.reapUnused(bucket, interval)
 			}

@@ -480,7 +480,7 @@ type endpoint struct {
 
 	// recentTSTime is the unix time when we last updated
 	// TCPEndpointStateInner.RecentTS.
-	recentTSTime time.Time `state:".(unixTime)"`
+	recentTSTime tcpip.MonotonicTime
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
@@ -638,7 +638,7 @@ type endpoint struct {
 
 	// lastOutOfWindowAckTime is the time at which the an ACK was sent in response
 	// to an out of window segment being received by this endpoint.
-	lastOutOfWindowAckTime time.Time `state:".(unixTime)"`
+	lastOutOfWindowAckTime tcpip.MonotonicTime
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -787,7 +787,7 @@ func (e *endpoint) EndpointState() EndpointState {
 // setRecentTimestamp sets the recentTS field to the provided value.
 func (e *endpoint) setRecentTimestamp(recentTS uint32) {
 	e.RecentTS = recentTS
-	e.recentTSTime = time.Now()
+	e.recentTSTime = e.stack.Clock().NowMonotonic()
 }
 
 // recentTimestamp returns the value of the recentTS field.
@@ -884,7 +884,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.segmentQueue.ep = e
 	e.TSOffset = timeStampOffset()
 	e.acceptCond = sync.NewCond(&e.acceptMu)
-	e.keepalive.timer.init(&e.keepalive.waker)
+	e.keepalive.timer.init(e.stack.Clock(), &e.keepalive.waker)
 
 	return e
 }
@@ -1201,7 +1201,7 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 		e.rcvQueueInfo.rcvQueueMu.Unlock()
 		return
 	}
-	now := time.Now()
+	now := e.stack.Clock().NowMonotonic()
 	if rtt := e.rcvQueueInfo.RcvAutoParams.RTT; rtt == 0 || now.Sub(e.rcvQueueInfo.RcvAutoParams.MeasureTime) < rtt {
 		e.rcvQueueInfo.RcvAutoParams.CopiedBytes += copied
 		e.rcvQueueInfo.rcvQueueMu.Unlock()
@@ -1556,7 +1556,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		}
 
 		// Add data to the send queue.
-		s := newOutgoingSegment(e.TransportEndpointInfo.ID, v)
+		s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
 		e.sndQueueInfo.SndBufUsed += len(v)
 		e.sndQueueInfo.SndBufInQueue += seqnum.Size(len(v))
 		e.sndQueueInfo.sndQueue.PushBack(s)
@@ -2241,7 +2241,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 				// If the endpoint is not in TIME-WAIT or if it is in TIME-WAIT but
 				// less than 1 second has elapsed since its recentTS was updated then
 				// we cannot reuse the port.
-				if tcpEP.EndpointState() != StateTimeWait || time.Since(tcpEP.recentTSTime) < 1*time.Second {
+				if tcpEP.EndpointState() != StateTimeWait || e.stack.Clock().NowMonotonic().Sub(tcpEP.recentTSTime) < 1*time.Second {
 					tcpEP.UnlockUser()
 					return false, nil
 				}
@@ -2387,7 +2387,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newOutgoingSegment(e.TransportEndpointInfo.ID, nil)
+			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), nil)
 			e.sndQueueInfo.sndQueue.PushBack(s)
 			e.sndQueueInfo.SndBufInQueue++
 			// Mark endpoint as closed.
@@ -2865,14 +2865,15 @@ func (e *endpoint) maybeEnableTimestamp(synOpts *header.TCPSynOptions) {
 // timestamp returns the timestamp value to be used in the TSVal field of the
 // timestamp option for outgoing TCP segments for a given endpoint.
 func (e *endpoint) timestamp() uint32 {
-	return tcpTimeStamp(time.Now(), e.TSOffset)
+	return tcpTimeStamp(e.stack.Clock().NowMonotonic(), e.TSOffset)
 }
 
 // tcpTimeStamp returns a timestamp offset by the provided offset. This is
 // not inlined above as it's used when SYN cookies are in use and endpoint
 // is not created at the time when the SYN cookie is sent.
-func tcpTimeStamp(curTime time.Time, offset uint32) uint32 {
-	return uint32(curTime.Unix()*1000+int64(curTime.Nanosecond()/1e6)) + offset
+func tcpTimeStamp(curTime tcpip.MonotonicTime, offset uint32) uint32 {
+	d := curTime.Sub(tcpip.MonotonicTime{})
+	return uint32(d.Milliseconds()) + offset
 }
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending
@@ -2926,7 +2927,7 @@ func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 	s := stack.TCPEndpointState{
 		TCPEndpointStateInner: e.TCPEndpointStateInner,
 		ID:                    stack.TCPEndpointID(e.TransportEndpointInfo.ID),
-		SegTime:               time.Now(),
+		SegTime:               e.stack.Clock().NowMonotonic(),
 		Receiver:              e.rcv.TCPReceiverState,
 		Sender:                e.snd.TCPSenderState,
 	}
@@ -2954,7 +2955,7 @@ func (e *endpoint) completeStateLocked() stack.TCPEndpointState {
 
 	if cubic, ok := e.snd.cc.(*cubicState); ok {
 		s.Sender.Cubic = cubic.TCPCubicState
-		s.Sender.Cubic.TimeSinceLastCongestion = time.Since(s.Sender.Cubic.T)
+		s.Sender.Cubic.TimeSinceLastCongestion = e.stack.Clock().NowMonotonic().Sub(s.Sender.Cubic.T)
 	}
 
 	s.Sender.RACKState = e.snd.rc.TCPRACKState
@@ -3046,14 +3047,16 @@ func GetTCPSendBufferLimits(s tcpip.StackHandler) tcpip.SendBufferSizeOption {
 
 // allowOutOfWindowAck returns true if an out-of-window ACK can be sent now.
 func (e *endpoint) allowOutOfWindowAck() bool {
-	var limit stack.TCPInvalidRateLimitOption
-	if err := e.stack.Option(&limit); err != nil {
-		panic(fmt.Sprintf("e.stack.Option(%+v) failed with error: %s", limit, err))
-	}
+	now := e.stack.Clock().NowMonotonic()
 
-	now := time.Now()
-	if now.Sub(e.lastOutOfWindowAckTime) < time.Duration(limit) {
-		return false
+	if e.lastOutOfWindowAckTime != (tcpip.MonotonicTime{}) {
+		var limit stack.TCPInvalidRateLimitOption
+		if err := e.stack.Option(&limit); err != nil {
+			panic(fmt.Sprintf("e.stack.Option(%+v) failed with error: %s", limit, err))
+		}
+		if now.Sub(e.lastOutOfWindowAckTime) < time.Duration(limit) {
+			return false
+		}
 	}
 
 	e.lastOutOfWindowAckTime = now
