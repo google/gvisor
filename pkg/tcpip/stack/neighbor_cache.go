@@ -310,7 +310,7 @@ func (n *neighborCache) handleUpperLevelConfirmation(addr tcpip.Address) {
 func (n *neighborCache) init(nic *nic, r LinkAddressResolver) {
 	*n = neighborCache{
 		nic:     nic,
-		state:   NewNUDState(nic.stack.nudConfigs, nic.stack.randomGenerator),
+		state:   NewNUDState(nic.stack.nudConfigs, nic.stack.clock, nic.stack.randomGenerator),
 		linkRes: r,
 	}
 	n.mu.Lock()

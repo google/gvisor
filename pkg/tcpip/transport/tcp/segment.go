@@ -17,7 +17,6 @@ package tcp
 import (
 	"fmt"
 	"sync/atomic"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -73,9 +72,9 @@ type segment struct {
 	parsedOptions  header.TCPOptions
 	options        []byte `state:".([]byte)"`
 	hasNewSACKInfo bool
-	rcvdTime       time.Time `state:".(unixTime)"`
+	rcvdTime       tcpip.MonotonicTime
 	// xmitTime is the last transmit time of this segment.
-	xmitTime  time.Time `state:".(unixTime)"`
+	xmitTime  tcpip.MonotonicTime
 	xmitCount uint32
 
 	// acked indicates if the segment has already been SACKed.
@@ -88,7 +87,7 @@ type segment struct {
 	lost bool
 }
 
-func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *segment {
+func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) *segment {
 	netHdr := pkt.Network()
 	s := &segment{
 		refCnt:   1,
@@ -100,17 +99,17 @@ func newIncomingSegment(id stack.TransportEndpointID, pkt *stack.PacketBuffer) *
 	}
 	s.data = pkt.Data().ExtractVV().Clone(s.views[:])
 	s.hdr = header.TCP(pkt.TransportHeader().View())
-	s.rcvdTime = time.Now()
+	s.rcvdTime = clock.NowMonotonic()
 	s.dataMemSize = s.data.Size()
 	return s
 }
 
-func newOutgoingSegment(id stack.TransportEndpointID, v buffer.View) *segment {
+func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, v buffer.View) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
 	}
-	s.rcvdTime = time.Now()
+	s.rcvdTime = clock.NowMonotonic()
 	if len(v) != 0 {
 		s.views[0] = v
 		s.data = buffer.NewVectorisedView(len(v), s.views[:1])

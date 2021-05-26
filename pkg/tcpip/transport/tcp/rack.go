@@ -79,7 +79,7 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 // update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
-	rtt := time.Now().Sub(seg.xmitTime)
+	rtt := rc.snd.ep.stack.Clock().NowMonotonic().Sub(seg.xmitTime)
 	tsOffset := rc.snd.ep.TSOffset
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
@@ -115,7 +115,7 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// ending sequence number of the packet which has been acknowledged
 	// most recently.
 	endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
-	if rc.XmitTime.Before(seg.xmitTime) || (seg.xmitTime.Equal(rc.XmitTime) && rc.EndSequence.LessThan(endSeq)) {
+	if rc.XmitTime.Before(seg.xmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 		rc.XmitTime = seg.xmitTime
 		rc.EndSequence = endSeq
 	}
@@ -174,7 +174,7 @@ func (s *sender) schedulePTO() {
 	}
 	s.rtt.Unlock()
 
-	now := time.Now()
+	now := s.ep.stack.Clock().NowMonotonic()
 	if s.resendTimer.enabled() {
 		if now.Add(pto).After(s.resendTimer.target) {
 			pto = s.resendTimer.target.Sub(now)
@@ -352,7 +352,7 @@ func (rc *rackControl) exitRecovery() {
 // detectLoss marks the segment as lost if the reordering window has elapsed
 // and the ACK is not received. It will also arm the reorder timer.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2 Step 5.
-func (rc *rackControl) detectLoss(rcvTime time.Time) int {
+func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 	var timeout time.Duration
 	numLost := 0
 	for seg := rc.snd.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
@@ -366,7 +366,7 @@ func (rc *rackControl) detectLoss(rcvTime time.Time) int {
 		}
 
 		endSeq := seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
-		if seg.xmitTime.Before(rc.XmitTime) || (seg.xmitTime.Equal(rc.XmitTime) && rc.EndSequence.LessThan(endSeq)) {
+		if seg.xmitTime.Before(rc.XmitTime) || (seg.xmitTime == rc.XmitTime && rc.EndSequence.LessThan(endSeq)) {
 			timeRemaining := seg.xmitTime.Sub(rcvTime) + rc.RTT + rc.ReoWnd
 			if timeRemaining <= 0 {
 				seg.lost = true
@@ -392,7 +392,7 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 		return nil
 	}
 
-	numLost := rc.detectLoss(time.Now())
+	numLost := rc.detectLoss(rc.snd.ep.stack.Clock().NowMonotonic())
 	if numLost == 0 {
 		return nil
 	}

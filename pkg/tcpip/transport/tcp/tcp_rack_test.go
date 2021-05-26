@@ -50,7 +50,7 @@ func TestRACKUpdate(t *testing.T) {
 	c := context.New(t, uint32(mtu))
 	defer c.Cleanup()
 
-	var xmitTime time.Time
+	var xmitTime tcpip.MonotonicTime
 	probeDone := make(chan struct{})
 	c.Stack().AddTCPProbe(func(state stack.TCPEndpointState) {
 		// Validate that the endpoint Sender.RACKState is what we expect.
@@ -79,7 +79,7 @@ func TestRACKUpdate(t *testing.T) {
 	}
 
 	// Write the data.
-	xmitTime = time.Now()
+	xmitTime = c.Stack().Clock().NowMonotonic()
 	var r bytes.Reader
 	r.Reset(data)
 	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {

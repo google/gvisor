@@ -711,7 +711,8 @@ func TestNUDStateReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, rand.New(&rng))
+			var clock faketime.NullClock
+			s := stack.NewNUDState(c, &clock, rand.New(&rng))
 			if got, want := s.ReachableTime(), test.want; got != want {
 				t.Errorf("got ReachableTime = %q, want = %q", got, want)
 			}
@@ -783,7 +784,8 @@ func TestNUDStateRecomputeReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, rand.New(&rng))
+			var clock faketime.NullClock
+			s := stack.NewNUDState(c, &clock, rand.New(&rng))
 			old := s.ReachableTime()
 
 			if got, want := s.ReachableTime(), old; got != want {

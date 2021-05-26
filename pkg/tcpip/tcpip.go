@@ -76,6 +76,11 @@ func (mt MonotonicTime) Before(u MonotonicTime) bool {
 	return mt.nanoseconds < u.nanoseconds
 }
 
+// After reports whether the monotonic clock reading mt is after u.
+func (mt MonotonicTime) After(u MonotonicTime) bool {
+	return mt.nanoseconds > u.nanoseconds
+}
+
 // Add returns the monotonic clock reading mt+d.
 func (mt MonotonicTime) Add(d time.Duration) MonotonicTime {
 	return MonotonicTime{

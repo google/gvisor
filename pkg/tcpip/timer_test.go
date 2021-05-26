@@ -38,6 +38,21 @@ func TestMonotonicTimeBefore(t *testing.T) {
 	}
 }
 
+func TestMonotonicTimeAfter(t *testing.T) {
+	var mt tcpip.MonotonicTime
+	if mt.After(mt) {
+		t.Errorf("%#v.After(%#v)", mt, mt)
+	}
+
+	one := mt.Add(1)
+	if mt.After(one) {
+		t.Errorf("%#v.After(%#v)", mt, one)
+	}
+	if !one.After(mt) {
+		t.Errorf("!%#v.After(%#v)", one, mt)
+	}
+}
+
 func TestMonotonicTimeAddSub(t *testing.T) {
 	var mt tcpip.MonotonicTime
 	if one, two := mt.Add(2), mt.Add(1).Add(1); one != two {

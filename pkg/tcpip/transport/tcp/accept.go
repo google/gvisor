@@ -114,8 +114,8 @@ type listenContext struct {
 }
 
 // timeStamp returns an 8-bit timestamp with a granularity of 64 seconds.
-func timeStamp() uint32 {
-	return uint32(time.Now().Unix()>>6) & tsMask
+func timeStamp(clock tcpip.Clock) uint32 {
+	return uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Seconds()) >> 6 & tsMask
 }
 
 // newListenContext creates a new listen context.
@@ -171,7 +171,7 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonc
 // createCookie creates a SYN cookie for the given id and incoming sequence
 // number.
 func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Value, data uint32) seqnum.Value {
-	ts := timeStamp()
+	ts := timeStamp(l.stack.Clock())
 	v := l.cookieHash(id, 0, 0) + uint32(seq) + (ts << tsOffset)
 	v += (l.cookieHash(id, ts, 1) + data) & hashMask
 	return seqnum.Value(v)
@@ -181,7 +181,7 @@ func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Va
 // sequence number. If it is, it also returns the data originally encoded in the
 // cookie when createCookie was called.
 func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnum.Value, seq seqnum.Value) (uint32, bool) {
-	ts := timeStamp()
+	ts := timeStamp(l.stack.Clock())
 	v := uint32(cookie) - l.cookieHash(id, 0, 0) - uint32(seq)
 	cookieTS := v >> tsOffset
 	if ((ts - cookieTS) & tsMask) > maxTSDiff {
@@ -247,7 +247,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*handshake, tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
-	isn := generateSecureISN(s.id, l.stack.Seed())
+	isn := generateSecureISN(s.id, l.stack.Clock(), l.stack.Seed())
 	ep, err := l.createConnectingEndpoint(s, opts, queue)
 	if err != nil {
 		return nil, err
@@ -591,7 +591,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		synOpts := header.TCPSynOptions{
 			WS:    -1,
 			TS:    opts.TS,
-			TSVal: tcpTimeStamp(time.Now(), timeStampOffset()),
+			TSVal: tcpTimeStamp(e.stack.Clock().NowMonotonic(), timeStampOffset()),
 			TSEcr: opts.TSVal,
 			MSS:   calculateAdvertisedMSS(e.userMSS, route),
 		}

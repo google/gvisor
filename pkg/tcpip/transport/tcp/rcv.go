@@ -17,7 +17,6 @@ package tcp
 import (
 	"container/heap"
 	"math"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -50,7 +49,7 @@ type receiver struct {
 	pendingRcvdSegments segmentHeap
 
 	// Time when the last ack was received.
-	lastRcvdAckTime time.Time `state:".(unixTime)"`
+	lastRcvdAckTime tcpip.MonotonicTime
 }
 
 func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
@@ -63,7 +62,7 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 		},
 		rcvWnd:          rcvWnd,
 		rcvWUP:          irs + 1,
-		lastRcvdAckTime: time.Now(),
+		lastRcvdAckTime: ep.stack.Clock().NowMonotonic(),
 	}
 }
 
@@ -325,9 +324,9 @@ func (r *receiver) updateRTT() {
 	// is first acknowledged and the receipt of data that is at least one
 	// window beyond the sequence number that was acknowledged.
 	r.ep.rcvQueueInfo.rcvQueueMu.Lock()
-	if r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime.IsZero() {
+	if r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime == (tcpip.MonotonicTime{}) {
 		// New measurement.
-		r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = time.Now()
+		r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
 		r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
 		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
 		return
@@ -336,14 +335,14 @@ func (r *receiver) updateRTT() {
 		r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
 		return
 	}
-	rtt := time.Since(r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime)
+	rtt := r.ep.stack.Clock().NowMonotonic().Sub(r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime)
 	// We only store the minimum observed RTT here as this is only used in
 	// absence of a SRTT available from either timestamps or a sender
 	// measurement of RTT.
 	if r.ep.rcvQueueInfo.RcvAutoParams.RTT == 0 || rtt < r.ep.rcvQueueInfo.RcvAutoParams.RTT {
 		r.ep.rcvQueueInfo.RcvAutoParams.RTT = rtt
 	}
-	r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = time.Now()
+	r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureTime = r.ep.stack.Clock().NowMonotonic()
 	r.ep.rcvQueueInfo.RcvAutoParams.RTTMeasureSeqNumber = r.RcvNxt.Add(r.rcvWnd)
 	r.ep.rcvQueueInfo.rcvQueueMu.Unlock()
 }
@@ -467,7 +466,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	}
 
 	// Store the time of the last ack.
-	r.lastRcvdAckTime = time.Now()
+	r.lastRcvdAckTime = r.ep.stack.Clock().NowMonotonic()
 
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
 
 func TestCleanup(t *testing.T) {
@@ -27,9 +28,11 @@ func TestCleanup(t *testing.T) {
 		isAssertedTimeoutSeconds = timerDurationSeconds + 1
 	)
 
+	clock := faketime.NewManualClock()
+
 	tmr := timer{}
 	w := sleep.Waker{}
-	tmr.init(&w)
+	tmr.init(clock, &w)
 	tmr.enable(timerDurationSeconds * time.Second)
 	tmr.cleanup()
 
@@ -39,7 +42,7 @@ func TestCleanup(t *testing.T) {
 
 	// The waker should not be asserted.
 	for i := 0; i < isAssertedTimeoutSeconds; i++ {
-		time.Sleep(time.Second)
+		clock.Advance(time.Second)
 		if w.IsAsserted() {
 			t.Fatalf("waker asserted unexpectedly")
 		}

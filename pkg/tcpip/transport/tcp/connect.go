@@ -92,7 +92,7 @@ type handshake struct {
 	rcvWndScale int
 
 	// startTime is the time at which the first SYN/SYN-ACK was sent.
-	startTime time.Time
+	startTime tcpip.MonotonicTime
 
 	// deferAccept if non-zero will drop the final ACK for a passive
 	// handshake till an ACK segment with data is received or the timeout is
@@ -156,12 +156,12 @@ func (h *handshake) resetState() {
 	h.flags = header.TCPFlagSyn
 	h.ackNum = 0
 	h.mss = 0
-	h.iss = generateSecureISN(h.ep.TransportEndpointInfo.ID, h.ep.stack.Seed())
+	h.iss = generateSecureISN(h.ep.TransportEndpointInfo.ID, h.ep.stack.Clock(), h.ep.stack.Seed())
 }
 
 // generateSecureISN generates a secure Initial Sequence number based on the
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
-func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
+func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uint32) seqnum.Value {
 	isnHasher := jenkins.Sum32(seed)
 	isnHasher.Write([]byte(id.LocalAddress))
 	isnHasher.Write([]byte(id.RemoteAddress))
@@ -180,7 +180,7 @@ func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
 	//
 	// Which sort of guarantees that we won't reuse the ISN for a new
 	// connection for the same tuple for at least 274s.
-	isn := isnHasher.Sum32() + uint32(time.Now().UnixNano()>>6)
+	isn := isnHasher.Sum32() + uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Nanoseconds()>>6)
 	return seqnum.Value(isn)
 }
 
@@ -381,7 +381,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	if s.flagIsSet(header.TCPFlagAck) {
 		// If deferAccept is not zero and this is a bare ACK and the
 		// timeout is not hit then drop the ACK.
-		if h.deferAccept != 0 && s.data.Size() == 0 && time.Since(h.startTime) < h.deferAccept {
+		if h.deferAccept != 0 && s.data.Size() == 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) < h.deferAccept {
 			h.acked = true
 			h.ep.stack.Stats().DroppedPackets.Increment()
 			return nil
@@ -474,7 +474,7 @@ func (h *handshake) processSegments() tcpip.Error {
 // start sends the first SYN/SYN-ACK. It does not block, even if link address
 // resolution is required.
 func (h *handshake) start() {
-	h.startTime = time.Now()
+	h.startTime = h.ep.stack.Clock().NowMonotonic()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 	var sackEnabled tcpip.TCPSACKEnabled
 	if err := h.ep.stack.TransportProtocolOption(ProtocolNumber, &sackEnabled); err != nil {
@@ -527,7 +527,7 @@ func (h *handshake) complete() tcpip.Error {
 	defer s.Done()
 
 	// Initialize the resend timer.
-	timer, err := newBackoffTimer(time.Second, MaxRTO, resendWaker.Assert)
+	timer, err := newBackoffTimer(h.ep.stack.Clock(), time.Second, MaxRTO, resendWaker.Assert)
 	if err != nil {
 		return err
 	}
@@ -552,7 +552,7 @@ func (h *handshake) complete() tcpip.Error {
 			// The last is required to provide a way for the peer to complete
 			// the connection with another ACK or data (as ACKs are never
 			// retransmitted on their own).
-			if h.active || !h.acked || h.deferAccept != 0 && time.Since(h.startTime) > h.deferAccept {
+			if h.active || !h.acked || h.deferAccept != 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
 				h.ep.sendSynTCP(h.ep.route, tcpFields{
 					id:     h.ep.TransportEndpointInfo.ID,
 					ttl:    h.ep.ttl,
@@ -608,15 +608,15 @@ func (h *handshake) complete() tcpip.Error {
 type backoffTimer struct {
 	timeout    time.Duration
 	maxTimeout time.Duration
-	t          *time.Timer
+	t          tcpip.Timer
 }
 
-func newBackoffTimer(timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
+func newBackoffTimer(clock tcpip.Clock, timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
 	if timeout > maxTimeout {
 		return nil, &tcpip.ErrTimeout{}
 	}
 	bt := &backoffTimer{timeout: timeout, maxTimeout: maxTimeout}
-	bt.t = time.AfterFunc(timeout, f)
+	bt.t = clock.AfterFunc(timeout, f)
 	return bt, nil
 }
 
@@ -1267,7 +1267,7 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 
 	// If a userTimeout is set then abort the connection if it is
 	// exceeded.
-	if userTimeout != 0 && time.Since(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
+	if userTimeout != 0 && e.stack.Clock().NowMonotonic().Sub(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
 		return &tcpip.ErrTimeout{}
@@ -1322,7 +1322,7 @@ func (e *endpoint) disableKeepaliveTimer() {
 // segments.
 func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) tcpip.Error {
 	e.mu.Lock()
-	var closeTimer *time.Timer
+	var closeTimer tcpip.Timer
 	var closeWaker sleep.Waker
 
 	epilogue := func() {
@@ -1484,7 +1484,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 					if e.EndpointState() == StateFinWait2 && e.closed {
 						// The socket has been closed and we are in FIN_WAIT2
 						// so start the FIN_WAIT2 timer.
-						closeTimer = time.AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
+						closeTimer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
 					}
 				}
 
@@ -1721,7 +1721,7 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 
 	var timeWaitWaker sleep.Waker
 	s.AddWaker(&timeWaitWaker, timeWaitDone)
-	timeWaitTimer := time.AfterFunc(timeWaitDuration, timeWaitWaker.Assert)
+	timeWaitTimer := e.stack.Clock().AfterFunc(timeWaitDuration, timeWaitWaker.Assert)
 	defer timeWaitTimer.Stop()
 
 	for {

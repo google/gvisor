@@ -41,7 +41,6 @@ go_library(
         "protocol.go",
         "rack.go",
         "rcv.go",
-        "rcv_state.go",
         "reno.go",
         "reno_recovery.go",
         "sack.go",
@@ -53,7 +52,6 @@ go_library(
         "segment_state.go",
         "segment_unsafe.go",
         "snd.go",
-        "snd_state.go",
         "tcp_endpoint_list.go",
         "tcp_segment_list.go",
         "timer.go",
@@ -134,6 +132,7 @@ go_test(
     deps = [
         "//pkg/sleep",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

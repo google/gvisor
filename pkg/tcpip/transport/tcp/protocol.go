@@ -131,7 +131,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
 // goroutine which is responsible for dequeuing and doing full TCP dispatch of
 // the packet.
 func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
-	p.dispatcher.queuePacket(ep, id, pkt)
+	p.dispatcher.queuePacket(ep, id, p.stack.Clock(), pkt)
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
@@ -142,7 +142,7 @@ func (p *protocol) QueuePacket(ep stack.TransportEndpoint, id stack.TransportEnd
 // particular, SYNs addressed to a non-existent connection are rejected by this
 // means."
 func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	s := newIncomingSegment(id, pkt)
+	s := newIncomingSegment(id, p.stack.Clock(), pkt)
 	defer s.decRef()
 
 	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid {
