@@ -354,19 +354,19 @@ type InitKernelArgs struct {
 // before calling Init.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.FeatureSet == nil {
-		return fmt.Errorf("FeatureSet is nil")
+		return fmt.Errorf("args.FeatureSet is nil")
 	}
 	if args.Timekeeper == nil {
-		return fmt.Errorf("Timekeeper is nil")
+		return fmt.Errorf("args.Timekeeper is nil")
 	}
 	if args.Timekeeper.clocks == nil {
 		return fmt.Errorf("must call Timekeeper.SetClocks() before Kernel.Init()")
 	}
 	if args.RootUserNamespace == nil {
-		return fmt.Errorf("RootUserNamespace is nil")
+		return fmt.Errorf("args.RootUserNamespace is nil")
 	}
 	if args.ApplicationCores == 0 {
-		return fmt.Errorf("ApplicationCores is 0")
+		return fmt.Errorf("args.ApplicationCores is 0")
 	}
 
 	k.featureSet = args.FeatureSet
@@ -654,12 +654,12 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 	defer k.tasks.mu.RUnlock()
 	for t := range k.tasks.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if mm := t.image.MemoryManager; mm != nil {
-			if _, ok := invalidated[mm]; !ok {
-				if err := mm.InvalidateUnsavable(ctx); err != nil {
+		if memMgr := t.image.MemoryManager; memMgr != nil {
+			if _, ok := invalidated[memMgr]; !ok {
+				if err := memMgr.InvalidateUnsavable(ctx); err != nil {
 					return err
 				}
-				invalidated[mm] = struct{}{}
+				invalidated[memMgr] = struct{}{}
 			}
 		}
 		// I really wish we just had a sync.Map of all MMs...
@@ -1784,7 +1784,7 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
 	})
 
 	t := TaskFromContext(ctx)
-	k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
+	_, _ = k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
 		Tid:       int32(t.ThreadID()),
 		Registers: t.Arch().StateData().Proto(),
 	})
@@ -1875,7 +1875,7 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 			return
 		}
 		t.mu.Lock()
-		for cg, _ := range t.cgroups {
+		for cg := range t.cgroups {
 			if cg.HierarchyID() == hid {
 				t.leaveCgroupLocked(cg)
 			}

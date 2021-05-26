@@ -181,7 +181,7 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
-		memfile.Close()
+		_ = memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
 	}
 	return mf, nil

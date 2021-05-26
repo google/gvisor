@@ -211,11 +211,11 @@ func New(args Args) (*Loader, error) {
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
-		return nil, fmt.Errorf("setting up rand: %v", err)
+		return nil, fmt.Errorf("setting up rand: %w", err)
 	}
 
 	if err := usage.Init(); err != nil {
-		return nil, fmt.Errorf("setting up memory usage: %v", err)
+		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
 	metric.CreateSentryMetrics()
@@ -260,7 +260,7 @@ func New(args Args) (*Loader, error) {
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {
-		return nil, fmt.Errorf("creating platform: %v", err)
+		return nil, fmt.Errorf("creating platform: %w", err)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
@@ -269,7 +269,7 @@ func New(args Args) (*Loader, error) {
 	// Create memory file.
 	mf, err := createMemoryFile()
 	if err != nil {
-		return nil, fmt.Errorf("creating memory file: %v", err)
+		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
 	k.SetMemoryFile(mf)
 
@@ -278,30 +278,30 @@ func New(args Args) (*Loader, error) {
 	// Pass k as the platform since it is savable, unlike the actual platform.
 	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
-		return nil, fmt.Errorf("creating vdso: %v", err)
+		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
 
 	// Create timekeeper.
 	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
 	if err != nil {
-		return nil, fmt.Errorf("creating timekeeper: %v", err)
+		return nil, fmt.Errorf("creating timekeeper: %w", err)
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	if err := enableStrace(args.Conf); err != nil {
-		return nil, fmt.Errorf("enabling strace: %v", err)
+		return nil, fmt.Errorf("enabling strace: %w", err)
 	}
 
 	// Create root network namespace/stack.
 	netns, err := newRootNetworkNamespace(args.Conf, k, k)
 	if err != nil {
-		return nil, fmt.Errorf("creating network: %v", err)
+		return nil, fmt.Errorf("creating network: %w", err)
 	}
 
 	// Create capabilities.
 	caps, err := specutils.Capabilities(args.Conf.EnableRaw, args.Spec.Process.Capabilities)
 	if err != nil {
-		return nil, fmt.Errorf("converting capabilities: %v", err)
+		return nil, fmt.Errorf("converting capabilities: %w", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -345,7 +345,7 @@ func New(args Args) (*Loader, error) {
 		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 		PIDNamespace:                kernel.NewRootPIDNamespace(creds.UserNamespace),
 	}); err != nil {
-		return nil, fmt.Errorf("initializing kernel: %v", err)
+		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
 	if kernel.VFS2Enabled {
@@ -374,17 +374,17 @@ func New(args Args) (*Loader, error) {
 
 	procArgs, err := createProcessArgs(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
-		return nil, fmt.Errorf("creating init process for root container: %v", err)
+		return nil, fmt.Errorf("creating init process for root container: %w", err)
 	}
 	info.procArgs = procArgs
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
-		return nil, fmt.Errorf("initializing compat logs: %v", err)
+		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
 
 	mountHints, err := newPodMountHints(args.Spec)
 	if err != nil {
-		return nil, fmt.Errorf("creating pod mount hints: %v", err)
+		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
 
 	info.conf = args.Conf
@@ -394,12 +394,12 @@ func New(args Args) (*Loader, error) {
 		// Set up host mount that will be used for imported fds.
 		hostFilesystem, err := hostvfs2.NewFilesystem(k.VFS())
 		if err != nil {
-			return nil, fmt.Errorf("failed to create hostfs filesystem: %v", err)
+			return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 		}
 		defer hostFilesystem.DecRef(k.SupervisorContext())
 		hostMount, err := k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create hostfs mount: %v", err)
+			return nil, fmt.Errorf("failed to create hostfs mount: %w", err)
 		}
 		k.SetHostMount(hostMount)
 	}
@@ -417,7 +417,7 @@ func New(args Args) (*Loader, error) {
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
 	if err := sighandling.IgnoreChildStop(); err != nil {
-		return nil, fmt.Errorf("ignore child stop signals failed: %v", err)
+		return nil, fmt.Errorf("ignore child stop signals failed: %w", err)
 	}
 
 	// Create the control server using the provided FD.
@@ -426,14 +426,14 @@ func New(args Args) (*Loader, error) {
 	// controller is used to configure the kernel's network stack.
 	ctrl, err := newController(args.ControllerFD, l)
 	if err != nil {
-		return nil, fmt.Errorf("creating control server: %v", err)
+		return nil, fmt.Errorf("creating control server: %w", err)
 	}
 	l.ctrl = ctrl
 
 	// Only start serving after Loader is set to controller and controller is set
 	// to Loader, because they are both used in the urpc methods.
 	if err := ctrl.srv.StartServing(); err != nil {
-		return nil, fmt.Errorf("starting control server: %v", err)
+		return nil, fmt.Errorf("starting control server: %w", err)
 	}
 
 	return l, nil
@@ -444,7 +444,7 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
-		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %v", err)
+		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %w", err)
 	}
 	env, err := specutils.ResolveEnvs(spec.Process.Env)
 	if err != nil {
@@ -498,18 +498,18 @@ func (l *Loader) Destroy() {
 	// In the success case, stdioFDs and goferFDs will only contain
 	// released/closed FDs that ownership has been passed over to host FDs and
 	// gofer sessions. Close them here in case of failure.
-	for _, fd := range l.root.stdioFDs {
-		_ = fd.Close()
+	for _, f := range l.root.stdioFDs {
+		_ = f.Close()
 	}
-	for _, fd := range l.root.goferFDs {
-		_ = fd.Close()
+	for _, f := range l.root.goferFDs {
+		_ = f.Close()
 	}
 }
 
 func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
-		panic(fmt.Sprintf("invalid platform %v: %v", conf.Platform, err))
+		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
 	log.Infof("Platform: %s", conf.Platform)
 	return p.New(deviceFile)
@@ -519,7 +519,7 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error creating memfd: %v", err)
+		return nil, fmt.Errorf("error creating memfd: %w", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
@@ -527,8 +527,8 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	// in a mount namespace in which the relevant cgroupfs is not visible.
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
-		memfile.Close()
-		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
+		_ = memfile.Close()
+		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %w", err)
 	}
 	return mf, nil
 }
@@ -545,7 +545,7 @@ func (l *Loader) installSeccompFilters() error {
 			ControllerFD:  l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
-			return fmt.Errorf("installing seccomp filters: %v", err)
+			return fmt.Errorf("installing seccomp filters: %w", err)
 		}
 	}
 	return nil
@@ -571,8 +571,8 @@ func (l *Loader) run() error {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
-		stack := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
-		if err := stack.Configure(); err != nil {
+		s := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
+		if err := s.Configure(); err != nil {
 			return err
 		}
 	}
@@ -629,9 +629,9 @@ func (l *Loader) run() error {
 			// be handled properly.
 			deliveryMode = DeliverToForegroundProcessGroup
 		}
-		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
+		log.Infof("Received external signal %d, mode: %s", sig, deliveryMode)
 		if err := l.signal(l.sandboxID, 0, int32(sig), deliveryMode); err != nil {
-			log.Warningf("error sending signal %v to container %q: %v", sig, l.sandboxID, err)
+			log.Warningf("error sending signal %s to container %q: %s", sig, l.sandboxID, err)
 		}
 	})
 
@@ -660,7 +660,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
-		return fmt.Errorf("creating capabilities: %v", err)
+		return fmt.Errorf("creating capabilities: %w", err)
 	}
 
 	l.mu.Lock()
@@ -713,16 +713,16 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
-		return fmt.Errorf("creating new process: %v", err)
+		return fmt.Errorf("creating new process: %w", err)
 	}
 
 	// Use stdios or TTY depending on the spec configuration.
 	if spec.Process.Terminal {
-		if len(stdioFDs) > 0 {
-			return fmt.Errorf("using TTY, stdios not expected: %v", stdioFDs)
+		if l := len(stdioFDs); l != 0 {
+			return fmt.Errorf("using TTY, stdios not expected: %d", l)
 		}
 		if ep.hostTTY == nil {
-			return fmt.Errorf("terminal enabled but no TTY provided. Did you set --console-socket on create?")
+			return fmt.Errorf("terminal enabled but no TTY provided (--console-socket possibly passed)")
 		}
 		info.stdioFDs = []*fd.FD{ep.hostTTY, ep.hostTTY, ep.hostTTY}
 		ep.hostTTY = nil
@@ -743,7 +743,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	ctx := info.procArgs.NewContext(l.k)
 	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("importing fds: %v", err)
+		return nil, nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
@@ -780,7 +780,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("creating process: %v", err)
+		return nil, nil, nil, fmt.Errorf("creating process: %w", err)
 	}
 	// CreateProcess takes a reference on FDTable if successful.
 	info.procArgs.FDTable.DecRef(ctx)
@@ -799,7 +799,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 		if info.spec.Linux != nil && info.spec.Linux.Seccomp != nil {
 			program, err := seccomp.BuildProgram(info.spec.Linux.Seccomp)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("building seccomp program: %v", err)
+				return nil, nil, nil, fmt.Errorf("building seccomp program: %w", err)
 			}
 
 			if log.IsLogging(log.Debug) {
@@ -810,7 +810,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			task := tg.Leader()
 			// NOTE: It seems Flags are ignored by runc so we ignore them too.
 			if err := task.AppendSyscallFilter(program, true); err != nil {
-				return nil, nil, nil, fmt.Errorf("appending seccomp filters: %v", err)
+				return nil, nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 			}
 		}
 	} else {
@@ -841,7 +841,7 @@ func (l *Loader) startGoferMonitor(cid string, goferFDs []*fd.FD) {
 			return uintptr(n), 0, err
 		})
 		if err != nil {
-			panic(fmt.Sprintf("Error monitoring gofer FDs: %v", err))
+			panic(fmt.Sprintf("Error monitoring gofer FDs: %s", err))
 		}
 
 		l.mu.Lock()
@@ -852,7 +852,7 @@ func (l *Loader) startGoferMonitor(cid string, goferFDs []*fd.FD) {
 		if tg, _ := l.tryThreadGroupFromIDLocked(execID{cid: cid}); tg != nil {
 			log.Infof("Gofer socket disconnected, killing container %q", cid)
 			if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
-				log.Warningf("Error killing container %q after gofer stopped: %v", cid, err)
+				log.Warningf("Error killing container %q after gofer stopped: %s", cid, err)
 			}
 		}
 	}()
@@ -873,7 +873,7 @@ func (l *Loader) destroyContainer(cid string) error {
 	// The container exists, but has it been started?
 	if tg != nil {
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
-			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
+			return fmt.Errorf("sending SIGKILL to all container processes: %w", err)
 		}
 		// Wait for all processes that belong to the container to exit (including
 		// exec'd processes).
@@ -982,7 +982,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		tty:     ttyFile,
 		ttyVFS2: ttyFileVFS2,
 	}
-	log.Debugf("updated processes: %v", l.processes)
+	log.Debugf("updated processes: %s", l.processes)
 
 	return tgid, nil
 }
@@ -993,7 +993,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// multiple clients to wait on the same container.
 	tg, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
-		return fmt.Errorf("can't wait for container %q: %v", cid, err)
+		return fmt.Errorf("can't wait for container %q: %w", cid, err)
 	}
 
 	// If the thread either has already exited or exits during waiting,
@@ -1007,7 +1007,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	if l.root.procArgs.ContainerID == cid {
 		// All sentry-created resources should have been released at this point.
 		refsvfs2.DoLeakCheck()
-		coverage.Report()
+		_ = coverage.Report()
 	}
 	return nil
 }
@@ -1026,7 +1026,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 
 		l.mu.Lock()
 		delete(l.processes, eid)
-		log.Debugf("updated processes (removal): %v", l.processes)
+		log.Debugf("updated processes (removal): %s", l.processes)
 		l.mu.Unlock()
 		return nil
 	}
@@ -1035,7 +1035,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 	// In this case, find the process in the container's PID namespace.
 	initTG, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
-		return fmt.Errorf("waiting for PID %d: %v", tgid, err)
+		return fmt.Errorf("waiting for PID %d: %w", tgid, err)
 	}
 	tg := initTG.PIDNamespace().ThreadGroupWithID(tgid)
 	if tg == nil {
@@ -1094,7 +1094,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 		return inet.NewRootNamespace(s, creator), nil
 
 	default:
-		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
+		panic(fmt.Sprintf("invalid network configuration: %d", conf.Network))
 	}
 
 }
@@ -1107,7 +1107,7 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 		icmp.NewProtocol4,
 		icmp.NewProtocol6,
 	}
-	s := netstack.Stack{stack.New(stack.Options{
+	s := netstack.Stack{Stack: stack.New(stack.Options{
 		NetworkProtocols:   netProtos,
 		TransportProtocols: transProtos,
 		Clock:              clock,
@@ -1190,13 +1190,13 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 	switch mode {
 	case DeliverToProcess:
 		if err := l.signalProcess(cid, kernel.ThreadID(pid), signo); err != nil {
-			return fmt.Errorf("signaling process in container %q PID %d: %v", cid, pid, err)
+			return fmt.Errorf("signaling process in container %q PID %d: %w", cid, pid, err)
 		}
 		return nil
 
 	case DeliverToForegroundProcessGroup:
 		if err := l.signalForegrondProcessGroup(cid, kernel.ThreadID(pid), signo); err != nil {
-			return fmt.Errorf("signaling foreground process group in container %q PID %d: %v", cid, pid, err)
+			return fmt.Errorf("signaling foreground process group in container %q PID %d: %w", cid, pid, err)
 		}
 		return nil
 
@@ -1209,12 +1209,12 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 			return err
 		}
 		if err := l.signalAllProcesses(cid, signo); err != nil {
-			return fmt.Errorf("signaling all processes in container %q: %v", cid, err)
+			return fmt.Errorf("signaling all processes in container %q: %w", cid, err)
 		}
 		return nil
 
 	default:
-		panic(fmt.Sprintf("unknown signal delivery mode %v", mode))
+		panic(fmt.Sprintf("unknown signal delivery mode %s", mode))
 	}
 }
 
@@ -1247,7 +1247,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid, pid: tgid})
 	if err != nil {
 		l.mu.Unlock()
-		return fmt.Errorf("no thread group found: %v", err)
+		return fmt.Errorf("no thread group found: %w", err)
 	}
 	if tg == nil {
 		l.mu.Unlock()
@@ -1257,7 +1257,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 	tty, ttyVFS2, err := l.ttyFromIDLocked(execID{cid: cid, pid: tgid})
 	l.mu.Unlock()
 	if err != nil {
-		return fmt.Errorf("no thread group found: %v", err)
+		return fmt.Errorf("no thread group found: %w", err)
 	}
 
 	var pg *kernel.ProcessGroup
