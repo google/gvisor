@@ -244,7 +244,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	TrimSACKBlockList(&r.ep.sack, r.RcvNxt)
 
 	// Handle FIN or FIN-ACK.
-	if s.flagIsSet(header.TCPFlagFin) {
+	if s.flags.Contains(header.TCPFlagFin) {
 		r.RcvNxt++
 
 		// Send ACK immediately.
@@ -260,7 +260,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		case StateEstablished:
 			r.ep.setEndpointState(StateCloseWait)
 		case StateFinWait1:
-			if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
+			if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
 				// FIN-ACK, transition to TIME-WAIT.
 				r.ep.setEndpointState(StateTimeWait)
 			} else {
@@ -295,7 +295,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 	// Handle ACK (not FIN-ACK, which we handled above) during one of the
 	// shutdown states.
-	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
+	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == r.ep.snd.SndNxt {
 		switch r.ep.EndpointState() {
 		case StateFinWait1:
 			r.ep.setEndpointState(StateFinWait2)
@@ -423,7 +423,7 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// while the FIN is considered to occur after
 		// the last actual data octet in a segment in
 		// which it occurs.
-		if closed && (!s.flagIsSet(header.TCPFlagFin) || s.sequenceNumber.Add(s.logicalLen()) != r.RcvNxt+1) {
+		if closed && (!s.flags.Contains(header.TCPFlagFin) || s.sequenceNumber.Add(s.logicalLen()) != r.RcvNxt+1) {
 			return true, &tcpip.ErrConnectionAborted{}
 		}
 	}
@@ -470,7 +470,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {
-		if segLen > 0 || s.flagIsSet(header.TCPFlagFin) {
+		if segLen > 0 || s.flags.Contains(header.TCPFlagFin) {
 			// We only store the segment if it's within our buffer size limit.
 			//
 			// Only use 75% of the receive buffer queue for out-of-order
@@ -538,7 +538,7 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	//
 	// As we do not yet support PAWS, we are being conservative in ignoring
 	// RSTs by default.
-	if s.flagIsSet(header.TCPFlagRst) {
+	if s.flags.Contains(header.TCPFlagRst) {
 		return false, false
 	}
 
@@ -558,13 +558,13 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 
 	//    (2) returns to TIME-WAIT state if the SYN turns out
 	//      to be an old duplicate".
-	if s.flagIsSet(header.TCPFlagSyn) && r.RcvNxt.LessThan(segSeq) {
+	if s.flags.Contains(header.TCPFlagSyn) && r.RcvNxt.LessThan(segSeq) {
 
 		return false, true
 	}
 
 	// Drop the segment if it does not contain an ACK.
-	if !s.flagIsSet(header.TCPFlagAck) {
+	if !s.flags.Contains(header.TCPFlagAck) {
 		return false, false
 	}
 
@@ -573,7 +573,7 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 		r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.MaxSentAck, segSeq)
 	}
 
-	if segSeq.Add(1) == r.RcvNxt && s.flagIsSet(header.TCPFlagFin) {
+	if segSeq.Add(1) == r.RcvNxt && s.flags.Contains(header.TCPFlagFin) {
 		// If it's a FIN-ACK then resetTimeWait and send an ACK, as it
 		// indicates our final ACK could have been lost.
 		r.ep.snd.sendAck()

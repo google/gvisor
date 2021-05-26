@@ -550,7 +550,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 	e.rcvQueueInfo.rcvQueueMu.Lock()
 	rcvClosed := e.rcvQueueInfo.RcvClosed
 	e.rcvQueueInfo.rcvQueueMu.Unlock()
-	if rcvClosed || s.flagsAreSet(header.TCPFlagSyn|header.TCPFlagAck) {
+	if rcvClosed || s.flags.Contains(header.TCPFlagSyn|header.TCPFlagAck) {
 		// If the endpoint is shutdown, reply with reset.
 		//
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
