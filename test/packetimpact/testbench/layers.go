@@ -824,6 +824,7 @@ type ICMPv6 struct {
 	Type     *header.ICMPv6Type
 	Code     *header.ICMPv6Code
 	Checksum *uint16
+	Ident    *uint16 // Only in Echo Request/Reply.
 	Pointer  *uint32 // Only in Parameter Problem.
 	Payload  []byte
 }
@@ -849,6 +850,10 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 	}
 	typ := h.Type()
 	switch typ {
+	case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
+		if l.Ident != nil {
+			h.SetIdent(*l.Ident)
+		}
 	case header.ICMPv6ParamProblem:
 		if l.Pointer != nil {
 			h.SetTypeSpecific(*l.Pointer)
@@ -899,6 +904,8 @@ func parseICMPv6(b []byte) (Layer, layerParser) {
 		Payload:  h.Payload(),
 	}
 	switch msgType {
+	case header.ICMPv6EchoRequest, header.ICMPv6EchoReply:
+		icmpv6.Ident = Uint16(h.Ident())
 	case header.ICMPv6ParamProblem:
 		icmpv6.Pointer = Uint32(h.TypeSpecific())
 	}
