@@ -58,8 +58,8 @@ var nameToID = map[string]stack.TableID{
 
 // DefaultLinuxTables returns the rules of stack.DefaultTables() wrapped for
 // compatibility with netfilter extensions.
-func DefaultLinuxTables() *stack.IPTables {
-	tables := stack.DefaultTables()
+func DefaultLinuxTables(seed uint32) *stack.IPTables {
+	tables := stack.DefaultTables(seed)
 	tables.VisitTargets(func(oldTarget stack.Target) stack.Target {
 		switch val := oldTarget.(type) {
 		case *stack.AcceptTarget:

@@ -20,7 +20,6 @@
 package stack
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -223,9 +222,15 @@ type Options struct {
 	// RandSource must be thread-safe.
 	RandSource rand.Source
 
-	// IPTables are the initial iptables rules. If nil, iptables will allow
+	// IPTables are the initial iptables rules. If nil, DefaultIPTables will be
+	// used to construct the initial iptables rules.
 	// all traffic.
 	IPTables *IPTables
+
+	// DefaultIPTables is an optional iptables rules constructor that is called
+	// if IPTables is nil. If both fields are nil, iptables will allow all
+	// traffic.
+	DefaultIPTables func(uint32) *IPTables
 
 	// SecureRNG is a cryptographically secure random number generator.
 	SecureRNG io.Reader
@@ -324,22 +329,31 @@ func New(opts Options) *Stack {
 		opts.UniqueID = new(uniqueIDGenerator)
 	}
 
-	randSrc := opts.RandSource
-	if randSrc == nil {
-		// Source provided by rand.NewSource is not thread-safe so
-		// we wrap it in a simple thread-safe version.
-		randSrc = &lockedRandomSource{src: rand.NewSource(generateRandInt64())}
-	}
-
-	if opts.IPTables == nil {
-		opts.IPTables = DefaultTables()
-	}
-
-	opts.NUDConfigs.resetInvalidFields()
-
 	if opts.SecureRNG == nil {
 		opts.SecureRNG = cryptorand.Reader
 	}
+
+	randSrc := opts.RandSource
+	if randSrc == nil {
+		var v int64
+		if err := binary.Read(opts.SecureRNG, binary.LittleEndian, &v); err != nil {
+			panic(err)
+		}
+		// Source provided by rand.NewSource is not thread-safe so
+		// we wrap it in a simple thread-safe version.
+		randSrc = &lockedRandomSource{src: rand.NewSource(v)}
+	}
+	randomGenerator := rand.New(randSrc)
+
+	seed := randomGenerator.Uint32()
+	if opts.IPTables == nil {
+		if opts.DefaultIPTables == nil {
+			opts.DefaultIPTables = DefaultTables
+		}
+		opts.IPTables = opts.DefaultIPTables(seed)
+	}
+
+	opts.NUDConfigs.resetInvalidFields()
 
 	s := &Stack{
 		transportProtocols:       make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
@@ -353,11 +367,11 @@ func New(opts Options) *Stack {
 		handleLocal:              opts.HandleLocal,
 		tables:                   opts.IPTables,
 		icmpRateLimiter:          NewICMPRateLimiter(),
-		seed:                     generateRandUint32(),
+		seed:                     seed,
 		nudConfigs:               opts.NUDConfigs,
 		uniqueIDGenerator:        opts.UniqueID,
 		nudDisp:                  opts.NUDDisp,
-		randomGenerator:          rand.New(randSrc),
+		randomGenerator:          randomGenerator,
 		secureRNG:                opts.SecureRNG,
 		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
@@ -1820,27 +1834,6 @@ func (s *Stack) Rand() *rand.Rand {
 // generator.
 func (s *Stack) SecureRNG() io.Reader {
 	return s.secureRNG
-}
-
-func generateRandUint32() uint32 {
-	b := make([]byte, 4)
-	if _, err := cryptorand.Read(b); err != nil {
-		panic(err)
-	}
-	return binary.LittleEndian.Uint32(b)
-}
-
-func generateRandInt64() int64 {
-	b := make([]byte, 8)
-	if _, err := cryptorand.Read(b); err != nil {
-		panic(err)
-	}
-	buf := bytes.NewReader(b)
-	var v int64
-	if err := binary.Read(buf, binary.LittleEndian, &v); err != nil {
-		panic(err)
-	}
-	return v
 }
 
 // FindNICNameFromID returns the name of the NIC for the given NICID.

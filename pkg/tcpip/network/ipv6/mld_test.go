@@ -16,6 +16,7 @@ package ipv6_test
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -138,7 +139,8 @@ func TestSendQueuedMLDReports(t *testing.T) {
 			var secureRNG bytes.Reader
 			secureRNG.Reset(secureRNGBytes[:])
 			s := stack.New(stack.Options{
-				SecureRNG: &secureRNG,
+				SecureRNG:  &secureRNG,
+				RandSource: rand.NewSource(time.Now().UnixNano()),
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					DADConfigs: stack.DADConfigurations{
 						DupAddrDetectTransmits: test.dadTransmits,

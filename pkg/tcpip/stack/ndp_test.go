@@ -19,11 +19,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/rand"
+	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -497,8 +498,9 @@ func TestDADResolve(t *testing.T) {
 
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
-				Clock:     clock,
-				SecureRNG: &secureRNG,
+				Clock:      clock,
+				RandSource: rand.NewSource(time.Now().UnixNano()),
+				SecureRNG:  &secureRNG,
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp: &ndpDisp,
 					DADConfigs: stack.DADConfigurations{
@@ -1035,7 +1037,7 @@ func TestSetNDPConfigurations(t *testing.T) {
 // raBufWithOptsAndDHCPv6 returns a valid NDP Router Advertisement with options
 // and DHCPv6 configurations specified.
 func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool, optSer header.NDPOptionsSerializer) *stack.PacketBuffer {
-	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + int(optSer.Length())
+	icmpSize := header.ICMPv6HeaderSize + header.NDPRAMinimumSize + optSer.Length()
 	hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
 	pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 	pkt.SetType(header.ICMPv6RouterAdvert)
@@ -1048,13 +1050,13 @@ func raBufWithOptsAndDHCPv6(ip tcpip.Address, rl uint16, managedAddress, otherCo
 	if managedAddress {
 		// The Managed Addresses flag field is the 7th bit of byte #1 (0-indexing)
 		// of the RA payload.
-		raPayload[1] |= (1 << 7)
+		raPayload[1] |= 1 << 7
 	}
 	// Populate the Other Configurations flag field.
 	if otherConfigurations {
 		// The Other Configurations flag field is the 6th bit of byte #1
 		// (0-indexing) of the RA payload.
-		raPayload[1] |= (1 << 6)
+		raPayload[1] |= 1 << 6
 	}
 	opts := ra.Options()
 	opts.Serialize(optSer)
@@ -3833,12 +3835,12 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	const nicName = "nic1"
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
 	secretKey := secretKeyBuf[:]
-	n, err := rand.Read(secretKey)
+	n, err := cryptorand.Read(secretKey)
 	if err != nil {
-		t.Fatalf("rand.Read(_): %s", err)
+		t.Fatalf("cryptorand.Read(_): %s", err)
 	}
 	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got rand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
+		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
 	}
 
 	prefix1, subnet1, _ := prefixSubnetAddr(0, linkAddr1)
@@ -3946,12 +3948,12 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
 	secretKey := secretKeyBuf[:]
-	n, err := rand.Read(secretKey)
+	n, err := cryptorand.Read(secretKey)
 	if err != nil {
-		t.Fatalf("rand.Read(_): %s", err)
+		t.Fatalf("cryptorand.Read(_): %s", err)
 	}
 	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got rand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
+		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
 	}
 
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
@@ -4311,12 +4313,12 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 
 	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
 	secretKey := secretKeyBuf[:]
-	n, err := rand.Read(secretKey)
+	n, err := cryptorand.Read(secretKey)
 	if err != nil {
-		t.Fatalf("rand.Read(_): %s", err)
+		t.Fatalf("cryptorand.Read(_): %s", err)
 	}
 	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got rand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
+		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
 	}
 
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
