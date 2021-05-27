@@ -291,14 +291,17 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						wq := waiter.Queue{}
 						we, ch := waiter.NewChannelEntry(nil)
 						wq.EventRegister(&we, waiter.ReadableEvents)
-						defer wq.EventUnregister(&we)
-						defer close(ch)
+						t.Cleanup(func() {
+							wq.EventUnregister(&we)
+							close(ch)
+						})
 
 						var err tcpip.Error
 						ep, err := c.s.NewEndpoint(udp.ProtocolNumber, netProtoNum, &wq)
 						if err != nil {
 							t.Fatalf("NewEndpoint failed: %s", err)
 						}
+						t.Cleanup(ep.Close)
 						eps[ep] = i
 
 						go func(ep tcpip.Endpoint) {
@@ -307,7 +310,6 @@ func TestBindToDeviceDistribution(t *testing.T) {
 							}
 						}(ep)
 
-						defer ep.Close()
 						ep.SocketOptions().SetReusePort(endpoint.reuse)
 						if err := ep.SocketOptions().SetBindToDevice(int32(endpoint.bindToDevice)); err != nil {
 							t.Fatalf("SetSockOpt(&%T(%d)) on endpoint %d failed: %s", endpoint.bindToDevice, endpoint.bindToDevice, i, err)
@@ -332,7 +334,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 					if got, want := len(test.endpoints), len(wantDistribution); got != want {
 						t.Fatalf("got len(test.endpoints) = %d, want %d", got, want)
 					}
-					ports := make(map[uint16]tcpip.Endpoint)
+					endpoints := make(map[uint16]tcpip.Endpoint)
 					stats := make(map[tcpip.Endpoint]int)
 					for i := 0; i < npackets; i++ {
 						// Send a packet.
@@ -357,11 +359,11 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}
 						stats[ep]++
 						if i < nports {
-							ports[uint16(i)] = ep
+							endpoints[uint16(i)] = ep
 						} else {
 							// Check that all packets from one client are handled by the same
 							// socket.
-							if want, got := ports[port], ep; want != got {
+							if want, got := endpoints[port], ep; want != got {
 								t.Fatalf("Packet sent on port %d expected on endpoint %d but received on endpoint %d", port, eps[want], eps[got])
 							}
 						}
