@@ -129,10 +129,14 @@ func TestJobReschedule(t *testing.T) {
 	wg.Wait()
 }
 
+func stdClockWithAfter() (tcpip.Clock, func(time.Duration) <-chan time.Time) {
+	return tcpip.NewStdClock(), time.After
+}
+
 func TestJobExecution(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after := stdClockWithAfter()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -144,7 +148,7 @@ func TestJobExecution(t *testing.T) {
 	// Wait for timer to fire.
 	select {
 	case <-ch:
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 		t.Fatal("timed out waiting for timer to fire")
 	}
 
@@ -152,14 +156,14 @@ func TestJobExecution(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("no other timers should have fired")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 }
 
 func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after := stdClockWithAfter()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -175,7 +179,7 @@ func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 	// Wait for timer to fire.
 	select {
 	case <-ch:
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 		t.Fatal("timed out waiting for timer to fire")
 	}
 
@@ -183,14 +187,14 @@ func TestCancellableTimerResetFromLongDuration(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("no other timers should have fired")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 }
 
 func TestJobRescheduleFromShortDuration(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after := stdClockWithAfter()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -204,7 +208,7 @@ func TestJobRescheduleFromShortDuration(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("timer fired after being stopped")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 
 	job.Schedule(shortDuration)
@@ -212,7 +216,7 @@ func TestJobRescheduleFromShortDuration(t *testing.T) {
 	// Wait for timer to fire.
 	select {
 	case <-ch:
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 		t.Fatal("timed out waiting for timer to fire")
 	}
 
@@ -220,14 +224,14 @@ func TestJobRescheduleFromShortDuration(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("no other timers should have fired")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 }
 
 func TestJobImmediatelyCancel(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after := stdClockWithAfter()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -243,14 +247,19 @@ func TestJobImmediatelyCancel(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("timer fired after being stopped")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
+}
+
+func stdClockWithAfterAndSleep() (tcpip.Clock, func(time.Duration) <-chan time.Time, func(time.Duration)) {
+	clock, after := stdClockWithAfter()
+	return clock, after, time.Sleep
 }
 
 func TestJobCancelledRescheduleWithoutLock(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after, sleep := stdClockWithAfterAndSleep()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -265,7 +274,7 @@ func TestJobCancelledRescheduleWithoutLock(t *testing.T) {
 
 		lock.Lock()
 		// Sleep until the timer fires and gets blocked trying to take the lock.
-		time.Sleep(middleDuration * 2)
+		sleep(middleDuration * 2)
 		job.Cancel()
 		lock.Unlock()
 	}
@@ -275,14 +284,14 @@ func TestJobCancelledRescheduleWithoutLock(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("timer fired after being stopped")
-	case <-time.After(middleDuration * 2):
+	case <-after(middleDuration * 2):
 	}
 }
 
 func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after, sleep := stdClockWithAfterAndSleep()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -291,7 +300,7 @@ func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	job.Schedule(shortDuration)
 	for i := 0; i < 10; i++ {
 		// Sleep until the timer fires and gets blocked trying to take the lock.
-		time.Sleep(middleDuration)
+		sleep(middleDuration)
 		job.Cancel()
 		job.Schedule(shortDuration)
 	}
@@ -300,7 +309,7 @@ func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	// Wait for double the duration for the last timer to fire.
 	select {
 	case <-ch:
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 		t.Fatal("timed out waiting for timer to fire")
 	}
 
@@ -308,14 +317,14 @@ func TestManyCancellableTimerResetAfterBlockedOnLock(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("no other timers should have fired")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 }
 
 func TestManyJobReschedulesUnderLock(t *testing.T) {
 	t.Parallel()
 
-	clock := tcpip.NewStdClock()
+	clock, after := stdClockWithAfter()
 	var lock sync.Mutex
 	ch := make(chan struct{})
 
@@ -331,7 +340,7 @@ func TestManyJobReschedulesUnderLock(t *testing.T) {
 	// Wait for double the duration for the last timer to fire.
 	select {
 	case <-ch:
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 		t.Fatal("timed out waiting for timer to fire")
 	}
 
@@ -339,6 +348,6 @@ func TestManyJobReschedulesUnderLock(t *testing.T) {
 	select {
 	case <-ch:
 		t.Fatal("no other timers should have fired")
-	case <-time.After(middleDuration):
+	case <-after(middleDuration):
 	}
 }

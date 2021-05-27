@@ -16,7 +16,6 @@ package ipv4_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -3086,7 +3085,7 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.ReadContext(context.Background())
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -3129,7 +3128,7 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.ReadContext(context.Background())
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -3153,9 +3152,11 @@ func TestPacketQueing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			e := channel.New(1, defaultMTU, host1NICLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				Clock:              clock,
 			})
 
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -3178,7 +3179,8 @@ func TestPacketQueing(t *testing.T) {
 			// Wait for a ARP request since link address resolution should be
 			// performed.
 			{
-				p, ok := e.ReadContext(context.Background())
+				clock.RunImmediatelyScheduledJobs()
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -3219,6 +3221,7 @@ func TestPacketQueing(t *testing.T) {
 			}
 
 			// Expect the response now that the link address has resolved.
+			clock.RunImmediatelyScheduledJobs()
 			test.checkResp(t, e)
 
 			// Since link resolution was already performed, it shouldn't be performed

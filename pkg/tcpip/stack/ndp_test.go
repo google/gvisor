@@ -16,7 +16,6 @@ package stack_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"math/rand"
@@ -607,7 +606,10 @@ func TestDADResolve(t *testing.T) {
 
 			// Validate the sent Neighbor Solicitation messages.
 			for i := uint8(0); i < test.dupAddrDetectTransmits; i++ {
-				p, _ := e.ReadContext(context.Background())
+				p, ok := e.Read()
+				if !ok {
+					t.Fatal("packet didn't arrive")
+				}
 
 				// Make sure its an IPv6 packet.
 				if p.Proto != header.IPv6ProtocolNumber {
@@ -733,11 +735,13 @@ func TestDADFail(t *testing.T) {
 			dadConfigs.RetransmitTimer = time.Second * 2
 
 			e := channel.New(0, 1280, linkAddr1)
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp:    &ndpDisp,
 					DADConfigs: dadConfigs,
 				})},
+				Clock: clock,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -763,16 +767,17 @@ func TestDADFail(t *testing.T) {
 
 			// Wait for DAD to fail and make sure the address did
 			// not get resolved.
+			clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer)
 			select {
-			case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
-				// If we don't get a failure event after the
-				// expected resolution time + extra 1s buffer,
-				// something is wrong.
-				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr1, &stack.DADDupAddrDetected{HolderLinkAddress: test.expectedHolderLinkAddress}); diff != "" {
 					t.Errorf("DAD event mismatch (-want +got):\n%s", diff)
 				}
+			default:
+				// If we don't get a failure event after the
+				// expected resolution time + extra 1s buffer,
+				// something is wrong.
+				t.Fatal("timed out waiting for DAD failure")
 			}
 			if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
 				t.Fatal(err)
@@ -841,11 +846,13 @@ func TestDADStop(t *testing.T) {
 			}
 
 			e := channel.New(0, 1280, linkAddr1)
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp:    &ndpDisp,
 					DADConfigs: dadConfigs,
 				})},
+				Clock: clock,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -863,15 +870,16 @@ func TestDADStop(t *testing.T) {
 			test.stopFn(t, s)
 
 			// Wait for DAD to fail (since the address was removed during DAD).
+			clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer)
 			select {
-			case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
-				// If we don't get a failure event after the expected resolution
-				// time + extra 1s buffer, something is wrong.
-				t.Fatal("timed out waiting for DAD failure")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID, addr1, &stack.DADAborted{}); diff != "" {
 					t.Errorf("DAD event mismatch (-want +got):\n%s", diff)
 				}
+			default:
+				// If we don't get a failure event after the expected resolution
+				// time + extra 1s buffer, something is wrong.
+				t.Fatal("timed out waiting for DAD failure")
 			}
 
 			if !test.skipFinalAddrCheck {
@@ -922,10 +930,12 @@ func TestSetNDPConfigurations(t *testing.T) {
 				dadC: make(chan ndpDADEvent, 1),
 			}
 			e := channel.New(0, 1280, linkAddr1)
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp: &ndpDisp,
 				})},
+				Clock: clock,
 			})
 
 			expectDADEvent := func(nicID tcpip.NICID, addr tcpip.Address) {
@@ -1004,28 +1014,23 @@ func TestSetNDPConfigurations(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// Sleep until right (500ms before) before resolution to
-			// make sure the address didn't resolve on NIC(1) yet.
-			const delta = 500 * time.Millisecond
-			time.Sleep(time.Duration(test.dupAddrDetectTransmits)*test.expectedRetransmitTimer - delta)
+			// Sleep until right before resolution to make sure the address didn't
+			// resolve on NIC(1) yet.
+			const delta = 1
+			clock.Advance(time.Duration(test.dupAddrDetectTransmits)*test.expectedRetransmitTimer - delta)
 			if err := checkGetMainNICAddress(s, nicID1, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{}); err != nil {
 				t.Fatal(err)
 			}
 
 			// Wait for DAD to resolve.
+			clock.Advance(delta)
 			select {
-			case <-time.After(2 * delta):
-				// We should get a resolution event after 500ms
-				// (delta) since we wait for 500ms less than the
-				// expected resolution time above to make sure
-				// that the address did not yet resolve. Waiting
-				// for 1s (2x delta) without a resolution event
-				// means something is wrong.
-				t.Fatal("timed out waiting for DAD resolution")
 			case e := <-ndpDisp.dadC:
 				if diff := checkDADEvent(e, nicID1, addr1, &stack.DADSucceeded{}); diff != "" {
 					t.Errorf("DAD event mismatch (-want +got):\n%s", diff)
 				}
+			default:
+				t.Fatal("timed out waiting for DAD resolution")
 			}
 			if err := checkGetMainNICAddress(s, nicID1, header.IPv6ProtocolNumber, addrWithPrefix1); err != nil {
 				t.Fatal(err)
@@ -1342,6 +1347,7 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 		routerC: make(chan ndpRouterEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -1350,6 +1356,7 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1371,10 +1378,11 @@ func TestRouterDiscoveryDispatcherNoRemember(t *testing.T) {
 	// Wait for the invalidation time plus some buffer to make sure we do
 	// not actually receive any invalidation events as we should not have
 	// remembered the router in the first place.
+	clock.Advance(lifetimeSeconds * time.Second)
 	select {
 	case <-ndpDisp.routerC:
 		t.Fatal("should not have received any router events")
-	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 }
 
@@ -1385,6 +1393,7 @@ func TestRouterDiscovery(t *testing.T) {
 			rememberRouter: true,
 		}
 		e := channel.New(0, 1280, linkAddr1)
+		clock := faketime.NewManualClock()
 		s := stack.New(stack.Options{
 			NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 				NDPConfigs: ipv6.NDPConfigurations{
@@ -1393,6 +1402,7 @@ func TestRouterDiscovery(t *testing.T) {
 				},
 				NDPDisp: &ndpDisp,
 			})},
+			Clock: clock,
 		})
 
 		expectRouterEvent := func(addr tcpip.Address, discovered bool) {
@@ -1411,12 +1421,13 @@ func TestRouterDiscovery(t *testing.T) {
 		expectAsyncRouterInvalidationEvent := func(addr tcpip.Address, timeout time.Duration) {
 			t.Helper()
 
+			clock.Advance(timeout)
 			select {
 			case e := <-ndpDisp.routerC:
 				if diff := checkRouterEvent(e, addr, false); diff != "" {
 					t.Errorf("router event mismatch (-want +got):\n%s", diff)
 				}
-			case <-time.After(timeout):
+			default:
 				t.Fatal("timed out waiting for router discovery event")
 			}
 		}
@@ -1463,7 +1474,7 @@ func TestRouterDiscovery(t *testing.T) {
 		// Wait for the normal lifetime plus an extra bit for the
 		// router to get invalidated. If we don't get an invalidation
 		// event after this time, then something is wrong.
-		expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second+defaultAsyncPositiveEventTimeout)
+		expectAsyncRouterInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second)
 
 		// Rx an RA from lladdr2 with huge lifetime.
 		e.InjectInbound(header.IPv6ProtocolNumber, raBuf(llAddr2, 1000))
@@ -1480,7 +1491,7 @@ func TestRouterDiscovery(t *testing.T) {
 		// Wait for the normal lifetime plus an extra bit for the
 		// router to get invalidated. If we don't get an invalidation
 		// event after this time, then something is wrong.
-		expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second+defaultAsyncPositiveEventTimeout)
+		expectAsyncRouterInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second)
 	})
 }
 
@@ -1549,6 +1560,7 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 		prefixC: make(chan ndpPrefixEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -1557,6 +1569,7 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1578,10 +1591,11 @@ func TestPrefixDiscoveryDispatcherNoRemember(t *testing.T) {
 	// Wait for the invalidation time plus some buffer to make sure we do
 	// not actually receive any invalidation events as we should not have
 	// remembered the prefix in the first place.
+	clock.Advance(lifetimeSeconds * time.Second)
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("should not have received any prefix events")
-	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 }
 
@@ -1596,6 +1610,7 @@ func TestPrefixDiscovery(t *testing.T) {
 			rememberPrefix: true,
 		}
 		e := channel.New(0, 1280, linkAddr1)
+		clock := faketime.NewManualClock()
 		s := stack.New(stack.Options{
 			NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 				NDPConfigs: ipv6.NDPConfigurations{
@@ -1604,6 +1619,7 @@ func TestPrefixDiscovery(t *testing.T) {
 				},
 				NDPDisp: &ndpDisp,
 			})},
+			Clock: clock,
 		})
 
 		if err := s.CreateNIC(1, e); err != nil {
@@ -1664,12 +1680,13 @@ func TestPrefixDiscovery(t *testing.T) {
 
 		// Wait for prefix2's most recent invalidation job plus some buffer to
 		// expire.
+		clock.Advance(time.Duration(lifetime) * time.Second)
 		select {
 		case e := <-ndpDisp.prefixC:
 			if diff := checkPrefixEvent(e, subnet2, false); diff != "" {
 				t.Errorf("prefix event mismatch (-want +got):\n%s", diff)
 			}
-		case <-time.After(time.Duration(lifetime)*time.Second + defaultAsyncPositiveEventTimeout):
+		default:
 			t.Fatal("timed out waiting for prefix discovery event")
 		}
 
@@ -1702,6 +1719,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 		rememberPrefix: true,
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -1710,6 +1728,7 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -1733,21 +1752,23 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	// with infinite valid lifetime which should not get invalidated.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, false, testInfiniteLifetimeSeconds, 0))
 	expectPrefixEvent(subnet, true)
+	clock.Advance(testInfiniteLifetime)
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After(testInfiniteLifetime + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 
 	// Receive an RA with finite lifetime.
 	// The prefix should get invalidated after 1s.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, false, testInfiniteLifetimeSeconds-1, 0))
+	clock.Advance(testInfiniteLifetime)
 	select {
 	case e := <-ndpDisp.prefixC:
 		if diff := checkPrefixEvent(e, subnet, false); diff != "" {
 			t.Errorf("prefix event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(testInfiniteLifetime):
+	default:
 		t.Fatal("timed out waiting for prefix discovery event")
 	}
 
@@ -1758,19 +1779,21 @@ func TestPrefixDiscoveryWithInfiniteLifetime(t *testing.T) {
 	// Receive an RA with prefix with an infinite lifetime.
 	// The prefix should not be invalidated.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, false, testInfiniteLifetimeSeconds, 0))
+	clock.Advance(testInfiniteLifetime)
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After(testInfiniteLifetime + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 
 	// Receive an RA with a prefix with a lifetime value greater than the
 	// set infinite lifetime value.
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, false, testInfiniteLifetimeSeconds+1, 0))
+	clock.Advance((testInfiniteLifetimeSeconds + 1) * time.Second)
 	select {
 	case <-ndpDisp.prefixC:
 		t.Fatal("unexpectedly invalidated a prefix with infinite lifetime")
-	case <-time.After((testInfiniteLifetimeSeconds+1)*time.Second + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 
 	// Receive an RA with 0 lifetime.
@@ -3615,6 +3638,7 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -3623,6 +3647,7 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -3656,10 +3681,11 @@ func TestAutoGenAddrRemoval(t *testing.T) {
 
 	// Wait for the original valid lifetime to make sure the original job got
 	// cancelled/cleaned up.
+	clock.Advance(lifetimeSeconds * time.Second)
 	select {
 	case <-ndpDisp.autoGenAddrC:
 		t.Fatal("unexpectedly received an auto gen addr event")
-	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 }
 
@@ -3781,6 +3807,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -3789,6 +3816,7 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	})
 
 	if err := s.CreateNIC(1, e); err != nil {
@@ -3818,14 +3846,27 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 
 	// Should not get an invalidation event after the PI's invalidation
 	// time.
+	clock.Advance(lifetimeSeconds * time.Second)
 	select {
 	case <-ndpDisp.autoGenAddrC:
 		t.Fatal("unexpectedly received an auto gen addr event")
-	case <-time.After(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout):
+	default:
 	}
 	if !containsV6Addr(s.NICInfo()[1].ProtocolAddresses, addr) {
 		t.Fatalf("Should have %s in the list of addresses", addr1)
 	}
+}
+
+func makeSecretKey(t *testing.T) []byte {
+	secretKey := make([]byte, header.OpaqueIIDSecretKeyMinBytes)
+	n, err := cryptorand.Read(secretKey)
+	if err != nil {
+		t.Fatalf("cryptorand.Read(_): %s", err)
+	}
+	if l := len(secretKey); n != l {
+		t.Fatalf("got cryptorand.Read(_) = (%d, nil), want = (%d, nil)", n, l)
+	}
+	return secretKey
 }
 
 // TestAutoGenAddrWithOpaqueIID tests that SLAAC generated addresses will use
@@ -3833,15 +3874,8 @@ func TestAutoGenAddrStaticConflict(t *testing.T) {
 func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	const nicID = 1
 	const nicName = "nic1"
-	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
-	secretKey := secretKeyBuf[:]
-	n, err := cryptorand.Read(secretKey)
-	if err != nil {
-		t.Fatalf("cryptorand.Read(_): %s", err)
-	}
-	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
-	}
+
+	secretKey := makeSecretKey(t)
 
 	prefix1, subnet1, _ := prefixSubnetAddr(0, linkAddr1)
 	prefix2, subnet2, _ := prefixSubnetAddr(1, linkAddr1)
@@ -3863,6 +3897,7 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 1),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			NDPConfigs: ipv6.NDPConfigurations{
@@ -3877,6 +3912,7 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 				SecretKey: secretKey,
 			},
 		})},
+		Clock: clock,
 	})
 	opts := stack.NICOptions{Name: nicName}
 	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
@@ -3915,12 +3951,13 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	}
 
 	// Wait for addr of prefix1 to be invalidated.
+	clock.Advance(validLifetimeSecondPrefix1 * time.Second)
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
 		if diff := checkAutoGenAddrEvent(e, addr1, invalidatedAddr); diff != "" {
 			t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(validLifetimeSecondPrefix1*time.Second + defaultAsyncPositiveEventTimeout):
+	default:
 		t.Fatal("timed out waiting for addr auto gen event")
 	}
 	if containsV6Addr(s.NICInfo()[nicID].ProtocolAddresses, addr1) {
@@ -3946,15 +3983,7 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 	}()
 	ipv6.MaxDesyncFactor = time.Nanosecond
 
-	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
-	secretKey := secretKeyBuf[:]
-	n, err := cryptorand.Read(secretKey)
-	if err != nil {
-		t.Fatalf("cryptorand.Read(_): %s", err)
-	}
-	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
-	}
+	secretKey := makeSecretKey(t)
 
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
 
@@ -4233,13 +4262,12 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 		addrType := addrType
 
 		t.Run(addrType.name, func(t *testing.T) {
-			t.Parallel()
-
 			ndpDisp := ndpDispatcher{
 				dadC:         make(chan ndpDADEvent, 1),
 				autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 			}
 			e := channel.New(0, 1280, linkAddr1)
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					AutoGenLinkLocal: addrType.autoGenLinkLocal,
@@ -4250,6 +4278,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 						RetransmitTimer:        retransmitTimer,
 					},
 				})},
+				Clock: clock,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -4294,7 +4323,7 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 			select {
 			case e := <-ndpDisp.autoGenAddrC:
 				t.Fatalf("unexpectedly got an auto-generated address event = %+v", e)
-			case <-time.After(defaultAsyncNegativeEventTimeout):
+			default:
 			}
 		})
 	}
@@ -4311,15 +4340,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	const maxRetries = 1
 	const lifetimeSeconds = 5
 
-	var secretKeyBuf [header.OpaqueIIDSecretKeyMinBytes]byte
-	secretKey := secretKeyBuf[:]
-	n, err := cryptorand.Read(secretKey)
-	if err != nil {
-		t.Fatalf("cryptorand.Read(_): %s", err)
-	}
-	if n != header.OpaqueIIDSecretKeyMinBytes {
-		t.Fatalf("got cryptorand.Read(_) = (%d, _), want = (%d, _)", n, header.OpaqueIIDSecretKeyMinBytes)
-	}
+	secretKey := makeSecretKey(t)
 
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
 
@@ -4328,6 +4349,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 		autoGenAddrC: make(chan ndpAutoGenAddrEvent, 2),
 	}
 	e := channel.New(0, 1280, linkAddr1)
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			DADConfigs: stack.DADConfigurations{
@@ -4347,6 +4369,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 				SecretKey: secretKey,
 			},
 		})},
+		Clock: clock,
 	})
 	opts := stack.NICOptions{Name: nicName}
 	if err := s.CreateNICWithOptions(nicID, e, opts); err != nil {
@@ -4377,7 +4400,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	expectAutoGenAddrEvent(addr, newAddr)
 
 	// Simulate a DAD conflict after some time has passed.
-	time.Sleep(failureTimer)
+	clock.Advance(failureTimer)
 	rxNDPSolicit(e, addr.Address)
 	expectAutoGenAddrEvent(addr, invalidatedAddr)
 	select {
@@ -4392,12 +4415,13 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	// Let the next address resolve.
 	addr.Address = tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 1, secretKey))
 	expectAutoGenAddrEvent(addr, newAddr)
+	clock.Advance(dadTransmits * retransmitTimer)
 	select {
 	case e := <-ndpDisp.dadC:
 		if diff := checkDADEvent(e, nicID, addr.Address, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("DAD event mismatch (-want +got):\n%s", diff)
 		}
-	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
+	default:
 		t.Fatal("timed out waiting for DAD event")
 	}
 
@@ -4411,6 +4435,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	//
 	// We expect either just the invalidation event or the deprecation event
 	// followed by the invalidation event.
+	clock.Advance(lifetimeSeconds*time.Second - failureTimer - dadTransmits*retransmitTimer)
 	select {
 	case e := <-ndpDisp.autoGenAddrC:
 		if e.eventType == deprecatedAddr {
@@ -4423,7 +4448,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 				if diff := checkAutoGenAddrEvent(e, addr, invalidatedAddr); diff != "" {
 					t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 				}
-			case <-time.After(defaultAsyncPositiveEventTimeout):
+			default:
 				t.Fatal("timed out waiting for invalidated auto gen addr event after deprecation")
 			}
 		} else {
@@ -4431,7 +4456,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 				t.Errorf("auto-gen addr event mismatch (-want +got):\n%s", diff)
 			}
 		}
-	case <-time.After(lifetimeSeconds*time.Second - failureTimer - dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
+	default:
 		t.Fatal("timed out waiting for auto gen addr event")
 	}
 }
@@ -4865,6 +4890,7 @@ func TestCleanupNDPState(t *testing.T) {
 				rememberPrefix: true,
 				autoGenAddrC:   make(chan ndpAutoGenAddrEvent, test.maxAutoGenAddrEvents),
 			}
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					AutoGenLinkLocal: true,
@@ -4876,6 +4902,7 @@ func TestCleanupNDPState(t *testing.T) {
 					},
 					NDPDisp: &ndpDisp,
 				})},
+				Clock: clock,
 			})
 
 			expectRouterEvent := func() (bool, ndpRouterEvent) {
@@ -5108,7 +5135,7 @@ func TestCleanupNDPState(t *testing.T) {
 
 			// Should not get any more events (invalidation timers should have been
 			// cancelled when the NDP state was cleaned up).
-			time.Sleep(lifetimeSeconds*time.Second + defaultAsyncNegativeEventTimeout)
+			clock.Advance(lifetimeSeconds * time.Second)
 			select {
 			case <-ndpDisp.routerC:
 				t.Error("unexpected router event")
@@ -5236,6 +5263,23 @@ func TestDHCPv6ConfigurationFromNDPDA(t *testing.T) {
 	expectDHCPv6Event(ipv6.DHCPv6OtherConfigurations)
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithDHCPv6(llAddr2, false, true))
 	expectNoDHCPv6Event()
+}
+
+var _ rand.Source = (*savingRandSource)(nil)
+
+type savingRandSource struct {
+	s rand.Source
+
+	lastInt63 int64
+}
+
+func (d *savingRandSource) Int63() int64 {
+	i := d.s.Int63()
+	d.lastInt63 = i
+	return i
+}
+func (d *savingRandSource) Seed(seed int64) {
+	d.s.Seed(seed)
 }
 
 // TestRouterSolicitation tests the initial Router Solicitations that are sent
@@ -5404,6 +5448,9 @@ func TestRouterSolicitation(t *testing.T) {
 							t.Fatalf("unexpectedly got a packet = %#v", p)
 						}
 					}
+					randSource := savingRandSource{
+						s: rand.NewSource(time.Now().UnixNano()),
+					}
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 							NDPConfigs: ipv6.NDPConfigurations{
@@ -5413,8 +5460,10 @@ func TestRouterSolicitation(t *testing.T) {
 								MaxRtrSolicitationDelay: test.maxRtrSolicitDelay,
 							},
 						})},
-						Clock: clock,
+						Clock:      clock,
+						RandSource: &randSource,
 					})
+
 					if err := s.CreateNIC(nicID, &e); err != nil {
 						t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 					}
@@ -5427,19 +5476,27 @@ func TestRouterSolicitation(t *testing.T) {
 
 					// Make sure each RS is sent at the right time.
 					remaining := test.maxRtrSolicit
-					if remaining > 0 {
-						waitForPkt(test.effectiveMaxRtrSolicitDelay)
+					if remaining != 0 {
+						maxRtrSolicitDelay := test.maxRtrSolicitDelay
+						if maxRtrSolicitDelay < 0 {
+							maxRtrSolicitDelay = ipv6.DefaultNDPConfigurations().MaxRtrSolicitationDelay
+						}
+						var actualRtrSolicitDelay time.Duration
+						if maxRtrSolicitDelay != 0 {
+							actualRtrSolicitDelay = time.Duration(randSource.lastInt63) % maxRtrSolicitDelay
+						}
+						waitForPkt(actualRtrSolicitDelay)
 						remaining--
 					}
 
 					subTest.afterFirstRS(t, s)
 
-					for ; remaining > 0; remaining-- {
-						if test.effectiveRtrSolicitInt > defaultAsyncPositiveEventTimeout {
+					for ; remaining != 0; remaining-- {
+						if test.effectiveRtrSolicitInt != 0 {
 							waitForNothing(test.effectiveRtrSolicitInt - time.Nanosecond)
 							waitForPkt(time.Nanosecond)
 						} else {
-							waitForPkt(test.effectiveRtrSolicitInt)
+							waitForPkt(0)
 						}
 					}
 
@@ -5535,12 +5592,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			e := channel.New(maxRtrSolicitations, 1280, linkAddr1)
-			waitForPkt := func(timeout time.Duration) {
+			waitForPkt := func(clock *faketime.ManualClock, timeout time.Duration) {
 				t.Helper()
 
-				ctx, cancel := context.WithTimeout(context.Background(), timeout)
-				defer cancel()
-				p, ok := e.ReadContext(ctx)
+				clock.Advance(timeout)
+				p, ok := e.Read()
 				if !ok {
 					t.Fatal("timed out waiting for packet")
 				}
@@ -5554,6 +5610,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPRS())
 			}
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPConfigs: ipv6.NDPConfigurations{
@@ -5563,6 +5620,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 						MaxRtrSolicitationDelay: delay,
 					},
 				})},
+				Clock: clock,
 			})
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -5570,13 +5628,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
-			ctx, cancel := context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
-			defer cancel()
-			if _, ok := e.ReadContext(ctx); ok {
+			clock.Advance(delay)
+			if _, ok := e.Read(); ok {
 				// A single RS may have been sent before solicitations were stopped.
-				ctx, cancel := context.WithTimeout(context.Background(), interval+defaultAsyncNegativeEventTimeout)
-				defer cancel()
-				if _, ok = e.ReadContext(ctx); ok {
+				clock.Advance(interval)
+				if _, ok = e.Read(); ok {
 					t.Fatal("should not have sent more than one RS message")
 				}
 			}
@@ -5584,9 +5640,8 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stopping router solicitations after it has already been stopped should
 			// do nothing.
 			test.stopFn(t, s, false /* first */)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
-			defer cancel()
-			if _, ok := e.ReadContext(ctx); ok {
+			clock.Advance(delay)
+			if _, ok := e.Read(); ok {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
 			}
 
@@ -5597,21 +5652,19 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 			// Start soliciting routers.
 			test.startFn(t, s)
-			waitForPkt(delay + defaultAsyncPositiveEventTimeout)
-			waitForPkt(interval + defaultAsyncPositiveEventTimeout)
-			waitForPkt(interval + defaultAsyncPositiveEventTimeout)
-			ctx, cancel = context.WithTimeout(context.Background(), interval+defaultAsyncNegativeEventTimeout)
-			defer cancel()
-			if _, ok := e.ReadContext(ctx); ok {
+			waitForPkt(clock, delay)
+			waitForPkt(clock, interval)
+			waitForPkt(clock, interval)
+			clock.Advance(interval)
+			if _, ok := e.Read(); ok {
 				t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
 			}
 
 			// Starting router solicitations after it has already completed should do
 			// nothing.
 			test.startFn(t, s)
-			ctx, cancel = context.WithTimeout(context.Background(), delay+defaultAsyncNegativeEventTimeout)
-			defer cancel()
-			if _, ok := e.ReadContext(ctx); ok {
+			clock.Advance(interval)
+			if _, ok := e.Read(); ok {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
 			}
 		})

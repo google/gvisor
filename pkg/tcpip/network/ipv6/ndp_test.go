@@ -16,7 +16,6 @@ package ipv6
 
 import (
 	"bytes"
-	"context"
 	"math/rand"
 	"strings"
 	"testing"
@@ -400,8 +399,10 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
+				Clock:            clock,
 			})
 			e := channel.New(1, 1280, nicLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
@@ -471,7 +472,8 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			if test.performsLinkResolution {
-				p, got := e.ReadContext(context.Background())
+				clock.RunImmediatelyScheduledJobs()
+				p, got := e.Read()
 				if !got {
 					t.Fatal("expected an NDP NS response")
 				}
@@ -526,7 +528,8 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				}))
 			}
 
-			p, got := e.ReadContext(context.Background())
+			clock.RunImmediatelyScheduledJobs()
+			p, got := e.Read()
 			if !got {
 				t.Fatal("expected an NDP NA response")
 			}
@@ -850,12 +853,12 @@ func TestNDPValidation(t *testing.T) {
 						routerOnly := stats.RouterOnlyPacketsDroppedByHost
 						typStat := typ.statCounter(stats)
 
-						icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
-						copy(icmp[typ.size:], typ.extraData)
-						icmp.SetType(typ.typ)
-						icmp.SetCode(test.code)
-						icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
-							Header:      icmp[:typ.size],
+						icmpH := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
+						copy(icmpH[typ.size:], typ.extraData)
+						icmpH.SetType(typ.typ)
+						icmpH.SetCode(test.code)
+						icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+							Header:      icmpH[:typ.size],
 							Src:         lladdr0,
 							Dst:         lladdr1,
 							PayloadCsum: header.Checksum(typ.extraData /* initial */, 0),
@@ -881,7 +884,7 @@ func TestNDPValidation(t *testing.T) {
 							t.FailNow()
 						}
 
-						handleIPv6Payload(buffer.View(icmp), test.hopLimit, test.atomicFragment, ep)
+						handleIPv6Payload(buffer.View(icmpH), test.hopLimit, test.atomicFragment, ep)
 
 						// Rx count of the NDP packet should have increased.
 						if got := typStat.Value(); got != 1 {
@@ -1260,7 +1263,8 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	snmc := header.SolicitedNodeAddr(lladdr0)
 	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
 	checkDADMsg := func() {
-		p, ok := e.ReadContext(context.Background())
+		clock.RunImmediatelyScheduledJobs()
+		p, ok := e.Read()
 		if !ok {
 			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
 		}
