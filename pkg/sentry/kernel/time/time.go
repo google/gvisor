@@ -458,25 +458,6 @@ func NewTimer(clock Clock, listener TimerListener) *Timer {
 	return t
 }
 
-// After waits for the duration to elapse according to clock and then sends a
-// notification on the returned channel. The timer is started immediately and
-// will fire exactly once. The second return value is the start time used with
-// the duration.
-//
-// Callers must call Timer.Destroy.
-func After(clock Clock, duration time.Duration) (*Timer, Time, <-chan struct{}) {
-	notifier, tchan := NewChannelNotifier()
-	t := NewTimer(clock, notifier)
-	now := clock.Now()
-
-	t.Swap(Setting{
-		Enabled: true,
-		Period:  0,
-		Next:    now.Add(duration),
-	})
-	return t, now, tchan
-}
-
 // init initializes Timer state that is not preserved across save/restore. If
 // init has already been called, calling it again is a no-op.
 //

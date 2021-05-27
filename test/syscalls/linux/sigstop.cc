@@ -123,6 +123,55 @@ void SleepIgnoreStopped(absl::Duration d) {
   }
 }
 
+TEST(SigstopTest, RestartSyscall) {
+  pid_t pid;
+  constexpr absl::Duration kStopDelay = absl::Seconds(5);
+  constexpr absl::Duration kSleepDelay = absl::Seconds(15);
+  constexpr absl::Duration kStartupDelay = absl::Seconds(5);
+  constexpr absl::Duration kErrorDelay = absl::Seconds(3);
+
+  const DisableSave ds;  // Timing-related.
+
+  pid = fork();
+  if (pid == 0) {
+    struct timespec ts = {.tv_sec = kSleepDelay / absl::Seconds(1)};
+    auto start = absl::Now();
+    TEST_CHECK(nanosleep(&ts, nullptr) == 0);
+    auto finish = absl::Now();
+    // Check that time spent stopped is counted as time spent sleeping.
+    TEST_CHECK(finish - start >= kSleepDelay);
+    TEST_CHECK(finish - start < kSleepDelay + kErrorDelay);
+    _exit(kChildMainThreadExitCode);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+
+  // Wait for the child subprocess to start sleeping before stopping it.
+  absl::SleepFor(kStartupDelay);
+  ASSERT_THAT(kill(pid, SIGSTOP), SyscallSucceeds());
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSTOPPED(status));
+  EXPECT_EQ(SIGSTOP, WSTOPSIG(status));
+
+  // Sleep for shorter than the sleep in the child subprocess.
+  absl::SleepFor(kStopDelay);
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, WNOHANG),
+              SyscallSucceedsWithValue(0));
+
+  // Resume the child.
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, WCONTINUED),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFCONTINUED(status));
+
+  // Expect it to die.
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0), SyscallSucceeds());
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(WEXITSTATUS(status), kChildMainThreadExitCode);
+}
+
 void RunChild() {
   // Start another thread that attempts to call exit_group with a different
   // error code, in order to verify that SIGSTOP stops this thread as well.
