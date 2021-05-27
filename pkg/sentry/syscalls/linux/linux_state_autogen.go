@@ -81,7 +81,7 @@ func (n *clockNanosleepRestartBlock) StateTypeName() string {
 func (n *clockNanosleepRestartBlock) StateFields() []string {
 	return []string{
 		"c",
-		"duration",
+		"end",
 		"rem",
 	}
 }
@@ -92,7 +92,7 @@ func (n *clockNanosleepRestartBlock) beforeSave() {}
 func (n *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.c)
-	stateSinkObject.Save(1, &n.duration)
+	stateSinkObject.Save(1, &n.end)
 	stateSinkObject.Save(2, &n.rem)
 }
 
@@ -101,7 +101,7 @@ func (n *clockNanosleepRestartBlock) afterLoad() {}
 // +checklocksignore
 func (n *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.c)
-	stateSourceObject.Load(1, &n.duration)
+	stateSourceObject.Load(1, &n.end)
 	stateSourceObject.Load(2, &n.rem)
 }
 
