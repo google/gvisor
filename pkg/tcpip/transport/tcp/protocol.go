@@ -481,6 +481,6 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		// TODO(gvisor.dev/issue/5243): Set recovery to tcpip.TCPRACKLossDetection.
 		recovery: 0,
 	}
-	p.dispatcher.init(runtime.GOMAXPROCS(0))
+	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
 	return &p
 }

@@ -19,7 +19,6 @@ import (
 	"math"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -147,11 +146,6 @@ func FindWndScale(wnd seqnum.Size) int {
 // resetState resets the state of the handshake object such that it becomes
 // ready for a new 3-way handshake.
 func (h *handshake) resetState() {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-
 	h.state = handshakeSynSent
 	h.flags = header.TCPFlagSyn
 	h.ackNum = 0

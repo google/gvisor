@@ -17,6 +17,7 @@ package ipv6
 import (
 	"bytes"
 	"context"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -1240,8 +1241,9 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	var secureRNG bytes.Reader
 	secureRNG.Reset(secureRNGBytes[:])
 	s := stack.New(stack.Options{
-		SecureRNG: &secureRNG,
-		Clock:     clock,
+		Clock:      clock,
+		RandSource: rand.NewSource(time.Now().UnixNano()),
+		SecureRNG:  &secureRNG,
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
 			DADConfigs: dadConfigs,
 		})},

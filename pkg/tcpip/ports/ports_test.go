@@ -18,6 +18,7 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -331,6 +332,7 @@ func TestPortReservation(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			pm := NewPortManager()
 			net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 			for _, test := range test.actions {
 				first, _ := pm.PortRange()
@@ -356,7 +358,7 @@ func TestPortReservation(t *testing.T) {
 					BindToDevice: test.device,
 					Dest:         test.dest,
 				}
-				gotPort, err := pm.ReservePort(portRes, nil /* testPort */)
+				gotPort, err := pm.ReservePort(rng, portRes, nil /* testPort */)
 				if diff := cmp.Diff(test.want, err); diff != "" {
 					t.Fatalf("unexpected error from ReservePort(%+v, _), (-want, +got):\n%s", portRes, diff)
 				}
@@ -417,10 +419,11 @@ func TestPickEphemeralPort(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pm := NewPortManager()
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
 				t.Fatalf("failed to set ephemeral port range: %s", err)
 			}
-			port, err := pm.PickEphemeralPort(test.f)
+			port, err := pm.PickEphemeralPort(rng, test.f)
 			if diff := cmp.Diff(test.wantErr, err); diff != "" {
 				t.Fatalf("unexpected error from PickEphemeralPort(..), (-want, +got):\n%s", diff)
 			}

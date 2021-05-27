@@ -16,8 +16,6 @@ package stack
 
 import (
 	"fmt"
-	"math/rand"
-
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
@@ -223,7 +221,7 @@ func (epsByNIC *endpointsByNIC) registerEndpoint(d *transportDemuxer, netProto t
 	return multiPortEp.singleRegisterEndpoint(t, flags)
 }
 
-func (epsByNIC *endpointsByNIC) checkEndpoint(d *transportDemuxer, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
+func (epsByNIC *endpointsByNIC) checkEndpoint(flags ports.Flags, bindToDevice tcpip.NICID) tcpip.Error {
 	epsByNIC.mu.RLock()
 	defer epsByNIC.mu.RUnlock()
 
@@ -475,7 +473,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	if !ok {
 		epsByNIC = &endpointsByNIC{
 			endpoints: make(map[tcpip.NICID]*multiPortEndpoint),
-			seed:      rand.Uint32(),
+			seed:      d.stack.Seed(),
 		}
 		eps.endpoints[id] = epsByNIC
 	}
@@ -502,7 +500,7 @@ func (d *transportDemuxer) singleCheckEndpoint(netProto tcpip.NetworkProtocolNum
 		return nil
 	}
 
-	return epsByNIC.checkEndpoint(d, netProto, protocol, flags, bindToDevice)
+	return epsByNIC.checkEndpoint(flags, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it
