@@ -15,15 +15,14 @@
 package arp_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -31,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
 
 const (
@@ -39,15 +37,6 @@ const (
 
 	stackLinkAddr  = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
 	remoteLinkAddr = tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06")
-
-	defaultChannelSize = 1
-	defaultMTU         = 65536
-
-	// eventChanSize defines the size of event channels used by the neighbor
-	// cache's event dispatcher. The size chosen here needs to be sufficient to
-	// queue all the events received during tests before consumption.
-	// If eventChanSize is too small, the tests may deadlock.
-	eventChanSize = 32
 )
 
 var (
@@ -123,24 +112,6 @@ func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.Neighbo
 	d.C <- e
 }
 
-func (d *arpDispatcher) waitForEvent(ctx context.Context, want eventInfo) error {
-	select {
-	case got := <-d.C:
-		if diff := cmp.Diff(want, got, cmp.AllowUnexported(got), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
-			return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
-		}
-	case <-ctx.Done():
-		return fmt.Errorf("%s for %s", ctx.Err(), want)
-	}
-	return nil
-}
-
-func (d *arpDispatcher) waitForEventWithTimeout(want eventInfo, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return d.waitForEvent(ctx, want)
-}
-
 func (d *arpDispatcher) nextEvent() (eventInfo, bool) {
 	select {
 	case event := <-d.C:
@@ -153,55 +124,45 @@ func (d *arpDispatcher) nextEvent() (eventInfo, bool) {
 type testContext struct {
 	s       *stack.Stack
 	linkEP  *channel.Endpoint
-	nudDisp *arpDispatcher
+	nudDisp arpDispatcher
 }
 
-func newTestContext(t *testing.T) *testContext {
-	c := stack.DefaultNUDConfigurations()
-	// Transition from Reachable to Stale almost immediately to test if receiving
-	// probes refreshes positive reachability.
-	c.BaseReachableTime = time.Microsecond
+func makeTestContext(t *testing.T, eventDepth int, packetDepth int) testContext {
+	t.Helper()
 
-	d := arpDispatcher{
-		// Create an event channel large enough so the neighbor cache doesn't block
-		// while dispatching events. Blocking could interfere with the timing of
-		// NUD transitions.
-		C: make(chan eventInfo, eventChanSize),
+	tc := testContext{
+		nudDisp: arpDispatcher{
+			C: make(chan eventInfo, eventDepth),
+		},
 	}
 
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
-		NUDConfigs:         c,
-		NUDDisp:            &d,
+	tc.s = stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+		NUDDisp:          &tc.nudDisp,
+		Clock:            &faketime.NullClock{},
 	})
 
-	ep := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
-	ep.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	tc.linkEP = channel.New(packetDepth, header.IPv4MinimumMTU, stackLinkAddr)
+	tc.linkEP.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 
-	wep := stack.LinkEndpoint(ep)
-
+	wep := stack.LinkEndpoint(tc.linkEP)
 	if testing.Verbose() {
-		wep = sniffer.New(ep)
+		wep = sniffer.New(wep)
 	}
-	if err := s.CreateNIC(nicID, wep); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
-	}
-
-	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress for ipv4 failed: %v", err)
+	if err := tc.s.CreateNIC(nicID, wep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{
+	if err := tc.s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
+		t.Fatalf("AddAddress for ipv4 failed: %s", err)
+	}
+
+	tc.s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,
 		NIC:         nicID,
 	}})
 
-	return &testContext{
-		s:       s,
-		linkEP:  ep,
-		nudDisp: &d,
-	}
+	return tc
 }
 
 func (c *testContext) cleanup() {
@@ -209,7 +170,7 @@ func (c *testContext) cleanup() {
 }
 
 func TestMalformedPacket(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
 	v := make(buffer.View, header.ARPSize)
@@ -228,7 +189,7 @@ func TestMalformedPacket(t *testing.T) {
 }
 
 func TestDisabledEndpoint(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
 	ep, err := c.s.GetNetworkEndpoint(nicID, header.ARPProtocolNumber)
@@ -253,7 +214,7 @@ func TestDisabledEndpoint(t *testing.T) {
 }
 
 func TestDirectReply(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
 	const senderMAC = "\x01\x02\x03\x04\x05\x06"
@@ -284,7 +245,7 @@ func TestDirectReply(t *testing.T) {
 }
 
 func TestDirectRequest(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 1, 1)
 	defer c.cleanup()
 
 	tests := []struct {
@@ -391,17 +352,21 @@ func TestDirectRequest(t *testing.T) {
 			}
 
 			// Verify the sender was saved in the neighbor cache.
-			wantEvent := eventInfo{
-				eventType: entryAdded,
-				nicID:     nicID,
-				entry: stack.NeighborEntry{
-					Addr:     test.senderAddr,
-					LinkAddr: test.senderLinkAddr,
-					State:    stack.Stale,
-				},
-			}
-			if err := c.nudDisp.waitForEventWithTimeout(wantEvent, time.Second); err != nil {
-				t.Fatal(err)
+			if got, ok := c.nudDisp.nextEvent(); ok {
+				want := eventInfo{
+					eventType: entryAdded,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     test.senderAddr,
+						LinkAddr: test.senderLinkAddr,
+						State:    stack.Stale,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			} else {
+				t.Fatal("event didn't arrive")
 			}
 
 			neighbors, err := c.s.Neighbors(nicID, ipv4.ProtocolNumber)
@@ -589,7 +554,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
 			})
-			linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
+			linkEP := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
 			if err := s.CreateNIC(nicID, &testLinkEndpoint{LinkEndpoint: linkEP, writeErr: test.linkErr}); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -663,15 +628,16 @@ func TestLinkAddressRequest(t *testing.T) {
 }
 
 func TestDADARPRequestPacket(t *testing.T) {
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocolWithOptions(arp.Options{
 			DADConfigs: stack.DADConfigurations{
 				DupAddrDetectTransmits: 1,
-				RetransmitTimer:        time.Second,
 			},
 		}), ipv4.NewProtocol},
+		Clock: clock,
 	})
-	e := channel.New(1, defaultMTU, stackLinkAddr)
+	e := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -682,7 +648,8 @@ func TestDADARPRequestPacket(t *testing.T) {
 		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, header.IPv4ProtocolNumber, remoteAddr, res, stack.DADStarting)
 	}
 
-	pkt, ok := e.ReadContext(context.Background())
+	clock.RunImmediatelyScheduledJobs()
+	pkt, ok := e.Read()
 	if !ok {
 		t.Fatal("expected to send an ARP request")
 	}

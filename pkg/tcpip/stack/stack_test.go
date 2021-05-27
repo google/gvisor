@@ -2640,15 +2640,17 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	const nicID = 1
 
 	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
+		dadC: make(chan ndpDADEvent, 1),
 	}
 	dadConfigs := stack.DefaultDADConfigurations()
+	clock := faketime.NewManualClock()
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			AutoGenLinkLocal: true,
 			NDPDisp:          &ndpDisp,
 			DADConfigs:       dadConfigs,
 		})},
+		Clock: clock,
 	}
 
 	e := channel.New(int(dadConfigs.DupAddrDetectTransmits), 1280, linkAddr1)
@@ -2666,17 +2668,18 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
 
 	// Wait for DAD to resolve.
+	clock.Advance(time.Duration(dadConfigs.DupAddrDetectTransmits) * dadConfigs.RetransmitTimer)
 	select {
-	case <-time.After(time.Duration(dadConfigs.DupAddrDetectTransmits)*dadConfigs.RetransmitTimer + time.Second):
+	case e := <-ndpDisp.dadC:
+		if diff := checkDADEvent(e, nicID, linkLocalAddr, &stack.DADSucceeded{}); diff != "" {
+			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
+		}
+	default:
 		// We should get a resolution event after 1s (default time to
 		// resolve as per default NDP configurations). Waiting for that
 		// resolution time + an extra 1s without a resolution event
 		// means something is wrong.
 		t.Fatal("timed out waiting for DAD resolution")
-	case e := <-ndpDisp.dadC:
-		if diff := checkDADEvent(e, nicID, linkLocalAddr, &stack.DADSucceeded{}); diff != "" {
-			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
-		}
 	}
 	if err := checkGetMainNICAddress(s, nicID, header.IPv6ProtocolNumber, tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); err != nil {
 		t.Fatal(err)
@@ -3307,8 +3310,9 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	const nicID = 1
 
 	ndpDisp := ndpDispatcher{
-		dadC: make(chan ndpDADEvent),
+		dadC: make(chan ndpDADEvent, 1),
 	}
+	clock := faketime.NewManualClock()
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 			DADConfigs: stack.DADConfigurations{
@@ -3317,6 +3321,7 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 			},
 			NDPDisp: &ndpDisp,
 		})},
+		Clock: clock,
 	}
 
 	e := channel.New(dadTransmits, 1280, linkAddr1)
@@ -3361,13 +3366,14 @@ func TestDoDADWhenNICEnabled(t *testing.T) {
 	}
 
 	// Wait for DAD to resolve.
+	clock.Advance(dadTransmits * retransmitTimer)
 	select {
-	case <-time.After(dadTransmits*retransmitTimer + defaultAsyncPositiveEventTimeout):
-		t.Fatal("timed out waiting for DAD resolution")
 	case e := <-ndpDisp.dadC:
 		if diff := checkDADEvent(e, nicID, addr.AddressWithPrefix.Address, &stack.DADSucceeded{}); diff != "" {
 			t.Errorf("dad event mismatch (-want +got):\n%s", diff)
 		}
+	default:
+		t.Fatal("timed out waiting for DAD resolution")
 	}
 	if addrs := s.AllAddresses()[nicID]; !containsV6Addr(addrs, addr.AddressWithPrefix) {
 		t.Fatalf("got s.AllAddresses()[%d] = %+v, want = %+v", nicID, addrs, addr)

@@ -16,7 +16,6 @@ package ipv6
 
 import (
 	"bytes"
-	"context"
 	"net"
 	"reflect"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -366,6 +366,8 @@ type testContext struct {
 
 	linkEP0 *channel.Endpoint
 	linkEP1 *channel.Endpoint
+
+	clock *faketime.ManualClock
 }
 
 type endpointWithResolutionCapability struct {
@@ -377,15 +379,19 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 }
 
 func newTestContext(t *testing.T) *testContext {
+	clock := faketime.NewManualClock()
 	c := &testContext{
 		s0: stack.New(stack.Options{
 			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+			Clock:              clock,
 		}),
 		s1: stack.New(stack.Options{
 			NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 			TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+			Clock:              clock,
 		}),
+		clock: clock,
 	}
 
 	c.linkEP0 = channel.New(defaultChannelSize, defaultMTU, linkAddr0)
@@ -452,10 +458,14 @@ type routeArgs struct {
 	remoteLinkAddr tcpip.LinkAddress
 }
 
-func routeICMPv6Packet(t *testing.T, args routeArgs, fn func(*testing.T, header.ICMPv6)) {
+func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs, fn func(*testing.T, header.ICMPv6)) {
 	t.Helper()
 
-	pi, _ := args.src.ReadContext(context.Background())
+	clock.RunImmediatelyScheduledJobs()
+	pi, ok := args.src.Read()
+	if !ok {
+		t.Fatal("packet didn't arrive")
+	}
 
 	{
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -528,7 +538,7 @@ func TestLinkResolution(t *testing.T) {
 		{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6NeighborSolicit, remoteLinkAddr: header.EthernetAddressFromMulticastIPv6Address(header.SolicitedNodeAddr(lladdr1))},
 		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
 	} {
-		routeICMPv6Packet(t, args, func(t *testing.T, icmpv6 header.ICMPv6) {
+		routeICMPv6Packet(t, c.clock, args, func(t *testing.T, icmpv6 header.ICMPv6) {
 			if got, want := tcpip.Address(icmpv6[8:][:16]), lladdr1; got != want {
 				t.Errorf("%d: got target = %s, want = %s", icmpv6.Type(), got, want)
 			}
@@ -539,7 +549,7 @@ func TestLinkResolution(t *testing.T) {
 		{src: c.linkEP0, dst: c.linkEP1, typ: header.ICMPv6EchoRequest},
 		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6EchoReply},
 	} {
-		routeICMPv6Packet(t, args, nil)
+		routeICMPv6Packet(t, c.clock, args, nil)
 	}
 }
 
@@ -1320,7 +1330,7 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.ReadContext(context.Background())
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -1366,7 +1376,7 @@ func TestPacketQueing(t *testing.T) {
 				}))
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
-				p, ok := e.ReadContext(context.Background())
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -1391,9 +1401,11 @@ func TestPacketQueing(t *testing.T) {
 
 			e := channel.New(1, header.IPv6MinimumMTU, host1NICLinkAddr)
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				Clock:              clock,
 			})
 
 			if err := s.CreateNIC(nicID, e); err != nil {
@@ -1416,7 +1428,8 @@ func TestPacketQueing(t *testing.T) {
 			// Wait for a neighbor solicitation since link address resolution should
 			// be performed.
 			{
-				p, ok := e.ReadContext(context.Background())
+				clock.RunImmediatelyScheduledJobs()
+				p, ok := e.Read()
 				if !ok {
 					t.Fatalf("timed out waiting for packet")
 				}
@@ -1470,6 +1483,7 @@ func TestPacketQueing(t *testing.T) {
 			}
 
 			// Expect the response now that the link address has resolved.
+			clock.RunImmediatelyScheduledJobs()
 			test.checkResp(t, e)
 
 			// Since link resolution was already performed, it shouldn't be performed

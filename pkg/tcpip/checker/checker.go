@@ -50,7 +50,7 @@ func IPv4(t *testing.T, b []byte, checkers ...NetworkChecker) {
 	ipv4 := header.IPv4(b)
 
 	if !ipv4.IsValid(len(b)) {
-		t.Error("Not a valid IPv4 packet")
+		t.Fatalf("Not a valid IPv4 packet: %x", ipv4)
 	}
 
 	if !ipv4.IsChecksumValid() {
@@ -72,7 +72,7 @@ func IPv6(t *testing.T, b []byte, checkers ...NetworkChecker) {
 
 	ipv6 := header.IPv6(b)
 	if !ipv6.IsValid(len(b)) {
-		t.Error("Not a valid IPv6 packet")
+		t.Fatalf("Not a valid IPv6 packet: %x", ipv6)
 	}
 
 	for _, f := range checkers {
