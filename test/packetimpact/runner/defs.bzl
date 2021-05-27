@@ -115,7 +115,7 @@ def packetimpact_netstack_test(
         **kwargs
     )
 
-def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1):
+def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1, **kwargs):
     """Add packetimpact tests written in go.
 
     Args:
@@ -123,6 +123,7 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
         num_duts: how many DUTs are needed for the test
+        **kwargs: all the other args, forwarded to packetimpact_native_test and packetimpact_netstack_test
     """
     testbench_binary = name + "_test"
     packetimpact_native_test(
@@ -130,12 +131,14 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_failure = expect_native_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
+        **kwargs
     )
     packetimpact_netstack_test(
         name = name,
         expect_failure = expect_netstack_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
+        **kwargs
     )
 
 def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
@@ -163,6 +166,7 @@ PacketimpactTestInfo = provider(
     doc = "Provide information for packetimpact tests",
     fields = [
         "name",
+        "timeout",
         "expect_netstack_failure",
         "num_duts",
     ],
@@ -271,9 +275,6 @@ ALL_TESTS = [
         num_duts = 3,
     ),
     PacketimpactTestInfo(
-        name = "udp_send_recv_dgram",
-    ),
-    PacketimpactTestInfo(
         name = "tcp_linger",
     ),
     PacketimpactTestInfo(
@@ -288,6 +289,10 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_fin_retransmission",
+    ),
+    PacketimpactTestInfo(
+        name = "generic_dgram_socket_send_recv",
+        timeout = "long",
     ),
 ]
 

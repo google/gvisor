@@ -57,9 +57,19 @@ type DUTUname struct {
 	OperatingSystem string
 }
 
-// IsLinux returns true if we are running natively on Linux.
+// IsLinux returns true if the DUT is running Linux.
 func (n *DUTUname) IsLinux() bool {
 	return Native && n.OperatingSystem == "GNU/Linux"
+}
+
+// IsGvisor returns true if the DUT is running gVisor.
+func (*DUTUname) IsGvisor() bool {
+	return !Native
+}
+
+// IsFuchsia returns true if the DUT is running Fuchsia.
+func (n *DUTUname) IsFuchsia() bool {
+	return Native && n.OperatingSystem == "Fuchsia"
 }
 
 // DUTTestNet describes the test network setup on dut and how the testbench
@@ -97,6 +107,16 @@ type DUTTestNet struct {
 	// POSIXServerPort is the UDP port the POSIX server is bound to on the
 	// control network.
 	POSIXServerPort uint16
+}
+
+// SubnetBroadcast returns the test network's subnet broadcast address.
+func (n *DUTTestNet) SubnetBroadcast() net.IP {
+	addr := append([]byte(nil), n.RemoteIPv4...)
+	mask := net.CIDRMask(n.IPv4PrefixLength, net.IPv4len*8)
+	for i := range addr {
+		addr[i] |= ^mask[i]
+	}
+	return addr
 }
 
 // registerFlags defines flags and associates them with the package-level
