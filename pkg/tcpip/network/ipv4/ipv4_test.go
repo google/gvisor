@@ -398,13 +398,13 @@ func TestForwarding(t *testing.T) {
 			totalLength := ipHeaderLength + icmpHeaderLength + test.payloadLength
 			hdr := buffer.NewPrependable(totalLength)
 			hdr.Prepend(test.payloadLength)
-			icmp := header.ICMPv4(hdr.Prepend(icmpHeaderLength))
-			icmp.SetIdent(randomIdent)
-			icmp.SetSequence(randomSequence)
-			icmp.SetType(header.ICMPv4Echo)
-			icmp.SetCode(header.ICMPv4UnusedCode)
-			icmp.SetChecksum(0)
-			icmp.SetChecksum(^header.Checksum(icmp, 0))
+			icmpH := header.ICMPv4(hdr.Prepend(icmpHeaderLength))
+			icmpH.SetIdent(randomIdent)
+			icmpH.SetSequence(randomSequence)
+			icmpH.SetType(header.ICMPv4Echo)
+			icmpH.SetCode(header.ICMPv4UnusedCode)
+			icmpH.SetChecksum(0)
+			icmpH.SetChecksum(^header.Checksum(icmpH, 0))
 			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 			ip.Encode(&header.IPv4Fields{
 				TotalLength: uint16(totalLength),
@@ -1208,15 +1208,15 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 			totalLen := uint16(ipHeaderLength + header.ICMPv4MinimumSize)
 			hdr := buffer.NewPrependable(int(totalLen))
-			icmp := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
+			icmpH := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 
 			// Specify ident/seq to make sure we get the same in the response.
-			icmp.SetIdent(randomIdent)
-			icmp.SetSequence(randomSequence)
-			icmp.SetType(header.ICMPv4Echo)
-			icmp.SetCode(header.ICMPv4UnusedCode)
-			icmp.SetChecksum(0)
-			icmp.SetChecksum(^header.Checksum(icmp, 0))
+			icmpH.SetIdent(randomIdent)
+			icmpH.SetSequence(randomSequence)
+			icmpH.SetType(header.ICMPv4Echo)
+			icmpH.SetCode(header.ICMPv4UnusedCode)
+			icmpH.SetChecksum(0)
+			icmpH.SetChecksum(^header.Checksum(icmpH, 0))
 			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 			if test.maxTotalLength < totalLen {
 				totalLen = test.maxTotalLength

@@ -675,8 +675,7 @@ func addIPHeader(srcAddr, dstAddr tcpip.Address, pkt *stack.PacketBuffer, params
 	if length > math.MaxUint16 {
 		return &tcpip.ErrMessageTooLong{}
 	}
-	ip := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen))
-	ip.Encode(&header.IPv6Fields{
+	header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize + extHdrsLen)).Encode(&header.IPv6Fields{
 		PayloadLength:     uint16(length),
 		TransportProtocol: params.Protocol,
 		HopLimit:          params.TTL,
@@ -918,20 +917,20 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 	if !ok {
 		return &tcpip.ErrMalformedHeader{}
 	}
-	ip := header.IPv6(h)
+	ipH := header.IPv6(h)
 
 	// Always set the payload length.
 	pktSize := pkt.Data().Size()
-	ip.SetPayloadLength(uint16(pktSize - header.IPv6MinimumSize))
+	ipH.SetPayloadLength(uint16(pktSize - header.IPv6MinimumSize))
 
 	// Set the source address when zero.
-	if ip.SourceAddress() == header.IPv6Any {
-		ip.SetSourceAddress(r.LocalAddress())
+	if ipH.SourceAddress() == header.IPv6Any {
+		ipH.SetSourceAddress(r.LocalAddress())
 	}
 
 	// Set the destination. If the packet already included a destination, it will
 	// be part of the route anyways.
-	ip.SetDestinationAddress(r.RemoteAddress())
+	ipH.SetDestinationAddress(r.RemoteAddress())
 
 	// Populate the packet buffer's network header and don't allow an invalid
 	// packet to be sent.
@@ -2189,7 +2188,7 @@ func calculateNetworkMTU(linkMTU, networkHeadersLen uint32) (uint32, tcpip.Error
 		return 0, &tcpip.ErrMalformedHeader{}
 	}
 
-	networkMTU := linkMTU - uint32(networkHeadersLen)
+	networkMTU := linkMTU - networkHeadersLen
 	if networkMTU > maxPayloadSize {
 		networkMTU = maxPayloadSize
 	}
