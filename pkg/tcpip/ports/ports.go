@@ -101,7 +101,7 @@ func (dc destToCounter) intersectionFlags(res Reservation) (BitFlags, int) {
 		// Wildcard destinations affect all destinations for TupleOnly.
 		if dest.addr == anyIPAddress || res.Dest.Addr == anyIPAddress {
 			// Only bitwise and the TupleOnlyFlag.
-			intersection &= ((^TupleOnlyFlag) | counter.SharedFlags())
+			intersection &= (^TupleOnlyFlag) | counter.SharedFlags()
 			count++
 		}
 	}
@@ -238,13 +238,13 @@ type PortTester func(port uint16) (good bool, err tcpip.Error)
 // possible ephemeral ports, allowing the caller to decide whether a given port
 // is suitable for its needs, and stopping when a port is found or an error
 // occurs.
-func (pm *PortManager) PickEphemeralPort(testPort PortTester) (port uint16, err tcpip.Error) {
+func (pm *PortManager) PickEphemeralPort(rng *rand.Rand, testPort PortTester) (port uint16, err tcpip.Error) {
 	pm.ephemeralMu.RLock()
 	firstEphemeral := pm.firstEphemeral
 	numEphemeral := pm.numEphemeral
 	pm.ephemeralMu.RUnlock()
 
-	offset := uint32(rand.Int31n(int32(numEphemeral)))
+	offset := uint32(rng.Int31n(int32(numEphemeral)))
 	return pickEphemeralPort(offset, firstEphemeral, numEphemeral, testPort)
 }
 
@@ -303,7 +303,7 @@ func pickEphemeralPort(offset uint32, first, count uint16, testPort PortTester) 
 // An optional PortTester can be passed in which if provided will be used to
 // test if the picked port can be used. The function should return true if the
 // port is safe to use, false otherwise.
-func (pm *PortManager) ReservePort(res Reservation, testPort PortTester) (reservedPort uint16, err tcpip.Error) {
+func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort PortTester) (reservedPort uint16, err tcpip.Error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -328,7 +328,7 @@ func (pm *PortManager) ReservePort(res Reservation, testPort PortTester) (reserv
 	}
 
 	// A port wasn't specified, so try to find one.
-	return pm.PickEphemeralPort(func(p uint16) (bool, tcpip.Error) {
+	return pm.PickEphemeralPort(rng, func(p uint16) (bool, tcpip.Error) {
 		res.Port = p
 		if !pm.reserveSpecificPortLocked(res) {
 			return false, nil

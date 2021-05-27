@@ -20,12 +20,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -882,7 +882,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	}
 
 	e.segmentQueue.ep = e
-	e.TSOffset = timeStampOffset()
+	e.TSOffset = timeStampOffset(e.stack.Rand())
 	e.acceptCond = sync.NewCond(&e.acceptMu)
 	e.keepalive.timer.init(e.stack.Clock(), &e.keepalive.waker)
 
@@ -2215,7 +2215,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 				BindToDevice: bindToDevice,
 				Dest:         addr,
 			}
-			if _, err := e.stack.ReservePort(portRes, nil /* testPort */); err != nil {
+			if _, err := e.stack.ReservePort(e.stack.Rand(), portRes, nil /* testPort */); err != nil {
 				if _, ok := err.(*tcpip.ErrPortInUse); !ok || !reuse {
 					return false, nil
 				}
@@ -2262,7 +2262,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 					BindToDevice: bindToDevice,
 					Dest:         addr,
 				}
-				if _, err := e.stack.ReservePort(portRes, nil /* testPort */); err != nil {
+				if _, err := e.stack.ReservePort(e.stack.Rand(), portRes, nil /* testPort */); err != nil {
 					return false, nil
 				}
 			}
@@ -2598,7 +2598,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 		BindToDevice: bindToDevice,
 		Dest:         tcpip.FullAddress{},
 	}
-	port, err := e.stack.ReservePort(portRes, func(p uint16) (bool, tcpip.Error) {
+	port, err := e.stack.ReservePort(e.stack.Rand(), portRes, func(p uint16) (bool, tcpip.Error) {
 		id := e.TransportEndpointInfo.ID
 		id.LocalPort = p
 		// CheckRegisterTransportEndpoint should only return an error if there is a
@@ -2878,11 +2878,7 @@ func tcpTimeStamp(curTime tcpip.MonotonicTime, offset uint32) uint32 {
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending
 // timestamp values in a timestamp option for a TCP segment.
-func timeStampOffset() uint32 {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
+func timeStampOffset(rng *rand.Rand) uint32 {
 	// Initialize a random tsOffset that will be added to the recentTS
 	// everytime the timestamp is sent when the Timestamp option is enabled.
 	//
@@ -2892,7 +2888,7 @@ func timeStampOffset() uint32 {
 	// NOTE: This is not completely to spec as normally this should be
 	// initialized in a manner analogous to how sequence numbers are
 	// randomized per connection basis. But for now this is sufficient.
-	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+	return rng.Uint32()
 }
 
 // maybeEnableSACKPermitted marks the SACKPermitted option enabled for this endpoint

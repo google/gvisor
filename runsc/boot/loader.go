@@ -1115,9 +1115,9 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 		HandleLocal:        true,
 		// Enable raw sockets for users with sufficient
 		// privileges.
-		RawFactory: raw.EndpointFactory{},
-		UniqueID:   uniqueID,
-		IPTables:   netfilter.DefaultLinuxTables(),
+		RawFactory:      raw.EndpointFactory{},
+		UniqueID:        uniqueID,
+		DefaultIPTables: netfilter.DefaultLinuxTables,
 	})}
 
 	// Enable SACK Recovery.
