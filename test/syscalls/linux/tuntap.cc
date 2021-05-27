@@ -23,6 +23,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <cstddef>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -44,6 +45,7 @@ constexpr int kIPLen = 4;
 
 constexpr const char kDevNetTun[] = "/dev/net/tun";
 constexpr const char kTapName[] = "tap0";
+constexpr const char kTunName[] = "tun0";
 
 #define kTapIPAddr htonl(0x0a000001)     /* Inet 10.0.0.1 */
 #define kTapPeerIPAddr htonl(0x0a000002) /* Inet 10.0.0.2 */
@@ -408,6 +410,43 @@ TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
     }
 
     if (n >= sizeof(arp_pkt) && r.pi.pi_protocol == htons(ETH_P_ARP)) {
+      break;
+    }
+  }
+}
+
+TEST_F(TuntapTest, TUNNoPacketInfo) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Interface creation.
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+
+  struct ifreq ifr_set = {};
+  ifr_set.ifr_flags = IFF_TUN | IFF_NO_PI;
+  strncpy(ifr_set.ifr_name, kTunName, IFNAMSIZ);
+  EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr_set), SyscallSucceeds());
+
+  // Interface setup.
+  auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kTunName));
+  const struct in_addr dev_ipv4_addr = {.s_addr = kTapIPAddr};
+  EXPECT_NO_ERRNO(LinkAddLocalAddr(link.index, AF_INET, 24, &dev_ipv4_addr, sizeof(dev_ipv4_addr)));
+
+  ping_pkt ping_req = CreatePingPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
+  size_t packet_size = sizeof(ping_req) - offsetof(ping_pkt, ip);
+
+  // Send ICMP query
+  EXPECT_THAT(write(fd.get(), &ping_req.ip, packet_size), SyscallSucceedsWithValue(packet_size));
+
+  // Receive loop to process inbound packets.
+  while (1) {
+    ping_pkt ping_resp = {};
+    EXPECT_THAT(read(fd.get(), &ping_resp.ip, packet_size), SyscallSucceedsWithValue(packet_size));
+
+    // Process ping response packet.
+    if (!memcmp(&ping_resp.ip.saddr, &ping_req.ip.daddr, kIPLen) &&
+        !memcmp(&ping_resp.ip.daddr, &ping_req.ip.saddr, kIPLen) &&
+        ping_resp.icmp.type == 0 && ping_resp.icmp.code == 0) {
+      // Ends and passes the test.
       break;
     }
   }
