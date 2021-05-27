@@ -38,21 +38,18 @@ func BenchmarkFfmpeg(b *testing.B) {
 	b.ResetTimer()
 	b.StopTimer()
 
-	for i := 0; i < b.N; i++ {
-		container := machine.GetContainer(ctx, b)
-		defer container.CleanUp(ctx)
-		if err := harness.DropCaches(machine); err != nil {
-			b.Skipf("failed to drop caches: %v. You probably need root.", err)
-		}
-
-		b.StartTimer()
-		if _, err := container.Run(ctx, dockerutil.RunOpts{
-			Image: "benchmarks/ffmpeg",
-		}, cmd...); err != nil {
-			b.Fatalf("failed to run container: %v", err)
-		}
-		b.StopTimer()
+	container := machine.GetContainer(ctx, b)
+	defer container.CleanUp(ctx)
+	if err := harness.DropCaches(machine); err != nil {
+		b.Skipf("failed to drop caches: %v. You probably need root.", err)
 	}
+	b.StartTimer()
+	if _, err := container.Run(ctx, dockerutil.RunOpts{
+		Image: "benchmarks/ffmpeg",
+	}, cmd...); err != nil {
+		b.Fatalf("failed to run container: %v", err)
+	}
+	b.StopTimer()
 }
 
 func TestMain(m *testing.M) {
