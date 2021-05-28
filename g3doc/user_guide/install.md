@@ -138,7 +138,9 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 
 ### Specific release
 
-A given release release is available at the following URL:
+Specific releases are the latest [point release](#point-release) for a given
+date. Specific releases should be available for any date that has a point
+release. A given release is available at the following URL:
 
 `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}/${ARCH}`
 
@@ -159,7 +161,9 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 
 ### Point release
 
-A given point release is available at the following URL:
+Point releases correspond to
+[releases](https://github.com/google/gvisor/releases) tagged in the Github
+repository. A given point release is available at the following URL:
 
 `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}/${ARCH}`
 
