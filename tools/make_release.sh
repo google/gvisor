@@ -22,8 +22,10 @@ if [[ "$#" -le 2 ]]; then
 fi
 
 set -xeo pipefail
-declare -r private_key="$1"; shift
-declare -r root="$1"; shift
+declare -r private_key="$1"
+shift
+declare -r root="$1"
+shift
 declare -a binaries
 declare -a pkgs
 
@@ -44,7 +46,7 @@ install_raw() {
     name=$(basename "${binary}")
     mkdir -p "${root}/$1/${arch}"
     cp -f "${binary}" "${root}/$1/${arch}"
-    (cd "${root}/$1/${arch}" && sha512sum "${name}" > "${name}.sha512")
+    (cd "${root}/$1/${arch}" && sha512sum "${name}" >"${name}.sha512")
   done
 }
 
@@ -55,7 +57,8 @@ install_apt() {
 
 # If nightly, install only nightly artifacts.
 if [[ "${NIGHTLY:-false}" == "true" ]]; then
-  # The "latest" directory and current date.
+  # Install the nightly release.
+  # https://gvisor.dev/docs/user_guide/install/#nightly
   stamp="$(date -Idate)"
   install_raw "nightly/latest"
   install_raw "nightly/${stamp}"
@@ -69,13 +72,23 @@ else
     for tag in ${tags}; do
       name=$(echo "${tag}" | cut -d'-' -f2)
       base=$(echo "${name}" | cut -d'.' -f1)
+      # Install the "specific" release. This is the latest release with the
+      # given date.
+      # https://gvisor.dev/docs/user_guide/install/#specific-release
+      install_raw "release/${base}"
+      # Install the "point release".
+      # https://gvisor.dev/docs/user_guide/install/#point-release
       install_raw "release/${name}"
+      # Install the latest release.
+      # https://gvisor.dev/docs/user_guide/install/#latest-release
       install_raw "release/latest"
+
       install_apt "release"
       install_apt "${base}"
     done
   else
     # Otherwise, assume it is a raw master commit.
+    # https://gvisor.dev/docs/user_guide/install/#head
     install_raw "master/latest"
     install_apt "master"
   fi
