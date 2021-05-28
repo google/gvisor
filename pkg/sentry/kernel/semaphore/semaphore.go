@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/ipcutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -141,7 +142,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 
 			// Check that caller can access semaphore set.
 			creds := auth.CredentialsFromContext(ctx)
-			if !set.checkPerms(creds, fs.PermsFromMode(mode)) {
+			if !ipcutil.CheckPermissions(set.registry.userNS, set.owner, set.perms, creds, fs.PermsFromMode(mode)) {
 				return nil, syserror.EACCES
 			}
 
@@ -251,7 +252,7 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 
 	// "The effective user ID of the calling process must match the creator or
 	// owner of the semaphore set, or the caller must be privileged."
-	if !set.checkCredentials(creds) && !set.checkCapability(creds) {
+	if !ipcutil.CheckOwnership(set.registry.userNS, set.owner, set.creator, creds) {
 		return syserror.EACCES
 	}
 
@@ -369,7 +370,7 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 
 	// "The effective UID of the calling process must match the owner or creator
 	// of the semaphore set, or the caller must be privileged."
-	if !s.checkCredentials(creds) && !s.checkCapability(creds) {
+	if !ipcutil.CheckOwnership(s.registry.userNS, s.owner, s.creator, creds) {
 		return syserror.EACCES
 	}
 
@@ -394,7 +395,7 @@ func (s *Set) semStat(creds *auth.Credentials, permMask fs.PermMask) (*linux.Sem
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.checkPerms(creds, permMask) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, permMask) {
 		return nil, syserror.EACCES
 	}
 
@@ -424,7 +425,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 	defer s.mu.Unlock()
 
 	// "The calling process must have alter permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Write: true}) {
 		return syserror.EACCES
 	}
 
@@ -460,7 +461,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	defer s.mu.Unlock()
 
 	// "The calling process must have alter permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Write: true}) {
 		return syserror.EACCES
 	}
 
@@ -482,7 +483,7 @@ func (s *Set) GetVal(num int32, creds *auth.Credentials) (int16, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: true}) {
 		return 0, syserror.EACCES
 	}
 
@@ -499,7 +500,7 @@ func (s *Set) GetValAll(creds *auth.Credentials) ([]uint16, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: true}) {
 		return nil, syserror.EACCES
 	}
 
@@ -516,7 +517,7 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: true}) {
 		return 0, syserror.EACCES
 	}
 
@@ -532,7 +533,7 @@ func (s *Set) countWaiters(num int32, creds *auth.Credentials, pred func(w *wait
 	defer s.mu.Unlock()
 
 	// The calling process must have read permission on the semaphore set.
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: true}) {
 		return 0, syserror.EACCES
 	}
 
@@ -588,7 +589,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 		}
 	}
 
-	if !s.checkPerms(creds, fs.PermMask{Read: readOnly, Write: !readOnly}) {
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: readOnly, Write: !readOnly}) {
 		return nil, 0, syserror.EACCES
 	}
 
@@ -672,34 +673,6 @@ func (s *Set) AbortWait(num int32, ch chan struct{}) {
 		}
 	}
 	// Waiter may not be found in case it raced with wakeWaiters().
-}
-
-func (s *Set) checkCredentials(creds *auth.Credentials) bool {
-	return s.owner.UID == creds.EffectiveKUID ||
-		s.owner.GID == creds.EffectiveKGID ||
-		s.creator.UID == creds.EffectiveKUID ||
-		s.creator.GID == creds.EffectiveKGID
-}
-
-func (s *Set) checkCapability(creds *auth.Credentials) bool {
-	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, s.registry.userNS) && creds.UserNamespace.MapFromKUID(s.owner.UID).Ok()
-}
-
-func (s *Set) checkPerms(creds *auth.Credentials, reqPerms fs.PermMask) bool {
-	// Are we owner, or in group, or other?
-	p := s.perms.Other
-	if s.owner.UID == creds.EffectiveKUID {
-		p = s.perms.User
-	} else if creds.InGroup(s.owner.GID) {
-		p = s.perms.Group
-	}
-
-	// Are permissions satisfied without capability checks?
-	if p.SupersetOf(reqPerms) {
-		return true
-	}
-
-	return s.checkCapability(creds)
 }
 
 // destroy destroys the set.

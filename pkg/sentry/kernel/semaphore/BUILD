@@ -27,6 +27,7 @@ go_library(
         "//pkg/context",
         "//pkg/log",
         "//pkg/sentry/fs",
+        "//pkg/sentry/ipcutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sync",

@@ -34,6 +34,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
+        "//pkg/sentry/ipcutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",

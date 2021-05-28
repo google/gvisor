@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/ipcutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -164,7 +165,8 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 			defer shm.mu.Unlock()
 
 			// Check that caller can access the segment.
-			if !shm.checkPermissions(ctx, fs.PermsFromMode(mode)) {
+			creds := auth.CredentialsFromContext(ctx)
+			if !ipcutil.CheckPermissions(shm.registry.userNS, shm.owner, shm.perms, creds, fs.PermsFromMode(mode)) {
 				// "The user does not have permission to access the shared
 				// memory segment, and does not have the CAP_IPC_OWNER
 				// capability in the user namespace that governs its IPC
@@ -550,7 +552,8 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 		return memmap.MMapOpts{}, syserror.EIDRM
 	}
 
-	if !s.checkPermissions(ctx, fs.PermMask{
+	creds := auth.CredentialsFromContext(ctx)
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{
 		Read:    true,
 		Write:   !opts.Readonly,
 		Execute: opts.Execute,
@@ -590,7 +593,8 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 
 	// "The caller must have read permission on the shared memory segment."
 	//   - man shmctl(2)
-	if !s.checkPermissions(ctx, fs.PermMask{Read: true}) {
+	creds := auth.CredentialsFromContext(ctx)
+	if !ipcutil.CheckPermissions(s.registry.userNS, s.owner, s.perms, creds, fs.PermMask{Read: true}) {
 		// "IPC_STAT or SHM_STAT is requested and shm_perm.mode does not allow
 		// read access for shmid, and the calling process does not have the
 		// CAP_IPC_OWNER capability in the user namespace that governs its IPC
@@ -602,7 +606,6 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 	if s.pendingDestruction {
 		mode |= linux.SHM_DEST
 	}
-	creds := auth.CredentialsFromContext(ctx)
 
 	// Use the reference count as a rudimentary count of the number of
 	// attaches. We exclude:
@@ -644,11 +647,11 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.checkOwnership(ctx) {
+	creds := auth.CredentialsFromContext(ctx)
+	if !ipcutil.CheckOwnership(s.registry.userNS, s.owner, s.creator, creds) {
 		return syserror.EPERM
 	}
 
-	creds := auth.CredentialsFromContext(ctx)
 	uid := creds.UserNamespace.MapToKUID(auth.UID(ds.ShmPerm.UID))
 	gid := creds.UserNamespace.MapToKGID(auth.GID(ds.ShmPerm.GID))
 	if !uid.Ok() || !gid.Ok() {
@@ -689,41 +692,4 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	// holds a reference.
 	s.DecRef(ctx)
 	return
-}
-
-// checkOwnership verifies whether a segment may be accessed by ctx as an
-// owner. See ipc/util.c:ipcctl_pre_down_nolock() in Linux.
-//
-// Precondition: Caller must hold s.mu.
-func (s *Shm) checkOwnership(ctx context.Context) bool {
-	creds := auth.CredentialsFromContext(ctx)
-	if s.owner.UID == creds.EffectiveKUID || s.creator.UID == creds.EffectiveKUID {
-		return true
-	}
-
-	// Tasks with CAP_SYS_ADMIN may bypass ownership checks. Strangely, Linux
-	// doesn't use CAP_IPC_OWNER for this despite CAP_IPC_OWNER being documented
-	// for use to "override IPC ownership checks".
-	return creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, s.registry.userNS)
-}
-
-// checkPermissions verifies whether a segment is accessible by ctx for access
-// described by req. See ipc/util.c:ipcperms() in Linux.
-//
-// Precondition: Caller must hold s.mu.
-func (s *Shm) checkPermissions(ctx context.Context, req fs.PermMask) bool {
-	creds := auth.CredentialsFromContext(ctx)
-
-	p := s.perms.Other
-	if s.owner.UID == creds.EffectiveKUID {
-		p = s.perms.User
-	} else if creds.InGroup(s.owner.GID) {
-		p = s.perms.Group
-	}
-	if p.SupersetOf(req) {
-		return true
-	}
-
-	// Tasks with CAP_IPC_OWNER may bypass permission checks.
-	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, s.registry.userNS)
 }
