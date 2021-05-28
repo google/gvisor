@@ -182,7 +182,7 @@ const (
 // ipv4LinkLocalUnicastSubnet is the IPv4 link local unicast subnet as defined
 // by RFC 3927 section 1.
 var ipv4LinkLocalUnicastSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet("\xa9\xfe\x00\x00", tcpip.AddressMask("\xff\xff\x00\x00"))
+	subnet, err := tcpip.NewSubnet("\xa9\xfe\x00\x00", "\xff\xff\x00\x00")
 	if err != nil {
 		panic(err)
 	}
@@ -192,7 +192,7 @@ var ipv4LinkLocalUnicastSubnet = func() tcpip.Subnet {
 // ipv4LinkLocalMulticastSubnet is the IPv4 link local multicast subnet as
 // defined by RFC 5771 section 4.
 var ipv4LinkLocalMulticastSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet("\xe0\x00\x00\x00", tcpip.AddressMask("\xff\xff\xff\x00"))
+	subnet, err := tcpip.NewSubnet("\xe0\x00\x00\x00", "\xff\xff\xff\x00")
 	if err != nil {
 		panic(err)
 	}
@@ -573,7 +573,7 @@ func (o *IPv4OptionGeneric) Type() IPv4OptionType {
 func (o *IPv4OptionGeneric) Size() uint8 { return uint8(len(*o)) }
 
 // Contents implements IPv4Option.
-func (o *IPv4OptionGeneric) Contents() []byte { return []byte(*o) }
+func (o *IPv4OptionGeneric) Contents() []byte { return *o }
 
 // IPv4OptionIterator is an iterator pointing to a specific IP option
 // at any point of time. It also holds information as to a new options buffer
@@ -611,7 +611,7 @@ func (i *IPv4OptionIterator) InitReplacement(option IPv4Option) IPv4Options {
 // RemainingBuffer returns the remaining (unused) part of the new option buffer,
 // into which a new option may be written.
 func (i *IPv4OptionIterator) RemainingBuffer() IPv4Options {
-	return IPv4Options(i.newOptions[i.writePoint:])
+	return i.newOptions[i.writePoint:]
 }
 
 // ConsumeBuffer marks a portion of the new buffer as used.
@@ -847,7 +847,7 @@ func (ts *IPv4OptionTimestamp) Type() IPv4OptionType { return IPv4OptionTimestam
 func (ts *IPv4OptionTimestamp) Size() uint8 { return uint8(len(*ts)) }
 
 // Contents implements IPv4Option.
-func (ts *IPv4OptionTimestamp) Contents() []byte { return []byte(*ts) }
+func (ts *IPv4OptionTimestamp) Contents() []byte { return *ts }
 
 // Pointer returns the pointer field in the IP Timestamp option.
 func (ts *IPv4OptionTimestamp) Pointer() uint8 {
@@ -951,7 +951,7 @@ func (rr *IPv4OptionRecordRoute) Type() IPv4OptionType { return IPv4OptionRecord
 func (rr *IPv4OptionRecordRoute) Size() uint8 { return uint8(len(*rr)) }
 
 // Contents implements IPv4Option.
-func (rr *IPv4OptionRecordRoute) Contents() []byte { return []byte(*rr) }
+func (rr *IPv4OptionRecordRoute) Contents() []byte { return *rr }
 
 // Router Alert option specific related constants.
 //
@@ -996,7 +996,7 @@ func (*IPv4OptionRouterAlert) Type() IPv4OptionType { return IPv4OptionRouterAle
 func (ra *IPv4OptionRouterAlert) Size() uint8 { return uint8(len(*ra)) }
 
 // Contents implements IPv4Option.
-func (ra *IPv4OptionRouterAlert) Contents() []byte { return []byte(*ra) }
+func (ra *IPv4OptionRouterAlert) Contents() []byte { return *ra }
 
 // Value returns the value of the IPv4OptionRouterAlert.
 func (ra *IPv4OptionRouterAlert) Value() uint16 {

@@ -1312,7 +1312,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		t.Fatalf("RemoveAddress(%d, %s): %s", nicID, lladdr0, err)
 	}
 	// Should not restart DAD since we already requested DAD above - the handler
-	// should be called when the original request compeletes so we should not send
+	// should be called when the original request completes so we should not send
 	// an extra DAD message here.
 	dadRequestsMade++
 	if res, err := s.CheckDuplicateAddress(nicID, ProtocolNumber, lladdr0, func(r stack.DADResult) {

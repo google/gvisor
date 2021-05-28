@@ -129,7 +129,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, header.UDPMinimumSize)
 
 	// UDP checksum
-	sum = header.Checksum(header.UDP([]byte{}), sum)
+	sum = header.Checksum(nil, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	payloadLength := hdr.UsedLength()
@@ -402,7 +402,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 	}{
 		{
 			name:         "None",
-			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return []byte{}, nextHdr },
+			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return nil, nextHdr },
 			shouldAccept: true,
 			expectICMP:   false,
 		},
@@ -612,8 +612,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 		{
 			name: "No next header",
 			extHdr: func(nextHdr uint8) ([]byte, uint8) {
-				return []byte{},
-					noNextHdrID
+				return nil, noNextHdrID
 			},
 			shouldAccept: false,
 			expectICMP:   false,
@@ -1160,7 +1159,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 						fragmentExtHdrLen+len(ipv6Payload1Addr1ToAddr2),
 						[]buffer.View{
 							// Fragment extension header.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0},
 
 							ipv6Payload1Addr1ToAddr2,
 						},
@@ -1180,7 +1179,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 						fragmentExtHdrLen+len(ipv6Payload3Addr1ToAddr2),
 						[]buffer.View{
 							// Fragment extension header.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0},
 
 							ipv6Payload3Addr1ToAddr2,
 						},
@@ -1202,7 +1201,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1218,7 +1217,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1240,7 +1239,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1256,7 +1255,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1278,7 +1277,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1296,7 +1295,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment offset = 8, More = false, ID = 1
 							// NextHeader value is different than the one in the first fragment, so
 							// this NextHeader should be ignored.
-							buffer.View([]byte{uint8(header.IPv6NoNextHeaderIdentifier), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.IPv6NoNextHeaderIdentifier), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1318,7 +1317,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload3Addr1ToAddr2[:64],
 						},
@@ -1334,7 +1333,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload3Addr1ToAddr2[64:],
 						},
@@ -1356,7 +1355,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload3Addr1ToAddr2[:63],
 						},
@@ -1372,7 +1371,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload3Addr1ToAddr2[63:],
 						},
@@ -1394,7 +1393,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1410,7 +1409,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 2
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 2}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 2},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1432,7 +1431,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload4Addr1ToAddr2[:udpMaximumSizeMinus15],
 						},
@@ -1448,10 +1447,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = udpMaximumSizeMinus15/8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
+							[]byte{uint8(header.UDPProtocolNumber), 0,
 								udpMaximumSizeMinus15 >> 8,
 								udpMaximumSizeMinus15 & 0xff,
-								0, 0, 0, 1}),
+								0, 0, 0, 1},
 
 							ipv6Payload4Addr1ToAddr2[udpMaximumSizeMinus15:],
 						},
@@ -1473,7 +1472,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload4Addr1ToAddr2[:udpMaximumSizeMinus15],
 						},
@@ -1489,10 +1488,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = udpMaximumSizeMinus15/8, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0,
+							[]byte{uint8(header.UDPProtocolNumber), 0,
 								udpMaximumSizeMinus15 >> 8,
 								(udpMaximumSizeMinus15 & 0xff) + 1,
-								0, 0, 0, 1}),
+								0, 0, 0, 1},
 
 							ipv6Payload4Addr1ToAddr2[udpMaximumSizeMinus15:],
 						},
@@ -1514,12 +1513,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Routing extension header.
 							//
 							// Segments left = 0.
-							buffer.View([]byte{fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5}),
+							[]byte{fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5},
 
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1535,12 +1534,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Routing extension header.
 							//
 							// Segments left = 0.
-							buffer.View([]byte{fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5}),
+							[]byte{fragmentExtHdrID, 0, 1, 0, 2, 3, 4, 5},
 
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1562,12 +1561,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Routing extension header.
 							//
 							// Segments left = 1.
-							buffer.View([]byte{fragmentExtHdrID, 0, 1, 1, 2, 3, 4, 5}),
+							[]byte{fragmentExtHdrID, 0, 1, 1, 2, 3, 4, 5},
 
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1583,12 +1582,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Routing extension header.
 							//
 							// Segments left = 1.
-							buffer.View([]byte{fragmentExtHdrID, 0, 1, 1, 2, 3, 4, 5}),
+							[]byte{fragmentExtHdrID, 0, 1, 1, 2, 3, 4, 5},
 
 							// Fragment extension header.
 							//
 							// Fragment offset = 9, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 72, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 72, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1610,12 +1609,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1},
 
 							// Routing extension header.
 							//
 							// Segments left = 0.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 1, 0, 2, 3, 4, 5}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 1, 0, 2, 3, 4, 5},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1631,7 +1630,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 9, More = false, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 72, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 72, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1653,12 +1652,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1},
 
 							// Routing extension header.
 							//
 							// Segments left = 1.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 1, 1, 2, 3, 4, 5}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 1, 1, 2, 3, 4, 5},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1674,7 +1673,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 9, More = false, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 72, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 72, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1699,12 +1698,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1},
 
 							// Routing extension header (part 1)
 							//
 							// Segments left = 0.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 1, 1, 0, 2, 3, 4, 5}),
+							[]byte{uint8(header.UDPProtocolNumber), 1, 1, 0, 2, 3, 4, 5},
 						},
 					),
 				},
@@ -1721,10 +1720,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 1, More = false, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 8, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 8, 0, 0, 0, 1},
 
 							// Routing extension header (part 2)
-							buffer.View([]byte{6, 7, 8, 9, 10, 11, 12, 13}),
+							[]byte{6, 7, 8, 9, 10, 11, 12, 13},
 
 							ipv6Payload1Addr1ToAddr2,
 						},
@@ -1749,12 +1748,12 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 1, 0, 0, 0, 1},
 
 							// Routing extension header (part 1)
 							//
 							// Segments left = 1.
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 1, 1, 1, 2, 3, 4, 5}),
+							[]byte{uint8(header.UDPProtocolNumber), 1, 1, 1, 2, 3, 4, 5},
 						},
 					),
 				},
@@ -1771,10 +1770,10 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 1, More = false, ID = 1
-							buffer.View([]byte{routingExtHdrID, 0, 0, 8, 0, 0, 0, 1}),
+							[]byte{routingExtHdrID, 0, 0, 8, 0, 0, 0, 1},
 
 							// Routing extension header (part 2)
-							buffer.View([]byte{6, 7, 8, 9, 10, 11, 12, 13}),
+							[]byte{6, 7, 8, 9, 10, 11, 12, 13},
 
 							ipv6Payload1Addr1ToAddr2,
 						},
@@ -1798,7 +1797,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1816,7 +1815,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 1},
 
 							ipv6Payload2Addr1ToAddr2,
 						},
@@ -1832,7 +1831,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1854,7 +1853,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1870,7 +1869,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 2
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 2}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 2},
 
 							ipv6Payload2Addr1ToAddr2[:32],
 						},
@@ -1886,7 +1885,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1902,7 +1901,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 4, More = false, ID = 2
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 32, 0, 0, 0, 2}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 32, 0, 0, 0, 2},
 
 							ipv6Payload2Addr1ToAddr2[32:],
 						},
@@ -1924,7 +1923,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[:64],
 						},
@@ -1940,7 +1939,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 0, More = true, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 1, 0, 0, 0, 1},
 
 							ipv6Payload1Addr3ToAddr2[:32],
 						},
@@ -1956,7 +1955,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 8, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 64, 0, 0, 0, 1},
 
 							ipv6Payload1Addr1ToAddr2[64:],
 						},
@@ -1972,7 +1971,7 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 							// Fragment extension header.
 							//
 							// Fragment offset = 4, More = false, ID = 1
-							buffer.View([]byte{uint8(header.UDPProtocolNumber), 0, 0, 32, 0, 0, 0, 1}),
+							[]byte{uint8(header.UDPProtocolNumber), 0, 0, 32, 0, 0, 0, 1},
 
 							ipv6Payload1Addr3ToAddr2[32:],
 						},
@@ -2208,7 +2207,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 					checker.ICMPv6Type(test.expectICMPType),
 					checker.ICMPv6Code(test.expectICMPCode),
 					checker.ICMPv6TypeSpecific(test.expectICMPTypeSpecific),
-					checker.ICMPv6Payload([]byte(expectICMPPayload)),
+					checker.ICMPv6Payload(expectICMPPayload),
 				),
 			)
 		})
@@ -2459,7 +2458,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				checker.ICMPv6(
 					checker.ICMPv6Type(header.ICMPv6TimeExceeded),
 					checker.ICMPv6Code(header.ICMPv6ReassemblyTimeout),
-					checker.ICMPv6Payload([]byte(firstFragmentSent)),
+					checker.ICMPv6Payload(firstFragmentSent),
 				),
 			)
 		})
@@ -2795,11 +2794,7 @@ var fragmentationTests = []struct {
 }
 
 func TestFragmentationWritePacket(t *testing.T) {
-	const (
-		ttl            = 42
-		tos            = stack.DefaultTOS
-		transportProto = tcp.ProtocolNumber
-	)
+	const ttl = 42
 
 	for _, ft := range fragmentationTests {
 		t.Run(ft.description, func(t *testing.T) {
@@ -3335,7 +3330,7 @@ func TestForwarding(t *testing.T) {
 			}
 
 			transportProtocol := header.ICMPv6ProtocolNumber
-			extHdrBytes := []byte{}
+			var extHdrBytes []byte
 			extHdrChecker := checker.IPv6ExtHdr()
 			if test.extHdr != nil {
 				nextHdrID := hopByHopExtHdrID
@@ -3349,15 +3344,15 @@ func TestForwarding(t *testing.T) {
 			totalLength := ipHeaderLength + icmpHeaderLength + test.payloadLength + extHdrLen
 			hdr := buffer.NewPrependable(totalLength)
 			hdr.Prepend(test.payloadLength)
-			icmp := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
+			icmpH := header.ICMPv6(hdr.Prepend(icmpHeaderLength))
 
-			icmp.SetIdent(randomIdent)
-			icmp.SetSequence(randomSequence)
-			icmp.SetType(header.ICMPv6EchoRequest)
-			icmp.SetCode(header.ICMPv6UnusedCode)
-			icmp.SetChecksum(0)
-			icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
-				Header: icmp,
+			icmpH.SetIdent(randomIdent)
+			icmpH.SetSequence(randomSequence)
+			icmpH.SetType(header.ICMPv6EchoRequest)
+			icmpH.SetCode(header.ICMPv6UnusedCode)
+			icmpH.SetChecksum(0)
+			icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+				Header: icmpH,
 				Src:    test.sourceAddr,
 				Dst:    test.destAddr,
 			}))
@@ -3395,14 +3390,14 @@ func TestForwarding(t *testing.T) {
 					return len(hdr.View())
 				}
 
-				checker.IPv6(t, header.IPv6(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+				checker.IPv6(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
 					checker.SrcAddr(incomingIPv6Addr.Address),
 					checker.DstAddr(test.sourceAddr),
 					checker.TTL(DefaultTTL),
 					checker.ICMPv6(
 						checker.ICMPv6Type(test.icmpType),
 						checker.ICMPv6Code(test.icmpCode),
-						checker.ICMPv6Payload([]byte(hdr.View()[0:expectedICMPPayloadLength()])),
+						checker.ICMPv6Payload(hdr.View()[:expectedICMPPayloadLength()]),
 					),
 				)
 
@@ -3419,7 +3414,7 @@ func TestForwarding(t *testing.T) {
 					t.Fatal("expected ICMP Echo Request packet through outgoing NIC")
 				}
 
-				checker.IPv6WithExtHdr(t, header.IPv6(stack.PayloadSince(reply.Pkt.NetworkHeader())),
+				checker.IPv6WithExtHdr(t, stack.PayloadSince(reply.Pkt.NetworkHeader()),
 					checker.SrcAddr(test.sourceAddr),
 					checker.DstAddr(test.destAddr),
 					checker.TTL(test.TTL-1),

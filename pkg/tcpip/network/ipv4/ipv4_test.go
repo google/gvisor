@@ -3030,7 +3030,7 @@ func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string)
 	return false, false
 }
 
-func TestPacketQueing(t *testing.T) {
+func TestPacketQueuing(t *testing.T) {
 	const nicID = 1
 
 	var (
