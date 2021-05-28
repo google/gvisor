@@ -42,6 +42,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -184,6 +185,7 @@ func TestConfig(t *testing.T) *config.Config {
 	conf.Network = config.NetworkNone
 	conf.Strace = true
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
+	conf.WatchdogAction = watchdog.Panic
 	return conf
 }
 
