@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -51,11 +52,11 @@ type Registry struct {
 	userNS *auth.UserNamespace
 	// mu protects all fields below.
 	mu         sync.Mutex `state:"nosave"`
-	semaphores map[int32]*Set
-	lastIDUsed int32
+	semaphores map[ipc.ID]*Set
+	lastIDUsed ipc.ID
 	// indexes maintains a mapping between a set's index in virtual array and
 	// its identifier.
-	indexes map[int32]int32
+	indexes map[int32]ipc.ID
 }
 
 // Set represents a set of semaphores that can be operated atomically.
@@ -65,19 +66,12 @@ type Set struct {
 	// registry owning this sem set. Immutable.
 	registry *Registry
 
-	// Id is a handle that identifies the set.
-	ID int32
-
-	// key is an user provided key that can be shared between processes.
-	key int32
-
-	// creator is the user that created the set. Immutable.
-	creator fs.FileOwner
-
 	// mu protects all fields below.
-	mu         sync.Mutex `state:"nosave"`
-	owner      fs.FileOwner
-	perms      fs.FilePermissions
+	mu sync.Mutex `state:"nosave"`
+
+	// obj defines basic fields that should be included in all SysV IPC objects.
+	obj *ipc.Object
+
 	opTime     ktime.Time
 	changeTime ktime.Time
 
@@ -116,8 +110,8 @@ type waiter struct {
 func NewRegistry(userNS *auth.UserNamespace) *Registry {
 	return &Registry{
 		userNS:     userNS,
-		semaphores: make(map[int32]*Set),
-		indexes:    make(map[int32]int32),
+		semaphores: make(map[ipc.ID]*Set),
+		indexes:    make(map[int32]ipc.ID),
 	}
 }
 
@@ -126,7 +120,7 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 // a new set is always created. If create is false, it fails if a set cannot
 // be found. If exclusive is true, it fails if a set with the same key already
 // exists.
-func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linux.FileMode, private, create, exclusive bool) (*Set, error) {
+func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, nsems int32, mode linux.FileMode, private, create, exclusive bool) (*Set, error) {
 	if nsems < 0 || nsems > semsMax {
 		return nil, linuxerr.EINVAL
 	}
@@ -142,7 +136,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 
 			// Check that caller can access semaphore set.
 			creds := auth.CredentialsFromContext(ctx)
-			if !set.checkPerms(creds, fs.PermsFromMode(mode)) {
+			if !set.obj.CheckPermissions(creds, fs.PermsFromMode(mode)) {
 				return nil, linuxerr.EACCES
 			}
 
@@ -233,7 +227,7 @@ func (r *Registry) HighestIndex() int32 {
 
 // RemoveID removes set with give 'id' from the registry and marks the set as
 // dead. All waiters will be awakened and fail.
-func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
+func (r *Registry) RemoveID(id ipc.ID, creds *auth.Credentials) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -252,27 +246,17 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 
 	// "The effective user ID of the calling process must match the creator or
 	// owner of the semaphore set, or the caller must be privileged."
-	if !set.checkCredentials(creds) && !set.checkCapability(creds) {
+	if !set.obj.CheckOwnership(creds) {
 		return linuxerr.EACCES
 	}
 
-	delete(r.semaphores, set.ID)
+	delete(r.semaphores, set.obj.ID)
 	delete(r.indexes, index)
 	set.destroy()
 	return nil
 }
 
-func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.FileOwner, perms fs.FilePermissions, nsems int32) (*Set, error) {
-	set := &Set{
-		registry:   r,
-		key:        key,
-		owner:      owner,
-		creator:    owner,
-		perms:      perms,
-		changeTime: ktime.NowFromContext(ctx),
-		sems:       make([]sem, nsems),
-	}
-
+func (r *Registry) newSet(ctx context.Context, key ipc.Key, owner, creator fs.FileOwner, perms fs.FilePermissions, nsems int32) (*Set, error) {
 	// Find the next available ID.
 	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
 		// Handle wrap around.
@@ -287,8 +271,15 @@ func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.File
 			}
 			r.indexes[index] = id
 			r.lastIDUsed = id
+
+			set := &Set{
+				registry:   r,
+				obj:        ipc.NewObject(r.userNS, ipc.ID(id), ipc.Key(key), creator, owner, perms),
+				changeTime: ktime.NowFromContext(ctx),
+				sems:       make([]sem, nsems),
+			}
 			r.semaphores[id] = set
-			set.ID = id
+
 			return set, nil
 		}
 	}
@@ -298,7 +289,7 @@ func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.File
 }
 
 // FindByID looks up a set given an ID.
-func (r *Registry) FindByID(id int32) *Set {
+func (r *Registry) FindByID(id ipc.ID) *Set {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.semaphores[id]
@@ -316,16 +307,16 @@ func (r *Registry) FindByIndex(index int32) *Set {
 	return r.semaphores[id]
 }
 
-func (r *Registry) findByKey(key int32) *Set {
+func (r *Registry) findByKey(key ipc.Key) *Set {
 	for _, v := range r.semaphores {
-		if v.key == key {
+		if v.obj.Key == key {
 			return v
 		}
 	}
 	return nil
 }
 
-func (r *Registry) findIndexByID(id int32) (int32, bool) {
+func (r *Registry) findIndexByID(id ipc.ID) (int32, bool) {
 	for k, v := range r.indexes {
 		if v == id {
 			return k, true
@@ -351,6 +342,11 @@ func (r *Registry) totalSems() int {
 	return totalSems
 }
 
+// ID returns semaphore's ID.
+func (s *Set) ID() ipc.ID {
+	return s.obj.ID
+}
+
 func (s *Set) findSem(num int32) *sem {
 	if num < 0 || int(num) >= s.Size() {
 		return nil
@@ -370,12 +366,12 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 
 	// "The effective UID of the calling process must match the owner or creator
 	// of the semaphore set, or the caller must be privileged."
-	if !s.checkCredentials(creds) && !s.checkCapability(creds) {
+	if !s.obj.CheckOwnership(creds) {
 		return linuxerr.EACCES
 	}
 
-	s.owner = owner
-	s.perms = perms
+	s.obj.Owner = owner
+	s.obj.Perms = perms
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
 }
@@ -395,18 +391,18 @@ func (s *Set) semStat(creds *auth.Credentials, permMask fs.PermMask) (*linux.Sem
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.checkPerms(creds, permMask) {
+	if !s.obj.CheckPermissions(creds, permMask) {
 		return nil, linuxerr.EACCES
 	}
 
 	return &linux.SemidDS{
 		SemPerm: linux.IPCPerm{
-			Key:  uint32(s.key),
-			UID:  uint32(creds.UserNamespace.MapFromKUID(s.owner.UID)),
-			GID:  uint32(creds.UserNamespace.MapFromKGID(s.owner.GID)),
-			CUID: uint32(creds.UserNamespace.MapFromKUID(s.creator.UID)),
-			CGID: uint32(creds.UserNamespace.MapFromKGID(s.creator.GID)),
-			Mode: uint16(s.perms.LinuxMode()),
+			Key:  uint32(s.obj.Key),
+			UID:  uint32(creds.UserNamespace.MapFromKUID(s.obj.Owner.UID)),
+			GID:  uint32(creds.UserNamespace.MapFromKGID(s.obj.Owner.GID)),
+			CUID: uint32(creds.UserNamespace.MapFromKUID(s.obj.Creator.UID)),
+			CGID: uint32(creds.UserNamespace.MapFromKGID(s.obj.Creator.GID)),
+			Mode: uint16(s.obj.Perms.LinuxMode()),
 			Seq:  0, // IPC sequence not supported.
 		},
 		SemOTime: s.opTime.TimeT(),
@@ -425,7 +421,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 	defer s.mu.Unlock()
 
 	// "The calling process must have alter permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Write: true}) {
 		return linuxerr.EACCES
 	}
 
@@ -461,7 +457,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 	defer s.mu.Unlock()
 
 	// "The calling process must have alter permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Write: true}) {
 		return linuxerr.EACCES
 	}
 
@@ -483,7 +479,7 @@ func (s *Set) GetVal(num int32, creds *auth.Credentials) (int16, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
 		return 0, linuxerr.EACCES
 	}
 
@@ -500,7 +496,7 @@ func (s *Set) GetValAll(creds *auth.Credentials) ([]uint16, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
 		return nil, linuxerr.EACCES
 	}
 
@@ -517,7 +513,7 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 	defer s.mu.Unlock()
 
 	// "The calling process must have read permission on the semaphore set."
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
 		return 0, linuxerr.EACCES
 	}
 
@@ -533,7 +529,7 @@ func (s *Set) countWaiters(num int32, creds *auth.Credentials, pred func(w *wait
 	defer s.mu.Unlock()
 
 	// The calling process must have read permission on the semaphore set.
-	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
 		return 0, linuxerr.EACCES
 	}
 
@@ -589,7 +585,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 		}
 	}
 
-	if !s.checkPerms(creds, fs.PermMask{Read: readOnly, Write: !readOnly}) {
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: readOnly, Write: !readOnly}) {
 		return nil, 0, linuxerr.EACCES
 	}
 
@@ -673,34 +669,6 @@ func (s *Set) AbortWait(num int32, ch chan struct{}) {
 		}
 	}
 	// Waiter may not be found in case it raced with wakeWaiters().
-}
-
-func (s *Set) checkCredentials(creds *auth.Credentials) bool {
-	return s.owner.UID == creds.EffectiveKUID ||
-		s.owner.GID == creds.EffectiveKGID ||
-		s.creator.UID == creds.EffectiveKUID ||
-		s.creator.GID == creds.EffectiveKGID
-}
-
-func (s *Set) checkCapability(creds *auth.Credentials) bool {
-	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, s.registry.userNS) && creds.UserNamespace.MapFromKUID(s.owner.UID).Ok()
-}
-
-func (s *Set) checkPerms(creds *auth.Credentials, reqPerms fs.PermMask) bool {
-	// Are we owner, or in group, or other?
-	p := s.perms.Other
-	if s.owner.UID == creds.EffectiveKUID {
-		p = s.perms.User
-	} else if creds.InGroup(s.owner.GID) {
-		p = s.perms.Group
-	}
-
-	// Are permissions satisfied without capability checks?
-	if p.SupersetOf(reqPerms) {
-		return true
-	}
-
-	return s.checkCapability(creds)
 }
 
 // destroy destroys the set.
