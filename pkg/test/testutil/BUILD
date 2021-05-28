@@ -12,6 +12,7 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/sentry/watchdog",
         "//pkg/sync",
         "//runsc/config",
         "//runsc/specutils",

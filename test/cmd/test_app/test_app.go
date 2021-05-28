@@ -160,14 +160,17 @@ func (c *taskTree) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.
 func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	stop := testutil.StartReaper()
-	defer stop()
-
 	if c.depth == 0 {
 		log.Printf("Child sleeping, PID: %d\n", os.Getpid())
-		select {}
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
-	log.Printf("Parent %d sleeping, PID: %d\n", c.depth, os.Getpid())
+
+	log.Printf("Parent %d creating %d children, PID: %d\n", c.depth, c.width, os.Getpid())
+
+	stop := testutil.StartReaper()
+	defer stop()
 
 	var cmds []*exec.Cmd
 	for i := 0; i < c.width; i++ {
@@ -175,7 +178,7 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 			"/proc/self/exe", c.Name(),
 			"--depth", strconv.Itoa(c.depth-1),
 			"--width", strconv.Itoa(c.width),
-			"--pause", strconv.FormatBool(c.pause))
+			fmt.Sprintf("--pause=%t", c.pause))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -190,7 +193,10 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 	}
 
 	if c.pause {
-		select {}
+		log.Printf("Parent %d sleeping, PID: %d\n", c.depth, os.Getpid())
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 
 	return subcommands.ExitSuccess
