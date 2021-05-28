@@ -420,7 +420,7 @@ const (
 	PermanentExpired
 
 	// Temporary is an endpoint, created on a one-off basis to temporarily
-	// consider the NIC bound an an address that it is not explictiy bound to
+	// consider the NIC bound an an address that it is not explicitly bound to
 	// (such as a permanent address). Its reference count must not be biased by 1
 	// so that the address is removed immediately when references to it are no
 	// longer held.
@@ -630,7 +630,7 @@ type NetworkEndpoint interface {
 	// HandlePacket takes ownership of pkt.
 	HandlePacket(pkt *PacketBuffer)
 
-	// Close is called when the endpoint is reomved from a stack.
+	// Close is called when the endpoint is removed from a stack.
 	Close()
 
 	// NetworkProtocolNumber returns the tcpip.NetworkProtocolNumber for
@@ -968,7 +968,7 @@ type DuplicateAddressDetector interface {
 	// called with the result of the original DAD request.
 	CheckDuplicateAddress(tcpip.Address, DADCompletionHandler) DADCheckAddressDisposition
 
-	// SetDADConfiguations sets the configurations for DAD.
+	// SetDADConfigurations sets the configurations for DAD.
 	SetDADConfigurations(c DADConfigurations)
 
 	// DuplicateAddressProtocol returns the network protocol the receiver can
@@ -979,7 +979,7 @@ type DuplicateAddressDetector interface {
 // LinkAddressResolver handles link address resolution for a network protocol.
 type LinkAddressResolver interface {
 	// LinkAddressRequest sends a request for the link address of the target
-	// address. The request is broadcasted on the local network if a remote link
+	// address. The request is broadcast on the local network if a remote link
 	// address is not provided.
 	LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error
 
@@ -1072,4 +1072,4 @@ type GSOEndpoint interface {
 
 // SoftwareGSOMaxSize is a maximum allowed size of a software GSO segment.
 // This isn't a hard limit, because it is never set into packet headers.
-const SoftwareGSOMaxSize = (1 << 16)
+const SoftwareGSOMaxSize = 1 << 16
