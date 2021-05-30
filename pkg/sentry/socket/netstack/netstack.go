@@ -2959,7 +2959,8 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		linux.SIOCGIFNAME,
 		linux.SIOCGIFNETMASK,
 		linux.SIOCGIFTXQLEN,
-		linux.SIOCETHTOOL:
+		linux.SIOCETHTOOL,
+		linux.SIOCSIFMTU:
 
 		var ifr linux.IFReq
 		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
@@ -3110,6 +3111,13 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 	case linux.SIOCGIFMTU:
 		// Gets the MTU of the device.
 		hostarch.ByteOrder.PutUint32(ifr.Data[:4], iface.MTU)
+
+	case linux.SIOCSIFMTU:
+		// TODO(gvisor.dev/issue/6033): Support setting MTU value.
+		mtu := hostarch.ByteOrder.Uint32(ifr.Data[:4])
+		if mtu != iface.MTU {
+			return syserr.ErrNotSupported
+		}
 
 	case linux.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
