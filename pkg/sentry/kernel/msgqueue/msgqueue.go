@@ -16,12 +16,26 @@
 package msgqueue
 
 import (
-	"sync"
-
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
+)
+
+const (
+	// System-wide limit for maximum number of queues.
+	maxQueues = linux.MSGMNI
+
+	// Maximum size of a queue in bytes.
+	maxQueueBytes = linux.MSGMNB
+
+	// Maximum size of a message in bytes.
+	maxMessageBytes = linux.MSGMAX
 )
 
 // Registry contains a set of message queues that can be referenced using keys
@@ -34,6 +48,13 @@ type Registry struct {
 
 	// reg defines basic fields and operations needed for all SysV registries.
 	reg *ipc.Registry
+}
+
+// NewRegistry returns a new Registry ready to be used.
+func NewRegistry(userNS *auth.UserNamespace) *Registry {
+	return &Registry{
+		reg: ipc.NewRegistry(userNS),
+	}
 }
 
 // Queue represents a SysV message queue, described by sysvipc(7).
@@ -103,9 +124,69 @@ type Message struct {
 	mSize uint64
 }
 
-// NewRegistry returns a new Registry ready to be used.
-func NewRegistry(userNS *auth.UserNamespace) *Registry {
-	return &Registry{
-		reg: ipc.NewRegistry(userNS),
+// FindOrCreate creates a new message queue or returns an existing one. See
+// msgget(2).
+func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, mode linux.FileMode, private, create, exclusive bool) (*Queue, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !private {
+		queue, err := r.reg.Find(ctx, key, mode, create, exclusive)
+		if err != nil {
+			return nil, err
+		}
+
+		if queue != nil {
+			return queue.(*Queue), nil
+		}
 	}
+
+	// Check system-wide limits.
+	if r.reg.ObjectCount() >= maxQueues {
+		return nil, linuxerr.ENOSPC
+	}
+
+	return r.newQueueLocked(ctx, key, fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(mode))
+}
+
+// newQueueLocked creates a new queue using the given fields. An error is
+// returned if there're no more available identifiers.
+//
+// Precondition: r.mu must be held.
+func (r *Registry) newQueueLocked(ctx context.Context, key ipc.Key, creator fs.FileOwner, perms fs.FilePermissions) (*Queue, error) {
+	q := &Queue{
+		registry:    r,
+		obj:         ipc.NewObject(r.reg.UserNS, key, creator, creator, perms),
+		sendTime:    ktime.ZeroTime,
+		receiveTime: ktime.ZeroTime,
+		changeTime:  ktime.NowFromContext(ctx),
+		maxBytes:    maxQueueBytes,
+	}
+
+	err := r.reg.Register(q)
+	if err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+// Lock implements ipc.Mechanism.Lock.
+func (q *Queue) Lock() {
+	q.mu.Lock()
+}
+
+// Unlock implements ipc.mechanism.Unlock.
+//
+// +checklocksignore
+func (q *Queue) Unlock() {
+	q.mu.Unlock()
+}
+
+// Object implements ipc.Mechanism.Object.
+func (q *Queue) Object() *ipc.Object {
+	return q.obj
+}
+
+// Destroy implements ipc.Mechanism.Destroy. It's yet to be implemented.
+func (q *Queue) Destroy() {
 }
