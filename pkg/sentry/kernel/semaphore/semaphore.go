@@ -171,10 +171,10 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 	// Map semaphores and map indexes in a registry are of the same size,
 	// check map semaphores only here for the system limit.
 	if len(r.semaphores) >= setsMax {
-		return nil, syserror.EINVAL
+		return nil, syserror.ENOSPC
 	}
 	if r.totalSems() > int(semsTotalMax-nsems) {
-		return nil, syserror.EINVAL
+		return nil, syserror.ENOSPC
 	}
 
 	// Finally create a new set.
