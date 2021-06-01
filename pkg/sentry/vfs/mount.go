@@ -220,7 +220,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	vdDentry := vd.dentry
 	vdDentry.mu.Lock()
 	for {
-		if vdDentry.dead {
+		if vd.mount.umounted || vdDentry.dead {
 			vdDentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef(ctx)
