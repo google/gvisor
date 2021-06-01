@@ -6238,6 +6238,54 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	}
 }
 
+func TestListenDropIncrement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	stats := c.Stack().Stats()
+	c.Create(-1 /*epRcvBuf*/)
+
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+	if err := c.EP.Listen(1 /*backlog*/); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+
+	initialDropped := stats.DroppedPackets.Value()
+
+	// Send RST, FIN segments, that are expected to be dropped by the listener.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagRst,
+	})
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagFin,
+	})
+
+	// To ensure that the RST, FIN sent earlier are indeed received and ignored
+	// by the listener, send a SYN and wait for the SYN to be ACKd.
+	irs := seqnum.Value(context.TestInitialSequenceNumber)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  irs,
+	})
+	checker.IPv4(t, c.GetPacket(), checker.TCP(checker.SrcPort(context.StackPort),
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck|header.TCPFlagSyn),
+		checker.TCPAckNum(uint32(irs)+1),
+	))
+
+	if got, want := stats.DroppedPackets.Value(), initialDropped+2; got != want {
+		t.Fatalf("got stats.DroppedPackets.Value() = %d, want = %d", got, want)
+	}
+}
+
 func TestEndpointBindListenAcceptState(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
