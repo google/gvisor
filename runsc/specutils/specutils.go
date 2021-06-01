@@ -246,7 +246,7 @@ func Capabilities(enableRaw bool, specCaps *specs.LinuxCapabilities) (*auth.Task
 		if caps.PermittedCaps, err = capsFromNames(specCaps.Permitted, skipSet); err != nil {
 			return nil, err
 		}
-		// TODO(nlacasse): Support ambient capabilities.
+		// TODO(gvisor.dev/issue/3166): Support ambient capabilities.
 	}
 	return &caps, nil
 }
