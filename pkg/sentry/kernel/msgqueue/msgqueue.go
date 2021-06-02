@@ -67,6 +67,11 @@ type Queue struct {
 	// mu protects all the fields below.
 	mu sync.Mutex `state:"nosave"`
 
+	// dead is set to true when a queue is removed from the registry and should
+	// not be used. Operations on the queue should check dead, and return
+	// EIDRM if set to true.
+	dead bool
+
 	// obj defines basic fields that should be included in all SysV IPC objects.
 	obj *ipc.Object
 
@@ -170,6 +175,17 @@ func (r *Registry) newQueueLocked(ctx context.Context, key ipc.Key, creator fs.F
 	return q, nil
 }
 
+// Remove removes the queue with specified ID. All waiters (readers and
+// writers) and writers will be awakened and fail. Remove will return an error
+// if the ID is invalid, or the the user doesn't have privileges.
+func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.reg.Remove(id, creds)
+	return nil
+}
+
 // Lock implements ipc.Mechanism.Lock.
 func (q *Queue) Lock() {
 	q.mu.Lock()
@@ -187,6 +203,13 @@ func (q *Queue) Object() *ipc.Object {
 	return q.obj
 }
 
-// Destroy implements ipc.Mechanism.Destroy. It's yet to be implemented.
+// Destroy implements ipc.Mechanism.Destroy.
 func (q *Queue) Destroy() {
+	q.dead = true
+
+	// Notify waiters. Senders and receivers will try to run, and return an
+	// error (EIDRM). Waiters should remove themselves from the queue after
+	// waking up.
+	q.senders.Notify(waiter.EventOut)
+	q.receivers.Notify(waiter.EventIn)
 }
