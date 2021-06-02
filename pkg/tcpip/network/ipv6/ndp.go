@@ -127,24 +127,16 @@ const (
 	// maxSLAACAddrLocalRegenAttempts is the maximum number of times to attempt
 	// SLAAC address regenerations in response to an IPv6 endpoint-local conflict.
 	maxSLAACAddrLocalRegenAttempts = 10
-)
 
-var (
 	// MinPrefixInformationValidLifetimeForUpdate is the minimum Valid
 	// Lifetime to update the valid lifetime of a generated address by
 	// SLAAC.
-	//
-	// This is exported as a variable (instead of a constant) so tests
-	// can update it to a smaller value.
 	//
 	// Min = 2hrs.
 	MinPrefixInformationValidLifetimeForUpdate = 2 * time.Hour
 
 	// MaxDesyncFactor is the upper bound for the preferred lifetime's desync
 	// factor for temporary SLAAC addresses.
-	//
-	// This is exported as a variable (instead of a constant) so tests
-	// can update it to a smaller value.
 	//
 	// Must be greater than 0.
 	//
@@ -154,18 +146,12 @@ var (
 	// MinMaxTempAddrPreferredLifetime is the minimum value allowed for the
 	// maximum preferred lifetime for temporary SLAAC addresses.
 	//
-	// This is exported as a variable (instead of a constant) so tests
-	// can update it to a smaller value.
-	//
 	// This value guarantees that a temporary address is preferred for at
 	// least 1hr if the SLAAC prefix is valid for at least that time.
 	MinMaxTempAddrPreferredLifetime = defaultRegenAdvanceDuration + MaxDesyncFactor + time.Hour
 
 	// MinMaxTempAddrValidLifetime is the minimum value allowed for the
 	// maximum valid lifetime for temporary SLAAC addresses.
-	//
-	// This is exported as a variable (instead of a constant) so tests
-	// can update it to a smaller value.
 	//
 	// This value guarantees that a temporary address is valid for at least
 	// 2hrs if the SLAAC prefix is valid for at least that time.
@@ -1239,8 +1225,9 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	// address is the lower of the preferred lifetime of the stable address or the
 	// maximum temporary address preferred lifetime - the temporary address desync
 	// factor.
-	pl := ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor
+	var pl time.Duration
 	if prefixState.preferredUntil != (tcpip.MonotonicTime{}) {
+		pl = ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor
 		if prefixPL := prefixState.preferredUntil.Sub(now); pl > prefixPL {
 			// Respect the preferred lifetime of the prefix, as per RFC 4941 section
 			// 3.3 step 4.
@@ -1463,9 +1450,12 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 		// the maximum temporary address preferred lifetime - the temporary address
 		// desync factor. Note, the preferred lifetime of a temporary address is
 		// relative to the address's creation time.
-		preferredUntil := tempAddrState.createdAt.Add(ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor)
-		if prefixState.preferredUntil != (tcpip.MonotonicTime{}) && preferredUntil.Sub(prefixState.preferredUntil) > 0 {
-			preferredUntil = prefixState.preferredUntil
+		var preferredUntil tcpip.MonotonicTime
+		if prefixState.preferredUntil != (tcpip.MonotonicTime{}) {
+			preferredUntil = tempAddrState.createdAt.Add(ndp.configs.MaxTempAddrPreferredLifetime - ndp.temporaryAddressDesyncFactor)
+			if prefixState.preferredUntil.Before(preferredUntil) {
+				preferredUntil = prefixState.preferredUntil
+			}
 		}
 
 		// If the address is no longer preferred, deprecate it immediately.
@@ -1841,9 +1831,7 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 	ndp.slaacPrefixes = make(map[tcpip.Subnet]slaacPrefixState)
 
 	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
-	if MaxDesyncFactor != 0 {
-		ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.Rand().Int63n(int64(MaxDesyncFactor)))
-	}
+	ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.Rand().Int63n(int64(MaxDesyncFactor)))
 }
 
 func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
