@@ -692,6 +692,78 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownConnectingRead) {
   });
 }
 
+// Test close of a non-blocking connecting socket.
+TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
+  TestParam const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(
+      bind(listen_fd.get(), AsSockAddr(&listen_addr), listener.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), 0), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_EQ(addrlen, listener.addr_len);
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  // Try many iterations to catch a race with socket close and handshake
+  // completion.
+  for (int i = 0; i < 1000; ++i) {
+    FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    ASSERT_THAT(
+        connect(client.get(), AsSockAddr(&conn_addr), connector.addr_len),
+        SyscallFailsWithErrno(EINPROGRESS));
+    ASSERT_THAT(close(client.release()), SyscallSucceeds());
+
+    // Accept any connections and check if they were closed from the peer. Not
+    // all client connects would result in an acceptable connection as the
+    // client handshake might never complete if the socket close was processed
+    // sooner than the non-blocking connect OR the accept queue is full. We are
+    // only interested in the case where we do have an acceptable completed
+    // connection. The accept is non-blocking here, which means that at the time
+    // of listener close (after the loop ends), we could still have a completed
+    // connection (from connect of any previous iteration) in the accept queue.
+    // The listener close would clean up the accept queue.
+    int accepted_fd;
+    ASSERT_THAT(accepted_fd = accept(listen_fd.get(), nullptr, nullptr),
+                AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EWOULDBLOCK)));
+    if (accepted_fd < 0) {
+      continue;
+    }
+    FileDescriptor accepted(accepted_fd);
+    struct pollfd pfd = {
+        .fd = accepted.get(),
+        .events = POLLIN | POLLRDHUP,
+    };
+    // Use a large timeout to accomodate for retransmitted FINs.
+    constexpr int kTimeout = 30000;
+    int n = poll(&pfd, 1, kTimeout);
+    ASSERT_GE(n, 0) << strerror(errno);
+    ASSERT_EQ(n, 1);
+
+    if (IsRunningOnGvisor() && GvisorPlatform() != Platform::kFuchsia) {
+      // TODO(gvisor.dev/issue/6015): Notify POLLRDHUP on incoming FIN.
+      ASSERT_EQ(pfd.revents, POLLIN);
+    } else {
+      ASSERT_EQ(pfd.revents, POLLIN | POLLRDHUP);
+    }
+    ASSERT_THAT(close(accepted.release()), SyscallSucceeds());
+  }
+}
+
 // TODO(b/157236388): Remove  once bug is fixed. Test fails w/
 // random save as established connections which can't be delivered to the accept
 // queue because the queue is full are not correctly delivered after restore
