@@ -1474,11 +1474,19 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 					return &tcpip.ErrConnectionReset{}
 				}
 
-				if n&notifyClose != 0 && closeTimer == nil {
-					if e.EndpointState() == StateFinWait2 && e.closed {
+				if n&notifyClose != 0 && e.closed {
+					switch e.EndpointState() {
+					case StateEstablished:
+						// Perform full shutdown if the endpoint is still
+						// established. This can occur when notifyClose
+						// was asserted just before becoming established.
+						e.shutdownLocked(tcpip.ShutdownWrite | tcpip.ShutdownRead)
+					case StateFinWait2:
 						// The socket has been closed and we are in FIN_WAIT2
 						// so start the FIN_WAIT2 timer.
-						closeTimer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
+						if closeTimer == nil {
+							closeTimer = e.stack.Clock().AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
+						}
 					}
 				}
 
