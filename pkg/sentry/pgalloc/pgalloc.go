@@ -1062,14 +1062,11 @@ func (f *MemoryFile) runReclaim() {
 			break
 		}
 
-		// If ManualZeroing is in effect, pages will be zeroed on allocation
-		// and may not be freed by decommitFile, so calling decommitFile is
-		// unnecessary.
-		if !f.opts.ManualZeroing {
-			if err := f.decommitFile(fr); err != nil {
-				log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
-				// Zero the pages manually. This won't reduce memory usage, but at
-				// least ensures that the pages will be zero when reallocated.
+		if err := f.decommitFile(fr); err != nil {
+			log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
+			// If manual zeroing is enabled, pages will be zeroed when they are
+			// reallocated. Otherwise, we need to zero them here.
+			if !f.opts.ManualZeroing {
 				if err := f.manuallyZero(fr); err != nil {
 					panic(fmt.Sprintf("Reclaim failed to decommit or zero %v: %v", fr, err))
 				}
