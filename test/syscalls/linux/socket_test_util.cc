@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_test_util.h"
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 
@@ -798,84 +799,82 @@ TestAddress TestAddress::WithPort(uint16_t port) const {
   return addr;
 }
 
-TestAddress V4Any() {
-  TestAddress t("V4Any");
+namespace {
+
+TestAddress V4Addr(std::string description, in_addr_t addr) {
+  TestAddress t(description);
   t.addr.ss_family = AF_INET;
   t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr = htonl(INADDR_ANY);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr = addr;
   return t;
+}
+
+TestAddress V6Addr(std::string description, struct in6_addr addr) {
+  TestAddress t(description);
+  t.addr.ss_family = AF_INET6;
+  t.addr_len = sizeof(sockaddr_in6);
+  reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr = addr;
+  return t;
+}
+
+}  // namespace
+
+TestAddress V4AddrStr(std::string description, const char* addr) {
+  in_addr_t s_addr;
+  inet_pton(AF_INET, addr, &s_addr);
+  return V4Addr(description, s_addr);
+}
+
+TestAddress V6AddrStr(std::string description, const char* addr) {
+  struct in6_addr s_addr;
+  inet_pton(AF_INET6, addr, &s_addr);
+  return V6Addr(description, s_addr);
+}
+
+TestAddress V4Any() { return V4Addr("V4Any", htonl(INADDR_ANY)); }
+
+TestAddress V4Broadcast() {
+  return V4Addr("V4Broadcast", htonl(INADDR_BROADCAST));
 }
 
 TestAddress V4Loopback() {
-  TestAddress t("V4Loopback");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      htonl(INADDR_LOOPBACK);
-  return t;
+  return V4Addr("V4Loopback", htonl(INADDR_LOOPBACK));
 }
 
-TestAddress V4MappedAny() {
-  TestAddress t("V4MappedAny");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  inet_pton(AF_INET6, "::ffff:0.0.0.0",
-            reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr);
-  return t;
+TestAddress V4LoopbackSubnetBroadcast() {
+  return V4AddrStr("V4LoopbackSubnetBroadcast", "127.255.255.255");
 }
+
+TestAddress V4MappedAny() { return V6AddrStr("V4MappedAny", "::ffff:0.0.0.0"); }
 
 TestAddress V4MappedLoopback() {
-  TestAddress t("V4MappedLoopback");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  inet_pton(AF_INET6, "::ffff:127.0.0.1",
-            reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr);
-  return t;
+  return V6AddrStr("V4MappedLoopback", "::ffff:127.0.0.1");
 }
 
 TestAddress V4Multicast() {
-  TestAddress t("V4Multicast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kMulticastAddress);
-  return t;
+  return V4Addr("V4Multicast", inet_addr(kMulticastAddress));
 }
 
-TestAddress V4Broadcast() {
-  TestAddress t("V4Broadcast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      htonl(INADDR_BROADCAST);
-  return t;
+TestAddress V4MulticastAllHosts() {
+  return V4Addr("V4MulticastAllHosts", htonl(INADDR_ALLHOSTS_GROUP));
 }
 
-TestAddress V6Any() {
-  TestAddress t("V6Any");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr = in6addr_any;
-  return t;
+TestAddress V6Any() { return V6Addr("V6Any", in6addr_any); }
+
+TestAddress V6Loopback() { return V6Addr("V6Loopback", in6addr_loopback); }
+
+TestAddress V6Multicast() { return V6AddrStr("V6Multicast", "ff05::1234"); }
+
+TestAddress V6MulticastInterfaceLocalAllNodes() {
+  return V6AddrStr("V6MulticastInterfaceLocalAllNodes", "ff01::1");
 }
 
-TestAddress V6Loopback() {
-  TestAddress t("V6Loopback");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr = in6addr_loopback;
-  return t;
+TestAddress V6MulticastLinkLocalAllNodes() {
+  return V6AddrStr("V6MulticastLinkLocalAllNodes", "ff02::1");
 }
 
-TestAddress V6Multicast() {
-  TestAddress t("V6Multicast");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  EXPECT_EQ(
-      1,
-      inet_pton(AF_INET6, "ff05::1234",
-                reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr));
-  return t;
+TestAddress V6MulticastLinkLocalAllRouters() {
+  return V6AddrStr("V6MulticastLinkLocalAllRouters", "ff02::2");
 }
 
 // Checksum computes the internet checksum of a buffer.

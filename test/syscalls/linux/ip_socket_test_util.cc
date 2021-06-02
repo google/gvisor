@@ -140,6 +140,22 @@ SocketPairKind IPv4UDPUnboundSocketPair(int type) {
                                   /* dual_stack = */ false)};
 }
 
+SocketKind ICMPUnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "ICMP socket");
+  return SocketKind{
+      description, AF_INET, type | SOCK_DGRAM, IPPROTO_ICMP,
+      UnboundSocketCreator(AF_INET, type | SOCK_DGRAM, IPPROTO_ICMP)};
+}
+
+SocketKind ICMPv6UnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "ICMPv6 socket");
+  return SocketKind{
+      description, AF_INET6, type | SOCK_DGRAM, IPPROTO_ICMPV6,
+      UnboundSocketCreator(AF_INET6, type | SOCK_DGRAM, IPPROTO_ICMPV6)};
+}
+
 SocketKind IPv4UDPUnboundSocket(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
