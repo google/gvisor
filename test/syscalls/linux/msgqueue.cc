@@ -48,9 +48,6 @@ class Queue {
 
 // Test simple creation and retrieval for msgget(2).
 TEST(MsgqueueTest, MsgGet) {
-  // Don't run test until syscall is implemented.
-  GTEST_SKIP();
-
   const TempPath keyfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const key_t key = ftok(keyfile.path().c_str(), 1);
   ASSERT_THAT(key, SyscallSucceeds());
@@ -62,9 +59,6 @@ TEST(MsgqueueTest, MsgGet) {
 
 // Test simple failure scenarios for msgget(2).
 TEST(MsgqueueTest, MsgGetFail) {
-  // Don't run test until syscall is implemented.
-  GTEST_SKIP();
-
   const TempPath keyfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const key_t key = ftok(keyfile.path().c_str(), 1);
   ASSERT_THAT(key, SyscallSucceeds());
@@ -79,9 +73,6 @@ TEST(MsgqueueTest, MsgGetFail) {
 
 // Test using msgget(2) with IPC_PRIVATE option.
 TEST(MsgqueueTest, MsgGetIpcPrivate) {
-  // Don't run test until syscall is implemented.
-  GTEST_SKIP();
-
   Queue queue1(msgget(IPC_PRIVATE, 0));
   ASSERT_THAT(queue1.get(), SyscallSucceeds());
 

@@ -25,6 +25,7 @@ go_library(
         "sys_mempolicy.go",
         "sys_mmap.go",
         "sys_mount.go",
+        "sys_msgqueue.go",
         "sys_pipe.go",
         "sys_poll.go",
         "sys_prctl.go",

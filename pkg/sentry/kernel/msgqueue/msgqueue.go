@@ -213,3 +213,8 @@ func (q *Queue) Destroy() {
 	q.senders.Notify(waiter.EventOut)
 	q.receivers.Notify(waiter.EventIn)
 }
+
+// ID returns queue's ID.
+func (q *Queue) ID() ipc.ID {
+	return q.obj.ID
+}
