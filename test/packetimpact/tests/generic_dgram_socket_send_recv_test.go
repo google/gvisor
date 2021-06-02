@@ -91,7 +91,9 @@ func TestSocket(t *testing.T) {
 		&icmpV6Test{},
 		&udpTest{},
 	} {
+		proto := proto
 		t.Run(proto.Name(), func(t *testing.T) {
+			t.Parallel()
 			// Test every combination of bound/unbound, broadcast/multicast/unicast
 			// bound/destination address, and bound/not-bound to device.
 			for _, bindTo := range []net.IP{
@@ -104,7 +106,9 @@ func TestSocket(t *testing.T) {
 				dut.Net.RemoteIPv4,
 				dut.Net.RemoteIPv6,
 			} {
+				bindTo := bindTo
 				t.Run(fmt.Sprintf("bindTo=%s", bindTo), func(t *testing.T) {
+					t.Parallel()
 					for _, sendTo := range []net.IP{
 						net.IPv4bcast,
 						net.IPv4allsys,
@@ -114,13 +118,19 @@ func TestSocket(t *testing.T) {
 						dut.Net.RemoteIPv4,
 						dut.Net.RemoteIPv6,
 					} {
+						sendTo := sendTo
 						t.Run(fmt.Sprintf("sendTo=%s", sendTo), func(t *testing.T) {
+							t.Parallel()
 							for _, bindToDevice := range []bool{true, false} {
+								bindToDevice := bindToDevice
 								t.Run(fmt.Sprintf("bindToDevice=%t", bindToDevice), func(t *testing.T) {
+									t.Parallel()
 									t.Run("Send", func(t *testing.T) {
+										t.Parallel()
 										proto.Send(t, dut, bindTo, sendTo, bindToDevice)
 									})
 									t.Run("Receive", func(t *testing.T) {
+										t.Parallel()
 										proto.Receive(t, dut, bindTo, sendTo, bindToDevice)
 									})
 								})
@@ -135,7 +145,6 @@ func TestSocket(t *testing.T) {
 
 type icmpV4TestEnv struct {
 	socketFD int32
-	ident    uint16
 	conn     testbench.IPv4Conn
 	layers   testbench.Layers
 }
@@ -146,18 +155,30 @@ func (test *icmpV4Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 	t.Helper()
 
 	// Tell the DUT to create a socket.
-	var socketFD int32
-	var ident uint16
-
-	if bindTo != nil {
-		socketFD, ident = dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_ICMP, bindTo)
-	} else {
-		// An unbound socket will auto-bind to INADDR_ANY.
-		socketFD = dut.Socket(t, unix.AF_INET, unix.SOCK_DGRAM, unix.IPPROTO_ICMP)
-	}
+	socketFD := dut.Socket(t, unix.AF_INET, unix.SOCK_DGRAM, unix.IPPROTO_ICMP)
 	t.Cleanup(func() {
 		dut.Close(t, socketFD)
 	})
+
+	if bindTo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
+		defer cancel()
+		ret, err := dut.BindWithErrno(ctx, t, socketFD, sockaddr(t, dut, bindTo))
+		if bindTo.To4() == nil || isBroadcastOrMulticast(dut, bindTo) {
+			if ret != 0 {
+				t.Skip("ICMP sockets cannot bind to IPv6, broadcast, or multicast addresses")
+			}
+			// TODO(gvisor.dev/issue/5711): Remove this if statement once ICMP
+			// sockets are no longer allowed to bind to broadcast addresses.
+			if (dut.Uname.IsGvisor() || dut.Uname.IsFuchsia()) && isBroadcast(dut, bindTo) {
+				t.Skip("TODO(gvisor.dev/issue/5711): Disallow ICMP sockets from binding to broadcast addresses.")
+			}
+			t.Fatalf("got dut.BindWithErrno(_, _, %d, %s) = (0, _), want = (non-zero, _)", socketFD, bindTo)
+		}
+		if ret != 0 {
+			t.Fatalf("got dut.BindWithErrno(_, _, %d, %s) = (%d, %s), want = (0, nil)", socketFD, bindTo, ret, err)
+		}
+	}
 
 	if bindToDevice {
 		dut.SetSockOpt(t, socketFD, unix.SOL_SOCKET, unix.SO_BINDTODEVICE, []byte(dut.Net.RemoteDevName))
@@ -171,7 +192,6 @@ func (test *icmpV4Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 
 	return icmpV4TestEnv{
 		socketFD: socketFD,
-		ident:    ident,
 		conn:     conn,
 		layers: testbench.Layers{
 			expectedEthLayer(t, dut, socketFD, sendTo),
@@ -187,12 +207,6 @@ var _ protocolTest = (*icmpV4Test)(nil)
 func (*icmpV4Test) Name() string { return "icmpv4" }
 
 func (test *icmpV4Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
-	if bindTo.To4() == nil || isBroadcastOrMulticast(dut, bindTo) {
-		// ICMPv4 sockets cannot bind to IPv6, broadcast, or multicast
-		// addresses.
-		return
-	}
-
 	isV4 := sendTo.To4() != nil
 
 	// TODO(gvisor.dev/issue/5681): Remove this case once ICMP sockets allow
@@ -244,11 +258,12 @@ func (test *icmpV4Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 				t.Fatalf("got dut.SendTo = %d, want %d", got, want)
 			}
 
-			// Verify the test runner received an ICMP packet with the correctly
-			// set "ident".
-			if env.ident != 0 {
-				icmpLayer.Ident = &env.ident
-			}
+			// Set the ident field after sending the packet. This is necessary
+			// for unbound sockets, where ident will not be available until
+			// after a packet is sent.
+			icmpLayer.Ident = ident(t, dut, env.socketFD)
+
+			// Verify the test runner received the ICMP packet.
 			want := append(env.layers, icmpLayer)
 			if got, ok := env.conn.ListenForFrame(t, want, time.Second); !ok && expectPacket {
 				t.Fatalf("did not receive expected frame matching %s\nGot frames: %s", want, got)
@@ -261,12 +276,6 @@ func (test *icmpV4Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 }
 
 func (test *icmpV4Test) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
-	if bindTo.To4() == nil || isBroadcastOrMulticast(dut, bindTo) {
-		// ICMPv4 sockets cannot bind to IPv6, broadcast, or multicast
-		// addresses.
-		return
-	}
-
 	expectPacket := (bindTo.Equal(dut.Net.RemoteIPv4) || bindTo.Equal(net.IPv4zero)) && sendTo.Equal(dut.Net.RemoteIPv4)
 
 	// TODO(gvisor.dev/issue/5763): Remove this if statement once gVisor
@@ -285,10 +294,8 @@ func (test *icmpV4Test) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo 
 		t.Run(name, func(t *testing.T) {
 			icmpLayer := &testbench.ICMPv4{
 				Type:    testbench.ICMPv4Type(header.ICMPv4EchoReply),
+				Ident:   ident(t, dut, env.socketFD),
 				Payload: payload,
-			}
-			if env.ident != 0 {
-				icmpLayer.Ident = &env.ident
 			}
 
 			// Send an ICMPv4 packet from the test runner to the DUT.
@@ -333,7 +340,6 @@ func (test *icmpV4Test) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo 
 
 type icmpV6TestEnv struct {
 	socketFD int32
-	ident    uint16
 	conn     testbench.IPv6Conn
 	layers   testbench.Layers
 }
@@ -351,18 +357,25 @@ func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 	t.Helper()
 
 	// Tell the DUT to create a socket.
-	var socketFD int32
-	var ident uint16
-
-	if bindTo != nil {
-		socketFD, ident = dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_ICMPV6, bindTo)
-	} else {
-		// An unbound socket will auto-bind to IN6ADDR_ANY_INIT.
-		socketFD = dut.Socket(t, unix.AF_INET6, unix.SOCK_DGRAM, unix.IPPROTO_ICMPV6)
-	}
+	socketFD := dut.Socket(t, unix.AF_INET6, unix.SOCK_DGRAM, unix.IPPROTO_ICMPV6)
 	t.Cleanup(func() {
 		dut.Close(t, socketFD)
 	})
+
+	if bindTo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
+		defer cancel()
+		ret, err := dut.BindWithErrno(ctx, t, socketFD, sockaddr(t, dut, bindTo))
+		if bindTo.To4() != nil || bindTo.IsMulticast() {
+			if ret != 0 {
+				t.Skip("ICMPv6 sockets cannot bind to IPv4 or multicast addresses")
+			}
+			t.Fatalf("got dut.BindWithErrno(_, _, %d, %s) = (0, _), want = (non-zero, _)", socketFD, bindTo)
+		}
+		if ret != 0 {
+			t.Fatalf("got dut.BindWithErrno(_, _, %d, %s) = (%d, %s), want = (0, nil)", socketFD, bindTo, ret, err)
+		}
+	}
 
 	if bindToDevice {
 		dut.SetSockOpt(t, socketFD, unix.SOL_SOCKET, unix.SO_BINDTODEVICE, []byte(dut.Net.RemoteDevName))
@@ -376,7 +389,6 @@ func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 
 	return icmpV6TestEnv{
 		socketFD: socketFD,
-		ident:    ident,
 		conn:     conn,
 		layers: testbench.Layers{
 			expectedEthLayer(t, dut, socketFD, sendTo),
@@ -392,11 +404,6 @@ var _ protocolTest = (*icmpV6Test)(nil)
 func (*icmpV6Test) Name() string { return "icmpv6" }
 
 func (test *icmpV6Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
-	if bindTo.To4() != nil || bindTo.IsMulticast() {
-		// ICMPv6 sockets cannot bind to IPv4 or multicast addresses.
-		return
-	}
-
 	expectPacket := sendTo.Equal(dut.Net.LocalIPv6)
 	wantErrno := unix.Errno(0)
 
@@ -451,11 +458,12 @@ func (test *icmpV6Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 				t.Fatalf("got dut.SendToWithErrno(_, _, %d, _, _, %s) = (%d, _), want = (%d, _)", env.socketFD, sendTo, got, want)
 			}
 
-			// Verify the test runner received an ICMPv6 packet with the
-			// correctly set "ident".
-			if env.ident != 0 {
-				icmpLayer.Ident = &env.ident
-			}
+			// Set the ident field after sending the packet. This is necessary
+			// for unbound sockets, where ident will not be available until
+			// after a packet is sent.
+			icmpLayer.Ident = ident(t, dut, env.socketFD)
+
+			// Verify the test runner received the ICMPv6 packet.
 			want := append(env.layers, icmpLayer)
 			if got, ok := env.conn.ListenForFrame(t, want, time.Second); !ok && expectPacket {
 				t.Fatalf("did not receive expected frame matching %s\nGot frames: %s", want, got)
@@ -468,11 +476,6 @@ func (test *icmpV6Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 }
 
 func (test *icmpV6Test) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
-	if bindTo.To4() != nil || bindTo.IsMulticast() {
-		// ICMPv6 sockets cannot bind to IPv4 or multicast addresses.
-		return
-	}
-
 	expectPacket := true
 	switch {
 	case bindTo.Equal(dut.Net.RemoteIPv6) && sendTo.Equal(dut.Net.RemoteIPv6):
@@ -498,10 +501,8 @@ func (test *icmpV6Test) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo 
 		t.Run(name, func(t *testing.T) {
 			icmpLayer := &testbench.ICMPv6{
 				Type:    testbench.ICMPv6Type(header.ICMPv6EchoReply),
+				Ident:   ident(t, dut, env.socketFD),
 				Payload: payload,
-			}
-			if env.ident != 0 {
-				icmpLayer.Ident = &env.ident
 			}
 
 			// Send an ICMPv6 packet from the test runner to the DUT.
@@ -571,6 +572,7 @@ func (test *udpTest) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo net.I
 	if bindTo != nil {
 		var remotePort uint16
 		socketFD, remotePort = dut.CreateBoundSocket(t, unix.SOCK_DGRAM, unix.IPPROTO_UDP, bindTo)
+		t.Logf("port = %d", remotePort)
 		outgoingUDP.DstPort = &remotePort
 		incomingUDP.SrcPort = &remotePort
 	} else {
@@ -691,6 +693,10 @@ func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP
 				t.Fatalf("got dut.SendToWithErrno(_, _, %d, _, _, %s) = (%d, _), want = (%d, _)", env.socketFD, sendTo, got, want)
 			}
 
+			if bindTo == nil {
+				t.Logf("port = %d (unbound)", ident(t, dut, env.socketFD))
+			}
+
 			// Verify the test runner received a UDP packet with the
 			// correct payload.
 			want := append(env.layers, &testbench.Payload{
@@ -762,7 +768,7 @@ func (test *udpTest) Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 				)
 				ret, recvPayload, errno := dut.RecvWithErrno(context.Background(), t, env.socketFD, int32(maxPayloadSize), 0)
 				if errno != unix.EAGAIN || errno != unix.EWOULDBLOCK {
-					t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s", ret, recvPayload, errno)
+					t.Errorf("Recv got unexpected result, ret=%d, payload=%q, errno=%s, port=%d", ret, recvPayload, errno, *ident(t, dut, env.socketFD))
 				}
 			}
 		})
@@ -783,4 +789,39 @@ func sameIPVersion(a, b net.IP) bool {
 
 func isRemoteAddr(dut testbench.DUT, ip net.IP) bool {
 	return ip.Equal(dut.Net.RemoteIPv4) || ip.Equal(dut.Net.RemoteIPv6)
+}
+
+func sockaddr(t *testing.T, dut testbench.DUT, addr net.IP) unix.Sockaddr {
+	if addr.To4() != nil {
+		sa := unix.SockaddrInet4{}
+		copy(sa.Addr[:], addr.To4())
+		return &sa
+	} else if addr.To16() != nil {
+		sa := unix.SockaddrInet6{
+			ZoneId: dut.Net.RemoteDevID,
+		}
+		copy(sa.Addr[:], addr.To16())
+		return &sa
+	}
+	t.Fatalf("invalid IP address: %s", addr)
+	return nil
+}
+
+func ident(t *testing.T, dut testbench.DUT, socketFD int32) *uint16 {
+	sa := dut.GetSockName(t, socketFD)
+
+	var ident uint16
+	switch s := sa.(type) {
+	case *unix.SockaddrInet4:
+		ident = uint16(s.Port)
+	case *unix.SockaddrInet6:
+		ident = uint16(s.Port)
+	default:
+		t.Fatalf("got dut.GetSockName(_, %d) = %T, want = %T or %T", sa, &unix.SockaddrInet4{}, &unix.RawSockaddrInet6{})
+	}
+
+	if ident != 0 {
+		return &ident
+	}
+	return nil
 }

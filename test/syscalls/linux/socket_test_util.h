@@ -499,15 +499,25 @@ struct TestAddress {
 constexpr char kMulticastAddress[] = "224.0.2.1";
 constexpr char kBroadcastAddress[] = "255.255.255.255";
 
-TestAddress V4Any();
+TestAddress V4AddrStr(std::string description, const char* addr);
+TestAddress V6AddrStr(std::string description, const char* addr);
+
 TestAddress V4Broadcast();
 TestAddress V4Loopback();
+TestAddress V4LoopbackSubnetBroadcast();
 TestAddress V4MappedAny();
 TestAddress V4MappedLoopback();
 TestAddress V4Multicast();
+TestAddress V4MulticastAllHosts();
+TestAddress V4Any();
+TestAddress V4SubnetBroadcast();
+
 TestAddress V6Any();
 TestAddress V6Loopback();
 TestAddress V6Multicast();
+TestAddress V6MulticastInterfaceLocalAllNodes();
+TestAddress V6MulticastLinkLocalAllNodes();
+TestAddress V6MulticastLinkLocalAllRouters();
 
 // Compute the internet checksum of an IP header.
 uint16_t IPChecksum(struct iphdr ip);
