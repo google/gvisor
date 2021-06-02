@@ -121,10 +121,10 @@ var AMD64 = &kernel.SyscallTable{
 		65:  syscalls.PartiallySupported("semop", Semop, "Option SEM_UNDO not supported.", nil),
 		66:  syscalls.Supported("semctl", Semctl),
 		67:  syscalls.Supported("shmdt", Shmdt),
-		68:  syscalls.ErrorWithEvent("msgget", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
-		69:  syscalls.ErrorWithEvent("msgsnd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
-		70:  syscalls.ErrorWithEvent("msgrcv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
-		71:  syscalls.ErrorWithEvent("msgctl", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
+		68:  syscalls.Supported("msgget", Msgget),
+		69:  syscalls.ErrorWithEvent("msgsnd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
+		70:  syscalls.ErrorWithEvent("msgrcv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
+		71:  syscalls.PartiallySupported("msgctl", Msgctl, "Only supports IPC_RMID option.", []string{"gvisor.dev/issue/135"}),
 		72:  syscalls.PartiallySupported("fcntl", Fcntl, "Not all options are supported.", nil),
 		73:  syscalls.PartiallySupported("flock", Flock, "Locks are held within the sandbox only.", nil),
 		74:  syscalls.PartiallySupported("fsync", Fsync, "Full data flush is not guaranteed at this time.", nil),
@@ -616,10 +616,10 @@ var ARM64 = &kernel.SyscallTable{
 		183: syscalls.ErrorWithEvent("mq_timedreceive", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}), // TODO(b/29354921)
 		184: syscalls.ErrorWithEvent("mq_notify", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
 		185: syscalls.ErrorWithEvent("mq_getsetattr", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
-		186: syscalls.ErrorWithEvent("msgget", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
-		187: syscalls.ErrorWithEvent("msgctl", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
-		188: syscalls.ErrorWithEvent("msgrcv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
-		189: syscalls.ErrorWithEvent("msgsnd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/135"}),          // TODO(b/29354921)
+		186: syscalls.Supported("msgget", Msgget),
+		187: syscalls.PartiallySupported("msgctl", Msgctl, "Only supports IPC_RMID option.", []string{"gvisor.dev/issue/135"}),
+		188: syscalls.ErrorWithEvent("msgrcv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
+		189: syscalls.ErrorWithEvent("msgsnd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/135"}), // TODO(b/29354921)
 		190: syscalls.Supported("semget", Semget),
 		191: syscalls.Supported("semctl", Semctl),
 		192: syscalls.Supported("semtimedop", Semtimedop),
