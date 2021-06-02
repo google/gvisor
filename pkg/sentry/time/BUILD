@@ -8,7 +8,7 @@ go_template_instance(
     out = "seqatomic_parameters_unsafe.go",
     package = "time",
     suffix = "Parameters",
-    template = "//pkg/sync:generic_seqatomic",
+    template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
         "Value": "Parameters",
     },

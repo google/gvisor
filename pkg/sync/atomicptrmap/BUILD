@@ -1,9 +1,28 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(
     default_visibility = ["//visibility:private"],
     licenses = ["notice"],
+)
+
+go_template(
+    name = "generic_atomicptrmap",
+    srcs = ["generic_atomicptrmap_unsafe.go"],
+    opt_consts = [
+        "ShardOrder",
+    ],
+    opt_types = [
+        "Hasher",
+    ],
+    types = [
+        "Key",
+        "Value",
+    ],
+    deps = [
+        "//pkg/gohacks",
+        "//pkg/sync",
+    ],
 )
 
 go_template_instance(
@@ -11,7 +30,7 @@ go_template_instance(
     out = "test_atomicptrmap_unsafe.go",
     package = "atomicptrmap",
     prefix = "test",
-    template = "//pkg/sync:generic_atomicptrmap",
+    template = ":generic_atomicptrmap",
     types = {
         "Key": "int64",
         "Value": "testValue",
@@ -27,7 +46,7 @@ go_template_instance(
     package = "atomicptrmap",
     prefix = "test",
     suffix = "Sharded",
-    template = "//pkg/sync:generic_atomicptrmap",
+    template = ":generic_atomicptrmap",
     types = {
         "Key": "int64",
         "Value": "testValue",
