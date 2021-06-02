@@ -1,5 +1,4 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -7,45 +6,6 @@ package(
 )
 
 exports_files(["LICENSE"])
-
-go_template(
-    name = "generic_atomicptr",
-    srcs = ["generic_atomicptr_unsafe.go"],
-    types = [
-        "Value",
-    ],
-)
-
-go_template(
-    name = "generic_atomicptrmap",
-    srcs = ["generic_atomicptrmap_unsafe.go"],
-    opt_consts = [
-        "ShardOrder",
-    ],
-    opt_types = [
-        "Hasher",
-    ],
-    types = [
-        "Key",
-        "Value",
-    ],
-    deps = [
-        ":sync",
-        "//pkg/gohacks",
-    ],
-)
-
-go_template(
-    name = "generic_seqatomic",
-    srcs = ["generic_seqatomic_unsafe.go"],
-    types = [
-        "Value",
-    ],
-    deps = [
-        ":sync",
-        "//pkg/gohacks",
-    ],
-)
 
 go_library(
     name = "sync",

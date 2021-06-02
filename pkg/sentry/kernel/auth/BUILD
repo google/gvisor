@@ -8,7 +8,7 @@ go_template_instance(
     out = "atomicptr_credentials_unsafe.go",
     package = "auth",
     suffix = "Credentials",
-    template = "//pkg/sync:generic_atomicptr",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
     types = {
         "Value": "Credentials",
     },

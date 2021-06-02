@@ -32,7 +32,7 @@ go_template_instance(
     out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
     package = "kernel",
     suffix = "TaskGoroutineSchedInfo",
-    template = "//pkg/sync:generic_seqatomic",
+    template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
         "Value": "TaskGoroutineSchedInfo",
     },
