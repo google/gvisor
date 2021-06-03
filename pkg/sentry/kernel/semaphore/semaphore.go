@@ -252,7 +252,7 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 	// "The effective user ID of the calling process must match the creator or
 	// owner of the semaphore set, or the caller must be privileged."
 	if !set.checkCredentials(creds) && !set.checkCapability(creds) {
-		return syserror.EACCES
+		return syserror.EPERM
 	}
 
 	delete(r.semaphores, set.ID)
@@ -370,7 +370,7 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 	// "The effective UID of the calling process must match the owner or creator
 	// of the semaphore set, or the caller must be privileged."
 	if !s.checkCredentials(creds) && !s.checkCapability(creds) {
-		return syserror.EACCES
+		return syserror.EPERM
 	}
 
 	s.owner = owner
