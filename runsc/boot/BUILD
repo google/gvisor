@@ -38,7 +38,6 @@ go_library(
         "//pkg/fspath",
         "//pkg/log",
         "//pkg/memutil",
-        "//pkg/metric",
         "//pkg/rand",
         "//pkg/refs",
         "//pkg/refsvfs2",

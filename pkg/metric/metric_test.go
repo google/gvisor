@@ -48,6 +48,8 @@ func (s *sliceEmitter) Reset() {
 var emitter sliceEmitter
 
 func init() {
+	reset()
+
 	eventchannel.AddEmitter(&emitter)
 }
 
@@ -77,7 +79,9 @@ func TestInitialize(t *testing.T) {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	Initialize()
+	if err := Initialize(); err != nil {
+		t.Fatalf("Initialize(): %s", err)
+	}
 
 	if len(emitter) != 1 {
 		t.Fatalf("Initialize emitted %d events want 1", len(emitter))
@@ -149,7 +153,9 @@ func TestDisable(t *testing.T) {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	Disable()
+	if err := Disable(); err != nil {
+		t.Fatalf("Disable(): %s", err)
+	}
 
 	if len(emitter) != 1 {
 		t.Fatalf("Initialize emitted %d events want 1", len(emitter))
@@ -178,7 +184,9 @@ func TestEmitMetricUpdate(t *testing.T) {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	Initialize()
+	if err := Initialize(); err != nil {
+		t.Fatalf("Initialize(): %s", err)
+	}
 
 	// Don't care about the registration metrics.
 	emitter.Reset()
@@ -270,7 +278,9 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
-	Initialize()
+	if err := Initialize(); err != nil {
+		t.Fatalf("Initialize(): %s", err)
+	}
 
 	// Don't care about the registration metrics.
 	emitter.Reset()

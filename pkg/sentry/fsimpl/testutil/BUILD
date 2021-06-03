@@ -17,7 +17,6 @@ go_library(
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/memutil",
-        "//pkg/metric",
         "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel",

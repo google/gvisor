@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/memutil"
-	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -62,8 +61,6 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
-
-	metric.CreateSentryMetrics()
 
 	kernel.VFS2Enabled = true
 	k := &kernel.Kernel{
