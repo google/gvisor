@@ -36,17 +36,22 @@ var (
 	// new metric after initialization.
 	ErrInitializationDone = errors.New("metric cannot be created after initialization is complete")
 
-	// createdSentryMetrics indicates that the sentry metrics are created.
-	createdSentryMetrics = false
-
 	// WeirdnessMetric is a metric with fields created to track the number
 	// of weird occurrences such as time fallback, partial_result, vsyscall
 	// count, watchdog startup timeouts and stuck tasks.
-	WeirdnessMetric *Uint64Metric
+	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result, vsyscalls invoked in the sandbox, watchdog startup timeouts and stuck tasks.",
+		Field{
+			name:          "weirdness_type",
+			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count", "watchdog_stuck_startup", "watchdog_stuck_tasks"},
+		})
 
 	// SuspiciousOperationsMetric is a metric with fields created to detect
 	// operations such as opening an executable file to write from a gofer.
-	SuspiciousOperationsMetric *Uint64Metric
+	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
+		Field{
+			name:          "operation_type",
+			allowedValues: []string{"opened_write_execute_file"},
+		})
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
@@ -84,17 +89,21 @@ var (
 // Precondition:
 //  * All metrics are registered.
 //  * Initialize/Disable has not been called.
-func Initialize() {
+func Initialize() error {
 	if initialized {
-		panic("Initialize/Disable called more than once")
+		return errors.New("metric.Initialize called after metric.Initialize or metric.Disable")
 	}
-	initialized = true
 
 	m := pb.MetricRegistration{}
 	for _, v := range allMetrics.m {
 		m.Metrics = append(m.Metrics, v.metadata)
 	}
-	eventchannel.Emit(&m)
+	if err := eventchannel.Emit(&m); err != nil {
+		return fmt.Errorf("unable to emit metric initialize event: %w", err)
+	}
+
+	initialized = true
+	return nil
 }
 
 // Disable sends an empty metric registration event over the event channel,
@@ -103,16 +112,18 @@ func Initialize() {
 // Precondition:
 //  * All metrics are registered.
 //  * Initialize/Disable has not been called.
-func Disable() {
+func Disable() error {
 	if initialized {
-		panic("Initialize/Disable called more than once")
+		return errors.New("metric.Disable called after metric.Initialize or metric.Disable")
 	}
-	initialized = true
 
 	m := pb.MetricRegistration{}
 	if err := eventchannel.Emit(&m); err != nil {
-		panic("unable to emit metric disable event: " + err.Error())
+		return fmt.Errorf("unable to emit metric disable event: %w", err)
 	}
+
+	initialized = true
+	return nil
 }
 
 type customUint64Metric struct {
@@ -165,8 +176,8 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 	}
 
 	// Metrics can exist without fields.
-	if len(fields) > 1 {
-		panic("Sentry metrics support at most one field")
+	if l := len(fields); l > 1 {
+		return fmt.Errorf("%d fields provided, must be <= 1", l)
 	}
 
 	for _, field := range fields {
@@ -182,7 +193,7 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 // without fields and panics if it returns an error.
 func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func(...string) uint64, fields ...Field) {
 	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_NONE, description, value, fields...); err != nil {
-		panic(fmt.Sprintf("Unable to register metric %q: %v", name, err))
+		panic(fmt.Sprintf("Unable to register metric %q: %s", name, err))
 	}
 }
 
@@ -209,7 +220,7 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 func MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to create metric %q: %v", name, err))
+		panic(fmt.Sprintf("Unable to create metric %q: %s", name, err))
 	}
 	return m
 }
@@ -219,7 +230,7 @@ func MustCreateNewUint64Metric(name string, sync bool, description string, field
 func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description string) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NANOSECONDS, description)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to create metric %q: %v", name, err))
+		panic(fmt.Sprintf("Unable to create metric %q: %s", name, err))
 	}
 	return m
 }
@@ -354,7 +365,7 @@ func EmitMetricUpdate() {
 
 			m.Metrics = append(m.Metrics, &pb.MetricValue{
 				Name:  k,
-				Value: &pb.MetricValue_Uint64Value{t},
+				Value: &pb.MetricValue_Uint64Value{Uint64Value: t},
 			})
 		case map[string]uint64:
 			for fieldValue, metricValue := range t {
@@ -369,7 +380,7 @@ func EmitMetricUpdate() {
 				m.Metrics = append(m.Metrics, &pb.MetricValue{
 					Name:        k,
 					FieldValues: []string{fieldValue},
-					Value:       &pb.MetricValue_Uint64Value{metricValue},
+					Value:       &pb.MetricValue_Uint64Value{Uint64Value: metricValue},
 				})
 			}
 		}
@@ -390,26 +401,7 @@ func EmitMetricUpdate() {
 		}
 	}
 
-	eventchannel.Emit(&m)
-}
-
-// CreateSentryMetrics creates the sentry metrics during kernel initialization.
-func CreateSentryMetrics() {
-	if createdSentryMetrics {
-		return
+	if err := eventchannel.Emit(&m); err != nil {
+		log.Warningf("Unable to emit metrics: %s", err)
 	}
-
-	createdSentryMetrics = true
-
-	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result, vsyscalls invoked in the sandbox, watchdog startup timeouts and stuck tasks.",
-		Field{
-			name:          "weirdness_type",
-			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count", "watchdog_stuck_startup", "watchdog_stuck_tasks"},
-		})
-
-	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
-		Field{
-			name:          "operation_type",
-			allowedValues: []string{"opened_write_execute_file"},
-		})
 }
