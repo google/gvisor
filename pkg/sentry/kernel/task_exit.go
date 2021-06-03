@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -48,6 +49,23 @@ type ExitStatus struct {
 	// Signo is the signal that caused the exit. If the exit was not caused by
 	// a signal, Signo is 0.
 	Signo int
+}
+
+func (es ExitStatus) String() string {
+	var b strings.Builder
+	if code := es.Code; code != 0 {
+		if b.Len() != 0 {
+			b.WriteByte(' ')
+		}
+		_, _ = fmt.Fprintf(&b, "Code=%d", code)
+	}
+	if signal := es.Signo; signal != 0 {
+		if b.Len() != 0 {
+			b.WriteByte(' ')
+		}
+		_, _ = fmt.Fprintf(&b, "Signal=%d", signal)
+	}
+	return b.String()
 }
 
 // Signaled returns true if the ExitStatus indicates that the exiting task or
