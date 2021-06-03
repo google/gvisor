@@ -53,6 +53,7 @@ void SigRecordingHandler(int signum, siginfo_t* siginfo,
 }
 
 PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
+  global_num_signals_received = 0;
   struct sigaction handler;
   handler.sa_sigaction = SigRecordingHandler;
   sigemptyset(&handler.sa_mask);
