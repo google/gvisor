@@ -499,15 +499,45 @@ struct TestAddress {
 constexpr char kMulticastAddress[] = "224.0.2.1";
 constexpr char kBroadcastAddress[] = "255.255.255.255";
 
+// Returns a TestAddress with `addr` parsed as an IPv4 address described by
+// `description`.
+TestAddress V4AddrStr(std::string description, const char* addr);
+// Returns a TestAddress with `addr` parsed as an IPv6 address described by
+// `description`.
+TestAddress V6AddrStr(std::string description, const char* addr);
+
+// Returns a TestAddress for the IPv4 any address.
 TestAddress V4Any();
+// Returns a TestAddress for the IPv4 limited broadcast address.
 TestAddress V4Broadcast();
+// Returns a TestAddress for the IPv4 loopback address.
 TestAddress V4Loopback();
+// Returns a TestAddress for the subnet broadcast of the IPv4 loopback address.
+TestAddress V4LoopbackSubnetBroadcast();
+// Returns a TestAddress for the IPv4-mapped IPv6 any address.
 TestAddress V4MappedAny();
+// Returns a TestAddress for the IPv4-mapped IPv6 loopback address.
 TestAddress V4MappedLoopback();
+// Returns a TestAddress for a IPv4 multicast address.
 TestAddress V4Multicast();
+// Returns a TestAddress for the IPv4 all-hosts multicast group address.
+TestAddress V4MulticastAllHosts();
+
+// Returns a TestAddress for the IPv6 any address.
 TestAddress V6Any();
+// Returns a TestAddress for the IPv6 loopback address.
 TestAddress V6Loopback();
+// Returns a TestAddress for a IPv6 multicast address.
 TestAddress V6Multicast();
+// Returns a TestAddress for the IPv6 interface-local all-nodes multicast group
+// address.
+TestAddress V6MulticastInterfaceLocalAllNodes();
+// Returns a TestAddress for the IPv6 link-local all-nodes multicast group
+// address.
+TestAddress V6MulticastLinkLocalAllNodes();
+// Returns a TestAddress for the IPv6 link-local all-routers multicast group
+// address.
+TestAddress V6MulticastLinkLocalAllRouters();
 
 // Compute the internet checksum of an IP header.
 uint16_t IPChecksum(struct iphdr ip);
