@@ -363,6 +363,9 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	// and receives packets and also sends POSIX socket commands to the
 	// posix_server to be executed on the DUT.
 	testArgs := []string{containerTestbenchBinary}
+	if testing.Verbose() {
+		testArgs = append(testArgs, "-test.v")
+	}
 	testArgs = append(testArgs, extraTestArgs...)
 	testArgs = append(testArgs,
 		fmt.Sprintf("--native=%t", native),
@@ -395,6 +398,8 @@ func TestWithDUT(ctx context.Context, t *testing.T, mkDevice func(*dockerutil.Co
 	} else if expectFailure {
 		t.Logf(`test failed as expected: %v
 %s`, err, testLogs)
+	} else if testing.Verbose() {
+		t.Log(testLogs)
 	}
 }
 
