@@ -36,14 +36,10 @@ const (
 
 // Install generates BPF code based on the set of syscalls provided. It only
 // allows syscalls that conform to the specification. Syscalls that violate the
-// specification will trigger RET_KILL_PROCESS, except for the cases below.
-//
-// RET_TRAP is used in violations, instead of RET_KILL_PROCESS, in the
-// following cases:
-//	 1. Kernel doesn't support RET_KILL_PROCESS: RET_KILL_THREAD only kills the
-//      offending thread and often keeps the sentry hanging.
-//   2. Debug: RET_TRAP generates a panic followed by a stack trace which is
-//      much easier to debug then RET_KILL_PROCESS which can't be caught.
+// specification will trigger RET_KILL_PROCESS. If RET_KILL_PROCESS is not
+// supported, violations will trigger RET_TRAP instead. RET_KILL_THREAD is not
+// used because it only kills the offending thread and often keeps the sentry
+// hanging.
 //
 // Be aware that RET_TRAP sends SIGSYS to the process and it may be ignored,
 // making it possible for the process to continue running after a violation.
