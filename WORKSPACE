@@ -131,10 +131,10 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_google_go_github_v32",
-    importpath = "github.com/google/go-github/v32",
-    sum = "h1:GWkQOdXqviCPx7Q7Fj+KyPoGm4SwHRh8rheoPhd27II=",
-    version = "v32.1.0",
+    name = "com_github_google_go_github_v35",
+    importpath = "github.com/google/go-github/v35",
+    sum = "h1:s/soW8jauhjUC3rh8JI0FePuocj0DEI9DNBg/bVplE8=",
+    version = "v35.2.0",
 )
 
 go_repository(
