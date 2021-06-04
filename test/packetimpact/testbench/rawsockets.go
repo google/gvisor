@@ -17,7 +17,6 @@ package testbench
 import (
 	"encoding/binary"
 	"fmt"
-	"math"
 	"net"
 	"testing"
 	"time"
@@ -81,19 +80,20 @@ func (s *Sniffer) Recv(t *testing.T, timeout time.Duration) []byte {
 
 	deadline := time.Now().Add(timeout)
 	for {
-		timeout = deadline.Sub(time.Now())
+		timeout = time.Until(deadline)
 		if timeout <= 0 {
 			return nil
 		}
-		whole, frac := math.Modf(timeout.Seconds())
-		tv := unix.Timeval{
-			Sec:  int64(whole),
-			Usec: int64(frac * float64(time.Second/time.Microsecond)),
+		usec := timeout.Microseconds()
+		if usec == 0 {
+			// Timeout is less than a microsecond; set usec to 1 to avoid
+			// blocking indefinitely.
+			usec = 1
 		}
-		// The following should never happen, but having this guard here is better
-		// than blocking indefinitely in the future.
-		if tv.Sec == 0 && tv.Usec == 0 {
-			t.Fatal("setting SO_RCVTIMEO to 0 means blocking indefinitely")
+		const microsInOne = 1e6
+		tv := unix.Timeval{
+			Sec:  usec / microsInOne,
+			Usec: usec % microsInOne,
 		}
 		if err := unix.SetsockoptTimeval(s.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
 			t.Fatalf("can't setsockopt SO_RCVTIMEO: %s", err)
