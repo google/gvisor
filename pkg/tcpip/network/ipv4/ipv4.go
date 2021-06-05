@@ -720,7 +720,8 @@ func (e *endpoint) forwardPacket(pkt *stack.PacketBuffer) ip.ForwardingError {
 			return nil
 		}
 
-		ep.handleValidatedPacket(h, pkt)
+		// The packet originally arrived on e so provide its NIC as the input NIC.
+		ep.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 		return nil
 	}
 
@@ -836,7 +837,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 	}
 
-	e.handleValidatedPacket(h, pkt)
+	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
 // handleLocalPacket is like HandlePacket except it does not perform the
@@ -855,10 +856,10 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 		return
 	}
 
-	e.handleValidatedPacket(h, pkt)
+	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
-func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer) {
+func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
 	pkt.NICID = e.nic.ID()
 	stats := e.stats
 	stats.ip.ValidPacketsReceived.Increment()
@@ -920,8 +921,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer)
 
 	// iptables filtering. All packets that reach here are intended for
 	// this machine and will not be forwarded.
-	inNicName := e.protocol.stack.FindNICNameFromID(e.nic.ID())
-	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, "" /* preroutingAddr */, inNicName, "" /* outNicName */); !ok {
+	if ok := e.protocol.stack.IPTables().Check(stack.Input, pkt, nil, "" /* preroutingAddr */, inNICName, "" /* outNicName */); !ok {
 		// iptables is telling us to drop the packet.
 		stats.ip.IPTablesInputDropped.Increment()
 		return

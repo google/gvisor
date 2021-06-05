@@ -166,7 +166,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				// Make sure the packet is not dropped by the next rule.
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, true, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, true, err)
 				}
 			},
 			genPacket:          genPacketV6,
@@ -187,7 +187,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{nicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, false, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, false, err)
 				}
 			},
 			genPacket:          genPacketV4,
@@ -207,7 +207,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, true, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, true, err)
 				}
 			},
 			genPacket:          genPacketV6,
@@ -227,7 +227,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, false, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, false, err)
 				}
 			},
 			genPacket:          genPacketV4,
@@ -250,7 +250,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, true, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, true, err)
 				}
 			},
 			genPacket:          genPacketV6,
@@ -273,7 +273,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, false, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, false, err)
 				}
 			},
 			genPacket:          genPacketV4,
@@ -293,7 +293,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{anotherNicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, true, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, true, err)
 				}
 			},
 			genPacket:          genPacketV6,
@@ -313,7 +313,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{anotherNicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
 				if err := ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */); err != nil {
-					t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, false, err)
+					t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, false, err)
 				}
 			},
 			genPacket:          genPacketV4,
@@ -465,7 +465,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				}
 
 				if err := s.IPTables().ReplaceTable(stack.FilterID, table, false /* ipv4 */); err != nil {
-					t.Fatalf("RelaceTable(%d, _, false): %s", stack.FilterID, err)
+					t.Fatalf("ReplaceTable(%d, _, false): %s", stack.FilterID, err)
 				}
 			},
 			genPacket: func(r *stack.Route) stack.PacketBufferList {
@@ -556,7 +556,7 @@ func TestIPTableWritePackets(t *testing.T) {
 				}
 
 				if err := s.IPTables().ReplaceTable(stack.FilterID, table, true /* ipv6 */); err != nil {
-					t.Fatalf("RelaceTable(%d, _, true): %s", stack.FilterID, err)
+					t.Fatalf("ReplaceTable(%d, _, true): %s", stack.FilterID, err)
 				}
 			},
 			genPacket: func(r *stack.Route) stack.PacketBufferList {
@@ -681,6 +681,32 @@ func forwardedICMPv6EchoReplyChecker(t *testing.T, b []byte, src, dst tcpip.Addr
 			checker.ICMPv6Type(header.ICMPv6EchoReply)))
 }
 
+func boolToInt(v bool) uint64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func setupDropFilter(hook stack.Hook, f stack.IPHeaderFilter) func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber) {
+	return func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber) {
+		t.Helper()
+
+		ipv6 := netProto == ipv6.ProtocolNumber
+
+		ipt := s.IPTables()
+		filter := ipt.GetTable(stack.FilterID, ipv6)
+		ruleIdx := filter.BuiltinChains[hook]
+		filter.Rules[ruleIdx].Filter = f
+		filter.Rules[ruleIdx].Target = &stack.DropTarget{NetworkProtocol: netProto}
+		// Make sure the packet is not dropped by the next rule.
+		filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{NetworkProtocol: netProto}
+		if err := ipt.ReplaceTable(stack.FilterID, filter, ipv6); err != nil {
+			t.Fatalf("ipt.ReplaceTable(%d, _, %t): %s", stack.FilterID, ipv6, err)
+		}
+	}
+}
+
 func TestForwardingHook(t *testing.T) {
 	const (
 		nicID1 = 1
@@ -740,32 +766,6 @@ func TestForwardingHook(t *testing.T) {
 		},
 	}
 
-	setupDropFilter := func(f stack.IPHeaderFilter) func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber) {
-		return func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber) {
-			t.Helper()
-
-			ipv6 := netProto == ipv6.ProtocolNumber
-
-			ipt := s.IPTables()
-			filter := ipt.GetTable(stack.FilterID, ipv6)
-			ruleIdx := filter.BuiltinChains[stack.Forward]
-			filter.Rules[ruleIdx].Filter = f
-			filter.Rules[ruleIdx].Target = &stack.DropTarget{NetworkProtocol: netProto}
-			// Make sure the packet is not dropped by the next rule.
-			filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{NetworkProtocol: netProto}
-			if err := ipt.ReplaceTable(stack.FilterID, filter, ipv6); err != nil {
-				t.Fatalf("ipt.RelaceTable(%d, _, %t): %s", stack.FilterID, ipv6, err)
-			}
-		}
-	}
-
-	boolToInt := func(v bool) uint64 {
-		if v {
-			return 1
-		}
-		return 0
-	}
-
 	subTests := []struct {
 		name          string
 		setupFilter   func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber)
@@ -779,59 +779,59 @@ func TestForwardingHook(t *testing.T) {
 
 		{
 			name:          "Drop",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{}),
 			expectForward: false,
 		},
 		{
 			name:          "Drop with input NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: nic1Name}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: nic1Name}),
 			expectForward: false,
 		},
 		{
 			name:          "Drop with output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{OutputInterface: nic2Name}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{OutputInterface: nic2Name}),
 			expectForward: false,
 		},
 		{
 			name:          "Drop with input and output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: nic1Name, OutputInterface: nic2Name}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: nic1Name, OutputInterface: nic2Name}),
 			expectForward: false,
 		},
 
 		{
 			name:          "Drop with other input NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: otherNICName}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: otherNICName}),
 			expectForward: true,
 		},
 		{
 			name:          "Drop with other output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{OutputInterface: otherNICName}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{OutputInterface: otherNICName}),
 			expectForward: true,
 		},
 		{
 			name:          "Drop with other input and output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: otherNICName, OutputInterface: nic2Name}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: otherNICName, OutputInterface: nic2Name}),
 			expectForward: true,
 		},
 		{
 			name:          "Drop with input and other output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: nic1Name, OutputInterface: otherNICName}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: nic1Name, OutputInterface: otherNICName}),
 			expectForward: true,
 		},
 		{
 			name:          "Drop with other input and other output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: otherNICName, OutputInterface: otherNICName}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: otherNICName, OutputInterface: otherNICName}),
 			expectForward: true,
 		},
 
 		{
 			name:          "Drop with inverted input NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{InputInterface: nic1Name, InputInterfaceInvert: true}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{InputInterface: nic1Name, InputInterfaceInvert: true}),
 			expectForward: true,
 		},
 		{
 			name:          "Drop with inverted output NIC filtering",
-			setupFilter:   setupDropFilter(stack.IPHeaderFilter{OutputInterface: nic2Name, OutputInterfaceInvert: true}),
+			setupFilter:   setupDropFilter(stack.Forward, stack.IPHeaderFilter{OutputInterface: nic2Name, OutputInterfaceInvert: true}),
 			expectForward: true,
 		},
 	}
@@ -935,6 +935,197 @@ func TestForwardingHook(t *testing.T) {
 					}
 					if expectTransmitPacket {
 						test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestInputHookWithLocalForwarding(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+
+		nic1Name = "nic1"
+		nic2Name = "nic2"
+
+		otherNICName = "otherNIC"
+	)
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		rx       func(*channel.Endpoint)
+		checker  func(*testing.T, []byte)
+	}{
+		{
+			name:     "IPv4",
+			netProto: ipv4.ProtocolNumber,
+			rx: func(e *channel.Endpoint) {
+				utils.RxICMPv4EchoRequest(e, utils.RemoteIPv4Addr, utils.Ipv4Addr2.AddressWithPrefix.Address, ttl)
+			},
+			checker: func(t *testing.T, b []byte) {
+				checker.IPv4(t, b,
+					checker.SrcAddr(utils.Ipv4Addr2.AddressWithPrefix.Address),
+					checker.DstAddr(utils.RemoteIPv4Addr),
+					checker.ICMPv4(
+						checker.ICMPv4Type(header.ICMPv4EchoReply)))
+			},
+		},
+		{
+			name:     "IPv6",
+			netProto: ipv6.ProtocolNumber,
+			rx: func(e *channel.Endpoint) {
+				utils.RxICMPv6EchoRequest(e, utils.RemoteIPv6Addr, utils.Ipv6Addr2.AddressWithPrefix.Address, ttl)
+			},
+			checker: func(t *testing.T, b []byte) {
+				checker.IPv6(t, b,
+					checker.SrcAddr(utils.Ipv6Addr2.AddressWithPrefix.Address),
+					checker.DstAddr(utils.RemoteIPv6Addr),
+					checker.ICMPv6(
+						checker.ICMPv6Type(header.ICMPv6EchoReply)))
+			},
+		},
+	}
+
+	subTests := []struct {
+		name        string
+		setupFilter func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber)
+		expectDrop  bool
+	}{
+		{
+			name:        "Accept",
+			setupFilter: func(*testing.T, *stack.Stack, tcpip.NetworkProtocolNumber) { /* no filter */ },
+			expectDrop:  false,
+		},
+
+		{
+			name:        "Drop",
+			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{}),
+			expectDrop:  true,
+		},
+		{
+			name:        "Drop with input NIC filtering on arrival NIC",
+			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic1Name}),
+			expectDrop:  true,
+		},
+		{
+			name:        "Drop with input NIC filtering on delivered NIC",
+			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: nic2Name}),
+			expectDrop:  false,
+		},
+
+		{
+			name:        "Drop with input NIC filtering on other NIC",
+			setupFilter: setupDropFilter(stack.Input, stack.IPHeaderFilter{InputInterface: otherNICName}),
+			expectDrop:  false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, subTest := range subTests {
+				t.Run(subTest.name, func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+					})
+
+					subTest.setupFilter(t, s, test.netProto)
+
+					e1 := channel.New(1, header.IPv6MinimumMTU, "")
+					if err := s.CreateNICWithOptions(nicID1, e1, stack.NICOptions{Name: nic1Name}); err != nil {
+						t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", nicID1, err)
+					}
+					if err := s.AddProtocolAddress(nicID1, utils.Ipv4Addr1); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID1, utils.Ipv4Addr1, err)
+					}
+					if err := s.AddProtocolAddress(nicID1, utils.Ipv6Addr1); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID1, utils.Ipv6Addr1, err)
+					}
+
+					e2 := channel.New(1, header.IPv6MinimumMTU, "")
+					if err := s.CreateNICWithOptions(nicID2, e2, stack.NICOptions{Name: nic2Name}); err != nil {
+						t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", nicID2, err)
+					}
+					if err := s.AddProtocolAddress(nicID2, utils.Ipv4Addr2); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID2, utils.Ipv4Addr2, err)
+					}
+					if err := s.AddProtocolAddress(nicID2, utils.Ipv6Addr2); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID2, utils.Ipv6Addr2, err)
+					}
+
+					if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
+					}
+					if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
+					}
+
+					s.SetRouteTable([]tcpip.Route{
+						{
+							Destination: header.IPv4EmptySubnet,
+							NIC:         nicID1,
+						},
+						{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         nicID1,
+						},
+					})
+
+					test.rx(e1)
+
+					ep1, err := s.GetNetworkEndpoint(nicID1, test.netProto)
+					if err != nil {
+						t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID1, test.netProto, err)
+					}
+					ep1Stats := ep1.Stats()
+					ipEP1Stats, ok := ep1Stats.(stack.IPNetworkEndpointStats)
+					if !ok {
+						t.Fatalf("got ep1Stats = %T, want = stack.IPNetworkEndpointStats", ep1Stats)
+					}
+					ip1Stats := ipEP1Stats.IPStats()
+
+					if got := ip1Stats.PacketsReceived.Value(); got != 1 {
+						t.Errorf("got ip1Stats.PacketsReceived.Value() = %d, want = 1", got)
+					}
+					if got := ip1Stats.ValidPacketsReceived.Value(); got != 1 {
+						t.Errorf("got ip1Stats.ValidPacketsReceived.Value() = %d, want = 1", got)
+					}
+					if got, want := ip1Stats.PacketsSent.Value(), boolToInt(!subTest.expectDrop); got != want {
+						t.Errorf("got ip1Stats.PacketsSent.Value() = %d, want = %d", got, want)
+					}
+
+					ep2, err := s.GetNetworkEndpoint(nicID2, test.netProto)
+					if err != nil {
+						t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID2, test.netProto, err)
+					}
+					ep2Stats := ep2.Stats()
+					ipEP2Stats, ok := ep2Stats.(stack.IPNetworkEndpointStats)
+					if !ok {
+						t.Fatalf("got ep2Stats = %T, want = stack.IPNetworkEndpointStats", ep2Stats)
+					}
+					ip2Stats := ipEP2Stats.IPStats()
+					if got := ip2Stats.PacketsReceived.Value(); got != 0 {
+						t.Errorf("got ip2Stats.PacketsReceived.Value() = %d, want = 0", got)
+					}
+					if got := ip2Stats.ValidPacketsReceived.Value(); got != 1 {
+						t.Errorf("got ip2Stats.ValidPacketsReceived.Value() = %d, want = 1", got)
+					}
+					if got, want := ip2Stats.IPTablesInputDropped.Value(), boolToInt(subTest.expectDrop); got != want {
+						t.Errorf("got ip2Stats.IPTablesInputDropped.Value() = %d, want = %d", got, want)
+					}
+					if got := ip2Stats.PacketsSent.Value(); got != 0 {
+						t.Errorf("got ip2Stats.PacketsSent.Value() = %d, want = 0", got)
+					}
+
+					if p, ok := e1.Read(); ok == subTest.expectDrop {
+						t.Errorf("got e1.Read() = (%#v, %t), want = (_, %t)", p, ok, !subTest.expectDrop)
+					} else if !subTest.expectDrop {
+						test.checker(t, stack.PayloadSince(p.Pkt.NetworkHeader()))
+					}
+					if p, ok := e2.Read(); ok {
+						t.Errorf("got e1.Read() = (%#v, true), want = (_, false)", p)
 					}
 				})
 			}
