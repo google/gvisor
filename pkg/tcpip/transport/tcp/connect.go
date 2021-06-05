@@ -406,11 +406,11 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 
 		h.ep.transitionToStateEstablishedLocked(h)
 
-		// If the segment has data then requeue it for the receiver
-		// to process it again once main loop is started.
-		if s.data.Size() > 0 {
+		// Requeue the segment if the ACK completing the handshake has more info
+		// to be procesed by the newly established endpoint.
+		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && h.ep.enqueueSegment(s) {
 			s.incRef()
-			h.ep.enqueueSegment(s)
+			h.ep.newSegmentWaker.Assert()
 		}
 		return nil
 	}

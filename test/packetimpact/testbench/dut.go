@@ -498,8 +498,8 @@ func (dut *DUT) PollOne(t *testing.T, fd int32, events int16, timeout time.Durat
 	if readyFd := pfds[0].Fd; readyFd != fd {
 		t.Fatalf("Poll returned an fd %d that was not requested (%d)", readyFd, fd)
 	}
-	if got, want := pfds[0].Revents, int16(events); got&want == 0 {
-		t.Fatalf("Poll returned no events in our interest, got: %#b, want: %#b", got, want)
+	if got, want := pfds[0].Revents, int16(events); got&want != want {
+		t.Fatalf("Poll returned events does not include all of the interested events, got: %#b, want: %#b", got, want)
 	}
 }
 

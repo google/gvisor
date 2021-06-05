@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -114,7 +115,10 @@ func TestTCPSynCookie(t *testing.T) {
 						t.Fatalf("dut.Poll(...) = %d, want = %d", got, want)
 					}
 
-					c.conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(test.flags)})
+					sampleData := []byte("Sample Data")
+					samplePayload := &testbench.Payload{Bytes: sampleData}
+
+					c.conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(test.flags)}, samplePayload)
 					pfds = dut.Poll(t, []unix.PollFd{{Fd: listenFD, Events: unix.POLLIN}}, time.Second)
 					want := 0
 					if test.accept {
@@ -126,6 +130,18 @@ func TestTCPSynCookie(t *testing.T) {
 					// Accept the connection to enable poll on any subsequent connection.
 					if test.accept {
 						fd, _ := dut.Accept(t, listenFD)
+						if test.flags.Contains(header.TCPFlagFin) {
+							if dut.Uname.IsLinux() {
+								dut.PollOne(t, fd, unix.POLLIN|unix.POLLRDHUP, time.Second)
+							} else {
+								// TODO(gvisor.dev/issue/6015): Notify POLLIN|POLLRDHUP on incoming FIN.
+								dut.PollOne(t, fd, unix.POLLIN, time.Second)
+							}
+						}
+						got := dut.Recv(t, fd, int32(len(sampleData)), 0)
+						if diff := cmp.Diff(got, sampleData); diff != "" {
+							t.Fatalf("dut.Recv: data mismatch (-want +got):\n%s", diff)
+						}
 						dut.Close(t, fd)
 					}
 				})

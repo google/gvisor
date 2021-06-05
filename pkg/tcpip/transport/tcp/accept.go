@@ -740,6 +740,13 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			mss:         rcvdSynOptions.MSS,
 		})
 
+		// Requeue the segment if the ACK completing the handshake has more info
+		// to be procesed by the newly established endpoint.
+		if (s.flags.Contains(header.TCPFlagFin) || s.data.Size() > 0) && n.enqueueSegment(s) {
+			s.incRef()
+			n.newSegmentWaker.Assert()
+		}
+
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case
 		// the application is slow to accept or stops
