@@ -240,6 +240,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:io_uring_setup_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:verity_ioctl_test",
 )
 
