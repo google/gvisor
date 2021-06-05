@@ -15,6 +15,7 @@ go_library(
         "getdents.go",
         "inotify.go",
         "ioctl.go",
+        "io_uring.go",
         "lock.go",
         "memfd.go",
         "mmap.go",
