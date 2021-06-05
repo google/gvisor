@@ -134,7 +134,7 @@ type PacketBuffer struct {
 	// https://www.man7.org/linux/man-pages/man7/packet.7.html.
 	PktType tcpip.PacketType
 
-	// NICID is the ID of the interface the network packet was received at.
+	// NICID is the ID of the last interface the network packet was handled at.
 	NICID tcpip.NICID
 
 	// RXTransportChecksumValidated indicates that transport checksum verification
