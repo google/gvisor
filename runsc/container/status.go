@@ -14,6 +14,10 @@
 
 package container
 
+import (
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+)
+
 // Status enumerates container statuses. The statuses and their semantics are
 // part of the runtime CLI spec.
 type Status int
@@ -37,6 +41,10 @@ const (
 
 	// Stopped indicates "the container process has exited".
 	Stopped
+
+	// additional state that runtime-spec doesn't have
+	ContainerStatePaused  specs.ContainerState = "paused"
+	ContainerStateUnknown specs.ContainerState = "unknown"
 )
 
 // String converts a Status to a string. These strings are part of the runtime
@@ -57,4 +65,22 @@ func (s Status) String() string {
 		return "unknown"
 	}
 
+}
+
+// ContainerState converts Status to runtime-spec ContainerState type
+func (s Status) ContainerState() specs.ContainerState {
+	switch s {
+	case Created:
+		return specs.StateCreated
+	case Creating:
+		return specs.StateCreating
+	case Paused:
+		return ContainerStatePaused
+	case Running:
+		return specs.StateRunning
+	case Stopped:
+		return specs.StateStopped
+	default:
+		return ContainerStateUnknown
+	}
 }

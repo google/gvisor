@@ -58,8 +58,12 @@ var dindMountinfo = `
 18 05 0:46 / /sys/fs/cgroup/rdma ro master:26 - cgroup cgroup rw,rdma
 `
 
+var cgroupv2MountInfo = `
+29 22 0:26 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw,seclabel,nsdelegate
+`
+
 func TestUninstallEnoent(t *testing.T) {
-	c := Cgroup{
+	c := cgroupV1{
 		// Use a non-existent name.
 		Name: "runsc-test-uninstall-656e6f656e740a",
 		Own:  make(map[string]bool),
@@ -795,7 +799,7 @@ func TestLoadPaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := strings.NewReader(tc.cgroups)
 			mountinfo := strings.NewReader(tc.mountinfo)
-			got, err := loadPathsHelper(r, mountinfo)
+			got, err := loadPathsHelper(r, mountinfo, false)
 			if len(tc.err) == 0 {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
@@ -859,6 +863,60 @@ func TestOptional(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.err) {
 				t.Errorf("ctrlr.skip() want: *%s*, got: %q", tc.err, err)
+			}
+		})
+	}
+}
+
+func TestLoadPathsCgroupv2(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		cgroups   string
+		mountinfo string
+		want      map[string]string
+		err       string
+	}{
+		{
+			name:      "cgroupv2",
+			cgroups:   "0::/docker/123",
+			mountinfo: cgroupv2MountInfo,
+			want: map[string]string{
+				"cgroup2": "docker/123",
+			},
+		},
+
+		{
+			name:      "cgroupv2-nested",
+			cgroups:   "0::/",
+			mountinfo: cgroupv2MountInfo,
+			want: map[string]string{
+				"cgroup2": ".",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := strings.NewReader(tc.cgroups)
+			mountinfo := strings.NewReader(tc.mountinfo)
+			got, err := loadPathsHelper(r, mountinfo, true)
+			if len(tc.err) == 0 {
+				if err != nil {
+					t.Fatalf("Unexpected error: %v", err)
+				}
+			} else if !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("Wrong error message, want: *%s*, got: %v", tc.err, err)
+			}
+			for key, vWant := range tc.want {
+				vGot, ok := got[key]
+				if !ok {
+					t.Errorf("Missing controller %q", key)
+				}
+				if vWant != vGot {
+					t.Errorf("Wrong controller %q value, want: %q, got: %q", key, vWant, vGot)
+				}
+				delete(got, key)
+			}
+			for k, v := range got {
+				t.Errorf("Unexpected controller %q: %q", k, v)
 			}
 		})
 	}
