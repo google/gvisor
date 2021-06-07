@@ -1861,7 +1861,9 @@ func (k *Kernel) PopulateNewCgroupHierarchy(root Cgroup) {
 			return
 		}
 		t.mu.Lock()
-		t.enterCgroupLocked(root)
+		// A task can be in the cgroup if it has been created after the
+		// cgroup hierarchy was registered.
+		t.enterCgroupIfNotYetLocked(root)
 		t.mu.Unlock()
 	})
 	k.tasks.mu.RUnlock()
