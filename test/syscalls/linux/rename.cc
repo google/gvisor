@@ -26,6 +26,8 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
+using ::testing::AnyOf;
+
 namespace gvisor {
 namespace testing {
 
@@ -436,6 +438,60 @@ TEST(RenameTest, SysfsDirectoryToSelf) {
   SKIP_IF(geteuid() != 0);
   std::string const path = "/sys/devices";
   EXPECT_THAT(rename(path.c_str(), path.c_str()), SyscallSucceeds());
+}
+
+#ifndef SYS_renameat2
+#if defined(__x86_64__)
+#define SYS_renameat2 316
+#elif defined(__aarch64__)
+#define SYS_renameat2 276
+#else
+#error "Unknown architecture"
+#endif
+#endif  // SYS_renameat2
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif  // RENAME_NOREPLACE
+
+int renameat2(int olddirfd, const char* oldpath, int newdirfd,
+              const char* newpath, unsigned int flags) {
+  return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
+}
+
+TEST(Renameat2Test, NoReplaceSuccess) {
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  std::string const newpath = NewTempAbsPath();
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+  // (if flags are unsupported), or succeed (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, f.path().c_str(), AT_FDCWD, newpath.c_str(),
+                RENAME_NOREPLACE),
+      AnyOf(SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL)), SyscallSucceeds()));
+}
+
+TEST(Renameat2Test, NoReplaceExisting) {
+  auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto f2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported), EINVAL (if
+  // flags are unsupported), or EEXIST (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
+                        f2.path().c_str(), RENAME_NOREPLACE),
+              SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
+}
+
+TEST(Renameat2Test, NoReplaceDot) {
+  auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto d2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported), EINVAL (if
+  // flags are unsupported), or EEXIST (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
+                absl::StrCat(d2.path(), "/.").c_str(), RENAME_NOREPLACE),
+      SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
 }
 
 }  // namespace

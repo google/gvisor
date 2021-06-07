@@ -496,20 +496,24 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
 func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
-	if opts.Flags != 0 {
-		// TODO(b/145974740): Support renameat2 flags.
-		return syserror.EINVAL
-	}
-
-	// Resolve newParent first to verify that it's on this Mount.
+	// Resolve newParentDir first to verify that it's on this Mount.
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	newParentDir, err := walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry))
 	if err != nil {
 		return err
 	}
+
+	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+		// TODO(b/145974740): Support other renameat2 flags.
+		return syserror.EINVAL
+	}
+
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
+		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
+			return syserror.EEXIST
+		}
 		return syserror.EBUSY
 	}
 	mnt := rp.Mount()
@@ -556,6 +560,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	replaced, ok := newParentDir.childMap[newName]
 	if ok {
+		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
+			return syserror.EEXIST
+		}
 		replacedDir, ok := replaced.inode.impl.(*directory)
 		if ok {
 			if !renamed.inode.isDir() {
