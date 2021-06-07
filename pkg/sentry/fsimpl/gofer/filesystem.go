@@ -1194,11 +1194,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
 func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
-	if opts.Flags != 0 {
-		// Requires 9P support.
-		return syserror.EINVAL
-	}
-
+	// Resolve newParent first to verify that it's on this Mount.
 	var ds *[]*dentry
 	fs.renameMu.Lock()
 	defer fs.renameMuUnlockAndCheckCaching(ctx, &ds)
@@ -1206,8 +1202,21 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
+
+	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+		return syserror.EINVAL
+	}
+	if fs.opts.interop == InteropModeShared && opts.Flags&linux.RENAME_NOREPLACE != 0 {
+		// Requires 9P support to synchronize with other remote filesystem
+		// users.
+		return syserror.EINVAL
+	}
+
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
+		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
+			return syserror.EEXIST
+		}
 		return syserror.EBUSY
 	}
 	mnt := rp.Mount()
@@ -1280,6 +1289,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	var replacedVFSD *vfs.Dentry
 	if replaced != nil {
+		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
+			return syserror.EEXIST
+		}
 		replacedVFSD = &replaced.vfsd
 		if replaced.isDir() {
 			if !renamed.isDir() {

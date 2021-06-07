@@ -635,12 +635,6 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
 func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
-	// Only RENAME_NOREPLACE is supported.
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		return syserror.EINVAL
-	}
-	noReplace := opts.Flags&linux.RENAME_NOREPLACE != 0
-
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
@@ -651,6 +645,13 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
+
+	// Only RENAME_NOREPLACE is supported.
+	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+		return syserror.EINVAL
+	}
+	noReplace := opts.Flags&linux.RENAME_NOREPLACE != 0
+
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
 		return syserror.EXDEV
