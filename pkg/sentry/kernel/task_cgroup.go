@@ -85,6 +85,14 @@ func (t *Task) enterCgroupLocked(c Cgroup) {
 	c.Enter(t)
 }
 
+// +checklocks:t.mu
+func (t *Task) enterCgroupIfNotYetLocked(c Cgroup) {
+	if _, ok := t.cgroups[c]; ok {
+		return
+	}
+	t.enterCgroupLocked(c)
+}
+
 // LeaveCgroups removes t out from all its cgroups.
 func (t *Task) LeaveCgroups() {
 	t.mu.Lock()
