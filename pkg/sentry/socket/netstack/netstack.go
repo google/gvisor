@@ -1798,11 +1798,6 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-
-		if v == 0 {
-			socket.SetSockOptEmitUnimplementedEvent(t, name)
-		}
-
 		ep.SocketOptions().SetOutOfBandInline(v != 0)
 		return nil
 
