@@ -15,14 +15,27 @@
 package vfs2
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
+	// "gvisor.dev/gvisor/pkg/syserror"
 )
 
 // IoUringSetup implements Linux syscall io_uring_setup(2)
 func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-    fd := -1
-    return uintptr(fd), nil, syserror.EINVAL
+	file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(), 0)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+		CloseOnExec: linux.O_CLOEXEC != 0,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return uintptr(fd), nil, nil
 
 }
