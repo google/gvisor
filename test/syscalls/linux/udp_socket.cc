@@ -791,14 +791,14 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   iov.iov_len = kBufLen;
 
   size_t control_buf_len = CMSG_SPACE(sizeof(sock_extended_err) + addrlen_);
-  char* control_buf = static_cast<char*>(calloc(1, control_buf_len));
+  std::vector<char> control_buf(control_buf_len);
   struct sockaddr_storage remote;
   memset(&remote, 0, sizeof(remote));
   struct msghdr msg = {};
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
   msg.msg_flags = 0;
-  msg.msg_control = control_buf;
+  msg.msg_control = control_buf.data();
   msg.msg_controllen = control_buf_len;
   msg.msg_name = reinterpret_cast<void*>(&remote);
   msg.msg_namelen = addrlen_;
