@@ -38,6 +38,14 @@ TEST(IoUringSetupTest, Exist) {
   ASSERT_NE(errno, ENOSYS);
 }
 
+TEST(IoUringSetupTest, ReturnsFd) {
+  struct io_uring_params params = { 0 };
+  const int nb_entries = 2;
+  int fd = io_uring_setup(nb_entries, &params);
+
+  ASSERT_NE(fd , -1);
+}
+
 }  // namespace
 
 }  // namespace testing
