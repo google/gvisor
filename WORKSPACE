@@ -1253,6 +1253,17 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 
 rules_pkg_dependencies()
 
+# System Call test dependencies.
+http_archive(
+    name = "com_google_absl",
+    sha256 = "1764491a199eb9325b177126547f03d244f86b4ff28f16f206c7b3e7e4f777ec",
+    strip_prefix = "abseil-cpp-278e0a071885a22dcd2fd1b5576cc44757299343",
+    urls = [
+        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz",
+        "https://github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz"
+    ],
+)
+
 # Load C++ grpc rules.
 http_archive(
     name = "com_github_grpc_grpc",
@@ -1271,16 +1282,6 @@ load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
 
 grpc_extra_deps()
 
-# System Call test dependencies.
-http_archive(
-    name = "com_google_absl",
-    sha256 = "56775f1283a59e6274c28d99981a9717ff4e0b1161e9129fdb2fcf22531d8d93",
-    strip_prefix = "abseil-cpp-a0d1e098c2f99694fa399b175a7ccf920762030e",
-    urls = [
-        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/a0d1e098c2f99694fa399b175a7ccf920762030e.tar.gz",
-        "https://github.com/abseil/abseil-cpp/archive/a0d1e098c2f99694fa399b175a7ccf920762030e.tar.gz",
-    ],
-)
 
 http_archive(
     name = "com_google_googletest",
