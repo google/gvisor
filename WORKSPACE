@@ -1254,6 +1254,9 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 rules_pkg_dependencies()
 
 # System Call test dependencies.
+# grpc also has a dependency on abseil but as this is before grpc dependency 
+# declaration, it will take precedence over grpc's one
+# Version LTS 20210324.2
 http_archive(
     name = "com_google_absl",
     sha256 = "1764491a199eb9325b177126547f03d244f86b4ff28f16f206c7b3e7e4f777ec",
