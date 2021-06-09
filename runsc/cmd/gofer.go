@@ -473,14 +473,12 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	rv := make([]string, len(opts))
 	copy(rv, opts)
 
-	if conf.OverlayfsStaleRead {
-		statfs := unix.Statfs_t{}
-		if err := unix.Statfs(path, &statfs); err != nil {
-			return nil, err
-		}
-		if statfs.Type == unix.OVERLAYFS_SUPER_MAGIC {
-			rv = append(rv, "overlayfs_stale_read")
-		}
+	statfs := unix.Statfs_t{}
+	if err := unix.Statfs(path, &statfs); err != nil {
+		return nil, err
+	}
+	if statfs.Type == unix.OVERLAYFS_SUPER_MAGIC {
+		rv = append(rv, "overlayfs_stale_read")
 	}
 	return rv, nil
 }
