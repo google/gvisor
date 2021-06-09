@@ -41,7 +41,6 @@ package fdbased
 
 import (
 	"fmt"
-	"math"
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
@@ -196,8 +195,12 @@ type Options struct {
 // option for an FD with a fanoutID already in use by another FD for a different
 // NIC will return an EINVAL.
 //
+// Since fanoutID must be unique within the network namespace, we start with
+// the PID to avoid collisions. The only way to be sure of avoiding collisions
+// is to run in a new network namespace.
+//
 // Must be accessed using atomic operations.
-var fanoutID int32 = 0
+var fanoutID int32 = int32(unix.Getpid())
 
 // New creates a new fd-based endpoint.
 //
@@ -292,11 +295,6 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 		}
 		switch sa.(type) {
 		case *unix.SockaddrLinklayer:
-			// See: PACKET_FANOUT_MAX in net/packet/internal.h
-			const packetFanoutMax = 1 << 16
-			if fID > packetFanoutMax {
-				return nil, fmt.Errorf("host fanoutID limit exceeded, fanoutID must be <= %d", math.MaxUint16)
-			}
 			// Enable PACKET_FANOUT mode if the underlying socket is of type
 			// AF_PACKET. We do not enable PACKET_FANOUT_FLAG_DEFRAG as that will
 			// prevent gvisor from receiving fragmented packets and the host does the
@@ -317,7 +315,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			//
 			// See: https://github.com/torvalds/linux/blob/7acac4b3196caee5e21fb5ea53f8bc124e6a16fc/net/packet/af_packet.c#L3881
 			const fanoutType = unix.PACKET_FANOUT_HASH
-			fanoutArg := int(fID) | fanoutType<<16
+			fanoutArg := (int(fID) & 0xffff) | fanoutType<<16
 			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
 				return nil, fmt.Errorf("failed to enable PACKET_FANOUT option: %v", err)
 			}
