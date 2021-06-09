@@ -652,6 +652,13 @@ func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP
 		wantErrno = unix.EINVAL
 	}
 
+	// TODO(https://fxbug.dev/78430): Remove this if statement once UDP
+	// sockets on Fuchsia disallow sending to IPv4 broadcast and multicast
+	// when bound to IPv6 any.
+	if dut.Uname.IsFuchsia() && bindTo.Equal(net.IPv6zero) && (sendTo.Equal(net.IPv4bcast) || sendTo.Equal(net.IPv4allsys)) && !bindToDevice {
+		expectPacket = true
+	}
+
 	env := test.setup(t, dut, bindTo, sendTo, bindToDevice)
 
 	for name, payload := range map[string][]byte{
