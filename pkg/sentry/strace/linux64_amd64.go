@@ -33,7 +33,7 @@ var linuxAMD64 = SyscallMap{
 	6:   makeSyscallInfo("lstat", Path, Stat),
 	7:   makeSyscallInfo("poll", PollFDs, Hex, Hex),
 	8:   makeSyscallInfo("lseek", Hex, Hex, Hex),
-	9:   makeSyscallInfo("mmap", Hex, Hex, Hex, Hex, FD, Hex),
+	9:   makeSyscallInfo("mmap", Hex, Hex, MmapProt, MmapFlags, FD, Hex),
 	10:  makeSyscallInfo("mprotect", Hex, Hex, Hex),
 	11:  makeSyscallInfo("munmap", Hex, Hex),
 	12:  makeSyscallInfo("brk", Hex),

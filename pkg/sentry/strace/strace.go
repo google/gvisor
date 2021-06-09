@@ -489,6 +489,10 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, epollEvents(t, args[arg].Pointer(), 0 /* numEvents */, uint64(maximumBlobSize)))
 		case SelectFDSet:
 			output = append(output, fdSet(t, int(args[0].Int()), args[arg].Pointer()))
+		case MmapProt:
+			output = append(output, ProtectionFlagSet.Parse(uint64(args[arg].Uint())))
+		case MmapFlags:
+			output = append(output, MmapFlagSet.Parse(uint64(args[arg].Uint())))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
