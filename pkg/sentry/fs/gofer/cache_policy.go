@@ -139,7 +139,7 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 
 	// Walk from parent to child again.
 	//
-	// TODO(b/112031682): If we have a directory FD in the parent
+	// NOTE(b/112031682): If we have a directory FD in the parent
 	// inodeOperations, then we can use fstatat(2) to get the inode
 	// attributes instead of making this RPC.
 	qids, f, mask, attr, err := parentIops.fileState.file.walkGetAttr(ctx, []string{name})
