@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -33,6 +34,8 @@ func TestDestroyIdempotent(t *testing.T) {
 		},
 		syncableDentries: make(map[*dentry]struct{}),
 		inoByQIDPath:     make(map[uint64]uint64),
+		inoByKey:         make(map[inoKey]uint64),
+		fdsToClose:       make([]lisafs.FDID, 0, fdCacheSize),
 	}
 
 	attr := &p9.Attr{

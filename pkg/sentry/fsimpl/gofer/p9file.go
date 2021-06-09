@@ -141,18 +141,18 @@ func (f p9file) open(ctx context.Context, flags p9.OpenFlags) (*fd.FD, p9.QID, u
 	return fdobj, qid, iounit, err
 }
 
-func (f p9file) readAt(ctx context.Context, p []byte, offset uint64) (int, error) {
+func (f p9file) readAt(ctx context.Context, p []byte, offset uint64) (uint64, error) {
 	ctx.UninterruptibleSleepStart(false)
 	n, err := f.file.ReadAt(p, offset)
 	ctx.UninterruptibleSleepFinish(false)
-	return n, err
+	return uint64(n), err
 }
 
-func (f p9file) writeAt(ctx context.Context, p []byte, offset uint64) (int, error) {
+func (f p9file) writeAt(ctx context.Context, p []byte, offset uint64) (uint64, error) {
 	ctx.UninterruptibleSleepStart(false)
 	n, err := f.file.WriteAt(p, offset)
 	ctx.UninterruptibleSleepFinish(false)
-	return n, err
+	return uint64(n), err
 }
 
 func (f p9file) fsync(ctx context.Context) error {

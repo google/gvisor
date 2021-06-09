@@ -25,6 +25,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -60,6 +61,7 @@ type Gofer struct {
 	ioFDs     intFlags
 	applyCaps bool
 	setUpRoot bool
+	useLisafs bool
 
 	specFD   int
 	mountsFD int
@@ -70,9 +72,16 @@ func (*Gofer) Name() string {
 	return "gofer"
 }
 
+func (g *Gofer) protocol() string {
+	if g.useLisafs {
+		return "lisafs"
+	}
+	return "9P"
+}
+
 // Synopsis implements subcommands.Command.
-func (*Gofer) Synopsis() string {
-	return "launch a gofer process that serves files over 9P protocol (internal use only)"
+func (g *Gofer) Synopsis() string {
+	return fmt.Sprintf("launch a gofer process that serves files over %s protocol (internal use only)", g.protocol())
 }
 
 // Usage implements subcommands.Command.
@@ -83,9 +92,10 @@ func (*Gofer) Usage() string {
 // SetFlags implements subcommands.Command.
 func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
-	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
+	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
+	f.BoolVar(&g.useLisafs, "lisafs", false, "if true, use lisafs protocol instead of 9P")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 }
@@ -162,6 +172,96 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	log.Infof("Process chroot'd to %q", root)
 
+	// Initialize filters.
+	if conf.FSGoferHostUDS {
+		filter.InstallUDSFilters()
+	}
+
+	if conf.Verity {
+		filter.InstallXattrFilters()
+	}
+
+	if err := filter.Install(); err != nil {
+		Fatalf("installing seccomp filters: %v", err)
+	}
+
+	if g.useLisafs {
+		g.runLisafsServers(spec, conf, root)
+	} else {
+		g.run9PServers(spec, conf, root)
+	}
+	return subcommands.ExitSuccess
+}
+
+func newSocket(ioFD int) *unet.Socket {
+	socket, err := unet.NewSocket(ioFD)
+	if err != nil {
+		Fatalf("creating server on FD %d: %v", ioFD, err)
+	}
+	return socket
+}
+
+func (g *Gofer) runLisafsServers(spec *specs.Spec, conf *config.Config, root string) {
+	type connectionConfig struct {
+		mountPath string
+		opts      *fsgofer.Config
+		sock      *unet.Socket
+	}
+	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
+
+	// Start with root mount, then add any other additional mount as needed.
+	cfgs = append(cfgs, connectionConfig{
+		mountPath: "/",
+		opts: &fsgofer.Config{
+			ROMount:           spec.Root.Readonly || conf.Overlay,
+			EnableVerityXattr: conf.Verity,
+		},
+		sock: newSocket(g.ioFDs[0]),
+	})
+	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].opts.ROMount)
+
+	mountIdx := 1 // first one is the root
+	for _, m := range spec.Mounts {
+		if !specutils.IsGoferMount(m, conf.VFS2) {
+			continue
+		}
+
+		if !filepath.IsAbs(m.Destination) {
+			Fatalf("mount destination must be absolute: %q", m.Destination)
+		}
+		if mountIdx >= len(g.ioFDs) {
+			Fatalf("no FD found for mount. Did you forget --io-fd? FDs: %d, Mount: %+v", len(g.ioFDs), m)
+		}
+
+		cfgs = append(cfgs, connectionConfig{
+			mountPath: m.Destination,
+			opts: &fsgofer.Config{
+				ROMount:           isReadonlyMount(m.Options) || conf.Overlay,
+				HostUDS:           conf.FSGoferHostUDS,
+				EnableVerityXattr: conf.Verity,
+			},
+			sock: newSocket(g.ioFDs[mountIdx]),
+		})
+
+		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].opts.ROMount)
+		mountIdx++
+	}
+
+	if mountIdx != len(g.ioFDs) {
+		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+	}
+	cfgs = cfgs[:mountIdx]
+
+	var cm lisafs.ConnectionManager
+	for _, cfg := range cfgs {
+		if err := cm.StartConnection(cfg.sock, cfg.mountPath, fsgofer.LisafsHandlers, cfg.opts); err != nil {
+			Fatalf("starting connection on FD %d for gofer mount at path %q failed: %v", cfg.sock.FD(), cfg.mountPath, err)
+		}
+	}
+	cm.Wait()
+}
+
+func (g *Gofer) run9PServers(spec *specs.Spec, conf *config.Config, root string) {
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
@@ -176,7 +276,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
-		if specutils.Is9PMount(m, conf.VFS2) {
+		if specutils.IsGoferMount(m, conf.VFS2) {
 			cfg := fsgofer.Config{
 				ROMount:           isReadonlyMount(m.Options) || conf.Overlay,
 				HostUDS:           conf.FSGoferHostUDS,
@@ -199,26 +299,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
 
-	if conf.FSGoferHostUDS {
-		filter.InstallUDSFilters()
-	}
-
-	if conf.Verity {
-		filter.InstallXattrFilters()
-	}
-
-	if err := filter.Install(); err != nil {
-		Fatalf("installing seccomp filters: %v", err)
-	}
-
-	runServers(ats, g.ioFDs)
-	return subcommands.ExitSuccess
-}
-
-func runServers(ats []p9.Attacher, ioFDs []int) {
 	// Run the loops and wait for all to exit.
 	var wg sync.WaitGroup
-	for i, ioFD := range ioFDs {
+	for i, ioFD := range g.ioFDs {
 		wg.Add(1)
 		go func(ioFD int, at p9.Attacher) {
 			socket, err := unet.NewSocket(ioFD)
@@ -350,7 +433,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // creates directories as needed.
 func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 	for _, m := range mounts {
-		if !specutils.Is9PMount(m, conf.VFS2) {
+		if !specutils.IsGoferMount(m, conf.VFS2) {
 			continue
 		}
 
@@ -390,7 +473,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if !specutils.Is9PMount(m, conf.VFS2) {
+		if !specutils.IsGoferMount(m, conf.VFS2) {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}
