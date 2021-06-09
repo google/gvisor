@@ -357,7 +357,7 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 		case *ICMPv4:
 			fields.Protocol = uint8(header.ICMPv4ProtocolNumber)
 		default:
-			// TODO(b/150301488): Support more protocols as needed.
+			// We can add support for more protocols as needed.
 			return nil, fmt.Errorf("ipv4 header's next layer is unrecognized: %#v", n)
 		}
 	}
