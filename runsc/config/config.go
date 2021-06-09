@@ -151,12 +151,6 @@ type Config struct {
 	// ReferenceLeakMode sets reference leak check mode
 	ReferenceLeak refs.LeakMode `flag:"ref-leak-mode"`
 
-	// OverlayfsStaleRead instructs the sandbox to assume that the root mount
-	// is on a Linux overlayfs mount, which does not necessarily preserve
-	// coherence between read-only and subsequent writable file descriptors
-	// representing the "same" file.
-	OverlayfsStaleRead bool `flag:"overlayfs-stale-read"`
-
 	// CPUNumFromQuota sets CPU number count to available CPU quota, using
 	// least integer value greater than or equal to quota.
 	//

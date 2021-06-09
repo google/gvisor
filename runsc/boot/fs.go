@@ -763,12 +763,10 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 	p9FS := mustFindFilesystem("9p")
 	opts := p9MountData(fd, conf.FileAccess, false /* vfs2 */)
 
-	if conf.OverlayfsStaleRead {
-		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
-		// can only send mount options for specs.Mounts (specs.Root is missing
-		// Options field). So assume root is always on top of overlayfs.
-		opts = append(opts, "overlayfs_stale_read")
-	}
+	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
+	// can only send mount options for specs.Mounts (specs.Root is missing
+	// Options field). So assume root is always on top of overlayfs.
+	opts = append(opts, "overlayfs_stale_read")
 
 	rootInode, err := p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
 	if err != nil {

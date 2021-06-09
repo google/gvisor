@@ -210,12 +210,10 @@ func (c *containerMounter) createMountNamespaceVFS2(ctx context.Context, conf *c
 	fd := c.fds.remove()
 	data := p9MountData(fd, conf.FileAccess, true /* vfs2 */)
 
-	if conf.OverlayfsStaleRead {
-		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
-		// can only send mount options for specs.Mounts (specs.Root is missing
-		// Options field). So assume root is always on top of overlayfs.
-		data = append(data, "overlayfs_stale_read")
-	}
+	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
+	// can only send mount options for specs.Mounts (specs.Root is missing
+	// Options field). So assume root is always on top of overlayfs.
+	data = append(data, "overlayfs_stale_read")
 
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	opts := &vfs.MountOptions{
