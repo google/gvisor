@@ -246,7 +246,7 @@ var linuxARM64 = SyscallMap{
 	219: makeSyscallInfo("keyctl", Hex, Hex, Hex, Hex, Hex),
 	220: makeSyscallInfo("clone", CloneFlags, Hex, Hex, Hex, Hex),
 	221: makeSyscallInfo("execve", Path, ExecveStringVector, ExecveStringVector),
-	222: makeSyscallInfo("mmap", Hex, Hex, Hex, Hex, FD, Hex),
+	222: makeSyscallInfo("mmap", Hex, Hex, MmapProt, MmapFlags, FD, Hex),
 	223: makeSyscallInfo("fadvise64", FD, Hex, Hex, Hex),
 	224: makeSyscallInfo("swapon", Hex, Hex),
 	225: makeSyscallInfo("swapoff", Hex),
