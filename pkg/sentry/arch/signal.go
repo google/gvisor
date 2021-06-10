@@ -19,28 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-// SignalAct represents the action that should be taken when a signal is
-// delivered, and is equivalent to struct sigaction.
-//
-// +marshal
-// +stateify savable
-type SignalAct struct {
-	Handler  uint64
-	Flags    uint64
-	Restorer uint64 // Only used on amd64.
-	Mask     linux.SignalSet
-}
-
-// SerializeFrom implements NativeSignalAct.SerializeFrom.
-func (s *SignalAct) SerializeFrom(other *SignalAct) {
-	*s = *other
-}
-
-// DeserializeTo implements NativeSignalAct.DeserializeTo.
-func (s *SignalAct) DeserializeTo(other *SignalAct) {
-	*other = *s
-}
-
 // SignalStack represents information about a user stack, and is equivalent to
 // stack_t.
 //

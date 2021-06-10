@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -30,14 +29,14 @@ type SignalHandlers struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// actions is the action to be taken upon receiving each signal.
-	actions map[linux.Signal]arch.SignalAct
+	actions map[linux.Signal]linux.SigAction
 }
 
 // NewSignalHandlers returns a new SignalHandlers specifying all default
 // actions.
 func NewSignalHandlers() *SignalHandlers {
 	return &SignalHandlers{
-		actions: make(map[linux.Signal]arch.SignalAct),
+		actions: make(map[linux.Signal]linux.SigAction),
 	}
 }
 
@@ -59,9 +58,9 @@ func (sh *SignalHandlers) CopyForExec() *SignalHandlers {
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	for sig, act := range sh.actions {
-		if act.Handler == arch.SignalActIgnore {
-			sh2.actions[sig] = arch.SignalAct{
-				Handler: arch.SignalActIgnore,
+		if act.Handler == linux.SIG_IGN {
+			sh2.actions[sig] = linux.SigAction{
+				Handler: linux.SIG_IGN,
 			}
 		}
 	}
@@ -73,15 +72,15 @@ func (sh *SignalHandlers) IsIgnored(sig linux.Signal) bool {
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	sa, ok := sh.actions[sig]
-	return ok && sa.Handler == arch.SignalActIgnore
+	return ok && sa.Handler == linux.SIG_IGN
 }
 
 // dequeueActionLocked returns the SignalAct that should be used to handle sig.
 //
 // Preconditions: sh.mu must be locked.
-func (sh *SignalHandlers) dequeueAction(sig linux.Signal) arch.SignalAct {
+func (sh *SignalHandlers) dequeueAction(sig linux.Signal) linux.SigAction {
 	act := sh.actions[sig]
-	if act.IsResetHandler() {
+	if act.Flags&linux.SA_RESETHAND != 0 {
 		delete(sh.actions, sig)
 	}
 	return act
