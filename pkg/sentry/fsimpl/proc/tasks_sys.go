@@ -55,6 +55,7 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			}),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
 			"mmap_min_addr":     fs.newInode(ctx, root, 0444, &mmapMinAddrData{k: k}),
 			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
 		}),
