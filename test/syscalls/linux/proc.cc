@@ -2364,6 +2364,15 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   EXPECT_EQ(procfs_hostname, hostname);
 }
 
+TEST(ProcSysVmMaxmapCount, HasNumericValue) {
+  const std::string val_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/vm/max_map_count"));
+  int32_t val;
+  EXPECT_TRUE(absl::SimpleAtoi(val_str, &val))
+      << "/proc/sys/vm/max_map_count does not contain a numeric value: "
+      << val_str;
+}
+
 TEST(ProcSysVmMmapMinAddr, HasNumericValue) {
   const std::string mmap_min_addr_str =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/vm/mmap_min_addr"));
