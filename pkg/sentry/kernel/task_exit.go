@@ -670,10 +670,10 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				t.parent.tg.signalHandlers.mu.Lock()
 				if t.tg.terminationSignal == linux.SIGCHLD || fromPtraceDetach {
 					if act, ok := t.parent.tg.signalHandlers.actions[linux.SIGCHLD]; ok {
-						if act.Handler == arch.SignalActIgnore {
+						if act.Handler == linux.SIG_IGN {
 							t.exitParentAcked = true
 							signalParent = false
-						} else if act.Flags&arch.SignalFlagNoCldWait != 0 {
+						} else if act.Flags&linux.SA_NOCLDWAIT != 0 {
 							t.exitParentAcked = true
 						}
 					}

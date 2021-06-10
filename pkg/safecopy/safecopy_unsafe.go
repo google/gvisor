@@ -342,6 +342,9 @@ func errorFromFaultSignal(addr uintptr, sig int32) error {
 // handler however, and if this is function is being used externally then the
 // same courtesy is expected.
 func ReplaceSignalHandler(sig unix.Signal, handler uintptr, previous *uintptr) error {
+	// TODO(gvisor.dev/issue/6160): This struct is the same as linux.SigAction.
+	// Once the usermem dependency is removed from primitive, delete this replica
+	// and remove IFTTT comments in abi/linux/signal.go.
 	var sa struct {
 		handler  uintptr
 		flags    uint64

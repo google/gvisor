@@ -21,25 +21,16 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// FIXME(gvisor.dev/issue/214): Move to pkg/abi/linux along with definitions in
-// pkg/sentry/arch.
-type sigaction struct {
-	handler  uintptr
-	flags    uint64
-	restorer uintptr
-	mask     uint64
-}
-
 // IgnoreChildStop sets the SA_NOCLDSTOP flag, causing child processes to not
 // generate SIGCHLD when they stop.
 func IgnoreChildStop() error {
-	var sa sigaction
+	var sa linux.SigAction
 
 	// Get the existing signal handler information, and set the flag.
 	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(unix.SIGCHLD), 0, uintptr(unsafe.Pointer(&sa)), linux.SignalSetSize, 0, 0); e != 0 {
 		return e
 	}
-	sa.flags |= linux.SA_NOCLDSTOP
+	sa.Flags |= linux.SA_NOCLDSTOP
 	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(unix.SIGCHLD), uintptr(unsafe.Pointer(&sa)), 0, linux.SignalSetSize, 0, 0); e != 0 {
 		return e
 	}

@@ -86,7 +86,7 @@ var defaultActions = map[linux.Signal]SignalAction{
 }
 
 // computeAction figures out what to do given a signal number
-// and an arch.SignalAct. SIGSTOP always results in a SignalActionStop,
+// and an linux.SigAction. SIGSTOP always results in a SignalActionStop,
 // and SIGKILL always results in a SignalActionTerm.
 // Signal 0 is always ignored as many programs use it for various internal functions
 // and don't expect it to do anything.
@@ -97,7 +97,7 @@ var defaultActions = map[linux.Signal]SignalAction{
 // 0, the default action is taken;
 // 1, the signal is ignored;
 // anything else, the function returns SignalActionHandler.
-func computeAction(sig linux.Signal, act arch.SignalAct) SignalAction {
+func computeAction(sig linux.Signal, act linux.SigAction) SignalAction {
 	switch sig {
 	case linux.SIGSTOP:
 		return SignalActionStop
@@ -108,9 +108,9 @@ func computeAction(sig linux.Signal, act arch.SignalAct) SignalAction {
 	}
 
 	switch act.Handler {
-	case arch.SignalActDefault:
+	case linux.SIG_DFL:
 		return defaultActions[sig]
-	case arch.SignalActIgnore:
+	case linux.SIG_IGN:
 		return SignalActionIgnore
 	default:
 		return SignalActionHandler
@@ -155,7 +155,7 @@ func (t *Task) PendingSignals() linux.SignalSet {
 }
 
 // deliverSignal delivers the given signal and returns the following run state.
-func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunState {
+func (t *Task) deliverSignal(info *arch.SignalInfo, act linux.SigAction) taskRunState {
 	sigact := computeAction(linux.Signal(info.Signo), act)
 
 	if t.haveSyscallReturn {
@@ -172,7 +172,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 					fallthrough
 				case sre == syserror.ERESTART_RESTARTBLOCK:
 					fallthrough
-				case (sre == syserror.ERESTARTSYS && !act.IsRestart()):
+				case (sre == syserror.ERESTARTSYS && act.Flags&linux.SA_RESTART == 0):
 					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().SetReturn(uintptr(-ExtractErrno(syserror.EINTR, -1)))
 				default:
@@ -236,7 +236,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 
 // deliverSignalToHandler changes the task's userspace state to enter the given
 // user-configured handler for the given signal.
-func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct) error {
+func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act linux.SigAction) error {
 	// Signal delivery to an application handler interrupts restartable
 	// sequences.
 	t.rseqInterrupt()
@@ -248,7 +248,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	// N.B. This is a *copy* of the alternate stack that the user's signal
 	// handler expects to see in its ucontext (even if it's not in use).
 	alt := t.signalStack
-	if act.IsOnStack() && alt.IsEnabled() {
+	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() {
 		alt.SetOnStack()
 		if !alt.Contains(sp) {
 			sp = hostarch.Addr(alt.Top())
@@ -289,7 +289,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 
 	// Add our signal mask.
 	newMask := t.signalMask | act.Mask
-	if !act.IsNoDefer() {
+	if act.Flags&linux.SA_NODEFER == 0 {
 		newMask |= linux.SignalSetOf(linux.Signal(info.Signo))
 	}
 	t.SetSignalMask(newMask)
@@ -572,9 +572,9 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
 	blocked := linux.SignalSetOf(sig)&t.signalMask != 0
 	act := t.tg.signalHandlers.actions[sig]
-	ignored := act.Handler == arch.SignalActIgnore
+	ignored := act.Handler == linux.SIG_IGN
 	if blocked || ignored || unconditional {
-		act.Handler = arch.SignalActDefault
+		act.Handler = linux.SIG_DFL
 		t.tg.signalHandlers.actions[sig] = act
 		if blocked {
 			t.setSignalMaskLocked(t.signalMask &^ linux.SignalSetOf(sig))
@@ -680,11 +680,11 @@ func (t *Task) SetSignalStack(alt arch.SignalStack) bool {
 	return true
 }
 
-// SetSignalAct atomically sets the thread group's signal action for signal sig
+// SetSigAction atomically sets the thread group's signal action for signal sig
 // to *actptr (if actptr is not nil) and returns the old signal action.
-func (tg *ThreadGroup) SetSignalAct(sig linux.Signal, actptr *arch.SignalAct) (arch.SignalAct, error) {
+func (tg *ThreadGroup) SetSigAction(sig linux.Signal, actptr *linux.SigAction) (linux.SigAction, error) {
 	if !sig.IsValid() {
-		return arch.SignalAct{}, syserror.EINVAL
+		return linux.SigAction{}, syserror.EINVAL
 	}
 
 	tg.pidns.owner.mu.RLock()
@@ -716,27 +716,6 @@ func (tg *ThreadGroup) SetSignalAct(sig linux.Signal, actptr *arch.SignalAct) (a
 		}
 	}
 	return oldact, nil
-}
-
-// CopyOutSignalAct converts the given SignalAct into an architecture-specific
-// type and then copies it out to task memory.
-func (t *Task) CopyOutSignalAct(addr hostarch.Addr, s *arch.SignalAct) error {
-	n := t.Arch().NewSignalAct()
-	n.SerializeFrom(s)
-	_, err := n.CopyOut(t, addr)
-	return err
-}
-
-// CopyInSignalAct copies an architecture-specific sigaction type from task
-// memory and then converts it into a SignalAct.
-func (t *Task) CopyInSignalAct(addr hostarch.Addr) (arch.SignalAct, error) {
-	n := t.Arch().NewSignalAct()
-	var s arch.SignalAct
-	if _, err := n.CopyIn(t, addr); err != nil {
-		return s, err
-	}
-	n.DeserializeTo(&s)
-	return s, nil
 }
 
 // CopyOutSignalStack converts the given SignalStack into an
@@ -909,7 +888,7 @@ func (t *Task) signalStop(target *Task, code int32, status int32) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	act, ok := t.tg.signalHandlers.actions[linux.SIGCHLD]
-	if !ok || (act.Handler != arch.SignalActIgnore && act.Flags&arch.SignalFlagNoCldStop == 0) {
+	if !ok || (act.Handler != linux.SIG_IGN && act.Flags&linux.SA_NOCLDSTOP == 0) {
 		sigchld := &arch.SignalInfo{
 			Signo: int32(linux.SIGCHLD),
 			Code:  code,
