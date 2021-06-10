@@ -19,28 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-// SignalStack represents information about a user stack, and is equivalent to
-// stack_t.
-//
-// +marshal
-// +stateify savable
-type SignalStack struct {
-	Addr  uint64
-	Flags uint32
-	_     uint32
-	Size  uint64
-}
-
-// SerializeFrom implements NativeSignalStack.SerializeFrom.
-func (s *SignalStack) SerializeFrom(other *SignalStack) {
-	*s = *other
-}
-
-// DeserializeTo implements NativeSignalStack.DeserializeTo.
-func (s *SignalStack) DeserializeTo(other *SignalStack) {
-	*other = *s
-}
-
 // SignalInfo represents information about a signal being delivered, and is
 // equivalent to struct siginfo in linux kernel(linux/include/uapi/asm-generic/siginfo.h).
 //

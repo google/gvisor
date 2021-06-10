@@ -25,9 +25,9 @@ import (
 
 // Marshallable types used by this file.
 var _ marshal.Marshallable = (*SignalContext64)(nil)
-var _ marshal.Marshallable = (*SignalStack)(nil)
 var _ marshal.Marshallable = (*UContext64)(nil)
 var _ marshal.Marshallable = (*linux.SignalSet)(nil)
+var _ marshal.Marshallable = (*linux.SignalStack)(nil)
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SignalContext64) SizeBytes() int {
@@ -270,7 +270,7 @@ func (s *SignalContext64) WriteTo(writer io.Writer) (int64, error) {
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (u *UContext64) SizeBytes() int {
     return 16 +
-        (*SignalStack)(nil).SizeBytes() +
+        (*linux.SignalStack)(nil).SizeBytes() +
         (*SignalContext64)(nil).SizeBytes() +
         (*linux.SignalSet)(nil).SizeBytes()
 }

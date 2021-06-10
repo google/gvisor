@@ -325,13 +325,12 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 	alt := t.SignalStack()
 	if oldaddr != 0 {
-		if err := t.CopyOutSignalStack(oldaddr, &alt); err != nil {
+		if _, err := alt.CopyOut(t, oldaddr); err != nil {
 			return 0, nil, err
 		}
 	}
 	if setaddr != 0 {
-		alt, err := t.CopyInSignalStack(setaddr)
-		if err != nil {
+		if _, err := alt.CopyIn(t, setaddr); err != nil {
 			return 0, nil, err
 		}
 		// The signal stack cannot be changed if the task is currently
