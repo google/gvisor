@@ -249,7 +249,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act linux.SigAction
 	// handler expects to see in its ucontext (even if it's not in use).
 	alt := t.signalStack
 	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() {
-		alt.SetOnStack()
+		alt.Flags |= linux.SS_ONSTACK
 		if !alt.Contains(sp) {
 			sp = hostarch.Addr(alt.Top())
 		}
@@ -641,17 +641,17 @@ func (t *Task) SetSavedSignalMask(mask linux.SignalSet) {
 }
 
 // SignalStack returns the task-private signal stack.
-func (t *Task) SignalStack() arch.SignalStack {
+func (t *Task) SignalStack() linux.SignalStack {
 	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
 	alt := t.signalStack
 	if t.onSignalStack(alt) {
-		alt.Flags |= arch.SignalStackFlagOnStack
+		alt.Flags |= linux.SS_ONSTACK
 	}
 	return alt
 }
 
 // onSignalStack returns true if the task is executing on the given signal stack.
-func (t *Task) onSignalStack(alt arch.SignalStack) bool {
+func (t *Task) onSignalStack(alt linux.SignalStack) bool {
 	sp := hostarch.Addr(t.Arch().Stack())
 	return alt.Contains(sp)
 }
@@ -661,20 +661,20 @@ func (t *Task) onSignalStack(alt arch.SignalStack) bool {
 // This value may not be changed if the task is currently executing on the
 // signal stack, i.e. if t.onSignalStack returns true. In this case, this
 // function will return false. Otherwise, true is returned.
-func (t *Task) SetSignalStack(alt arch.SignalStack) bool {
+func (t *Task) SetSignalStack(alt linux.SignalStack) bool {
 	// Check that we're not executing on the stack.
 	if t.onSignalStack(t.signalStack) {
 		return false
 	}
 
-	if alt.Flags&arch.SignalStackFlagDisable != 0 {
+	if alt.Flags&linux.SS_DISABLE != 0 {
 		// Don't record anything beyond the flags.
-		t.signalStack = arch.SignalStack{
-			Flags: arch.SignalStackFlagDisable,
+		t.signalStack = linux.SignalStack{
+			Flags: linux.SS_DISABLE,
 		}
 	} else {
 		// Mask out irrelevant parts: only disable matters.
-		alt.Flags &= arch.SignalStackFlagDisable
+		alt.Flags &= linux.SS_DISABLE
 		t.signalStack = alt
 	}
 	return true
@@ -716,27 +716,6 @@ func (tg *ThreadGroup) SetSigAction(sig linux.Signal, actptr *linux.SigAction) (
 		}
 	}
 	return oldact, nil
-}
-
-// CopyOutSignalStack converts the given SignalStack into an
-// architecture-specific type and then copies it out to task memory.
-func (t *Task) CopyOutSignalStack(addr hostarch.Addr, s *arch.SignalStack) error {
-	n := t.Arch().NewSignalStack()
-	n.SerializeFrom(s)
-	_, err := n.CopyOut(t, addr)
-	return err
-}
-
-// CopyInSignalStack copies an architecture-specific stack_t from task memory
-// and then converts it into a SignalStack.
-func (t *Task) CopyInSignalStack(addr hostarch.Addr) (arch.SignalStack, error) {
-	n := t.Arch().NewSignalStack()
-	var s arch.SignalStack
-	if _, err := n.CopyIn(t, addr); err != nil {
-		return s, err
-	}
-	n.DeserializeTo(&s)
-	return s, nil
 }
 
 // groupStop is a TaskStop placed on tasks that have received a stop signal

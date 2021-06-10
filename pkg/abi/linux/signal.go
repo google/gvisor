@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -165,7 +166,7 @@ const (
 	SIG_IGN = 1
 )
 
-// Signal action flags for rt_sigaction(2), from uapi/asm-generic/signal.h
+// Signal action flags for rt_sigaction(2), from uapi/asm-generic/signal.h.
 const (
 	SA_NOCLDSTOP = 0x00000001
 	SA_NOCLDWAIT = 0x00000002
@@ -177,6 +178,12 @@ const (
 	SA_RESETHAND = 0x80000000
 	SA_NOMASK    = SA_NODEFER
 	SA_ONESHOT   = SA_RESETHAND
+)
+
+// Signal stack flags for signalstack(2), from include/uapi/linux/signal.h.
+const (
+	SS_ONSTACK = 1
+	SS_DISABLE = 2
 )
 
 // Signal info types.
@@ -241,6 +248,33 @@ type SigAction struct {
 }
 
 // LINT.ThenChange(../../safecopy/safecopy_unsafe.go)
+
+// SignalStack represents information about a user stack, and is equivalent to
+// stack_t.
+//
+// +marshal
+// +stateify savable
+type SignalStack struct {
+	Addr  uint64
+	Flags uint32
+	_     uint32
+	Size  uint64
+}
+
+// Contains checks if the stack pointer is within this stack.
+func (s *SignalStack) Contains(sp hostarch.Addr) bool {
+	return hostarch.Addr(s.Addr) < sp && sp <= hostarch.Addr(s.Addr+s.Size)
+}
+
+// Top returns the stack's top address.
+func (s *SignalStack) Top() hostarch.Addr {
+	return hostarch.Addr(s.Addr + s.Size)
+}
+
+// IsEnabled returns true iff this signal stack is marked as enabled.
+func (s *SignalStack) IsEnabled() bool {
+	return s.Flags&SS_DISABLE == 0
+}
 
 // Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
 const (

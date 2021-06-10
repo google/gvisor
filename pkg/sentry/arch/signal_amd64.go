@@ -76,14 +76,9 @@ const (
 type UContext64 struct {
 	Flags    uint64
 	Link     uint64
-	Stack    SignalStack
+	Stack    linux.SignalStack
 	MContext SignalContext64
 	Sigset   linux.SignalSet
-}
-
-// NewSignalStack implements Context.NewSignalStack.
-func (c *context64) NewSignalStack() NativeSignalStack {
-	return &SignalStack{}
 }
 
 // From Linux 'arch/x86/include/uapi/asm/sigcontext.h' the following is the
@@ -105,7 +100,7 @@ func (c *context64) fpuFrameSize() (size int, useXsave bool) {
 
 // SignalSetup implements Context.SignalSetup. (Compare to Linux's
 // arch/x86/kernel/signal.c:__setup_rt_frame().)
-func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
+func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error {
 	sp := st.Bottom
 
 	// "The 128-byte area beyond the location pointed to by %rsp is considered
@@ -232,15 +227,15 @@ func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInf
 
 // SignalRestore implements Context.SignalRestore. (Compare to Linux's
 // arch/x86/kernel/signal.c:sys_rt_sigreturn().)
-func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error) {
+func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
 	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
-		return 0, SignalStack{}, err
+		return 0, linux.SignalStack{}, err
 	}
 	var info SignalInfo
 	if _, err := info.CopyIn(st, StackBottomMagic); err != nil {
-		return 0, SignalStack{}, err
+		return 0, linux.SignalStack{}, err
 	}
 
 	// Restore registers.
