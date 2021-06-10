@@ -7,7 +7,7 @@ go_binary(
     testonly = 1,
     srcs = [
         "fds.go",
-        "test_app.go",
+        "main.go",
     ],
     pure = True,
     visibility = ["//runsc/container:__pkg__"],

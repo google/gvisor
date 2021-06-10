@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_binary(
     name = "runner",
     testonly = 1,
-    srcs = ["runner.go"],
+    srcs = ["main.go"],
     data = [
         "//runsc",
     ],

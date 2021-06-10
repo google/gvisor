@@ -5,8 +5,8 @@ package(licenses = ["notice"])
 go_binary(
     name = "go_generics",
     srcs = [
-        "generics.go",
         "imports.go",
+        "main.go",
         "remove.go",
     ],
     visibility = ["//:sandbox"],
