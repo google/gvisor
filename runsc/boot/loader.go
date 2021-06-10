@@ -963,10 +963,15 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		}
 		args.Envv = envv
 	}
+	args.PIDNamespace = tg.PIDNamespace()
+
+	args.Limits, err = createLimitSet(l.root.spec)
+	if err != nil {
+		return 0, fmt.Errorf("creating limits: %w", err)
+	}
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
-	args.PIDNamespace = tg.PIDNamespace()
 	newTG, tgid, ttyFile, ttyFileVFS2, err := control.ExecAsync(&proc, args)
 	if err != nil {
 		return 0, err
