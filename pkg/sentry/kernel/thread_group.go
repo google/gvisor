@@ -490,10 +490,10 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
 
-	// TODO(b/129283598): "If tcsetpgrp() is called by a member of a
-	// background process group in its session, and the calling process is
-	// not blocking or ignoring SIGTTOU, a SIGTTOU signal is sent to all
-	// members of this background process group."
+	// TODO(gvisor.dev/issue/6148): "If tcsetpgrp() is called by a member of a
+	// background process group in its session, and the calling process is not
+	// blocking or ignoring SIGTTOU, a SIGTTOU signal is sent to all members of
+	// this background process group."
 
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
