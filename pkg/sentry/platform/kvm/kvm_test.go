@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -157,7 +158,7 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 
 func TestApplicationSyscall(t *testing.T) {
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -171,7 +172,7 @@ func TestApplicationSyscall(t *testing.T) {
 		return false
 	})
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -188,7 +189,7 @@ func TestApplicationSyscall(t *testing.T) {
 func TestApplicationFault(t *testing.T) {
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -203,7 +204,7 @@ func TestApplicationFault(t *testing.T) {
 	})
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -221,7 +222,7 @@ func TestRegistersSyscall(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleRegsSyscall, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -244,7 +245,7 @@ func TestRegistersFault(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleRegsFault, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -270,7 +271,7 @@ func TestBounce(t *testing.T) {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
 		}()
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -285,7 +286,7 @@ func TestBounce(t *testing.T) {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
 		}()
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -317,7 +318,7 @@ func TestBounceStress(t *testing.T) {
 				c.BounceToKernel()
 			}()
 			randomSleep()
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -338,7 +339,7 @@ func TestInvalidate(t *testing.T) {
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, &data) // Read legitimate value.
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -353,7 +354,7 @@ func TestInvalidate(t *testing.T) {
 		// Unmap the page containing data & invalidate.
 		pt.Unmap(hostarch.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(hostarch.PageSize-1)), hostarch.PageSize)
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -371,13 +372,13 @@ func TestInvalidate(t *testing.T) {
 }
 
 // IsFault returns true iff the given signal represents a fault.
-func IsFault(err error, si *arch.SignalInfo) bool {
+func IsFault(err error, si *linux.SignalInfo) bool {
 	return err == platform.ErrContextSignal && si.Signo == int32(unix.SIGSEGV)
 }
 
 func TestEmptyAddressSpace(t *testing.T) {
 	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -391,7 +392,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 		return false
 	})
 	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -467,7 +468,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 		a int // Count for ErrContextInterrupt.
 	)
 	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -504,7 +505,7 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 		a int
 	)
 	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,

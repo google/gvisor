@@ -19,6 +19,7 @@ package kvm
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -30,7 +31,7 @@ func TestSegments(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestSegments(regs)
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -55,7 +56,7 @@ func stmxcsr(addr *uint32)
 
 func TestMXCSR(t *testing.T) {
 	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+		var si linux.SignalInfo
 		switchOpts := ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,

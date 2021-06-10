@@ -195,8 +195,8 @@ type Context interface {
 	// - nil: The Context invoked a system call.
 	//
 	// - ErrContextSignal: The Context was interrupted by a signal. The
-	// returned *arch.SignalInfo contains information about the signal. If
-	// arch.SignalInfo.Signo == SIGSEGV, the returned hostarch.AccessType
+	// returned *linux.SignalInfo contains information about the signal. If
+	// linux.SignalInfo.Signo == SIGSEGV, the returned hostarch.AccessType
 	// contains the access type of the triggering fault. The caller owns
 	// the returned SignalInfo.
 	//
@@ -207,7 +207,7 @@ type Context interface {
 	// concurrent call to Switch().
 	//
 	// - ErrContextCPUPreempted: See the definition of that error for details.
-	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, hostarch.AccessType, error)
+	Switch(ctx context.Context, mm MemoryManager, ac arch.Context, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error)
 
 	// PullFullState() pulls a full state of the application thread.
 	//

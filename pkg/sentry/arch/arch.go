@@ -149,7 +149,7 @@ type Context interface {
 	// stack is not going to be used).
 	//
 	// sigset is the signal mask before entering the signal handler.
-	SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error
+	SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error
 
 	// SignalRestore restores context after returning from a signal
 	// handler.

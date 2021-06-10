@@ -45,7 +45,7 @@ type Stack struct {
 }
 
 // scratchBufLen is the default length of Stack.scratchBuf. The
-// largest structs the stack regularly serializes are arch.SignalInfo
+// largest structs the stack regularly serializes are linux.SignalInfo
 // and arch.UContext64. We'll set the default size as the larger of
 // the two, arch.UContext64.
 var scratchBufLen = (*UContext64)(nil).SizeBytes()

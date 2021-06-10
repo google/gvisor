@@ -37,7 +37,6 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -1221,7 +1220,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	execTG, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err == nil {
 		// Send signal directly to the identified process.
-		return l.k.SendExternalSignalThreadGroup(execTG, &arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(execTG, &linux.SignalInfo{Signo: signo})
 	}
 
 	// The caller may be signaling a process not started directly via exec.
@@ -1234,7 +1233,7 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	if tg.Leader().ContainerID() != cid {
 		return fmt.Errorf("process %d belongs to a different container: %q", tgid, tg.Leader().ContainerID())
 	}
-	return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
+	return l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo})
 }
 
 // signalForegrondProcessGroup looks up foreground process group from the TTY
@@ -1270,7 +1269,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		// No foreground process group has been set. Signal the
 		// original thread group.
 		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, tgid, tgid)
-		return l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo})
 	}
 	// Send the signal to all processes in the process group.
 	var lastErr error
@@ -1278,7 +1277,7 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		if tg.ProcessGroup() != pg {
 			continue
 		}
-		if err := l.k.SendExternalSignalThreadGroup(tg, &arch.SignalInfo{Signo: signo}); err != nil {
+		if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo}); err != nil {
 			lastErr = err
 		}
 	}
@@ -1293,7 +1292,7 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	// sent to the entire container.
 	l.k.Pause()
 	defer l.k.Unpause()
-	return l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo})
+	return l.k.SendContainerSignal(cid, &linux.SignalInfo{Signo: signo})
 }
 
 // threadGroupFromID is similar to tryThreadGroupFromIDLocked except that it

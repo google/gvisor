@@ -79,6 +79,7 @@ go_test(
         "requires-kvm",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/hostarch",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",

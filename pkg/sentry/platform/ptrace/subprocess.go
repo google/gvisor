@@ -20,6 +20,7 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/procid"
@@ -524,7 +525,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	// Check for interrupts, and ensure that future interrupts will signal t.
 	if !c.interrupt.Enable(t) {
 		// Pending interrupt; simulate.
-		c.signalInfo = arch.SignalInfo{Signo: int32(platform.SignalInterrupt)}
+		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
 		return false
 	}
 	defer c.interrupt.Disable()

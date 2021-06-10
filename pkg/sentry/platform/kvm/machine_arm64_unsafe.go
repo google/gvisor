@@ -23,10 +23,10 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
@@ -272,7 +272,7 @@ func (c *vCPU) getOneRegister(reg *kvmOneReg) error {
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Pc) {
 		return nonCanonical(regs.Pc, int32(unix.SIGSEGV), info)
@@ -319,14 +319,14 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	case ring0.El0SyncUndef:
 		return c.fault(int32(unix.SIGILL), info)
 	case ring0.El0SyncDbg:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGTRAP),
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
 		info.SetAddr(switchOpts.Registers.Pc) // Include address.
 		return hostarch.AccessType{}, platform.ErrContextSignal
 	case ring0.El0SyncSpPc:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}

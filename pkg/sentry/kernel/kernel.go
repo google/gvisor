@@ -1341,7 +1341,7 @@ func (k *Kernel) Unpause() {
 // context is used only for debugging to describe how the signal was received.
 //
 // Preconditions: Kernel must have an init process.
-func (k *Kernel) SendExternalSignal(info *arch.SignalInfo, context string) {
+func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.sendExternalSignal(info, context)
@@ -1349,7 +1349,7 @@ func (k *Kernel) SendExternalSignal(info *arch.SignalInfo, context string) {
 
 // SendExternalSignalThreadGroup injects a signal into an specific ThreadGroup.
 // This function doesn't skip signals like SendExternalSignal does.
-func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *arch.SignalInfo) error {
+func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return tg.SendSignal(info)
@@ -1357,7 +1357,7 @@ func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *arch.Signa
 
 // SendContainerSignal sends the given signal to all processes inside the
 // namespace that match the given container ID.
-func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
+func (k *Kernel) SendContainerSignal(cid string, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.tasks.mu.RLock()
