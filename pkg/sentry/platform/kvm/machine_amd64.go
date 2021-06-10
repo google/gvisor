@@ -23,11 +23,11 @@ import (
 	"runtime/debug"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
@@ -264,10 +264,10 @@ func (c *vCPU) setSystemTime() error {
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
-func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
-	*info = arch.SignalInfo{
+func nonCanonical(addr uint64, signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
+	*info = linux.SignalInfo{
 		Signo: signal,
-		Code:  arch.SignalInfoKernel,
+		Code:  linux.SI_KERNEL,
 	}
 	info.SetAddr(addr) // Include address.
 	return hostarch.NoAccess, platform.ErrContextSignal
@@ -276,7 +276,7 @@ func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (hostarch.Ac
 // fault generates an appropriate fault return.
 //
 //go:nosplit
-func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := ring0.ReadCR2()
 	code, user := c.ErrorCode()
@@ -287,7 +287,7 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, 
 		return hostarch.NoAccess, platform.ErrContextInterrupt
 	}
 	// Reset the pointed SignalInfo.
-	*info = arch.SignalInfo{Signo: signal}
+	*info = linux.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
 	accessType := hostarch.AccessType{
 		Read:    code&(1<<1) == 0,
@@ -325,7 +325,7 @@ func prefaultFloatingPointState(data *fpu.State) {
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
 		return nonCanonical(regs.Rip, int32(unix.SIGSEGV), info)
@@ -371,7 +371,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return c.fault(int32(unix.SIGSEGV), info)
 
 	case ring0.Debug, ring0.Breakpoint:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGTRAP),
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
@@ -383,9 +383,9 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		ring0.BoundRangeExceeded,
 		ring0.InvalidTSS,
 		ring0.StackSegmentFault:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGSEGV),
-			Code:  arch.SignalInfoKernel,
+			Code:  linux.SI_KERNEL,
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		if vector == ring0.GeneralProtectionFault {
@@ -397,7 +397,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.InvalidOpcode:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGILL),
 			Code:  1, // ILL_ILLOPC (illegal opcode).
 		}
@@ -405,7 +405,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.DivideByZero:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGFPE),
 			Code:  1, // FPE_INTDIV (divide by zero).
 		}
@@ -413,7 +413,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return hostarch.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Overflow:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGFPE),
 			Code:  2, // FPE_INTOVF (integer overflow).
 		}
@@ -422,7 +422,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 
 	case ring0.X87FloatingPointException,
 		ring0.SIMDFloatingPointException:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGFPE),
 			Code:  7, // FPE_FLTINV (invalid operation).
 		}
@@ -433,7 +433,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 		return hostarch.NoAccess, platform.ErrContextInterrupt
 
 	case ring0.AlignmentCheck:
-		*info = arch.SignalInfo{
+		*info = linux.SignalInfo{
 			Signo: int32(unix.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}

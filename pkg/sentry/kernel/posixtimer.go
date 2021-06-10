@@ -18,7 +18,6 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -97,7 +96,7 @@ func (it *IntervalTimer) ResumeTimer() {
 }
 
 // Preconditions: it.target's signal mutex must be locked.
-func (it *IntervalTimer) updateDequeuedSignalLocked(si *arch.SignalInfo) {
+func (it *IntervalTimer) updateDequeuedSignalLocked(si *linux.SignalInfo) {
 	it.sigpending = false
 	if it.sigorphan {
 		return
@@ -138,9 +137,9 @@ func (it *IntervalTimer) Notify(exp uint64, setting ktime.Setting) (ktime.Settin
 	it.sigpending = true
 	it.sigorphan = false
 	it.overrunCur += exp - 1
-	si := &arch.SignalInfo{
+	si := &linux.SignalInfo{
 		Signo: int32(it.signo),
-		Code:  arch.SignalInfoTimer,
+		Code:  linux.SI_TIMER,
 	}
 	si.SetTimerID(it.id)
 	si.SetSigval(it.sigval)

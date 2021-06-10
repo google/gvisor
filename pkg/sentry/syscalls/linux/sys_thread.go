@@ -398,7 +398,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			// out the fields it would set for a successful waitid in this case
 			// as well.
 			if infop != 0 {
-				var si arch.SignalInfo
+				var si linux.SignalInfo
 				_, err = si.CopyOut(t, infop)
 			}
 		}
@@ -413,7 +413,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if infop == 0 {
 		return 0, nil, nil
 	}
-	si := arch.SignalInfo{
+	si := linux.SignalInfo{
 		Signo: int32(linux.SIGCHLD),
 	}
 	si.SetPID(int32(wr.TID))
@@ -423,24 +423,24 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	s := unix.WaitStatus(wr.Status)
 	switch {
 	case s.Exited():
-		si.Code = arch.CLD_EXITED
+		si.Code = linux.CLD_EXITED
 		si.SetStatus(int32(s.ExitStatus()))
 	case s.Signaled():
-		si.Code = arch.CLD_KILLED
+		si.Code = linux.CLD_KILLED
 		si.SetStatus(int32(s.Signal()))
 	case s.CoreDump():
-		si.Code = arch.CLD_DUMPED
+		si.Code = linux.CLD_DUMPED
 		si.SetStatus(int32(s.Signal()))
 	case s.Stopped():
 		if wr.Event == kernel.EventTraceeStop {
-			si.Code = arch.CLD_TRAPPED
+			si.Code = linux.CLD_TRAPPED
 			si.SetStatus(int32(s.TrapCause()))
 		} else {
-			si.Code = arch.CLD_STOPPED
+			si.Code = linux.CLD_STOPPED
 			si.SetStatus(int32(s.StopSignal()))
 		}
 	case s.Continued():
-		si.Code = arch.CLD_CONTINUED
+		si.Code = linux.CLD_CONTINUED
 		si.SetStatus(int32(linux.SIGCONT))
 	default:
 		t.Warningf("waitid got incomprehensible wait status %d", s)

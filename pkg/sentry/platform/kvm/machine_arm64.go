@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
@@ -126,10 +126,10 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
-func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
-	*info = arch.SignalInfo{
+func nonCanonical(addr uint64, signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
+	*info = linux.SignalInfo{
 		Signo: signal,
-		Code:  arch.SignalInfoKernel,
+		Code:  linux.SI_KERNEL,
 	}
 	info.SetAddr(addr) // Include address.
 	return hostarch.NoAccess, platform.ErrContextSignal
@@ -157,7 +157,7 @@ func isWriteFault(code uint64) bool {
 // fault generates an appropriate fault return.
 //
 //go:nosplit
-func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, error) {
+func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := c.GetFaultAddr()
 	code, user := c.ErrorCode()
@@ -170,7 +170,7 @@ func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (hostarch.AccessType, 
 	}
 
 	// Reset the pointed SignalInfo.
-	*info = arch.SignalInfo{Signo: signal}
+	*info = linux.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
 
 	ret := code & _ESR_ELx_FSC

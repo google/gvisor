@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -395,7 +394,7 @@ type Task struct {
 	// ptraceSiginfo is analogous to Linux's task_struct::last_siginfo.
 	//
 	// ptraceSiginfo is protected by the TaskSet mutex.
-	ptraceSiginfo *arch.SignalInfo
+	ptraceSiginfo *linux.SignalInfo
 
 	// ptraceEventMsg is the value set by PTRACE_EVENT stops and returned to
 	// the tracer by ptrace(PTRACE_GETEVENTMSG).

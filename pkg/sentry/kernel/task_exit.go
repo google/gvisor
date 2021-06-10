@@ -31,7 +31,6 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -140,12 +139,12 @@ func (t *Task) killLocked() {
 	if t.stop != nil && t.stop.Killable() {
 		t.endInternalStopLocked()
 	}
-	t.pendingSignals.enqueue(&arch.SignalInfo{
+	t.pendingSignals.enqueue(&linux.SignalInfo{
 		Signo: int32(linux.SIGKILL),
 		// Linux just sets SIGKILL in the pending signal bitmask without
 		// enqueueing an actual siginfo, such that
 		// kernel/signal.c:collect_signal() initializes si_code to SI_USER.
-		Code: arch.SignalInfoUser,
+		Code: linux.SI_USER,
 	}, nil)
 	t.interrupt()
 }
@@ -350,7 +349,7 @@ func (t *Task) exitThreadGroup() bool {
 	// signalStop must be called with t's signal mutex unlocked.
 	t.tg.signalHandlers.mu.Unlock()
 	if notifyParent && t.tg.leader.parent != nil {
-		t.tg.leader.parent.signalStop(t, arch.CLD_STOPPED, int32(sig))
+		t.tg.leader.parent.signalStop(t, linux.CLD_STOPPED, int32(sig))
 		t.tg.leader.parent.tg.eventQueue.Notify(EventChildGroupStop)
 	}
 	return last
@@ -371,7 +370,7 @@ func (t *Task) exitChildren() {
 				continue
 			}
 			other.signalHandlers.mu.Lock()
-			other.leader.sendSignalLocked(&arch.SignalInfo{
+			other.leader.sendSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, true /* group */)
 			other.signalHandlers.mu.Unlock()
@@ -386,9 +385,9 @@ func (t *Task) exitChildren() {
 	// wait for a parent to reap them.)
 	for c := range t.children {
 		if sig := c.ParentDeathSignal(); sig != 0 {
-			siginfo := &arch.SignalInfo{
+			siginfo := &linux.SignalInfo{
 				Signo: int32(sig),
-				Code:  arch.SignalInfoUser,
+				Code:  linux.SI_USER,
 			}
 			siginfo.SetPID(int32(c.tg.pidns.tids[t]))
 			siginfo.SetUID(int32(t.Credentials().RealKUID.In(c.UserNamespace()).OrOverflow()))
@@ -723,17 +722,17 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 }
 
 // Preconditions: The TaskSet mutex must be locked.
-func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *arch.SignalInfo {
-	info := &arch.SignalInfo{
+func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.SignalInfo {
+	info := &linux.SignalInfo{
 		Signo: int32(sig),
 	}
 	info.SetPID(int32(receiver.tg.pidns.tids[t]))
 	info.SetUID(int32(t.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	if t.exitStatus.Signaled() {
-		info.Code = arch.CLD_KILLED
+		info.Code = linux.CLD_KILLED
 		info.SetStatus(int32(t.exitStatus.Signo))
 	} else {
-		info.Code = arch.CLD_EXITED
+		info.Code = linux.CLD_EXITED
 		info.SetStatus(int32(t.exitStatus.Code))
 	}
 	// TODO(b/72102453): Set utime, stime.

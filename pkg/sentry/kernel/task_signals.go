@@ -127,7 +127,7 @@ var StopSignals = linux.MakeSignalSet(linux.SIGSTOP, linux.SIGTSTP, linux.SIGTTI
 // If there are no pending unmasked signals, dequeueSignalLocked returns nil.
 //
 // Preconditions: t.tg.signalHandlers.mu must be locked.
-func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *arch.SignalInfo {
+func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *linux.SignalInfo {
 	if info := t.pendingSignals.dequeue(mask); info != nil {
 		return info
 	}
@@ -155,7 +155,7 @@ func (t *Task) PendingSignals() linux.SignalSet {
 }
 
 // deliverSignal delivers the given signal and returns the following run state.
-func (t *Task) deliverSignal(info *arch.SignalInfo, act linux.SigAction) taskRunState {
+func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRunState {
 	sigact := computeAction(linux.Signal(info.Signo), act)
 
 	if t.haveSyscallReturn {
@@ -236,7 +236,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act linux.SigAction) taskRun
 
 // deliverSignalToHandler changes the task's userspace state to enter the given
 // user-configured handler for the given signal.
-func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act linux.SigAction) error {
+func (t *Task) deliverSignalToHandler(info *linux.SignalInfo, act linux.SigAction) error {
 	// Signal delivery to an application handler interrupts restartable
 	// sequences.
 	t.rseqInterrupt()
@@ -326,7 +326,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 // Preconditions:
 // * The caller must be running on the task goroutine.
 // * t.exitState < TaskExitZombie.
-func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*arch.SignalInfo, error) {
+func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.SignalInfo, error) {
 	// set is the set of signals we're interested in; invert it to get the set
 	// of signals to block.
 	mask := ^(set &^ UnblockableSignals)
@@ -373,7 +373,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*arch.S
 //	syserror.EINVAL - The signal is not valid.
 //	syserror.EAGAIN - THe signal is realtime, and cannot be queued.
 //
-func (t *Task) SendSignal(info *arch.SignalInfo) error {
+func (t *Task) SendSignal(info *linux.SignalInfo) error {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -382,7 +382,7 @@ func (t *Task) SendSignal(info *arch.SignalInfo) error {
 }
 
 // SendGroupSignal sends the given signal to t's thread group.
-func (t *Task) SendGroupSignal(info *arch.SignalInfo) error {
+func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -392,7 +392,7 @@ func (t *Task) SendGroupSignal(info *arch.SignalInfo) error {
 
 // SendSignal sends the given signal to tg, using tg's leader to determine if
 // the signal is blocked.
-func (tg *ThreadGroup) SendSignal(info *arch.SignalInfo) error {
+func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
 	tg.signalHandlers.mu.Lock()
@@ -400,11 +400,11 @@ func (tg *ThreadGroup) SendSignal(info *arch.SignalInfo) error {
 	return tg.leader.sendSignalLocked(info, true /* group */)
 }
 
-func (t *Task) sendSignalLocked(info *arch.SignalInfo, group bool) error {
+func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
 	return t.sendSignalTimerLocked(info, group, nil)
 }
 
-func (t *Task) sendSignalTimerLocked(info *arch.SignalInfo, group bool, timer *IntervalTimer) error {
+func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
 	if t.exitState == TaskExitDead {
 		return syserror.ESRCH
 	}
@@ -732,7 +732,7 @@ func (*groupStop) Killable() bool { return true }
 // previously-dequeued stop signal.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) initiateGroupStop(info *arch.SignalInfo) {
+func (t *Task) initiateGroupStop(info *linux.SignalInfo) {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -868,7 +868,7 @@ func (t *Task) signalStop(target *Task, code int32, status int32) {
 	defer t.tg.signalHandlers.mu.Unlock()
 	act, ok := t.tg.signalHandlers.actions[linux.SIGCHLD]
 	if !ok || (act.Handler != linux.SIG_IGN && act.Flags&linux.SA_NOCLDSTOP == 0) {
-		sigchld := &arch.SignalInfo{
+		sigchld := &linux.SignalInfo{
 			Signo: int32(linux.SIGCHLD),
 			Code:  code,
 		}
@@ -913,14 +913,14 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 			// notified its tracer accordingly. But it's consistent with
 			// Linux...
 			if intr {
-				tracer.signalStop(t.tg.leader, arch.CLD_STOPPED, int32(sig))
+				tracer.signalStop(t.tg.leader, linux.CLD_STOPPED, int32(sig))
 				if !notifyParent {
 					tracer.tg.eventQueue.Notify(EventGroupContinue | EventTraceeStop | EventChildGroupStop)
 				} else {
 					tracer.tg.eventQueue.Notify(EventGroupContinue | EventTraceeStop)
 				}
 			} else {
-				tracer.signalStop(t.tg.leader, arch.CLD_CONTINUED, int32(sig))
+				tracer.signalStop(t.tg.leader, linux.CLD_CONTINUED, int32(sig))
 				tracer.tg.eventQueue.Notify(EventGroupContinue)
 			}
 		}
@@ -932,10 +932,10 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 			// SIGCHLD is a standard signal, so the latter would always be
 			// dropped. Hence sending only the former is equivalent.
 			if intr {
-				t.tg.leader.parent.signalStop(t.tg.leader, arch.CLD_STOPPED, int32(sig))
+				t.tg.leader.parent.signalStop(t.tg.leader, linux.CLD_STOPPED, int32(sig))
 				t.tg.leader.parent.tg.eventQueue.Notify(EventGroupContinue | EventChildGroupStop)
 			} else {
-				t.tg.leader.parent.signalStop(t.tg.leader, arch.CLD_CONTINUED, int32(sig))
+				t.tg.leader.parent.signalStop(t.tg.leader, linux.CLD_CONTINUED, int32(sig))
 				t.tg.leader.parent.tg.eventQueue.Notify(EventGroupContinue)
 			}
 		}
@@ -976,7 +976,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 				// without requiring an extra PTRACE_GETSIGINFO call." -
 				// "Group-stop", ptrace(2)
 				t.ptraceCode = int32(sig) | linux.PTRACE_EVENT_STOP<<8
-				t.ptraceSiginfo = &arch.SignalInfo{
+				t.ptraceSiginfo = &linux.SignalInfo{
 					Signo: int32(sig),
 					Code:  t.ptraceCode,
 				}
@@ -987,7 +987,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 				t.ptraceSiginfo = nil
 			}
 			if t.beginPtraceStopLocked() {
-				tracer.signalStop(t, arch.CLD_STOPPED, int32(sig))
+				tracer.signalStop(t, linux.CLD_STOPPED, int32(sig))
 				// For consistency with Linux, if the parent and tracer are in the
 				// same thread group, deduplicate notification signals.
 				if notifyParent && tracer.tg == t.tg.leader.parent.tg {
@@ -1005,7 +1005,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 			t.tg.signalHandlers.mu.Unlock()
 		}
 		if notifyParent {
-			t.tg.leader.parent.signalStop(t.tg.leader, arch.CLD_STOPPED, int32(sig))
+			t.tg.leader.parent.signalStop(t.tg.leader, linux.CLD_STOPPED, int32(sig))
 			t.tg.leader.parent.tg.eventQueue.Notify(EventChildGroupStop)
 		}
 		t.tg.pidns.owner.mu.RUnlock()
@@ -1059,7 +1059,7 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 	if sig != linux.Signal(info.Signo) {
 		info.Signo = int32(sig)
 		info.Errno = 0
-		info.Code = arch.SignalInfoUser
+		info.Code = linux.SI_USER
 		// pid isn't a valid field for all signal numbers, but Linux
 		// doesn't care (kernel/signal.c:ptrace_signal()).
 		//

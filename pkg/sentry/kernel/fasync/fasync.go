@@ -17,7 +17,6 @@ package fasync
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -125,9 +124,9 @@ func (a *FileAsync) Callback(e *waiter.Entry, mask waiter.EventMask) {
 	if !permCheck {
 		return
 	}
-	signalInfo := &arch.SignalInfo{
+	signalInfo := &linux.SignalInfo{
 		Signo: int32(linux.SIGIO),
-		Code:  arch.SignalInfoKernel,
+		Code:  linux.SI_KERNEL,
 	}
 	if a.signal != 0 {
 		signalInfo.Signo = int32(a.signal)

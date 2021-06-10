@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -233,7 +232,7 @@ func (pg *ProcessGroup) Session() *Session {
 
 // SendSignal sends a signal to all processes inside the process group. It is
 // analagous to kernel/signal.c:kill_pgrp.
-func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
+func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 	tasks := pg.originator.TaskSet()
 	tasks.mu.RLock()
 	defer tasks.mu.RUnlock()

@@ -186,21 +186,11 @@ const (
 	SS_DISABLE = 2
 )
 
-// Signal info types.
-const (
-	SI_MASK  = 0xffff0000
-	SI_KILL  = 0 << 16
-	SI_TIMER = 1 << 16
-	SI_POLL  = 2 << 16
-	SI_FAULT = 3 << 16
-	SI_CHLD  = 4 << 16
-	SI_RT    = 5 << 16
-	SI_MESGQ = 6 << 16
-	SI_SYS   = 7 << 16
-)
-
 // SIGPOLL si_codes.
 const (
+	// SI_POLL is defined as __SI_POLL in Linux 2.6.
+	SI_POLL = 2 << 16
+
 	// POLL_IN indicates that data input available.
 	POLL_IN = SI_POLL | 1
 
@@ -218,6 +208,75 @@ const (
 
 	// POLL_HUP indicates that a device disconnected.
 	POLL_HUP = SI_POLL | 6
+)
+
+// Possible values for si_code.
+const (
+	// SI_USER is sent by kill, sigsend, raise.
+	SI_USER = 0
+
+	// SI_KERNEL is sent by the kernel from somewhere.
+	SI_KERNEL = 0x80
+
+	// SI_QUEUE is sent by sigqueue.
+	SI_QUEUE = -1
+
+	// SI_TIMER is sent by timer expiration.
+	SI_TIMER = -2
+
+	// SI_MESGQ is sent by real time mesq state change.
+	SI_MESGQ = -3
+
+	// SI_ASYNCIO is sent by AIO completion.
+	SI_ASYNCIO = -4
+
+	// SI_SIGIO is sent by queued SIGIO.
+	SI_SIGIO = -5
+
+	// SI_TKILL is sent by tkill system call.
+	SI_TKILL = -6
+
+	// SI_DETHREAD is sent by execve() killing subsidiary threads.
+	SI_DETHREAD = -7
+
+	// SI_ASYNCNL is sent by glibc async name lookup completion.
+	SI_ASYNCNL = -60
+)
+
+// CLD_* codes are only meaningful for SIGCHLD.
+const (
+	// CLD_EXITED indicates that a task exited.
+	CLD_EXITED = 1
+
+	// CLD_KILLED indicates that a task was killed by a signal.
+	CLD_KILLED = 2
+
+	// CLD_DUMPED indicates that a task was killed by a signal and then dumped
+	// core.
+	CLD_DUMPED = 3
+
+	// CLD_TRAPPED indicates that a task was stopped by ptrace.
+	CLD_TRAPPED = 4
+
+	// CLD_STOPPED indicates that a thread group completed a group stop.
+	CLD_STOPPED = 5
+
+	// CLD_CONTINUED indicates that a group-stopped thread group was continued.
+	CLD_CONTINUED = 6
+)
+
+// SYS_* codes are only meaningful for SIGSYS.
+const (
+	// SYS_SECCOMP indicates that a signal originates from seccomp.
+	SYS_SECCOMP = 1
+)
+
+// Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
+const (
+	SIGEV_SIGNAL    = 0
+	SIGEV_NONE      = 1
+	SIGEV_THREAD    = 2
+	SIGEV_THREAD_ID = 4
 )
 
 // Sigevent represents struct sigevent.
@@ -276,10 +335,214 @@ func (s *SignalStack) IsEnabled() bool {
 	return s.Flags&SS_DISABLE == 0
 }
 
-// Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
-const (
-	SIGEV_SIGNAL    = 0
-	SIGEV_NONE      = 1
-	SIGEV_THREAD    = 2
-	SIGEV_THREAD_ID = 4
-)
+// SignalInfo represents information about a signal being delivered, and is
+// equivalent to struct siginfo in linux kernel(linux/include/uapi/asm-generic/siginfo.h).
+//
+// +marshal
+// +stateify savable
+type SignalInfo struct {
+	Signo int32 // Signal number
+	Errno int32 // Errno value
+	Code  int32 // Signal code
+	_     uint32
+
+	// struct siginfo::_sifields is a union. In SignalInfo, fields in the union
+	// are accessed through methods.
+	//
+	// For reference, here is the definition of _sifields: (_sigfault._trapno,
+	// which does not exist on x86, omitted for clarity)
+	//
+	// union {
+	// 	int _pad[SI_PAD_SIZE];
+	//
+	// 	/* kill() */
+	// 	struct {
+	// 		__kernel_pid_t _pid;	/* sender's pid */
+	// 		__ARCH_SI_UID_T _uid;	/* sender's uid */
+	// 	} _kill;
+	//
+	// 	/* POSIX.1b timers */
+	// 	struct {
+	// 		__kernel_timer_t _tid;	/* timer id */
+	// 		int _overrun;		/* overrun count */
+	// 		char _pad[sizeof( __ARCH_SI_UID_T) - sizeof(int)];
+	// 		sigval_t _sigval;	/* same as below */
+	// 		int _sys_private;       /* not to be passed to user */
+	// 	} _timer;
+	//
+	// 	/* POSIX.1b signals */
+	// 	struct {
+	// 		__kernel_pid_t _pid;	/* sender's pid */
+	// 		__ARCH_SI_UID_T _uid;	/* sender's uid */
+	// 		sigval_t _sigval;
+	// 	} _rt;
+	//
+	// 	/* SIGCHLD */
+	// 	struct {
+	// 		__kernel_pid_t _pid;	/* which child */
+	// 		__ARCH_SI_UID_T _uid;	/* sender's uid */
+	// 		int _status;		/* exit code */
+	// 		__ARCH_SI_CLOCK_T _utime;
+	// 		__ARCH_SI_CLOCK_T _stime;
+	// 	} _sigchld;
+	//
+	// 	/* SIGILL, SIGFPE, SIGSEGV, SIGBUS */
+	// 	struct {
+	// 		void *_addr; /* faulting insn/memory ref. */
+	// 		short _addr_lsb; /* LSB of the reported address */
+	// 	} _sigfault;
+	//
+	// 	/* SIGPOLL */
+	// 	struct {
+	// 		__ARCH_SI_BAND_T _band;	/* POLL_IN, POLL_OUT, POLL_MSG */
+	// 		int _fd;
+	// 	} _sigpoll;
+	//
+	// 	/* SIGSYS */
+	// 	struct {
+	// 		void *_call_addr; /* calling user insn */
+	// 		int _syscall;	/* triggering system call number */
+	// 		unsigned int _arch;	/* AUDIT_ARCH_* of syscall */
+	// 	} _sigsys;
+	// } _sifields;
+	//
+	// _sifields is padded so that the size of siginfo is SI_MAX_SIZE = 128
+	// bytes.
+	Fields [128 - 16]byte
+}
+
+// FixSignalCodeForUser fixes up si_code.
+//
+// The si_code we get from Linux may contain the kernel-specific code in the
+// top 16 bits if it's positive (e.g., from ptrace). Linux's
+// copy_siginfo_to_user does
+//     err |= __put_user((short)from->si_code, &to->si_code);
+// to mask out those bits and we need to do the same.
+func (s *SignalInfo) FixSignalCodeForUser() {
+	if s.Code > 0 {
+		s.Code &= 0x0000ffff
+	}
+}
+
+// PID returns the si_pid field.
+func (s *SignalInfo) PID() int32 {
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[0:4]))
+}
+
+// SetPID mutates the si_pid field.
+func (s *SignalInfo) SetPID(val int32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
+}
+
+// UID returns the si_uid field.
+func (s *SignalInfo) UID() int32 {
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[4:8]))
+}
+
+// SetUID mutates the si_uid field.
+func (s *SignalInfo) SetUID(val int32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
+}
+
+// Sigval returns the sigval field, which is aliased to both si_int and si_ptr.
+func (s *SignalInfo) Sigval() uint64 {
+	return hostarch.ByteOrder.Uint64(s.Fields[8:16])
+}
+
+// SetSigval mutates the sigval field.
+func (s *SignalInfo) SetSigval(val uint64) {
+	hostarch.ByteOrder.PutUint64(s.Fields[8:16], val)
+}
+
+// TimerID returns the si_timerid field.
+func (s *SignalInfo) TimerID() TimerID {
+	return TimerID(hostarch.ByteOrder.Uint32(s.Fields[0:4]))
+}
+
+// SetTimerID sets the si_timerid field.
+func (s *SignalInfo) SetTimerID(val TimerID) {
+	hostarch.ByteOrder.PutUint32(s.Fields[0:4], uint32(val))
+}
+
+// Overrun returns the si_overrun field.
+func (s *SignalInfo) Overrun() int32 {
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[4:8]))
+}
+
+// SetOverrun sets the si_overrun field.
+func (s *SignalInfo) SetOverrun(val int32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[4:8], uint32(val))
+}
+
+// Addr returns the si_addr field.
+func (s *SignalInfo) Addr() uint64 {
+	return hostarch.ByteOrder.Uint64(s.Fields[0:8])
+}
+
+// SetAddr sets the si_addr field.
+func (s *SignalInfo) SetAddr(val uint64) {
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], val)
+}
+
+// Status returns the si_status field.
+func (s *SignalInfo) Status() int32 {
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[8:12]))
+}
+
+// SetStatus mutates the si_status field.
+func (s *SignalInfo) SetStatus(val int32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
+}
+
+// CallAddr returns the si_call_addr field.
+func (s *SignalInfo) CallAddr() uint64 {
+	return hostarch.ByteOrder.Uint64(s.Fields[0:8])
+}
+
+// SetCallAddr mutates the si_call_addr field.
+func (s *SignalInfo) SetCallAddr(val uint64) {
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], val)
+}
+
+// Syscall returns the si_syscall field.
+func (s *SignalInfo) Syscall() int32 {
+	return int32(hostarch.ByteOrder.Uint32(s.Fields[8:12]))
+}
+
+// SetSyscall mutates the si_syscall field.
+func (s *SignalInfo) SetSyscall(val int32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], uint32(val))
+}
+
+// Arch returns the si_arch field.
+func (s *SignalInfo) Arch() uint32 {
+	return hostarch.ByteOrder.Uint32(s.Fields[12:16])
+}
+
+// SetArch mutates the si_arch field.
+func (s *SignalInfo) SetArch(val uint32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[12:16], val)
+}
+
+// Band returns the si_band field.
+func (s *SignalInfo) Band() int64 {
+	return int64(hostarch.ByteOrder.Uint64(s.Fields[0:8]))
+}
+
+// SetBand mutates the si_band field.
+func (s *SignalInfo) SetBand(val int64) {
+	// Note: this assumes the platform uses `long` as `__ARCH_SI_BAND_T`.
+	// On some platforms, which gVisor doesn't support, `__ARCH_SI_BAND_T` is
+	// `int`. See siginfo.h.
+	hostarch.ByteOrder.PutUint64(s.Fields[0:8], uint64(val))
+}
+
+// FD returns the si_fd field.
+func (s *SignalInfo) FD() uint32 {
+	return hostarch.ByteOrder.Uint32(s.Fields[8:12])
+}
+
+// SetFD mutates the si_fd field.
+func (s *SignalInfo) SetFD(val uint32) {
+	hostarch.ByteOrder.PutUint32(s.Fields[8:12], val)
+}
