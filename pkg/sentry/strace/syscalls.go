@@ -238,6 +238,12 @@ const (
 	// EpollEvents is an array of struct epoll_event. It is the events
 	// argument in epoll_wait(2)/epoll_pwait(2).
 	EpollEvents
+
+	// MmapProt is the protection argument in mmap(2).
+	MmapProt
+
+	// MmapFlags is the flags argument in mmap(2).
+	MmapFlags
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

@@ -11,6 +11,7 @@ go_library(
         "futex.go",
         "linux64_amd64.go",
         "linux64_arm64.go",
+        "mmap.go",
         "open.go",
         "poll.go",
         "ptrace.go",
@@ -35,7 +36,6 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/syscalls/linux",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

@@ -115,14 +115,14 @@ func (a *Action) Get() interface{} {
 }
 
 // String returns Action's string representation.
-func (a *Action) String() string {
-	switch *a {
+func (a Action) String() string {
+	switch a {
 	case LogWarning:
 		return "logWarning"
 	case Panic:
 		return "panic"
 	default:
-		panic(fmt.Sprintf("Invalid watchdog action: %d", *a))
+		panic(fmt.Sprintf("Invalid watchdog action: %d", a))
 	}
 }
 
