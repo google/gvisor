@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -394,7 +393,7 @@ func (t *Task) ptraceTrapLocked(code int32) {
 	t.trapStopPending = false
 	t.tg.signalHandlers.mu.Unlock()
 	t.ptraceCode = code
-	t.ptraceSiginfo = &arch.SignalInfo{
+	t.ptraceSiginfo = &linux.SignalInfo{
 		Signo: int32(linux.SIGTRAP),
 		Code:  code,
 	}
@@ -402,7 +401,7 @@ func (t *Task) ptraceTrapLocked(code int32) {
 	t.ptraceSiginfo.SetUID(int32(t.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
 	if t.beginPtraceStopLocked() {
 		tracer := t.Tracer()
-		tracer.signalStop(t, arch.CLD_TRAPPED, int32(linux.SIGTRAP))
+		tracer.signalStop(t, linux.CLD_TRAPPED, int32(linux.SIGTRAP))
 		tracer.tg.eventQueue.Notify(EventTraceeStop)
 	}
 }
@@ -542,9 +541,9 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
 	// ptrace(2)
 	if !seize {
-		target.sendSignalLocked(&arch.SignalInfo{
+		target.sendSignalLocked(&linux.SignalInfo{
 			Signo: int32(linux.SIGSTOP),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		}, false /* group */)
 	}
 	// Undocumented Linux feature: If the tracee is already group-stopped (and
@@ -586,7 +585,7 @@ func (t *Task) exitPtrace() {
 	for target := range t.ptraceTracees {
 		if target.ptraceOpts.ExitKill {
 			target.tg.signalHandlers.mu.Lock()
-			target.sendSignalLocked(&arch.SignalInfo{
+			target.sendSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, false /* group */)
 			target.tg.signalHandlers.mu.Unlock()
@@ -652,7 +651,7 @@ func (t *Task) forgetTracerLocked() {
 // Preconditions:
 // * The signal mutex must be locked.
 // * The caller must be running on the task goroutine.
-func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
+func (t *Task) ptraceSignalLocked(info *linux.SignalInfo) bool {
 	if linux.Signal(info.Signo) == linux.SIGKILL {
 		return false
 	}
@@ -678,7 +677,7 @@ func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
 	t.ptraceSiginfo = info
 	t.Debugf("Entering signal-delivery-stop for signal %d", info.Signo)
 	if t.beginPtraceStopLocked() {
-		tracer.signalStop(t, arch.CLD_TRAPPED, info.Signo)
+		tracer.signalStop(t, linux.CLD_TRAPPED, info.Signo)
 		tracer.tg.eventQueue.Notify(EventTraceeStop)
 	}
 	return true
@@ -829,7 +828,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 			if child.ptraceSeized {
 				child.trapStopPending = true
 			} else {
-				child.pendingSignals.enqueue(&arch.SignalInfo{
+				child.pendingSignals.enqueue(&linux.SignalInfo{
 					Signo: int32(linux.SIGSTOP),
 				}, nil)
 			}
@@ -893,9 +892,9 @@ func (t *Task) ptraceExec(oldTID ThreadID) {
 	}
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	t.sendSignalLocked(&arch.SignalInfo{
+	t.sendSignalLocked(&linux.SignalInfo{
 		Signo: int32(linux.SIGTRAP),
-		Code:  arch.SignalInfoUser,
+		Code:  linux.SI_USER,
 	}, false /* group */)
 }
 
@@ -1228,7 +1227,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		return err
 
 	case linux.PTRACE_SETSIGINFO:
-		var info arch.SignalInfo
+		var info linux.SignalInfo
 		if _, err := info.CopyIn(t, data); err != nil {
 			return err
 		}

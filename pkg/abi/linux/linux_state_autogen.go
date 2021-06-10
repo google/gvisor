@@ -139,6 +139,40 @@ func (s *SignalStack) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &s.Size)
 }
 
+func (s *SignalInfo) StateTypeName() string {
+	return "pkg/abi/linux.SignalInfo"
+}
+
+func (s *SignalInfo) StateFields() []string {
+	return []string{
+		"Signo",
+		"Errno",
+		"Code",
+		"Fields",
+	}
+}
+
+func (s *SignalInfo) beforeSave() {}
+
+// +checklocksignore
+func (s *SignalInfo) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.Signo)
+	stateSinkObject.Save(1, &s.Errno)
+	stateSinkObject.Save(2, &s.Code)
+	stateSinkObject.Save(3, &s.Fields)
+}
+
+func (s *SignalInfo) afterLoad() {}
+
+// +checklocksignore
+func (s *SignalInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.Signo)
+	stateSourceObject.Load(1, &s.Errno)
+	stateSourceObject.Load(2, &s.Code)
+	stateSourceObject.Load(3, &s.Fields)
+}
+
 func (c *ControlMessageIPPacketInfo) StateTypeName() string {
 	return "pkg/abi/linux.ControlMessageIPPacketInfo"
 }
@@ -249,6 +283,7 @@ func init() {
 	state.Register((*BPFInstruction)(nil))
 	state.Register((*SigAction)(nil))
 	state.Register((*SignalStack)(nil))
+	state.Register((*SignalInfo)(nil))
 	state.Register((*ControlMessageIPPacketInfo)(nil))
 	state.Register((*KernelTermios)(nil))
 	state.Register((*WindowSize)(nil))

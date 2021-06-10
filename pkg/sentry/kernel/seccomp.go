@@ -39,11 +39,11 @@ func dataAsBPFInput(t *Task, d *linux.SeccompData) bpf.Input {
 	}
 }
 
-func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *arch.SignalInfo {
-	si := &arch.SignalInfo{
+func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.SignalInfo {
+	si := &linux.SignalInfo{
 		Signo: int32(linux.SIGSYS),
 		Errno: errno,
-		Code:  arch.SYS_SECCOMP,
+		Code:  linux.SYS_SECCOMP,
 	}
 	si.SetCallAddr(uint64(ip))
 	si.SetSyscall(sysno)

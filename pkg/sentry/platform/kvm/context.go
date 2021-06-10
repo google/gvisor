@@ -17,6 +17,7 @@ package kvm
 import (
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -32,15 +33,15 @@ type context struct {
 	// machine is the parent machine, and is immutable.
 	machine *machine
 
-	// info is the arch.SignalInfo cached for this context.
-	info arch.SignalInfo
+	// info is the linux.SignalInfo cached for this context.
+	info linux.SignalInfo
 
 	// interrupt is the interrupt context.
 	interrupt interrupt.Forwarder
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*arch.SignalInfo, hostarch.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 

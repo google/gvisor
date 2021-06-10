@@ -100,7 +100,7 @@ func (c *context64) fpuFrameSize() (size int, useXsave bool) {
 
 // SignalSetup implements Context.SignalSetup. (Compare to Linux's
 // arch/x86/kernel/signal.c:__setup_rt_frame().)
-func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error {
+func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error {
 	sp := st.Bottom
 
 	// "The 128-byte area beyond the location pointed to by %rsp is considered
@@ -233,7 +233,7 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.Si
 	if _, err := uc.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, linux.SignalStack{}, err
 	}
-	var info SignalInfo
+	var info linux.SignalInfo
 	if _, err := info.CopyIn(st, StackBottomMagic); err != nil {
 		return 0, linux.SignalStack{}, err
 	}

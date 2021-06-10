@@ -101,7 +101,7 @@ func (t *thread) setFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) erro
 }
 
 // getSignalInfo retrieves information about the signal that caused the stop.
-func (t *thread) getSignalInfo(si *arch.SignalInfo) error {
+func (t *thread) getSignalInfo(si *linux.SignalInfo) error {
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETSIGINFO,

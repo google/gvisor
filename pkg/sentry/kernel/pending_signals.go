@@ -17,7 +17,6 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 const (
@@ -65,7 +64,7 @@ type pendingSignalQueue struct {
 type pendingSignal struct {
 	// pendingSignalEntry links into a pendingSignalList.
 	pendingSignalEntry
-	*arch.SignalInfo
+	*linux.SignalInfo
 
 	// If timer is not nil, it is the IntervalTimer which sent this signal.
 	timer *IntervalTimer
@@ -75,7 +74,7 @@ type pendingSignal struct {
 // on failure (if the given signal's queue is full).
 //
 // Preconditions: info represents a valid signal.
-func (p *pendingSignals) enqueue(info *arch.SignalInfo, timer *IntervalTimer) bool {
+func (p *pendingSignals) enqueue(info *linux.SignalInfo, timer *IntervalTimer) bool {
 	sig := linux.Signal(info.Signo)
 	q := &p.signals[sig.Index()]
 	if sig.IsStandard() {
@@ -93,7 +92,7 @@ func (p *pendingSignals) enqueue(info *arch.SignalInfo, timer *IntervalTimer) bo
 
 // dequeue dequeues and returns any pending signal not masked by mask. If no
 // unmasked signals are pending, dequeue returns nil.
-func (p *pendingSignals) dequeue(mask linux.SignalSet) *arch.SignalInfo {
+func (p *pendingSignals) dequeue(mask linux.SignalSet) *linux.SignalInfo {
 	// "Real-time signals are delivered in a guaranteed order. Multiple
 	// real-time signals of the same type are delivered in the order they were
 	// sent. If different real-time signals are sent to a process, they are
@@ -111,7 +110,7 @@ func (p *pendingSignals) dequeue(mask linux.SignalSet) *arch.SignalInfo {
 	return p.dequeueSpecific(linux.Signal(lowestPendingUnblockedBit + 1))
 }
 
-func (p *pendingSignals) dequeueSpecific(sig linux.Signal) *arch.SignalInfo {
+func (p *pendingSignals) dequeueSpecific(sig linux.Signal) *linux.SignalInfo {
 	q := &p.signals[sig.Index()]
 	ps := q.pendingSignalList.Front()
 	if ps == nil {

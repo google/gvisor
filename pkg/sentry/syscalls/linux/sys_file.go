@@ -1569,9 +1569,9 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
+		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		})
 		return 0, nil, syserror.EFBIG
 	}
@@ -1632,9 +1632,9 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
+		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		})
 		return 0, nil, syserror.EFBIG
 	}
@@ -2140,9 +2140,9 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EFBIG
 	}
 	if uint64(size) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
+		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		})
 		return 0, nil, syserror.EFBIG
 	}

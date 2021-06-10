@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -36,7 +35,7 @@ const SignalPanic = linux.SIGUSR2
 // context is used only for debugging to differentiate these cases.
 //
 // Preconditions: Kernel must have an init process.
-func (k *Kernel) sendExternalSignal(info *arch.SignalInfo, context string) {
+func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 	switch linux.Signal(info.Signo) {
 	case linux.SIGURG:
 		// Sent by the Go 1.14+ runtime for asynchronous goroutine preemption.
@@ -60,18 +59,18 @@ func (k *Kernel) sendExternalSignal(info *arch.SignalInfo, context string) {
 }
 
 // SignalInfoPriv returns a SignalInfo equivalent to Linux's SEND_SIG_PRIV.
-func SignalInfoPriv(sig linux.Signal) *arch.SignalInfo {
-	return &arch.SignalInfo{
+func SignalInfoPriv(sig linux.Signal) *linux.SignalInfo {
+	return &linux.SignalInfo{
 		Signo: int32(sig),
-		Code:  arch.SignalInfoKernel,
+		Code:  linux.SI_KERNEL,
 	}
 }
 
 // SignalInfoNoInfo returns a SignalInfo equivalent to Linux's SEND_SIG_NOINFO.
-func SignalInfoNoInfo(sig linux.Signal, sender, receiver *Task) *arch.SignalInfo {
-	info := &arch.SignalInfo{
+func SignalInfoNoInfo(sig linux.Signal, sender, receiver *Task) *linux.SignalInfo {
+	info := &linux.SignalInfo{
 		Signo: int32(sig),
-		Code:  arch.SignalInfoUser,
+		Code:  linux.SI_USER,
 	}
 	info.SetPID(int32(receiver.tg.pidns.IDOfThreadGroup(sender.tg)))
 	info.SetUID(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))

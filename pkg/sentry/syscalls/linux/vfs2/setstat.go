@@ -242,9 +242,9 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	limit := limits.FromContext(t).Get(limits.FileSize).Cur
 	if uint64(size) >= limit {
-		t.SendSignal(&arch.SignalInfo{
+		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		})
 		return 0, nil, syserror.EFBIG
 	}

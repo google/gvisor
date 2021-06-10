@@ -73,7 +73,7 @@ var (
 
 type context struct {
 	// signalInfo is the signal info, if and when a signal is received.
-	signalInfo arch.SignalInfo
+	signalInfo linux.SignalInfo
 
 	// interrupt is the interrupt context.
 	interrupt interrupt.Forwarder
@@ -96,7 +96,7 @@ type context struct {
 }
 
 // Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*arch.SignalInfo, hostarch.AccessType, error) {
+func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac arch.Context, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
 	isSyscall := s.switchToApp(c, ac)
