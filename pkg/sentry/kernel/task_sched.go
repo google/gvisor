@@ -536,7 +536,7 @@ func (tg *ThreadGroup) updateCPUTimersEnabledLocked() {
 // appropriate for /proc/[pid]/status.
 func (t *Task) StateStatus() string {
 	switch s := t.TaskGoroutineSchedInfo().State; s {
-	case TaskGoroutineNonexistent:
+	case TaskGoroutineNonexistent, TaskGoroutineRunningSys:
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		switch t.exitState {
@@ -546,16 +546,16 @@ func (t *Task) StateStatus() string {
 			return "X (dead)"
 		default:
 			// The task goroutine can't exit before passing through
-			// runExitNotify, so this indicates that the task has been created,
-			// but the task goroutine hasn't yet started. The Linux equivalent
-			// is struct task_struct::state == TASK_NEW
+			// runExitNotify, so if s == TaskGoroutineNonexistent, the task has
+			// been created but the task goroutine hasn't yet started. The
+			// Linux equivalent is struct task_struct::state == TASK_NEW
 			// (kernel/fork.c:copy_process() =>
 			// kernel/sched/core.c:sched_fork()), but the TASK_NEW bit is
 			// masked out by TASK_REPORT for /proc/[pid]/status, leaving only
 			// TASK_RUNNING.
 			return "R (running)"
 		}
-	case TaskGoroutineRunningSys, TaskGoroutineRunningApp:
+	case TaskGoroutineRunningApp:
 		return "R (running)"
 	case TaskGoroutineBlockedInterruptible:
 		return "S (sleeping)"
