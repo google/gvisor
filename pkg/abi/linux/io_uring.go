@@ -14,7 +14,48 @@
 
 package linux
 
+const (
+	IORING_MAX_ENTRIES    = 32768
+	IORING_MAX_CQ_ENTRIES = 2 * IORING_MAX_ENTRIES
+
+	IORING_OFF_SQ_RING = 0
+	IORING_OFF_CQ_RING = 0x8000000
+	IORING_OFF_SQES    = 0x10000000
+)
+
+// IoSqringOffsets represents struct io_sqring_offsets.
+//
+// +marshal
+type IoSqringOffsets struct {
+	Head        uint32
+	Tail        uint32
+	RingMask    uint32
+	RingEntries uint32
+	Flags       uint32
+	Dropped     uint32
+	Array       uint32
+	Resv1       uint32
+	Resv2       uint64
+}
+
+// IoCqringOffsets represents struct io_cqring_offsets.
+//
+// +marshal
+type IoCqringOffsets struct {
+	Head        uint32
+	Tail        uint32
+	RingMask    uint32
+	RingEntries uint32
+	Overflow    uint32
+	Cqes        uint32
+	Flags       uint32
+	Resv1       uint32
+	Resv2       uint64
+}
+
 // IoUringParams represents struct io_uring_params.
+//
+// +marshal
 type IoUringParams struct {
 	SqEntries    uint32
 	CqEntries    uint32
@@ -23,6 +64,8 @@ type IoUringParams struct {
 	SqThreadIDLE uint32
 	Features     uint32
 	WqFd         uint32
-	Resv         [3]uint64
+	Resv         [3]uint32
+	SqOff        IoSqringOffsets
+	CqOff        IoCqringOffsets
 	//TODO: Fix missing sq_off and cq_off
 }
