@@ -134,10 +134,6 @@ type Context interface {
 	// RegisterMap returns a map of all registers.
 	RegisterMap() (map[string]uintptr, error)
 
-	// NewSignalStack returns a new object that is equivalent to stack_t in the
-	// guest architecture.
-	NewSignalStack() NativeSignalStack
-
 	// SignalSetup modifies the context in preparation for handling the
 	// given signal.
 	//
@@ -153,7 +149,7 @@ type Context interface {
 	// stack is not going to be used).
 	//
 	// sigset is the signal mask before entering the signal handler.
-	SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error
+	SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet) error
 
 	// SignalRestore restores context after returning from a signal
 	// handler.
@@ -163,7 +159,7 @@ type Context interface {
 	// rt is true if SignalRestore is being entered from rt_sigreturn and
 	// false if SignalRestore is being entered from sigreturn.
 	// SignalRestore returns the thread's new signal mask.
-	SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error)
+	SignalRestore(st *Stack, rt bool) (linux.SignalSet, linux.SignalStack, error)
 
 	// CPUIDEmulate emulates a CPUID instruction according to current register state.
 	CPUIDEmulate(l log.Logger)

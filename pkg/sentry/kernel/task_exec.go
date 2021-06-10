@@ -66,7 +66,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -181,7 +180,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.signalHandlers = t.tg.signalHandlers.CopyForExec()
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	// "Any alternate signal stack is not preserved (sigaltstack(2))." - execve(2)
-	t.signalStack = arch.SignalStack{Flags: arch.SignalStackFlagDisable}
+	t.signalStack = linux.SignalStack{Flags: linux.SS_DISABLE}
 	// "The termination signal is reset to SIGCHLD (see clone(2))."
 	t.tg.terminationSignal = linux.SIGCHLD
 	// execed indicates that the process can no longer join a process group

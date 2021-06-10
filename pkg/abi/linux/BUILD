@@ -79,6 +79,7 @@ go_library(
         "//pkg/abi",
         "//pkg/bits",
         "//pkg/context",
+        "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
     ],

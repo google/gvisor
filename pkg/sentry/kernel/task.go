@@ -151,7 +151,7 @@ type Task struct {
 	// which the SA_ONSTACK flag is set.
 	//
 	// signalStack is exclusive to the task goroutine.
-	signalStack arch.SignalStack
+	signalStack linux.SignalStack
 
 	// signalQueue is a set of registered waiters for signal-related events.
 	//
