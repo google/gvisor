@@ -1062,10 +1062,20 @@ func (f *MemoryFile) runReclaim() {
 			break
 		}
 
-		// If ManualZeroing is in effect, pages will be zeroed on allocation
-		// and may not be freed by decommitFile, so calling decommitFile is
-		// unnecessary.
-		if !f.opts.ManualZeroing {
+		if f.opts.ManualZeroing {
+			// If ManualZeroing is in effect, only hugepage-aligned regions may
+			// be safely passed to decommitFile. Pages will be zeroed on
+			// reallocation, so we don't need to perform any manual zeroing
+			// here, whether or not decommitFile succeeds.
+			if startAddr, ok := hostarch.Addr(fr.Start).HugeRoundUp(); ok {
+				if endAddr := hostarch.Addr(fr.End).HugeRoundDown(); startAddr < endAddr {
+					decommitFR := memmap.FileRange{uint64(startAddr), uint64(endAddr)}
+					if err := f.decommitFile(decommitFR); err != nil {
+						log.Warningf("Reclaim failed to decommit %v: %v", decommitFR, err)
+					}
+				}
+			}
+		} else {
 			if err := f.decommitFile(fr); err != nil {
 				log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
 				// Zero the pages manually. This won't reduce memory usage, but at
