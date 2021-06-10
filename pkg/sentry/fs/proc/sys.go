@@ -77,6 +77,27 @@ func (*overcommitMemory) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandl
 	}, 0
 }
 
+// +stateify savable
+type maxMapCount struct{}
+
+// NeedsUpdate implements seqfile.SeqSource.
+func (*maxMapCount) NeedsUpdate(int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.
+func (*maxMapCount) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return nil, 0
+	}
+	return []seqfile.SeqData{
+		{
+			Buf:    []byte("2147483647\n"),
+			Handle: (*maxMapCount)(nil),
+		},
+	}, 0
+}
+
 func (p *proc) newKernelDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	h := hostname{
 		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
@@ -96,6 +117,7 @@ func (p *proc) newKernelDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode
 
 func (p *proc) newVMDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	children := map[string]*fs.Inode{
+		"max_map_count":     seqfile.NewSeqFileInode(ctx, &maxMapCount{}, msrc),
 		"mmap_min_addr":     seqfile.NewSeqFileInode(ctx, &mmapMinAddrData{p.k}, msrc),
 		"overcommit_memory": seqfile.NewSeqFileInode(ctx, &overcommitMemory{}, msrc),
 	}

@@ -729,6 +729,27 @@ func (o *overcommitMemory) afterLoad() {}
 func (o *overcommitMemory) StateLoad(stateSourceObject state.Source) {
 }
 
+func (m *maxMapCount) StateTypeName() string {
+	return "pkg/sentry/fs/proc.maxMapCount"
+}
+
+func (m *maxMapCount) StateFields() []string {
+	return []string{}
+}
+
+func (m *maxMapCount) beforeSave() {}
+
+// +checklocksignore
+func (m *maxMapCount) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+}
+
+func (m *maxMapCount) afterLoad() {}
+
+// +checklocksignore
+func (m *maxMapCount) StateLoad(stateSourceObject state.Source) {
+}
+
 func (h *hostname) StateTypeName() string {
 	return "pkg/sentry/fs/proc.hostname"
 }
@@ -1773,6 +1794,7 @@ func init() {
 	state.Register((*statData)(nil))
 	state.Register((*mmapMinAddrData)(nil))
 	state.Register((*overcommitMemory)(nil))
+	state.Register((*maxMapCount)(nil))
 	state.Register((*hostname)(nil))
 	state.Register((*hostnameFile)(nil))
 	state.Register((*tcpMemInode)(nil))
