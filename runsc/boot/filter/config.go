@@ -271,7 +271,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.EqualTo(unix.MSG_DONTWAIT),
-			seccomp.EqualTo(0),
 		},
 	},
 	unix.SYS_RESTART_SYSCALL: {},
