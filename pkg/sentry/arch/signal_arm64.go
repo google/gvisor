@@ -71,18 +71,13 @@ type UContext64 struct {
 	MContext SignalContext64
 }
 
-// NewSignalAct implements Context.NewSignalAct.
-func (c *context64) NewSignalAct() NativeSignalAct {
-	return &SignalAct{}
-}
-
 // NewSignalStack implements Context.NewSignalStack.
 func (c *context64) NewSignalStack() NativeSignalStack {
 	return &SignalStack{}
 }
 
 // SignalSetup implements Context.SignalSetup.
-func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
+func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
 	sp := st.Bottom
 
 	// Construct the UContext64 now since we need its size.
@@ -114,7 +109,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// Prior to proceeding, figure out if the frame will exhaust the range
 	// for the signal stack. This is not allowed, and should immediately
 	// force signal delivery (reverting to the default handler).
-	if act.IsOnStack() && alt.IsEnabled() && !alt.Contains(frameBottom) {
+	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() && !alt.Contains(frameBottom) {
 		return unix.EFAULT
 	}
 
@@ -137,7 +132,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	c.Regs.Regs[0] = uint64(info.Signo)
 	c.Regs.Regs[1] = uint64(infoAddr)
 	c.Regs.Regs[2] = uint64(ucAddr)
-	c.Regs.Regs[30] = uint64(act.Restorer)
+	c.Regs.Regs[30] = act.Restorer
 
 	// Save the thread's floating point state.
 	c.sigFPState = append(c.sigFPState, c.fpState)

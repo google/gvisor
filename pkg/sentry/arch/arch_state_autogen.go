@@ -76,40 +76,6 @@ func (a *AuxEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &a.Value)
 }
 
-func (s *SignalAct) StateTypeName() string {
-	return "pkg/sentry/arch.SignalAct"
-}
-
-func (s *SignalAct) StateFields() []string {
-	return []string{
-		"Handler",
-		"Flags",
-		"Restorer",
-		"Mask",
-	}
-}
-
-func (s *SignalAct) beforeSave() {}
-
-// +checklocksignore
-func (s *SignalAct) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	stateSinkObject.Save(0, &s.Handler)
-	stateSinkObject.Save(1, &s.Flags)
-	stateSinkObject.Save(2, &s.Restorer)
-	stateSinkObject.Save(3, &s.Mask)
-}
-
-func (s *SignalAct) afterLoad() {}
-
-// +checklocksignore
-func (s *SignalAct) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.Handler)
-	stateSourceObject.Load(1, &s.Flags)
-	stateSourceObject.Load(2, &s.Restorer)
-	stateSourceObject.Load(3, &s.Mask)
-}
-
 func (s *SignalStack) StateTypeName() string {
 	return "pkg/sentry/arch.SignalStack"
 }
@@ -178,7 +144,6 @@ func (s *SignalInfo) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*MmapLayout)(nil))
 	state.Register((*AuxEntry)(nil))
-	state.Register((*SignalAct)(nil))
 	state.Register((*SignalStack)(nil))
 	state.Register((*SignalInfo)(nil))
 }

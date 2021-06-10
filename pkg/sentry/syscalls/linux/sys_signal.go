@@ -251,20 +251,20 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, syserror.EINVAL
 	}
 
-	var newactptr *arch.SignalAct
+	var newactptr *linux.SigAction
 	if newactarg != 0 {
-		newact, err := t.CopyInSignalAct(newactarg)
-		if err != nil {
+		var newact linux.SigAction
+		if _, err := newact.CopyIn(t, newactarg); err != nil {
 			return 0, nil, err
 		}
 		newactptr = &newact
 	}
-	oldact, err := t.ThreadGroup().SetSignalAct(sig, newactptr)
+	oldact, err := t.ThreadGroup().SetSigAction(sig, newactptr)
 	if err != nil {
 		return 0, nil, err
 	}
 	if oldactarg != 0 {
-		if err := t.CopyOutSignalAct(oldactarg, &oldact); err != nil {
+		if _, err := oldact.CopyOut(t, oldactarg); err != nil {
 			return 0, nil, err
 		}
 	}

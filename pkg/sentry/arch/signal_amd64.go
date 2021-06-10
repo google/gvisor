@@ -81,11 +81,6 @@ type UContext64 struct {
 	Sigset   linux.SignalSet
 }
 
-// NewSignalAct implements Context.NewSignalAct.
-func (c *context64) NewSignalAct() NativeSignalAct {
-	return &SignalAct{}
-}
-
 // NewSignalStack implements Context.NewSignalStack.
 func (c *context64) NewSignalStack() NativeSignalStack {
 	return &SignalStack{}
@@ -110,7 +105,7 @@ func (c *context64) fpuFrameSize() (size int, useXsave bool) {
 
 // SignalSetup implements Context.SignalSetup. (Compare to Linux's
 // arch/x86/kernel/signal.c:__setup_rt_frame().)
-func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
+func (c *context64) SignalSetup(st *Stack, act *linux.SigAction, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error {
 	sp := st.Bottom
 
 	// "The 128-byte area beyond the location pointed to by %rsp is considered
@@ -187,7 +182,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	// Prior to proceeding, figure out if the frame will exhaust the range
 	// for the signal stack. This is not allowed, and should immediately
 	// force signal delivery (reverting to the default handler).
-	if act.IsOnStack() && alt.IsEnabled() && !alt.Contains(frameBottom) {
+	if act.Flags&linux.SA_ONSTACK != 0 && alt.IsEnabled() && !alt.Contains(frameBottom) {
 		return unix.EFAULT
 	}
 
@@ -203,7 +198,7 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		return err
 	}
 	ucAddr := st.Bottom
-	if act.HasRestorer() {
+	if act.Flags&linux.SA_RESTORER != 0 {
 		// Push the restorer return address.
 		// Note that this doesn't need to be popped.
 		if _, err := primitive.CopyUint64Out(st, StackBottomMagic, act.Restorer); err != nil {

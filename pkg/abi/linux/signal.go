@@ -227,6 +227,21 @@ type Sigevent struct {
 	UnRemainder [44]byte
 }
 
+// LINT.IfChange
+
+// SigAction represents struct sigaction.
+//
+// +marshal
+// +stateify savable
+type SigAction struct {
+	Handler  uint64
+	Flags    uint64
+	Restorer uint64
+	Mask     SignalSet
+}
+
+// LINT.ThenChange(../../safecopy/safecopy_unsafe.go)
+
 // Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
 const (
 	SIGEV_SIGNAL    = 0
