@@ -99,6 +99,9 @@ type ExecArgs struct {
 
 	// PIDNamespace is the pid namespace for the process being executed.
 	PIDNamespace *kernel.PIDNamespace
+
+	// Limits is the limit set for the process being executed.
+	Limits *limits.LimitSet
 }
 
 // String prints the arguments as a string.
@@ -151,6 +154,10 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	if pidns == nil {
 		pidns = proc.Kernel.RootPIDNamespace()
 	}
+	limitSet := args.Limits
+	if limitSet == nil {
+		limitSet = limits.NewLimitSet()
+	}
 	initArgs := kernel.CreateProcessArgs{
 		Filename:                args.Filename,
 		Argv:                    args.Argv,
@@ -161,7 +168,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Credentials:             creds,
 		FDTable:                 fdTable,
 		Umask:                   0022,
-		Limits:                  limits.NewLimitSet(),
+		Limits:                  limitSet,
 		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
 		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
