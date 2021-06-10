@@ -47,6 +47,62 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+func TestMain(m *testing.M) {
+	log.SetLevel(log.Debug)
+	flag.Parse()
+	if err := testutil.ConfigureExePath(); err != nil {
+		panic(err.Error())
+	}
+	specutils.MaybeRunAsRoot()
+	os.Exit(m.Run())
+}
+
+func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
+	args := &control.ExecArgs{
+		Filename: name,
+		Argv:     append([]string{name}, arg...),
+	}
+	return cont.executeSync(args)
+}
+
+func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	args := &control.ExecArgs{
+		Filename:    name,
+		Argv:        append([]string{name}, arg...),
+		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
+	}
+	ws, err := cont.executeSync(args)
+	w.Close()
+	if err != nil {
+		return nil, err
+	}
+	if ws != 0 {
+		return nil, fmt.Errorf("exec failed, status: %v", ws)
+	}
+
+	out, err := ioutil.ReadAll(r)
+	return out, err
+}
+
+// executeSync synchronously executes a new process.
+func (c *Container) executeSync(args *control.ExecArgs) (unix.WaitStatus, error) {
+	pid, err := c.Execute(args)
+	if err != nil {
+		return 0, fmt.Errorf("error executing: %v", err)
+	}
+	ws, err := c.WaitPID(pid)
+	if err != nil {
+		return 0, fmt.Errorf("error waiting: %v", err)
+	}
+	return ws, nil
+}
+
 // waitForProcessList waits for the given process list to show up in the container.
 func waitForProcessList(cont *Container, want []*control.Process) error {
 	cb := func() error {
@@ -2470,58 +2526,67 @@ func TestBindMountByOption(t *testing.T) {
 	}
 }
 
-func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
-	args := &control.ExecArgs{
-		Filename: name,
-		Argv:     append([]string{name}, arg...),
+// TestRlimits sets limit to number of open files and checks that the limit
+// is propagated to the container.
+func TestRlimits(t *testing.T) {
+	file, err := ioutil.TempFile(testutil.TmpDir(), "ulimit")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return cont.executeSync(args)
+	cmd := fmt.Sprintf("ulimit -n > %q", file.Name())
+
+	spec := testutil.NewSpecWithArgs("sh", "-c", cmd)
+	spec.Process.Rlimits = []specs.POSIXRlimit{
+		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
+	}
+
+	conf := testutil.TestConfig(t)
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("Error running container: %v", err)
+	}
+	got, err := ioutil.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "100\n"; string(got) != want {
+		t.Errorf("ulimit result, got: %q, want: %q", got, want)
+	}
 }
 
-func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, error) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	args := &control.ExecArgs{
-		Filename:    name,
-		Argv:        append([]string{name}, arg...),
-		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
-	}
-	ws, err := cont.executeSync(args)
-	w.Close()
-	if err != nil {
-		return nil, err
-	}
-	if ws != 0 {
-		return nil, fmt.Errorf("exec failed, status: %v", ws)
+// TestRlimitsExec sets limit to number of open files and checks that the limit
+// is propagated to exec'd processes.
+func TestRlimitsExec(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("sleep", "100")
+	spec.Process.Rlimits = []specs.POSIXRlimit{
+		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
 	}
 
-	out, err := ioutil.ReadAll(r)
-	return out, err
-}
-
-// executeSync synchronously executes a new process.
-func (c *Container) executeSync(args *control.ExecArgs) (unix.WaitStatus, error) {
-	pid, err := c.Execute(args)
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
-		return 0, fmt.Errorf("error executing: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
-	ws, err := c.WaitPID(pid)
-	if err != nil {
-		return 0, fmt.Errorf("error waiting: %v", err)
-	}
-	return ws, nil
-}
+	defer cleanup()
 
-func TestMain(m *testing.M) {
-	log.SetLevel(log.Debug)
-	flag.Parse()
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
 	}
-	specutils.MaybeRunAsRoot()
-	os.Exit(m.Run())
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	got, err := executeCombinedOutput(cont, "/bin/sh", "-c", "ulimit -n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "100\n"; string(got) != want {
+		t.Errorf("ulimit result, got: %q, want: %q", got, want)
+	}
 }
