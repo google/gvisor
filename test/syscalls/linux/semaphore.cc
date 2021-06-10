@@ -49,6 +49,9 @@ constexpr int kSemAem = 32767;
 
 class AutoSem {
  public:
+  // Creates a new private semaphore.
+  AutoSem() : id_(semget(IPC_PRIVATE, 1, 0)) {}
+
   explicit AutoSem(int id) : id_(id) {}
   ~AutoSem() {
     if (id_ >= 0) {
@@ -99,6 +102,20 @@ TEST(SemaphoreTest, SemGet) {
   EXPECT_NE(sem.get(), sem2.get());
   ASSERT_THAT(sem3.get(), SyscallSucceeds());
   EXPECT_NE(sem3.get(), sem2.get());
+}
+
+// Tests system-wide limits for semget.
+TEST(SemaphoreTest, SemGetSystemLimits) {
+  // Disable save so that we don't trigger save/restore too many times.
+  const DisableSave ds;
+
+  // Exceed number of semaphores per set.
+  EXPECT_THAT(semget(IPC_PRIVATE, kSemMsl + 1, 0),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Exceed system-wide limit for semaphore sets by 1.
+  AutoSem sems[kSemMni];
+  EXPECT_THAT(semget(IPC_PRIVATE, 1, 0), SyscallFailsWithErrno(ENOSPC));
 }
 
 // Tests simple operations that shouldn't block in a single-thread.
