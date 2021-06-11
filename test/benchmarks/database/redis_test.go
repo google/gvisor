@@ -1,6 +1,6 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 3.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -17,6 +17,7 @@ package database
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,34 @@ func BenchmarkRedis(b *testing.B) {
 	// Redis runs on port 6379 by default.
 	port := 6379
 	ctx := context.Background()
+	server := serverMachine.GetContainer(ctx, b)
+	defer server.CleanUp(ctx)
+
+	// The redis docker container takes no arguments to run a redis server.
+	if err := server.Spawn(ctx, dockerutil.RunOpts{
+		Image: "benchmarks/redis",
+		Ports: []int{port},
+	}); err != nil {
+		b.Fatalf("failed to start redis server with: %v", err)
+	}
+
+	if out, err := server.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
+		b.Fatalf("failed to start redis server: %v %s", err, out)
+	}
+
+	ip, err := serverMachine.IPAddress()
+	if err != nil {
+		b.Fatalf("failed to get IP from server: %v", err)
+	}
+
+	serverPort, err := server.FindPort(ctx, port)
+	if err != nil {
+		b.Fatalf("failed to get IP from server: %v", err)
+	}
+
+	if err = harness.WaitUntilServing(ctx, clientMachine, ip, serverPort); err != nil {
+		b.Fatalf("failed to start redis with: %v", err)
+	}
 	for _, operation := range operations {
 		param := tools.Parameter{
 			Name:  "operation",
@@ -74,49 +103,30 @@ func BenchmarkRedis(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to parse paramaters: %v", err)
 		}
+
 		b.Run(name, func(b *testing.B) {
-			server := serverMachine.GetContainer(ctx, b)
-			defer server.CleanUp(ctx)
-
-			// The redis docker container takes no arguments to run a redis server.
-			if err := server.Spawn(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/redis",
-				Ports: []int{port},
-			}); err != nil {
-				b.Fatalf("failed to start redis server with: %v", err)
-			}
-
-			if out, err := server.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
-				b.Fatalf("failed to start redis server: %v %s", err, out)
-			}
-
-			ip, err := serverMachine.IPAddress()
-			if err != nil {
-				b.Fatalf("failed to get IP from server: %v", err)
-			}
-
-			serverPort, err := server.FindPort(ctx, port)
-			if err != nil {
-				b.Fatalf("failed to get IP from server: %v", err)
-			}
-
-			if err = harness.WaitUntilServing(ctx, clientMachine, ip, serverPort); err != nil {
-				b.Fatalf("failed to start redis with: %v", err)
-			}
-
-			client := clientMachine.GetNativeContainer(ctx, b)
-			defer client.CleanUp(ctx)
-
 			redis := tools.Redis{
 				Operation: operation,
 			}
-			b.ResetTimer()
-			out, err := client.Run(ctx, dockerutil.RunOpts{
-				Image: "benchmarks/redis",
-			}, redis.MakeCmd(ip, serverPort, b.N /*requests*/)...)
+
+			// Sometimes, the connection between the redis client and server can be
+			// flaky such that the client returns infinity as the QPS measurement for
+			// a give operation. If this happens, retry the client up to 3 times.
+			out := "inf"
+			for retries := 0; strings.Contains(out, "inf") && retries < 3; retries++ {
+				b.ResetTimer()
+				client := clientMachine.GetNativeContainer(ctx, b)
+				defer client.CleanUp(ctx)
+
+				out, err = client.Run(ctx, dockerutil.RunOpts{
+					Image: "benchmarks/redis",
+				}, redis.MakeCmd(ip, serverPort, b.N /*requests*/)...)
+			}
+
 			if err != nil {
 				b.Fatalf("redis-benchmark failed with: %v", err)
 			}
+
 			b.StopTimer()
 			redis.Report(b, out)
 		})
