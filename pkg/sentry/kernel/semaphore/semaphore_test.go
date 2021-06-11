@@ -139,6 +139,7 @@ func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r := NewRegistry(auth.NewRootUserNamespace())
 	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0x600), true, true, true)
+
 	if err != nil {
 		t.Fatalf("FindOrCreate() failed, err: %v", err)
 	}
@@ -156,8 +157,8 @@ func TestUnregister(t *testing.T) {
 	}
 
 	creds := auth.CredentialsFromContext(ctx)
-	if err := r.RemoveID(set.obj.ID, creds); err != nil {
-		t.Fatalf("RemoveID(%d) failed, err: %v", set.obj.ID, err)
+	if err := r.Remove(set.obj.ID, creds); err != nil {
+		t.Fatalf("Remove(%d) failed, err: %v", set.obj.ID, err)
 	}
 	if !set.dead {
 		t.Fatalf("set is not dead: %+v", set)

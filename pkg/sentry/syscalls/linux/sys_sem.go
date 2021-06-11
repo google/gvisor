@@ -240,7 +240,7 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 func remove(t *kernel.Task, id ipc.ID) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	creds := auth.CredentialsFromContext(t)
-	return r.RemoveID(id, creds)
+	return r.Remove(id, creds)
 }
 
 func ipcSet(t *kernel.Task, id ipc.ID, uid auth.UID, gid auth.GID, perms fs.FilePermissions) error {
