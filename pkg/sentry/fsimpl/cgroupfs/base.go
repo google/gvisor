@@ -133,6 +133,17 @@ func (c *cgroupInode) Controllers() []kernel.CgroupController {
 	return c.fs.kcontrollers
 }
 
+// tasks returns a snapshot of the tasks inside the cgroup.
+func (c *cgroupInode) tasks() []*kernel.Task {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	ts := make([]*kernel.Task, 0, len(c.ts))
+	for t := range c.ts {
+		ts = append(ts, t)
+	}
+	return ts
+}
+
 // Enter implements kernel.CgroupImpl.Enter.
 func (c *cgroupInode) Enter(t *kernel.Task) {
 	c.fs.tasksMu.Lock()
@@ -163,10 +174,7 @@ func (d *cgroupProcsData) Generate(ctx context.Context, buf *bytes.Buffer) error
 
 	pgids := make(map[kernel.ThreadID]struct{})
 
-	d.fs.tasksMu.RLock()
-	defer d.fs.tasksMu.RUnlock()
-
-	for task := range d.ts {
+	for _, task := range d.tasks() {
 		// Map dedups pgid, since iterating over all tasks produces multiple
 		// entries for the group leaders.
 		if pgid := currPidns.IDOfThreadGroup(task.ThreadGroup()); pgid != 0 {
@@ -205,10 +213,7 @@ func (d *tasksData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 	var pids []kernel.ThreadID
 
-	d.fs.tasksMu.RLock()
-	defer d.fs.tasksMu.RUnlock()
-
-	for task := range d.ts {
+	for _, task := range d.tasks() {
 		if pid := currPidns.IDOfTask(task); pid != 0 {
 			pids = append(pids, pid)
 		}
