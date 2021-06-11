@@ -49,8 +49,9 @@
 //
 // kernel.CgroupRegistry.mu
 //   cgroupfs.filesystem.mu
-//     Task.mu
-//       cgroupfs.filesystem.tasksMu.
+//     kernel.TaskSet.mu
+//       kernel.Task.mu
+//         cgroupfs.filesystem.tasksMu.
 package cgroupfs
 
 import (
