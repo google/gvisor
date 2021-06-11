@@ -278,6 +278,9 @@ TEST(ExecTest, InterpreterScriptArgNUL) {
 
 // Trailing whitespace following interpreter path is ignored.
 TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
+  // FIXME(b/190850365): This test case fails on Linux.
+  SKIP_IF(!IsRunningOnGvisor());
+
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", RunfilePath(kBasicWorkload)));
@@ -303,6 +306,9 @@ TEST(ExecTest, InterpreterScriptArgWhitespace) {
 }
 
 TEST(ExecTest, InterpreterScriptNoPath) {
+  // FIXME(b/190850365): This test case fails on Linux.
+  SKIP_IF(!IsRunningOnGvisor());
+
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!", 0755));
 
