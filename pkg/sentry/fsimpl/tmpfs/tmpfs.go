@@ -717,44 +717,63 @@ func (i *inode) touchCMtimeLocked() {
 	atomic.StoreInt64(&i.ctime, now)
 }
 
-func (i *inode) listXattr(size uint64) ([]string, error) {
-	return i.xattrs.ListXattr(size)
+func checkXattrName(name string) error {
+	// Linux's tmpfs supports "security" and "trusted" xattr namespaces, and
+	// (depending on build configuration) POSIX ACL xattr namespaces
+	// ("system.posix_acl_access" and "system.posix_acl_default"). We don't
+	// support POSIX ACLs or the "security" namespace (b/148380782).
+	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+		return nil
+	}
+	// We support the "user" namespace because we have tests that depend on
+	// this feature.
+	if strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
+		return nil
+	}
+	return syserror.EOPNOTSUPP
+}
+
+func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error) {
+	return i.xattrs.ListXattr(creds, size)
 }
 
 func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
-	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
+	if err := checkXattrName(opts.Name); err != nil {
 		return "", err
-	}
-	return i.xattrs.GetXattr(opts)
-}
-
-func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
-	if err := i.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
-		return err
-	}
-	return i.xattrs.SetXattr(opts)
-}
-
-func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
-	if err := i.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
-		return err
-	}
-	return i.xattrs.RemoveXattr(name)
-}
-
-func (i *inode) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
-	// We currently only support extended attributes in the user.* and
-	// trusted.* namespaces. See b/148380782.
-	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) && !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
-		return syserror.EOPNOTSUPP
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
 	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
 	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, kuid, kgid); err != nil {
+		return "", err
+	}
+	return i.xattrs.GetXattr(creds, mode, kuid, opts)
+}
+
+func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	if err := checkXattrName(opts.Name); err != nil {
 		return err
 	}
-	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
+	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+		return err
+	}
+	return i.xattrs.SetXattr(creds, mode, kuid, opts)
+}
+
+func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
+	if err := checkXattrName(name); err != nil {
+		return err
+	}
+	mode := linux.FileMode(atomic.LoadUint32(&i.mode))
+	kuid := auth.KUID(atomic.LoadUint32(&i.uid))
+	kgid := auth.KGID(atomic.LoadUint32(&i.gid))
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+		return err
+	}
+	return i.xattrs.RemoveXattr(creds, mode, kuid, name)
 }
 
 // fileDescription is embedded by tmpfs implementations of
@@ -807,7 +826,7 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 
 // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
 func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
-	return fd.inode().listXattr(size)
+	return fd.inode().listXattr(auth.CredentialsFromContext(ctx), size)
 }
 
 // GetXattr implements vfs.FileDescriptionImpl.GetXattr.

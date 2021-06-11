@@ -822,7 +822,7 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 	if err != nil {
 		return nil, err
 	}
-	return d.inode.listXattr(size)
+	return d.inode.listXattr(rp.Credentials(), size)
 }
 
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
