@@ -17,6 +17,7 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 
+#include "absl/time/clock.h"
 #include "test/util/capability_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -63,7 +64,7 @@ constexpr size_t msgSize = 50;
 // msgbuf is a simple buffer using to send and receive text messages for
 // testing purposes.
 struct msgbuf {
-  long mtype;
+  int64_t mtype;
   char mtext[msgSize];
 };
 
@@ -234,7 +235,7 @@ TEST(MsgqueueTest, MsgRcvType) {
 
   // Send messages in an order and receive them in reverse, based on type,
   // which shouldn't block.
-  std::map<long, msgbuf> typeToBuf = {
+  std::map<int64_t, msgbuf> typeToBuf = {
       {1, msgbuf{1, "Message 1."}}, {2, msgbuf{2, "Message 2."}},
       {3, msgbuf{3, "Message 3."}}, {4, msgbuf{4, "Message 4."}},
       {5, msgbuf{5, "Message 5."}}, {6, msgbuf{6, "Message 6."}},
@@ -246,7 +247,7 @@ TEST(MsgqueueTest, MsgRcvType) {
                 SyscallSucceeds());
   }
 
-  for (long i = typeToBuf.size(); i > 0; i--) {
+  for (int64_t i = typeToBuf.size(); i > 0; i--) {
     msgbuf rcv;
     EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(typeToBuf[i].mtext) + 1, i, 0),
                 SyscallSucceedsWithValue(sizeof(typeToBuf[i].mtext)));
@@ -261,7 +262,7 @@ TEST(MsgqueueTest, MsgExcept) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  std::map<long, msgbuf> typeToBuf = {
+  std::map<int64_t, msgbuf> typeToBuf = {
       {1, msgbuf{1, "Message 1."}},
       {2, msgbuf{2, "Message 2."}},
   };
@@ -271,7 +272,7 @@ TEST(MsgqueueTest, MsgExcept) {
                 SyscallSucceeds());
   }
 
-  for (long i = typeToBuf.size(); i > 0; i--) {
+  for (int64_t i = typeToBuf.size(); i > 0; i--) {
     msgbuf actual = typeToBuf[i == 1 ? 2 : 1];
     msgbuf rcv;
 
@@ -340,7 +341,7 @@ TEST(MsgqueueTest, MsgOpLimits) {
   // Use a buffer with the maximum mount of bytes that can be transformed to
   // make it easier to exhaust the queue limit.
   struct msgmax {
-    long mtype;
+    int64_t mtype;
     char mtext[msgMax];
   };
 
@@ -413,6 +414,261 @@ TEST(MsgqueueTest, MsgCopy) {
     EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0, 0),
                 SyscallSucceedsWithValue(sizeof(buf.mtext)));
     EXPECT_TRUE(buf == rcv);
+  }
+}
+
+// Test msgrcv (most probably) blocking on an empty queue.
+TEST(MsgqueueTest, MsgRcvBlocking) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  msgbuf buf{1, "A message."};
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    msgbuf rcv;
+    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0,
+                                   0) == sizeof(buf.mtext) &&
+                buf == rcv);
+    _exit(0);
+  }
+
+  // Sleep to try and make msgrcv block before sending a message.
+  absl::SleepFor(absl::Milliseconds(150));
+
+  EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+              SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Test msgrcv (most probably) waiting for a specific-type message.
+TEST(MsgqueueTest, MsgRcvTypeBlocking) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  msgbuf bufs[5] = {{1, "A message."},
+                    {1, "A message."},
+                    {1, "A message."},
+                    {1, "A message."},
+                    {2, "A different message."}};
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    msgbuf buf = bufs[4];  // Buffer that should be received.
+    msgbuf rcv;
+    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 2,
+                                   0) == sizeof(buf.mtext) &&
+                buf == rcv);
+    _exit(0);
+  }
+
+  // Sleep to try and make msgrcv block before sending messages.
+  absl::SleepFor(absl::Milliseconds(150));
+
+  // Send all buffers in order, only last one should be received.
+  for (auto& buf : bufs) {
+    EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                SyscallSucceeds());
+  }
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Test msgsnd (most probably) blocking on a full queue.
+TEST(MsgqueueTest, MsgSndBlocking) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  // Use a buffer with the maximum mount of bytes that can be transformed to
+  // make it easier to exhaust the queue limit.
+  struct msgmax {
+    int64_t mtype;
+    char mtext[msgMax];
+  };
+
+  msgmax buf{1, ""};  // Has max amount of bytes.
+
+  const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
+                                            // sent without blocking.
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    // Fill the queue.
+    for (size_t i = 0; i < msgCount; i++) {
+      EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                  SyscallSucceeds());
+    }
+
+    // Next msgsnd should block.
+    TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
+                0);
+    _exit(0);
+  }
+
+  // To increase the chance of the last msgsnd blocking before doing a msgrcv,
+  // we use MSG_COPY option to copy the last index in the queue. As long as
+  // MSG_COPY fails, the queue hasn't yet been filled. When MSG_COPY succeeds,
+  // the queue is filled, and most probably, a blocking msgsnd has been made.
+  msgmax rcv;
+  while (msgrcv(queue.get(), &rcv, msgMax, msgCount - 1,
+                MSG_COPY | IPC_NOWAIT) == -1 &&
+         errno == ENOMSG) {
+  }
+
+  // Delay a bit more for the blocking msgsnd.
+  absl::SleepFor(absl::Milliseconds(100));
+
+  EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0, 0),
+              SyscallSucceedsWithValue(sizeof(buf.mtext)));
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Test removing a queue while a blocking msgsnd is executing.
+TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  // Use a buffer with the maximum mount of bytes that can be transformed to
+  // make it easier to exhaust the queue limit.
+  struct msgmax {
+    int64_t mtype;
+    char mtext[msgMax];
+  };
+
+  const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
+                                            // sent without blocking.
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    // Fill the queue.
+    msgmax buf{1, ""};
+    for (size_t i = 0; i < msgCount; i++) {
+      EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                  SyscallSucceeds());
+    }
+
+    // Next msgsnd should block. Because we're repeating on EINTR, msgsnd may
+    // race with msgctl(IPC_RMID) and return EINVAL.
+    TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
+                    -1 &&
+                (errno == EIDRM || errno == EINVAL));
+    _exit(0);
+  }
+
+  // Similar to MsgSndBlocking, we do this to increase the chance of msgsnd
+  // blocking before removing the queue.
+  msgmax rcv;
+  while (msgrcv(queue.get(), &rcv, msgMax, msgCount - 1,
+                MSG_COPY | IPC_NOWAIT) == -1 &&
+         errno == ENOMSG) {
+  }
+  absl::SleepFor(absl::Milliseconds(100));
+
+  EXPECT_THAT(msgctl(queue.release(), IPC_RMID, nullptr), SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Test removing a queue while a blocking msgrcv is executing.
+TEST(MsgqueueTest, MsgRcvRmWhileBlocking) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    // Because we're repeating on EINTR, msgsnd may race with msgctl(IPC_RMID)
+    // and return EINVAL.
+    msgbuf rcv;
+    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, 1, 2, 0) == -1 &&
+                (errno == EIDRM || errno == EINVAL));
+    _exit(0);
+  }
+
+  // Sleep to try and make msgrcv block before sending messages.
+  absl::SleepFor(absl::Milliseconds(150));
+
+  EXPECT_THAT(msgctl(queue.release(), IPC_RMID, nullptr), SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Test a collection of msgsnd/msgrcv operations in different processes.
+TEST(MsgqueueTest, MsgOpGeneral) {
+  SKIP_IF(!run);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  // Create 50 sending, and 50 receiving processes. There are only 5 messages to
+  // be sent and received, each with a different type. All messages will be sent
+  // and received equally (10 of each.) By the end of the test all processes
+  // should unblock and return normally.
+  const size_t msgCount = 5;
+  std::map<int64_t, msgbuf> typeToBuf = {{1, msgbuf{1, "Message 1."}},
+                                         {2, msgbuf{2, "Message 2."}},
+                                         {3, msgbuf{3, "Message 3."}},
+                                         {4, msgbuf{4, "Message 4."}},
+                                         {5, msgbuf{5, "Message 5."}}};
+
+  std::vector<pid_t> children;
+
+  const size_t pCount = 50;
+  for (size_t i = 1; i <= pCount; i++) {
+    const pid_t child_pid = fork();
+    if (child_pid == 0) {
+      msgbuf buf = typeToBuf[(i % msgCount) + 1];
+      msgbuf rcv;
+      TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1,
+                                     (i % msgCount) + 1,
+                                     0) == sizeof(buf.mtext) &&
+                  buf == rcv);
+      _exit(0);
+    }
+    children.push_back(child_pid);
+  }
+
+  for (size_t i = 1; i <= pCount; i++) {
+    const pid_t child_pid = fork();
+    if (child_pid == 0) {
+      msgbuf buf = typeToBuf[(i % msgCount) + 1];
+      TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
+                  0);
+      _exit(0);
+    }
+    children.push_back(child_pid);
+  }
+
+  for (auto const& pid : children) {
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+                SyscallSucceedsWithValue(pid));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
   }
 }
 
