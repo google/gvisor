@@ -1282,9 +1282,12 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
-	// We only support xattrs prefixed with "user." (see b/148380782). Currently,
-	// there is no need to expose any other xattrs through a gofer.
-	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
+	// Deny access to the "security" and "system" namespaces since applications
+	// may expect these to affect kernel behavior in unimplemented ways
+	// (b/148380782). Allow all other extended attributes to be passed through
+	// to the remote filesystem. This is inconsistent with Linux's 9p client,
+	// but consistent with other filesystems (e.g. FUSE).
+	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
 		return syserror.EOPNOTSUPP
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
@@ -1684,7 +1687,7 @@ func (d *dentry) setDeleted() {
 }
 
 func (d *dentry) listXattr(ctx context.Context, creds *auth.Credentials, size uint64) ([]string, error) {
-	if d.file.isNil() || !d.userXattrSupported() {
+	if d.file.isNil() {
 		return nil, nil
 	}
 	xattrMap, err := d.file.listXattr(ctx, size)
@@ -1693,10 +1696,7 @@ func (d *dentry) listXattr(ctx context.Context, creds *auth.Credentials, size ui
 	}
 	xattrs := make([]string, 0, len(xattrMap))
 	for x := range xattrMap {
-		// We only support xattrs in the user.* namespace.
-		if strings.HasPrefix(x, linux.XATTR_USER_PREFIX) {
-			xattrs = append(xattrs, x)
-		}
+		xattrs = append(xattrs, x)
 	}
 	return xattrs, nil
 }
@@ -1729,13 +1729,6 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 		return err
 	}
 	return d.file.removeXattr(ctx, name)
-}
-
-// Extended attributes in the user.* namespace are only supported for regular
-// files and directories.
-func (d *dentry) userXattrSupported() bool {
-	filetype := linux.FileMode(atomic.LoadUint32(&d.mode)).FileType()
-	return filetype == linux.ModeRegular || filetype == linux.ModeDirectory
 }
 
 // Preconditions:
