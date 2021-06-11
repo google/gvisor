@@ -26,7 +26,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/errors/linuxerr",
-        "//pkg/log",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",
@@ -42,10 +41,11 @@ go_test(
     srcs = ["semaphore_test.go"],
     library = ":semaphore",
     deps = [
-        "//pkg/abi/linux",
-        "//pkg/context",
-        "//pkg/sentry/contexttest",
-        "//pkg/sentry/kernel/auth",
-        "//pkg/syserror",
+        "//pkg/abi/linux",  # keep
+        "//pkg/context",  # keep
+        "//pkg/sentry/contexttest",  # keep
+        "//pkg/sentry/kernel/auth",  # keep
+        "//pkg/sentry/kernel/ipc",  # keep
+        "//pkg/syserror",  # keep
     ],
 )

@@ -13,6 +13,8 @@
 // limitations under the License.
 
 // Package ipc defines functionality and utilities common to sysvipc mechanisms.
+//
+// Lock ordering: [shm/semaphore/msgqueue].Registry.mu -> Mechanism
 package ipc
 
 import (
@@ -29,6 +31,8 @@ type ID int32
 
 // Object represents an abstract IPC object with fields common to all IPC
 // mechanisms.
+//
+// +stateify savable
 type Object struct {
 	// User namespace which owns the IPC namespace which owns the IPC object.
 	// Immutable.
@@ -54,22 +58,26 @@ type Object struct {
 // be looked at as a container for an ipc.Object, which is by definition a fully
 // functional SysV object.
 type Mechanism interface {
-	// Object returns a pointer to the mechanism's ipc.Object. Mechanism.Lock,
-	// and Mechanism.Unlock should be used when the object is used.
-	Object() *Object
-
 	// Lock behaves the same as Mutex.Lock on the mechanism.
 	Lock()
 
 	// Unlock behaves the same as Mutex.Unlock on the mechanism.
 	Unlock()
+
+	// Object returns a pointer to the mechanism's ipc.Object. Mechanism.Lock,
+	// and Mechanism.Unlock should be used when the object is used.
+	Object() *Object
+
+	// Destroy destroys the mechanism.
+	Destroy()
 }
 
-// NewObject returns a new, initialized ipc.Object.
-func NewObject(un *auth.UserNamespace, id ID, key Key, creator, owner fs.FileOwner, perms fs.FilePermissions) *Object {
+// NewObject returns a new, initialized ipc.Object. The newly returned object
+// doesn't have a valid ID. When the object is registered, the registry assigns
+// it a new unique ID.
+func NewObject(un *auth.UserNamespace, key Key, creator, owner fs.FileOwner, perms fs.FilePermissions) *Object {
 	return &Object{
 		UserNS:  un,
-		ID:      id,
 		Key:     key,
 		Creator: creator,
 		Owner:   owner,

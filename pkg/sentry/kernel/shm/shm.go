@@ -64,38 +64,34 @@ type Registry struct {
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// shms maps segment ids to segments.
+	// reg defines basic fields and operations needed for all SysV registries.
 	//
-	// shms holds all referenced segments, which are removed on the last
+	// Withing reg, there are two maps, Objects and KeysToIDs.
+	//
+	// reg.objects holds all referenced segments, which are removed on the last
 	// DecRef. Thus, it cannot itself hold a reference on the Shm.
 	//
 	// Since removal only occurs after the last (unlocked) DecRef, there
 	// exists a short window during which a Shm still exists in Shm, but is
 	// unreferenced. Users must use TryIncRef to determine if the Shm is
 	// still valid.
-	shms map[ipc.ID]*Shm
-
-	// keysToShms maps segment keys to segments.
 	//
-	// Shms in keysToShms are guaranteed to be referenced, as they are
+	// keysToIDs maps segment keys to IDs.
+	//
+	// Shms in keysToIDs are guaranteed to be referenced, as they are
 	// removed by disassociateKey before the last DecRef.
-	keysToShms map[ipc.Key]*Shm
+	reg *ipc.Registry
 
 	// Sum of the sizes of all existing segments rounded up to page size, in
 	// units of page size.
 	totalPages uint64
-
-	// ID assigned to the last created segment. Used to quickly find the next
-	// unused ID.
-	lastIDUsed ipc.ID
 }
 
 // NewRegistry creates a new shm registry.
 func NewRegistry(userNS *auth.UserNamespace) *Registry {
 	return &Registry{
-		userNS:     userNS,
-		shms:       make(map[ipc.ID]*Shm),
-		keysToShms: make(map[ipc.Key]*Shm),
+		userNS: userNS,
+		reg:    ipc.NewRegistry(userNS),
 	}
 }
 
@@ -105,9 +101,14 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 func (r *Registry) FindByID(id ipc.ID) *Shm {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := r.shms[id]
+	mech := r.reg.FindByID(id)
+	if mech == nil {
+		return nil
+	}
+	s := mech.(*Shm)
+
 	// Take a reference on s. If TryIncRef fails, s has reached the last
-	// DecRef, but hasn't quite been removed from r.shms yet.
+	// DecRef, but hasn't quite been removed from r.reg.objects yet.
 	if s != nil && s.TryIncRef() {
 		return s
 	}
@@ -125,7 +126,7 @@ func (r *Registry) dissociateKey(s *Shm) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.obj.Key != linux.IPC_PRIVATE {
-		delete(r.keysToShms, s.obj.Key)
+		r.reg.DissociateKey(s.obj.Key)
 		s.obj.Key = linux.IPC_PRIVATE
 	}
 }
@@ -147,49 +148,28 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.shms) >= linux.SHMMNI {
+	if r.reg.ObjectCount() >= linux.SHMMNI {
 		// "All possible shared memory IDs have been taken (SHMMNI) ..."
 		//   - man shmget(2)
 		return nil, syserror.ENOSPC
 	}
 
 	if !private {
-		// Look up an existing segment.
-		if shm := r.keysToShms[key]; shm != nil {
-			shm.mu.Lock()
-			defer shm.mu.Unlock()
+		shm, err := r.reg.Find(ctx, key, mode, create, exclusive)
+		if err != nil {
+			return nil, err
+		}
 
-			// Check that caller can access the segment.
-			creds := auth.CredentialsFromContext(ctx)
-			if !shm.obj.CheckPermissions(creds, fs.PermsFromMode(mode)) {
-				// "The user does not have permission to access the shared
-				// memory segment, and does not have the CAP_IPC_OWNER
-				// capability in the user namespace that governs its IPC
-				// namespace." - man shmget(2)
-				return nil, linuxerr.EACCES
-			}
-
+		// Validate shm-specific parameters.
+		if shm != nil {
+			shm := shm.(*Shm)
 			if size > shm.size {
 				// "A segment for the given key exists, but size is greater than
 				// the size of that segment." - man shmget(2)
 				return nil, linuxerr.EINVAL
 			}
-
-			if create && exclusive {
-				// "IPC_CREAT and IPC_EXCL were specified in shmflg, but a
-				// shared memory segment already exists for key."
-				//  - man shmget(2)
-				return nil, linuxerr.EEXIST
-			}
-
 			shm.IncRef()
 			return shm, nil
-		}
-
-		if !create {
-			// "No segment exists for the given key, and IPC_CREAT was not
-			// specified." - man shmget(2)
-			return nil, syserror.ENOENT
 		}
 	}
 
@@ -208,9 +188,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 	}
 
 	// Need to create a new segment.
-	creator := fs.FileOwnerFromContext(ctx)
-	perms := fs.FilePermsFromMode(mode)
-	s, err := r.newShm(ctx, pid, key, creator, perms, size)
+	s, err := r.newShmLocked(ctx, pid, key, fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(mode), size)
 	if err != nil {
 		return nil, err
 	}
@@ -220,10 +198,10 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 	return s, nil
 }
 
-// newShm creates a new segment in the registry.
+// newShmLocked creates a new segment in the registry.
 //
 // Precondition: Caller must hold r.mu.
-func (r *Registry) newShm(ctx context.Context, pid int32, key ipc.Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
+func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
@@ -235,39 +213,24 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key ipc.Key, creator f
 		return nil, err
 	}
 
-	// Find the next available ID.
-	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
-		// Handle wrap around.
-		if id < 0 {
-			id = 0
-			continue
-		}
-		if r.shms[id] == nil {
-			r.lastIDUsed = id
-
-			shm := &Shm{
-				mfp:           mfp,
-				registry:      r,
-				size:          size,
-				effectiveSize: effectiveSize,
-				obj:           ipc.NewObject(r.userNS, ipc.ID(id), ipc.Key(key), creator, creator, perms),
-				fr:            fr,
-				creatorPID:    pid,
-				changeTime:    ktime.NowFromContext(ctx),
-			}
-			shm.InitRefs()
-
-			r.shms[id] = shm
-			r.keysToShms[key] = shm
-
-			r.totalPages += effectiveSize / hostarch.PageSize
-
-			return shm, nil
-		}
+	shm := &Shm{
+		mfp:           mfp,
+		registry:      r,
+		size:          size,
+		effectiveSize: effectiveSize,
+		obj:           ipc.NewObject(r.reg.UserNS, ipc.Key(key), creator, creator, perms),
+		fr:            fr,
+		creatorPID:    pid,
+		changeTime:    ktime.NowFromContext(ctx),
 	}
+	shm.InitRefs()
 
-	log.Warningf("Shm ids exhuasted, they may be leaking")
-	return nil, syserror.ENOSPC
+	if err := r.reg.Register(shm); err != nil {
+		return nil, err
+	}
+	r.totalPages += effectiveSize / hostarch.PageSize
+
+	return shm, nil
 }
 
 // IPCInfo reports global parameters for sysv shared memory segments on this
@@ -289,7 +252,7 @@ func (r *Registry) ShmInfo() *linux.ShmInfo {
 	defer r.mu.Unlock()
 
 	return &linux.ShmInfo{
-		UsedIDs: int32(r.lastIDUsed),
+		UsedIDs: int32(r.reg.LastIDUsed()),
 		ShmTot:  r.totalPages,
 		ShmRss:  r.totalPages, // We could probably get a better estimate from memory accounting.
 		ShmSwp:  0,            // No reclaim at the moment.
@@ -310,7 +273,7 @@ func (r *Registry) remove(s *Shm) {
 		panic(fmt.Sprintf("Attempted to remove %s from the registry whose key is still associated", s.debugLocked()))
 	}
 
-	delete(r.shms, s.obj.ID)
+	r.reg.DissociateID(s.obj.ID)
 	r.totalPages -= s.effectiveSize / hostarch.PageSize
 }
 
@@ -322,13 +285,16 @@ func (r *Registry) Release(ctx context.Context) {
 	// the IPC namespace containing it has no more references.
 	toRelease := make([]*Shm, 0)
 	r.mu.Lock()
-	for _, s := range r.keysToShms {
-		s.mu.Lock()
-		if !s.pendingDestruction {
-			toRelease = append(toRelease, s)
-		}
-		s.mu.Unlock()
-	}
+	r.reg.ForAllObjects(
+		func(o ipc.Mechanism) {
+			s := o.(*Shm)
+			s.mu.Lock()
+			if !s.pendingDestruction {
+				toRelease = append(toRelease, s)
+			}
+			s.mu.Unlock()
+		},
+	)
 	r.mu.Unlock()
 
 	for _, s := range toRelease {
@@ -383,7 +349,6 @@ type Shm struct {
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// obj defines basic fields that should be included in all SysV IPC objects.
 	obj *ipc.Object
 
 	// attachTime is updated on every successful shmat.
@@ -410,6 +375,28 @@ type Shm struct {
 // ID returns object's ID.
 func (s *Shm) ID() ipc.ID {
 	return s.obj.ID
+}
+
+// Object implements ipc.Mechanism.Object.
+func (s *Shm) Object() *ipc.Object {
+	return s.obj
+}
+
+// Destroy implements ipc.Mechanism.Destroy. No work is performed on shm.Destroy
+// because a different removal mechanism is used in shm. See Shm.MarkDestroyed.
+func (s *Shm) Destroy() {
+}
+
+// Lock implements ipc.Mechanism.Lock.
+func (s *Shm) Lock() {
+	s.mu.Lock()
+}
+
+// Unlock implements ipc.mechanism.Unlock.
+//
+// +checklocksignore
+func (s *Shm) Unlock() {
+	s.mu.Unlock()
 }
 
 // Precondition: Caller must hold s.mu.
