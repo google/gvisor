@@ -369,7 +369,8 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 .PHONY: benchmark-platforms
 
 run-benchmark: load-benchmarks $(RUNTIME_BIN) ## Runs single benchmark and optionally sends data to BigQuery.
-	@$(call run_benchmark,$(RUNTIME)$(BENCH_VFS),$(BENCH_RUNTIME_ARGS) $(BENCH_VFS))
+	@if test "$(RUNTIME)" = "runc"; then $(call run_benchmark,$(RUNTIME)); fi;
+	@if test "$(RUNTIME)" != "runc"; then $(call run_benchmark,$(RUNTIME)$(BENCH_VFS),$(BENCH_RUNTIME_ARGS) $(BENCH_VFS)); fi;
 .PHONY: run-benchmark
 
 ##
