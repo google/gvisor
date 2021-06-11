@@ -55,15 +55,23 @@ func TestTCPListenBacklog(t *testing.T) {
 
 	// Send the ACK to complete handshake.
 	establishedConn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+
+	// Poll for the established connection ready for accept.
 	dut.PollOne(t, listenFd, unix.POLLIN, time.Second)
 
-	// Send the ACK to complete handshake, expect this to be ignored by the
-	// listener.
+	// Send the ACK to complete handshake, expect this to be dropped by the
+	// listener as the accept queue would be full because of the previous
+	// handshake.
 	incompleteConn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	// Let the test wait for sometime so that the ACK is indeed dropped by
+	// the listener. Without such a wait, the DUT accept can race with
+	// ACK handling (dropping) causing the test to be flaky.
+	time.Sleep(100 * time.Millisecond)
 
 	// Drain the accept queue to enable poll for subsequent connections on the
 	// listener.
-	dut.Accept(t, listenFd)
+	fd, _ := dut.Accept(t, listenFd)
+	dut.Close(t, fd)
 
 	// The ACK for the incomplete connection should be ignored by the
 	// listening endpoint and the poll on listener should now time out.
