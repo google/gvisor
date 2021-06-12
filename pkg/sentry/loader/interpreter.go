@@ -59,7 +59,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.Fil
 	// Linux silently truncates the remainder of the line if it exceeds
 	// interpMaxLineLength.
 	i := bytes.IndexByte(line, '\n')
-	if i > 0 {
+	if i >= 0 {
 		line = line[:i]
 	}
 

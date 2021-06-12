@@ -278,15 +278,12 @@ TEST(ExecTest, InterpreterScriptArgNUL) {
 
 // Trailing whitespace following interpreter path is ignored.
 TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
-  // FIXME(b/190850365): This test case fails on Linux.
-  SKIP_IF(!IsRunningOnGvisor());
-
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", RunfilePath(kBasicWorkload)));
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path(), "  "), 0755));
+      GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path(), "  \n"), 0755));
 
   CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(1, 0),
             absl::StrCat(link.path(), "\n", script.path(), "\n"));
@@ -306,11 +303,11 @@ TEST(ExecTest, InterpreterScriptArgWhitespace) {
 }
 
 TEST(ExecTest, InterpreterScriptNoPath) {
-  // FIXME(b/190850365): This test case fails on Linux.
-  SKIP_IF(!IsRunningOnGvisor());
-
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!", 0755));
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!\n\n", 0755));
+
+  std::cerr << "path: " << script.path() << std::endl;
+  std::cerr << system(absl::StrCat("cat ", script.path()).c_str()) << std::endl;
 
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(
