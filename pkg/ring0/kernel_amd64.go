@@ -254,6 +254,8 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	return
 }
 
+var sentryXCR0 = xgetbv(0)
+
 // start is the CPU entrypoint.
 //
 // This is called from the Start asm stub (see entry_amd64.go); on return the
@@ -265,24 +267,10 @@ func start(c *CPU) {
 	WriteGS(kernelAddr(c.kernelEntry))
 	WriteFS(uintptr(c.registers.Fs_base))
 
-	// Initialize floating point.
-	//
-	// Note that on skylake, the valid XCR0 mask reported seems to be 0xff.
-	// This breaks down as:
-	//
-	//	bit0   - x87
-	//	bit1   - SSE
-	//	bit2   - AVX
-	//	bit3-4 - MPX
-	//	bit5-7 - AVX512
-	//
-	// For some reason, enabled MPX & AVX512 on platforms that report them
-	// seems to be cause a general protection fault. (Maybe there are some
-	// virtualization issues and these aren't exported to the guest cpuid.)
-	// This needs further investigation, but we can limit the floating
-	// point operations to x87, SSE & AVX for now.
 	fninit()
-	xsetbv(0, validXCR0Mask&0x7)
+	// Need to sync XCR0 with the host, because xsave and xrstor can be
+	// called from different contexts.
+	xsetbv(0, sentryXCR0)
 
 	// Set the syscall target.
 	wrmsr(_MSR_LSTAR, kernelFunc(sysenter))
