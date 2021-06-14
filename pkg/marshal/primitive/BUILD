@@ -12,9 +12,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
-        "//pkg/context",
         "//pkg/hostarch",
         "//pkg/marshal",
-        "//pkg/usermem",
     ],
 )

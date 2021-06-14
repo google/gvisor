@@ -293,8 +293,6 @@ type Sigevent struct {
 	UnRemainder [44]byte
 }
 
-// LINT.IfChange
-
 // SigAction represents struct sigaction.
 //
 // +marshal
@@ -305,8 +303,6 @@ type SigAction struct {
 	Restorer uint64
 	Mask     SignalSet
 }
-
-// LINT.ThenChange(../../safecopy/safecopy_unsafe.go)
 
 // SignalStack represents information about a user stack, and is equivalent to
 // stack_t.
