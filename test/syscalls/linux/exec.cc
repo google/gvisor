@@ -306,9 +306,6 @@ TEST(ExecTest, InterpreterScriptNoPath) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!\n\n", 0755));
 
-  std::cerr << "path: " << script.path() << std::endl;
-  std::cerr << system(absl::StrCat("cat ", script.path()).c_str()) << std::endl;
-
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(
       ForkAndExec(script.path(), {script.path()}, {}, nullptr, &execve_errno));
