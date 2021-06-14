@@ -135,7 +135,7 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 			v = math.MaxInt32 // Silently truncate.
 		}
 		// Copy result to userspace.
-		iocc := primitive.IOCopyContext{
+		iocc := usermem.IOCopyContext{
 			IO:  io,
 			Ctx: ctx,
 			Opts: usermem.IOOpts{

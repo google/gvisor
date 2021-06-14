@@ -19,10 +19,8 @@ package primitive
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Int8 is a marshal.Marshallable implementation for int8.
@@ -399,27 +397,4 @@ func CopyStringIn(cc marshal.CopyContext, addr hostarch.Addr, dst *string) (int,
 func CopyStringOut(cc marshal.CopyContext, addr hostarch.Addr, src string) (int, error) {
 	srcP := ByteSlice(src)
 	return srcP.CopyOut(cc, addr)
-}
-
-// IOCopyContext wraps an object implementing hostarch.IO to implement
-// marshal.CopyContext.
-type IOCopyContext struct {
-	Ctx  context.Context
-	IO   usermem.IO
-	Opts usermem.IOOpts
-}
-
-// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
-func (i *IOCopyContext) CopyScratchBuffer(size int) []byte {
-	return make([]byte, size)
-}
-
-// CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
-func (i *IOCopyContext) CopyOutBytes(addr hostarch.Addr, b []byte) (int, error) {
-	return i.IO.CopyOut(i.Ctx, addr, b, i.Opts)
-}
-
-// CopyInBytes implements marshal.CopyContext.CopyInBytes.
-func (i *IOCopyContext) CopyInBytes(addr hostarch.Addr, b []byte) (int, error) {
-	return i.IO.CopyIn(i.Ctx, addr, b, i.Opts)
 }
