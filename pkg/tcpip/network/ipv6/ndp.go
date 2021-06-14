@@ -215,12 +215,11 @@ type NDPDispatcher interface {
 	OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult)
 
 	// OnDefaultRouterDiscovered is called when a new default router is
-	// discovered. Implementations must return true if the newly discovered
-	// router should be remembered.
+	// discovered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address) bool
+	OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address)
 
 	// OnDefaultRouterInvalidated is called when a discovered default router that
 	// was remembered is invalidated.
@@ -230,12 +229,10 @@ type NDPDispatcher interface {
 	OnDefaultRouterInvalidated(tcpip.NICID, tcpip.Address)
 
 	// OnOnLinkPrefixDiscovered is called when a new on-link prefix is discovered.
-	// Implementations must return true if the newly discovered on-link prefix
-	// should be remembered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) bool
+	OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet)
 
 	// OnOnLinkPrefixInvalidated is called when a discovered on-link prefix that
 	// was remembered is invalidated.
@@ -245,13 +242,11 @@ type NDPDispatcher interface {
 	OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet)
 
 	// OnAutoGenAddress is called when a new prefix with its autonomous address-
-	// configuration flag set is received and SLAAC was performed. Implementations
-	// may prevent the stack from assigning the address to the NIC by returning
-	// false.
+	// configuration flag set is received and SLAAC was performed.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) bool
+	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix)
 
 	// OnAutoGenAddressDeprecated is called when an auto-generated address (SLAAC)
 	// is deprecated, but is still considered valid. Note, if an address is
@@ -848,11 +843,7 @@ func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
 	}
 
 	// Inform the integrator when we discovered a default router.
-	if !ndpDisp.OnDefaultRouterDiscovered(ndp.ep.nic.ID(), ip) {
-		// Informed by the integrator to not remember the router, do
-		// nothing further.
-		return
-	}
+	ndpDisp.OnDefaultRouterDiscovered(ndp.ep.nic.ID(), ip)
 
 	state := defaultRouterState{
 		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
@@ -878,11 +869,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	}
 
 	// Inform the integrator when we discovered an on-link prefix.
-	if !ndpDisp.OnOnLinkPrefixDiscovered(ndp.ep.nic.ID(), prefix) {
-		// Informed by the integrator to not remember the prefix, do
-		// nothing further.
-		return
-	}
+	ndpDisp.OnOnLinkPrefixDiscovered(ndp.ep.nic.ID(), prefix)
 
 	state := onLinkPrefixState{
 		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
@@ -1096,15 +1083,12 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, config
 		return nil
 	}
 
-	if !ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr) {
-		// Informed by the integrator not to add the address.
-		return nil
-	}
-
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.FirstPrimaryEndpoint, configType, deprecated)
 	if err != nil {
 		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", addr, err))
 	}
+
+	ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr)
 
 	return addressEndpoint
 }
