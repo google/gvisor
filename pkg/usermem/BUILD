@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "bytes_io.go",
         "bytes_io_unsafe.go",
+        "marshal.go",
         "usermem.go",
     ],
     visibility = ["//:sandbox"],
