@@ -755,9 +755,9 @@ func (e *endpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams,
 	// based on destination address and do not send the packet to link
 	// layer.
 	//
-	// TODO(gvisor.dev/issue/170): We should do this for every
-	// packet, rather than only NATted packets, but removing this check
-	// short circuits broadcasts before they are sent out to other hosts.
+	// We should do this for every packet, rather than only NATted packets, but
+	// removing this check short circuits broadcasts before they are sent out to
+	// other hosts.
 	if pkt.NatDone {
 		netHeader := header.IPv6(pkt.NetworkHeader().View())
 		if ep := e.protocol.findEndpointWithAddress(netHeader.DestinationAddress()); ep != nil {

@@ -173,9 +173,8 @@ func (e *endpoint) handleControl(errInfo stack.TransportError, pkt *stack.Packet
 
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer) {
 	received := e.stats.icmp.packetsReceived
-	// TODO(gvisor.dev/issue/170): ICMP packets don't have their
-	// TransportHeader fields set. See icmp/protocol.go:protocol.Parse for a
-	// full explanation.
+	// ICMP packets don't have their TransportHeader fields set. See
+	// icmp/protocol.go:protocol.Parse for a full explanation.
 	v, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
 	if !ok {
 		received.invalid.Increment()

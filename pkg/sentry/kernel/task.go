@@ -852,15 +852,13 @@ func (t *Task) SetOOMScoreAdj(adj int32) error {
 	return nil
 }
 
-// UID returns t's uid.
-// TODO(gvisor.dev/issue/170): This method is not namespaced yet.
-func (t *Task) UID() uint32 {
+// KUID returns t's kuid.
+func (t *Task) KUID() uint32 {
 	return uint32(t.Credentials().EffectiveKUID)
 }
 
-// GID returns t's gid.
-// TODO(gvisor.dev/issue/170): This method is not namespaced yet.
-func (t *Task) GID() uint32 {
+// KGID returns t's kgid.
+func (t *Task) KGID() uint32 {
 	return uint32(t.Credentials().EffectiveKGID)
 }
 
