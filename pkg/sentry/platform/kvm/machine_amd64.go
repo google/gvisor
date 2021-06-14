@@ -469,7 +469,7 @@ func availableRegionsForSetMem() (phyRegions []physicalRegion) {
 }
 
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
-	// Map all the executible regions so that all the entry functions
+	// Map all the executable regions so that all the entry functions
 	// are mapped in the upper half.
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
