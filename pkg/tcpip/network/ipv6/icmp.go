@@ -285,8 +285,8 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
-	// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
-	// fields set. See icmp/protocol.go:protocol.Parse for a full explanation.
+	// ICMP packets don't have their TransportHeader fields set. See
+	// icmp/protocol.go:protocol.Parse for a full explanation.
 	v, ok := pkt.Data().PullUp(header.ICMPv6HeaderSize)
 	if !ok {
 		received.invalid.Increment()

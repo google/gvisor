@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -50,7 +51,7 @@ func (udpMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (udpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (udpMarshaler) unmarshal(_ *kernel.Task, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTUDP {
 		return nil, fmt.Errorf("buf has insufficient size for UDP match: %d", len(buf))
 	}
@@ -92,8 +93,6 @@ func (*UDPMatcher) name() string {
 
 // Match implements Matcher.Match.
 func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
-	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
-	// into the stack.Check codepath as matchers are added.
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		netHeader := header.IPv4(pkt.NetworkHeader().View())

@@ -465,11 +465,11 @@ type ControlMessages struct {
 
 // PacketOwner is used to get UID and GID of the packet.
 type PacketOwner interface {
-	// UID returns UID of the packet.
-	UID() uint32
+	// UID returns KUID of the packet.
+	KUID() uint32
 
-	// GID returns GID of the packet.
-	GID() uint32
+	// GID returns KGID of the packet.
+	KGID() uint32
 }
 
 // ReadOptions contains options for Endpoint.Read.

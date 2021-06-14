@@ -108,7 +108,7 @@ type Stack struct {
 	handleLocal bool
 
 	// tables are the iptables packet filtering and manipulation rules.
-	// TODO(gvisor.dev/issue/170): S/R this field.
+	// TODO(gvisor.dev/issue/4595): S/R this field.
 	tables *IPTables
 
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
@@ -1872,9 +1872,8 @@ const (
 // ParsePacketBufferTransport parses the provided packet buffer's transport
 // header.
 func (s *Stack) ParsePacketBufferTransport(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) ParseResult {
-	// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
-	// fields set yet, parse it here. See icmp/protocol.go:protocol.Parse for a
-	// full explanation.
+	// ICMP packets don't have their TransportHeader fields set yet, parse it
+	// here. See icmp/protocol.go:protocol.Parse for a full explanation.
 	if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
 		return ParsedOK
 	}

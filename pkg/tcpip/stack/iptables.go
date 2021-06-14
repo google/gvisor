@@ -268,10 +268,6 @@ const (
 // should continue traversing the network stack and false when it should be
 // dropped.
 //
-// TODO(gvisor.dev/issue/170): PacketBuffer should hold the route, from
-// which address can be gathered. Currently, address is only needed for
-// prerouting.
-//
 // Precondition: pkt.NetworkHeader is set.
 func (it *IPTables) Check(hook Hook, pkt *PacketBuffer, r *Route, preroutingAddr tcpip.Address, inNicName, outNicName string) bool {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber && pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {

@@ -174,13 +174,12 @@ func setHooksAndUnderflow(info *linux.IPTGetinfo, table stack.Table, offset uint
 
 // SetEntries sets iptables rules for a single table. See
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
-func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
+func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
 	replaceBuf := optVal[:linux.SizeOfIPTReplace]
 	optVal = optVal[linux.SizeOfIPTReplace:]
 	replace.UnmarshalBytes(replaceBuf)
 
-	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
 	switch replace.Name.String() {
 	case filterTable:
@@ -188,16 +187,16 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	case natTable:
 		table = stack.EmptyNATTable()
 	default:
-		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
+		nflog("unknown iptables table %q", replace.Name.String())
 		return syserr.ErrInvalidArgument
 	}
 
 	var err *syserr.Error
 	var offsets map[uint32]int
 	if ipv6 {
-		offsets, err = modifyEntries6(stk, optVal, &replace, &table)
+		offsets, err = modifyEntries6(task, stk, optVal, &replace, &table)
 	} else {
-		offsets, err = modifyEntries4(stk, optVal, &replace, &table)
+		offsets, err = modifyEntries4(task, stk, optVal, &replace, &table)
 	}
 	if err != nil {
 		return err
@@ -272,7 +271,6 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 		table.Rules[ruleIdx] = rule
 	}
 
-	// TODO(gvisor.dev/issue/170): Support other chains.
 	// Since we don't support FORWARD, yet, make sure all other chains point to
 	// ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
@@ -287,7 +285,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 		}
 	}
 
-	// TODO(gvisor.dev/issue/170): Check the following conditions:
+	// TODO(gvisor.dev/issue/6167): Check the following conditions:
 	// - There are no loops.
 	// - There are no chains without an unconditional final rule.
 	// - There are no chains without an unconditional underflow rule.
@@ -297,7 +295,7 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
-func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
 	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []stack.Matcher
 	for len(optVal) > 0 {
@@ -321,13 +319,13 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 		}
 
 		// Parse the specific matcher.
-		matcher, err := unmarshalMatcher(match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
+		matcher, err := unmarshalMatcher(task, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
 		if err != nil {
 			return nil, fmt.Errorf("failed to create matcher: %v", err)
 		}
 		matchers = append(matchers, matcher)
 
-		// TODO(gvisor.dev/issue/170): Check the revision field.
+		// TODO(gvisor.dev/issue/6167): Check the revision field.
 		optVal = optVal[match.MatchSize:]
 	}
 

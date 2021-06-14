@@ -242,7 +242,6 @@ type IPHeaderFilter struct {
 func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicName string) bool {
 	// Extract header fields.
 	var (
-		// TODO(gvisor.dev/issue/170): Support other filter fields.
 		transProto tcpip.TransportProtocolNumber
 		dstAddr    tcpip.Address
 		srcAddr    tcpip.Address
@@ -291,7 +290,6 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 
 		return true
 	case Postrouting:
-		// TODO(gvisor.dev/issue/170): Add the check for POSTROUTING.
 		return true
 	default:
 		panic(fmt.Sprintf("unknown hook: %d", hook))

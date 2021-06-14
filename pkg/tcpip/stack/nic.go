@@ -787,9 +787,8 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 	// TransportHeader is empty only when pkt is an ICMP packet or was reassembled
 	// from fragments.
 	if pkt.TransportHeader().View().IsEmpty() {
-		// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
-		// fields set yet, parse it here. See icmp/protocol.go:protocol.Parse for a
-		// full explanation.
+		// ICMP packets don't have their TransportHeader fields set yet, parse it
+		// here. See icmp/protocol.go:protocol.Parse for a full explanation.
 		if protocol == header.ICMPv4ProtocolNumber || protocol == header.ICMPv6ProtocolNumber {
 			// ICMP packets may be longer, but until icmp.Parse is implemented, here
 			// we parse it using the minimum size.
