@@ -331,7 +331,6 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/170): Check if the flags are valid.
 	// Also check if we need to map ports or IP.
 	// For now, redirect target only supports destination port change.
 	// Port range and IP range are not supported yet.
@@ -340,7 +339,6 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/170): Port range is not supported yet.
 	if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
 		nflog("redirectTargetMaker: MinPort != MaxPort (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		return nil, syserr.ErrInvalidArgument
@@ -502,7 +500,6 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/170): Port range is not supported yet.
 	if nfRange.RangeIPV4.MinPort != nfRange.RangeIPV4.MaxPort {
 		nflog("snatTargetMakerV4: MinPort != MaxPort (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		return nil, syserr.ErrInvalidArgument
@@ -594,7 +591,6 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 // translateToStandardTarget translates from the value in a
 // linux.XTStandardTarget to an stack.Verdict.
 func translateToStandardTarget(val int32, netProto tcpip.NetworkProtocolNumber) (target, *syserr.Error) {
-	// TODO(gvisor.dev/issue/170): Support other verdicts.
 	switch val {
 	case -linux.NF_ACCEPT - 1:
 		return &acceptTarget{stack.AcceptTarget{

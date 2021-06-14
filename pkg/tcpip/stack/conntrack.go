@@ -35,7 +35,6 @@ import (
 // Currently, only TCP tracking is supported.
 
 // Our hash table has 16K buckets.
-// TODO(gvisor.dev/issue/170): These should be tunable.
 const numBuckets = 1 << 14
 
 // Direction of the tuple.
@@ -165,8 +164,6 @@ func (cn *conn) updateLocked(tcpHeader header.TCP, hook Hook) {
 	// Update the state of tcb. tcb assumes it's always initialized on the
 	// client. However, we only need to know whether the connection is
 	// established or not, so the client/server distinction isn't important.
-	// TODO(gvisor.dev/issue/170): Add support in tcpconntrack to handle
-	// other tcp states.
 	if cn.tcb.IsEmpty() {
 		cn.tcb.Init(tcpHeader)
 	} else if hook == cn.tcbHook {
@@ -246,8 +243,7 @@ func (ct *ConnTrack) init() {
 // connFor gets the conn for pkt if it exists, or returns nil
 // if it does not. It returns an error when pkt does not contain a valid TCP
 // header.
-// TODO(gvisor.dev/issue/170): Only TCP packets are supported. Need to support
-// other transport protocols.
+// TODO(gvisor.dev/issue/6168): Support UDP.
 func (ct *ConnTrack) connFor(pkt *PacketBuffer) (*conn, direction) {
 	tid, err := packetToTupleID(pkt)
 	if err != nil {
@@ -385,7 +381,7 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		return false
 	}
 
-	// TODO(gvisor.dev/issue/170): Support other transport protocols.
+	// TODO(gvisor.dev/issue/6168): Support UDP.
 	if pkt.Network().TransportProtocol() != header.TCPProtocolNumber {
 		return false
 	}
@@ -466,8 +462,6 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	}
 
 	// Update the state of tcb.
-	// TODO(gvisor.dev/issue/170): Add support in tcpcontrack to handle
-	// other tcp states.
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
@@ -544,8 +538,6 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 // reapUnused returns the next bucket that should be checked and the time after
 // which it should be called again.
 func (ct *ConnTrack) reapUnused(start int, prevInterval time.Duration) (int, time.Duration) {
-	// TODO(gvisor.dev/issue/170): This can be more finely controlled, as
-	// it is in Linux via sysctl.
 	const fractionPerReaping = 128
 	const maxExpiredPct = 50
 	const maxFullTraversal = 60 * time.Second

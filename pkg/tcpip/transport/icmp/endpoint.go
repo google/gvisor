@@ -758,8 +758,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		h := header.ICMPv4(pkt.TransportHeader().View())
-		// TODO(gvisor.dev/issue/170): Determine if len(h) check is still needed
-		// after early parsing.
 		if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
@@ -767,8 +765,6 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		}
 	case header.IPv6ProtocolNumber:
 		h := header.ICMPv6(pkt.TransportHeader().View())
-		// TODO(gvisor.dev/issue/170): Determine if len(h) check is still needed
-		// after early parsing.
 		if len(h) < header.ICMPv6MinimumSize || h.Type() != header.ICMPv6EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
 			e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()

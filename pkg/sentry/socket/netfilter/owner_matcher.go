@@ -19,6 +19,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -40,8 +42,8 @@ func (ownerMarshaler) name() string {
 func (ownerMarshaler) marshal(mr matcher) []byte {
 	matcher := mr.(*OwnerMatcher)
 	iptOwnerInfo := linux.IPTOwnerInfo{
-		UID: matcher.uid,
-		GID: matcher.gid,
+		UID: uint32(matcher.uid),
+		GID: uint32(matcher.gid),
 	}
 
 	// Support for UID and GID match.
@@ -63,7 +65,7 @@ func (ownerMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (ownerMarshaler) unmarshal(task *kernel.Task, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfIPTOwnerInfo {
 		return nil, fmt.Errorf("buf has insufficient size for owner match: %d", len(buf))
 	}
@@ -72,11 +74,12 @@ func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.
 	// exceed what's strictly necessary to hold matchData.
 	var matchData linux.IPTOwnerInfo
 	matchData.UnmarshalUnsafe(buf[:linux.SizeOfIPTOwnerInfo])
-	nflog("parseMatchers: parsed IPTOwnerInfo: %+v", matchData)
+	nflog("parsed IPTOwnerInfo: %+v", matchData)
 
 	var owner OwnerMatcher
-	owner.uid = matchData.UID
-	owner.gid = matchData.GID
+	creds := task.Credentials()
+	owner.uid = creds.UserNamespace.MapToKUID(auth.UID(matchData.UID))
+	owner.gid = creds.UserNamespace.MapToKGID(auth.GID(matchData.GID))
 
 	// Check flags.
 	if matchData.Match&linux.XT_OWNER_UID != 0 {
@@ -97,8 +100,8 @@ func (ownerMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.
 
 // OwnerMatcher matches against a UID and/or GID.
 type OwnerMatcher struct {
-	uid       uint32
-	gid       uint32
+	uid       auth.KUID
+	gid       auth.KGID
 	matchUID  bool
 	matchGID  bool
 	invertUID bool
@@ -113,7 +116,6 @@ func (*OwnerMatcher) name() string {
 // Match implements Matcher.Match.
 func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	// Support only for OUTPUT chain.
-	// TODO(gvisor.dev/issue/170): Need to support for POSTROUTING chain also.
 	if hook != stack.Output {
 		return false, true
 	}
@@ -126,7 +128,7 @@ func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ str
 	var matches bool
 	// Check for UID match.
 	if om.matchUID {
-		if pkt.Owner.UID() == om.uid {
+		if auth.KUID(pkt.Owner.KUID()) == om.uid {
 			matches = true
 		}
 		if matches == om.invertUID {
@@ -137,7 +139,7 @@ func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ str
 	// Check for GID match.
 	if om.matchGID {
 		matches = false
-		if pkt.Owner.GID() == om.gid {
+		if auth.KGID(pkt.Owner.KGID()) == om.gid {
 			matches = true
 		}
 		if matches == om.invertGID {

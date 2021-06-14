@@ -25,6 +25,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
