@@ -170,7 +170,9 @@ TEST(UidGidRootTest, SetgidNotFromThreadGroupLeader) {
   const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
   // NOTE(b/64676707): Do setgid in a separate thread so that we can test if
   // info.si_pid is set correctly.
-  ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
+  ScopedThread thread =
+      ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
+  thread.Join();
   EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
 
 #pragma pop_macro("allow_setgid")

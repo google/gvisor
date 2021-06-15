@@ -88,7 +88,7 @@ TEST(UnameTest, UnshareUTS) {
   struct utsname init;
   ASSERT_THAT(uname(&init), SyscallSucceeds());
 
-  ScopedThread([&]() {
+  ScopedThread thread = ScopedThread([&]() {
     EXPECT_THAT(unshare(CLONE_NEWUTS), SyscallSucceeds());
 
     constexpr char kHostname[] = "wubbalubba";
@@ -97,6 +97,7 @@ TEST(UnameTest, UnshareUTS) {
     char hostname[65];
     EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
   });
+  thread.Join();
 
   struct utsname after;
   EXPECT_THAT(uname(&after), SyscallSucceeds());

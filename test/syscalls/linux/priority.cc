@@ -72,7 +72,8 @@ TEST(SetpriorityTest, Implemented) {
 
   // No need to clear errno for setpriority():
   // "The setpriority() call returns 0 if there is no error, or -1 if there is"
-  EXPECT_THAT(setpriority(PRIO_PROCESS, /*who=*/0, /*nice=*/16),
+  EXPECT_THAT(setpriority(PRIO_PROCESS, /*who=*/0,
+                          /*nice=*/16),  // NOLINT(bugprone-argument-comment)
               SyscallSucceeds());
 }
 
@@ -80,7 +81,8 @@ TEST(SetpriorityTest, Implemented) {
 TEST(Setpriority, InvalidWhich) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
 
-  EXPECT_THAT(setpriority(/*which=*/3, /*who=*/0, /*nice=*/16),
+  EXPECT_THAT(setpriority(/*which=*/3, /*who=*/0,
+                          /*nice=*/16),  // NOLINT(bugprone-argument-comment)
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -88,7 +90,8 @@ TEST(Setpriority, InvalidWhich) {
 TEST(SetpriorityTest, ValidWho) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
 
-  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(), /*nice=*/16),
+  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(),
+                          /*nice=*/16),  // NOLINT(bugprone-argument-comment)
               SyscallSucceeds());
 }
 
@@ -142,22 +145,26 @@ TEST(SetpriorityTest, OutsideRange) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_NICE)));
 
   // Set niceval > 19
-  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(), /*nice=*/100),
+  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(),
+                          /*nice=*/100),  // NOLINT(bugprone-argument-comment)
               SyscallSucceeds());
 
   errno = 0;
   // Test niceval truncated to 19
   EXPECT_THAT(getpriority(PRIO_PROCESS, getpid()),
-              SyscallSucceedsWithValue(/*maxnice=*/19));
+              SyscallSucceedsWithValue(
+                  /*maxnice=*/19));  // NOLINT(bugprone-argument-comment)
 
   // Set niceval < -20
-  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(), /*nice=*/-100),
+  EXPECT_THAT(setpriority(PRIO_PROCESS, getpid(),
+                          /*nice=*/-100),  // NOLINT(bugprone-argument-comment)
               SyscallSucceeds());
 
   errno = 0;
   // Test niceval truncated to -20
   EXPECT_THAT(getpriority(PRIO_PROCESS, getpid()),
-              SyscallSucceedsWithValue(/*minnice=*/-20));
+              SyscallSucceedsWithValue(
+                  /*minnice=*/-20));  // NOLINT(bugprone-argument-comment)
 }
 
 // Process is not found when which=PRIO_PROCESS
@@ -167,7 +174,7 @@ TEST(SetpriorityTest, InvalidWho) {
   // Flaky, but it's tough to avoid a race condition when finding an unused pid
   EXPECT_THAT(setpriority(PRIO_PROCESS,
                           /*who=*/INT_MAX - 1,
-                          /*nice=*/16),
+                          /*nice=*/16),  // NOLINT(bugprone-argument-comment)
               SyscallFailsWithErrno(ESRCH));
 }
 
