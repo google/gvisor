@@ -143,12 +143,6 @@ type Kernel struct {
 	// to CreateProcess, and is protected by extMu.
 	globalInit *ThreadGroup
 
-	// realtimeClock is a ktime.Clock based on timekeeper's Realtime.
-	realtimeClock *timekeeperClock
-
-	// monotonicClock is a ktime.Clock based on timekeeper's Monotonic.
-	monotonicClock *timekeeperClock
-
 	// syslog is the kernel log.
 	syslog syslog
 
@@ -306,6 +300,9 @@ type InitKernelArgs struct {
 	// FeatureSet is the emulated CPU feature set.
 	FeatureSet *cpuid.FeatureSet
 
+	// Timekeeper manages time for all tasks in the system.
+	Timekeeper *Timekeeper
+
 	// RootUserNamespace is the root user namespace.
 	RootUserNamespace *auth.UserNamespace
 
@@ -345,24 +342,18 @@ type InitKernelArgs struct {
 	PIDNamespace *PIDNamespace
 }
 
-// SetTimekeeper sets Kernel.timekeeper. SetTimekeeper must be called before
-// Init.
-func (k *Kernel) SetTimekeeper(tk *Timekeeper) {
-	k.timekeeper = tk
-}
-
 // Init initialize the Kernel with no tasks.
 //
 // Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
-// and Kernel.SetTimekeeper before calling Init.
+// before calling Init.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.FeatureSet == nil {
 		return fmt.Errorf("args.FeatureSet is nil")
 	}
-	if k.timekeeper == nil {
-		return fmt.Errorf("timekeeper is nil")
+	if args.Timekeeper == nil {
+		return fmt.Errorf("args.Timekeeper is nil")
 	}
-	if k.timekeeper.clocks == nil {
+	if args.Timekeeper.clocks == nil {
 		return fmt.Errorf("must call Timekeeper.SetClocks() before Kernel.Init()")
 	}
 	if args.RootUserNamespace == nil {
@@ -373,6 +364,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 
 	k.featureSet = args.FeatureSet
+	k.timekeeper = args.Timekeeper
 	k.tasks = newTaskSet(args.PIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace
 	k.rootUTSNamespace = args.RootUTSNamespace
@@ -397,8 +389,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	k.extraAuxv = args.ExtraAuxv
 	k.vdso = args.Vdso
-	k.realtimeClock = &timekeeperClock{tk: k.timekeeper, c: sentrytime.Realtime}
-	k.monotonicClock = &timekeeperClock{tk: k.timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
@@ -1103,7 +1093,7 @@ func (k *Kernel) Start() error {
 	}
 
 	k.started = true
-	k.cpuClockTicker = ktime.NewTimer(k.monotonicClock, newKernelCPUClockTicker(k))
+	k.cpuClockTicker = ktime.NewTimer(k.timekeeper.monotonicClock, newKernelCPUClockTicker(k))
 	k.cpuClockTicker.Swap(ktime.Setting{
 		Enabled: true,
 		Period:  linux.ClockTick,
@@ -1258,7 +1248,7 @@ func (k *Kernel) incRunningTasks() {
 		// These cause very different value of cpuClock. But again, since
 		// nothing was running while the ticker was disabled, those differences
 		// don't matter.
-		setting, exp := k.cpuClockTickerSetting.At(k.monotonicClock.Now())
+		setting, exp := k.cpuClockTickerSetting.At(k.timekeeper.monotonicClock.Now())
 		if exp > 0 {
 			atomic.AddUint64(&k.cpuClock, exp)
 		}
@@ -1468,12 +1458,12 @@ func (k *Kernel) ApplicationCores() uint {
 
 // RealtimeClock returns the application CLOCK_REALTIME clock.
 func (k *Kernel) RealtimeClock() ktime.Clock {
-	return k.realtimeClock
+	return k.timekeeper.realtimeClock
 }
 
 // MonotonicClock returns the application CLOCK_MONOTONIC clock.
 func (k *Kernel) MonotonicClock() ktime.Clock {
-	return k.monotonicClock
+	return k.timekeeper.monotonicClock
 }
 
 // CPUClockNow returns the current value of k.cpuClock.
@@ -1551,32 +1541,6 @@ func (k *Kernel) SetSaveError(err error) {
 	if k.saveStatus == nil {
 		k.saveStatus = err
 	}
-}
-
-var _ tcpip.Clock = (*Kernel)(nil)
-
-// Now implements tcpip.Clock.NowNanoseconds.
-func (k *Kernel) Now() time.Time {
-	nsec, err := k.timekeeper.GetTime(sentrytime.Realtime)
-	if err != nil {
-		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
-	}
-	return time.Unix(0, nsec)
-}
-
-// NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (k *Kernel) NowMonotonic() tcpip.MonotonicTime {
-	nsec, err := k.timekeeper.GetTime(sentrytime.Monotonic)
-	if err != nil {
-		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
-	}
-	var mt tcpip.MonotonicTime
-	return mt.Add(time.Duration(nsec) * time.Nanosecond)
-}
-
-// AfterFunc implements tcpip.Clock.AfterFunc.
-func (k *Kernel) AfterFunc(d time.Duration, f func()) tcpip.Timer {
-	return ktime.TcpipAfterFunc(k.realtimeClock, d, f)
 }
 
 // SetMemoryFile sets Kernel.mf. SetMemoryFile must be called before Init or

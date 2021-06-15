@@ -278,19 +278,15 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create timekeeper.
-	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
-	if err != nil {
-		return nil, fmt.Errorf("creating timekeeper: %w", err)
-	}
+	tk := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
-	k.SetTimekeeper(tk)
 
 	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("enabling strace: %w", err)
 	}
 
 	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, k, k)
+	netns, err := newRootNetworkNamespace(args.Conf, tk, k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
@@ -332,6 +328,7 @@ func New(args Args) (*Loader, error) {
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
 		FeatureSet:                  cpuid.HostFeatureSet(),
+		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
 		RootNetworkNamespace:        netns,
 		ApplicationCores:            uint(args.NumCPU),
