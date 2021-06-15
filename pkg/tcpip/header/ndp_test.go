@@ -126,36 +126,83 @@ func TestNDPNeighborAdvert(t *testing.T) {
 }
 
 func TestNDPRouterAdvert(t *testing.T) {
-	b := []byte{
-		64, 128, 1, 2,
-		3, 4, 5, 6,
-		7, 8, 9, 10,
+	tests := []struct {
+		hopLimit                        uint8
+		managedFlag, otherConfFlag      bool
+		prf                             NDPRoutePreference
+		routerLifetimeS                 uint16
+		reachableTimeMS, retransTimerMS uint32
+	}{
+		{
+			hopLimit:        1,
+			managedFlag:     false,
+			otherConfFlag:   true,
+			prf:             HighRoutePreference,
+			routerLifetimeS: 2,
+			reachableTimeMS: 3,
+			retransTimerMS:  4,
+		},
+		{
+			hopLimit:        64,
+			managedFlag:     true,
+			otherConfFlag:   false,
+			prf:             LowRoutePreference,
+			routerLifetimeS: 258,
+			reachableTimeMS: 78492,
+			retransTimerMS:  13213,
+		},
 	}
 
-	ra := NDPRouterAdvert(b)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			flags := uint8(0)
+			if test.managedFlag {
+				flags |= 1 << 7
+			}
+			if test.otherConfFlag {
+				flags |= 1 << 6
+			}
+			flags |= uint8(test.prf) << 3
 
-	if got := ra.CurrHopLimit(); got != 64 {
-		t.Errorf("got ra.CurrHopLimit = %d, want = 64", got)
-	}
+			b := []byte{
+				test.hopLimit, flags, 1, 2,
+				3, 4, 5, 6,
+				7, 8, 9, 10,
+			}
+			binary.BigEndian.PutUint16(b[2:], test.routerLifetimeS)
+			binary.BigEndian.PutUint32(b[4:], test.reachableTimeMS)
+			binary.BigEndian.PutUint32(b[8:], test.retransTimerMS)
 
-	if got := ra.ManagedAddrConfFlag(); !got {
-		t.Errorf("got ManagedAddrConfFlag = false, want = true")
-	}
+			ra := NDPRouterAdvert(b)
 
-	if got := ra.OtherConfFlag(); got {
-		t.Errorf("got OtherConfFlag = true, want = false")
-	}
+			if got := ra.CurrHopLimit(); got != test.hopLimit {
+				t.Errorf("got ra.CurrHopLimit() = %d, want = %d", got, test.hopLimit)
+			}
 
-	if got, want := ra.RouterLifetime(), time.Second*258; got != want {
-		t.Errorf("got ra.RouterLifetime = %d, want = %d", got, want)
-	}
+			if got := ra.ManagedAddrConfFlag(); got != test.managedFlag {
+				t.Errorf("got ManagedAddrConfFlag() = %t, want = %t", got, test.managedFlag)
+			}
 
-	if got, want := ra.ReachableTime(), time.Millisecond*50595078; got != want {
-		t.Errorf("got ra.ReachableTime = %d, want = %d", got, want)
-	}
+			if got := ra.OtherConfFlag(); got != test.otherConfFlag {
+				t.Errorf("got OtherConfFlag() = %t, want = %t", got, test.otherConfFlag)
+			}
 
-	if got, want := ra.RetransTimer(), time.Millisecond*117967114; got != want {
-		t.Errorf("got ra.RetransTimer = %d, want = %d", got, want)
+			if got := ra.DefaultRouterPreference(); got != test.prf {
+				t.Errorf("got DefaultRouterPreference() = %d, want = %d", got, test.prf)
+			}
+
+			if got, want := ra.RouterLifetime(), time.Second*time.Duration(test.routerLifetimeS); got != want {
+				t.Errorf("got ra.RouterLifetime() = %d, want = %d", got, want)
+			}
+
+			if got, want := ra.ReachableTime(), time.Millisecond*time.Duration(test.reachableTimeMS); got != want {
+				t.Errorf("got ra.ReachableTime() = %d, want = %d", got, want)
+			}
+
+			if got, want := ra.RetransTimer(), time.Millisecond*time.Duration(test.retransTimerMS); got != want {
+				t.Errorf("got ra.RetransTimer() = %d, want = %d", got, want)
+			}
+		})
 	}
 }
 
