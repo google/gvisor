@@ -116,7 +116,7 @@ void BlockingReadableTest(int16_t mask) {
   });
 
   notify.WaitForNotification();
-  absl::SleepFor(absl::Seconds(1.0));
+  absl::SleepFor(absl::Seconds(1));
 
   // Write some data to the pipe.
   char s[] = "foo\n";
@@ -221,7 +221,7 @@ TEST_F(PollTest, BlockingEventPOLLHUP) {
   });
 
   notify.WaitForNotification();
-  absl::SleepFor(absl::Seconds(1.0));
+  absl::SleepFor(absl::Seconds(1));
 
   // Write some data and close the writer fd.
   fd1.reset();

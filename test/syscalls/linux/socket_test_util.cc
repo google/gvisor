@@ -85,7 +85,8 @@ Creator<SocketPair> AcceptBindSocketPairCreator(bool abstract, int domain,
     RETURN_ERROR_IF_SYSCALL_FAIL(
         bind(bound, AsSockAddr(&bind_addr), sizeof(bind_addr)));
     MaybeSave();  // Successful bind.
-    RETURN_ERROR_IF_SYSCALL_FAIL(listen(bound, /* backlog = */ 5));
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        listen(bound, /* backlog = */ 5));  // NOLINT(bugprone-argument-comment)
     MaybeSave();  // Successful listen.
 
     int connected;
@@ -316,7 +317,8 @@ PosixErrorOr<T> BindIP(int fd, bool dual_stack) {
 template <typename T>
 PosixErrorOr<T> TCPBindAndListen(int fd, bool dual_stack) {
   ASSIGN_OR_RETURN_ERRNO(T addr, BindIP<T>(fd, dual_stack));
-  RETURN_ERROR_IF_SYSCALL_FAIL(listen(fd, /* backlog = */ 5));
+  RETURN_ERROR_IF_SYSCALL_FAIL(
+      listen(fd, /* backlog = */ 5));  // NOLINT(bugprone-argument-comment)
   return addr;
 }
 

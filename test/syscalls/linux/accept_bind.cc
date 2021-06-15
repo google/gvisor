@@ -37,7 +37,8 @@ TEST_P(AllSocketPairTest, Listen) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
+  ASSERT_THAT(listen(sockets->first_fd(),
+                     /* backlog = */ 5),  // NOLINT(bugprone-argument-comment)
               SyscallSucceeds());
 }
 
