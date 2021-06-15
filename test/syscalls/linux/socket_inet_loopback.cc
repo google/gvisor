@@ -368,7 +368,8 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdown) {
   TestAddress const& connector = param.connector;
 
   constexpr int kBacklog = 2;
-  constexpr int kFDs = kBacklog + 1;
+  // See the comment in TCPBacklog for why this isn't kBacklog + 1.
+  constexpr int kFDs = kBacklog;
 
   // Create the listening socket.
   FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -454,6 +455,8 @@ TEST_P(SocketInetLoopbackTest, TCPListenClose) {
   uint16_t const port =
       ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
 
+  // Connect repeatedly, keeping each connection open. After kBacklog
+  // connections, we'll start getting EINPROGRESS.
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
   std::vector<FileDescriptor> clients;
@@ -608,6 +611,8 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownDuringConnect) {
 
 void TestListenHangupConnectingRead(const TestParam& param,
                                     void (*hangup)(FileDescriptor&)) {
+  constexpr int kTimeout = 10000;
+
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
@@ -637,14 +642,33 @@ void TestListenHangupConnectingRead(const TestParam& param,
   sockaddr_storage conn_addr = connector.addr;
   ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
   FileDescriptor established_client = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-  ASSERT_THAT(connect(established_client.get(), AsSockAddr(&conn_addr),
-                      connector.addr_len),
-              SyscallSucceeds());
+      Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  int ret = connect(established_client.get(), AsSockAddr(&conn_addr),
+                    connector.addr_len);
+  if (ret != 0) {
+    EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+  }
+
+  // On some kernels a backlog of 0 means no backlog, while on others it means a
+  // backlog of 1. See commit c609e6aae4efcf383fe86b195d1b060befcb3666 for more
+  // explanation.
+  //
+  // If we timeout connecting to loopback, we're on a kernel with no backlog.
+  pollfd pfd = {
+      .fd = established_client.get(),
+      .events = POLLIN | POLLOUT,
+  };
+  if (!poll(&pfd, 1, kTimeout)) {
+    // We're on one of those kernels. It should be impossible to establish the
+    // connection, so connect will always return EALREADY.
+    EXPECT_THAT(connect(established_client.get(), AsSockAddr(&conn_addr),
+                        connector.addr_len),
+                SyscallFailsWithErrno(EALREADY));
+    return;
+  }
 
   // Ensure that the accept queue has the completed connection.
-  constexpr int kTimeout = 10000;
-  pollfd pfd = {
+  pfd = {
       .fd = listen_fd.get(),
       .events = POLLIN,
   };
@@ -654,8 +678,8 @@ void TestListenHangupConnectingRead(const TestParam& param,
   FileDescriptor connecting_client = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
   // Keep the last client in connecting state.
-  int ret = connect(connecting_client.get(), AsSockAddr(&conn_addr),
-                    connector.addr_len);
+  ret = connect(connecting_client.get(), AsSockAddr(&conn_addr),
+                connector.addr_len);
   if (ret != 0) {
     EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
   }
@@ -795,7 +819,8 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptBacklogSizes) {
     if (backlog < 0) {
       expected_accepts = 1024;
     } else {
-      expected_accepts = backlog + 1;
+      // See the comment in TCPBacklog for why this isn't backlog + 1.
+      expected_accepts = backlog;
     }
     for (int i = 0; i < expected_accepts; i++) {
       SCOPED_TRACE(absl::StrCat("i=", i));
@@ -896,7 +921,11 @@ TEST_P(SocketInetLoopbackTest, TCPBacklog) {
   // enqueuing established connections to the accept queue, newer SYNs could
   // still be replied to causing those client connections would be accepted as
   // we start dequeuing the queue.
-  ASSERT_GE(accepted_conns, kBacklogSize + 1);
+  //
+  // On some kernels this can value can be off by one, so we don't add 1 to
+  // kBacklogSize. See commit c609e6aae4efcf383fe86b195d1b060befcb3666 for more
+  // explanation.
+  ASSERT_GE(accepted_conns, kBacklogSize);
   ASSERT_GE(client_conns, accepted_conns);
 }
 
@@ -931,7 +960,9 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
 
   // Fill up the accept queue and trigger more client connections which would be
   // waiting to be accepted.
-  std::array<FileDescriptor, kBacklog + 1> established_clients;
+  //
+  // See the comment in TCPBacklog for why this isn't backlog + 1.
+  std::array<FileDescriptor, kBacklog> established_clients;
   for (auto& fd : established_clients) {
     fd = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
