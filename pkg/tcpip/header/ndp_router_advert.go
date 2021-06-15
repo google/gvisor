@@ -19,12 +19,72 @@ import (
 	"time"
 )
 
+// NDPRoutePreference is the preference values for default routers or
+// more-specific routes.
+//
+// As per RFC 4191 section 2.1,
+//
+//   Default router preferences and preferences for more-specific routes
+//   are encoded the same way.
+//
+//   Preference values are encoded as a two-bit signed integer, as
+//   follows:
+//
+//      01      High
+//      00      Medium (default)
+//      11      Low
+//      10      Reserved - MUST NOT be sent
+//
+//   Note that implementations can treat the value as a two-bit signed
+//   integer.
+//
+//   Having just three values reinforces that they are not metrics and
+//   more values do not appear to be necessary for reasonable scenarios.
+type NDPRoutePreference uint8
+
+const (
+	// HighRoutePreference indicates a high preference, as per
+	// RFC 4191 section 2.1.
+	HighRoutePreference NDPRoutePreference = 0b01
+
+	// MediumRoutePreference indicates a medium preference, as per
+	// RFC 4191 section 2.1.
+	//
+	// This is the default preference value.
+	MediumRoutePreference = 0b00
+
+	// LowRoutePreference indicates a low preference, as per
+	// RFC 4191 section 2.1.
+	LowRoutePreference = 0b11
+
+	// ReservedRoutePreference is a reserved preference value, as per
+	// RFC 4191 section 2.1.
+	//
+	// It MUST NOT be sent.
+	ReservedRoutePreference = 0b10
+)
+
 // NDPRouterAdvert is an NDP Router Advertisement message. It will only contain
 // the body of an ICMPv6 packet.
 //
-// See RFC 4861 section 4.2 for more details.
+// See RFC 4861 section 4.2 and RFC 4191 section 2.2 for more details.
 type NDPRouterAdvert []byte
 
+// As per RFC 4191 section 2.2,
+//
+//       0                   1                   2                   3
+//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |     Type      |     Code      |          Checksum             |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      | Cur Hop Limit |M|O|H|Prf|Resvd|       Router Lifetime         |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |                         Reachable Time                        |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |                          Retrans Timer                        |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |   Options ...
+//      +-+-+-+-+-+-+-+-+-+-+-+-
 const (
 	// NDPRAMinimumSize is the minimum size of a valid NDP Router
 	// Advertisement message (body of an ICMPv6 packet).
@@ -46,6 +106,14 @@ const (
 	// ndpRAOtherConfFlagMask is the mask of the Other Configuration flag
 	// within the bit-field/flags byte of an NDPRouterAdvert.
 	ndpRAOtherConfFlagMask = (1 << 6)
+
+	// ndpDefaultRouterPreferenceShift is the shift of the Prf (Default Router
+	// Preference) field within the flags byte of an NDPRouterAdvert.
+	ndpDefaultRouterPreferenceShift = 3
+
+	// ndpDefaultRouterPreferenceMask is the mask of the Prf (Default Router
+	// Preference) field within the flags byte of an NDPRouterAdvert.
+	ndpDefaultRouterPreferenceMask = (0b11 << ndpDefaultRouterPreferenceShift)
 
 	// ndpRARouterLifetimeOffset is the start of the 2-byte Router Lifetime
 	// field within an NDPRouterAdvert.
@@ -78,6 +146,11 @@ func (b NDPRouterAdvert) ManagedAddrConfFlag() bool {
 // OtherConfFlag returns the value of the Other Configuration flag.
 func (b NDPRouterAdvert) OtherConfFlag() bool {
 	return b[ndpRAFlagsOffset]&ndpRAOtherConfFlagMask != 0
+}
+
+// DefaultRouterPreference returns the Default Router Preference field.
+func (b NDPRouterAdvert) DefaultRouterPreference() NDPRoutePreference {
+	return NDPRoutePreference((b[ndpRAFlagsOffset] & ndpDefaultRouterPreferenceMask) >> ndpDefaultRouterPreferenceShift)
 }
 
 // RouterLifetime returns the lifetime associated with the default router. A
