@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package linux
+// Package errno holds errno codes for abi/linux.
+package errno
 
 // Errno represents a Linux errno value.
-type Errno int
+type Errno uint32
 
 // Errno values from include/uapi/asm-generic/errno-base.h.
 const (
@@ -60,8 +61,8 @@ const (
 	ENOLCK
 	ENOSYS
 	ENOTEMPTY
-	ELOOP  //40
-	_      // Skip for EWOULDBLOCK = EAGAIN
+	ELOOP  // 40
+	_      // Skip for EWOULDBLOCK = EAGAIN.
 	ENOMSG //42
 	EIDRM
 	ECHRNG
@@ -78,13 +79,13 @@ const (
 	ENOANO
 	EBADRQC
 	EBADSLT
-	_ // Skip for EDEADLOCK = EDEADLK
+	_ // Skip for EDEADLOCK = EDEADLK.
 	EBFONT
 	ENOSTR // 60
 	ENODATA
 	ETIME
 	ENOSR
-	ENONET
+	_ // Skip for ENOENT = ENONET.
 	ENOPKG
 	EREMOTE
 	ENOLINK
@@ -160,4 +161,5 @@ const (
 const (
 	EWOULDBLOCK = EAGAIN
 	EDEADLOCK   = EDEADLK
+	ENONET      = ENOENT
 )
