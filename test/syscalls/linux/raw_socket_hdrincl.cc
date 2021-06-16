@@ -177,11 +177,10 @@ TEST_F(RawHDRINCL, ConnectToLoopback) {
               SyscallSucceeds());
 }
 
-// FIXME(gvisor.dev/issue/3159): Test currently flaky.
-TEST_F(RawHDRINCL, DISABLED_SendWithoutConnectSucceeds) {
+TEST_F(RawHDRINCL, SendWithoutConnectFails) {
   struct iphdr hdr = LoopbackHeader();
   ASSERT_THAT(send(socket_, &hdr, sizeof(hdr), 0),
-              SyscallSucceedsWithValue(sizeof(hdr)));
+              SyscallFailsWithErrno(EDESTADDRREQ));
 }
 
 // HDRINCL implies write-only. Verify that we can't read a packet sent to

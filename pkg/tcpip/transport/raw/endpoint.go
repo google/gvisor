@@ -286,26 +286,6 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 			return nil, nil, nil, &tcpip.ErrBadBuffer{}
 		}
 
-		// If this is an unassociated socket and callee provided a nonzero
-		// destination address, route using that address.
-		if e.ops.GetHeaderIncluded() {
-			ip := header.IPv4(payloadBytes)
-			if !ip.IsValid(len(payloadBytes)) {
-				return nil, nil, nil, &tcpip.ErrInvalidOptionValue{}
-			}
-			dstAddr := ip.DestinationAddress()
-			// Update dstAddr with the address in the IP header, unless
-			// opts.To is set (e.g. if sendto specifies a specific
-			// address).
-			if dstAddr != tcpip.Address([]byte{0, 0, 0, 0}) && opts.To == nil {
-				opts.To = &tcpip.FullAddress{
-					NIC:  0,       // NIC is unset.
-					Addr: dstAddr, // The address from the payload.
-					Port: 0,       // There are no ports here.
-				}
-			}
-		}
-
 		// Did the user caller provide a destination? If not, use the connected
 		// destination.
 		if opts.To == nil {
