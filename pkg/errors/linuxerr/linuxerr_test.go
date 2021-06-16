@@ -16,34 +16,37 @@ package syserror_test
 
 import (
 	"errors"
+	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/linuxerr"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	gErrors "gvisor.dev/gvisor/pkg/errors"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var globalError error
 
-func BenchmarkAssignErrno(b *testing.B) {
+func BenchmarkAssignUnix(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		globalError = unix.EINVAL
 	}
 }
 
-func BenchmarkLinuxerrAssignError(b *testing.B) {
+func BenchmarkAssignLinuxerr(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		globalError = linuxerr.EINVAL
 	}
 }
 
-func BenchmarkAssignSyserrorError(b *testing.B) {
+func BenchmarkAssignSyserror(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		globalError = syserror.EINVAL
 	}
 }
 
-func BenchmarkCompareErrno(b *testing.B) {
+func BenchmarkCompareUnix(b *testing.B) {
 	globalError = unix.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -53,7 +56,7 @@ func BenchmarkCompareErrno(b *testing.B) {
 	}
 }
 
-func BenchmarkCompareLinuxerrError(b *testing.B) {
+func BenchmarkCompareLinuxerr(b *testing.B) {
 	globalError = linuxerr.E2BIG
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -63,7 +66,7 @@ func BenchmarkCompareLinuxerrError(b *testing.B) {
 	}
 }
 
-func BenchmarkCompareSyserrorError(b *testing.B) {
+func BenchmarkCompareSyserror(b *testing.B) {
 	globalError = syserror.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -73,7 +76,7 @@ func BenchmarkCompareSyserrorError(b *testing.B) {
 	}
 }
 
-func BenchmarkSwitchErrno(b *testing.B) {
+func BenchmarkSwitchUnix(b *testing.B) {
 	globalError = unix.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -88,7 +91,7 @@ func BenchmarkSwitchErrno(b *testing.B) {
 	}
 }
 
-func BenchmarkSwitchLinuxerrError(b *testing.B) {
+func BenchmarkSwitchLinuxerr(b *testing.B) {
 	globalError = linuxerr.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -103,7 +106,7 @@ func BenchmarkSwitchLinuxerrError(b *testing.B) {
 	}
 }
 
-func BenchmarkSwitchSyserrorError(b *testing.B) {
+func BenchmarkSwitchSyserror(b *testing.B) {
 	globalError = syserror.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
@@ -115,6 +118,52 @@ func BenchmarkSwitchSyserrorError(b *testing.B) {
 		case syserror.EAGAIN:
 			j += 3
 		}
+	}
+}
+
+func BenchmarkReturnUnix(b *testing.B) {
+	var localError error
+	f := func() error {
+		return unix.EINVAL
+	}
+	for i := b.N; i > 0; i-- {
+		localError = f()
+	}
+	if localError != nil {
+		return
+	}
+}
+
+func BenchmarkReturnLinuxerr(b *testing.B) {
+	var localError error
+	f := func() error {
+		return linuxerr.EINVAL
+	}
+	for i := b.N; i > 0; i-- {
+		localError = f()
+	}
+	if localError != nil {
+		return
+	}
+}
+
+func BenchmarkConvertUnixLinuxerr(b *testing.B) {
+	var localError error
+	for i := b.N; i > 0; i-- {
+		localError = linuxerr.ErrorFromErrno(errno.Errno(unix.EINVAL))
+	}
+	if localError != nil {
+		return
+	}
+}
+
+func BenchmarkConvertUnixLinuxerrZero(b *testing.B) {
+	var localError error
+	for i := b.N; i > 0; i-- {
+		localError = linuxerr.ErrorFromErrno(errno.Errno(0))
+	}
+	if localError != nil {
+		return
 	}
 }
 
@@ -160,5 +209,37 @@ func TestErrorTranslation(t *testing.T) {
 		default:
 			t.Fatalf("Unknown function %v", tt.fn)
 		}
+	}
+}
+
+func TestSyscallErrnoToErrors(t *testing.T) {
+	for _, tc := range []struct {
+		errno syscall.Errno
+		err   *gErrors.Error
+	}{
+		{errno: syscall.EACCES, err: linuxerr.EACCES},
+		{errno: syscall.EAGAIN, err: linuxerr.EAGAIN},
+		{errno: syscall.EBADF, err: linuxerr.EBADF},
+		{errno: syscall.EBUSY, err: linuxerr.EBUSY},
+		{errno: syscall.EDOM, err: linuxerr.EDOM},
+		{errno: syscall.EEXIST, err: linuxerr.EEXIST},
+		{errno: syscall.EFAULT, err: linuxerr.EFAULT},
+		{errno: syscall.EFBIG, err: linuxerr.EFBIG},
+		{errno: syscall.EINTR, err: linuxerr.EINTR},
+		{errno: syscall.EINVAL, err: linuxerr.EINVAL},
+		{errno: syscall.EIO, err: linuxerr.EIO},
+		{errno: syscall.ENOTDIR, err: linuxerr.ENOTDIR},
+		{errno: syscall.ENOTTY, err: linuxerr.ENOTTY},
+		{errno: syscall.EPERM, err: linuxerr.EPERM},
+		{errno: syscall.EPIPE, err: linuxerr.EPIPE},
+		{errno: syscall.ESPIPE, err: linuxerr.ESPIPE},
+		{errno: syscall.EWOULDBLOCK, err: linuxerr.EAGAIN},
+	} {
+		t.Run(tc.errno.Error(), func(t *testing.T) {
+			e := linuxerr.ErrorFromErrno(errno.Errno(tc.errno))
+			if e != tc.err {
+				t.Fatalf("Mismatch errors: want: %+v (%d) got: %+v %d", tc.err, tc.err.Errno(), e, e.Errno())
+			}
+		})
 	}
 }
