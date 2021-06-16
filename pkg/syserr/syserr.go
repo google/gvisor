@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -31,26 +31,25 @@ type Error struct {
 	message string
 
 	// noTranslation indicates that this Error cannot be translated to a
-	// linux.Errno.
+	// errno.Errno.
 	noTranslation bool
 
-	// errno is the linux.Errno this Error should be translated to.
-	errno linux.Errno
+	// errno is the errno.Errno this Error should be translated to.
+	errno errno.Errno
 }
 
 // New creates a new Error and adds a translation for it.
 //
 // New must only be called at init.
-func New(message string, linuxTranslation linux.Errno) *Error {
+func New(message string, linuxTranslation errno.Errno) *Error {
 	err := &Error{message: message, errno: linuxTranslation}
 
 	// TODO(b/34162363): Remove this.
-	errno := linuxTranslation
-	if errno < 0 || int(errno) >= len(linuxBackwardsTranslations) {
-		panic(fmt.Sprint("invalid errno: ", errno))
+	if int(err.errno) >= len(linuxBackwardsTranslations) {
+		panic(fmt.Sprint("invalid errno: ", err.errno))
 	}
 
-	e := error(unix.Errno(errno))
+	e := error(unix.Errno(err.errno))
 	// syserror.ErrWouldBlock gets translated to syserror.EWOULDBLOCK and
 	// enables proper blocking semantics. This should temporary address the
 	// class of blocking bugs that keep popping up with the current state of
@@ -58,7 +57,7 @@ func New(message string, linuxTranslation linux.Errno) *Error {
 	if e == syserror.EWOULDBLOCK {
 		e = syserror.ErrWouldBlock
 	}
-	linuxBackwardsTranslations[errno] = linuxBackwardsTranslation{err: e, ok: true}
+	linuxBackwardsTranslations[err.errno] = linuxBackwardsTranslation{err: e, ok: true}
 
 	return err
 }
@@ -69,7 +68,7 @@ func New(message string, linuxTranslation linux.Errno) *Error {
 // NewDynamic should only be used sparingly and not be used for static error
 // messages. Errors with static error messages should be declared with New as
 // global variables.
-func NewDynamic(message string, linuxTranslation linux.Errno) *Error {
+func NewDynamic(message string, linuxTranslation errno.Errno) *Error {
 	return &Error{message: message, errno: linuxTranslation}
 }
 
@@ -82,7 +81,7 @@ func NewWithoutTranslation(message string) *Error {
 	return &Error{message: message, noTranslation: true}
 }
 
-func newWithHost(message string, linuxTranslation linux.Errno, hostErrno unix.Errno) *Error {
+func newWithHost(message string, linuxTranslation errno.Errno, hostErrno unix.Errno) *Error {
 	e := New(message, linuxTranslation)
 	addLinuxHostTranslation(hostErrno, e)
 	return e
@@ -114,19 +113,19 @@ func (e *Error) ToError() error {
 	if e.noTranslation {
 		panic(fmt.Sprintf("error %q does not support translation", e.message))
 	}
-	errno := int(e.errno)
-	if errno == linux.NOERRNO {
+	err := int(e.errno)
+	if err == errno.NOERRNO {
 		return nil
 	}
-	if errno <= 0 || errno >= len(linuxBackwardsTranslations) || !linuxBackwardsTranslations[errno].ok {
-		panic(fmt.Sprintf("unknown error %q (%d)", e.message, errno))
+	if err >= len(linuxBackwardsTranslations) || !linuxBackwardsTranslations[err].ok {
+		panic(fmt.Sprintf("unknown error %q (%d)", e.message, err))
 	}
-	return linuxBackwardsTranslations[errno].err
+	return linuxBackwardsTranslations[err].err
 }
 
 // ToLinux converts the Error to a Linux ABI error that can be returned to the
 // application.
-func (e *Error) ToLinux() linux.Errno {
+func (e *Error) ToLinux() errno.Errno {
 	if e.noTranslation {
 		panic(fmt.Sprintf("No Linux ABI translation available for %q", e.message))
 	}
@@ -138,137 +137,137 @@ func (e *Error) ToLinux() linux.Errno {
 // Some of the errors should be replaced with package specific errors and
 // others should be removed entirely.
 var (
-	ErrNotPermitted               = newWithHost("operation not permitted", linux.EPERM, unix.EPERM)
-	ErrNoFileOrDir                = newWithHost("no such file or directory", linux.ENOENT, unix.ENOENT)
-	ErrNoProcess                  = newWithHost("no such process", linux.ESRCH, unix.ESRCH)
-	ErrInterrupted                = newWithHost("interrupted system call", linux.EINTR, unix.EINTR)
-	ErrIO                         = newWithHost("I/O error", linux.EIO, unix.EIO)
-	ErrDeviceOrAddress            = newWithHost("no such device or address", linux.ENXIO, unix.ENXIO)
-	ErrTooManyArgs                = newWithHost("argument list too long", linux.E2BIG, unix.E2BIG)
-	ErrEcec                       = newWithHost("exec format error", linux.ENOEXEC, unix.ENOEXEC)
-	ErrBadFD                      = newWithHost("bad file number", linux.EBADF, unix.EBADF)
-	ErrNoChild                    = newWithHost("no child processes", linux.ECHILD, unix.ECHILD)
-	ErrTryAgain                   = newWithHost("try again", linux.EAGAIN, unix.EAGAIN)
-	ErrNoMemory                   = newWithHost("out of memory", linux.ENOMEM, unix.ENOMEM)
-	ErrPermissionDenied           = newWithHost("permission denied", linux.EACCES, unix.EACCES)
-	ErrBadAddress                 = newWithHost("bad address", linux.EFAULT, unix.EFAULT)
-	ErrNotBlockDevice             = newWithHost("block device required", linux.ENOTBLK, unix.ENOTBLK)
-	ErrBusy                       = newWithHost("device or resource busy", linux.EBUSY, unix.EBUSY)
-	ErrExists                     = newWithHost("file exists", linux.EEXIST, unix.EEXIST)
-	ErrCrossDeviceLink            = newWithHost("cross-device link", linux.EXDEV, unix.EXDEV)
-	ErrNoDevice                   = newWithHost("no such device", linux.ENODEV, unix.ENODEV)
-	ErrNotDir                     = newWithHost("not a directory", linux.ENOTDIR, unix.ENOTDIR)
-	ErrIsDir                      = newWithHost("is a directory", linux.EISDIR, unix.EISDIR)
-	ErrInvalidArgument            = newWithHost("invalid argument", linux.EINVAL, unix.EINVAL)
-	ErrFileTableOverflow          = newWithHost("file table overflow", linux.ENFILE, unix.ENFILE)
-	ErrTooManyOpenFiles           = newWithHost("too many open files", linux.EMFILE, unix.EMFILE)
-	ErrNotTTY                     = newWithHost("not a typewriter", linux.ENOTTY, unix.ENOTTY)
-	ErrTestFileBusy               = newWithHost("text file busy", linux.ETXTBSY, unix.ETXTBSY)
-	ErrFileTooBig                 = newWithHost("file too large", linux.EFBIG, unix.EFBIG)
-	ErrNoSpace                    = newWithHost("no space left on device", linux.ENOSPC, unix.ENOSPC)
-	ErrIllegalSeek                = newWithHost("illegal seek", linux.ESPIPE, unix.ESPIPE)
-	ErrReadOnlyFS                 = newWithHost("read-only file system", linux.EROFS, unix.EROFS)
-	ErrTooManyLinks               = newWithHost("too many links", linux.EMLINK, unix.EMLINK)
-	ErrBrokenPipe                 = newWithHost("broken pipe", linux.EPIPE, unix.EPIPE)
-	ErrDomain                     = newWithHost("math argument out of domain of func", linux.EDOM, unix.EDOM)
-	ErrRange                      = newWithHost("math result not representable", linux.ERANGE, unix.ERANGE)
-	ErrDeadlock                   = newWithHost("resource deadlock would occur", linux.EDEADLOCK, unix.EDEADLOCK)
-	ErrNameTooLong                = newWithHost("file name too long", linux.ENAMETOOLONG, unix.ENAMETOOLONG)
-	ErrNoLocksAvailable           = newWithHost("no record locks available", linux.ENOLCK, unix.ENOLCK)
-	ErrInvalidSyscall             = newWithHost("invalid system call number", linux.ENOSYS, unix.ENOSYS)
-	ErrDirNotEmpty                = newWithHost("directory not empty", linux.ENOTEMPTY, unix.ENOTEMPTY)
-	ErrLinkLoop                   = newWithHost("too many symbolic links encountered", linux.ELOOP, unix.ELOOP)
-	ErrNoMessage                  = newWithHost("no message of desired type", linux.ENOMSG, unix.ENOMSG)
-	ErrIdentifierRemoved          = newWithHost("identifier removed", linux.EIDRM, unix.EIDRM)
-	ErrChannelOutOfRange          = newWithHost("channel number out of range", linux.ECHRNG, unix.ECHRNG)
-	ErrLevelTwoNotSynced          = newWithHost("level 2 not synchronized", linux.EL2NSYNC, unix.EL2NSYNC)
-	ErrLevelThreeHalted           = newWithHost("level 3 halted", linux.EL3HLT, unix.EL3HLT)
-	ErrLevelThreeReset            = newWithHost("level 3 reset", linux.EL3RST, unix.EL3RST)
-	ErrLinkNumberOutOfRange       = newWithHost("link number out of range", linux.ELNRNG, unix.ELNRNG)
-	ErrProtocolDriverNotAttached  = newWithHost("protocol driver not attached", linux.EUNATCH, unix.EUNATCH)
-	ErrNoCSIAvailable             = newWithHost("no CSI structure available", linux.ENOCSI, unix.ENOCSI)
-	ErrLevelTwoHalted             = newWithHost("level 2 halted", linux.EL2HLT, unix.EL2HLT)
-	ErrInvalidExchange            = newWithHost("invalid exchange", linux.EBADE, unix.EBADE)
-	ErrInvalidRequestDescriptor   = newWithHost("invalid request descriptor", linux.EBADR, unix.EBADR)
-	ErrExchangeFull               = newWithHost("exchange full", linux.EXFULL, unix.EXFULL)
-	ErrNoAnode                    = newWithHost("no anode", linux.ENOANO, unix.ENOANO)
-	ErrInvalidRequestCode         = newWithHost("invalid request code", linux.EBADRQC, unix.EBADRQC)
-	ErrInvalidSlot                = newWithHost("invalid slot", linux.EBADSLT, unix.EBADSLT)
-	ErrBadFontFile                = newWithHost("bad font file format", linux.EBFONT, unix.EBFONT)
-	ErrNotStream                  = newWithHost("device not a stream", linux.ENOSTR, unix.ENOSTR)
-	ErrNoDataAvailable            = newWithHost("no data available", linux.ENODATA, unix.ENODATA)
-	ErrTimerExpired               = newWithHost("timer expired", linux.ETIME, unix.ETIME)
-	ErrStreamsResourceDepleted    = newWithHost("out of streams resources", linux.ENOSR, unix.ENOSR)
-	ErrMachineNotOnNetwork        = newWithHost("machine is not on the network", linux.ENONET, unix.ENONET)
-	ErrPackageNotInstalled        = newWithHost("package not installed", linux.ENOPKG, unix.ENOPKG)
-	ErrIsRemote                   = newWithHost("object is remote", linux.EREMOTE, unix.EREMOTE)
-	ErrNoLink                     = newWithHost("link has been severed", linux.ENOLINK, unix.ENOLINK)
-	ErrAdvertise                  = newWithHost("advertise error", linux.EADV, unix.EADV)
-	ErrSRMount                    = newWithHost("srmount error", linux.ESRMNT, unix.ESRMNT)
-	ErrSendCommunication          = newWithHost("communication error on send", linux.ECOMM, unix.ECOMM)
-	ErrProtocol                   = newWithHost("protocol error", linux.EPROTO, unix.EPROTO)
-	ErrMultihopAttempted          = newWithHost("multihop attempted", linux.EMULTIHOP, unix.EMULTIHOP)
-	ErrRFS                        = newWithHost("RFS specific error", linux.EDOTDOT, unix.EDOTDOT)
-	ErrInvalidDataMessage         = newWithHost("not a data message", linux.EBADMSG, unix.EBADMSG)
-	ErrOverflow                   = newWithHost("value too large for defined data type", linux.EOVERFLOW, unix.EOVERFLOW)
-	ErrNetworkNameNotUnique       = newWithHost("name not unique on network", linux.ENOTUNIQ, unix.ENOTUNIQ)
-	ErrFDInBadState               = newWithHost("file descriptor in bad state", linux.EBADFD, unix.EBADFD)
-	ErrRemoteAddressChanged       = newWithHost("remote address changed", linux.EREMCHG, unix.EREMCHG)
-	ErrSharedLibraryInaccessible  = newWithHost("can not access a needed shared library", linux.ELIBACC, unix.ELIBACC)
-	ErrCorruptedSharedLibrary     = newWithHost("accessing a corrupted shared library", linux.ELIBBAD, unix.ELIBBAD)
-	ErrLibSectionCorrupted        = newWithHost(".lib section in a.out corrupted", linux.ELIBSCN, unix.ELIBSCN)
-	ErrTooManySharedLibraries     = newWithHost("attempting to link in too many shared libraries", linux.ELIBMAX, unix.ELIBMAX)
-	ErrSharedLibraryExeced        = newWithHost("cannot exec a shared library directly", linux.ELIBEXEC, unix.ELIBEXEC)
-	ErrIllegalByteSequence        = newWithHost("illegal byte sequence", linux.EILSEQ, unix.EILSEQ)
-	ErrShouldRestart              = newWithHost("interrupted system call should be restarted", linux.ERESTART, unix.ERESTART)
-	ErrStreamPipe                 = newWithHost("streams pipe error", linux.ESTRPIPE, unix.ESTRPIPE)
-	ErrTooManyUsers               = newWithHost("too many users", linux.EUSERS, unix.EUSERS)
-	ErrNotASocket                 = newWithHost("socket operation on non-socket", linux.ENOTSOCK, unix.ENOTSOCK)
-	ErrDestinationAddressRequired = newWithHost("destination address required", linux.EDESTADDRREQ, unix.EDESTADDRREQ)
-	ErrMessageTooLong             = newWithHost("message too long", linux.EMSGSIZE, unix.EMSGSIZE)
-	ErrWrongProtocolForSocket     = newWithHost("protocol wrong type for socket", linux.EPROTOTYPE, unix.EPROTOTYPE)
-	ErrProtocolNotAvailable       = newWithHost("protocol not available", linux.ENOPROTOOPT, unix.ENOPROTOOPT)
-	ErrProtocolNotSupported       = newWithHost("protocol not supported", linux.EPROTONOSUPPORT, unix.EPROTONOSUPPORT)
-	ErrSocketNotSupported         = newWithHost("socket type not supported", linux.ESOCKTNOSUPPORT, unix.ESOCKTNOSUPPORT)
-	ErrEndpointOperation          = newWithHost("operation not supported on transport endpoint", linux.EOPNOTSUPP, unix.EOPNOTSUPP)
-	ErrProtocolFamilyNotSupported = newWithHost("protocol family not supported", linux.EPFNOSUPPORT, unix.EPFNOSUPPORT)
-	ErrAddressFamilyNotSupported  = newWithHost("address family not supported by protocol", linux.EAFNOSUPPORT, unix.EAFNOSUPPORT)
-	ErrAddressInUse               = newWithHost("address already in use", linux.EADDRINUSE, unix.EADDRINUSE)
-	ErrAddressNotAvailable        = newWithHost("cannot assign requested address", linux.EADDRNOTAVAIL, unix.EADDRNOTAVAIL)
-	ErrNetworkDown                = newWithHost("network is down", linux.ENETDOWN, unix.ENETDOWN)
-	ErrNetworkUnreachable         = newWithHost("network is unreachable", linux.ENETUNREACH, unix.ENETUNREACH)
-	ErrNetworkReset               = newWithHost("network dropped connection because of reset", linux.ENETRESET, unix.ENETRESET)
-	ErrConnectionAborted          = newWithHost("software caused connection abort", linux.ECONNABORTED, unix.ECONNABORTED)
-	ErrConnectionReset            = newWithHost("connection reset by peer", linux.ECONNRESET, unix.ECONNRESET)
-	ErrNoBufferSpace              = newWithHost("no buffer space available", linux.ENOBUFS, unix.ENOBUFS)
-	ErrAlreadyConnected           = newWithHost("transport endpoint is already connected", linux.EISCONN, unix.EISCONN)
-	ErrNotConnected               = newWithHost("transport endpoint is not connected", linux.ENOTCONN, unix.ENOTCONN)
-	ErrShutdown                   = newWithHost("cannot send after transport endpoint shutdown", linux.ESHUTDOWN, unix.ESHUTDOWN)
-	ErrTooManyRefs                = newWithHost("too many references: cannot splice", linux.ETOOMANYREFS, unix.ETOOMANYREFS)
-	ErrTimedOut                   = newWithHost("connection timed out", linux.ETIMEDOUT, unix.ETIMEDOUT)
-	ErrConnectionRefused          = newWithHost("connection refused", linux.ECONNREFUSED, unix.ECONNREFUSED)
-	ErrHostDown                   = newWithHost("host is down", linux.EHOSTDOWN, unix.EHOSTDOWN)
-	ErrNoRoute                    = newWithHost("no route to host", linux.EHOSTUNREACH, unix.EHOSTUNREACH)
-	ErrAlreadyInProgress          = newWithHost("operation already in progress", linux.EALREADY, unix.EALREADY)
-	ErrInProgress                 = newWithHost("operation now in progress", linux.EINPROGRESS, unix.EINPROGRESS)
-	ErrStaleFileHandle            = newWithHost("stale file handle", linux.ESTALE, unix.ESTALE)
-	ErrStructureNeedsCleaning     = newWithHost("structure needs cleaning", linux.EUCLEAN, unix.EUCLEAN)
-	ErrIsNamedFile                = newWithHost("is a named type file", linux.ENOTNAM, unix.ENOTNAM)
-	ErrRemoteIO                   = newWithHost("remote I/O error", linux.EREMOTEIO, unix.EREMOTEIO)
-	ErrQuotaExceeded              = newWithHost("quota exceeded", linux.EDQUOT, unix.EDQUOT)
-	ErrNoMedium                   = newWithHost("no medium found", linux.ENOMEDIUM, unix.ENOMEDIUM)
-	ErrWrongMediumType            = newWithHost("wrong medium type", linux.EMEDIUMTYPE, unix.EMEDIUMTYPE)
-	ErrCanceled                   = newWithHost("operation canceled", linux.ECANCELED, unix.ECANCELED)
-	ErrNoKey                      = newWithHost("required key not available", linux.ENOKEY, unix.ENOKEY)
-	ErrKeyExpired                 = newWithHost("key has expired", linux.EKEYEXPIRED, unix.EKEYEXPIRED)
-	ErrKeyRevoked                 = newWithHost("key has been revoked", linux.EKEYREVOKED, unix.EKEYREVOKED)
-	ErrKeyRejected                = newWithHost("key was rejected by service", linux.EKEYREJECTED, unix.EKEYREJECTED)
-	ErrOwnerDied                  = newWithHost("owner died", linux.EOWNERDEAD, unix.EOWNERDEAD)
-	ErrNotRecoverable             = newWithHost("state not recoverable", linux.ENOTRECOVERABLE, unix.ENOTRECOVERABLE)
+	ErrNotPermitted               = newWithHost("operation not permitted", errno.EPERM, unix.EPERM)
+	ErrNoFileOrDir                = newWithHost("no such file or directory", errno.ENOENT, unix.ENOENT)
+	ErrNoProcess                  = newWithHost("no such process", errno.ESRCH, unix.ESRCH)
+	ErrInterrupted                = newWithHost("interrupted system call", errno.EINTR, unix.EINTR)
+	ErrIO                         = newWithHost("I/O error", errno.EIO, unix.EIO)
+	ErrDeviceOrAddress            = newWithHost("no such device or address", errno.ENXIO, unix.ENXIO)
+	ErrTooManyArgs                = newWithHost("argument list too long", errno.E2BIG, unix.E2BIG)
+	ErrEcec                       = newWithHost("exec format error", errno.ENOEXEC, unix.ENOEXEC)
+	ErrBadFD                      = newWithHost("bad file number", errno.EBADF, unix.EBADF)
+	ErrNoChild                    = newWithHost("no child processes", errno.ECHILD, unix.ECHILD)
+	ErrTryAgain                   = newWithHost("try again", errno.EAGAIN, unix.EAGAIN)
+	ErrNoMemory                   = newWithHost("out of memory", errno.ENOMEM, unix.ENOMEM)
+	ErrPermissionDenied           = newWithHost("permission denied", errno.EACCES, unix.EACCES)
+	ErrBadAddress                 = newWithHost("bad address", errno.EFAULT, unix.EFAULT)
+	ErrNotBlockDevice             = newWithHost("block device required", errno.ENOTBLK, unix.ENOTBLK)
+	ErrBusy                       = newWithHost("device or resource busy", errno.EBUSY, unix.EBUSY)
+	ErrExists                     = newWithHost("file exists", errno.EEXIST, unix.EEXIST)
+	ErrCrossDeviceLink            = newWithHost("cross-device link", errno.EXDEV, unix.EXDEV)
+	ErrNoDevice                   = newWithHost("no such device", errno.ENODEV, unix.ENODEV)
+	ErrNotDir                     = newWithHost("not a directory", errno.ENOTDIR, unix.ENOTDIR)
+	ErrIsDir                      = newWithHost("is a directory", errno.EISDIR, unix.EISDIR)
+	ErrInvalidArgument            = newWithHost("invalid argument", errno.EINVAL, unix.EINVAL)
+	ErrFileTableOverflow          = newWithHost("file table overflow", errno.ENFILE, unix.ENFILE)
+	ErrTooManyOpenFiles           = newWithHost("too many open files", errno.EMFILE, unix.EMFILE)
+	ErrNotTTY                     = newWithHost("not a typewriter", errno.ENOTTY, unix.ENOTTY)
+	ErrTestFileBusy               = newWithHost("text file busy", errno.ETXTBSY, unix.ETXTBSY)
+	ErrFileTooBig                 = newWithHost("file too large", errno.EFBIG, unix.EFBIG)
+	ErrNoSpace                    = newWithHost("no space left on device", errno.ENOSPC, unix.ENOSPC)
+	ErrIllegalSeek                = newWithHost("illegal seek", errno.ESPIPE, unix.ESPIPE)
+	ErrReadOnlyFS                 = newWithHost("read-only file system", errno.EROFS, unix.EROFS)
+	ErrTooManyLinks               = newWithHost("too many links", errno.EMLINK, unix.EMLINK)
+	ErrBrokenPipe                 = newWithHost("broken pipe", errno.EPIPE, unix.EPIPE)
+	ErrDomain                     = newWithHost("math argument out of domain of func", errno.EDOM, unix.EDOM)
+	ErrRange                      = newWithHost("math result not representable", errno.ERANGE, unix.ERANGE)
+	ErrDeadlock                   = newWithHost("resource deadlock would occur", errno.EDEADLOCK, unix.EDEADLOCK)
+	ErrNameTooLong                = newWithHost("file name too long", errno.ENAMETOOLONG, unix.ENAMETOOLONG)
+	ErrNoLocksAvailable           = newWithHost("no record locks available", errno.ENOLCK, unix.ENOLCK)
+	ErrInvalidSyscall             = newWithHost("invalid system call number", errno.ENOSYS, unix.ENOSYS)
+	ErrDirNotEmpty                = newWithHost("directory not empty", errno.ENOTEMPTY, unix.ENOTEMPTY)
+	ErrLinkLoop                   = newWithHost("too many symbolic links encountered", errno.ELOOP, unix.ELOOP)
+	ErrNoMessage                  = newWithHost("no message of desired type", errno.ENOMSG, unix.ENOMSG)
+	ErrIdentifierRemoved          = newWithHost("identifier removed", errno.EIDRM, unix.EIDRM)
+	ErrChannelOutOfRange          = newWithHost("channel number out of range", errno.ECHRNG, unix.ECHRNG)
+	ErrLevelTwoNotSynced          = newWithHost("level 2 not synchronized", errno.EL2NSYNC, unix.EL2NSYNC)
+	ErrLevelThreeHalted           = newWithHost("level 3 halted", errno.EL3HLT, unix.EL3HLT)
+	ErrLevelThreeReset            = newWithHost("level 3 reset", errno.EL3RST, unix.EL3RST)
+	ErrLinkNumberOutOfRange       = newWithHost("link number out of range", errno.ELNRNG, unix.ELNRNG)
+	ErrProtocolDriverNotAttached  = newWithHost("protocol driver not attached", errno.EUNATCH, unix.EUNATCH)
+	ErrNoCSIAvailable             = newWithHost("no CSI structure available", errno.ENOCSI, unix.ENOCSI)
+	ErrLevelTwoHalted             = newWithHost("level 2 halted", errno.EL2HLT, unix.EL2HLT)
+	ErrInvalidExchange            = newWithHost("invalid exchange", errno.EBADE, unix.EBADE)
+	ErrInvalidRequestDescriptor   = newWithHost("invalid request descriptor", errno.EBADR, unix.EBADR)
+	ErrExchangeFull               = newWithHost("exchange full", errno.EXFULL, unix.EXFULL)
+	ErrNoAnode                    = newWithHost("no anode", errno.ENOANO, unix.ENOANO)
+	ErrInvalidRequestCode         = newWithHost("invalid request code", errno.EBADRQC, unix.EBADRQC)
+	ErrInvalidSlot                = newWithHost("invalid slot", errno.EBADSLT, unix.EBADSLT)
+	ErrBadFontFile                = newWithHost("bad font file format", errno.EBFONT, unix.EBFONT)
+	ErrNotStream                  = newWithHost("device not a stream", errno.ENOSTR, unix.ENOSTR)
+	ErrNoDataAvailable            = newWithHost("no data available", errno.ENODATA, unix.ENODATA)
+	ErrTimerExpired               = newWithHost("timer expired", errno.ETIME, unix.ETIME)
+	ErrStreamsResourceDepleted    = newWithHost("out of streams resources", errno.ENOSR, unix.ENOSR)
+	ErrMachineNotOnNetwork        = newWithHost("machine is not on the network", errno.ENONET, unix.ENONET)
+	ErrPackageNotInstalled        = newWithHost("package not installed", errno.ENOPKG, unix.ENOPKG)
+	ErrIsRemote                   = newWithHost("object is remote", errno.EREMOTE, unix.EREMOTE)
+	ErrNoLink                     = newWithHost("link has been severed", errno.ENOLINK, unix.ENOLINK)
+	ErrAdvertise                  = newWithHost("advertise error", errno.EADV, unix.EADV)
+	ErrSRMount                    = newWithHost("srmount error", errno.ESRMNT, unix.ESRMNT)
+	ErrSendCommunication          = newWithHost("communication error on send", errno.ECOMM, unix.ECOMM)
+	ErrProtocol                   = newWithHost("protocol error", errno.EPROTO, unix.EPROTO)
+	ErrMultihopAttempted          = newWithHost("multihop attempted", errno.EMULTIHOP, unix.EMULTIHOP)
+	ErrRFS                        = newWithHost("RFS specific error", errno.EDOTDOT, unix.EDOTDOT)
+	ErrInvalidDataMessage         = newWithHost("not a data message", errno.EBADMSG, unix.EBADMSG)
+	ErrOverflow                   = newWithHost("value too large for defined data type", errno.EOVERFLOW, unix.EOVERFLOW)
+	ErrNetworkNameNotUnique       = newWithHost("name not unique on network", errno.ENOTUNIQ, unix.ENOTUNIQ)
+	ErrFDInBadState               = newWithHost("file descriptor in bad state", errno.EBADFD, unix.EBADFD)
+	ErrRemoteAddressChanged       = newWithHost("remote address changed", errno.EREMCHG, unix.EREMCHG)
+	ErrSharedLibraryInaccessible  = newWithHost("can not access a needed shared library", errno.ELIBACC, unix.ELIBACC)
+	ErrCorruptedSharedLibrary     = newWithHost("accessing a corrupted shared library", errno.ELIBBAD, unix.ELIBBAD)
+	ErrLibSectionCorrupted        = newWithHost(".lib section in a.out corrupted", errno.ELIBSCN, unix.ELIBSCN)
+	ErrTooManySharedLibraries     = newWithHost("attempting to link in too many shared libraries", errno.ELIBMAX, unix.ELIBMAX)
+	ErrSharedLibraryExeced        = newWithHost("cannot exec a shared library directly", errno.ELIBEXEC, unix.ELIBEXEC)
+	ErrIllegalByteSequence        = newWithHost("illegal byte sequence", errno.EILSEQ, unix.EILSEQ)
+	ErrShouldRestart              = newWithHost("interrupted system call should be restarted", errno.ERESTART, unix.ERESTART)
+	ErrStreamPipe                 = newWithHost("streams pipe error", errno.ESTRPIPE, unix.ESTRPIPE)
+	ErrTooManyUsers               = newWithHost("too many users", errno.EUSERS, unix.EUSERS)
+	ErrNotASocket                 = newWithHost("socket operation on non-socket", errno.ENOTSOCK, unix.ENOTSOCK)
+	ErrDestinationAddressRequired = newWithHost("destination address required", errno.EDESTADDRREQ, unix.EDESTADDRREQ)
+	ErrMessageTooLong             = newWithHost("message too long", errno.EMSGSIZE, unix.EMSGSIZE)
+	ErrWrongProtocolForSocket     = newWithHost("protocol wrong type for socket", errno.EPROTOTYPE, unix.EPROTOTYPE)
+	ErrProtocolNotAvailable       = newWithHost("protocol not available", errno.ENOPROTOOPT, unix.ENOPROTOOPT)
+	ErrProtocolNotSupported       = newWithHost("protocol not supported", errno.EPROTONOSUPPORT, unix.EPROTONOSUPPORT)
+	ErrSocketNotSupported         = newWithHost("socket type not supported", errno.ESOCKTNOSUPPORT, unix.ESOCKTNOSUPPORT)
+	ErrEndpointOperation          = newWithHost("operation not supported on transport endpoint", errno.EOPNOTSUPP, unix.EOPNOTSUPP)
+	ErrProtocolFamilyNotSupported = newWithHost("protocol family not supported", errno.EPFNOSUPPORT, unix.EPFNOSUPPORT)
+	ErrAddressFamilyNotSupported  = newWithHost("address family not supported by protocol", errno.EAFNOSUPPORT, unix.EAFNOSUPPORT)
+	ErrAddressInUse               = newWithHost("address already in use", errno.EADDRINUSE, unix.EADDRINUSE)
+	ErrAddressNotAvailable        = newWithHost("cannot assign requested address", errno.EADDRNOTAVAIL, unix.EADDRNOTAVAIL)
+	ErrNetworkDown                = newWithHost("network is down", errno.ENETDOWN, unix.ENETDOWN)
+	ErrNetworkUnreachable         = newWithHost("network is unreachable", errno.ENETUNREACH, unix.ENETUNREACH)
+	ErrNetworkReset               = newWithHost("network dropped connection because of reset", errno.ENETRESET, unix.ENETRESET)
+	ErrConnectionAborted          = newWithHost("software caused connection abort", errno.ECONNABORTED, unix.ECONNABORTED)
+	ErrConnectionReset            = newWithHost("connection reset by peer", errno.ECONNRESET, unix.ECONNRESET)
+	ErrNoBufferSpace              = newWithHost("no buffer space available", errno.ENOBUFS, unix.ENOBUFS)
+	ErrAlreadyConnected           = newWithHost("transport endpoint is already connected", errno.EISCONN, unix.EISCONN)
+	ErrNotConnected               = newWithHost("transport endpoint is not connected", errno.ENOTCONN, unix.ENOTCONN)
+	ErrShutdown                   = newWithHost("cannot send after transport endpoint shutdown", errno.ESHUTDOWN, unix.ESHUTDOWN)
+	ErrTooManyRefs                = newWithHost("too many references: cannot splice", errno.ETOOMANYREFS, unix.ETOOMANYREFS)
+	ErrTimedOut                   = newWithHost("connection timed out", errno.ETIMEDOUT, unix.ETIMEDOUT)
+	ErrConnectionRefused          = newWithHost("connection refused", errno.ECONNREFUSED, unix.ECONNREFUSED)
+	ErrHostDown                   = newWithHost("host is down", errno.EHOSTDOWN, unix.EHOSTDOWN)
+	ErrNoRoute                    = newWithHost("no route to host", errno.EHOSTUNREACH, unix.EHOSTUNREACH)
+	ErrAlreadyInProgress          = newWithHost("operation already in progress", errno.EALREADY, unix.EALREADY)
+	ErrInProgress                 = newWithHost("operation now in progress", errno.EINPROGRESS, unix.EINPROGRESS)
+	ErrStaleFileHandle            = newWithHost("stale file handle", errno.ESTALE, unix.ESTALE)
+	ErrStructureNeedsCleaning     = newWithHost("structure needs cleaning", errno.EUCLEAN, unix.EUCLEAN)
+	ErrIsNamedFile                = newWithHost("is a named type file", errno.ENOTNAM, unix.ENOTNAM)
+	ErrRemoteIO                   = newWithHost("remote I/O error", errno.EREMOTEIO, unix.EREMOTEIO)
+	ErrQuotaExceeded              = newWithHost("quota exceeded", errno.EDQUOT, unix.EDQUOT)
+	ErrNoMedium                   = newWithHost("no medium found", errno.ENOMEDIUM, unix.ENOMEDIUM)
+	ErrWrongMediumType            = newWithHost("wrong medium type", errno.EMEDIUMTYPE, unix.EMEDIUMTYPE)
+	ErrCanceled                   = newWithHost("operation canceled", errno.ECANCELED, unix.ECANCELED)
+	ErrNoKey                      = newWithHost("required key not available", errno.ENOKEY, unix.ENOKEY)
+	ErrKeyExpired                 = newWithHost("key has expired", errno.EKEYEXPIRED, unix.EKEYEXPIRED)
+	ErrKeyRevoked                 = newWithHost("key has been revoked", errno.EKEYREVOKED, unix.EKEYREVOKED)
+	ErrKeyRejected                = newWithHost("key was rejected by service", errno.EKEYREJECTED, unix.EKEYREJECTED)
+	ErrOwnerDied                  = newWithHost("owner died", errno.EOWNERDEAD, unix.EOWNERDEAD)
+	ErrNotRecoverable             = newWithHost("state not recoverable", errno.ENOTRECOVERABLE, unix.ENOTRECOVERABLE)
 
 	// ErrWouldBlock translates to EWOULDBLOCK which is the same as EAGAIN
 	// on Linux.
-	ErrWouldBlock = New("operation would block", linux.EWOULDBLOCK)
+	ErrWouldBlock = New("operation would block", errno.EWOULDBLOCK)
 )
 
 // FromError converts a generic error to an *Error.

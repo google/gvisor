@@ -17,7 +17,7 @@ package kernel
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
-var errNoSyscalls = syserr.New("no syscall table found", linux.ENOEXEC)
+var errNoSyscalls = syserr.New("no syscall table found", errno.ENOEXEC)
 
 // Auxmap contains miscellaneous data for the task.
 type Auxmap map[string]interface{}

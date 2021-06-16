@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/linux/errno",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/hostarch",

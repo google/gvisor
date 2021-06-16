@@ -218,6 +218,7 @@ go_library(
         ":uncaught_signal_go_proto",
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/linux/errno",
         "//pkg/amutex",
         "//pkg/bits",
         "//pkg/bpf",

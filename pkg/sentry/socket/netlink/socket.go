@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -56,7 +57,7 @@ const (
 	maxSendBufferSize = 4 << 20 // 4MB
 )
 
-var errNoFilter = syserr.New("no filter attached", linux.ENOENT)
+var errNoFilter = syserr.New("no filter attached", errno.ENOENT)
 
 // netlinkSocketDevice is the netlink socket virtual device.
 var netlinkSocketDevice = device.NewAnonDevice()

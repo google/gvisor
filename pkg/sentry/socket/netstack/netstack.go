@@ -36,6 +36,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -289,7 +290,7 @@ const DefaultTTL = 64
 
 const sizeOfInt32 int = 4
 
-var errStackType = syserr.New("expected but did not receive a netstack.Stack", linux.EINVAL)
+var errStackType = syserr.New("expected but did not receive a netstack.Stack", errno.EINVAL)
 
 // commonEndpoint represents the intersection of a tcpip.Endpoint and a
 // transport.Endpoint.

@@ -6,7 +6,10 @@ go_library(
     name = "linuxerr",
     srcs = ["linuxerr.go"],
     visibility = ["//visibility:public"],
-    deps = ["//pkg/abi/linux"],
+    deps = [
+        "//pkg/abi/linux/errno",
+        "//pkg/errors",
+    ],
 )
 
 go_test(
@@ -14,6 +17,8 @@ go_test(
     srcs = ["linuxerr_test.go"],
     deps = [
         ":linuxerr",
+        "//pkg/abi/linux/errno",
+        "//pkg/errors",
         "//pkg/syserror",
         "@org_golang_x_sys//unix:go_default_library",
     ],
