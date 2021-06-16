@@ -485,7 +485,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 			pageTable.Map(
 				hostarch.Addr(ring0.KernelStartAddress|r.virtual),
 				r.length,
-				pagetables.MapOpts{AccessType: hostarch.Execute},
+				pagetables.MapOpts{AccessType: hostarch.Execute, Global: true},
 				physical)
 		}
 	})
@@ -498,7 +498,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 		pageTable.Map(
 			hostarch.Addr(ring0.KernelStartAddress|start),
 			regionLen,
-			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
+			pagetables.MapOpts{AccessType: hostarch.ReadWrite, Global: true},
 			physical)
 	}
 }
