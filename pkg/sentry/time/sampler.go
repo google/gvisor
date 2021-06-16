@@ -21,13 +21,6 @@ import (
 )
 
 const (
-	// defaultOverheadTSC is the default estimated syscall overhead in TSC cycles.
-	// It is further refined as syscalls are made.
-	defaultOverheadCycles = 1 * 1000
-
-	// maxOverheadCycles is the maximum allowed syscall overhead in TSC cycles.
-	maxOverheadCycles = 100 * defaultOverheadCycles
-
 	// maxSampleLoops is the maximum number of times to try to get a clock sample
 	// under the expected overhead.
 	maxSampleLoops = 5
