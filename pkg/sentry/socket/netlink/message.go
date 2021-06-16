@@ -50,7 +50,7 @@ func NewMessage(hdr linux.NetlinkMessageHeader) *Message {
 
 // ParseMessage parses the first message seen at buf, returning the rest of the
 // buffer. If message is malformed, ok of false is returned. For last message,
-// padding check is loose, if there isn't enought padding, whole buf is consumed
+// padding check is loose, if there isn't enough padding, whole buf is consumed
 // and ok is set to true.
 func ParseMessage(buf []byte) (msg *Message, rest []byte, ok bool) {
 	b := BytesView(buf)
