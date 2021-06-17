@@ -265,6 +265,11 @@ type TransportDispatcher interface {
 	//
 	// DeliverTransportError takes ownership of the packet buffer.
 	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
+
+	// DeliverRawPacket delivers a packet to any subscribed raw sockets.
+	//
+	// DeliverRawPacket does NOT take ownership of the packet buffer.
+	DeliverRawPacket(tcpip.TransportProtocolNumber, *PacketBuffer)
 }
 
 // PacketLooping specifies where an outbound packet should be sent.

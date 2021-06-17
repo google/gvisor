@@ -90,6 +90,10 @@ func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *st
 	return stack.TransportPacketHandled
 }
 
+func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) {
+	// No-op.
+}
+
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {

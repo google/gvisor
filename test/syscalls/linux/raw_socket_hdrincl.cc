@@ -281,9 +281,6 @@ TEST_F(RawHDRINCL, SendAndReceive) {
 // Send and receive a packet where the sendto address is not the same as the
 // provided destination.
 TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
-  // FIXME(gvisor.dev/issue/3160): Test currently flaky.
-  SKIP_IF(true);
-
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -301,18 +298,20 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   ASSERT_TRUE(
       FillPacket(packet, sizeof(packet), port, kPayload, sizeof(kPayload)));
   // Overwrite the IP destination address with an IP we can't get to.
+  constexpr int32_t kUnreachable = 42;
   struct iphdr iphdr = {};
   memcpy(&iphdr, packet, sizeof(iphdr));
-  iphdr.daddr = 42;
+  iphdr.daddr = kUnreachable;
   memcpy(packet, &iphdr, sizeof(iphdr));
 
+  // Send to localhost via loopback.
   socklen_t addrlen = sizeof(addr_);
   ASSERT_NO_FATAL_FAILURE(sendto(socket_, &packet, sizeof(packet), 0,
                                  reinterpret_cast<struct sockaddr*>(&addr_),
                                  addrlen));
 
-  // Receive the payload, since sendto should replace the bad destination with
-  // localhost.
+  // Receive the payload. Despite an unreachable destination address, sendto
+  // should have sent the packet through loopback.
   char recv_buf[sizeof(packet)];
   struct sockaddr_in src;
   socklen_t src_size = sizeof(src);
@@ -330,9 +329,8 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   struct iphdr recv_iphdr = {};
   memcpy(&recv_iphdr, recv_buf, sizeof(recv_iphdr));
   EXPECT_NE(recv_iphdr.id, 0);
-  // The destination address should be localhost, not the bad IP we set
-  // initially.
-  EXPECT_EQ(absl::gbswap_32(recv_iphdr.daddr), INADDR_LOOPBACK);
+  // The destination address is kUnreachable despite arriving via loopback.
+  EXPECT_EQ(recv_iphdr.daddr, kUnreachable);
 }
 
 // Send and receive a packet w/ the IP_HDRINCL option set.

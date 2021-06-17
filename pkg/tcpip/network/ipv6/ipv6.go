@@ -928,10 +928,6 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 		ipH.SetSourceAddress(r.LocalAddress())
 	}
 
-	// Set the destination. If the packet already included a destination, it will
-	// be part of the route anyways.
-	ipH.SetDestinationAddress(r.RemoteAddress())
-
 	// Populate the packet buffer's network header and don't allow an invalid
 	// packet to be sent.
 	//
@@ -1128,6 +1124,10 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 }
 
 func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer, inNICName string) {
+	// Raw socket packets are delivered based solely on the transport protocol
+	// number. We only require that the packet be valid IPv6.
+	e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
+
 	pkt.NICID = e.nic.ID()
 	stats := e.stats.ip
 	stats.ValidPacketsReceived.Increment()

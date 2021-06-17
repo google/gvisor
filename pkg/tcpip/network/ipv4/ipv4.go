@@ -614,10 +614,6 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt *stack.PacketBu
 		ipH.SetSourceAddress(r.LocalAddress())
 	}
 
-	// Set the destination. If the packet already included a destination, it will
-	// be part of the route anyways.
-	ipH.SetDestinationAddress(r.RemoteAddress())
-
 	// Set the packet ID when zero.
 	if ipH.ID() == 0 {
 		// RFC 6864 section 4.3 mandates uniqueness of ID values for
@@ -860,6 +856,13 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 }
 
 func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
+	// Raw socket packets are delivered based solely on the transport protocol
+	// number. We only require that the packet be valid IPv4, and that they not
+	// be fragmented.
+	if !h.More() && h.FragmentOffset() == 0 {
+		e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
+	}
+
 	pkt.NICID = e.nic.ID()
 	stats := e.stats
 	stats.ip.ValidPacketsReceived.Increment()
@@ -995,6 +998,9 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		// to do it here.
 		h.SetTotalLength(uint16(pkt.Data().Size() + len(h)))
 		h.SetFlagsFragmentOffset(0, 0)
+
+		// Now that the packet is reassembled, it can be sent to raw sockets.
+		e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
 	}
 	stats.ip.PacketsDelivered.Increment()
 
