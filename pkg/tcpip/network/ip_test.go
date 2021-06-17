@@ -88,6 +88,7 @@ type testObject struct {
 
 	dataCalls    int
 	controlCalls int
+	rawCalls     int
 }
 
 // checkValues verifies that the transport protocol, data contents, src & dst
@@ -146,6 +147,10 @@ func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpi
 		t.t.Errorf("transport error mismatch (-want +got):\n%s", diff)
 	}
 	t.controlCalls++
+}
+
+func (t *testObject) DeliverRawPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) {
+	t.rawCalls++
 }
 
 // Attach is only implemented to satisfy the LinkEndpoint interface.
@@ -717,7 +722,10 @@ func TestReceive(t *testing.T) {
 			}
 			test.handlePacket(t, ep, &nic)
 			if nic.testObject.dataCalls != 1 {
-				t.Errorf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+				t.Errorf("Bad number of data calls: got %d, want 1", nic.testObject.dataCalls)
+			}
+			if nic.testObject.rawCalls != 1 {
+				t.Errorf("Bad number of raw calls: got %d, want 1", nic.testObject.rawCalls)
 			}
 			if got := stat.Value(); got != 1 {
 				t.Errorf("got s.Stats().IP.PacketsReceived.Value() = %d, want = 1", got)
@@ -968,7 +976,10 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 
 	ep.HandlePacket(pkt)
 	if nic.testObject.dataCalls != 0 {
-		t.Fatalf("Bad number of data calls: got %x, want 0", nic.testObject.dataCalls)
+		t.Fatalf("Bad number of data calls: got %d, want 0", nic.testObject.dataCalls)
+	}
+	if nic.testObject.rawCalls != 0 {
+		t.Errorf("Bad number of raw calls: got %d, want 0", nic.testObject.rawCalls)
 	}
 
 	// Send second segment.
@@ -977,7 +988,10 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	})
 	ep.HandlePacket(pkt)
 	if nic.testObject.dataCalls != 1 {
-		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+		t.Fatalf("Bad number of data calls: got %d, want 1", nic.testObject.dataCalls)
+	}
+	if nic.testObject.rawCalls != 1 {
+		t.Errorf("Bad number of raw calls: got %d, want 1", nic.testObject.rawCalls)
 	}
 }
 
@@ -1310,7 +1324,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
 				return hdr.View().ToVectorisedView()
 			},
@@ -1351,7 +1365,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
 				ip.SetHeaderLength(header.IPv4MinimumSize - 1)
 				return hdr.View().ToVectorisedView()
@@ -1370,7 +1384,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
 				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
 			},
@@ -1388,7 +1402,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
 				return buffer.View(ip).ToVectorisedView()
 			},
@@ -1430,7 +1444,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 					Options:  ipv4Options,
 				})
 				return hdr.View().ToVectorisedView()
@@ -1469,7 +1483,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 					Options:  ipv4Options,
 				})
 				vv := buffer.View(ip).ToVectorisedView()
@@ -1515,7 +1529,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
 				return hdr.View().ToVectorisedView()
 			},
@@ -1560,7 +1574,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6FragmentExtHdrIdentifier),
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
 				return hdr.View().ToVectorisedView()
 			},
@@ -1595,7 +1609,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
 				return buffer.View(ip).ToVectorisedView()
 			},
@@ -1630,7 +1644,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv4Addr,
 				})
 				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
 			},

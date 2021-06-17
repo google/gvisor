@@ -262,8 +262,8 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
 }
 
 // A raw ICMP socket should be able to send a malformed short ICMP Echo Request,
-// while ping socket should not.
-// Neither should be able to receieve a short malformed packet.
+// while a ping socket should not. Neither should be able to receieve a short
+// malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 

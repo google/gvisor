@@ -779,11 +779,6 @@ func (n *nic) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 
 	transProto := state.proto
 
-	// Raw socket packets are delivered based solely on the transport
-	// protocol number. We do not inspect the payload to ensure it's
-	// validly formed.
-	n.stack.demux.deliverRawPacket(protocol, pkt)
-
 	// TransportHeader is empty only when pkt is an ICMP packet or was reassembled
 	// from fragments.
 	if pkt.TransportHeader().View().IsEmpty() {
@@ -875,6 +870,17 @@ func (n *nic) DeliverTransportError(local, remote tcpip.Address, net tcpip.Netwo
 	if n.stack.demux.deliverError(n, net, trans, transErr, pkt, id) {
 		return
 	}
+}
+
+// DeliverRawPacket implements TransportDispatcher.
+func (n *nic) DeliverRawPacket(protocol tcpip.TransportProtocolNumber, pkt *PacketBuffer) {
+	// For ICMPv4 only we validate the header length for compatibility with
+	// raw(7) ICMP_FILTER. The same check is made in Linux here:
+	// https://github.com/torvalds/linux/blob/70585216/net/ipv4/raw.c#L189.
+	if protocol == header.ICMPv4ProtocolNumber && pkt.TransportHeader().View().Size()+pkt.Data().Size() < header.ICMPv4MinimumSize {
+		return
+	}
+	n.stack.demux.deliverRawPacket(protocol, pkt)
 }
 
 // ID implements NetworkInterface.
