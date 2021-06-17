@@ -424,7 +424,6 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 		default:
 			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
 		}
-
 	} else {
 		// Raw packets need their ethernet headers prepended before
 		// queueing.
