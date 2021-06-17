@@ -418,8 +418,6 @@ func (k *Kernel) StateFields() []string {
 		"rootAbstractSocketNamespace",
 		"futexes",
 		"globalInit",
-		"realtimeClock",
-		"monotonicClock",
 		"syslog",
 		"runningTasks",
 		"cpuClock",
@@ -453,9 +451,9 @@ func (k *Kernel) beforeSave() {}
 func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
 	var danglingEndpointsValue []tcpip.Endpoint = k.saveDanglingEndpoints()
-	stateSinkObject.SaveValue(24, danglingEndpointsValue)
+	stateSinkObject.SaveValue(22, danglingEndpointsValue)
 	var deviceRegistryValue *device.Registry = k.saveDeviceRegistry()
-	stateSinkObject.SaveValue(28, deviceRegistryValue)
+	stateSinkObject.SaveValue(26, deviceRegistryValue)
 	stateSinkObject.Save(0, &k.featureSet)
 	stateSinkObject.Save(1, &k.timekeeper)
 	stateSinkObject.Save(2, &k.tasks)
@@ -470,30 +468,28 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &k.rootAbstractSocketNamespace)
 	stateSinkObject.Save(12, &k.futexes)
 	stateSinkObject.Save(13, &k.globalInit)
-	stateSinkObject.Save(14, &k.realtimeClock)
-	stateSinkObject.Save(15, &k.monotonicClock)
-	stateSinkObject.Save(16, &k.syslog)
-	stateSinkObject.Save(17, &k.runningTasks)
-	stateSinkObject.Save(18, &k.cpuClock)
-	stateSinkObject.Save(19, &k.cpuClockTickerDisabled)
-	stateSinkObject.Save(20, &k.cpuClockTickerSetting)
-	stateSinkObject.Save(21, &k.uniqueID)
-	stateSinkObject.Save(22, &k.nextInotifyCookie)
-	stateSinkObject.Save(23, &k.netlinkPorts)
-	stateSinkObject.Save(25, &k.sockets)
-	stateSinkObject.Save(26, &k.socketsVFS2)
-	stateSinkObject.Save(27, &k.nextSocketRecord)
-	stateSinkObject.Save(29, &k.DirentCacheLimiter)
-	stateSinkObject.Save(30, &k.SpecialOpts)
-	stateSinkObject.Save(31, &k.vfs)
-	stateSinkObject.Save(32, &k.hostMount)
-	stateSinkObject.Save(33, &k.pipeMount)
-	stateSinkObject.Save(34, &k.shmMount)
-	stateSinkObject.Save(35, &k.socketMount)
-	stateSinkObject.Save(36, &k.SleepForAddressSpaceActivation)
-	stateSinkObject.Save(37, &k.ptraceExceptions)
-	stateSinkObject.Save(38, &k.YAMAPtraceScope)
-	stateSinkObject.Save(39, &k.cgroupRegistry)
+	stateSinkObject.Save(14, &k.syslog)
+	stateSinkObject.Save(15, &k.runningTasks)
+	stateSinkObject.Save(16, &k.cpuClock)
+	stateSinkObject.Save(17, &k.cpuClockTickerDisabled)
+	stateSinkObject.Save(18, &k.cpuClockTickerSetting)
+	stateSinkObject.Save(19, &k.uniqueID)
+	stateSinkObject.Save(20, &k.nextInotifyCookie)
+	stateSinkObject.Save(21, &k.netlinkPorts)
+	stateSinkObject.Save(23, &k.sockets)
+	stateSinkObject.Save(24, &k.socketsVFS2)
+	stateSinkObject.Save(25, &k.nextSocketRecord)
+	stateSinkObject.Save(27, &k.DirentCacheLimiter)
+	stateSinkObject.Save(28, &k.SpecialOpts)
+	stateSinkObject.Save(29, &k.vfs)
+	stateSinkObject.Save(30, &k.hostMount)
+	stateSinkObject.Save(31, &k.pipeMount)
+	stateSinkObject.Save(32, &k.shmMount)
+	stateSinkObject.Save(33, &k.socketMount)
+	stateSinkObject.Save(34, &k.SleepForAddressSpaceActivation)
+	stateSinkObject.Save(35, &k.ptraceExceptions)
+	stateSinkObject.Save(36, &k.YAMAPtraceScope)
+	stateSinkObject.Save(37, &k.cgroupRegistry)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -514,32 +510,30 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &k.rootAbstractSocketNamespace)
 	stateSourceObject.Load(12, &k.futexes)
 	stateSourceObject.Load(13, &k.globalInit)
-	stateSourceObject.Load(14, &k.realtimeClock)
-	stateSourceObject.Load(15, &k.monotonicClock)
-	stateSourceObject.Load(16, &k.syslog)
-	stateSourceObject.Load(17, &k.runningTasks)
-	stateSourceObject.Load(18, &k.cpuClock)
-	stateSourceObject.Load(19, &k.cpuClockTickerDisabled)
-	stateSourceObject.Load(20, &k.cpuClockTickerSetting)
-	stateSourceObject.Load(21, &k.uniqueID)
-	stateSourceObject.Load(22, &k.nextInotifyCookie)
-	stateSourceObject.Load(23, &k.netlinkPorts)
-	stateSourceObject.Load(25, &k.sockets)
-	stateSourceObject.Load(26, &k.socketsVFS2)
-	stateSourceObject.Load(27, &k.nextSocketRecord)
-	stateSourceObject.Load(29, &k.DirentCacheLimiter)
-	stateSourceObject.Load(30, &k.SpecialOpts)
-	stateSourceObject.Load(31, &k.vfs)
-	stateSourceObject.Load(32, &k.hostMount)
-	stateSourceObject.Load(33, &k.pipeMount)
-	stateSourceObject.Load(34, &k.shmMount)
-	stateSourceObject.Load(35, &k.socketMount)
-	stateSourceObject.Load(36, &k.SleepForAddressSpaceActivation)
-	stateSourceObject.Load(37, &k.ptraceExceptions)
-	stateSourceObject.Load(38, &k.YAMAPtraceScope)
-	stateSourceObject.Load(39, &k.cgroupRegistry)
-	stateSourceObject.LoadValue(24, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	stateSourceObject.LoadValue(28, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
+	stateSourceObject.Load(14, &k.syslog)
+	stateSourceObject.Load(15, &k.runningTasks)
+	stateSourceObject.Load(16, &k.cpuClock)
+	stateSourceObject.Load(17, &k.cpuClockTickerDisabled)
+	stateSourceObject.Load(18, &k.cpuClockTickerSetting)
+	stateSourceObject.Load(19, &k.uniqueID)
+	stateSourceObject.Load(20, &k.nextInotifyCookie)
+	stateSourceObject.Load(21, &k.netlinkPorts)
+	stateSourceObject.Load(23, &k.sockets)
+	stateSourceObject.Load(24, &k.socketsVFS2)
+	stateSourceObject.Load(25, &k.nextSocketRecord)
+	stateSourceObject.Load(27, &k.DirentCacheLimiter)
+	stateSourceObject.Load(28, &k.SpecialOpts)
+	stateSourceObject.Load(29, &k.vfs)
+	stateSourceObject.Load(30, &k.hostMount)
+	stateSourceObject.Load(31, &k.pipeMount)
+	stateSourceObject.Load(32, &k.shmMount)
+	stateSourceObject.Load(33, &k.socketMount)
+	stateSourceObject.Load(34, &k.SleepForAddressSpaceActivation)
+	stateSourceObject.Load(35, &k.ptraceExceptions)
+	stateSourceObject.Load(36, &k.YAMAPtraceScope)
+	stateSourceObject.Load(37, &k.cgroupRegistry)
+	stateSourceObject.LoadValue(22, new([]tcpip.Endpoint), func(y interface{}) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
+	stateSourceObject.LoadValue(26, new(*device.Registry), func(y interface{}) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
 func (s *SocketRecord) StateTypeName() string {
@@ -2404,6 +2398,8 @@ func (t *Timekeeper) StateTypeName() string {
 
 func (t *Timekeeper) StateFields() []string {
 	return []string{
+		"realtimeClock",
+		"monotonicClock",
 		"bootTime",
 		"saveMonotonic",
 		"saveRealtime",
@@ -2414,18 +2410,22 @@ func (t *Timekeeper) StateFields() []string {
 // +checklocksignore
 func (t *Timekeeper) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
-	stateSinkObject.Save(0, &t.bootTime)
-	stateSinkObject.Save(1, &t.saveMonotonic)
-	stateSinkObject.Save(2, &t.saveRealtime)
-	stateSinkObject.Save(3, &t.params)
+	stateSinkObject.Save(0, &t.realtimeClock)
+	stateSinkObject.Save(1, &t.monotonicClock)
+	stateSinkObject.Save(2, &t.bootTime)
+	stateSinkObject.Save(3, &t.saveMonotonic)
+	stateSinkObject.Save(4, &t.saveRealtime)
+	stateSinkObject.Save(5, &t.params)
 }
 
 // +checklocksignore
 func (t *Timekeeper) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.bootTime)
-	stateSourceObject.Load(1, &t.saveMonotonic)
-	stateSourceObject.Load(2, &t.saveRealtime)
-	stateSourceObject.Load(3, &t.params)
+	stateSourceObject.Load(0, &t.realtimeClock)
+	stateSourceObject.Load(1, &t.monotonicClock)
+	stateSourceObject.Load(2, &t.bootTime)
+	stateSourceObject.Load(3, &t.saveMonotonic)
+	stateSourceObject.Load(4, &t.saveRealtime)
+	stateSourceObject.Load(5, &t.params)
 	stateSourceObject.AfterLoad(t.afterLoad)
 }
 
