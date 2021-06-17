@@ -418,7 +418,6 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/3549): Check for other flags.
 	// For now, redirect target only supports destination change.
 	if natRange.Flags != linux.NF_NAT_RANGE_PROTO_SPECIFIED {
 		nflog("nfNATTargetMaker: invalid range flags %d", natRange.Flags)

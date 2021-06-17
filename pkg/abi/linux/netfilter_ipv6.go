@@ -41,7 +41,6 @@ const (
 
 // IP6T_ORIGINAL_DST is the ip6tables SOL_IPV6 socket option. Corresponds to
 // the value in include/uapi/linux/netfilter_ipv6/ip6_tables.h.
-// TODO(gvisor.dev/issue/3549): Support IPv6 original destination.
 const IP6T_ORIGINAL_DST = 80
 
 // IP6TReplace is the argument for the IP6T_SO_SET_REPLACE sockopt. It
