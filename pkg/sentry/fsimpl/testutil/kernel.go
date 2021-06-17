@@ -80,12 +80,8 @@ func Boot() (*kernel.Kernel, error) {
 	}
 
 	// Create timekeeper.
-	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
-	if err != nil {
-		return nil, fmt.Errorf("creating timekeeper: %v", err)
-	}
+	tk := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
-	k.SetTimekeeper(tk)
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
 
@@ -94,6 +90,7 @@ func Boot() (*kernel.Kernel, error) {
 	if err = k.Init(kernel.InitKernelArgs{
 		ApplicationCores:            uint(runtime.GOMAXPROCS(-1)),
 		FeatureSet:                  cpuid.HostFeatureSet(),
+		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
 		Vdso:                        vdso,
 		RootUTSNamespace:            kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
