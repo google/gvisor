@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <errno.h>
@@ -44,6 +45,29 @@ TEST(IoUringSetupTest, ReturnsFd) {
   int fd = io_uring_setup(nb_entries, &params);
 
   ASSERT_NE(fd , -1);
+}
+
+TEST(IoUringSetupTest, IsMappable) {
+  struct io_uring_params params = { 0 };
+  const int nb_entries = 2;
+  int fd = io_uring_setup(nb_entries, &params);
+
+  int sring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned);
+  int cring_sz =
+      params.cq_off.cqes + params.cq_entries * sizeof(struct io_uring_cqe);
+  int sqring_sz = params.sq_entries * sizeof(struct io_uring_sqe);
+
+  void *addr = mmap(0, sring_sz, PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
+  ASSERT_NE(addr , MAP_FAILED);
+
+  addr = mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd, IORING_OFF_CQ_RING);
+  ASSERT_NE(addr , MAP_FAILED);
+
+  addr = mmap(0, sqring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd, IORING_OFF_SQES);
+  ASSERT_NE(addr , MAP_FAILED);
 }
 
 }  // namespace
