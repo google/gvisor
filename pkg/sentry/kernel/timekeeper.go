@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Timekeeper manages all of the kernel clocks.
@@ -38,6 +39,12 @@ type Timekeeper struct {
 	//
 	// It is set only once, by SetClocks.
 	clocks sentrytime.Clocks `state:"nosave"`
+
+	// realtimeClock is a ktime.Clock based on timekeeper's Realtime.
+	realtimeClock *timekeeperClock
+
+	// monotonicClock is a ktime.Clock based on timekeeper's Monotonic.
+	monotonicClock *timekeeperClock
 
 	// bootTime is the realtime when the system "booted". i.e., when
 	// SetClocks was called in the initial (not restored) run.
@@ -90,10 +97,13 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage memmap.FileRange) (*Timekeeper, error) {
-	return &Timekeeper{
+func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage memmap.FileRange) *Timekeeper {
+	t := Timekeeper{
 		params: NewVDSOParamPage(mfp, paramPage),
-	}, nil
+	}
+	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
+	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}
+	return &t
 }
 
 // SetClocks the backing clock source.
@@ -165,6 +175,32 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks) {
 	if t.restored != nil {
 		close(t.restored)
 	}
+}
+
+var _ tcpip.Clock = (*Timekeeper)(nil)
+
+// Now implements tcpip.Clock.
+func (t *Timekeeper) Now() time.Time {
+	nsec, err := t.GetTime(sentrytime.Realtime)
+	if err != nil {
+		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
+	}
+	return time.Unix(0, nsec)
+}
+
+// NowMonotonic implements tcpip.Clock.
+func (t *Timekeeper) NowMonotonic() tcpip.MonotonicTime {
+	nsec, err := t.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
+	}
+	var mt tcpip.MonotonicTime
+	return mt.Add(time.Duration(nsec) * time.Nanosecond)
+}
+
+// AfterFunc implements tcpip.Clock.
+func (t *Timekeeper) AfterFunc(d time.Duration, f func()) tcpip.Timer {
+	return ktime.TcpipAfterFunc(t.realtimeClock, d, f)
 }
 
 // startUpdater starts an update goroutine that keeps the clocks updated.

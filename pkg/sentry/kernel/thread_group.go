@@ -278,7 +278,7 @@ func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, s
 		limits:            limits,
 		mounts:            mntns,
 	}
-	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
+	tg.itimerRealTimer = ktime.NewTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
 	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
