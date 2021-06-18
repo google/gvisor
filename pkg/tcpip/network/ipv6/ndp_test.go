@@ -42,7 +42,7 @@ type testNDPDispatcher struct {
 func (*testNDPDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult) {
 }
 
-func (t *testNDPDispatcher) OnOffLinkRouteUpdated(_ tcpip.NICID, _ tcpip.Subnet, addr tcpip.Address) {
+func (t *testNDPDispatcher) OnOffLinkRouteUpdated(_ tcpip.NICID, _ tcpip.Subnet, addr tcpip.Address, _ header.NDPRoutePreference) {
 	t.addr = addr
 }
 
@@ -93,7 +93,7 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 
 	ipv6EP := ep.(*endpoint)
 	ipv6EP.mu.Lock()
-	ipv6EP.mu.ndp.rememberDefaultRouter(lladdr1, time.Hour)
+	ipv6EP.mu.ndp.rememberDefaultRouter(lladdr1, time.Hour, header.MediumRoutePreference)
 	ipv6EP.mu.Unlock()
 
 	if ndpDisp.addr != lladdr1 {
