@@ -218,7 +218,7 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOffLinkRouteUpdated(tcpip.NICID, tcpip.Subnet, tcpip.Address)
+	OnOffLinkRouteUpdated(tcpip.NICID, tcpip.Subnet, tcpip.Address, header.NDPRoutePreference)
 
 	// OnOffLinkRouteInvalidated is called when an off-link route is invalidated.
 	//
@@ -508,6 +508,8 @@ type ndpState struct {
 // defaultRouterState holds data associated with a default router discovered by
 // a Router Advertisement (RA).
 type defaultRouterState struct {
+	prf header.NDPRoutePreference
+
 	// Job to invalidate the default router.
 	//
 	// Must not be nil.
@@ -726,6 +728,19 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 	// Is the IPv6 endpoint configured to discover default routers?
 	if ndp.configs.DiscoverDefaultRouters {
+		prf := ra.DefaultRouterPreference()
+		if prf == header.ReservedRoutePreference {
+			// As per RFC 4191 section 2.2,
+			//
+			//   Prf (Default Router Preference)
+			//
+			//     If the Reserved (10) value is received, the receiver MUST treat the
+			//     value as if it were (00).
+			//
+			// Note that the value 00 is the medium (default) router preference value.
+			prf = header.MediumRoutePreference
+		}
+
 		rtr, ok := ndp.defaultRouters[ip]
 		rl := ra.RouterLifetime()
 		switch {
@@ -735,7 +750,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			// Only remember it if we currently know about less than
 			// MaxDiscoveredDefaultRouters routers.
 			if len(ndp.defaultRouters) < MaxDiscoveredDefaultRouters {
-				ndp.rememberDefaultRouter(ip, rl)
+				ndp.rememberDefaultRouter(ip, rl, prf)
 			}
 
 		case ok && rl != 0:
@@ -743,6 +758,14 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			// the invalidation job.
 			rtr.invalidationJob.Cancel()
 			rtr.invalidationJob.Schedule(rl)
+
+			if prf != rtr.prf {
+				rtr.prf = prf
+
+				// Inform the integrator about router preference updates.
+				ndp.ep.protocol.options.NDPDisp.OnOffLinkRouteUpdated(ndp.ep.nic.ID(), header.IPv6EmptySubnet, ip, prf)
+			}
+
 			ndp.defaultRouters[ip] = rtr
 
 		case ok && rl == 0:
@@ -834,16 +857,17 @@ func (ndp *ndpState) invalidateDefaultRouter(ip tcpip.Address) {
 // The router identified by ip MUST NOT already be known by the IPv6 endpoint.
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
-func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration) {
+func (ndp *ndpState) rememberDefaultRouter(ip tcpip.Address, rl time.Duration, prf header.NDPRoutePreference) {
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
 		return
 	}
 
 	// Inform the integrator when we discovered a default router.
-	ndpDisp.OnOffLinkRouteUpdated(ndp.ep.nic.ID(), header.IPv6EmptySubnet, ip)
+	ndpDisp.OnOffLinkRouteUpdated(ndp.ep.nic.ID(), header.IPv6EmptySubnet, ip, prf)
 
 	state := defaultRouterState{
+		prf: prf,
 		invalidationJob: ndp.ep.protocol.stack.NewJob(&ndp.ep.mu, func() {
 			ndp.invalidateDefaultRouter(ip)
 		}),
