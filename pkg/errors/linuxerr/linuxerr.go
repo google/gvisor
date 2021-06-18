@@ -27,6 +27,7 @@ import (
 const maxErrno uint32 = errno.EHWPOISON + 1
 
 var (
+	NOERROR = errors.New(errno.NOERRNO, "not an error")
 	EPERM   = errors.New(errno.EPERM, "operation not permitted")
 	ENOENT  = errors.New(errno.ENOENT, "no such file or directory")
 	ESRCH   = errors.New(errno.ESRCH, "no such process")
@@ -176,7 +177,7 @@ var errNotValidError = errors.New(errno.Errno(maxErrno), "not a valid error")
 // errnos (especially uint32(sycall.Errno)) and *Error.
 var errorSlice = []*errors.Error{
 	// Errno values from include/uapi/asm-generic/errno-base.h.
-	errno.NOERRNO: nil,
+	errno.NOERRNO: NOERROR,
 	errno.EPERM:   EPERM,
 	errno.ENOENT:  ENOENT,
 	errno.ESRCH:   ESRCH,

@@ -19,7 +19,8 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 
-	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
@@ -483,7 +484,7 @@ func (cs *connState) lookupChannel(id uint32) *channel {
 func (cs *connState) handle(m message) (r message) {
 	if !cs.reqGate.Enter() {
 		// connState.stop() has been called; the connection is shutting down.
-		r = newErr(unix.ECONNRESET)
+		r = newErrFromLinuxerr(linuxerr.ECONNRESET)
 		return
 	}
 	defer func() {
@@ -498,15 +499,23 @@ func (cs *connState) handle(m message) (r message) {
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErr(unix.EFAULT)
+			r = newErrFromLinuxerr(linuxerr.EFAULT)
 		}
 	}()
 	if handler, ok := m.(handler); ok {
 		// Call the message handler.
 		r = handler.handle(cs)
+		// TODO(b/34162363):This is only here to make sure the server works with
+		// only linuxerr Errors, as the handlers work with both client and server.
+		// It will be removed a followup, when all the unix.Errno errors are
+		// replaced with linuxerr.
+		if rlError, ok := r.(*Rlerror); ok {
+			e := linuxerr.ErrorFromErrno(errno.Errno(rlError.Error))
+			r = newErrFromLinuxerr(e)
+		}
 	} else {
 		// Produce an ENOSYS error.
-		r = newErr(unix.ENOSYS)
+		r = newErrFromLinuxerr(linuxerr.ENOSYS)
 	}
 	return
 }
@@ -553,7 +562,7 @@ func (cs *connState) handleRequest() bool {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
-		err := send(cs.conn, tag, newErr(err))
+		err := send(cs.conn, tag, newErrFromLinuxerr(err))
 		cs.sendMu.Unlock()
 		if err != nil {
 			log.Debugf("p9.send: %v", err)
