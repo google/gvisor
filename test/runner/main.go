@@ -48,6 +48,7 @@ var (
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
+	lisafs     = flag.Bool("lisafs", false, "enable lisafs protocol")
 	fuse       = flag.Bool("fuse", false, "enable FUSE")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 
@@ -160,6 +161,9 @@ func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-vfs2")
 		if *fuse {
 			args = append(args, "-fuse")
+		}
+		if *lisafs {
+			args = append(args, "-lisafs")
 		}
 	}
 	if *debug {
@@ -380,6 +384,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 			env = append(env, fuseVar+"=TRUE")
 		} else {
 			env = append(env, fuseVar+"=FALSE")
+		}
+		const lisafsVar = "LISAFS_ENABLED"
+		if *lisafs {
+			env = append(env, lisafsVar+"=TRUE")
+		} else {
+			env = append(env, lisafsVar+"=FALSE")
 		}
 	} else {
 		env = append(env, vfsVar+"=VFS1")

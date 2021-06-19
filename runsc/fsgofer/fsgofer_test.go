@@ -114,14 +114,14 @@ func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 	return nil
 }
 
-type state struct {
+type fileState struct {
 	root     *localFile
 	file     *localFile
 	conf     Config
 	fileType uint32
 }
 
-func (s state) String() string {
+func (s fileState) String() string {
 	return fmt.Sprintf("type(%v)", s.fileType)
 }
 
@@ -138,11 +138,11 @@ func typeName(fileType uint32) string {
 	}
 }
 
-func runAll(t *testing.T, test func(*testing.T, state)) {
+func runAll(t *testing.T, test func(*testing.T, fileState)) {
 	runCustom(t, allTypes, allConfs, test)
 }
 
-func runCustom(t *testing.T, types []uint32, confs []Config, test func(*testing.T, state)) {
+func runCustom(t *testing.T, types []uint32, confs []Config, test func(*testing.T, fileState)) {
 	for _, c := range confs {
 		for _, ft := range types {
 			name := fmt.Sprintf("%s/%s", configTestName(&c), typeName(ft))
@@ -168,7 +168,7 @@ func runCustom(t *testing.T, types []uint32, confs []Config, test func(*testing.
 					t.Fatalf("root.Walk({%q}) failed, err: %v", "symlink", err)
 				}
 
-				st := state{
+				st := fileState{
 					root:     root.(*localFile),
 					file:     file.(*localFile),
 					conf:     c,
@@ -236,7 +236,7 @@ func createFile(dir *localFile, name string) (*localFile, error) {
 }
 
 func TestReadWrite(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		child, err := createFile(s.file, "test")
 		if err != nil {
 			t.Fatalf("%v: createFile() failed, err: %v", s, err)
@@ -270,7 +270,7 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		for i, flags := range allOpenFlags {
 			_, l, _, _, err := s.file.Create(fmt.Sprintf("test-%d", i), flags, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 			if err != nil {
@@ -305,7 +305,7 @@ func TestCreateSetGID(t *testing.T) {
 		t.Skipf("Test requires CAP_CHOWN")
 	}
 
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		// Change group and set setgid to the parent dir.
 		if err := unix.Chown(s.file.hostPath, os.Getuid(), nobody); err != nil {
 			t.Fatalf("Chown() failed: %v", err)
@@ -373,7 +373,7 @@ func TestCreateSetGID(t *testing.T) {
 // TestReadWriteDup tests that a file opened in any mode can be dup'ed and
 // reopened in any other mode.
 func TestReadWriteDup(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		child, err := createFile(s.file, "test")
 		if err != nil {
 			t.Fatalf("%v: createFile() failed, err: %v", s, err)
@@ -419,7 +419,7 @@ func TestReadWriteDup(t *testing.T) {
 }
 
 func TestUnopened(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFREG}, allConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFREG}, allConfs, func(t *testing.T, s fileState) {
 		b := []byte("foobar")
 		if _, err := s.file.WriteAt(b, 0); err != unix.EBADF {
 			t.Errorf("%v: WriteAt() should have failed, got: %v, expected: unix.EBADF", s, err)
@@ -441,7 +441,7 @@ func TestUnopened(t *testing.T) {
 // was open with O_PATH, but Open() was not checking for it and allowing the
 // control file to be reused.
 func TestOpenOPath(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s fileState) {
 		// Fist remove all permissions on the file.
 		if err := s.file.SetAttr(p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: p9.FileMode(0)}); err != nil {
 			t.Fatalf("SetAttr(): %v", err)
@@ -474,7 +474,7 @@ func SetGetAttr(l *localFile, valid p9.SetAttrMask, attr p9.SetAttr) (p9.Attr, e
 }
 
 func TestSetAttrPerm(t *testing.T) {
-	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, rwConfs, func(t *testing.T, s fileState) {
 		valid := p9.SetAttrMask{Permissions: true}
 		attr := p9.SetAttr{Permissions: 0777}
 		got, err := SetGetAttr(s.file, valid, attr)
@@ -494,7 +494,7 @@ func TestSetAttrPerm(t *testing.T) {
 }
 
 func TestSetAttrSize(t *testing.T) {
-	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, rwConfs, func(t *testing.T, s fileState) {
 		for _, size := range []uint64{1024, 0, 1024 * 1024} {
 			valid := p9.SetAttrMask{Size: true}
 			attr := p9.SetAttr{Size: size}
@@ -517,7 +517,7 @@ func TestSetAttrSize(t *testing.T) {
 }
 
 func TestSetAttrTime(t *testing.T) {
-	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, rwConfs, func(t *testing.T, s fileState) {
 		valid := p9.SetAttrMask{ATime: true, ATimeNotSystemTime: true}
 		attr := p9.SetAttr{ATimeSeconds: 123, ATimeNanoSeconds: 456}
 		got, err := SetGetAttr(s.file, valid, attr)
@@ -551,7 +551,7 @@ func TestSetAttrOwner(t *testing.T) {
 		t.Skipf("SetAttr(owner) test requires CAP_CHOWN, running as %d", os.Getuid())
 	}
 
-	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, rwConfs, func(t *testing.T, s fileState) {
 		newUID := os.Getuid() + 1
 		valid := p9.SetAttrMask{UID: true}
 		attr := p9.SetAttr{UID: p9.UID(newUID)}
@@ -580,7 +580,7 @@ func SetGetXattr(l *localFile, name string, value string) error {
 }
 
 func TestSetGetDisabledXattr(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFREG}, rwConfs, func(t *testing.T, s fileState) {
 		name := "user.merkle.offset"
 		value := "tmp"
 		err := SetGetXattr(s.file, name, value)
@@ -591,7 +591,7 @@ func TestSetGetDisabledXattr(t *testing.T) {
 }
 
 func TestSetGetXattr(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFREG}, []Config{{ROMount: false, EnableVerityXattr: true}}, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFREG}, []Config{{ROMount: false, EnableVerityXattr: true}}, func(t *testing.T, s fileState) {
 		name := "user.merkle.offset"
 		value := "tmp"
 		err := SetGetXattr(s.file, name, value)
@@ -605,7 +605,7 @@ func TestLink(t *testing.T) {
 	if !specutils.HasCapabilities(capability.CAP_DAC_READ_SEARCH) {
 		t.Skipf("Link test requires CAP_DAC_READ_SEARCH, running as %d", os.Getuid())
 	}
-	runCustom(t, allTypes, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, rwConfs, func(t *testing.T, s fileState) {
 		const dirName = "linkdir"
 		const linkFile = "link"
 		if _, err := s.root.Mkdir(dirName, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
@@ -634,7 +634,7 @@ func TestROMountChecks(t *testing.T) {
 	uid := p9.UID(os.Getuid())
 	gid := p9.GID(os.Getgid())
 
-	runCustom(t, allTypes, roConfs, func(t *testing.T, s state) {
+	runCustom(t, allTypes, roConfs, func(t *testing.T, s fileState) {
 		if s.fileType != unix.S_IFLNK {
 			if _, _, _, err := s.file.Open(p9.WriteOnly); err != want {
 				t.Errorf("Open() should have failed, got: %v, expected: %v", err, want)
@@ -685,7 +685,7 @@ func TestROMountChecks(t *testing.T) {
 }
 
 func TestWalkNotFound(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, allConfs, func(t *testing.T, s fileState) {
 		if _, _, err := s.file.Walk([]string{"nobody-here"}); err != unix.ENOENT {
 			t.Errorf("Walk(%q) should have failed, got: %v, expected: unix.ENOENT", "nobody-here", err)
 		}
@@ -704,7 +704,7 @@ func TestWalkNotFound(t *testing.T) {
 }
 
 func TestWalkDup(t *testing.T) {
-	runAll(t, func(t *testing.T, s state) {
+	runAll(t, func(t *testing.T, s fileState) {
 		_, dup, err := s.file.Walk([]string{})
 		if err != nil {
 			t.Fatalf("%v: Walk(nil) failed, err: %v", s, err)
@@ -717,7 +717,7 @@ func TestWalkDup(t *testing.T) {
 }
 
 func TestWalkMultiple(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		var names []string
 		var parent p9.File = s.file
 		for i := 0; i < 5; i++ {
@@ -738,7 +738,7 @@ func TestWalkMultiple(t *testing.T) {
 }
 
 func TestReaddir(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		name := "dir"
 		if _, err := s.file.Mkdir(name, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != nil {
 			t.Fatalf("%v: MkDir(%s) failed, err: %v", s, name, err)
@@ -924,7 +924,7 @@ func TestDoubleAttachError(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		child, err := createFile(s.file, "test")
 		if err != nil {
 			t.Fatalf("createFile() failed: %v", err)
@@ -960,7 +960,7 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestMknod(t *testing.T) {
-	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s state) {
+	runCustom(t, []uint32{unix.S_IFDIR}, rwConfs, func(t *testing.T, s fileState) {
 		_, err := s.file.Mknod("test", p9.ModeRegular|0777, 1, 2, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 		if err != nil {
 			t.Fatalf("Mknod() failed: %v", err)

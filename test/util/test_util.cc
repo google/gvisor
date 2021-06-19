@@ -43,6 +43,7 @@ namespace testing {
 constexpr char kGvisorNetwork[] = "GVISOR_NETWORK";
 constexpr char kGvisorVfs[] = "GVISOR_VFS";
 constexpr char kFuseEnabled[] = "FUSE_ENABLED";
+constexpr char kLisafsEnabled[] = "LISAFS_ENABLED";
 
 bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
 
@@ -71,6 +72,11 @@ bool IsRunningWithVFS1() {
 
 bool IsFUSEEnabled() {
   const char* env = getenv(kFuseEnabled);
+  return env && strcmp(env, "TRUE") == 0;
+}
+
+bool IsLisafsEnabled() {
+  const char* env = getenv(kLisafsEnabled);
   return env && strcmp(env, "TRUE") == 0;
 }
 

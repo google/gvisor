@@ -143,6 +143,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call configure_noreload,$(RUNTIME)-d,--net-raw --debug --strace --log-packets)
 	@$(call configure_noreload,$(RUNTIME)-p,--net-raw --profile)
 	@$(call configure_noreload,$(RUNTIME)-vfs2-d,--net-raw --debug --strace --log-packets --vfs2)
+	@$(call configure_noreload,$(RUNTIME)-lisafs-d,--net-raw --debug --strace --log-packets --vfs2 --lisafs)
 	@$(call configure_noreload,$(RUNTIME)-vfs2-fuse-d,--net-raw --debug --strace --log-packets --vfs2 --fuse)
 	@$(call configure_noreload,$(RUNTIME)-vfs2-cgroup-d,--net-raw --debug --strace --log-packets --vfs2 --cgroupfs)
 	@$(call reload_docker)
@@ -222,6 +223,10 @@ syscall-tests: ## Run all system call tests.
 	@$(call install_runtime,$(RUNTIME),--vfs2)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
 
+%-runtime-tests_lisafs: load-runtimes_% $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--vfs2 --lisafs)
+	@$(call test_runtime,$(RUNTIME),--test_timeout=10800 //test/runtimes:$*)
+
 do-tests:
 	@$(call run,//runsc,--rootless do true)
 	@$(call run,//runsc,--rootless -network=none do true)
@@ -246,6 +251,8 @@ docker-tests: load-basic $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 	@$(call install_runtime,$(RUNTIME),--vfs2)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--vfs2 --lisafs)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: docker-tests
 
