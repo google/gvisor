@@ -69,3 +69,20 @@ type IoUringParams struct {
 	CqOff        IoCqringOffsets
 	//TODO: Fix missing sq_off and cq_off
 }
+
+// IoUringCqe represents struct io_uring_cqe.
+//
+// +marshal
+type IoUringCqe struct {
+	UserData uint64
+	Res      int32
+	Flags    uint32
+}
+
+// IoUringSqe represents struct io_uring_sqe.
+// TODO: this is just a placeholder
+//
+// +marshal
+type IoUringSqe struct {
+	Resv [64]uint8
+}
