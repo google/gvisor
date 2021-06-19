@@ -203,6 +203,56 @@ func TestTransportDemuxerRegister(t *testing.T) {
 	}
 }
 
+func TestTransportDemuxerRegisterMultiple(t *testing.T) {
+	type test struct {
+		flags ports.Flags
+		want  tcpip.Error
+	}
+	for _, subtest := range []struct {
+		name  string
+		tests []test
+	}{
+		{"zeroFlags", []test{
+			{ports.Flags{}, nil},
+			{ports.Flags{}, &tcpip.ErrPortInUse{}},
+		}},
+		{"multibindFlags", []test{
+			// Allow multiple registrations same TransportEndpointID with multibind flags.
+			{ports.Flags{LoadBalanced: true, MostRecent: true}, nil},
+			{ports.Flags{LoadBalanced: true, MostRecent: true}, nil},
+			// Disallow registration w/same ID for a non-multibindflag.
+			{ports.Flags{TupleOnly: true}, &tcpip.ErrPortInUse{}},
+		}},
+	} {
+		t.Run(subtest.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+			})
+			var eps []tcpip.Endpoint
+			for idx, test := range subtest.tests {
+				var wq waiter.Queue
+				ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+				if err != nil {
+					t.Fatal(err)
+				}
+				eps = append(eps, ep)
+				tEP, ok := ep.(stack.TransportEndpoint)
+				if !ok {
+					t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
+				}
+				id := stack.TransportEndpointID{LocalPort: 1}
+				if got, want := s.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber}, udp.ProtocolNumber, id, tEP, test.flags, 0), test.want; got != want {
+					t.Fatalf("test index: %d, s.RegisterTransportEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber, _, _, %+v, 0) = %s, want %s", idx, test.flags, got, want)
+				}
+			}
+			for _, ep := range eps {
+				ep.Close()
+			}
+		})
+	}
+}
+
 // TestBindToDeviceDistribution injects varied packets on input devices and checks that
 // the distribution of packets received matches expectations.
 func TestBindToDeviceDistribution(t *testing.T) {
