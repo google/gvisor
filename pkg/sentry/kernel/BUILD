@@ -249,6 +249,7 @@ go_library(
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
+        "//pkg/sentry/fsimpl/iouringfs",
         "//pkg/sentry/fsimpl/timerfd",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/hostcpu",

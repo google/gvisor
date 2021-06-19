@@ -36,6 +36,8 @@ var (
 	ENOTSOCK = error(unix.ENOTSOCK)
 	ENOSPC   = error(unix.ENOSPC)
 	ENOSYS   = error(unix.ENOSYS)
+	EPERM    = error(unix.EPERM)
+	EFAULT   = error(unix.EFAULT)
 )
 
 var (

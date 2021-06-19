@@ -57,6 +57,7 @@ go_library(
         "//pkg/sentry/fsimpl/signalfd",
         "//pkg/sentry/fsimpl/timerfd",
         "//pkg/sentry/fsimpl/tmpfs",
+        "//pkg/sentry/fsimpl/iouringfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/fasync",

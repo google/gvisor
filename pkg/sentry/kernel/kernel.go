@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	oldtimerfd "gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
@@ -273,6 +274,9 @@ type Kernel struct {
 	// 3. Socket files created by binding Unix sockets to a file path
 	socketMount *vfs.Mount
 
+	// FIXME:doc
+	iouringMount *vfs.Mount
+
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
 	SleepForAddressSpaceActivation bool
@@ -433,6 +437,17 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to create sockfs mount: %v", err)
 		}
 		k.socketMount = socketMount
+
+		iouringFilesystem, err := iouringfs.NewFilesystem(&k.vfs)
+		if err != nil {
+			return fmt.Errorf("failed to create iouringfs filesystem: %v", err)
+		}
+		defer iouringFilesystem.DecRef(ctx)
+		iouringMount, err := k.vfs.NewDisconnectedMount(iouringFilesystem, nil, &vfs.MountOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create iouringfs mount: %v", err)
+		}
+		k.iouringMount = iouringMount
 
 		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
 
@@ -1794,6 +1809,11 @@ func (k *Kernel) ShmMount() *vfs.Mount {
 // SocketMount returns the sockfs mount.
 func (k *Kernel) SocketMount() *vfs.Mount {
 	return k.socketMount
+}
+
+// IoUringMount returns the iouring mount.
+func (k *Kernel) IoUringMount() *vfs.Mount {
+	return k.iouringMount
 }
 
 // CgroupRegistry returns the cgroup registry.

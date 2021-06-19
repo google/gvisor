@@ -18,9 +18,10 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
+
 	"unsafe"
 )
 
@@ -33,8 +34,7 @@ type IoUring struct {
 	_    [15]uint32 // Head and tail need to be "____cacheline_aligned_in_smp"
 }
 
-// Represent `struct io_rings` as defined in
-// https://elixir.bootlin.com/linux/v5.10.44/source/fs/io_uring.c#L119
+// Represent `struct io_rings` as defined in fs/io_uring.c in linux
 type IoRings struct {
 	Sq            IoUring
 	Cq            IoUring
@@ -54,40 +54,32 @@ func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	entries := args[0].Uint()
 	params := args[1].Pointer()
 
-	err := ioUringCreate(t, entries, params)
+	paramsStruct, err := ioUringCreate(t, entries, params)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// 2 * IORING_OFF_SQES is to have enought space on the tmpfs file. This
-	// should change once we implement `iouringfs`
-	file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(),
-		2*linux.IORING_OFF_SQES)
-	if err != nil {
+	file_io, err_io := iouringfs.NewIouringfsFile(t, t.Kernel().IoUringMount(), paramsStruct.SqEntries, paramsStruct.CqEntries)
+	if err_io != nil {
 		return 0, nil, err
 	}
-
-	fd, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{
+	fd_io, err_io := t.NewFDFromVFS2(0, file_io, kernel.FDFlags{
 		CloseOnExec: linux.O_CLOEXEC != 0,
 	})
-	if err != nil {
-		return 0, nil, err
-	}
 
-	return uintptr(fd), nil, nil
-
+	return uintptr(fd_io), nil, nil
 }
 
-func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) error {
+func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) (*linux.IoUringParams, error) {
 	if entries == 0 {
-		return syserror.EINVAL
+		return nil, syserror.EFAULT
 	}
 
 	var params linux.IoUringParams
 
 	_, err := params.CopyIn(t, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if entries > linux.IORING_MAX_ENTRIES {
@@ -116,7 +108,7 @@ func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) error {
 	params.CqOff.Flags = uint32(unsafe.Offsetof(rings.CqFlags))
 
 	_, err = params.CopyOut(t, p)
-	return err
+	return &params, err
 }
 
 func NextPowOf2(n uint32) uint32 {
