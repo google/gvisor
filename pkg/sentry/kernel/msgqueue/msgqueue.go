@@ -386,13 +386,21 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 	return msg, nil
 }
 
-// Copy copies a message from the queue without deleting it. See
-// msgrcv(MSG_COPY).
-func (q *Queue) Copy() (*Message, error) {
+// Copy copies a message from the queue without deleting it. If no message
+// exists, an error is returned. See msgrcv(MSG_COPY).
+func (q *Queue) Copy(mType int64) (*Message, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	return nil, linuxerr.ENOSYS
+	if mType < 0 || q.messages.Empty() {
+		return nil, linuxerr.ENOMSG
+	}
+
+	msg := q.msgAtIndex(mType)
+	if msg == nil {
+		return nil, linuxerr.ENOMSG
+	}
+	return msg, nil
 }
 
 // msgOfType returns the first message with the specified type, nil if no
@@ -431,6 +439,17 @@ func (q *Queue) msgOfTypeLessThan(mType int64) (m *Message) {
 		}
 	}
 	return m
+}
+
+// msgAtIndex returns a pointer to a message at given index, nil if non exits.
+//
+// Precondition: caller must hold q.mu.
+func (q *Queue) msgAtIndex(mType int64) *Message {
+	msg := q.messages.Front()
+	for ; mType != 0 && msg != nil; mType-- {
+		msg = msg.Next()
+	}
+	return msg
 }
 
 // Lock implements ipc.Mechanism.Lock.
