@@ -86,6 +86,7 @@ go_library(
         "//pkg/sentry/kernel/eventfd",
         "//pkg/sentry/kernel/fasync",
         "//pkg/sentry/kernel/ipc",
+        "//pkg/sentry/kernel/msgqueue",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/shm",
