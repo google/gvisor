@@ -1130,7 +1130,7 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 func (e *endpoint) handleSegmentsLocked(fastPath bool) tcpip.Error {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
-		if e.EndpointState().closed() {
+		if state := e.EndpointState(); state.closed() || state == StateTimeWait {
 			return nil
 		}
 		s := e.segmentQueue.dequeue()
