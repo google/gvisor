@@ -61,6 +61,7 @@ Most common utilities work. Note that:
 | drill    | Working.                                  |
 | env      | Working.                                  |
 | find     | Working.                                  |
+| gcore    | Working.                                  |
 | gdb      | Working.                                  |
 | gosu     | Working.                                  |
 | grep     | Working (unless stdin is a pipe and stdout is /dev/null). |
