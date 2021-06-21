@@ -118,7 +118,10 @@ func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize int64, msgCopy, wai
 	}
 
 	if msgCopy {
-		return queue.Copy()
+		if wait || except {
+			return nil, linuxerr.EINVAL
+		}
+		return queue.Copy(mType)
 	}
 	return queue.Receive(t, t, mType, maxSize, wait, truncate, except, pid)
 }

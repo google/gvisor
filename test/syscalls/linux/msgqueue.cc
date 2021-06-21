@@ -345,7 +345,7 @@ bool MsgCopySupported() {
            errno == ENOSYS);
 }
 
-// Test usage of MSG_COPY for msgrcv.
+// Test msgrcv using MSG_COPY.
 TEST(MsgqueueTest, MsgCopy) {
   SKIP_IF(!MsgCopySupported());
 
@@ -372,11 +372,6 @@ TEST(MsgqueueTest, MsgCopy) {
     EXPECT_TRUE(buf == rcv);
   }
 
-  // Invalid index.
-  msgbuf rcv;
-  EXPECT_THAT(msgrcv(queue.get(), &rcv, 1, 5, MSG_COPY | IPC_NOWAIT),
-              SyscallFailsWithErrno(ENOMSG));
-
   // Re-receive the messages normally.
   for (auto& buf : bufs) {
     msgbuf rcv;
@@ -384,6 +379,37 @@ TEST(MsgqueueTest, MsgCopy) {
                 SyscallSucceedsWithValue(sizeof(buf.mtext)));
     EXPECT_TRUE(buf == rcv);
   }
+}
+
+// Test msgrcv using MSG_COPY with invalid arguments.
+TEST(MsgqueueTest, MsgCopyInvalidArgs) {
+  SKIP_IF(!MsgCopySupported());
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  msgbuf rcv;
+  EXPECT_THAT(msgrcv(queue.get(), &rcv, msgSize, 1, MSG_COPY),
+              SyscallFailsWithErrno(EINVAL));
+
+  EXPECT_THAT(
+      msgrcv(queue.get(), &rcv, msgSize, 5, MSG_COPY | MSG_EXCEPT | IPC_NOWAIT),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+// Test msgrcv using MSG_COPY with invalid indices.
+TEST(MsgqueueTest, MsgCopyInvalidIndex) {
+  SKIP_IF(!MsgCopySupported());
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  msgbuf rcv;
+  EXPECT_THAT(msgrcv(queue.get(), &rcv, msgSize, -3, MSG_COPY | IPC_NOWAIT),
+              SyscallFailsWithErrno(ENOMSG));
+
+  EXPECT_THAT(msgrcv(queue.get(), &rcv, msgSize, 5, MSG_COPY | IPC_NOWAIT),
+              SyscallFailsWithErrno(ENOMSG));
 }
 
 // Test msgrcv (most probably) blocking on an empty queue.
