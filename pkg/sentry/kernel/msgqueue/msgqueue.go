@@ -386,6 +386,15 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 	return msg, nil
 }
 
+// Copy copies a message from the queue without deleting it. See
+// msgrcv(MSG_COPY).
+func (q *Queue) Copy() (*Message, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	return nil, linuxerr.ENOSYS
+}
+
 // msgOfType returns the first message with the specified type, nil if no
 // message is found. If except is true, the first message of a type not equal
 // to mType will be returned.

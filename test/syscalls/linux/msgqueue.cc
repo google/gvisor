@@ -26,11 +26,6 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-// run is a temporary variable to easily enable/disable running tests. This
-// variable should be removed along with SKIP_IF when the tested functionality
-// is enabled.
-constexpr bool run = false;
-
 constexpr int msgMax = 8192;   // Max size for message in bytes.
 constexpr int msgMni = 32000;  // Max number of identifiers.
 constexpr int msgMnb = 16384;  // Default max size of message queue in bytes.
@@ -115,8 +110,6 @@ TEST(MsgqueueTest, MsgGetIpcPrivate) {
 
 // Test simple msgsnd and msgrcv.
 TEST(MsgqueueTest, MsgOpSimple) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -133,8 +126,6 @@ TEST(MsgqueueTest, MsgOpSimple) {
 
 // Test msgsnd and msgrcv of an empty message.
 TEST(MsgqueueTest, MsgOpEmpty) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -148,8 +139,6 @@ TEST(MsgqueueTest, MsgOpEmpty) {
 
 // Test truncation of message with MSG_NOERROR flag.
 TEST(MsgqueueTest, MsgOpTruncate) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -165,8 +154,6 @@ TEST(MsgqueueTest, MsgOpTruncate) {
 
 // Test msgsnd and msgrcv using invalid arguments.
 TEST(MsgqueueTest, MsgOpInvalidArgs) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -185,12 +172,10 @@ TEST(MsgqueueTest, MsgOpInvalidArgs) {
 
 // Test non-blocking msgrcv with an empty queue.
 TEST(MsgqueueTest, MsgOpNoMsg) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  msgbuf rcv{1, ""};
+  msgbuf rcv;
   EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(rcv.mtext) + 1, 0, IPC_NOWAIT),
               SyscallFailsWithErrno(ENOMSG));
 }
@@ -198,8 +183,6 @@ TEST(MsgqueueTest, MsgOpNoMsg) {
 // Test non-blocking msgrcv with a non-empty queue, but no messages of wanted
 // type.
 TEST(MsgqueueTest, MsgOpNoMsgType) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -213,8 +196,6 @@ TEST(MsgqueueTest, MsgOpNoMsgType) {
 
 // Test msgrcv with a larger size message than wanted, and truncation disabled.
 TEST(MsgqueueTest, MsgOpTooBig) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -228,8 +209,6 @@ TEST(MsgqueueTest, MsgOpTooBig) {
 
 // Test receiving messages based on type.
 TEST(MsgqueueTest, MsgRcvType) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -257,8 +236,6 @@ TEST(MsgqueueTest, MsgRcvType) {
 
 // Test using MSG_EXCEPT to receive a different-type message.
 TEST(MsgqueueTest, MsgExcept) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -285,8 +262,6 @@ TEST(MsgqueueTest, MsgExcept) {
 
 // Test msgrcv with a negative type.
 TEST(MsgqueueTest, MsgRcvTypeNegative) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -309,8 +284,6 @@ TEST(MsgqueueTest, MsgRcvTypeNegative) {
 
 // Test permission-related failure scenarios.
 TEST(MsgqueueTest, MsgOpPermissions) {
-  SKIP_IF(!run);
-
   AutoCapability cap(CAP_IPC_OWNER, false);
 
   Queue queue(msgget(IPC_PRIVATE, 0000));
@@ -326,8 +299,6 @@ TEST(MsgqueueTest, MsgOpPermissions) {
 
 // Test limits for messages and queues.
 TEST(MsgqueueTest, MsgOpLimits) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -376,8 +347,6 @@ bool MsgCopySupported() {
 
 // Test usage of MSG_COPY for msgrcv.
 TEST(MsgqueueTest, MsgCopy) {
-  SKIP_IF(!run);
-
   SKIP_IF(!MsgCopySupported());
 
   Queue queue(msgget(IPC_PRIVATE, 0600));
@@ -419,8 +388,6 @@ TEST(MsgqueueTest, MsgCopy) {
 
 // Test msgrcv (most probably) blocking on an empty queue.
 TEST(MsgqueueTest, MsgRcvBlocking) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -449,8 +416,6 @@ TEST(MsgqueueTest, MsgRcvBlocking) {
 
 // Test msgrcv (most probably) waiting for a specific-type message.
 TEST(MsgqueueTest, MsgRcvTypeBlocking) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -487,8 +452,6 @@ TEST(MsgqueueTest, MsgRcvTypeBlocking) {
 
 // Test msgsnd (most probably) blocking on a full queue.
 TEST(MsgqueueTest, MsgSndBlocking) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -508,8 +471,7 @@ TEST(MsgqueueTest, MsgSndBlocking) {
   if (child_pid == 0) {
     // Fill the queue.
     for (size_t i = 0; i < msgCount; i++) {
-      EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
-                  SyscallSucceeds());
+      TEST_PCHECK(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0) == 0);
     }
 
     // Next msgsnd should block.
@@ -531,7 +493,7 @@ TEST(MsgqueueTest, MsgSndBlocking) {
   // Delay a bit more for the blocking msgsnd.
   absl::SleepFor(absl::Milliseconds(100));
 
-  EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0, 0),
+  EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(buf.mtext), 0, 0),
               SyscallSucceedsWithValue(sizeof(buf.mtext)));
 
   int status;
@@ -542,8 +504,6 @@ TEST(MsgqueueTest, MsgSndBlocking) {
 
 // Test removing a queue while a blocking msgsnd is executing.
 TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -592,8 +552,6 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
 
 // Test removing a queue while a blocking msgrcv is executing.
 TEST(MsgqueueTest, MsgRcvRmWhileBlocking) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -620,8 +578,6 @@ TEST(MsgqueueTest, MsgRcvRmWhileBlocking) {
 
 // Test a collection of msgsnd/msgrcv operations in different processes.
 TEST(MsgqueueTest, MsgOpGeneral) {
-  SKIP_IF(!run);
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
