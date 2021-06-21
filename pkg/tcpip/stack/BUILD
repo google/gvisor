@@ -95,7 +95,7 @@ go_library(
 
 go_test(
     name = "stack_x_test",
-    size = "medium",
+    size = "small",
     srcs = [
         "addressable_endpoint_state_test.go",
         "ndp_test.go",
