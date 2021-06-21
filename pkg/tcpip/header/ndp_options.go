@@ -148,15 +148,10 @@ const (
 	// NDP option. That is, the length field for NDP options is in units of
 	// 8 octets, as per RFC 4861 section 4.6.
 	lengthByteUnits = 8
-)
 
-var (
 	// NDPInfiniteLifetime is a value that represents infinity for the
 	// 4-byte lifetime fields found in various NDP options. Its value is
 	// (2^32 - 1)s = 4294967295s.
-	//
-	// This is a variable instead of a constant so that tests can change
-	// this value to a smaller value. It should only be modified by tests.
 	NDPInfiniteLifetime = time.Second * math.MaxUint32
 )
 
