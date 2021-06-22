@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -440,7 +441,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		if err != nil {
 			return nil, err
 		}
-		if err := res.Error(); err == syserror.ENOSYS && !isDir {
+		if err := res.Error(); linuxerr.Equals(linuxerr.ENOSYS, err) && !isDir {
 			i.fs.conn.noOpen = true
 		} else if err != nil {
 			return nil, err

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -217,7 +218,7 @@ func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, s
 func copyInXattrName(t *kernel.Task, nameAddr hostarch.Addr) (string, error) {
 	name, err := t.CopyInString(nameAddr, linux.XATTR_NAME_MAX+1)
 	if err != nil {
-		if err == syserror.ENAMETOOLONG {
+		if linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
 			return "", syserror.ERANGE
 		}
 		return "", err

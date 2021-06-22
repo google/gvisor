@@ -41,6 +41,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/gohacks",
         "//pkg/hostarch",

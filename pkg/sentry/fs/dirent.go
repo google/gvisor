@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -1439,7 +1440,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	// replaced is the dirent that is being overwritten by rename.
 	replaced, err := newParent.walk(ctx, root, newName, false /* may unlock */)
 	if err != nil {
-		if err != syserror.ENOENT {
+		if !linuxerr.Equals(linuxerr.ENOENT, err) {
 			return err
 		}
 

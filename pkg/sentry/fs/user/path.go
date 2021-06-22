@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -93,7 +94,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 		binPath := path.Join(p, name)
 		traversals := uint(linux.MaxSymlinkTraversals)
 		d, err := mns.FindInode(ctx, root, nil, binPath, &traversals)
-		if err == syserror.ENOENT || err == syserror.EACCES {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.EACCES, err) {
 			// Didn't find it here.
 			continue
 		}
@@ -142,7 +143,7 @@ func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNam
 			Flags:    linux.O_RDONLY,
 		}
 		dentry, err := root.Mount().Filesystem().VirtualFilesystem().OpenAt(ctx, creds, pop, opts)
-		if err == syserror.ENOENT || err == syserror.EACCES {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.EACCES, err) {
 			// Didn't find it here.
 			continue
 		}

@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/device"
@@ -66,7 +67,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	// Get a p9.File for name.
 	qids, newFile, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			if cp.cacheNegativeDirents() {
 				// Return a negative Dirent. It will stay cached until something
 				// is created over it.
@@ -298,7 +299,7 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 
 	// N.B. FIFOs use major/minor numbers 0.
 	if _, err := i.fileState.file.mknod(ctx, name, mode, 0, 0, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
-		if i.session().overrides == nil || err != syserror.EPERM {
+		if i.session().overrides == nil || !linuxerr.Equals(linuxerr.EPERM, err) {
 			return err
 		}
 		// If gofer doesn't support mknod, check if we can create an internal fifo.

@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -54,7 +55,7 @@ func New(message string, linuxTranslation errno.Errno) *Error {
 	// enables proper blocking semantics. This should temporary address the
 	// class of blocking bugs that keep popping up with the current state of
 	// the error space.
-	if e == syserror.EWOULDBLOCK {
+	if err.errno == linuxerr.EWOULDBLOCK.Errno() {
 		e = syserror.ErrWouldBlock
 	}
 	linuxBackwardsTranslations[err.errno] = linuxBackwardsTranslation{err: e, ok: true}

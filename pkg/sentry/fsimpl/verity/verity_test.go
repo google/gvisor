@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -31,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -476,7 +476,7 @@ func TestOpenNonexistentFile(t *testing.T) {
 
 	// Ensure open an unexpected file in the parent directory fails with
 	// ENOENT rather than verification failure.
-	if _, err = openVerityAt(ctx, vfsObj, root, filename+"abc", linux.O_RDONLY, linux.ModeRegular); err != syserror.ENOENT {
+	if _, err = openVerityAt(ctx, vfsObj, root, filename+"abc", linux.O_RDONLY, linux.ModeRegular); !linuxerr.Equals(linuxerr.ENOENT, err) {
 		t.Errorf("OpenAt unexpected error: %v", err)
 	}
 }
@@ -767,7 +767,7 @@ func TestOpenDeletedFileFails(t *testing.T) {
 			}
 
 			// Ensure reopening the verity enabled file fails.
-			if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+			if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); !linuxerr.Equals(linuxerr.EIO, err) {
 				t.Errorf("got OpenAt error: %v, expected EIO", err)
 			}
 		})
@@ -829,7 +829,7 @@ func TestOpenRenamedFileFails(t *testing.T) {
 			}
 
 			// Ensure reopening the verity enabled file fails.
-			if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+			if _, err = openVerityAt(ctx, vfsObj, root, filename, linux.O_RDONLY, linux.ModeRegular); !linuxerr.Equals(linuxerr.EIO, err) {
 				t.Errorf("got OpenAt error: %v, expected EIO", err)
 			}
 		})
@@ -1063,14 +1063,14 @@ func TestDeletedSymlinkFileReadFails(t *testing.T) {
 				Root:  root,
 				Start: root,
 				Path:  fspath.Parse(symlink),
-			}); err != syserror.EIO {
+			}); !linuxerr.Equals(linuxerr.EIO, err) {
 				t.Fatalf("ReadlinkAt succeeded with modified symlink: %v", err)
 			}
 
 			if tc.testWalk {
 				fileInSymlinkDirectory := symlink + "/verity-test-file"
 				// Ensure opening the verity enabled file in the symlink directory fails.
-				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); !linuxerr.Equals(linuxerr.EIO, err) {
 					t.Errorf("Open succeeded with modified symlink: %v", err)
 				}
 			}
@@ -1195,14 +1195,14 @@ func TestModifiedSymlinkFileReadFails(t *testing.T) {
 				Root:  root,
 				Start: root,
 				Path:  fspath.Parse(symlink),
-			}); err != syserror.EIO {
+			}); !linuxerr.Equals(linuxerr.EIO, err) {
 				t.Fatalf("ReadlinkAt succeeded with modified symlink: %v", err)
 			}
 
 			if tc.testWalk {
 				fileInSymlinkDirectory := symlink + "/verity-test-file"
 				// Ensure opening the verity enabled file in the symlink directory fails.
-				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); err != syserror.EIO {
+				if _, err := openVerityAt(ctx, vfsObj, root, fileInSymlinkDirectory, linux.O_RDONLY, linux.ModeRegular); !linuxerr.Equals(linuxerr.EIO, err) {
 					t.Errorf("Open succeeded with modified symlink: %v", err)
 				}
 			}

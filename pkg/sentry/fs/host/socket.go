@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -213,7 +214,7 @@ func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMess
 		// block (and only for stream sockets).
 		err = syserror.EAGAIN
 	}
-	if n > 0 && err != syserror.EAGAIN {
+	if n > 0 && !linuxerr.Equals(linuxerr.EAGAIN, err) {
 		// The caller may need to block to send more data, but
 		// otherwise there isn't anything that can be done about an
 		// error with a partial write.

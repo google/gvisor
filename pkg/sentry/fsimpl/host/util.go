@@ -17,7 +17,7 @@ package host
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 func toTimespec(ts linux.StatxTimestamp, omit bool) unix.Timespec {
@@ -44,5 +44,5 @@ func timespecToStatxTimestamp(ts unix.Timespec) linux.StatxTimestamp {
 // isBlockError checks if an error is EAGAIN or EWOULDBLOCK.
 // If so, they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {
-	return err == syserror.EAGAIN || err == syserror.EWOULDBLOCK
+	return linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err)
 }

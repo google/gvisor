@@ -226,6 +226,7 @@ go_library(
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fspath",
         "//pkg/goid",

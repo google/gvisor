@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -394,8 +395,8 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 		}
 
 		var newFile *fs.File
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			// Like sys_open, check for a few things about the
 			// filesystem before trying to get a reference to the
 			// fs.File. The same constraints on Check apply.
@@ -418,7 +419,7 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 				return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
 			}
 			defer newFile.DecRef(t)
-		case syserror.ENOENT:
+		case linuxerr.Equals(linuxerr.ENOENT, err):
 			// File does not exist. Proceed with creation.
 
 			// Do we have write permissions on the parent?
@@ -1178,12 +1179,12 @@ func mkdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 		// Does this directory exist already?
 		remainingTraversals := uint(linux.MaxSymlinkTraversals)
 		f, err := t.MountNamespace().FindInode(t, root, d, name, &remainingTraversals)
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			// The directory existed.
 			defer f.DecRef(t)
 			return syserror.EEXIST
-		case syserror.EACCES:
+		case linuxerr.Equals(linuxerr.EACCES, err):
 			// Permission denied while walking to the directory.
 			return err
 		default:
@@ -1464,7 +1465,7 @@ func readlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, bufAddr hostarc
 		}
 
 		s, err := d.Inode.Readlink(t)
-		if err == syserror.ENOLINK {
+		if linuxerr.Equals(linuxerr.ENOLINK, err) {
 			return syserror.EINVAL
 		}
 		if err != nil {

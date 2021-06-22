@@ -20,6 +20,7 @@ package linuxerr
 import (
 	"fmt"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/errors"
 )
@@ -324,4 +325,23 @@ func ErrorFromErrno(e errno.Errno) *errors.Error {
 		return err
 	}
 	panic(fmt.Sprintf("invalid error requested with errno: %d", e))
+}
+
+// Equals compars a linuxerr to a given error
+// TODO(b/34162363): Remove when syserror is removed.
+func Equals(e *errors.Error, err error) bool {
+	if err == nil {
+		return e == NOERROR || e == nil
+	}
+	if e == nil {
+		return err == NOERROR || err == unix.Errno(0)
+	}
+
+	switch err.(type) {
+	case *errors.Error:
+		return e == err
+	case unix.Errno, error:
+		return unix.Errno(e.Errno()) == err
+	}
+	return false
 }

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -25,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -171,7 +171,7 @@ func TestIOAfterUnmap(t *testing.T) {
 	}
 
 	n, err = mm.CopyIn(ctx, addr, b, usermem.IOOpts{})
-	if err != syserror.EFAULT {
+	if !linuxerr.Equals(linuxerr.EFAULT, err) {
 		t.Errorf("CopyIn got err %v want EFAULT", err)
 	}
 	if n != 0 {
@@ -212,7 +212,7 @@ func TestIOAfterMProtect(t *testing.T) {
 
 	// Without IgnorePermissions, CopyOut should no longer succeed.
 	n, err = mm.CopyOut(ctx, addr, b, usermem.IOOpts{})
-	if err != syserror.EFAULT {
+	if !linuxerr.Equals(linuxerr.EFAULT, err) {
 		t.Errorf("CopyOut got err %v want EFAULT", err)
 	}
 	if n != 0 {
@@ -249,7 +249,7 @@ func TestAIOPrepareAfterDestroy(t *testing.T) {
 	mm.DestroyAIOContext(ctx, id)
 
 	// Prepare should fail because aioCtx should be destroyed.
-	if err := aioCtx.Prepare(); err != syserror.EINVAL {
+	if err := aioCtx.Prepare(); !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("aioCtx.Prepare got err %v want nil", err)
 	} else if err == nil {
 		aioCtx.CancelPendingRequest()

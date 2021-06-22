@@ -17,6 +17,7 @@ package unix
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -236,7 +237,7 @@ func (s *SocketVFS2) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 				Mode:     linux.FileMode(linux.S_IFSOCK | uint(stat.Mode)&^t.FSContext().Umask()),
 				Endpoint: bep,
 			})
-			if err == syserror.EEXIST {
+			if linuxerr.Equals(linuxerr.EEXIST, err) {
 				return syserr.ErrAddressInUse
 			}
 			return syserr.FromError(err)

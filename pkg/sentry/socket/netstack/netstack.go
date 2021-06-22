@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -2809,7 +2810,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 			if n > 0 {
 				return n, msgFlags, senderAddr, senderAddrLen, controlMessages, nil
 			}
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
 			return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
@@ -2877,7 +2878,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 				// became available between when we last checked and when we setup
 				// the notification.
 				if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-					if err == syserror.ETIMEDOUT {
+					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 						return int(total), syserr.ErrTryAgain
 					}
 					// handleIOError will consume errors from t.Block if needed.

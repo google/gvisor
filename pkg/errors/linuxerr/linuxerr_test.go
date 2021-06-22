@@ -16,6 +16,8 @@ package syserror_test
 
 import (
 	"errors"
+	"io"
+	"io/fs"
 	"syscall"
 	"testing"
 
@@ -239,6 +241,65 @@ func TestSyscallErrnoToErrors(t *testing.T) {
 			e := linuxerr.ErrorFromErrno(errno.Errno(tc.errno))
 			if e != tc.err {
 				t.Fatalf("Mismatch errors: want: %+v (%d) got: %+v %d", tc.err, tc.err.Errno(), e, e.Errno())
+			}
+		})
+	}
+}
+
+// TestEqualsMethod tests that the Equals method correctly compares syerror,
+// unix.Errno and linuxerr.
+// TODO (b/34162363): Remove this.
+func TestEqualsMethod(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		linuxErr []*gErrors.Error
+		err      []error
+		equal    bool
+	}{
+		{
+			name:     "compare nil",
+			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR},
+			err:      []error{nil, linuxerr.NOERROR, unix.Errno(0)},
+			equal:    true,
+		},
+		{
+			name:     "linuxerr nil error not",
+			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR},
+			err:      []error{unix.Errno(1), linuxerr.EPERM, syserror.EACCES},
+			equal:    false,
+		},
+		{
+			name:     "linuxerr not nil error nil",
+			linuxErr: []*gErrors.Error{linuxerr.ENOENT},
+			err:      []error{nil, unix.Errno(0), linuxerr.NOERROR},
+			equal:    false,
+		},
+		{
+			name:     "equal errors",
+			linuxErr: []*gErrors.Error{linuxerr.ESRCH},
+			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			equal:    true,
+		},
+		{
+			name:     "unequal errors",
+			linuxErr: []*gErrors.Error{linuxerr.ENOENT},
+			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			equal:    false,
+		},
+		{
+			name:     "other error",
+			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR, linuxerr.E2BIG, linuxerr.EINVAL},
+			err:      []error{fs.ErrInvalid, io.EOF},
+			equal:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, le := range tc.linuxErr {
+				for _, e := range tc.err {
+					if linuxerr.Equals(le, e) != tc.equal {
+						t.Fatalf("Expected %t from Equals method for linuxerr: %s %T and error: %s %T", tc.equal, le, le, e, e)
+					}
+				}
 			}
 		})
 	}

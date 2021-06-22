@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -81,7 +82,7 @@ func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	if err := semTimedOp(t, id, ops, true, timeout.ToDuration()); err != nil {
-		if err == syserror.ETIMEDOUT {
+		if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 			return 0, nil, syserror.EAGAIN
 		}
 		return 0, nil, err

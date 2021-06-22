@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -410,7 +411,7 @@ func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error
 		return err
 	}
 	lowerXattr, err := lower.ListXattr(ctx, linux.XATTR_SIZE_MAX)
-	if err != nil && err != syserror.EOPNOTSUPP {
+	if err != nil && !linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 		return err
 	}
 

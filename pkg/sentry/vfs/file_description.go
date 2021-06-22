@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
@@ -708,8 +709,8 @@ func (fd *FileDescription) ListXattr(ctx context.Context, size uint64) ([]string
 		return names, err
 	}
 	names, err := fd.impl.ListXattr(ctx, size)
-	if err == syserror.ENOTSUP {
-		// Linux doesn't actually return ENOTSUP in this case; instead,
+	if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+		// Linux doesn't actually return EOPNOTSUPP in this case; instead,
 		// fs/xattr.c:vfs_listxattr() falls back to allowing the security
 		// subsystem to return security extended attributes, which by default
 		// don't exist.

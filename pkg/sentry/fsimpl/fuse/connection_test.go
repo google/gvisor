@@ -19,9 +19,9 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // TestConnectionInitBlock tests if initialization
@@ -104,7 +104,7 @@ func TestConnectionAbort(t *testing.T) {
 	// After abort, Call() should return directly with ENOTCONN.
 	req := conn.NewRequest(creds, 0, 0, 0, testObj)
 	_, err = conn.Call(task, req)
-	if err != syserror.ENOTCONN {
+	if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
 	}
 

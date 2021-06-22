@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -120,7 +121,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = syserror.ErrWouldBlock
 			}
 			break
@@ -275,7 +276,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = syserror.ErrWouldBlock
 			}
 			break
@@ -371,7 +372,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = syserror.ErrWouldBlock
 			}
 			break
@@ -525,7 +526,7 @@ func pwrite(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, o
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, hasDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = syserror.ErrWouldBlock
 			}
 			break

@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux/errno",
+        "//pkg/errors/linuxerr",
         "//pkg/syserror",
         "//pkg/tcpip",
         "@org_golang_x_sys//unix:go_default_library",

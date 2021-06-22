@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
@@ -158,7 +159,7 @@ func (p *pipeOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
 // EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {
-	if err == syserror.EAGAIN || err == syserror.EWOULDBLOCK {
+	if linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err) {
 		return true
 	}
 	if pe, ok := err.(*os.PathError); ok {

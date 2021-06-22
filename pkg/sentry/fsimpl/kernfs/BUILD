@@ -104,6 +104,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
@@ -135,6 +136,7 @@ go_test(
         ":kernfs",
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

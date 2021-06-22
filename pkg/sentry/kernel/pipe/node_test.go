@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -258,7 +259,7 @@ func TestNonblockingWriteOpenFileNoReaders(t *testing.T) {
 	ctx := newSleeperContext(t)
 	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
-	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true, NonBlocking: true}, nil); err != syserror.ENXIO {
+	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true, NonBlocking: true}, nil); !linuxerr.Equals(linuxerr.ENXIO, err) {
 		t.Fatalf("Nonblocking open for write failed unexpected error %v.", err)
 	}
 }

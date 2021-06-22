@@ -11,6 +11,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/errors/linuxerr",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/epoll",

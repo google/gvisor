@@ -45,6 +45,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -358,7 +359,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// If runtime enable is allowed, the root merkle tree may be absent. We
 	// should create the tree file.
-	if err == syserror.ENOENT && fs.allowRuntimeEnable {
+	if linuxerr.Equals(linuxerr.ENOENT, err) && fs.allowRuntimeEnable {
 		lowerMerkleFD, err := vfsObj.OpenAt(ctx, fs.creds, &vfs.PathOperation{
 			Root:  lowerVD,
 			Start: lowerVD,
@@ -451,7 +452,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Name: childrenOffsetXattr,
 			Size: sizeOfStringInt32,
 		})
-		if err == syserror.ENOENT || err == syserror.ENODATA {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENODATA, err) {
 			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenOffsetXattr, err))
 		}
 		if err != nil {
@@ -470,7 +471,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			Name: childrenSizeXattr,
 			Size: sizeOfStringInt32,
 		})
-		if err == syserror.ENOENT || err == syserror.ENODATA {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENODATA, err) {
 			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", childrenSizeXattr, err))
 		}
 		if err != nil {
@@ -487,7 +488,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}, &vfs.OpenOptions{
 			Flags: linux.O_RDONLY,
 		})
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			return nil, nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to open root Merkle file: %v", err))
 		}
 		if err != nil {
@@ -1227,7 +1228,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 	// The Merkle tree file for the child should have been created and
 	// contains the expected xattrs. If the xattr does not exist, it
 	// indicates unexpected modifications to the file system.
-	if err == syserror.ENODATA {
+	if linuxerr.Equals(linuxerr.ENODATA, err) {
 		return 0, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
 	}
 	if err != nil {
@@ -1349,7 +1350,7 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 	// The Merkle tree file for the child should have been created and
 	// contains the expected xattrs. If the xattr does not exist, it
 	// indicates unexpected modifications to the file system.
-	if err == syserror.ENODATA {
+	if linuxerr.Equals(linuxerr.ENODATA, err) {
 		return nil, fd.d.fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s: %v", merkleSizeXattr, err))
 	}
 	if err != nil {

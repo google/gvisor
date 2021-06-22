@@ -26,12 +26,12 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -173,7 +173,7 @@ func TestSeek(t *testing.T) {
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -1, linux.SEEK_SET); !linuxerr.Equals(linuxerr.EINVAL, err) {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
@@ -187,7 +187,7 @@ func TestSeek(t *testing.T) {
 			}
 
 			// EINVAL should be returned if the resulting offset is negative.
-			if _, err := fd.Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
+			if _, err := fd.Seek(ctx, -(size + 2), linux.SEEK_CUR); !linuxerr.Equals(linuxerr.EINVAL, err) {
 				t.Errorf("expected error EINVAL but got %v", err)
 			}
 
@@ -204,7 +204,7 @@ func TestSeek(t *testing.T) {
 				}
 
 				// EINVAL should be returned if the resulting offset is negative.
-				if _, err := fd.Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
+				if _, err := fd.Seek(ctx, -(size + 1), linux.SEEK_END); !linuxerr.Equals(linuxerr.EINVAL, err) {
 					t.Errorf("expected error EINVAL but got %v", err)
 				}
 			}

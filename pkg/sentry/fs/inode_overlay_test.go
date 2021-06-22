@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
@@ -191,11 +192,11 @@ func TestLookup(t *testing.T) {
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			dirent, err := test.dir.Lookup(ctx, test.name)
-			if test.found && (err == syserror.ENOENT || dirent.IsNegative()) {
+			if test.found && (linuxerr.Equals(linuxerr.ENOENT, err) || dirent.IsNegative()) {
 				t.Fatalf("lookup %q expected to find positive dirent, got dirent %v err %v", test.name, dirent, err)
 			}
 			if !test.found {
-				if err != syserror.ENOENT && !dirent.IsNegative() {
+				if !linuxerr.Equals(linuxerr.ENOENT, err) && !dirent.IsNegative() {
 					t.Errorf("lookup %q expected to return ENOENT or negative dirent, got dirent %v err %v", test.name, dirent, err)
 				}
 				// Nothing more to check.

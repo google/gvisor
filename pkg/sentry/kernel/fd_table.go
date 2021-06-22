@@ -23,12 +23,12 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // FDFlags define flags for an individual descriptor.
@@ -156,7 +156,7 @@ func (f *FDTable) dropVFS2(ctx context.Context, file *vfs.FileDescription) {
 	// Release any POSIX lock possibly held by the FDTable.
 	if file.SupportsLocks() {
 		err := file.UnlockPOSIX(ctx, f, lock.LockRange{0, lock.LockEOF})
-		if err != nil && err != syserror.ENOLCK {
+		if err != nil && !linuxerr.Equals(linuxerr.ENOLCK, err) {
 			panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
 		}
 	}

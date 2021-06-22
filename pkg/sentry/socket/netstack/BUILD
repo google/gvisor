@@ -21,6 +21,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
