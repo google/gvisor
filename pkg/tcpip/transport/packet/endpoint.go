@@ -208,7 +208,6 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 }
 
 func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
-	// TODO(gvisor.dev/issue/173): Implement.
 	return 0, &tcpip.ErrInvalidOptionValue{}
 }
 
@@ -244,8 +243,6 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 
 // Bind implements tcpip.Endpoint.Bind.
 func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
-	// TODO(gvisor.dev/issue/173): Add Bind support.
-
 	// "By default, all packets of the specified protocol type are passed
 	// to a packet socket.  To get packets only from a specific interface
 	// use bind(2) specifying an address in a struct sockaddr_ll to bind
@@ -385,7 +382,6 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	// Push new packet into receive list and increment the buffer size.
 	var packet packet
-	// TODO(gvisor.dev/issue/173): Return network protocol.
 	if !pkt.LinkHeader().View().IsEmpty() {
 		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader().View())

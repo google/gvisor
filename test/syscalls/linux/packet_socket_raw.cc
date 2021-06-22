@@ -56,8 +56,6 @@
 //
 // These tests require CAP_NET_RAW to run.
 
-// TODO(gvisor.dev/issue/173): gVisor support.
-
 namespace gvisor {
 namespace testing {
 
@@ -193,7 +191,6 @@ TEST_P(RawPacketTest, Receive) {
   // sizeof(sockaddr_ll).
   ASSERT_THAT(src_len, AnyOf(Eq(sizeof(src)), Eq(sizeof(src) - 2)));
 
-  // TODO(gvisor.dev/issue/173): Verify protocol once we return it.
   // Verify the source address.
   EXPECT_EQ(src.sll_family, AF_PACKET);
   EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex());
@@ -238,7 +235,7 @@ TEST_P(RawPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(RawPacketTest, Send) {
-  // TODO(gvisor.dev/issue/173): Remove once we support packet socket writing.
+  // We don't implement writing to packet sockets on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 
   // Let's send a UDP packet and receive it using a regular UDP socket.
