@@ -17,23 +17,5 @@
 // the sandbox process running the container.
 package proc
 
-import (
-	"fmt"
-)
-
 // RunscRoot is the path to the root runsc state directory.
 const RunscRoot = "/run/containerd/runsc"
-
-func stateName(v interface{}) string {
-	switch v.(type) {
-	case *runningState, *execRunningState:
-		return "running"
-	case *createdState, *execCreatedState:
-		return "created"
-	case *deletedState:
-		return "deleted"
-	case *stoppedState:
-		return "stopped"
-	}
-	panic(fmt.Errorf("invalid state %v", v))
-}

@@ -6,6 +6,7 @@ go_library(
     name = "shim",
     srcs = [
         "api.go",
+        "debug.go",
         "epoll.go",
         "options.go",
         "service.go",

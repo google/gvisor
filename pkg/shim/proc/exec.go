@@ -145,16 +145,13 @@ func (e *execProcess) Kill(ctx context.Context, sig uint32, _ bool) error {
 
 func (e *execProcess) kill(ctx context.Context, sig uint32, _ bool) error {
 	internalPid := e.internalPid
-	if internalPid != 0 {
-		if err := e.parent.runtime.Kill(ctx, e.parent.id, int(sig), &runsc.KillOpts{
-			Pid: internalPid,
-		}); err != nil {
-			// If this returns error, consider the process has
-			// already stopped.
-			//
-			// TODO: Fix after signal handling is fixed.
-			return fmt.Errorf("%s: %w", err.Error(), errdefs.ErrNotFound)
-		}
+	if internalPid == 0 {
+		return nil
+	}
+
+	opts := runsc.KillOpts{Pid: internalPid}
+	if err := e.parent.runtime.Kill(ctx, e.parent.id, int(sig), &opts); err != nil {
+		return fmt.Errorf("%s: %w", err.Error(), errdefs.ErrNotFound)
 	}
 	return nil
 }
