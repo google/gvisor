@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -301,7 +302,7 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = syserror.ErrWouldBlock
 			}
 			break

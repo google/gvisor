@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -34,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -291,7 +291,7 @@ func (n *netSnmp) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 			continue
 		}
 		if err := n.s.Statistics(stat, line.prefix); err != nil {
-			if err == syserror.EOPNOTSUPP {
+			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
 			} else {
 				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)

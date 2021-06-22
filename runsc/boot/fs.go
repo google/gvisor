@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -41,7 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 
@@ -1039,8 +1039,8 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, mn
 
 	maxTraversals := uint(0)
 	tmp, err := mns.FindInode(ctx, root, root, "tmp", &maxTraversals)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		// Found '/tmp' in filesystem, check if it's empty.
 		defer tmp.DecRef(ctx)
 		f, err := tmp.Inode.GetFile(ctx, tmp, fs.FileFlags{Read: true, Directory: true})
@@ -1061,7 +1061,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, mn
 		log.Infof("Mounting internal tmpfs on top of empty %q", "/tmp")
 		fallthrough
 
-	case syserror.ENOENT:
+	case linuxerr.Equals(linuxerr.ENOENT, err):
 		// No '/tmp' found (or fallthrough from above). Safe to mount internal
 		// tmpfs.
 		tmpMount := specs.Mount{

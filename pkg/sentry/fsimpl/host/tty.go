@@ -17,6 +17,7 @@ package host
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -211,7 +212,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
 			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from tty_check_change()
 			// to -ENOTTY.
-			if err == syserror.EIO {
+			if linuxerr.Equals(linuxerr.EIO, err) {
 				return 0, syserror.ENOTTY
 			}
 			return 0, err

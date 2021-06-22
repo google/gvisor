@@ -21,13 +21,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type saveRestoreContextID int
@@ -92,7 +92,7 @@ func (fd *specialFileFD) savePipeData(ctx context.Context) error {
 			fd.buf = append(fd.buf, buf[:n]...)
 		}
 		if err != nil {
-			if err == io.EOF || err == syserror.EAGAIN {
+			if err == io.EOF || linuxerr.Equals(linuxerr.EAGAIN, err) {
 				break
 			}
 			return err

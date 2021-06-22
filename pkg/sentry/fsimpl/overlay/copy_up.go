@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -349,7 +350,7 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 
 	lowerXattrs, err := vfsObj.ListXattrAt(ctx, d.fs.creds, lowerPop, 0)
 	if err != nil {
-		if err == syserror.EOPNOTSUPP {
+		if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 			// There are no guarantees as to the contents of lowerXattrs.
 			return nil
 		}

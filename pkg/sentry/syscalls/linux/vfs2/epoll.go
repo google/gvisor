@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -174,7 +175,7 @@ func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents i
 				haveDeadline = true
 			}
 			if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-				if err == syserror.ETIMEDOUT {
+				if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 					err = nil
 				}
 				return 0, nil, err

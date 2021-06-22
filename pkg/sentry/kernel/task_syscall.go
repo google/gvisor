@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -357,7 +358,7 @@ func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, calle
 		t.Arch().SetReturn(uintptr(rval))
 	} else {
 		t.Debugf("vsyscall %d, caller %x: emulated syscall returned error: %v", sysno, t.Arch().Value(caller), err)
-		if err == syserror.EFAULT {
+		if linuxerr.Equals(linuxerr.EFAULT, err) {
 			t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 			t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 			// A return is not emulated in this case.

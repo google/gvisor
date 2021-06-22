@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -109,7 +110,7 @@ type inode struct {
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fileType linux.FileMode, isTTY bool) (*inode, error) {
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
-	seekable := err != syserror.ESPIPE
+	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
 	// We expect regular files to be seekable, as this is required for them to
 	// be memory-mappable.
 	if !seekable && fileType == unix.S_IFREG {
@@ -301,7 +302,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 	mask := opts.Mask & linux.STATX_ALL
 	var s unix.Statx_t
 	err := unix.Statx(i.hostFD, "", int(unix.AT_EMPTY_PATH|opts.Sync), int(mask), &s)
-	if err == syserror.ENOSYS {
+	if linuxerr.Equals(linuxerr.ENOSYS, err) {
 		// Fallback to fstat(2), if statx(2) is not supported on the host.
 		//
 		// TODO(b/151263641): Remove fallback.

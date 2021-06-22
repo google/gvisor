@@ -17,6 +17,7 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -134,7 +135,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 			var err error
 			v, err = waitForRequest(ctx, t, haveDeadline, deadline)
 			if err != nil {
-				if count > 0 || err == syserror.ETIMEDOUT {
+				if count > 0 || linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 					return uintptr(count), nil, nil
 				}
 				return 0, nil, syserror.ConvertIntr(err, syserror.EINTR)

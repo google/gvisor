@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
@@ -656,8 +657,8 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 		Path:  fspath.Parse("/tmp"),
 	}
 	fd, err := c.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		defer fd.DecRef(ctx)
 
 		err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
@@ -666,10 +667,10 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 			}
 			return nil
 		}))
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			log.Infof(`Mounting internal tmpfs on top of empty "/tmp"`)
-		case syserror.ENOTEMPTY:
+		case linuxerr.Equals(linuxerr.ENOTEMPTY, err):
 			// If more than "." and ".." is found, skip internal tmpfs to prevent
 			// hiding existing files.
 			log.Infof(`Skipping internal tmpfs mount for "/tmp" because it's not empty`)
@@ -679,7 +680,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 		}
 		fallthrough
 
-	case syserror.ENOENT:
+	case linuxerr.Equals(linuxerr.ENOENT, err):
 		// No '/tmp' found (or fallthrough from above). It's safe to mount internal
 		// tmpfs.
 		tmpMount := specs.Mount{
@@ -692,7 +693,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 		_, err := c.mountSubmountVFS2(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount})
 		return err
 
-	case syserror.ENOTDIR:
+	case linuxerr.Equals(linuxerr.ENOTDIR, err):
 		// Not a dir?! Let it be.
 		return nil
 

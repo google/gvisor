@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -1763,7 +1764,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		openReadable := !d.readFile.isNil() || read
 		openWritable := !d.writeFile.isNil() || write
 		h, err := openHandle(ctx, d.file, openReadable, openWritable, trunc)
-		if err == syserror.EACCES && (openReadable != read || openWritable != write) {
+		if linuxerr.Equals(linuxerr.EACCES, err) && (openReadable != read || openWritable != write) {
 			// It may not be possible to use a single handle for both
 			// reading and writing, since permissions on the file may have
 			// changed to e.g. disallow reading after previously being

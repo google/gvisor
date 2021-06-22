@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -714,7 +715,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			}
 			if ch != nil {
 				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-					if err == syserror.ETIMEDOUT {
+					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 						err = syserror.ErrWouldBlock
 					}
 					break

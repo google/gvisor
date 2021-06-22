@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -71,7 +72,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		// A file could have been created over a whiteout, so we need to
 		// check if something exists in the upper file system first.
 		child, err := parent.upper.Lookup(ctx, name)
-		if err != nil && err != syserror.ENOENT {
+		if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 			// We encountered an error that an overlay cannot handle,
 			// we must propagate it to the caller.
 			parent.copyMu.RUnlock()
@@ -125,7 +126,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		// Check the lower file system.
 		child, err := parent.lower.Lookup(ctx, name)
 		// Same song and dance as above.
-		if err != nil && err != syserror.ENOENT {
+		if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 			// Don't leak resources.
 			if upperInode != nil {
 				upperInode.DecRef(ctx)
@@ -396,7 +397,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		// newName has been removed out from under us. That's fine;
 		// filesystems where that can happen must handle stale
 		// 'replaced'.
-		if err != nil && err != syserror.ENOENT {
+		if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 			return err
 		}
 		if err == nil {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -132,7 +133,7 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 		// Wait for a notification.
 		timeout, err = t.BlockWithTimeout(ch, haveTimeout, timeout)
 		if err != nil {
-			if err == syserror.ETIMEDOUT {
+			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 				err = nil
 			}
 			return timeout, 0, err
@@ -410,7 +411,7 @@ func (p *pollRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
 func poll(t *kernel.Task, pfdAddr hostarch.Addr, nfds uint, timeout time.Duration) (uintptr, error) {
 	remainingTimeout, n, err := doPoll(t, pfdAddr, nfds, timeout)
 	// On an interrupt poll(2) is restarted with the remaining timeout.
-	if err == syserror.EINTR {
+	if linuxerr.Equals(linuxerr.EINTR, err) {
 		t.SetSyscallRestartBlock(&pollRestartBlock{
 			pfdAddr: pfdAddr,
 			nfds:    nfds,
@@ -462,7 +463,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	//
 	// Note that this means that if err is nil but copyErr is not, copyErr is
 	// ignored. This is consistent with Linux.
-	if err == syserror.EINTR && copyErr == nil {
+	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
 		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
@@ -492,7 +493,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	n, err := doSelect(t, nfds, readFDs, writeFDs, exceptFDs, timeout)
 	copyErr := copyOutTimevalRemaining(t, startNs, timeout, timevalAddr)
 	// See comment in Ppoll.
-	if err == syserror.EINTR && copyErr == nil {
+	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
 		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err
@@ -539,7 +540,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	n, err := doSelect(t, nfds, readFDs, writeFDs, exceptFDs, timeout)
 	copyErr := copyOutTimespecRemaining(t, startNs, timeout, timespecAddr)
 	// See comment in Ppoll.
-	if err == syserror.EINTR && copyErr == nil {
+	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
 		err = syserror.ERESTARTNOHAND
 	}
 	return n, nil, err

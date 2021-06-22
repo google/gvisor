@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -33,7 +34,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -679,7 +679,7 @@ func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			continue
 		}
 		if err := d.stack.Statistics(stat, line.prefix); err != nil {
-			if err == syserror.EOPNOTSUPP {
+			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
 			} else {
 				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)

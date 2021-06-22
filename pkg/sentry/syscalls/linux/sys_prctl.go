@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -98,7 +99,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_SET_NAME:
 		addr := args[1].Pointer()
 		name, err := t.CopyInString(addr, linux.TASK_COMM_LEN-1)
-		if err != nil && err != syserror.ENAMETOOLONG {
+		if err != nil && !linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
 			return 0, nil, err
 		}
 		t.SetName(name)
