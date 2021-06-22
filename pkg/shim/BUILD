@@ -8,6 +8,7 @@ go_library(
         "api.go",
         "debug.go",
         "epoll.go",
+        "errors.go",
         "options.go",
         "service.go",
         "service_linux.go",
@@ -44,6 +45,8 @@ go_library(
         "@com_github_gogo_protobuf//types:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_sirupsen_logrus//:go_default_library",
+        "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -51,7 +54,10 @@ go_library(
 go_test(
     name = "shim_test",
     size = "small",
-    srcs = ["service_test.go"],
+    srcs = [
+        "errors_test.go",
+        "service_test.go",
+    ],
     library = ":shim",
     deps = [
         "//pkg/shim/utils",
