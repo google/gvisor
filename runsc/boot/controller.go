@@ -15,6 +15,7 @@
 package boot
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -165,8 +166,8 @@ func newController(fd int, l *Loader) (*controller, error) {
 	return ctrl, nil
 }
 
-func (c *controller) stop() {
-	c.srv.Stop()
+func (c *controller) stop(ctx context.Context) {
+	c.srv.Stop(ctx)
 }
 
 // containerManager manages sandbox containers.

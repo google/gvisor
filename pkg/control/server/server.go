@@ -21,6 +21,7 @@ implementations of the control interface.
 package server
 
 import (
+	"context"
 	"os"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -65,13 +66,13 @@ func (s *Server) Wait() {
 
 // Stop stops the server. Note that this function should only be called once
 // and the server should not be used afterwards.
-func (s *Server) Stop() {
+func (s *Server) Stop(ctx context.Context) {
 	s.socket.Close()
 	s.Wait()
 
 	// This will cause existing clients to be terminated safely. If the
 	// registered handlers have a Stop callback, it will be called.
-	s.server.Stop()
+	s.server.Stop(ctx)
 }
 
 // StartServing starts listening for connect and spawns the main service

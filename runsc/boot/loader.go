@@ -16,6 +16,7 @@
 package boot
 
 import (
+	gcontext "context"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -468,6 +469,8 @@ func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *
 	return procArgs, nil
 }
 
+const destroyTimeout = 15 * gtime.Second
+
 // Destroy cleans up all resources used by the loader.
 //
 // Note that this will block until all open control server connections have
@@ -482,7 +485,9 @@ func (l *Loader) Destroy() {
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.
 	// profiling operations.
-	l.ctrl.stop()
+	ctx, cancel := gcontext.WithTimeout(context.Background(), destroyTimeout)
+	defer cancel()
+	l.ctrl.stop(ctx)
 
 	// Release all kernel resources. This is only safe after we can no longer
 	// save/restore.
