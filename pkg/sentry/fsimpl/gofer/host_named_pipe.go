@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -78,7 +79,7 @@ func nonblockingPipeHasWriter(fd int32) (bool, error) {
 	defer tempPipeMu.Unlock()
 	// Copy 1 byte from fd into the temporary pipe.
 	n, err := unix.Tee(int(fd), tempPipeWriteFD, 1, unix.SPLICE_F_NONBLOCK)
-	if err == syserror.EAGAIN {
+	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		// The pipe represented by fd is empty, but has a writer.
 		return true, nil
 	}

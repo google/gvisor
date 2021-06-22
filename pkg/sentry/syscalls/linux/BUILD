@@ -64,6 +64,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",

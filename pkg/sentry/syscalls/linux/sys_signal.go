@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -90,7 +91,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			}
 			info.SetPID(int32(target.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(target.UserNamespace()).OrOverflow()))
-			if err := target.SendGroupSignal(info); err != syserror.ESRCH {
+			if err := target.SendGroupSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 				return 0, nil, err
 			}
 		}
@@ -130,7 +131,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 			err := tg.SendSignal(info)
-			if err == syserror.ESRCH {
+			if linuxerr.Equals(linuxerr.ESRCH, err) {
 				// ESRCH is ignored because it means the task
 				// exited while we were iterating.  This is a
 				// race which would not normally exist on
@@ -174,7 +175,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 				info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 				info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 				// See note above regarding ESRCH race above.
-				if err := tg.SendSignal(info); err != syserror.ESRCH {
+				if err := tg.SendSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 					lastErr = err
 				}
 			}
@@ -433,7 +434,7 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 			return 0, nil, syserror.EPERM
 		}
 
-		if err := target.SendGroupSignal(&info); err != syserror.ESRCH {
+		if err := target.SendGroupSignal(&info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 			return 0, nil, err
 		}
 	}

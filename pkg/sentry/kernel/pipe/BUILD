@@ -47,6 +47,7 @@ go_test(
     library = ":pipe",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/syserror",

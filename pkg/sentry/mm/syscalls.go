@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
@@ -855,10 +856,10 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
 				// Linux: mm/mlock.c:__mlock_posix_error_return()
-				if err == syserror.EFAULT {
+				if linuxerr.Equals(linuxerr.EFAULT, err) {
 					return syserror.ENOMEM
 				}
-				if err == syserror.ENOMEM {
+				if linuxerr.Equals(linuxerr.ENOMEM, err) {
 					return syserror.EAGAIN
 				}
 				return err

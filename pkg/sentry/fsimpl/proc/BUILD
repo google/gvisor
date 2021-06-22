@@ -81,6 +81,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
@@ -119,6 +120,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
@@ -127,7 +129,6 @@ go_test(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

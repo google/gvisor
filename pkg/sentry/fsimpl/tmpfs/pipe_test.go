@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -114,7 +115,7 @@ func TestNonblockingWriteError(t *testing.T) {
 	}
 	openOpts := vfs.OpenOptions{Flags: linux.O_WRONLY | linux.O_NONBLOCK}
 	_, err := vfsObj.OpenAt(ctx, creds, &pop, &openOpts)
-	if err != syserror.ENXIO {
+	if !linuxerr.Equals(linuxerr.ENXIO, err) {
 		t.Fatalf("expected ENXIO, but got error: %v", err)
 	}
 }

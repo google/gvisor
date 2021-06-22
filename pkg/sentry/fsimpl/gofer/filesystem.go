@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -255,7 +256,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 
 	qid, file, attrMask, attr, err := parent.file.walkGetAttrOne(ctx, name)
 	if err != nil {
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			parent.cacheNegativeLookupLocked(name)
 		}
 		return nil, err
@@ -382,7 +383,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return syserror.EEXIST
 	}
 	checkExistence := func() error {
-		if child, err := fs.getChildLocked(ctx, parent, name, &ds); err != nil && err != syserror.ENOENT {
+		if child, err := fs.getChildLocked(ctx, parent, name, &ds); err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 			return err
 		} else if child != nil {
 			return syserror.EEXIST
@@ -715,7 +716,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			mode |= linux.S_ISGID
 		}
 		if _, err := parent.file.mkdir(ctx, name, p9.FileMode(mode), (p9.UID)(creds.EffectiveKUID), p9.GID(kgid)); err != nil {
-			if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
+			if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
 				return err
 			}
 			ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
@@ -752,7 +753,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
 		creds := rp.Credentials()
 		_, err := parent.file.mknod(ctx, name, (p9.FileMode)(opts.Mode), opts.DevMajor, opts.DevMinor, (p9.UID)(creds.EffectiveKUID), (p9.GID)(creds.EffectiveKGID))
-		if err != syserror.EPERM {
+		if !linuxerr.Equals(linuxerr.EPERM, err) {
 			return err
 		}
 
@@ -765,7 +766,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		case err == nil:
 			// Step succeeded, another file exists.
 			return syserror.EEXIST
-		case err != syserror.ENOENT:
+		case !linuxerr.Equals(linuxerr.ENOENT, err):
 			// Unexpected error.
 			return err
 		}
@@ -862,7 +863,7 @@ afterTrailingSymlink:
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
 	child, _, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
-	if err == syserror.ENOENT && mayCreate {
+	if linuxerr.Equals(linuxerr.ENOENT, err) && mayCreate {
 		if parent.isSynthetic() {
 			parent.dirMu.Unlock()
 			return nil, syserror.EPERM
@@ -1033,7 +1034,7 @@ func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.
 retry:
 	h, err := openHandle(ctx, d.file, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
 	if err != nil {
-		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && err == syserror.ENXIO {
+		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
 			// with ENXIO if opening the same named pipe with O_WRONLY would
 			// block because there are no readers of the pipe.
@@ -1284,7 +1285,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return syserror.ENOENT
 	}
 	replaced, err := fs.getChildLocked(ctx, newParent, newName, &ds)
-	if err != nil && err != syserror.ENOENT {
+	if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 		return err
 	}
 	var replacedVFSD *vfs.Dentry

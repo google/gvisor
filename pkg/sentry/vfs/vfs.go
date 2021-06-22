@@ -42,6 +42,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -731,8 +732,8 @@ func (vfs *VirtualFilesystem) ListXattrAt(ctx context.Context, creds *auth.Crede
 			rp.Release(ctx)
 			return names, nil
 		}
-		if err == syserror.ENOTSUP {
-			// Linux doesn't actually return ENOTSUP in this case; instead,
+		if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
+			// Linux doesn't actually return EOPNOTSUPP in this case; instead,
 			// fs/xattr.c:vfs_listxattr() falls back to allowing the security
 			// subsystem to return security extended attributes, which by
 			// default don't exist.
@@ -830,14 +831,14 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 		Path:  fspath.Parse(currentPath),
 	}
 	stat, err := vfs.StatAt(ctx, creds, pop, &StatOptions{Mask: linux.STATX_TYPE})
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory {
 			return syserror.ENOTDIR
 		}
 		// Directory already exists.
 		return nil
-	case syserror.ENOENT:
+	case linuxerr.Equals(linuxerr.ENOENT, err):
 		// Expected, we will create the dir.
 	default:
 		return fmt.Errorf("stat failed for %q during directory creation: %w", currentPath, err)
@@ -871,7 +872,7 @@ func (vfs *VirtualFilesystem) MakeSyntheticMountpoint(ctx context.Context, targe
 		Root:  root,
 		Start: root,
 		Path:  fspath.Parse(target),
-	}, mkdirOpts); err != nil && err != syserror.EEXIST {
+	}, mkdirOpts); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
 		return fmt.Errorf("failed to create mountpoint %q: %w", target, err)
 	}
 	return nil

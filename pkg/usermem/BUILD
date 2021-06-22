@@ -30,6 +30,7 @@ go_test(
     library = ":usermem",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/syserror",

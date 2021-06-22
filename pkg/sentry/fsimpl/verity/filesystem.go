@@ -25,6 +25,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/merkletree"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -195,7 +196,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 	// The Merkle tree file for the child should have been created and
 	// contains the expected xattrs. If the file or the xattr does not
 	// exist, it indicates unexpected modifications to the file system.
-	if err == syserror.ENOENT || err == syserror.ENODATA {
+	if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENODATA, err) {
 		return nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleOffsetInParentXattr, childPath, err))
 	}
 	if err != nil {
@@ -218,7 +219,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 
 	// The parent Merkle tree file should have been created. If it's
 	// missing, it indicates an unexpected modification to the file system.
-	if err == syserror.ENOENT {
+	if linuxerr.Equals(linuxerr.ENOENT, err) {
 		return nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to open parent Merkle file for %s: %v", childPath, err))
 	}
 	if err != nil {
@@ -238,7 +239,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 	// The Merkle tree file for the child should have been created and
 	// contains the expected xattrs. If the file or the xattr does not
 	// exist, it indicates unexpected modifications to the file system.
-	if err == syserror.ENOENT || err == syserror.ENODATA {
+	if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENODATA, err) {
 		return nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s for %s: %v", merkleSizeXattr, childPath, err))
 	}
 	if err != nil {
@@ -261,7 +262,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 		Root:  parent.lowerVD,
 		Start: parent.lowerVD,
 	}, &vfs.StatOptions{})
-	if err == syserror.ENOENT {
+	if linuxerr.Equals(linuxerr.ENOENT, err) {
 		return nil, fs.alertIntegrityViolation(fmt.Sprintf("Failed to get parent stat for %s: %v", childPath, err))
 	}
 	if err != nil {
@@ -327,7 +328,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 	}, &vfs.OpenOptions{
 		Flags: linux.O_RDONLY,
 	})
-	if err == syserror.ENOENT {
+	if linuxerr.Equals(linuxerr.ENOENT, err) {
 		return fs.alertIntegrityViolation(fmt.Sprintf("Failed to open merkle file for %s: %v", childPath, err))
 	}
 	if err != nil {
@@ -341,7 +342,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 		Size: sizeOfStringInt32,
 	})
 
-	if err == syserror.ENODATA {
+	if linuxerr.Equals(linuxerr.ENODATA, err) {
 		return fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s for merkle file of %s: %v", merkleSizeXattr, childPath, err))
 	}
 	if err != nil {
@@ -359,7 +360,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 			Size: sizeOfStringInt32,
 		})
 
-		if err == syserror.ENODATA {
+		if linuxerr.Equals(linuxerr.ENODATA, err) {
 			return fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s for merkle file of %s: %v", childrenOffsetXattr, childPath, err))
 		}
 		if err != nil {
@@ -375,7 +376,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 			Size: sizeOfStringInt32,
 		})
 
-		if err == syserror.ENODATA {
+		if linuxerr.Equals(linuxerr.ENODATA, err) {
 			return fs.alertIntegrityViolation(fmt.Sprintf("Failed to get xattr %s for merkle file of %s: %v", childrenSizeXattr, childPath, err))
 		}
 		if err != nil {
@@ -465,7 +466,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 			}
 
 			childVD, err := parent.getLowerAt(ctx, vfsObj, name)
-			if err == syserror.ENOENT {
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
 				// The file was previously accessed. If the
 				// file does not exist now, it indicates an
 				// unexpected modification to the file system.
@@ -480,7 +481,7 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 			// The Merkle tree file was previous accessed. If it
 			// does not exist now, it indicates an unexpected
 			// modification to the file system.
-			if err == syserror.ENOENT {
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
 				return nil, fs.alertIntegrityViolation(fmt.Sprintf("Expected Merkle file for target %s but none found", path))
 			}
 			if err != nil {
@@ -551,7 +552,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 	}
 
 	childVD, err := parent.getLowerAt(ctx, vfsObj, name)
-	if parent.verityEnabled() && err == syserror.ENOENT {
+	if parent.verityEnabled() && linuxerr.Equals(linuxerr.ENOENT, err) {
 		return nil, fs.alertIntegrityViolation(fmt.Sprintf("file %s expected but not found", parentPath+"/"+name))
 	}
 	if err != nil {
@@ -564,7 +565,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 
 	childMerkleVD, err := parent.getLowerAt(ctx, vfsObj, merklePrefix+name)
 	if err != nil {
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			if parent.verityEnabled() {
 				return nil, fs.alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", parentPath+"/"+name))
 			}
@@ -854,7 +855,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	// The file should exist, as we succeeded in finding its dentry. If it's
 	// missing, it indicates an unexpected modification to the file system.
 	if err != nil {
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			return nil, d.fs.alertIntegrityViolation(fmt.Sprintf("File %s expected but not found", path))
 		}
 		return nil, err
@@ -877,7 +878,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	// dentry. If it's missing, it indicates an unexpected modification to
 	// the file system.
 	if err != nil {
-		if err == syserror.ENOENT {
+		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			return nil, d.fs.alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", path))
 		}
 		return nil, err
@@ -902,7 +903,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 			Flags: linux.O_WRONLY | linux.O_APPEND,
 		})
 		if err != nil {
-			if err == syserror.ENOENT {
+			if linuxerr.Equals(linuxerr.ENOENT, err) {
 				return nil, d.fs.alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", path))
 			}
 			return nil, err
@@ -919,7 +920,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 				Flags: linux.O_WRONLY | linux.O_APPEND,
 			})
 			if err != nil {
-				if err == syserror.ENOENT {
+				if linuxerr.Equals(linuxerr.ENOENT, err) {
 					parentPath, _ := d.fs.vfsfs.VirtualFilesystem().PathnameWithDeleted(ctx, d.fs.rootDentry.lowerVD, d.parent.lowerVD)
 					return nil, d.fs.alertIntegrityViolation(fmt.Sprintf("Merkle file for %s expected but not found", parentPath))
 				}

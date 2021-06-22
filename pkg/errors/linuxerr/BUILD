@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//pkg/abi/linux/errno",
         "//pkg/errors",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

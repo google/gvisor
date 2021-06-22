@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -228,7 +229,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	// Just buffer the read instead.
 	buf := make([]byte, dst.NumBytes())
 	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
-	if err == syserror.EAGAIN {
+	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = syserror.ErrWouldBlock
 	}
 	if n == 0 {
@@ -316,7 +317,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, copyErr
 	}
 	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset))
-	if err == syserror.EAGAIN {
+	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = syserror.ErrWouldBlock
 	}
 	// Update offset if the offset is valid.

@@ -19,6 +19,7 @@ import (
 	"runtime/trace"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -45,7 +46,7 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 	err := t.BlockWithDeadline(C, true, deadline)
 
 	// Timeout, explicitly return a remaining duration of 0.
-	if err == syserror.ETIMEDOUT {
+	if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 		return 0, err
 	}
 

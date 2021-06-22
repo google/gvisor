@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -411,7 +412,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	defer rp.Mount().EndWrite()
 	childI, err := parent.inode.NewDir(ctx, pc, opts)
 	if err != nil {
-		if !opts.ForSyntheticMountpoint || err == syserror.EEXIST {
+		if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
 			return err
 		}
 		childI = newSyntheticDirectory(ctx, rp.Credentials(), opts.Mode)
@@ -546,7 +547,7 @@ afterTrailingSymlink:
 	}
 	// Determine whether or not we need to create a file.
 	child, err := fs.stepExistingLocked(ctx, rp, parent, false /* mayFollowSymlinks */)
-	if err == syserror.ENOENT {
+	if linuxerr.Equals(linuxerr.ENOENT, err) {
 		// Already checked for searchability above; now check for writability.
 		if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 			return nil, err
@@ -684,10 +685,12 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 		return syserror.EBUSY
 	}
-	switch err := checkCreateLocked(ctx, rp.Credentials(), newName, dstDir); err {
-	case nil:
+
+	err = checkCreateLocked(ctx, rp.Credentials(), newName, dstDir)
+	switch {
+	case err == nil:
 		// Ok, continue with rename as replacement.
-	case syserror.EEXIST:
+	case linuxerr.Equals(linuxerr.EEXIST, err):
 		if noReplace {
 			// Won't overwrite existing node since RENAME_NOREPLACE was requested.
 			return syserror.EEXIST

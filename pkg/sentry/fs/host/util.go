@@ -19,12 +19,12 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func nodeType(s *unix.Stat_t) fs.InodeType {
@@ -98,7 +98,7 @@ type dirInfo struct {
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
 // EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
 func isBlockError(err error) bool {
-	if err == syserror.EAGAIN || err == syserror.EWOULDBLOCK {
+	if linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err) {
 		return true
 	}
 	if pe, ok := err.(*os.PathError); ok {

@@ -23,13 +23,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -227,7 +227,7 @@ func TestTasks(t *testing.T) {
 		defer fd.DecRef(s.Ctx)
 		buf := make([]byte, 1)
 		bufIOSeq := usermem.BytesIOSequence(buf)
-		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); err != syserror.EISDIR {
+		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); !linuxerr.Equals(linuxerr.EISDIR, err) {
 			t.Errorf("wrong error reading directory: %v", err)
 		}
 	}
@@ -237,7 +237,7 @@ func TestTasks(t *testing.T) {
 		s.Creds,
 		s.PathOpAtRoot("/proc/9999"),
 		&vfs.OpenOptions{},
-	); err != syserror.ENOENT {
+	); !linuxerr.Equals(linuxerr.ENOENT, err) {
 		t.Fatalf("wrong error from vfsfs.OpenAt(/proc/9999): %v", err)
 	}
 }

@@ -48,6 +48,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/p9",
@@ -110,6 +111,7 @@ go_test(
     deps = [
         ":fs",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/fs/tmpfs",

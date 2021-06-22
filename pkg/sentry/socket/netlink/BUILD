@@ -17,6 +17,7 @@ go_library(
         "//pkg/abi/linux/errno",
         "//pkg/bits",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/marshal/primitive",

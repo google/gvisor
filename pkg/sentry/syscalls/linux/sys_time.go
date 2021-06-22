@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -209,11 +210,11 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem host
 
 	timer.Destroy()
 
-	switch err {
-	case syserror.ETIMEDOUT:
+	switch {
+	case linuxerr.Equals(linuxerr.ETIMEDOUT, err):
 		// Slept for entire timeout.
 		return nil
-	case syserror.ErrInterrupted:
+	case err == syserror.ErrInterrupted:
 		// Interrupted.
 		remaining := end.Sub(c.Now())
 		if remaining <= 0 {

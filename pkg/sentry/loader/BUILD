@@ -20,6 +20,7 @@ go_library(
         "//pkg/abi/linux/errno",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/rand",

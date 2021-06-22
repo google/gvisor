@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -155,10 +156,10 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// Write and PWrite fails.
-	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EIO {
+	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
 		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
-	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EIO {
+	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
 		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
 	}
 }
@@ -215,10 +216,10 @@ func TestWritable(t *testing.T) {
 	if n, err := fd.Seek(ctx, 1, linux.SEEK_SET); n != 0 && err != nil {
 		t.Errorf("Seek: got err (%v, %v), wanted (0, nil)", n, err)
 	}
-	if n, err := fd.Write(ctx, writeIOSeq, WriteOptions{}); n != 0 && err != syserror.EINVAL {
+	if n, err := fd.Write(ctx, writeIOSeq, WriteOptions{}); n != 0 && !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("Write: got err (%v, %v), wanted (0, EINVAL)", n, err)
 	}
-	if n, err := fd.PWrite(ctx, writeIOSeq, 2, WriteOptions{}); n != 0 && err != syserror.EINVAL {
+	if n, err := fd.PWrite(ctx, writeIOSeq, 2, WriteOptions{}); n != 0 && !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("PWrite: got err (%v, %v), wanted (0, EINVAL)", n, err)
 	}
 }

@@ -125,6 +125,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
@@ -156,6 +157,7 @@ go_test(
     library = ":mm",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
@@ -163,7 +165,6 @@ go_test(
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

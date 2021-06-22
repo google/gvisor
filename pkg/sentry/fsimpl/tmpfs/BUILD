@@ -118,6 +118,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs/lock",

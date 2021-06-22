@@ -32,6 +32,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fd",
         "//pkg/flipcall",

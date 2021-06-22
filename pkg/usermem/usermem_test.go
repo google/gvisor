@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -272,7 +273,7 @@ func TestCopyInt32StringsInVecRequiresOneValidValue(t *testing.T) {
 			src := BytesIOSequence([]byte(s))
 			initial := []int32{1, 2}
 			dsts := append([]int32(nil), initial...)
-			if n, err := CopyInt32StringsInVec(newContext(), src.IO, src.Addrs, dsts, src.Opts); err != syserror.EINVAL {
+			if n, err := CopyInt32StringsInVec(newContext(), src.IO, src.Addrs, dsts, src.Opts); !linuxerr.Equals(linuxerr.EINVAL, err) {
 				t.Errorf("CopyInt32StringsInVec: got (%d, %v), wanted (_, %v)", n, err, syserror.EINVAL)
 			}
 			if !reflect.DeepEqual(dsts, initial) {

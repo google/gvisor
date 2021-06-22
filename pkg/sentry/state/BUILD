@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
@@ -20,7 +21,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",
         "//pkg/state/statefile",
-        "//pkg/syserror",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

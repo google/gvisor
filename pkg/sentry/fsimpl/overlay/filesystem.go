@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -218,7 +219,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			Start: parentVD,
 			Path:  childPath,
 		}, &vfs.GetDentryOptions{})
-		if err == syserror.ENOENT || err == syserror.ENAMETOOLONG {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
 			// The file doesn't exist on this layer. Proceed to the next one.
 			return true
 		}
@@ -352,7 +353,7 @@ func (fs *filesystem) lookupLayerLocked(ctx context.Context, parent *dentry, nam
 		}, &vfs.StatOptions{
 			Mask: linux.STATX_TYPE,
 		})
-		if err == syserror.ENOENT || err == syserror.ENAMETOOLONG {
+		if linuxerr.Equals(linuxerr.ENOENT, err) || linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
 			// The file doesn't exist on this layer. Proceed to the next
 			// one.
 			return true
@@ -811,7 +812,7 @@ afterTrailingSymlink:
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
 	child, topLookupLayer, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
-	if err == syserror.ENOENT && mayCreate {
+	if linuxerr.Equals(linuxerr.ENOENT, err) && mayCreate {
 		fd, err := fs.createAndOpenLocked(ctx, rp, parent, &opts, &ds, topLookupLayer == lookupLayerUpperWhiteout)
 		parent.dirMu.Unlock()
 		return fd, err
@@ -1094,7 +1095,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		whiteouts     map[string]bool
 	)
 	replaced, replacedLayer, err = fs.getChildLocked(ctx, newParent, newName, &ds)
-	if err != nil && err != syserror.ENOENT {
+	if err != nil && !linuxerr.Equals(linuxerr.ENOENT, err) {
 		return err
 	}
 	if replaced != nil {
@@ -1177,7 +1178,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				Root:  replaced.upperVD,
 				Start: replaced.upperVD,
 				Path:  fspath.Parse(whiteoutName),
-			}); err != nil && err != syserror.EEXIST {
+			}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
 				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RenameAt failure: %v", err))
 			}
 		}
@@ -1344,7 +1345,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 					Root:  child.upperVD,
 					Start: child.upperVD,
 					Path:  fspath.Parse(whiteoutName),
-				}); err != nil && err != syserror.EEXIST {
+				}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
 					panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RmdirAt failure: %v", err))
 				}
 			}
