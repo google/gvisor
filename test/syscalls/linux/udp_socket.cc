@@ -1429,12 +1429,8 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthPacket) {
         sendto(sock_.get(), buf + i * psize, 0, 0, bind_addr_, addrlen_),
         SyscallSucceedsWithValue(0));
 
-    // TODO(gvisor.dev/issue/2726): sending a zero-length message to a hostinet
-    // socket does not cause a poll event to be triggered.
-    if (!IsRunningWithHostinet()) {
-      ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
-                  SyscallSucceedsWithValue(1));
-    }
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, /*timeout=*/1000),
+                SyscallSucceedsWithValue(1));
 
     // Check that regardless of how many packets are in the queue, the size
     // reported is that of a single packet.
