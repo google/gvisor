@@ -151,8 +151,8 @@ func (s *execStoppedState) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (s *execStoppedState) Kill(ctx context.Context, sig uint32, all bool) error {
-	return s.p.kill(ctx, sig, all)
+func (s *execStoppedState) Kill(_ context.Context, sig uint32, _ bool) error {
+	return handleStoppedKill(sig)
 }
 
 func (s *execStoppedState) SetExited(int) {
