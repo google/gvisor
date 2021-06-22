@@ -141,8 +141,6 @@ func testRecv(ctx context.Context, t *testing.T, d testData) {
 	d.conn.Send(t, testbench.UDP{})
 
 	if d.wantErrno != unix.Errno(0) {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 		ret, _, err := d.dut.RecvWithErrno(ctx, t, d.remoteFD, 100, 0)
 		if ret != -1 {
 			t.Fatalf("recv after ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", d.wantErrno)
@@ -167,8 +165,6 @@ func testSendTo(ctx context.Context, t *testing.T, d testData) {
 	}
 
 	if d.wantErrno != unix.Errno(0) {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 		ret, err := d.dut.SendToWithErrno(ctx, t, d.remoteFD, nil, 0, d.conn.LocalAddr(t))
 
 		if ret != -1 {
@@ -315,10 +311,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					defer wg.Done()
 
 					if wantErrno != unix.Errno(0) {
-						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-						defer cancel()
-
-						ret, _, err := dut.RecvWithErrno(ctx, t, remoteFD, 100, 0)
+						ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
 						if ret != -1 {
 							t.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
 							return
@@ -329,10 +322,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 						}
 					}
 
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, t, remoteFD, 100, 0); ret == -1 {
+					if ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0); ret == -1 {
 						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
 					}
 				}()
@@ -340,10 +330,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				go func() {
 					defer wg.Done()
 
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, t, cleanFD, 100, 0); ret == -1 {
+					if ret, _, err := dut.RecvWithErrno(context.Background(), t, cleanFD, 100, 0); ret == -1 {
 						t.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
 					}
 				}()
