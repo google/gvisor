@@ -25,29 +25,6 @@ import (
 var (
 	// The action for bluepillSignal is changed by sigaction().
 	bluepillSignal = unix.SIGILL
-
-	// vcpuSErrBounce is the event of system error for bouncing KVM.
-	vcpuSErrBounce = kvmVcpuEvents{
-		exception: exception{
-			sErrPending: 1,
-		},
-	}
-
-	// vcpuSErrNMI is the event of system error to trigger sigbus.
-	vcpuSErrNMI = kvmVcpuEvents{
-		exception: exception{
-			sErrPending: 1,
-			sErrHasEsr:  1,
-			sErrEsr:     _ESR_ELx_SERR_NMI,
-		},
-	}
-
-	// vcpuExtDabt is the event of ext_dabt.
-	vcpuExtDabt = kvmVcpuEvents{
-		exception: exception{
-			extDabtPending: 1,
-		},
-	}
 )
 
 // getTLS returns the value of TPIDR_EL0 register.
