@@ -81,8 +81,6 @@ const (
 
 // New returns a new shim service that can be used via GRPC.
 func New(ctx context.Context, id string, publisher shim.Publisher, cancel func()) (shim.Shim, error) {
-	log.L.Debugf("service.New, id: %s", id)
-
 	var opts shim.Opts
 	if ctxOpts := ctx.Value(shim.OptsKey{}); ctxOpts != nil {
 		opts = ctxOpts.(shim.Opts)
@@ -304,8 +302,6 @@ func (s *service) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) 
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
 func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
-	log.L.Debugf("Create, id: %s, bundle: %q", r.ID, r.Bundle)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -396,6 +392,9 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 		log.L.Debugf("stdout: %s", r.Stdout)
 		log.L.Debugf("stderr: %s", r.Stderr)
 		log.L.Debugf("***************************")
+		if log.L.Logger.IsLevelEnabled(logrus.DebugLevel) {
+			setDebugSigHandler()
+		}
 	}
 
 	// Save state before any action is taken to ensure Cleanup() will have all
@@ -506,9 +505,6 @@ func (s *service) Delete(ctx context.Context, r *taskAPI.DeleteRequest) (*taskAP
 	if err != nil {
 		return nil, err
 	}
-	if p == nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
-	}
 	if err := p.Delete(ctx); err != nil {
 		return nil, err
 	}
@@ -580,10 +576,12 @@ func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.
 
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
+		log.L.Debugf("State failed to find process: %v", err)
 		return nil, err
 	}
 	st, err := p.Status(ctx)
 	if err != nil {
+		log.L.Debugf("State failed: %v", err)
 		return nil, err
 	}
 	status := task.StatusUnknown
@@ -596,7 +594,7 @@ func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.
 		status = task.StatusStopped
 	}
 	sio := p.Stdio()
-	return &taskAPI.StateResponse{
+	res := &taskAPI.StateResponse{
 		ID:         p.ID(),
 		Bundle:     s.bundle,
 		Pid:        uint32(p.Pid()),
@@ -607,7 +605,9 @@ func (s *service) State(ctx context.Context, r *taskAPI.StateRequest) (*taskAPI.
 		Terminal:   sio.Terminal,
 		ExitStatus: uint32(p.ExitStatus()),
 		ExitedAt:   p.ExitedAt(),
-	}, nil
+	}
+	log.L.Debugf("State succeeded, response: %+v", res)
+	return res, nil
 }
 
 // Pause the container.
@@ -646,12 +646,11 @@ func (s *service) Kill(ctx context.Context, r *taskAPI.KillRequest) (*types.Empt
 	if err != nil {
 		return nil, err
 	}
-	if p == nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
-	}
 	if err := p.Kill(ctx, r.Signal, r.All); err != nil {
+		log.L.Debugf("Kill failed: %v", err)
 		return nil, errdefs.ToGRPC(err)
 	}
+	log.L.Debugf("Kill succeeded")
 	return empty, nil
 }
 
@@ -740,7 +739,7 @@ func (s *service) Stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 		log.L.Debugf("Stats error, id: %s: container not created", r.ID)
 		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
 	}
-	stats, err := s.task.Runtime().Stats(ctx, s.id)
+	stats, err := s.task.Stats(ctx, s.id)
 	if err != nil {
 		log.L.Debugf("Stats error, id: %s: %v", r.ID, err)
 		return nil, err
@@ -821,17 +820,17 @@ func (s *service) Wait(ctx context.Context, r *taskAPI.WaitRequest) (*taskAPI.Wa
 
 	p, err := s.getProcess(r.ExecID)
 	if err != nil {
+		log.L.Debugf("Wait failed to find process: %v", err)
 		return nil, err
-	}
-	if p == nil {
-		return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
 	}
 	p.Wait()
 
-	return &taskAPI.WaitResponse{
+	res := &taskAPI.WaitResponse{
 		ExitStatus: uint32(p.ExitStatus()),
 		ExitedAt:   p.ExitedAt(),
-	}, nil
+	}
+	log.L.Debugf("Wait succeeded, response: %+v", res)
+	return res, nil
 }
 
 func (s *service) processExits(ctx context.Context) {
@@ -848,10 +847,7 @@ func (s *service) checkProcesses(ctx context.Context, e proc.Exit) {
 			if ip, ok := p.(*proc.Init); ok {
 				// Ensure all children are killed.
 				log.L.Debugf("Container init process exited, killing all container processes")
-				if err := ip.KillAll(ctx); err != nil {
-					log.G(ctx).WithError(err).WithField("id", ip.ID()).
-						Error("failed to kill init's children")
-				}
+				ip.KillAll(ctx)
 			}
 			p.SetExited(e.Status)
 			s.events <- &events.TaskExit{
@@ -909,9 +905,14 @@ func (s *service) forward(ctx context.Context, publisher shim.Publisher) {
 func (s *service) getProcess(execID string) (process.Process, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if execID == "" {
+		if s.task == nil {
+			return nil, errdefs.ToGRPCf(errdefs.ErrFailedPrecondition, "container must be created")
+		}
 		return s.task, nil
 	}
+
 	p := s.processes[execID]
 	if p == nil {
 		return nil, errdefs.ToGRPCf(errdefs.ErrNotFound, "process does not exist %s", execID)

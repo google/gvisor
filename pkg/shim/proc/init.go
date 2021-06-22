@@ -39,6 +39,8 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
 
+const statusStopped = "stopped"
+
 // Init represents an initial process for a container.
 type Init struct {
 	wg        sync.WaitGroup
@@ -201,10 +203,15 @@ func (p *Init) ExitedAt() time.Time {
 func (p *Init) Status(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	return p.initState.State(ctx)
+}
+
+func (p *Init) state(ctx context.Context) (string, error) {
 	c, err := p.runtime.State(ctx, p.id)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
-			return "stopped", nil
+			return statusStopped, nil
 		}
 		return "", p.runtimeError(err, "OCI runtime state failed")
 	}
@@ -231,10 +238,7 @@ func (p *Init) start(ctx context.Context) error {
 		status, err := p.runtime.Wait(context.Background(), p.id)
 		if err != nil {
 			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
-			// TODO(random-liu): Handle runsc kill error.
-			if err := p.killAll(ctx); err != nil {
-				log.G(ctx).WithError(err).Errorf("Failed to kill container %q", p.id)
-			}
+			p.killAllLocked(ctx)
 			status = internalErrorCode
 		}
 		ExitCh <- Exit{
@@ -255,6 +259,12 @@ func (p *Init) SetExited(status int) {
 }
 
 func (p *Init) setExited(status int) {
+	if !p.exited.IsZero() {
+		log.L.Debugf("Status already set to %d, ignoring status: %d", p.status, status)
+		return
+	}
+
+	log.L.Debugf("Setting status: %d", status)
 	p.exited = time.Now()
 	p.status = status
 	p.Platform.ShutdownConsole(context.Background(), p.console)
@@ -270,15 +280,16 @@ func (p *Init) Delete(ctx context.Context) error {
 }
 
 func (p *Init) delete(ctx context.Context) error {
-	p.killAll(ctx)
+	p.killAllLocked(ctx)
 	p.wg.Wait()
+
 	err := p.runtime.Delete(ctx, p.id, nil)
-	// ignore errors if a runtime has already deleted the process
-	// but we still hold metadata and pipes
-	//
-	// this is common during a checkpoint, runc will delete the container state
-	// after a checkpoint and the container will no longer exist within runc
 	if err != nil {
+		// ignore errors if a runtime has already deleted the process
+		// but we still hold metadata and pipes
+		//
+		// this is common during a checkpoint, runc will delete the container state
+		// after a checkpoint and the container will no longer exist within runc
 		if strings.Contains(err.Error(), "does not exist") {
 			err = nil
 		} else {
@@ -326,29 +337,24 @@ func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
 	return p.initState.Kill(ctx, signal, all)
 }
 
-func (p *Init) kill(context context.Context, signal uint32, all bool) error {
+func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 	var (
 		killErr error
 		backoff = 100 * time.Millisecond
 	)
-	timeout := 1 * time.Second
-	for start := time.Now(); time.Now().Sub(start) < timeout; {
-		c, err := p.runtime.State(context, p.id)
+	const timeout = time.Second
+	for start := time.Now(); time.Since(start) < timeout; {
+		state, err := p.initState.State(ctx)
 		if err != nil {
-			if strings.Contains(err.Error(), "does not exist") {
-				return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
-			}
 			return p.runtimeError(err, "OCI runtime state failed")
 		}
 		// For runsc, signal only works when container is running state.
 		// If the container is not in running state, directly return
 		// "no such process"
-		if p.convertStatus(c.Status) == "stopped" {
+		if state == statusStopped {
 			return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
 		}
-		killErr = p.runtime.Kill(context, p.id, int(signal), &runsc.KillOpts{
-			All: all,
-		})
+		killErr = p.runtime.Kill(ctx, p.id, int(signal), &runsc.KillOpts{All: all})
 		if killErr == nil {
 			return nil
 		}
@@ -358,22 +364,18 @@ func (p *Init) kill(context context.Context, signal uint32, all bool) error {
 	return p.runtimeError(killErr, "kill timeout")
 }
 
-// KillAll kills all processes belonging to the init process.
-func (p *Init) KillAll(context context.Context) error {
+// KillAll kills all processes belonging to the init process. If
+// `runsc kill --all` returns error, assume the container has already stopped.
+func (p *Init) KillAll(context context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.killAll(context)
+	p.killAllLocked(context)
 }
 
-func (p *Init) killAll(context context.Context) error {
-	p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsc.KillOpts{
-		All: true,
-	})
-	// Ignore error handling for `runsc kill --all` for now.
-	// * If it doesn't return error, it is good;
-	// * If it returns error, consider the container has already stopped.
-	// TODO: Fix `runsc kill --all` error handling.
-	return nil
+func (p *Init) killAllLocked(context context.Context) {
+	if err := p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsc.KillOpts{All: true}); err != nil {
+		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
+	}
 }
 
 // Stdin returns the stdin of the process.
@@ -396,7 +398,6 @@ func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (process.Pr
 
 // exec returns a new exec'd process.
 func (p *Init) exec(path string, r *ExecConfig) (process.Process, error) {
-	// process exec request
 	var spec specs.Process
 	if err := json.Unmarshal(r.Spec.Value, &spec); err != nil {
 		return nil, err
@@ -418,6 +419,17 @@ func (p *Init) exec(path string, r *ExecConfig) (process.Process, error) {
 	}
 	e.execState = &execCreatedState{p: e}
 	return e, nil
+}
+
+func (p *Init) Stats(ctx context.Context, id string) (*runc.Stats, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.Stats(ctx, id)
+}
+
+func (p *Init) stats(ctx context.Context, id string) (*runc.Stats, error) {
+	return p.Runtime().Stats(ctx, id)
 }
 
 // Stdio returns the stdio of the process.
@@ -444,7 +456,7 @@ func (p *Init) runtimeError(rErr error, msg string) error {
 func (p *Init) convertStatus(status string) string {
 	if status == "created" && !p.Sandbox && p.status == internalErrorCode {
 		// Treat start failure state for non-root container as stopped.
-		return "stopped"
+		return statusStopped
 	}
 	return status
 }

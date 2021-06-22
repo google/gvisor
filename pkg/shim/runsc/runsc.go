@@ -17,6 +17,7 @@
 package runsc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -73,9 +74,9 @@ type Runsc struct {
 
 // List returns all containers created inside the provided runsc root directory.
 func (r *Runsc) List(context context.Context) ([]*runc.Container, error) {
-	data, err := cmdOutput(r.command(context, "list", "--format=json"), false)
+	data, stderr, err := cmdOutput(r.command(context, "list", "--format=json"), false)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
 	var out []*runc.Container
 	if err := json.Unmarshal(data, &out); err != nil {
@@ -86,9 +87,9 @@ func (r *Runsc) List(context context.Context) ([]*runc.Container, error) {
 
 // State returns the state for the container provided by id.
 func (r *Runsc) State(context context.Context, id string) (*runc.Container, error) {
-	data, err := cmdOutput(r.command(context, "state", id), true)
+	data, stderr, err := cmdOutput(r.command(context, "state", id), false)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s", err, data)
+		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
 	var c runc.Container
 	if err := json.Unmarshal(data, &c); err != nil {
@@ -142,9 +143,9 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 	}
 
 	if cmd.Stdout == nil && cmd.Stderr == nil {
-		data, err := cmdOutput(cmd, true)
+		out, _, err := cmdOutput(cmd, true)
 		if err != nil {
-			return fmt.Errorf("%s: %s", err, data)
+			return fmt.Errorf("%w: %s", err, out)
 		}
 		return nil
 	}
@@ -168,15 +169,15 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 }
 
 func (r *Runsc) Pause(context context.Context, id string) error {
-	if _, err := cmdOutput(r.command(context, "pause", id), true); err != nil {
-		return fmt.Errorf("unable to pause: %w", err)
+	if out, _, err := cmdOutput(r.command(context, "pause", id), true); err != nil {
+		return fmt.Errorf("unable to pause: %w: %s", err, out)
 	}
 	return nil
 }
 
 func (r *Runsc) Resume(context context.Context, id string) error {
-	if _, err := cmdOutput(r.command(context, "resume", id), true); err != nil {
-		return fmt.Errorf("unable to resume: %w", err)
+	if out, _, err := cmdOutput(r.command(context, "resume", id), true); err != nil {
+		return fmt.Errorf("unable to resume: %w: %s", err, out)
 	}
 	return nil
 }
@@ -189,9 +190,9 @@ func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	}
 
 	if cmd.Stdout == nil && cmd.Stderr == nil {
-		data, err := cmdOutput(cmd, true)
+		out, _, err := cmdOutput(cmd, true)
 		if err != nil {
-			return fmt.Errorf("%s: %s", err, data)
+			return fmt.Errorf("%w: %s", err, out)
 		}
 		return nil
 	}
@@ -221,12 +222,10 @@ type waitResult struct {
 }
 
 // Wait will wait for a running container, and return its exit status.
-//
-// TODO(random-liu): Add exec process support.
 func (r *Runsc) Wait(context context.Context, id string) (int, error) {
-	data, err := cmdOutput(r.command(context, "wait", id), true)
+	data, stderr, err := cmdOutput(r.command(context, "wait", id), false)
 	if err != nil {
-		return 0, fmt.Errorf("%s: %s", err, data)
+		return 0, fmt.Errorf("%w: %s", err, stderr)
 	}
 	var res waitResult
 	if err := json.Unmarshal(data, &res); err != nil {
@@ -294,9 +293,9 @@ func (r *Runsc) Exec(context context.Context, id string, spec specs.Process, opt
 		opts.Set(cmd)
 	}
 	if cmd.Stdout == nil && cmd.Stderr == nil {
-		data, err := cmdOutput(cmd, true)
+		out, _, err := cmdOutput(cmd, true)
 		if err != nil {
-			return fmt.Errorf("%s: %s", err, data)
+			return fmt.Errorf("%w: %s", err, out)
 		}
 		return nil
 	}
@@ -391,20 +390,12 @@ func (r *Runsc) Kill(context context.Context, id string, sig int, opts *KillOpts
 // Stats return the stats for a container like cpu, memory, and I/O.
 func (r *Runsc) Stats(context context.Context, id string) (*runc.Stats, error) {
 	cmd := r.command(context, "events", "--stats", id)
-	rd, err := cmd.StdoutPipe()
+	data, stderr, err := cmdOutput(cmd, false)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
-	ec, err := Monitor.Start(cmd)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		rd.Close()
-		Monitor.Wait(cmd, ec)
-	}()
 	var e runc.Event
-	if err := json.NewDecoder(rd).Decode(&e); err != nil {
+	if err := json.Unmarshal(data, &e); err != nil {
 		log.L.Debugf("Parsing events error: %v", err)
 		return nil, err
 	}
@@ -459,9 +450,9 @@ func (r *Runsc) Events(context context.Context, id string, interval time.Duratio
 
 // Ps lists all the processes inside the container returning their pids.
 func (r *Runsc) Ps(context context.Context, id string) ([]int, error) {
-	data, err := cmdOutput(r.command(context, "ps", "--format", "json", id), true)
+	data, stderr, err := cmdOutput(r.command(context, "ps", "--format", "json", id), false)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s", err, data)
+		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
 	var pids []int
 	if err := json.Unmarshal(data, &pids); err != nil {
@@ -472,9 +463,9 @@ func (r *Runsc) Ps(context context.Context, id string) ([]int, error) {
 
 // Top lists all the processes inside the container returning the full ps data.
 func (r *Runsc) Top(context context.Context, id string) (*runc.TopResults, error) {
-	data, err := cmdOutput(r.command(context, "ps", "--format", "table", id), true)
+	data, stderr, err := cmdOutput(r.command(context, "ps", "--format", "table", id), false)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s", err, data)
+		return nil, fmt.Errorf("%w: %s", err, stderr)
 	}
 
 	topResults, err := runc.ParsePSOutput(data)
@@ -517,9 +508,9 @@ func (r *Runsc) runOrError(cmd *exec.Cmd) error {
 		}
 		return err
 	}
-	data, err := cmdOutput(cmd, true)
+	out, _, err := cmdOutput(cmd, true)
 	if err != nil {
-		return fmt.Errorf("%s: %s", err, data)
+		return fmt.Errorf("%w: %s", err, out)
 	}
 	return nil
 }
@@ -540,23 +531,29 @@ func (r *Runsc) command(context context.Context, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, error) {
-	b := getBuf()
-	defer putBuf(b)
+func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, []byte, error) {
+	stdout := getBuf()
+	defer putBuf(stdout)
+	cmd.Stdout = stdout
+	cmd.Stderr = stdout
 
-	cmd.Stdout = b
-	if combined {
-		cmd.Stderr = b
+	var stderr *bytes.Buffer
+	if !combined {
+		stderr = getBuf()
+		defer putBuf(stderr)
+		cmd.Stderr = stderr
 	}
 	ec, err := Monitor.Start(cmd)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
-		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
+		err = fmt.Errorf("%q did not terminate sucessfully", cmd.Args[0])
 	}
-
-	return b.Bytes(), err
+	if stderr == nil {
+		return stdout.Bytes(), nil, err
+	}
+	return stdout.Bytes(), stderr.Bytes(), err
 }

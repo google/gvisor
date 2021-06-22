@@ -22,28 +22,38 @@ import (
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/pkg/process"
+	runc "github.com/containerd/go-runc"
 )
 
 type deletedState struct{}
 
-func (*deletedState) Resize(ws console.WinSize) error {
-	return fmt.Errorf("cannot resize a deleted process.ss")
+func (*deletedState) Resize(console.WinSize) error {
+	return fmt.Errorf("cannot resize a deleted container/process")
 }
 
-func (*deletedState) Start(ctx context.Context) error {
-	return fmt.Errorf("cannot start a deleted process.ss")
+func (*deletedState) Start(context.Context) error {
+	return fmt.Errorf("cannot start a deleted container/process")
 }
 
-func (*deletedState) Delete(ctx context.Context) error {
-	return fmt.Errorf("cannot delete a deleted process.ss: %w", errdefs.ErrNotFound)
+func (*deletedState) Delete(context.Context) error {
+	return fmt.Errorf("cannot delete a deleted container/process: %w", errdefs.ErrNotFound)
 }
 
-func (*deletedState) Kill(ctx context.Context, sig uint32, all bool) error {
-	return fmt.Errorf("cannot kill a deleted process.ss: %w", errdefs.ErrNotFound)
+func (*deletedState) Kill(_ context.Context, signal uint32, _ bool) error {
+	return handleStoppedKill(signal)
 }
 
-func (*deletedState) SetExited(status int) {}
+func (*deletedState) SetExited(int) {}
 
-func (*deletedState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (*deletedState) Exec(context.Context, string, *ExecConfig) (process.Process, error) {
 	return nil, fmt.Errorf("cannot exec in a deleted state")
+}
+
+func (s *deletedState) State(context.Context) (string, error) {
+	// There is no "deleted" state, closest one is stopped.
+	return "stopped", nil
+}
+
+func (s *deletedState) Stats(context.Context, string) (*runc.Stats, error) {
+	return nil, fmt.Errorf("cannot stat a stopped container/process")
 }

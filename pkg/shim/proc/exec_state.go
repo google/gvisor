@@ -34,18 +34,21 @@ type execCreatedState struct {
 	p *execProcess
 }
 
-func (s *execCreatedState) transition(name string) error {
-	switch name {
-	case "running":
+func (s *execCreatedState) name() string {
+	return "created"
+}
+
+func (s *execCreatedState) transition(transition stateTransition) {
+	switch transition {
+	case running:
 		s.p.execState = &execRunningState{p: s.p}
-	case "stopped":
+	case stopped:
 		s.p.execState = &execStoppedState{p: s.p}
-	case "deleted":
+	case deleted:
 		s.p.execState = &deletedState{}
 	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
 	}
-	return nil
 }
 
 func (s *execCreatedState) Resize(ws console.WinSize) error {
@@ -56,14 +59,16 @@ func (s *execCreatedState) Start(ctx context.Context) error {
 	if err := s.p.start(ctx); err != nil {
 		return err
 	}
-	return s.transition("running")
+	s.transition(running)
+	return nil
 }
 
 func (s *execCreatedState) Delete(ctx context.Context) error {
 	if err := s.p.delete(ctx); err != nil {
 		return err
 	}
-	return s.transition("deleted")
+	s.transition(deleted)
+	return nil
 }
 
 func (s *execCreatedState) Kill(ctx context.Context, sig uint32, all bool) error {
@@ -72,35 +77,35 @@ func (s *execCreatedState) Kill(ctx context.Context, sig uint32, all bool) error
 
 func (s *execCreatedState) SetExited(status int) {
 	s.p.setExited(status)
-
-	if err := s.transition("stopped"); err != nil {
-		panic(err)
-	}
+	s.transition(stopped)
 }
 
 type execRunningState struct {
 	p *execProcess
 }
 
-func (s *execRunningState) transition(name string) error {
-	switch name {
-	case "stopped":
+func (s *execRunningState) name() string {
+	return "running"
+}
+
+func (s *execRunningState) transition(transition stateTransition) {
+	switch transition {
+	case stopped:
 		s.p.execState = &execStoppedState{p: s.p}
 	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
 	}
-	return nil
 }
 
 func (s *execRunningState) Resize(ws console.WinSize) error {
 	return s.p.resize(ws)
 }
 
-func (s *execRunningState) Start(ctx context.Context) error {
+func (s *execRunningState) Start(context.Context) error {
 	return fmt.Errorf("cannot start a running process")
 }
 
-func (s *execRunningState) Delete(ctx context.Context) error {
+func (s *execRunningState) Delete(context.Context) error {
 	return fmt.Errorf("cannot delete a running process")
 }
 
@@ -110,31 +115,31 @@ func (s *execRunningState) Kill(ctx context.Context, sig uint32, all bool) error
 
 func (s *execRunningState) SetExited(status int) {
 	s.p.setExited(status)
-
-	if err := s.transition("stopped"); err != nil {
-		panic(err)
-	}
+	s.transition(stopped)
 }
 
 type execStoppedState struct {
 	p *execProcess
 }
 
-func (s *execStoppedState) transition(name string) error {
-	switch name {
-	case "deleted":
-		s.p.execState = &deletedState{}
-	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
-	}
-	return nil
+func (s *execStoppedState) name() string {
+	return "stopped"
 }
 
-func (s *execStoppedState) Resize(ws console.WinSize) error {
+func (s *execStoppedState) transition(transition stateTransition) {
+	switch transition {
+	case deleted:
+		s.p.execState = &deletedState{}
+	default:
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
+	}
+}
+
+func (s *execStoppedState) Resize(console.WinSize) error {
 	return fmt.Errorf("cannot resize a stopped container")
 }
 
-func (s *execStoppedState) Start(ctx context.Context) error {
+func (s *execStoppedState) Start(context.Context) error {
 	return fmt.Errorf("cannot start a stopped process")
 }
 
@@ -142,13 +147,14 @@ func (s *execStoppedState) Delete(ctx context.Context) error {
 	if err := s.p.delete(ctx); err != nil {
 		return err
 	}
-	return s.transition("deleted")
+	s.transition(deleted)
+	return nil
 }
 
 func (s *execStoppedState) Kill(ctx context.Context, sig uint32, all bool) error {
 	return s.p.kill(ctx, sig, all)
 }
 
-func (s *execStoppedState) SetExited(status int) {
+func (s *execStoppedState) SetExited(int) {
 	// no op
 }
