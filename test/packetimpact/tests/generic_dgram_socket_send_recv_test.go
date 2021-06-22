@@ -48,7 +48,6 @@ func maxUDPPayloadSize(addr net.IP) int {
 
 func init() {
 	testbench.Initialize(flag.CommandLine)
-	testbench.RPCTimeout = 500 * time.Millisecond
 }
 
 func expectedEthLayer(t *testing.T, dut testbench.DUT, socketFD int32, sendTo net.IP) testbench.Layer {
@@ -437,9 +436,7 @@ func (test *icmpV6Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net
 			copy(destSockaddr.Addr[:], sendTo.To16())
 
 			// Tell the DUT to send a packet out the ICMPv6 socket.
-			ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
-			defer cancel()
-			gotRet, gotErrno := dut.SendToWithErrno(ctx, t, env.socketFD, bytes, 0, &destSockaddr)
+			gotRet, gotErrno := dut.SendToWithErrno(context.Background(), t, env.socketFD, bytes, 0, &destSockaddr)
 
 			if gotErrno != wantErrno {
 				t.Fatalf("got dut.SendToWithErrno(_, _, %d, _, _, %s) = (_, %s), want = (_, %s)", env.socketFD, sendTo, gotErrno, wantErrno)
@@ -677,9 +674,7 @@ func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP
 			}
 
 			// Tell the DUT to send a packet out the UDP socket.
-			ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
-			defer cancel()
-			gotRet, gotErrno := dut.SendToWithErrno(ctx, t, env.socketFD, payload, 0, destSockaddr)
+			gotRet, gotErrno := dut.SendToWithErrno(context.Background(), t, env.socketFD, payload, 0, destSockaddr)
 
 			if gotErrno != wantErrno {
 				t.Fatalf("got dut.SendToWithErrno(_, _, %d, _, _, %s) = (_, %s), want = (_, %s)", env.socketFD, sendTo, gotErrno, wantErrno)

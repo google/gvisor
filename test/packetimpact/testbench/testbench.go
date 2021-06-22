@@ -31,8 +31,6 @@ var (
 	Native = false
 	// RPCKeepalive is the gRPC keepalive.
 	RPCKeepalive = 10 * time.Second
-	// RPCTimeout is the gRPC timeout.
-	RPCTimeout = 100 * time.Millisecond
 
 	// dutInfosJSON is the json string that describes information about all the
 	// duts available to use.
@@ -124,7 +122,6 @@ func (n *DUTTestNet) SubnetBroadcast() net.IP {
 // functions.
 func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
-	fs.DurationVar(&RPCTimeout, "rpc_timeout", RPCTimeout, "gRPC timeout")
 	fs.DurationVar(&RPCKeepalive, "rpc_keepalive", RPCKeepalive, "gRPC keepalive")
 	fs.StringVar(&dutInfosJSON, "dut_infos_json", dutInfosJSON, "json that describes the DUTs")
 }

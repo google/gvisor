@@ -41,11 +41,9 @@ func TestTCPSynSentUnreachable(t *testing.T) {
 	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
-	ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
-	defer cancel()
 	sa := unix.SockaddrInet4{Port: int(port)}
 	copy(sa.Addr[:], dut.Net.LocalIPv4)
-	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != unix.EINPROGRESS {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, clientFD, &sa); err != unix.EINPROGRESS {
 		t.Errorf("got connect() = %v, want EINPROGRESS", err)
 	}
 
@@ -86,14 +84,12 @@ func TestTCPSynSentUnreachable6(t *testing.T) {
 	defer conn.Close(t)
 
 	// Bring the DUT to SYN-SENT state with a non-blocking connect.
-	ctx, cancel := context.WithTimeout(context.Background(), testbench.RPCTimeout)
-	defer cancel()
 	sa := unix.SockaddrInet6{
 		Port:   int(conn.SrcPort()),
 		ZoneId: dut.Net.RemoteDevID,
 	}
 	copy(sa.Addr[:], dut.Net.LocalIPv6)
-	if _, err := dut.ConnectWithErrno(ctx, t, clientFD, &sa); err != unix.EINPROGRESS {
+	if _, err := dut.ConnectWithErrno(context.Background(), t, clientFD, &sa); err != unix.EINPROGRESS {
 		t.Errorf("got connect() = %v, want EINPROGRESS", err)
 	}
 

@@ -15,9 +15,7 @@
 package tcp_connect_icmp_error_test
 
 import (
-	"context"
 	"flag"
-	"sync"
 	"testing"
 	"time"
 
@@ -66,35 +64,38 @@ func TestTCPConnectICMPError(t *testing.T) {
 		t.Fatalf("expected SYN, %s", err)
 	}
 
-	done := make(chan bool)
-	defer close(done)
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	wg.Add(1)
-	var block sync.WaitGroup
-	block.Add(1)
+	// Continuously try to read the ICMP error in an attempt to trigger a race
+	// condition.
+	start := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		_, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
+		defer close(done)
 
-		block.Done()
+		close(start)
 		for {
 			select {
 			case <-done:
 				return
 			default:
-				if errno := dut.GetSockOptInt(t, clientFD, unix.SOL_SOCKET, unix.SO_ERROR); errno != 0 {
-					return
-				}
 			}
+			const want = unix.EHOSTUNREACH
+			switch got := unix.Errno(dut.GetSockOptInt(t, clientFD, unix.SOL_SOCKET, unix.SO_ERROR)); got {
+			case unix.Errno(0):
+				continue
+			case want:
+				return
+			default:
+				t.Fatalf("got SO_ERROR = %s, want %s", got, want)
+			}
+
 		}
 	}()
-	block.Wait()
 
+	<-start
 	sendICMPError(t, &conn, tcp)
 
 	dut.PollOne(t, clientFD, unix.POLLHUP, time.Second)
+	<-done
 
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// The DUT should reply with RST to our ACK as the state should have
