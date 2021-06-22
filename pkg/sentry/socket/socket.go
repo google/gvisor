@@ -659,7 +659,6 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		return &out, uint32(sockAddrInet6Size)
 
 	case linux.AF_PACKET:
-		// TODO(gvisor.dev/issue/173): Return protocol too.
 		var out linux.SockAddrLink
 		out.Family = linux.AF_PACKET
 		out.InterfaceIndex = int32(addr.NIC)
@@ -749,7 +748,6 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/173): Return protocol too.
 		return tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
 			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
