@@ -67,23 +67,6 @@ type socketOperations struct {
 	socketOpsCommon
 }
 
-// socketOpsCommon contains the socket operations common to VFS1 and VFS2.
-//
-// +stateify savable
-type socketOpsCommon struct {
-	socket.SendReceiveTimeout
-
-	family   int            // Read-only.
-	stype    linux.SockType // Read-only.
-	protocol int            // Read-only.
-	queue    waiter.Queue
-
-	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
-	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
-	// handle blocking behavior independently in the sentry.
-	fd int
-}
-
 var _ = socket.Socket(&socketOperations{})
 
 func newSocketFile(ctx context.Context, family int, stype linux.SockType, protocol int, fd int, nonblock bool) (*fs.File, *syserr.Error) {
@@ -101,29 +84,6 @@ func newSocketFile(ctx context.Context, family int, stype linux.SockType, protoc
 	dirent := socket.NewDirent(ctx, socketDevice)
 	defer dirent.DecRef(ctx)
 	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true, NonSeekable: true}, s), nil
-}
-
-// Release implements fs.FileOperations.Release.
-func (s *socketOpsCommon) Release(context.Context) {
-	fdnotifier.RemoveFD(int32(s.fd))
-	unix.Close(s.fd)
-}
-
-// Readiness implements waiter.Waitable.Readiness.
-func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return fdnotifier.NonBlockingPoll(int32(s.fd), mask)
-}
-
-// EventRegister implements waiter.Waitable.EventRegister.
-func (s *socketOpsCommon) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	s.queue.EventRegister(e, mask)
-	fdnotifier.UpdateFD(int32(s.fd))
-}
-
-// EventUnregister implements waiter.Waitable.EventUnregister.
-func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
-	s.queue.EventUnregister(e)
-	fdnotifier.UpdateFD(int32(s.fd))
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
@@ -175,6 +135,96 @@ func (s *socketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 		return writev(s.fd, safemem.IovecsFromBlockSeq(srcs))
 	}))
 	return int64(n), err
+}
+
+// Socket implements socket.Provider.Socket.
+func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+	// Check that we are using the host network stack.
+	stack := t.NetworkContext()
+	if stack == nil {
+		return nil, nil
+	}
+	if _, ok := stack.(*Stack); !ok {
+		return nil, nil
+	}
+
+	// Only accept TCP and UDP.
+	stype := stypeflags & linux.SOCK_TYPE_MASK
+	switch stype {
+	case unix.SOCK_STREAM:
+		switch protocol {
+		case 0, unix.IPPROTO_TCP:
+			// ok
+		default:
+			return nil, nil
+		}
+	case unix.SOCK_DGRAM:
+		switch protocol {
+		case 0, unix.IPPROTO_UDP:
+			// ok
+		default:
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+
+	// Conservatively ignore all flags specified by the application and add
+	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
+	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
+	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, syserr.FromError(err)
+	}
+	return newSocketFile(t, p.family, stype, protocol, fd, stypeflags&unix.SOCK_NONBLOCK != 0)
+}
+
+// Pair implements socket.Provider.Pair.
+func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+	// Not supported by AF_INET/AF_INET6.
+	return nil, nil, nil
+}
+
+// LINT.ThenChange(./socket_vfs2.go)
+
+// socketOpsCommon contains the socket operations common to VFS1 and VFS2.
+//
+// +stateify savable
+type socketOpsCommon struct {
+	socket.SendReceiveTimeout
+
+	family   int            // Read-only.
+	stype    linux.SockType // Read-only.
+	protocol int            // Read-only.
+	queue    waiter.Queue
+
+	// fd is the host socket fd. It must have O_NONBLOCK, so that operations
+	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
+	// handle blocking behavior independently in the sentry.
+	fd int
+}
+
+// Release implements fs.FileOperations.Release.
+func (s *socketOpsCommon) Release(context.Context) {
+	fdnotifier.RemoveFD(int32(s.fd))
+	unix.Close(s.fd)
+}
+
+// Readiness implements waiter.Waitable.Readiness.
+func (s *socketOpsCommon) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return fdnotifier.NonBlockingPoll(int32(s.fd), mask)
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (s *socketOpsCommon) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+	s.queue.EventRegister(e, mask)
+	fdnotifier.UpdateFD(int32(s.fd))
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (s *socketOpsCommon) EventUnregister(e *waiter.Entry) {
+	s.queue.EventUnregister(e)
+	fdnotifier.UpdateFD(int32(s.fd))
 }
 
 // Connect implements socket.Socket.Connect.
@@ -596,6 +646,17 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 		return 0, syserr.ErrInvalidArgument
 	}
 
+	// If the src is zero-length, call SENDTO directly with a null buffer in
+	// order to generate poll/epoll notifications.
+	if src.NumBytes() == 0 {
+		sysflags := flags | unix.MSG_DONTWAIT
+		n, _, errno := unix.Syscall6(unix.SYS_SENDTO, uintptr(s.fd), 0, 0, uintptr(sysflags), uintptr(firstBytePtr(to)), uintptr(len(to)))
+		if errno != 0 {
+			return 0, syserr.FromError(errno)
+		}
+		return int(n), nil
+	}
+
 	space := uint64(control.CmsgsSpace(t, controlMessages))
 	if space > maxControlLen {
 		space = maxControlLen
@@ -708,56 +769,6 @@ func (s *socketOpsCommon) Type() (family int, skType linux.SockType, protocol in
 type socketProvider struct {
 	family int
 }
-
-// Socket implements socket.Provider.Socket.
-func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
-	// Check that we are using the host network stack.
-	stack := t.NetworkContext()
-	if stack == nil {
-		return nil, nil
-	}
-	if _, ok := stack.(*Stack); !ok {
-		return nil, nil
-	}
-
-	// Only accept TCP and UDP.
-	stype := stypeflags & linux.SOCK_TYPE_MASK
-	switch stype {
-	case unix.SOCK_STREAM:
-		switch protocol {
-		case 0, unix.IPPROTO_TCP:
-			// ok
-		default:
-			return nil, nil
-		}
-	case unix.SOCK_DGRAM:
-		switch protocol {
-		case 0, unix.IPPROTO_UDP:
-			// ok
-		default:
-			return nil, nil
-		}
-	default:
-		return nil, nil
-	}
-
-	// Conservatively ignore all flags specified by the application and add
-	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
-	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
-	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
-	if err != nil {
-		return nil, syserr.FromError(err)
-	}
-	return newSocketFile(t, p.family, stype, protocol, fd, stypeflags&unix.SOCK_NONBLOCK != 0)
-}
-
-// Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
-	// Not supported by AF_INET/AF_INET6.
-	return nil, nil, nil
-}
-
-// LINT.ThenChange(./socket_vfs2.go)
 
 func init() {
 	for _, family := range []int{unix.AF_INET, unix.AF_INET6} {
