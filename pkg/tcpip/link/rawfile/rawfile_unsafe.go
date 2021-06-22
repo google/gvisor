@@ -25,6 +25,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
+// SizeofIovec is the size of a unix.Iovec in bytes.
+const SizeofIovec = unsafe.Sizeof(unix.Iovec{})
+
+// MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
+type MMsgHdr struct {
+	Msg unix.Msghdr
+	Len uint32
+	_   [4]byte
+}
+
+// SizeofMMsgHdr is the size of a MMsgHdr in bytes.
+const SizeofMMsgHdr = unsafe.Sizeof(MMsgHdr{})
+
 // GetMTU determines the MTU of a network interface device.
 func GetMTU(name string) (uint32, error) {
 	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
@@ -135,13 +148,6 @@ func BlockingReadv(fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
 			return 0, TranslateErrno(e)
 		}
 	}
-}
-
-// MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
-type MMsgHdr struct {
-	Msg unix.Msghdr
-	Len uint32
-	_   [4]byte
 }
 
 // BlockingRecvMMsg reads from a file descriptor that is set up as non-blocking

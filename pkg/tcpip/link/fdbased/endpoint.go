@@ -505,60 +505,87 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocol
 	return rawfile.NonBlockingWriteIovec(fd, builder.Build())
 }
 
-func (e *endpoint) sendBatch(batchFD int, batch []*stack.PacketBuffer) (int, tcpip.Error) {
+func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpip.Error) {
 	// Send a batch of packets through batchFD.
-	mmsgHdrs := make([]rawfile.MMsgHdr, 0, len(batch))
-	for _, pkt := range batch {
-		if e.hdrSize > 0 {
-			e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
-		}
-
-		var vnetHdrBuf []byte
-		if e.gsoKind == stack.HWGSOSupported {
-			vnetHdr := virtioNetHdr{}
-			if pkt.GSOOptions.Type != stack.GSONone {
-				vnetHdr.hdrLen = uint16(pkt.HeaderSize())
-				if pkt.GSOOptions.NeedsCsum {
-					vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
-					vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
-					vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
-				}
-				if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
-					switch pkt.GSOOptions.Type {
-					case stack.GSOTCPv4:
-						vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
-					case stack.GSOTCPv6:
-						vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
-					default:
-						panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
-					}
-					vnetHdr.gsoSize = pkt.GSOOptions.MSS
-				}
-			}
-			vnetHdrBuf = vnetHdr.marshal()
-		}
-
-		var builder iovec.Builder
-		builder.Add(vnetHdrBuf)
-		for _, v := range pkt.Views() {
-			builder.Add(v)
-		}
-		iovecs := builder.Build()
-
-		var mmsgHdr rawfile.MMsgHdr
-		mmsgHdr.Msg.Iov = &iovecs[0]
-		mmsgHdr.Msg.SetIovlen((len(iovecs)))
-		mmsgHdrs = append(mmsgHdrs, mmsgHdr)
-	}
-
+	mmsgHdrsStorage := make([]rawfile.MMsgHdr, 0, len(pkts))
 	packets := 0
-	for len(mmsgHdrs) > 0 {
-		sent, err := rawfile.NonBlockingSendMMsg(batchFD, mmsgHdrs)
-		if err != nil {
-			return packets, err
+	for packets < len(pkts) {
+		mmsgHdrs := mmsgHdrsStorage
+		batch := pkts[packets:]
+		hdrBytes := uintptr(0)
+		for _, pkt := range batch {
+			if e.hdrSize > 0 {
+				e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
+			}
+
+			var vnetHdrBuf []byte
+			if e.gsoKind == stack.HWGSOSupported {
+				vnetHdr := virtioNetHdr{}
+				if pkt.GSOOptions.Type != stack.GSONone {
+					vnetHdr.hdrLen = uint16(pkt.HeaderSize())
+					if pkt.GSOOptions.NeedsCsum {
+						vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
+						vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
+						vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
+					}
+					if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
+						switch pkt.GSOOptions.Type {
+						case stack.GSOTCPv4:
+							vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
+						case stack.GSOTCPv6:
+							vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
+						default:
+							panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
+						}
+						vnetHdr.gsoSize = pkt.GSOOptions.MSS
+					}
+				}
+				vnetHdrBuf = vnetHdr.marshal()
+			}
+
+			views := pkt.Views()
+
+			hdrBytes += rawfile.SizeofMMsgHdr
+			if len(vnetHdrBuf) != 0 {
+				hdrBytes += rawfile.SizeofIovec
+			}
+			hdrBytes += uintptr(len(views)) * rawfile.SizeofIovec
+			const maxHeaderBytes = (16 << 10) - 1
+			if hdrBytes > maxHeaderBytes {
+				break
+			}
+
+			var builder iovec.Builder
+			builder.Add(vnetHdrBuf)
+			for _, v := range views {
+				builder.Add(v)
+			}
+			iovecs := builder.Build()
+
+			var mmsgHdr rawfile.MMsgHdr
+			mmsgHdr.Msg.Iov = &iovecs[0]
+			mmsgHdr.Msg.SetIovlen((len(iovecs)))
+			mmsgHdrs = append(mmsgHdrs, mmsgHdr)
 		}
-		packets += sent
-		mmsgHdrs = mmsgHdrs[sent:]
+
+		if len(mmsgHdrs) == 0 {
+			// With sizeof(struct mmsghdr) taken into account, we can't fit
+			// batch[0] into a single sendmmsg.
+			pkt := batch[0]
+			if err := e.WritePacket(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
+				return packets, err
+			}
+			packets++
+		} else {
+			for len(mmsgHdrs) > 0 {
+				sent, err := rawfile.NonBlockingSendMMsg(batchFD, mmsgHdrs)
+				if err != nil {
+					return packets, err
+				}
+				packets += sent
+				mmsgHdrs = mmsgHdrs[sent:]
+			}
+		}
 	}
 
 	return packets, nil
