@@ -1182,6 +1182,62 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
   EXPECT_THAT(shutdown(s.get(), SHUT_WR), SyscallSucceedsWithValue(0));
 }
 
+TEST_P(SimpleTcpSocketTest, SelfConnectSendShutdownWrite) {
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  ASSERT_THAT(bind(s.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
+  // Get the bound port.
+  ASSERT_THAT(getsockname(s.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+
+  // Write enough data to fill send and receive buffers.
+  size_t write_size = 24 << 20;  // 24 MiB.
+  std::vector<char> writebuf(write_size);
+
+  ScopedThread t([&s]() {
+    absl::SleepFor(absl::Milliseconds(250));
+    ASSERT_THAT(shutdown(s.get(), SHUT_WR), SyscallSucceeds());
+  });
+
+  // Try to send the whole thing.
+  int n;
+  ASSERT_THAT(n = SendFd(s.get(), writebuf.data(), writebuf.size(), 0),
+              SyscallFailsWithErrno(EPIPE));
+}
+
+TEST_P(SimpleTcpSocketTest, SelfConnectRecvShutdownRead) {
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  const FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  ASSERT_THAT(bind(s.get(), AsSockAddr(&addr), addrlen), SyscallSucceeds());
+  // Get the bound port.
+  ASSERT_THAT(getsockname(s.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+
+  ScopedThread t([&s]() {
+    absl::SleepFor(absl::Milliseconds(250));
+    ASSERT_THAT(shutdown(s.get(), SHUT_RD), SyscallSucceeds());
+  });
+
+  char buf[1];
+  EXPECT_THAT(recv(s.get(), buf, 0, 0), SyscallSucceedsWithValue(0));
+}
+
 void NonBlockingConnect(int family, int16_t pollMask) {
   const FileDescriptor listener =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, IPPROTO_TCP));
