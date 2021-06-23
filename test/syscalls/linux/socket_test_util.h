@@ -564,6 +564,18 @@ inline sockaddr* AsSockAddr(sockaddr_un* s) {
   return reinterpret_cast<sockaddr*>(s);
 }
 
+PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr);
+
+PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port);
+
+// setupTimeWaitClose sets up a socket endpoint in TIME_WAIT state.
+// Callers can choose to perform active close on either ends of the connection
+// and also specify if they want to enabled SO_REUSEADDR.
+void SetupTimeWaitClose(const TestAddress* listener,
+                        const TestAddress* connector, bool reuse,
+                        bool accept_close, sockaddr_storage* listen_addr,
+                        sockaddr_storage* conn_bound_addr);
+
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
                                    SocketType type, bool reuse_addr);

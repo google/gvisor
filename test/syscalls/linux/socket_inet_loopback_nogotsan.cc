@@ -27,6 +27,7 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -38,47 +39,7 @@ namespace testing {
 
 namespace {
 
-using ::testing::Gt;
-
-PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
-  switch (family) {
-    case AF_INET:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
-    case AF_INET6:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
-PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
-  switch (family) {
-    case AF_INET:
-      reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
-      return NoError();
-    case AF_INET6:
-      reinterpret_cast<sockaddr_in6*>(addr)->sin6_port = port;
-      return NoError();
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
-struct TestParam {
-  TestAddress listener;
-  TestAddress connector;
-};
-
-std::string DescribeTestParam(::testing::TestParamInfo<TestParam> const& info) {
-  return absl::StrCat("Listen", info.param.listener.description, "_Connect",
-                      info.param.connector.description);
-}
-
-using SocketInetLoopbackTest = ::testing::TestWithParam<TestParam>;
+using SocketInetLoopbackTest = ::testing::TestWithParam<SocketInetTestParam>;
 
 // This test verifies that connect returns EADDRNOTAVAIL if all local ephemeral
 // ports are already in use for a given destination ip/port.
@@ -87,7 +48,7 @@ using SocketInetLoopbackTest = ::testing::TestWithParam<TestParam>;
 //
 // FIXME(b/162475855): This test is failing reliably.
 TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion) {
-  auto const& param = GetParam();
+  SocketInetTestParam const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
 
@@ -136,51 +97,15 @@ TEST_P(SocketInetLoopbackTest, DISABLED_TestTCPPortExhaustion) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    All, SocketInetLoopbackTest,
-    ::testing::Values(
-        // Listeners bound to IPv4 addresses refuse connections using IPv6
-        // addresses.
-        TestParam{V4Any(), V4Any()}, TestParam{V4Any(), V4Loopback()},
-        TestParam{V4Any(), V4MappedAny()},
-        TestParam{V4Any(), V4MappedLoopback()},
-        TestParam{V4Loopback(), V4Any()}, TestParam{V4Loopback(), V4Loopback()},
-        TestParam{V4Loopback(), V4MappedLoopback()},
-        TestParam{V4MappedAny(), V4Any()},
-        TestParam{V4MappedAny(), V4Loopback()},
-        TestParam{V4MappedAny(), V4MappedAny()},
-        TestParam{V4MappedAny(), V4MappedLoopback()},
-        TestParam{V4MappedLoopback(), V4Any()},
-        TestParam{V4MappedLoopback(), V4Loopback()},
-        TestParam{V4MappedLoopback(), V4MappedLoopback()},
-
-        // Listeners bound to IN6ADDR_ANY accept all connections.
-        TestParam{V6Any(), V4Any()}, TestParam{V6Any(), V4Loopback()},
-        TestParam{V6Any(), V4MappedAny()},
-        TestParam{V6Any(), V4MappedLoopback()}, TestParam{V6Any(), V6Any()},
-        TestParam{V6Any(), V6Loopback()},
-
-        // Listeners bound to IN6ADDR_LOOPBACK refuse connections using IPv4
-        // addresses.
-        TestParam{V6Loopback(), V6Any()},
-        TestParam{V6Loopback(), V6Loopback()}),
-    DescribeTestParam);
-
-struct ProtocolTestParam {
-  std::string description;
-  int type;
-};
-
-std::string DescribeProtocolTestParam(
-    ::testing::TestParamInfo<ProtocolTestParam> const& info) {
-  return info.param.description;
-}
+INSTANTIATE_TEST_SUITE_P(All, SocketInetLoopbackTest,
+                         SocketInetLoopbackTestValues(),
+                         DescribeSocketInetTestParam);
 
 using SocketMultiProtocolInetLoopbackTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
 TEST_P(SocketMultiProtocolInetLoopbackTest, BindAvoidsListeningPortsReuseAddr) {
-  const auto& param = GetParam();
+  ProtocolTestParam const& param = GetParam();
   // UDP sockets are allowed to bind/listen on the port w/ SO_REUSEADDR, for TCP
   // this is only permitted if there is no other listening socket.
   SKIP_IF(param.type != SOCK_STREAM);
@@ -222,11 +147,8 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, BindAvoidsListeningPortsReuseAddr) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    AllFamilies, SocketMultiProtocolInetLoopbackTest,
-    ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
-                      ProtocolTestParam{"UDP", SOCK_DGRAM}),
-    DescribeProtocolTestParam);
+INSTANTIATE_TEST_SUITE_P(AllFamilies, SocketMultiProtocolInetLoopbackTest,
+                         ProtocolTestValues(), DescribeProtocolTestParam);
 
 }  // namespace
 

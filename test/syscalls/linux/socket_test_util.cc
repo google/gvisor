@@ -948,5 +948,124 @@ uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
   return csum;
 }
 
+PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
+  switch (family) {
+    case AF_INET:
+      return static_cast<uint16_t>(
+          reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
+    case AF_INET6:
+      return static_cast<uint16_t>(
+          reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
+    default:
+      return PosixError(EINVAL,
+                        absl::StrCat("unknown socket family: ", family));
+  }
+}
+
+PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
+  switch (family) {
+    case AF_INET:
+      reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
+      return NoError();
+    case AF_INET6:
+      reinterpret_cast<sockaddr_in6*>(addr)->sin6_port = port;
+      return NoError();
+    default:
+      return PosixError(EINVAL,
+                        absl::StrCat("unknown socket family: ", family));
+  }
+}
+
+void SetupTimeWaitClose(const TestAddress* listener,
+                        const TestAddress* connector, bool reuse,
+                        bool accept_close, sockaddr_storage* listen_addr,
+                        sockaddr_storage* conn_bound_addr) {
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener->family(), SOCK_STREAM, IPPROTO_TCP));
+  if (reuse) {
+    ASSERT_THAT(setsockopt(listen_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+  }
+  ASSERT_THAT(
+      bind(listen_fd.get(), AsSockAddr(listen_addr), listener->addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener->addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener->family(), *listen_addr));
+
+  // Connect to the listening socket.
+  FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector->family(), SOCK_STREAM, IPPROTO_TCP));
+
+  // We disable saves after this point as a S/R causes the netstack seed
+  // to be regenerated which changes what ports/ISN is picked for a given
+  // tuple (src ip,src port, dst ip, dst port). This can cause the final
+  // SYN to use a sequence number that looks like one from the current
+  // connection in TIME_WAIT and will not be accepted causing the test
+  // to timeout.
+  //
+  // TODO(gvisor.dev/issue/940): S/R portSeed/portHint
+  DisableSave ds;
+
+  sockaddr_storage conn_addr = connector->addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector->family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(), AsSockAddr(&conn_addr),
+                                  connector->addr_len),
+              SyscallSucceeds());
+
+  // Accept the connection.
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+
+  // Get the address/port bound by the connecting socket.
+  socklen_t conn_addrlen = connector->addr_len;
+  ASSERT_THAT(
+      getsockname(conn_fd.get(), AsSockAddr(conn_bound_addr), &conn_addrlen),
+      SyscallSucceeds());
+
+  FileDescriptor active_closefd, passive_closefd;
+  if (accept_close) {
+    active_closefd = std::move(accepted);
+    passive_closefd = std::move(conn_fd);
+  } else {
+    active_closefd = std::move(conn_fd);
+    passive_closefd = std::move(accepted);
+  }
+
+  // shutdown to trigger TIME_WAIT.
+  ASSERT_THAT(shutdown(active_closefd.get(), SHUT_WR), SyscallSucceeds());
+  {
+    constexpr int kTimeout = 10000;
+    pollfd pfd = {
+        .fd = passive_closefd.get(),
+        .events = POLLIN,
+    };
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    ASSERT_EQ(pfd.revents, POLLIN);
+  }
+  ASSERT_THAT(shutdown(passive_closefd.get(), SHUT_WR), SyscallSucceeds());
+  {
+    constexpr int kTimeout = 10000;
+    constexpr int16_t want_events = POLLHUP;
+    pollfd pfd = {
+        .fd = active_closefd.get(),
+        .events = want_events,
+    };
+    ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+  }
+
+  // This sleep is needed to reduce flake to ensure that the passive-close
+  // ensures the state transitions to CLOSE from LAST_ACK.
+  absl::SleepFor(absl::Seconds(1));
+}
+
 }  // namespace testing
 }  // namespace gvisor
