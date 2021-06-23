@@ -272,6 +272,11 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	if err := unix.Fstat(i.hostFD, &s); err != nil {
 		return err
 	}
+	// Allow opening of STDIO for non-root users, similarly to runc.
+	// For more information see https://github.com/google/gvisor/issues/6180
+	if i.ino <= 3 {
+		return nil
+	}
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
 }
 
