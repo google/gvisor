@@ -648,6 +648,12 @@ syscall_test(
 syscall_test(
     size = "large",
     shard_count = most_shards,
+    test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
+)
+
+syscall_test(
+    size = "large",
+    shard_count = most_shards,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:socket_inet_loopback_nogotsan_test",

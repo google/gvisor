@@ -77,34 +77,6 @@ class BindToDeviceDistributionTest
   }
 };
 
-PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
-  switch (family) {
-    case AF_INET:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
-    case AF_INET6:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
-PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
-  switch (family) {
-    case AF_INET:
-      reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
-      return NoError();
-    case AF_INET6:
-      reinterpret_cast<sockaddr_in6*>(addr)->sin6_port = port;
-      return NoError();
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
 // Binds sockets to different devices and then creates many TCP connections.
 // Checks that the distribution of connections received on the sockets matches
 // the expectation.
