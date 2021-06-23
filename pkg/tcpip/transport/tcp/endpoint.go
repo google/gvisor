@@ -2372,6 +2372,9 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 				e.notifyProtocolGoroutine(notifyTickleWorker)
 				return nil
 			}
+			// Wake up any readers that maybe waiting for the stream to become
+			// readable.
+			e.waiterQueue.Notify(waiter.ReadableEvents)
 		}
 
 		// Close for write.
@@ -2394,6 +2397,9 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			e.sndQueueInfo.SndClosed = true
 			e.sndQueueInfo.sndQueueMu.Unlock()
 			e.handleClose()
+			// Wake up any writers that maybe waiting for the stream to become
+			// writable.
+			e.waiterQueue.Notify(waiter.WritableEvents)
 		}
 
 		return nil
