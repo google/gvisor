@@ -294,7 +294,7 @@ func (t *Task) isYAMADescendantOfLocked(ancestor *Task) bool {
 
 // Precondition: the TaskSet mutex must be locked (for reading or writing).
 func (t *Task) hasYAMAExceptionForLocked(tracer *Task) bool {
-	allowed, ok := t.k.ptraceExceptions[t]
+	allowed, ok := t.k.ptraceExceptions[t.tg.leader]
 	if !ok {
 		return false
 	}
