@@ -14,7 +14,6 @@
 
 // +build linux
 
-// Package memutil provides a wrapper for the memfd_create() system call.
 package memutil
 
 import (
