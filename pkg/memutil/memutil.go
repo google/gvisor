@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-
-package flipcall
-
-import "golang.org/x/sys/unix"
-
-// Return a memory mapping of the pwd in memory that can be shared outside the sandbox.
-func packetWindowMmap(pwd PacketWindowDescriptor) (uintptr, unix.Errno) {
-	m, _, err := unix.RawSyscall6(unix.SYS_MMAP, 0, uintptr(pwd.Length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
-	return m, err
-}
+// Package memutil provides utilities for working with shared memory files.
+package memutil

@@ -12,12 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package flipcall
+package memutil
 
-import "golang.org/x/sys/unix"
+import (
+	"golang.org/x/sys/unix"
+)
 
-// Return a memory mapping of the pwd in memory that can be shared outside the sandbox.
-func packetWindowMmap(pwd PacketWindowDescriptor) (uintptr, unix.Errno) {
-	m, _, err := unix.RawSyscall6(unix.SYS_MMAP, 0, uintptr(pwd.Length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
-	return m, err
+// MapFile returns a memory mapping configured by the given options as per
+// mmap(2).
+func MapFile(addr, len, prot, flags, fd, offset uintptr) (uintptr, error) {
+	m, _, e := unix.RawSyscall6(unix.SYS_MMAP, addr, len, prot, flags, fd, offset)
+	if e != 0 {
+		return 0, e
+	}
+	return m, nil
 }
