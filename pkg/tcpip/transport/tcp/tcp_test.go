@@ -3451,17 +3451,13 @@ loop:
 	for {
 		switch _, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{}); err.(type) {
 		case *tcpip.ErrWouldBlock:
-			select {
-			case <-ch:
-				// Expect the state to be StateError and subsequent Reads to fail with HardError.
-				_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
-				if d := cmp.Diff(&tcpip.ErrConnectionReset{}, err); d != "" {
-					t.Fatalf("c.EP.Read() mismatch (-want +got):\n%s", d)
-				}
-				break loop
-			case <-time.After(1 * time.Second):
-				t.Fatalf("Timed out waiting for reset to arrive")
+			<-ch
+			// Expect the state to be StateError and subsequent Reads to fail with HardError.
+			_, err := c.EP.Read(ioutil.Discard, tcpip.ReadOptions{})
+			if d := cmp.Diff(&tcpip.ErrConnectionReset{}, err); d != "" {
+				t.Fatalf("c.EP.Read() mismatch (-want +got):\n%s", d)
 			}
+			break loop
 		case *tcpip.ErrConnectionReset:
 			break loop
 		default:
@@ -3472,14 +3468,27 @@ loop:
 	if tcp.EndpointState(c.EP.State()) != tcp.StateError {
 		t.Fatalf("got EP state is not StateError")
 	}
-	if got := c.Stack().Stats().TCP.EstablishedResets.Value(); got != 1 {
-		t.Errorf("got stats.TCP.EstablishedResets.Value() = %d, want = 1", got)
+
+	checkValid := func() []error {
+		var errors []error
+		if got := c.Stack().Stats().TCP.EstablishedResets.Value(); got != 1 {
+			errors = append(errors, fmt.Errorf("got stats.TCP.EstablishedResets.Value() = %d, want = 1", got))
+		}
+		if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
+			errors = append(errors, fmt.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got))
+		}
+		if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
+			errors = append(errors, fmt.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got))
+		}
+		return errors
 	}
-	if got := c.Stack().Stats().TCP.CurrentEstablished.Value(); got != 0 {
-		t.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = 0", got)
+
+	start := time.Now()
+	for time.Since(start) < time.Minute && len(checkValid()) > 0 {
+		time.Sleep(50 * time.Millisecond)
 	}
-	if got := c.Stack().Stats().TCP.CurrentConnected.Value(); got != 0 {
-		t.Errorf("got stats.TCP.CurrentConnected.Value() = %d, want = 0", got)
+	for _, err := range checkValid() {
+		t.Error(err)
 	}
 }
 
@@ -6092,15 +6101,10 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 		defer c.WQ.EventUnregister(&we)
 
 		// Wait for connection to be established.
-		select {
-		case <-ch:
-			newEP, _, err = c.EP.Accept(nil)
-			if err != nil {
-				t.Fatalf("Accept failed: %s", err)
-			}
-
-		case <-time.After(1 * time.Second):
-			t.Fatalf("Timed out waiting for accept")
+		<-ch
+		newEP, _, err = c.EP.Accept(nil)
+		if err != nil {
+			t.Fatalf("Accept failed: %s", err)
 		}
 	}
 
@@ -6209,12 +6213,26 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
-	time.Sleep(50 * time.Millisecond)
-	if got := stats.TCP.ListenOverflowSynDrop.Value(); got != want {
-		t.Errorf("got stats.TCP.ListenOverflowSynDrop.Value() = %d, want = %d", got, want)
+	checkValid := func() []error {
+		var errors []error
+		if got := stats.TCP.ListenOverflowSynDrop.Value(); got != want {
+			errors = append(errors, fmt.Errorf("got stats.TCP.ListenOverflowSynDrop.Value() = %d, want = %d", got, want))
+		}
+		if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.ListenOverflowSynDrop.Value(); got != want {
+			errors = append(errors, fmt.Errorf("got EP stats Stats.ReceiveErrors.ListenOverflowSynDrop = %d, want = %d", got, want))
+		}
+		return errors
 	}
-	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.ListenOverflowSynDrop.Value(); got != want {
-		t.Errorf("got EP stats Stats.ReceiveErrors.ListenOverflowSynDrop = %d, want = %d", got, want)
+
+	start := time.Now()
+	for time.Since(start) < time.Minute && len(checkValid()) > 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	for _, err := range checkValid() {
+		t.Error(err)
+	}
+	if t.Failed() {
+		t.FailNow()
 	}
 
 	we, ch := waiter.NewChannelEntry(nil)
@@ -6225,15 +6243,10 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	_, _, err = c.EP.Accept(nil)
 	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
 		// Wait for connection to be established.
-		select {
-		case <-ch:
-			_, _, err = c.EP.Accept(nil)
-			if err != nil {
-				t.Fatalf("Accept failed: %s", err)
-			}
-
-		case <-time.After(1 * time.Second):
-			t.Fatalf("Timed out waiting for accept")
+		<-ch
+		_, _, err = c.EP.Accept(nil)
+		if err != nil {
+			t.Fatalf("Accept failed: %s", err)
 		}
 	}
 }
@@ -7483,7 +7496,7 @@ func TestTCPUserTimeout(t *testing.T) {
 	select {
 	case <-notifyCh:
 	case <-time.After(2 * initRTO):
-		t.Fatalf("connection still alive after %s, should have been closed after :%s", 2*initRTO, userTimeout)
+		t.Fatalf("connection still alive after %s, should have been closed after %s", 2*initRTO, userTimeout)
 	}
 
 	// No packet should be received as the connection should be silently
