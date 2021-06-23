@@ -1885,6 +1885,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:capability_util",

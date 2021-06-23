@@ -385,7 +385,7 @@ class PosixErrorIsMatcher {
 };
 
 // Returns a gMock matcher that matches a PosixError or PosixErrorOr<> whose
-// whose error code matches code_matcher, and whose error message matches
+// error code matches code_matcher, and whose error message matches
 // message_matcher.
 template <typename ErrorCodeMatcher>
 PosixErrorIsMatcher PosixErrorIs(
@@ -393,6 +393,14 @@ PosixErrorIsMatcher PosixErrorIs(
     ::testing::Matcher<const std::string&> message_matcher) {
   return PosixErrorIsMatcher(std::forward<ErrorCodeMatcher>(code_matcher),
                              std::move(message_matcher));
+}
+
+// Returns a gMock matcher that matches a PosixError or PosixErrorOr<> whose
+// error code matches code_matcher.
+template <typename ErrorCodeMatcher>
+PosixErrorIsMatcher PosixErrorIs(ErrorCodeMatcher&& code_matcher) {
+  return PosixErrorIsMatcher(std::forward<ErrorCodeMatcher>(code_matcher),
+                             ::testing::_);
 }
 
 // Returns a gMock matcher that matches a PosixErrorOr<> which is ok() and
