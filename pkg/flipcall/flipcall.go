@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/memutil"
 )
 
 // An Endpoint provides the ability to synchronously transfer data and control
@@ -96,9 +97,9 @@ func (ep *Endpoint) Init(side EndpointSide, pwd PacketWindowDescriptor, opts ...
 	if pwd.Length > math.MaxUint32 {
 		return fmt.Errorf("packet window size (%d) exceeds maximum (%d)", pwd.Length, math.MaxUint32)
 	}
-	m, e := packetWindowMmap(pwd)
-	if e != 0 {
-		return fmt.Errorf("failed to mmap packet window: %v", e)
+	m, err := memutil.MapFile(0, uintptr(pwd.Length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
+	if err != nil {
+		return fmt.Errorf("failed to mmap packet window: %v", err)
 	}
 	ep.packet = m
 	ep.dataCap = uint32(pwd.Length) - uint32(PacketHeaderBytes)
