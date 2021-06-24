@@ -132,7 +132,7 @@ func Init() error {
 	// always be the case for a newly mapped page from /dev/shm. If we obtain
 	// the shared memory through some other means in the future, we may have to
 	// explicitly zero the page.
-	mmap, err := unix.Mmap(int(file.Fd()), 0, int(RTMemoryStatsSize), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+	mmap, err := memutil.MapFile(0, RTMemoryStatsSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, file.Fd(), 0)
 	if err != nil {
 		return fmt.Errorf("error mapping usage file: %v", err)
 	}
