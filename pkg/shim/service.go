@@ -452,10 +452,10 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (*ta
 	}
 	process, err := newInit(r.Bundle, filepath.Join(r.Bundle, "work"), ns, s.platform, config, &s.opts, st.Rootfs)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 	if err := process.Create(ctx, config); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on
@@ -544,7 +544,7 @@ func (s *service) Exec(ctx context.Context, r *taskAPI.ExecProcessRequest) (*typ
 		Spec:     r.Spec,
 	})
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 	s.mu.Lock()
 	s.processes[r.ExecID] = process
@@ -565,7 +565,7 @@ func (s *service) ResizePty(ctx context.Context, r *taskAPI.ResizePtyRequest) (*
 		Height: uint16(r.Height),
 	}
 	if err := p.Resize(ws); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 	return empty, nil
 }
@@ -648,7 +648,7 @@ func (s *service) Kill(ctx context.Context, r *taskAPI.KillRequest) (*types.Empt
 	}
 	if err := p.Kill(ctx, r.Signal, r.All); err != nil {
 		log.L.Debugf("Kill failed: %v", err)
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 	log.L.Debugf("Kill succeeded")
 	return empty, nil
@@ -660,7 +660,7 @@ func (s *service) Pids(ctx context.Context, r *taskAPI.PidsRequest) (*taskAPI.Pi
 
 	pids, err := s.getContainerPids(ctx, r.ID)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errToGRPC(err)
 	}
 	var processes []*task.ProcessInfo
 	for _, pid := range pids {
