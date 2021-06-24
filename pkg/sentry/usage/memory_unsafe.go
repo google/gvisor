@@ -21,7 +21,7 @@ import (
 // RTMemoryStatsSize is the size of the RTMemoryStats struct.
 var RTMemoryStatsSize = unsafe.Sizeof(RTMemoryStats{})
 
-// RTMemoryStatsPointer casts the address of the byte slice into a RTMemoryStats pointer.
-func RTMemoryStatsPointer(b []byte) *RTMemoryStats {
-	return (*RTMemoryStats)(unsafe.Pointer(&b[0]))
+// RTMemoryStatsPointer casts addr to a RTMemoryStats pointer.
+func RTMemoryStatsPointer(addr uintptr) *RTMemoryStats {
+	return (*RTMemoryStats)(unsafe.Pointer(addr))
 }
