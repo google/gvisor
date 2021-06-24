@@ -369,6 +369,11 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
 
+	// Check whether a process still exists or not.
+	if id == 0 {
+		return syserror.ESRCH
+	}
+
 	// Per above, check for a Session leader or existing group.
 	for s := tg.pidns.owner.sessions.Front(); s != nil; s = s.Next() {
 		if s.leader.pidns != tg.pidns {
