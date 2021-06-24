@@ -107,7 +107,7 @@ analyzers:
         - pkg/sentry/socket/unix/transport/connectioned.go                 # unsupported usage.
         - pkg/sentry/vfs/dentry.go                                         # unsupported usage.
         - pkg/tcpip/network/internal/ip/generic_multicast_protocol_test.go # unsupported usage.
-        - pkg/tcpip/stack/conntrack.go                                     # unsupported usage.        
+        - pkg/tcpip/stack/conntrack.go                                     # unsupported usage.
         - pkg/tcpip/transport/packet/endpoint_state.go                     # unsupported usage.
         - pkg/tcpip/transport/raw/endpoint_state.go                        # unsupported usage.
         - pkg/tcpip/transport/icmp/endpoint.go                             # unsupported usage.
@@ -177,6 +177,7 @@ analyzers:
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.
         - pkg/sentry/platform/kvm/machine_unsafe.go                # Special case.
         - pkg/sentry/platform/safecopy/safecopy_unsafe.go          # Special case.
+        - pkg/sentry/usage/memory_unsafe.go                        # Special case.
         - pkg/sentry/vfs/mount_unsafe.go                           # Special case.
         - pkg/state/decode_unsafe.go                               # Special case.
   unusedresult:
