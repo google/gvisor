@@ -909,46 +909,18 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags header.TCPFlags, se
 	return err
 }
 
-func (e *endpoint) handleWrite() {
-	e.sndQueueInfo.sndQueueMu.Lock()
-	next := e.drainSendQueueLocked()
-	e.sndQueueInfo.sndQueueMu.Unlock()
-
-	e.sendData(next)
-}
-
-// Move packets from send queue to send list.
-//
-// Precondition: e.sndBufMu must be locked.
-func (e *endpoint) drainSendQueueLocked() *segment {
-	first := e.sndQueueInfo.sndQueue.Front()
-	if first != nil {
-		e.snd.writeList.PushBackList(&e.sndQueueInfo.sndQueue)
-		e.sndQueueInfo.SndBufInQueue = 0
-	}
-	return first
-}
-
 // Precondition: e.mu must be locked.
 func (e *endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
+		if next == nil {
+			return
+		}
 		e.snd.writeNext = next
 	}
 
 	// Push out any new packets.
 	e.snd.sendData()
-}
-
-func (e *endpoint) handleClose() {
-	if !e.EndpointState().connected() {
-		return
-	}
-	// Drain the send queue.
-	e.handleWrite()
-
-	// Mark send side as closed.
-	e.snd.Closed = true
 }
 
 // resetConnectionLocked puts the endpoint in an error state with the given
@@ -1402,14 +1374,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		{
 			w: &e.sndQueueInfo.sndWaker,
 			f: func() tcpip.Error {
-				e.handleWrite()
-				return nil
-			},
-		},
-		{
-			w: &e.sndQueueInfo.sndCloseWaker,
-			f: func() tcpip.Error {
-				e.handleClose()
+				e.sendData(nil /* next */)
 				return nil
 			},
 		},
