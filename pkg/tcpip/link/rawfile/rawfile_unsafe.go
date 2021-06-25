@@ -19,11 +19,65 @@
 package rawfile
 
 import (
+	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+// SizeofIovec is the size of a unix.Iovec in bytes.
+const SizeofIovec = unsafe.Sizeof(unix.Iovec{})
+
+// MaxIovs is UIO_MAXIOV, the maximum number of iovecs that may be passed to a
+// host system call in a single array.
+const MaxIovs = 1024
+
+// IovecFromBytes returns a unix.Iovec representing bs.
+//
+// Preconditions: len(bs) > 0.
+func IovecFromBytes(bs []byte) unix.Iovec {
+	iov := unix.Iovec{
+		Base: &bs[0],
+	}
+	iov.SetLen(len(bs))
+	return iov
+}
+
+func bytesFromIovec(iov unix.Iovec) (bs []byte) {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
+	sh.Data = uintptr(unsafe.Pointer(iov.Base))
+	sh.Len = int(iov.Len)
+	sh.Cap = int(iov.Len)
+	return
+}
+
+// AppendIovecFromBytes returns append(iovs, IovecFromBytes(bs)). If len(bs) ==
+// 0, AppendIovecFromBytes returns iovs without modification. If len(iovs) >=
+// max, AppendIovecFromBytes replaces the final iovec in iovs with one that
+// also includes the contents of bs. Note that this implies that
+// AppendIovecFromBytes is only usable when the returned iovec slice is used as
+// the source of a write.
+func AppendIovecFromBytes(iovs []unix.Iovec, bs []byte, max int) []unix.Iovec {
+	if len(bs) == 0 {
+		return iovs
+	}
+	if len(iovs) < max {
+		return append(iovs, IovecFromBytes(bs))
+	}
+	iovs[len(iovs)-1] = IovecFromBytes(append(bytesFromIovec(iovs[len(iovs)-1]), bs...))
+	return iovs
+}
+
+// MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
+type MMsgHdr struct {
+	Msg unix.Msghdr
+	Len uint32
+	_   [4]byte
+}
+
+// SizeofMMsgHdr is the size of a MMsgHdr in bytes.
+const SizeofMMsgHdr = unsafe.Sizeof(MMsgHdr{})
 
 // GetMTU determines the MTU of a network interface device.
 func GetMTU(name string) (uint32, error) {
@@ -135,13 +189,6 @@ func BlockingReadv(fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
 			return 0, TranslateErrno(e)
 		}
 	}
-}
-
-// MMsgHdr represents the mmsg_hdr structure required by recvmmsg() on linux.
-type MMsgHdr struct {
-	Msg unix.Msghdr
-	Len uint32
-	_   [4]byte
 }
 
 // BlockingRecvMMsg reads from a file descriptor that is set up as non-blocking
