@@ -133,29 +133,23 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r 
 	switch protocol := pkt.TransportProtocolNumber; protocol {
 	case header.UDPProtocolNumber:
 		udpHeader := header.UDP(pkt.TransportHeader().View())
-		udpHeader.SetDestinationPort(rt.Port)
 
-		// Calculate UDP checksum and set it.
 		if hook == Output {
-			udpHeader.SetChecksum(0)
-			netHeader := pkt.Network()
-			netHeader.SetDestinationAddress(address)
-
 			// Only calculate the checksum if offloading isn't supported.
-			if r.RequiresTXTransportChecksum() {
-				length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
-				xsum := header.PseudoHeaderChecksum(protocol, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
-				xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
-				udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
-			}
+			requiresChecksum := r.RequiresTXTransportChecksum()
+			rewritePacket(
+				pkt.Network(),
+				udpHeader,
+				false, /* updateSRCFields */
+				requiresChecksum,
+				requiresChecksum,
+				rt.Port,
+				address,
+			)
+		} else {
+			udpHeader.SetDestinationPort(rt.Port)
 		}
 
-		// After modification, IPv4 packets need a valid checksum.
-		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-			netHeader := header.IPv4(pkt.NetworkHeader().View())
-			netHeader.SetChecksum(0)
-			netHeader.SetChecksum(^netHeader.CalculateChecksum())
-		}
 		pkt.NatDone = true
 	case header.TCPProtocolNumber:
 		if ct == nil {
@@ -214,26 +208,18 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 
 	switch protocol := pkt.TransportProtocolNumber; protocol {
 	case header.UDPProtocolNumber:
-		udpHeader := header.UDP(pkt.TransportHeader().View())
-		udpHeader.SetChecksum(0)
-		udpHeader.SetSourcePort(st.Port)
-		netHeader := pkt.Network()
-		netHeader.SetSourceAddress(st.Addr)
-
 		// Only calculate the checksum if offloading isn't supported.
-		if r.RequiresTXTransportChecksum() {
-			length := uint16(pkt.Size()) - uint16(len(pkt.NetworkHeader().View()))
-			xsum := header.PseudoHeaderChecksum(protocol, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
-			xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
-			udpHeader.SetChecksum(^udpHeader.CalculateChecksum(xsum))
-		}
+		requiresChecksum := r.RequiresTXTransportChecksum()
+		rewritePacket(
+			pkt.Network(),
+			header.UDP(pkt.TransportHeader().View()),
+			true, /* updateSRCFields */
+			requiresChecksum,
+			requiresChecksum,
+			st.Port,
+			st.Addr,
+		)
 
-		// After modification, IPv4 packets need a valid checksum.
-		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-			netHeader := header.IPv4(pkt.NetworkHeader().View())
-			netHeader.SetChecksum(0)
-			netHeader.SetChecksum(^netHeader.CalculateChecksum())
-		}
 		pkt.NatDone = true
 	case header.TCPProtocolNumber:
 		if ct == nil {
@@ -251,4 +237,43 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, ct *ConnTrack, hook Hook, r *Rou
 	}
 
 	return RuleAccept, 0
+}
+
+func rewritePacket(n header.Network, t header.ChecksummableTransport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPort uint16, newAddr tcpip.Address) {
+	if updateSRCFields {
+		if fullChecksum {
+			t.SetSourcePortWithChecksumUpdate(newPort)
+		} else {
+			t.SetSourcePort(newPort)
+		}
+	} else {
+		if fullChecksum {
+			t.SetDestinationPortWithChecksumUpdate(newPort)
+		} else {
+			t.SetDestinationPort(newPort)
+		}
+	}
+
+	if updatePseudoHeader {
+		var oldAddr tcpip.Address
+		if updateSRCFields {
+			oldAddr = n.SourceAddress()
+		} else {
+			oldAddr = n.DestinationAddress()
+		}
+
+		t.UpdateChecksumPseudoHeaderAddress(oldAddr, newAddr, fullChecksum)
+	}
+
+	if checksummableNetHeader, ok := n.(header.ChecksummableNetwork); ok {
+		if updateSRCFields {
+			checksummableNetHeader.SetSourceAddressWithChecksumUpdate(newAddr)
+		} else {
+			checksummableNetHeader.SetDestinationAddressWithChecksumUpdate(newAddr)
+		}
+	} else if updateSRCFields {
+		n.SetSourceAddress(newAddr)
+	} else {
+		n.SetDestinationAddress(newAddr)
+	}
 }
