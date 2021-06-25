@@ -1461,7 +1461,7 @@ func TestRouterDiscovery(t *testing.T) {
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
-// ipv6.MaxDiscoveredDefaultRouters discovered routers are remembered.
+// ipv6.MaxDiscoveredOffLinkRoutes discovered routers are remembered.
 func TestRouterDiscoveryMaxRouters(t *testing.T) {
 	const nicID = 1
 
@@ -1484,14 +1484,14 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 	}
 
 	// Receive an RA from 2 more than the max number of discovered routers.
-	for i := 1; i <= ipv6.MaxDiscoveredDefaultRouters+2; i++ {
+	for i := 1; i <= ipv6.MaxDiscoveredOffLinkRoutes+2; i++ {
 		linkAddr := []byte{2, 2, 3, 4, 5, 0}
 		linkAddr[5] = byte(i)
 		llAddr := header.LinkLocalAddr(tcpip.LinkAddress(linkAddr))
 
 		e.InjectInbound(header.IPv6ProtocolNumber, raBufSimple(llAddr, 5))
 
-		if i <= ipv6.MaxDiscoveredDefaultRouters {
+		if i <= ipv6.MaxDiscoveredOffLinkRoutes {
 			select {
 			case e := <-ndpDisp.offLinkRouteC:
 				if diff := checkOffLinkRouteEvent(e, nicID, llAddr, header.MediumRoutePreference, true); diff != "" {
