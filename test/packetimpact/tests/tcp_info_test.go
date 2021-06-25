@@ -86,8 +86,8 @@ func TestTCPInfo(t *testing.T) {
 		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
 
-	// Expect retransmission of the packet within 1.5*RTO.
-	timeout := time.Duration(float64(info.RTO)*1.5) * time.Microsecond
+	// Given a generous retransmission timeout.
+	timeout := time.Duration(info.RTO) * 2 * time.Microsecond
 	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, timeout); err != nil {
 		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
