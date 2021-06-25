@@ -797,7 +797,13 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		// Try the Wait RPC to the sandbox.
 		var ws unix.WaitStatus
 		err = conn.Call(boot.ContainerWait, &cid, &ws)
+		conn.Close()
 		if err == nil {
+			if s.IsRootContainer(cid) {
+				if err := s.waitForStopped(); err != nil {
+					return unix.WaitStatus(0), err
+				}
+			}
 			// It worked!
 			return ws, nil
 		}
