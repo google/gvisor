@@ -73,7 +73,6 @@ func (s *sndQueueInfo) StateTypeName() string {
 func (s *sndQueueInfo) StateFields() []string {
 	return []string{
 		"TCPSndBufState",
-		"sndQueue",
 	}
 }
 
@@ -83,7 +82,6 @@ func (s *sndQueueInfo) beforeSave() {}
 func (s *sndQueueInfo) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.TCPSndBufState)
-	stateSinkObject.Save(1, &s.sndQueue)
 }
 
 func (s *sndQueueInfo) afterLoad() {}
@@ -91,7 +89,6 @@ func (s *sndQueueInfo) afterLoad() {}
 // +checklocksignore
 func (s *sndQueueInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.TCPSndBufState)
-	stateSourceObject.LoadWait(1, &s.sndQueue)
 }
 
 func (r *rcvQueueInfo) StateTypeName() string {

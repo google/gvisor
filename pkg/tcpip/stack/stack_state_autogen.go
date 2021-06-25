@@ -1045,7 +1045,6 @@ func (t *TCPSndBufState) StateFields() []string {
 		"SndBufSize",
 		"SndBufUsed",
 		"SndClosed",
-		"SndBufInQueue",
 		"PacketTooBigCount",
 		"SndMTU",
 	}
@@ -1059,9 +1058,8 @@ func (t *TCPSndBufState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &t.SndBufSize)
 	stateSinkObject.Save(1, &t.SndBufUsed)
 	stateSinkObject.Save(2, &t.SndClosed)
-	stateSinkObject.Save(3, &t.SndBufInQueue)
-	stateSinkObject.Save(4, &t.PacketTooBigCount)
-	stateSinkObject.Save(5, &t.SndMTU)
+	stateSinkObject.Save(3, &t.PacketTooBigCount)
+	stateSinkObject.Save(4, &t.SndMTU)
 }
 
 func (t *TCPSndBufState) afterLoad() {}
@@ -1071,9 +1069,8 @@ func (t *TCPSndBufState) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.SndBufSize)
 	stateSourceObject.Load(1, &t.SndBufUsed)
 	stateSourceObject.Load(2, &t.SndClosed)
-	stateSourceObject.Load(3, &t.SndBufInQueue)
-	stateSourceObject.Load(4, &t.PacketTooBigCount)
-	stateSourceObject.Load(5, &t.SndMTU)
+	stateSourceObject.Load(3, &t.PacketTooBigCount)
+	stateSourceObject.Load(4, &t.SndMTU)
 }
 
 func (t *TCPEndpointStateInner) StateTypeName() string {

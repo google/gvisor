@@ -293,16 +293,9 @@ type sndQueueInfo struct {
 	sndQueueMu sync.Mutex `state:"nosave"`
 	stack.TCPSndBufState
 
-	// sndQueue holds segments that are ready to be sent.
-	sndQueue segmentList `state:"wait"`
-
-	// sndWaker is used to signal the protocol goroutine when segments are
-	// added to the `sndQueue`.
+	// sndWaker is used to signal the protocol goroutine when there may be
+	// segments that need to be sent.
 	sndWaker sleep.Waker `state:"manual"`
-
-	// sndCloseWaker is used to notify the protocol goroutine when the send
-	// side is closed.
-	sndCloseWaker sleep.Waker `state:"manual"`
 }
 
 // rcvQueueInfo contains the endpoint's rcvQueue and associated metadata.
@@ -1558,10 +1551,9 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		// Add data to the send queue.
 		s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
 		e.sndQueueInfo.SndBufUsed += len(v)
-		e.sndQueueInfo.SndBufInQueue += seqnum.Size(len(v))
-		e.sndQueueInfo.sndQueue.PushBack(s)
+		e.snd.writeList.PushBack(s)
 
-		return e.drainSendQueueLocked(), len(v), nil
+		return s, len(v), nil
 	}()
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
@@ -2314,7 +2306,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 	// connection setting here.
 	if !handshake {
 		e.segmentQueue.mu.Lock()
-		for _, l := range []segmentList{e.segmentQueue.list, e.sndQueueInfo.sndQueue, e.snd.writeList} {
+		for _, l := range []segmentList{e.segmentQueue.list, e.snd.writeList} {
 			for s := l.Front(); s != nil; s = s.Next() {
 				s.id = e.TransportEndpointInfo.ID
 				e.sndQueueInfo.sndWaker.Assert()
@@ -2391,12 +2383,17 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 
 			// Queue fin segment.
 			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), nil)
-			e.sndQueueInfo.sndQueue.PushBack(s)
-			e.sndQueueInfo.SndBufInQueue++
+			e.snd.writeList.PushBack(s)
 			// Mark endpoint as closed.
 			e.sndQueueInfo.SndClosed = true
 			e.sndQueueInfo.sndQueueMu.Unlock()
-			e.handleClose()
+
+			// Drain the send queue.
+			e.sendData(s)
+
+			// Mark send side as closed.
+			e.snd.Closed = true
+
 			// Wake up any writers that maybe waiting for the stream to become
 			// writable.
 			e.waiterQueue.Notify(waiter.WritableEvents)
