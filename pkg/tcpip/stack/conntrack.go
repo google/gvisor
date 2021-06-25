@@ -405,16 +405,23 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	// validated if checksum offloading is off. It may require IP defrag if the
 	// packets are fragmented.
 
+	var newAddr tcpip.Address
+	var newPort uint16
+
+	updateSRCFields := false
+
 	switch hook {
 	case Prerouting, Output:
 		if conn.manip == manipDestination {
 			switch dir {
 			case dirOriginal:
-				tcpHeader.SetDestinationPort(conn.reply.srcPort)
-				netHeader.SetDestinationAddress(conn.reply.srcAddr)
+				newPort = conn.reply.srcPort
+				newAddr = conn.reply.srcAddr
 			case dirReply:
-				tcpHeader.SetSourcePort(conn.original.dstPort)
-				netHeader.SetSourceAddress(conn.original.dstAddr)
+				newPort = conn.original.dstPort
+				newAddr = conn.original.dstAddr
+
+				updateSRCFields = true
 			}
 			pkt.NatDone = true
 		}
@@ -422,11 +429,13 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		if conn.manip == manipSource {
 			switch dir {
 			case dirOriginal:
-				tcpHeader.SetSourcePort(conn.reply.dstPort)
-				netHeader.SetSourceAddress(conn.reply.dstAddr)
+				newPort = conn.reply.dstPort
+				newAddr = conn.reply.dstAddr
+
+				updateSRCFields = true
 			case dirReply:
-				tcpHeader.SetDestinationPort(conn.original.srcPort)
-				netHeader.SetDestinationAddress(conn.original.srcAddr)
+				newPort = conn.original.srcPort
+				newAddr = conn.original.srcAddr
 			}
 			pkt.NatDone = true
 		}
@@ -437,29 +446,31 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 		return false
 	}
 
+	fullChecksum := false
+	updatePseudoHeader := false
 	switch hook {
 	case Prerouting, Input:
 	case Output, Postrouting:
 		// Calculate the TCP checksum and set it.
-		tcpHeader.SetChecksum(0)
-		length := uint16(len(tcpHeader) + pkt.Data().Size())
-		xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, netHeader.SourceAddress(), netHeader.DestinationAddress(), length)
 		if pkt.GSOOptions.Type != GSONone && pkt.GSOOptions.NeedsCsum {
-			tcpHeader.SetChecksum(xsum)
+			updatePseudoHeader = true
 		} else if r.RequiresTXTransportChecksum() {
-			xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
-			tcpHeader.SetChecksum(^tcpHeader.CalculateChecksum(xsum))
+			fullChecksum = true
+			updatePseudoHeader = true
 		}
 	default:
 		panic(fmt.Sprintf("unrecognized hook = %s", hook))
 	}
 
-	// After modification, IPv4 packets need a valid checksum.
-	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
-		netHeader.SetChecksum(0)
-		netHeader.SetChecksum(^netHeader.CalculateChecksum())
-	}
+	rewritePacket(
+		netHeader,
+		tcpHeader,
+		updateSRCFields,
+		fullChecksum,
+		updatePseudoHeader,
+		newPort,
+		newAddr,
+	)
 
 	// Update the state of tcb.
 	conn.mu.Lock()
