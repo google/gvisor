@@ -344,7 +344,10 @@ func (e *endpoint) onAddressAssignedLocked(addr tcpip.Address) {
 func (e *endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.mu.ndp.invalidateDefaultRouter(rtr)
+
+	// We represent default routers with a default (off-link) route through the
+	// router.
+	e.mu.ndp.invalidateOffLinkRoute(offLinkRoute{dest: header.IPv6EmptySubnet, router: rtr})
 }
 
 // SetNDPConfigurations implements NDPEndpoint.
