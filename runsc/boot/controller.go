@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -165,8 +166,11 @@ func newController(fd int, l *Loader) (*controller, error) {
 	return ctrl, nil
 }
 
+// stopRPCTimeout is the time for clients to complete ongoing RPCs.
+const stopRPCTimeout = 15 * gtime.Second
+
 func (c *controller) stop() {
-	c.srv.Stop()
+	c.srv.Stop(stopRPCTimeout)
 }
 
 // containerManager manages sandbox containers.

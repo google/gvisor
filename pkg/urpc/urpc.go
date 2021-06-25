@@ -27,6 +27,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -458,29 +459,45 @@ func (s *Server) StartHandling(client *unet.Socket) {
 // No new requests should be initiated after calling Stop. Existing clients
 // will be closed after completing any pending RPCs. This method will block
 // until all clients have disconnected.
-func (s *Server) Stop() {
-	// Wait for all outstanding requests.
-	defer s.wg.Wait()
-
+//
+// timeout is the time for clients to complete ongoing RPCs.
+func (s *Server) Stop(timeout time.Duration) {
 	// Call any Stop callbacks.
 	for _, stopper := range s.stoppers {
 		stopper.Stop()
 	}
 
-	// Close all known clients.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for client, state := range s.clients {
-		switch state {
-		case idle:
-			// Close connection now.
-			client.Close()
-			s.clients[client] = closed
-		case processing:
-			// Request close when done.
-			s.clients[client] = closeRequested
+	done := make(chan bool, 1)
+	go func() {
+		if timeout != 0 {
+			timer := time.NewTicker(timeout)
+			defer timer.Stop()
+			select {
+			case <-done:
+				return
+			case <-timer.C:
+			}
 		}
-	}
+
+		// Close all known clients.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for client, state := range s.clients {
+			switch state {
+			case idle:
+				// Close connection now.
+				client.Close()
+				s.clients[client] = closed
+			case processing:
+				// Request close when done.
+				s.clients[client] = closeRequested
+			}
+		}
+	}()
+
+	// Wait for all outstanding requests.
+	s.wg.Wait()
+	done <- true
 }
 
 // Client is a urpc client.

@@ -214,7 +214,7 @@ func doStartSignal(t *testing.T, vfsEnabled bool) {
 
 	// We aren't going to wait on this application, so the control server
 	// needs to be shut down manually.
-	defer l.ctrl.srv.Stop()
+	defer l.ctrl.srv.Stop(time.Hour)
 
 	// Start a goroutine that calls WaitForStartSignal and writes to a
 	// channel when it returns.
