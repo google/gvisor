@@ -40,16 +40,18 @@ import (
 )
 
 var (
-	debug      = flag.Bool("debug", false, "enable debug logs")
-	strace     = flag.Bool("strace", false, "enable strace logs")
-	platform   = flag.String("platform", "ptrace", "platform to run on")
-	network    = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
-	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
-	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
-	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
-	vfs2       = flag.Bool("vfs2", false, "enable VFS2")
-	fuse       = flag.Bool("fuse", false, "enable FUSE")
-	runscPath  = flag.String("runsc", "", "path to runsc binary")
+	debug              = flag.Bool("debug", false, "enable debug logs")
+	strace             = flag.Bool("strace", false, "enable strace logs")
+	platform           = flag.String("platform", "ptrace", "platform to run on")
+	network            = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
+	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
+	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
+	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
+	vfs2               = flag.Bool("vfs2", false, "enable VFS2")
+	fuse               = flag.Bool("fuse", false, "enable FUSE")
+	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root")
+	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
+	runscPath          = flag.String("runsc", "", "path to runsc binary")
 
 	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
@@ -104,6 +106,27 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &unix.SysProcAttr{}
+
+	if *container {
+		// setup_container takes in its target argv as positional arguments.
+		cmd.Path = *setupContainerPath
+		cmd.Args = append([]string{cmd.Path}, cmd.Args...)
+		cmd.SysProcAttr = &unix.SysProcAttr{
+			Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNET | unix.CLONE_NEWIPC | unix.CLONE_NEWUTS,
+			// Set current user/group as root inside the namespace.
+			UidMappings: []syscall.SysProcIDMap{
+				{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+			},
+			GidMappings: []syscall.SysProcIDMap{
+				{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+			},
+			GidMappingsEnableSetgroups: false,
+			Credential: &syscall.Credential{
+				Uid: 0,
+				Gid: 0,
+			},
+		}
+	}
 
 	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
 		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUTS
@@ -453,6 +476,13 @@ func main() {
 			panic(err.Error())
 		}
 		*runscPath = specutils.ExePath
+	}
+	if *container && *setupContainerPath == "" {
+		setupContainer, err := testutil.FindFile("test/runner/setup_container/setup_container")
+		if err != nil {
+			fatalf("cannot find setup_container: %v", err)
+		}
+		*setupContainerPath = setupContainer
 	}
 
 	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
