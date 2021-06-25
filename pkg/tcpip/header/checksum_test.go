@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -255,4 +256,206 @@ func TestICMPv6Checksum(t *testing.T) {
 			PayloadLen:  vv.Size(),
 		})
 	}, want, fmt.Sprintf("header: {% x} data {% x}", h, vv.ToView()))
+}
+
+func randomAddress(size int) tcpip.Address {
+	s := make([]byte, size)
+	for i := 0; i < size; i++ {
+		s[i] = byte(rand.Uint32())
+	}
+	return tcpip.Address(s)
+}
+
+func TestChecksummableNetworkUpdateAddress(t *testing.T) {
+	tests := []struct {
+		name   string
+		update func(header.IPv4, tcpip.Address)
+	}{
+		{
+			name:   "SetSourceAddressWithChecksumUpdate",
+			update: header.IPv4.SetSourceAddressWithChecksumUpdate,
+		},
+		{
+			name:   "SetDestinationAddressWithChecksumUpdate",
+			update: header.IPv4.SetDestinationAddressWithChecksumUpdate,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for i := 0; i < 1000; i++ {
+				var origBytes [header.IPv4MinimumSize]byte
+				header.IPv4(origBytes[:]).Encode(&header.IPv4Fields{
+					TOS:            1,
+					TotalLength:    header.IPv4MinimumSize,
+					ID:             2,
+					Flags:          3,
+					FragmentOffset: 4,
+					TTL:            5,
+					Protocol:       6,
+					Checksum:       0,
+					SrcAddr:        randomAddress(header.IPv4AddressSize),
+					DstAddr:        randomAddress(header.IPv4AddressSize),
+				})
+
+				addr := randomAddress(header.IPv4AddressSize)
+
+				bytesCopy := origBytes
+				h := header.IPv4(bytesCopy[:])
+				origXSum := h.CalculateChecksum()
+				h.SetChecksum(^origXSum)
+
+				test.update(h, addr)
+				got := ^h.Checksum()
+				h.SetChecksum(0)
+				want := h.CalculateChecksum()
+				if got != want {
+					t.Errorf("got h.Checksum() = 0x%x, want = 0x%x; originalBytes = 0x%x, new addr = %s", got, want, origBytes, addr)
+				}
+			}
+		})
+	}
+}
+
+func TestChecksummableTransportUpdatePort(t *testing.T) {
+	// The fields in the pseudo header is not tested here so we just use 0.
+	const pseudoHeaderXSum = 0
+
+	tests := []struct {
+		name         string
+		transportHdr func(_, _ uint16) (header.ChecksummableTransport, func(uint16) uint16)
+		proto        tcpip.TransportProtocolNumber
+	}{
+		{
+			name: "TCP",
+			transportHdr: func(src, dst uint16) (header.ChecksummableTransport, func(uint16) uint16) {
+				h := header.TCP(make([]byte, header.TCPMinimumSize))
+				h.Encode(&header.TCPFields{
+					SrcPort:       src,
+					DstPort:       dst,
+					SeqNum:        1,
+					AckNum:        2,
+					DataOffset:    header.TCPMinimumSize,
+					Flags:         3,
+					WindowSize:    4,
+					Checksum:      0,
+					UrgentPointer: 5,
+				})
+				h.SetChecksum(^h.CalculateChecksum(pseudoHeaderXSum))
+				return h, h.CalculateChecksum
+			},
+			proto: header.TCPProtocolNumber,
+		},
+		{
+			name: "UDP",
+			transportHdr: func(src, dst uint16) (header.ChecksummableTransport, func(uint16) uint16) {
+				h := header.UDP(make([]byte, header.UDPMinimumSize))
+				h.Encode(&header.UDPFields{
+					SrcPort:  src,
+					DstPort:  dst,
+					Length:   0,
+					Checksum: 0,
+				})
+				h.SetChecksum(^h.CalculateChecksum(pseudoHeaderXSum))
+				return h, h.CalculateChecksum
+			},
+			proto: header.UDPProtocolNumber,
+		},
+	}
+
+	for i := 0; i < 1000; i++ {
+		origSrcPort := uint16(rand.Uint32())
+		origDstPort := uint16(rand.Uint32())
+		newPort := uint16(rand.Uint32())
+
+		t.Run(fmt.Sprintf("OrigSrcPort=%d,OrigDstPort=%d,NewPort=%d", origSrcPort, origDstPort, newPort), func(*testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					for _, subTest := range []struct {
+						name   string
+						update func(header.ChecksummableTransport)
+					}{
+						{
+							name:   "Source port",
+							update: func(h header.ChecksummableTransport) { h.SetSourcePortWithChecksumUpdate(newPort) },
+						},
+						{
+							name:   "Destination port",
+							update: func(h header.ChecksummableTransport) { h.SetDestinationPortWithChecksumUpdate(newPort) },
+						},
+					} {
+						t.Run(subTest.name, func(t *testing.T) {
+							h, calcXSum := test.transportHdr(origSrcPort, origDstPort)
+							subTest.update(h)
+							// TCP and UDP hold the 1s complement of the fully calculated
+							// checksum.
+							got := ^h.Checksum()
+							h.SetChecksum(0)
+
+							if want := calcXSum(pseudoHeaderXSum); got != want {
+								h, _ := test.transportHdr(origSrcPort, origDstPort)
+								t.Errorf("got Checksum() = 0x%x, want = 0x%x; originalBytes = %#v, new port = %d", got, want, h, newPort)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestChecksummableTransportUpdatePseudoHeaderAddress(t *testing.T) {
+	const addressSize = 6
+
+	tests := []struct {
+		name         string
+		transportHdr func() header.ChecksummableTransport
+		proto        tcpip.TransportProtocolNumber
+	}{
+		{
+			name:         "TCP",
+			transportHdr: func() header.ChecksummableTransport { return header.TCP(make([]byte, header.TCPMinimumSize)) },
+			proto:        header.TCPProtocolNumber,
+		},
+		{
+			name:         "UDP",
+			transportHdr: func() header.ChecksummableTransport { return header.UDP(make([]byte, header.UDPMinimumSize)) },
+			proto:        header.UDPProtocolNumber,
+		},
+	}
+
+	for i := 0; i < 1000; i++ {
+		permanent := randomAddress(addressSize)
+		old := randomAddress(addressSize)
+		new := randomAddress(addressSize)
+
+		t.Run(fmt.Sprintf("Permanent=%q,Old=%q,New=%q", permanent, old, new), func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					for _, fullChecksum := range []bool{true, false} {
+						t.Run(fmt.Sprintf("FullChecksum=%t", fullChecksum), func(t *testing.T) {
+							initialXSum := header.PseudoHeaderChecksum(test.proto, permanent, old, 0)
+							if fullChecksum {
+								// TCP and UDP hold the 1s complement of the fully calculated
+								// checksum.
+								initialXSum = ^initialXSum
+							}
+
+							h := test.transportHdr()
+							h.SetChecksum(initialXSum)
+							h.UpdateChecksumPseudoHeaderAddress(old, new, fullChecksum)
+
+							got := h.Checksum()
+							if fullChecksum {
+								got = ^got
+							}
+							if want := header.PseudoHeaderChecksum(test.proto, permanent, new, 0); got != want {
+								t.Errorf("got Checksum() = 0x%x, want = 0x%x; h = %#v", got, want, h)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
 }
