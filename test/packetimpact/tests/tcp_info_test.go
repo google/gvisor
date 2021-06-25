@@ -47,7 +47,7 @@ func TestTCPInfo(t *testing.T) {
 	samplePayload := &testbench.Payload{Bytes: sampleData}
 	dut.Send(t, acceptFD, sampleData, 0)
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
 
@@ -55,20 +55,23 @@ func TestTCPInfo(t *testing.T) {
 	if got, want := uint32(info.State), linux.TCP_ESTABLISHED; got != want {
 		t.Fatalf("got %d want %d", got, want)
 	}
-	rtt := time.Duration(info.RTT) * time.Microsecond
-	rttvar := time.Duration(info.RTTVar) * time.Microsecond
-	rto := time.Duration(info.RTO) * time.Microsecond
-	if rtt == 0 || rttvar == 0 || rto == 0 {
-		t.Errorf("expected rtt(%v), rttvar(%v) and rto(%v) to be greater than zero", rtt, rttvar, rto)
+	if info.RTT == 0 {
+		t.Errorf("got RTT=0, want nonzero")
+	}
+	if info.RTTVar == 0 {
+		t.Errorf("got RTTVar=0, want nonzero")
+	}
+	if info.RTO == 0 {
+		t.Errorf("got RTO=0, want nonzero")
 	}
 	if info.ReordSeen != 0 {
-		t.Errorf("expected the connection to not have any reordering, got: %v want: 0", info.ReordSeen)
+		t.Errorf("expected the connection to not have any reordering, got: %d want: 0", info.ReordSeen)
 	}
 	if info.SndCwnd == 0 {
 		t.Errorf("expected send congestion window to be greater than zero")
 	}
 	if info.CaState != linux.TCP_CA_Open {
-		t.Errorf("expected the connection to be in open state, got: %v want: %v", info.CaState, linux.TCP_CA_Open)
+		t.Errorf("expected the connection to be in open state, got: %d want: %d", info.CaState, linux.TCP_CA_Open)
 	}
 
 	if t.Failed() {
@@ -80,20 +83,20 @@ func TestTCPInfo(t *testing.T) {
 	seq := testbench.Uint32(uint32(*conn.RemoteSeqNum(t)))
 	dut.Send(t, acceptFD, sampleData, 0)
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
 
 	// Expect retransmission of the packet within 1.5*RTO.
 	timeout := time.Duration(float64(info.RTO)*1.5) * time.Microsecond
 	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: seq}, samplePayload, timeout); err != nil {
-		t.Fatalf("expected a packet with payload %v: %s", samplePayload, err)
+		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
 
 	info = dut.GetSockOptTCPInfo(t, acceptFD)
 	if info.CaState != linux.TCP_CA_Loss {
-		t.Errorf("expected the connection to be in loss recovery, got: %v want: %v", info.CaState, linux.TCP_CA_Loss)
+		t.Errorf("expected the connection to be in loss recovery, got: %d want: %d", info.CaState, linux.TCP_CA_Loss)
 	}
 	if info.SndCwnd != 1 {
-		t.Errorf("expected send congestion window to be 1, got: %v %v", info.SndCwnd)
+		t.Errorf("expected send congestion window to be 1, got: %d", info.SndCwnd)
 	}
 }
