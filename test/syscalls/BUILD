@@ -648,6 +648,7 @@ syscall_test(
 syscall_test(
     size = "large",
     shard_count = most_shards,
+    tags = ["container"],
     test = "//test/syscalls/linux:socket_inet_loopback_isolated_test",
 )
 

@@ -8,6 +8,7 @@ go_binary(
     srcs = ["main.go"],
     data = [
         "//runsc",
+        "//test/runner/setup_container",
     ],
     visibility = ["//:sandbox"],
     deps = [

@@ -19,6 +19,7 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/test_util.h"
 
 // Unit tests in this file will run in their own network namespace.
 

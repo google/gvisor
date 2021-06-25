@@ -3196,9 +3196,11 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_inet_loopback_test_params",
+        ":socket_netlink_util",
         ":socket_test_util",
         gtest,
         "//test/util:test_main",
+        "//test/util:test_util",
         "@com_google_absl//absl/time",
     ],
 )

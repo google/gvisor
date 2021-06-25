@@ -103,6 +103,8 @@ def _syscall_test(
     if platform == "native":
         tags.append("nogotsan")
 
+    container = "container" in tags
+
     runner_args = [
         # Arguments are passed directly to runner binary.
         "--platform=" + platform,
@@ -115,6 +117,7 @@ def _syscall_test(
         "--fuse=" + str(fuse),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
+        "--container=" + str(container),
     ]
 
     # Call the rule above.
