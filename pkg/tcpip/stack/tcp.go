@@ -380,9 +380,6 @@ type TCPSndBufState struct {
 	// SndClosed indicates that the endpoint has been closed for sends.
 	SndClosed bool
 
-	// SndBufInQueue is the number of bytes in the send queue.
-	SndBufInQueue seqnum.Size
-
 	// PacketTooBigCount is used to notify the main protocol routine how
 	// many times a "packet too big" control packet is received.
 	PacketTooBigCount int
