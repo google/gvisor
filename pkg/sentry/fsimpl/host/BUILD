@@ -49,7 +49,6 @@ go_library(
         "//pkg/fdnotifier",
         "//pkg/fspath",
         "//pkg/hostarch",
-        "//pkg/iovec",
         "//pkg/log",
         "//pkg/marshal/primitive",
         "//pkg/refs",

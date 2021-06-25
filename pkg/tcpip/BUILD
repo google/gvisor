@@ -46,7 +46,6 @@ deps_test(
         "//pkg/gohacks",
         "//pkg/goid",
         "//pkg/ilist",
-        "//pkg/iovec",
         "//pkg/linewriter",
         "//pkg/log",
         "//pkg/rand",

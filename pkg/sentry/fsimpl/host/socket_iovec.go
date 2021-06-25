@@ -16,7 +16,7 @@ package host
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/iovec"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -70,7 +70,7 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 		}
 	}
 
-	if iovsRequired > iovec.MaxIovs {
+	if iovsRequired > hostfd.MaxSendRecvMsgIov {
 		// The kernel will reject our call if we pass this many iovs.
 		// Use a single intermediate buffer instead.
 		b := make([]byte, stopLen)
