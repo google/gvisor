@@ -14,6 +14,8 @@
 
 package sniffer
 
+import "encoding/binary"
+import "io"
 import "time"
 
 type pcapHeader struct {
@@ -63,4 +65,14 @@ func newPCAPPacketHeader(incLen, orgLen uint32) pcapPacketHeader {
 		IncludedLength: incLen,
 		OriginalLength: orgLen,
 	}
+}
+
+func writePCAPPacketHeader(w io.Writer, h pcapPacketHeader) error {
+	var b [16]byte
+	binary.BigEndian.PutUint32(b[0:4], h.Seconds)
+	binary.BigEndian.PutUint32(b[4:8], h.Microseconds)
+	binary.BigEndian.PutUint32(b[8:12], h.IncludedLength)
+	binary.BigEndian.PutUint32(b[12:16], h.OriginalLength)
+	_, err := w.Write(b[:])
+	return err
 }

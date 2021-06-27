@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,8 @@ var LogPacketsToPCAP uint32 = 1
 
 type endpoint struct {
 	nested.Endpoint
+	pcapBufs   *sync.Pool
+	mu         sync.Mutex
 	writer     io.Writer
 	maxPCAPLen uint32
 	logPrefix  string
@@ -130,6 +133,10 @@ func NewWithWriter(lower stack.LinkEndpoint, writer io.Writer, snapLen uint32) (
 	sniffer := &endpoint{
 		writer:     writer,
 		maxPCAPLen: snapLen,
+		pcapBufs: &sync.Pool{New: func() interface{} {
+			b := make([]byte, pcapPacketHeaderLen+snapLen)
+			return &b
+		}},
 	}
 	sniffer.Endpoint.Init(lower, sniffer)
 	return sniffer, nil
@@ -159,15 +166,19 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 		if max := int(e.maxPCAPLen); length > max {
 			length = max
 		}
-		if err := binary.Write(writer, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
+		writeLength := pcapPacketHeaderLen + length
+		buf := *e.pcapBufs.Get().(*[]byte)
+		buf = buf[:writeLength]
+		sw := tcpip.SliceWriter(buf)
+		if err := writePCAPPacketHeader(&sw, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
 			panic(err)
 		}
-		write := func(b []byte) {
+		write := func(w io.Writer, b []byte) {
 			if len(b) > length {
 				b = b[:length]
 			}
 			for len(b) != 0 {
-				n, err := writer.Write(b)
+				n, err := w.Write(b)
 				if err != nil {
 					panic(err)
 				}
@@ -179,8 +190,13 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 			if length == 0 {
 				break
 			}
-			write(v)
+			write(&sw, v)
 		}
+		length = writeLength
+		e.mu.Lock()
+		write(writer, buf)
+		e.mu.Unlock()
+		e.pcapBufs.Put(&buf)
 	}
 }
 
