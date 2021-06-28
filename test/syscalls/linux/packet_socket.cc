@@ -231,9 +231,6 @@ TEST_P(CookedPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(CookedPacketTest, Send) {
-  // We don't implement writing to packet sockets on gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -286,6 +283,14 @@ TEST_P(CookedPacketTest, Send) {
   memcpy(send_buf, &iphdr, sizeof(iphdr));
   memcpy(send_buf + sizeof(iphdr), &udphdr, sizeof(udphdr));
   memcpy(send_buf + sizeof(iphdr) + sizeof(udphdr), kMessage, sizeof(kMessage));
+
+  // We don't implement writing to packet sockets on gVisor.
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
+                       reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
+                SyscallFailsWithErrno(EINVAL));
+    GTEST_SKIP();
+  }
 
   // Send it.
   ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
