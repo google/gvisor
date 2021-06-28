@@ -37,9 +37,7 @@ TEST_P(AllSocketPairTest, Listen) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(),
-                     /* backlog = */ 5),  // NOLINT(bugprone-argument-comment)
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
 }
 
 TEST_P(AllSocketPairTest, ListenIncreaseBacklog) {
@@ -49,10 +47,8 @@ TEST_P(AllSocketPairTest, ListenIncreaseBacklog) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 10),
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 10), SyscallSucceeds());
 }
 
 TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
@@ -62,10 +58,8 @@ TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 1),
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 1), SyscallSucceeds());
 }
 
 TEST_P(AllSocketPairTest, ListenBacklogSizes) {
