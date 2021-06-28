@@ -353,6 +353,22 @@ func (s *Sandbox) Event(cid string) (*boot.EventOut, error) {
 	return &e, nil
 }
 
+// PortForward starts port forwarding to the sandbox.
+func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
+	log.Debugf("Requesting port forward for container %q in sandbox %q", opts.ContainerID, s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContainerPortForward, opts, nil); err != nil {
+		return fmt.Errorf("port forwarding to sandbox: %v", err)
+	}
+
+	return nil
+}
+
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
 	conn, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))

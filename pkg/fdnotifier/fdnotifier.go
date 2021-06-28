@@ -65,7 +65,7 @@ func newNotifier() (*notifier, error) {
 	return w, nil
 }
 
-// waitFD waits on mask for fd. The fdMap mutex must be hold.
+// waitFD waits on mask for fd. The fdMap mutex must be held.
 func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 	if !fi.waiting && mask == 0 {
 		return nil
@@ -120,14 +120,17 @@ func (n *notifier) updateFD(fd int32) error {
 	return nil
 }
 
-// RemoveFD removes an FD from the list of FDs observed by n.
+// RemoveFD removes an FD from the list of FDs observed by n. This is a noop if
+// the fd is not registered.
 func (n *notifier) removeFD(fd int32) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// Remove from map, then from epoll object.
-	n.waitFD(fd, n.fdMap[fd], 0)
-	delete(n.fdMap, fd)
+	if _, ok := n.fdMap[fd]; ok {
+		// Remove from map, then from epoll object.
+		n.waitFD(fd, n.fdMap[fd], 0)
+		delete(n.fdMap, fd)
+	}
 }
 
 // hasFD returns true if the fd is in the list of observed FDs.

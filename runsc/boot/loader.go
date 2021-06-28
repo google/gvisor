@@ -125,19 +125,24 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
-	// mu guards processes.
+	// mu guards processes and portForwardConns.
 	mu sync.Mutex
 
 	// processes maps containers init process and invocation of exec. Root
 	// processes are keyed with container ID and pid=0, while exec invocations
 	// have the corresponding pid set.
 	//
-	// processes is guardded by mu.
+	// processes is guarded by mu.
 	processes map[execID]*execProcess
 
 	// mountHints provides extra information about mounts for containers that
 	// apply to the entire pod.
 	mountHints *podMountHints
+
+	// portForwardConns is a list of port forwarding connections that are active.
+	//
+	// portForwardConns is guarded by mu.
+	portForwardConns []portForwardConn
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -1350,4 +1355,40 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD) (*kerne
 		return nil, nil, nil, err
 	}
 	return fdTable, ttyFile, ttyFileVFS2, nil
+}
+
+// Pause pauses the sandbox.
+func (l *Loader) Pause() error {
+	l.onSave()
+	l.k.Pause()
+	return nil
+}
+
+// Checkpoint starts checkpointing the container.
+func (l *Loader) Checkpoint(opts *control.SaveOpts) error {
+	l.onSave()
+	state := control.State{
+		Kernel:   l.k,
+		Watchdog: l.watchdog,
+	}
+	return state.Save(opts, nil)
+}
+
+// onSave is called when a save is requested.
+func (l *Loader) onSave() {
+	l.mu.Lock()
+	// Request that port forwarding connections be closed.
+	var wg sync.WaitGroup
+	for _, c := range l.portForwardConns {
+		conn := c
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn.Close()
+		}()
+	}
+	l.mu.Unlock()
+
+	// Wait for connections to close.
+	wg.Wait()
 }

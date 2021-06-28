@@ -26,6 +26,7 @@ go_library(
         "mitigate_extras.go",
         "path.go",
         "pause.go",
+        "portforward.go",
         "ps.go",
         "restore.go",
         "resume.go",
