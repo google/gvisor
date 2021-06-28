@@ -6077,6 +6077,11 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 	// complete the connection to test that the large SEQ num
 	// did not change the state from SYN-RCVD.
 
+	// Get setup to be notified about connection establishment.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.ReadableEvents)
+	defer c.WQ.EventUnregister(&we)
+
 	// Send ACK to move to ESTABLISHED state.
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -6087,25 +6092,10 @@ func TestSynRcvdBadSeqNumber(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
+	<-ch
 	newEP, _, err := c.EP.Accept(nil)
-	switch err.(type) {
-	case nil, *tcpip.ErrWouldBlock:
-	default:
+	if err != nil {
 		t.Fatalf("Accept failed: %s", err)
-	}
-
-	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
-		// Try to accept the connections in the backlog.
-		we, ch := waiter.NewChannelEntry(nil)
-		c.WQ.EventRegister(&we, waiter.ReadableEvents)
-		defer c.WQ.EventUnregister(&we)
-
-		// Wait for connection to be established.
-		<-ch
-		newEP, _, err = c.EP.Accept(nil)
-		if err != nil {
-			t.Fatalf("Accept failed: %s", err)
-		}
 	}
 
 	// Now verify that the TCP socket is usable and in a connected state.
