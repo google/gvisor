@@ -26,9 +26,15 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-constexpr int msgMax = 8192;   // Max size for message in bytes.
+// Source: include/uapi/linux/msg.h
+constexpr int msgMnb = 16384;  // Maximum number of bytes in a queue.
 constexpr int msgMni = 32000;  // Max number of identifiers.
-constexpr int msgMnb = 16384;  // Default max size of message queue in bytes.
+constexpr int msgPool =
+    (msgMni * msgMnb / 1024);  // Size of buffer pool used to hold message data.
+constexpr int msgMap = msgMnb;  // Maximum number of entries in message map.
+constexpr int msgMax = 8192;    // Maximum number of bytes in a single message.
+constexpr int msgSsz = 16;      // Message segment size.
+constexpr int msgTql = msgMnb;  // Maximum number of messages on all queues.
 
 // Queue is a RAII class used to automatically clean message queues.
 class Queue {
@@ -652,6 +658,188 @@ TEST(MsgqueueTest, MsgOpGeneral) {
                 SyscallSucceedsWithValue(pid));
     EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
   }
+}
+
+// Test msgctl with IPC_STAT option.
+TEST(MsgqueueTest, MsgCtlIpcStat) {
+  GTEST_SKIP();
+
+  auto start = absl::Now();
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  const uid_t uid = getuid();
+  const gid_t gid = getgid();
+  const pid_t pid = getpid();
+
+  struct msqid_ds ds;
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+
+  EXPECT_EQ(ds.msg_perm.__key, IPC_PRIVATE);
+  EXPECT_EQ(ds.msg_perm.uid, uid);
+  EXPECT_EQ(ds.msg_perm.gid, gid);
+  EXPECT_EQ(ds.msg_perm.cuid, uid);
+  EXPECT_EQ(ds.msg_perm.cgid, gid);
+  EXPECT_EQ(ds.msg_perm.mode, 0600);
+
+  EXPECT_EQ(ds.msg_stime, 0);
+  EXPECT_EQ(ds.msg_rtime, 0);
+  EXPECT_GE(ds.msg_ctime, absl::ToTimeT(start));
+
+  EXPECT_EQ(ds.msg_cbytes, 0);
+  EXPECT_EQ(ds.msg_qnum, 0);
+  EXPECT_EQ(ds.msg_qbytes, msgMnb);
+  EXPECT_EQ(ds.msg_lspid, 0);
+  EXPECT_EQ(ds.msg_lrpid, 0);
+
+  // The timestamps only have a resolution of seconds; slow down so we actually
+  // see the timestamps change.
+  absl::SleepFor(absl::Seconds(1));
+  auto pre_send = absl::Now();
+
+  msgbuf buf;
+  ASSERT_THAT(msgsnd(queue.get(), &buf, msgSize, 0), SyscallSucceeds());
+
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+
+  EXPECT_GE(ds.msg_stime, absl::ToTimeT(pre_send));
+  EXPECT_EQ(ds.msg_rtime, 0);
+  EXPECT_GE(ds.msg_ctime, absl::ToTimeT(start));
+
+  EXPECT_EQ(ds.msg_cbytes, msgSize);
+  EXPECT_EQ(ds.msg_qnum, 1);
+  EXPECT_EQ(ds.msg_qbytes, msgMnb);
+  EXPECT_EQ(ds.msg_lspid, pid);
+  EXPECT_EQ(ds.msg_lrpid, 0);
+
+  absl::SleepFor(absl::Seconds(1));
+  auto pre_receive = absl::Now();
+
+  ASSERT_THAT(msgrcv(queue.get(), &buf, msgSize, 0, 0),
+              SyscallSucceedsWithValue(msgSize));
+
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+
+  EXPECT_GE(ds.msg_stime, absl::ToTimeT(pre_send));
+  EXPECT_GE(ds.msg_rtime, absl::ToTimeT(pre_receive));
+  EXPECT_GE(ds.msg_ctime, absl::ToTimeT(start));
+
+  EXPECT_EQ(ds.msg_cbytes, 0);
+  EXPECT_EQ(ds.msg_qnum, 0);
+  EXPECT_EQ(ds.msg_qbytes, msgMnb);
+  EXPECT_EQ(ds.msg_lspid, pid);
+  EXPECT_EQ(ds.msg_lrpid, pid);
+}
+
+// Test msgctl with IPC_STAT option on a write-only queue.
+TEST(MsgqueueTest, MsgCtlIpcStatWriteOnly) {
+  GTEST_SKIP();
+
+  // Drop CAP_IPC_OWNER which allows us to bypass permissions.
+  AutoCapability cap(CAP_IPC_OWNER, false);
+
+  Queue queue(msgget(IPC_PRIVATE, 0200));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  struct msqid_ds ds;
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds),
+              SyscallFailsWithErrno(EACCES));
+}
+
+// Test msgctl with IPC_SET option.
+TEST(MsgqueueTest, MsgCtlIpcSet) {
+  GTEST_SKIP();
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  struct msqid_ds ds;
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  EXPECT_EQ(ds.msg_perm.mode, 0600);
+
+  ds.msg_perm.mode = 0777;
+  ASSERT_THAT(msgctl(queue.get(), IPC_SET, &ds), SyscallSucceeds());
+
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  EXPECT_EQ(ds.msg_perm.mode, 0777);
+}
+
+// Test increasing msg_qbytes beyond limit with IPC_SET.
+TEST(MsgqueueTest, MsgCtlIpcSetMaxBytes) {
+  GTEST_SKIP();
+
+  // Drop CAP_SYS_RESOURCE which allows us to increase msg_qbytes beyond the
+  // system parameter MSGMNB.
+  AutoCapability cap(CAP_SYS_RESOURCE, false);
+
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  struct msqid_ds ds;
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  EXPECT_EQ(ds.msg_qbytes, msgMnb);
+
+  ds.msg_qbytes = msgMnb - 10;
+  ASSERT_THAT(msgctl(queue.get(), IPC_SET, &ds), SyscallSucceeds());
+
+  ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  EXPECT_EQ(ds.msg_qbytes, msgMnb - 10);
+
+  ds.msg_qbytes = msgMnb + 10;
+  EXPECT_THAT(msgctl(queue.get(), IPC_SET, &ds), SyscallFailsWithErrno(EPERM));
+}
+
+// Test msgctl with IPC_INFO option.
+TEST(MsgqueueTest, MsgCtlIpcInfo) {
+  GTEST_SKIP();
+
+  struct msginfo info;
+  ASSERT_THAT(msgctl(0, IPC_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
+              SyscallSucceeds());
+
+  EXPECT_GT(info.msgmax, 0);
+  EXPECT_GT(info.msgmni, 0);
+  EXPECT_GT(info.msgmnb, 0);
+  EXPECT_EQ(info.msgpool, msgPool);
+  EXPECT_EQ(info.msgmap, msgMap);
+  EXPECT_EQ(info.msgssz, msgSsz);
+  EXPECT_EQ(info.msgtql, msgTql);
+}
+
+// Test msgctl with MSG_INFO option.
+TEST(MsgqueueTest, MsgCtlMsgInfo) {
+  GTEST_SKIP();
+
+  struct msginfo info;
+  ASSERT_THAT(msgctl(0, MSG_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
+              SyscallSucceeds());
+
+  EXPECT_GT(info.msgmax, 0);
+  EXPECT_GT(info.msgmni, 0);
+  EXPECT_GT(info.msgmnb, 0);
+  EXPECT_EQ(info.msgpool, 0);  // Number of queues in the system.
+  EXPECT_EQ(info.msgmap, 0);   // Total number of messages in all queues.
+  EXPECT_EQ(info.msgtql, 0);   // Total number of bytes in all messages.
+  EXPECT_EQ(info.msgssz, msgSsz);
+
+  // Add a queue and a message.
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  ASSERT_THAT(queue.get(), SyscallSucceeds());
+
+  msgbuf buf;
+  ASSERT_THAT(msgsnd(queue.get(), &buf, msgSize, 0), SyscallSucceeds());
+
+  ASSERT_THAT(msgctl(0, MSG_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
+              SyscallSucceeds());
+
+  EXPECT_GT(info.msgmax, 0);
+  EXPECT_GT(info.msgmni, 0);
+  EXPECT_GT(info.msgmnb, 0);
+  EXPECT_EQ(info.msgpool, 1);       // Number of queues in the system.
+  EXPECT_EQ(info.msgmap, 1);        // Total number of messages in all queues.
+  EXPECT_EQ(info.msgtql, msgSize);  // Total number of bytes in all messages.
+  EXPECT_EQ(info.msgssz, msgSsz);
 }
 
 }  // namespace
