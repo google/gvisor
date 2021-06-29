@@ -26,11 +26,13 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cleanup"
 
 	"gvisor.dev/gvisor/pkg/shim/runsc"
 )
@@ -92,6 +94,12 @@ func (e *execProcess) SetExited(status int) {
 }
 
 func (e *execProcess) setExited(status int) {
+	if !e.exited.IsZero() {
+		log.L.Debugf("Exec: status already set to %d, ignoring status: %d", e.status, status)
+		return
+	}
+
+	log.L.Debugf("Exec: setting status: %d", status)
 	e.status = status
 	e.exited = time.Now()
 	e.parent.Platform.ShutdownConsole(context.Background(), e.console)
@@ -105,7 +113,7 @@ func (e *execProcess) Delete(ctx context.Context) error {
 	return e.execState.Delete(ctx)
 }
 
-func (e *execProcess) delete(ctx context.Context) error {
+func (e *execProcess) delete() error {
 	e.wg.Wait()
 	if e.io != nil {
 		for _, c := range e.closers {
@@ -113,12 +121,6 @@ func (e *execProcess) delete(ctx context.Context) error {
 		}
 		e.io.Close()
 	}
-	pidfile := filepath.Join(e.path, fmt.Sprintf("%s.pid", e.id))
-	// silently ignore error
-	os.Remove(pidfile)
-	internalPidfile := filepath.Join(e.path, fmt.Sprintf("%s-internal.pid", e.id))
-	// silently ignore error
-	os.Remove(internalPidfile)
 	return nil
 }
 
@@ -171,42 +173,53 @@ func (e *execProcess) Start(ctx context.Context) error {
 	return e.execState.Start(ctx)
 }
 
-func (e *execProcess) start(ctx context.Context) (err error) {
-	var (
-		socket          *runc.Socket
-		pidfile         = filepath.Join(e.path, fmt.Sprintf("%s.pid", e.id))
-		internalPidfile = filepath.Join(e.path, fmt.Sprintf("%s-internal.pid", e.id))
-	)
-	if e.stdio.Terminal {
-		if socket, err = runc.NewTempConsoleSocket(); err != nil {
+func (e *execProcess) start(ctx context.Context) error {
+	var socket *runc.Socket
+
+	switch {
+	case e.stdio.Terminal:
+		s, err := runc.NewTempConsoleSocket()
+		if err != nil {
 			return fmt.Errorf("failed to create runc console socket: %w", err)
 		}
-		defer socket.Close()
-	} else if e.stdio.IsNull() {
-		if e.io, err = runc.NewNullIO(); err != nil {
+		defer s.Close()
+		socket = s
+
+	case e.stdio.IsNull():
+		io, err := runc.NewNullIO()
+		if err != nil {
 			return fmt.Errorf("creating new NULL IO: %w", err)
 		}
-	} else {
-		if e.io, err = runc.NewPipeIO(e.parent.IoUID, e.parent.IoGID, withConditionalIO(e.stdio)); err != nil {
+		e.io = io
+
+	default:
+		io, err := runc.NewPipeIO(e.parent.IoUID, e.parent.IoGID, withConditionalIO(e.stdio))
+		if err != nil {
 			return fmt.Errorf("failed to create runc io pipes: %w", err)
 		}
+		e.io = io
 	}
+
 	opts := &runsc.ExecOpts{
-		PidFile:         pidfile,
-		InternalPidFile: internalPidfile,
+		PidFile:         filepath.Join(e.path, fmt.Sprintf("%s.pid", e.id)),
+		InternalPidFile: filepath.Join(e.path, fmt.Sprintf("%s-internal.pid", e.id)),
 		IO:              e.io,
 		Detach:          true,
 	}
+	defer func() {
+		_ = os.Remove(opts.PidFile)
+		_ = os.Remove(opts.InternalPidFile)
+	}()
 	if socket != nil {
 		opts.ConsoleSocket = socket
 	}
+
 	eventCh := e.parent.Monitor.Subscribe()
-	defer func() {
-		// Unsubscribe if an error is returned.
-		if err != nil {
-			e.parent.Monitor.Unsubscribe(eventCh)
-		}
-	}()
+	cu := cleanup.Make(func() {
+		e.parent.Monitor.Unsubscribe(eventCh)
+	})
+	defer cu.Clean()
+
 	if err := e.parent.runtime.Exec(ctx, e.parent.id, e.spec, opts); err != nil {
 		close(e.waitBlock)
 		return e.parent.runtimeError(err, "OCI runtime exec failed")
@@ -234,6 +247,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 			return fmt.Errorf("failed to start io pipe copy: %w", err)
 		}
 	}
+
 	pid, err := runc.ReadPidFile(opts.PidFile)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve OCI runtime exec pid: %w", err)
@@ -244,6 +258,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to retrieve OCI runtime exec internal pid: %w", err)
 	}
 	e.internalPid = internalPid
+
 	go func() {
 		defer e.parent.Monitor.Unsubscribe(eventCh)
 		for event := range eventCh {
@@ -257,21 +272,25 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 			}
 		}
 	}()
+
+	cu.Release() // cancel cleanup on success.
 	return nil
 }
 
-func (e *execProcess) Status(ctx context.Context) (string, error) {
+func (e *execProcess) Status(context.Context) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	// if we don't have a pid then the exec process has just been created
 	if e.pid == 0 {
 		return "created", nil
 	}
-	// if we have a pid and it can be signaled, the process is running
-	// TODO(random-liu): Use `runsc kill --pid`.
-	if err := unix.Kill(e.pid, 0); err == nil {
-		return "running", nil
+	// This checks that `runsc exec` process is still running. This process has
+	// the same lifetime as the process executing inside the container. So instead
+	// of calling `runsc kill --pid`, just do a quick check that `runsc exec` is
+	// still running.
+	if err := unix.Kill(e.pid, 0); err != nil {
+		// Can't signal the process, it must have exited.
+		return "stopped", nil
 	}
-	// else if we have a pid but it can nolonger be signaled, it has stopped
-	return "stopped", nil
+	return "running", nil
 }
