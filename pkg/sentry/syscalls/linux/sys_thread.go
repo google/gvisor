@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -112,7 +113,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 	}
 
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	atEmptyPath := flags&linux.AT_EMPTY_PATH != 0
 	if !atEmptyPath && len(pathname) == 0 {
@@ -260,7 +261,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 		wopts.NonCloneTasks = true
 		wopts.CloneTasks = true
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if options&linux.WCONTINUED != 0 {
 		wopts.Events |= kernel.EventGroupContinue
@@ -277,7 +278,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 // wait4 waits for the given child process to exit.
 func wait4(t *kernel.Task, pid int, statusAddr hostarch.Addr, options int, rusageAddr hostarch.Addr) (uintptr, error) {
 	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	wopts := kernel.WaitOptions{
 		Events:       kernel.EventExit | kernel.EventTraceeStop,
@@ -358,10 +359,10 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	rusageAddr := args[4].Pointer()
 
 	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if options&(linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED) == 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	wopts := kernel.WaitOptions{
 		Events:       kernel.EventTraceeStop,
@@ -374,7 +375,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case linux.P_PGID:
 		wopts.SpecificPGID = kernel.ProcessGroupID(id)
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if err := parseCommonWaitOptions(&wopts, options); err != nil {
@@ -528,7 +529,7 @@ func SchedGetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	// in an array of "unsigned long" so the buffer needs to
 	// be a multiple of the word size.
 	if size&(t.Arch().Width()-1) > 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var task *kernel.Task
@@ -545,7 +546,7 @@ func SchedGetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	// The buffer needs to be big enough to hold a cpumask with
 	// all possible cpus.
 	if size < mask.Size() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	_, err := t.CopyOutBytes(maskAddr, mask)
 
@@ -594,7 +595,7 @@ func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		}
 		tg = ot.ThreadGroup()
 		if tg.Leader() != ot {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		// Setpgid only operates on child threadgroups.
@@ -609,7 +610,7 @@ func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if pgid == 0 {
 		pgid = defaultPGID
 	} else if pgid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// If the pgid is the same as the group, then create a new one. Otherwise,
@@ -712,7 +713,7 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		// PRIO_USER and PRIO_PGRP have no further implementation yet.
 		return 0, nil, nil
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
@@ -754,7 +755,7 @@ func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		// PRIO_USER and PRIO_PGRP have no further implementation yet.
 		return 0, nil, nil
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, nil

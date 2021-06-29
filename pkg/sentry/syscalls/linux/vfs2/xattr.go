@@ -179,7 +179,7 @@ func setxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 	flags := args[4].Int()
 
 	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	path, err := copyInPath(t, pathAddr)
@@ -217,7 +217,7 @@ func Fsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	flags := args[4].Int()
 
 	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(fd)
@@ -322,7 +322,7 @@ func copyOutXattrNameList(t *kernel.Task, listAddr hostarch.Addr, size uint, nam
 	}
 	if buf.Len() > int(size) {
 		if size >= linux.XATTR_LIST_MAX {
-			return 0, syserror.E2BIG
+			return 0, linuxerr.E2BIG
 		}
 		return 0, syserror.ERANGE
 	}
@@ -331,7 +331,7 @@ func copyOutXattrNameList(t *kernel.Task, listAddr hostarch.Addr, size uint, nam
 
 func copyInXattrValue(t *kernel.Task, valueAddr hostarch.Addr, size uint) (string, error) {
 	if size > linux.XATTR_SIZE_MAX {
-		return "", syserror.E2BIG
+		return "", linuxerr.E2BIG
 	}
 	buf := make([]byte, size)
 	if _, err := t.CopyInBytes(valueAddr, buf); err != nil {
@@ -350,7 +350,7 @@ func copyOutXattrValue(t *kernel.Task, valueAddr hostarch.Addr, size uint, value
 	}
 	if len(value) > int(size) {
 		if size >= linux.XATTR_SIZE_MAX {
-			return 0, syserror.E2BIG
+			return 0, linuxerr.E2BIG
 		}
 		return 0, syserror.ERANGE
 	}

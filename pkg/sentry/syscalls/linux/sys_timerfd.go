@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
@@ -30,7 +31,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	flags := args[1].Int()
 
 	if flags&^(linux.TFD_CLOEXEC|linux.TFD_NONBLOCK) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var c ktime.Clock
@@ -40,7 +41,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	case linux.CLOCK_MONOTONIC, linux.CLOCK_BOOTTIME:
 		c = t.Kernel().MonotonicClock()
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	f := timerfd.NewFile(t, c)
 	defer f.DecRef(t)
@@ -66,7 +67,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	oldValAddr := args[3].Pointer()
 
 	if flags&^(linux.TFD_TIMER_ABSTIME) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	f := t.GetFile(fd)
@@ -77,7 +78,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var newVal linux.Itimerspec
@@ -111,7 +112,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	tf, ok := f.FileOperations.(*timerfd.TimerOperations)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	tm, s := tf.GetTime()

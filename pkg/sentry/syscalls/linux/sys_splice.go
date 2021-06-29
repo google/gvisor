@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -27,7 +28,7 @@ import (
 // doSplice implements a blocking splice operation.
 func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonBlocking bool) (int64, error) {
 	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 || (opts.SrcStart+opts.Length < 0) {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if opts.Length == 0 {
 		return 0, nil
@@ -125,13 +126,13 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Verify that the outfile Append flag is not set.
 	if outFile.Flags().Append {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Verify that we have a regular infile. This is a requirement; the
 	// same check appears in Linux (fs/splice.c:splice_direct_to_actor).
 	if !fs.IsRegular(inFile.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var (
@@ -190,7 +191,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Check for invalid flags.
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get files.
@@ -230,7 +231,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 		if outOffset != 0 {
 			if !outFile.Flags().Pwrite {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 
 			var offset int64
@@ -248,7 +249,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 		if inOffset != 0 {
 			if !inFile.Flags().Pread {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 
 			var offset int64
@@ -267,10 +268,10 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 		// We may not refer to the same pipe; otherwise it's a continuous loop.
 		if inFileAttr.InodeID == outFileAttr.InodeID {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Splice data.
@@ -298,7 +299,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	// Check for invalid flags.
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get files.
@@ -316,12 +317,12 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	// All files must be pipes.
 	if !fs.IsPipe(inFile.Dirent.Inode.StableAttr) || !fs.IsPipe(outFile.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// We may not refer to the same pipe; see above.
 	if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// The operation is non-blocking if anything is non-blocking.

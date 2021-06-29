@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -46,12 +47,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		count = int64(kernel.MAX_RW_COUNT)
 	}
 	if count < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Check for invalid flags.
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get file descriptions.
@@ -82,7 +83,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	inPipeFD, inIsPipe := inFile.Impl().(*pipe.VFSPipeFD)
 	outPipeFD, outIsPipe := outFile.Impl().(*pipe.VFSPipeFD)
 	if !inIsPipe && !outIsPipe {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Copy in offsets.
@@ -92,13 +93,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, syserror.ESPIPE
 		}
 		if inFile.Options().DenyPRead {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if _, err := primitive.CopyInt64In(t, inOffsetPtr, &inOffset); err != nil {
 			return 0, nil, err
 		}
 		if inOffset < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 	outOffset := int64(-1)
@@ -107,13 +108,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, syserror.ESPIPE
 		}
 		if outFile.Options().DenyPWrite {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if _, err := primitive.CopyInt64In(t, outOffsetPtr, &outOffset); err != nil {
 			return 0, nil, err
 		}
 		if outOffset < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 
@@ -189,12 +190,12 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 		count = int64(kernel.MAX_RW_COUNT)
 	}
 	if count < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Check for invalid flags.
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get file descriptions.
@@ -225,7 +226,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	inPipeFD, inIsPipe := inFile.Impl().(*pipe.VFSPipeFD)
 	outPipeFD, outIsPipe := outFile.Impl().(*pipe.VFSPipeFD)
 	if !inIsPipe || !outIsPipe {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Copy data.
@@ -288,7 +289,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Verify that the outFile Append flag is not set.
 	if outFile.StatusFlags()&linux.O_APPEND != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Verify that inFile is a regular file or block device. This is a
@@ -298,7 +299,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	} else if stat.Mask&linux.STATX_TYPE == 0 ||
 		(stat.Mode&linux.S_IFMT != linux.S_IFREG && stat.Mode&linux.S_IFMT != linux.S_IFBLK) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Copy offset if it exists.
@@ -314,16 +315,16 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		offset = int64(offsetP)
 
 		if offset < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if offset+count < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 
 	// Validate count. This must come after offset checks.
 	if count < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if count == 0 {
 		return 0, nil, nil

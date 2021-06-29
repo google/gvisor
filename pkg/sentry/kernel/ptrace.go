@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -994,7 +995,7 @@ func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 		linux.PTRACE_O_TRACEVFORK |
 		linux.PTRACE_O_TRACEVFORKDONE)
 	if opts&^valid != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	t.ptraceOpts = ptraceOptions{
 		ExitKill:       opts&linux.PTRACE_O_EXITKILL != 0,
@@ -1221,7 +1222,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if target.ptraceSiginfo == nil {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		_, err := target.ptraceSiginfo.CopyOut(t, data)
 		return err
@@ -1234,14 +1235,14 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if target.ptraceSiginfo == nil {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		target.ptraceSiginfo = &info
 		return nil
 
 	case linux.PTRACE_GETSIGMASK:
 		if addr != linux.SignalSetSize {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		mask := target.SignalMask()
 		_, err := mask.CopyOut(t, data)
@@ -1249,7 +1250,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 
 	case linux.PTRACE_SETSIGMASK:
 		if addr != linux.SignalSetSize {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		var mask linux.SignalSet
 		if _, err := mask.CopyIn(t, data); err != nil {

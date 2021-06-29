@@ -252,7 +252,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		hash, err := hex.DecodeString(encodedRootHash)
 		if err != nil {
 			ctx.Warningf("verity.FilesystemType.GetFilesystem: Failed to decode root hash: %v", err)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		rootHash = hash
 	}
@@ -270,19 +270,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Check for unparsed options.
 	if len(mopts) != 0 {
 		ctx.Warningf("verity.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	// Handle internal options.
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
 	if len(lowerPathname) == 0 && !ok {
 		ctx.Warningf("verity.FilesystemType.GetFilesystem: missing verity configs")
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	if len(lowerPathname) != 0 {
 		if ok {
 			ctx.Warningf("verity.FilesystemType.GetFilesystem: unexpected verity configs with specified lower path")
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		iopts = InternalFilesystemOptions{
 			AllowRuntimeEnable: len(rootHash) == 0,
@@ -301,7 +301,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		lowerPath := fspath.Parse(lowerPathname)
 		if !lowerPath.Absolute {
 			ctx.Infof("verity.FilesystemType.GetFilesystem: lower_path %q must be absolute", lowerPathname)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		var err error
 		mountedLowerVD, err = vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
@@ -440,7 +440,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	if !d.isDir() {
 		ctx.Warningf("verity root must be a directory")
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	if !fs.allowRuntimeEnable {
@@ -922,14 +922,14 @@ func (fd *fileDescription) Seek(ctx context.Context, offset int64, whence int32)
 	case linux.SEEK_END:
 		n = int64(fd.d.size)
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset > math.MaxInt64-n {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	offset += n
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	fd.off = offset
 	return offset, nil
@@ -1008,7 +1008,7 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 	default:
 		// TODO(b/167728857): Investigate whether and how we should
 		// enable other types of file.
-		return nil, 0, syserror.EINVAL
+		return nil, 0, linuxerr.EINVAL
 	}
 	hash, err := merkletree.Generate(params)
 	return hash, uint64(params.Size), err
@@ -1126,7 +1126,7 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest hostarch.Addr) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	var metadata linux.DigestMetadata
 
@@ -1179,7 +1179,7 @@ func (fd *fileDescription) verityFlags(ctx context.Context, flags hostarch.Addr)
 
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	_, err := primitive.CopyInt32Out(t, flags, f)
 	return 0, err
@@ -1434,7 +1434,7 @@ func (r *mmapReadSeeker) ReadAt(p []byte, off int64) (int, error) {
 	// mapped region.
 	readOffset := off - int64(r.Offset)
 	if readOffset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	bs.DropFirst64(uint64(readOffset))
 	view := bs.TakeFirst64(uint64(len(p)))

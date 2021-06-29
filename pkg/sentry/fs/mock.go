@@ -16,6 +16,7 @@ package fs
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -109,7 +110,7 @@ func (n *MockInodeOperations) SetPermissions(context.Context, *Inode, FilePermis
 
 // SetOwner implements fs.InodeOperations.SetOwner.
 func (*MockInodeOperations) SetOwner(context.Context, *Inode, FileOwner) error {
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // SetTimestamps implements fs.InodeOperations.SetTimestamps.

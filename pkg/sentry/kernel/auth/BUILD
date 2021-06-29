@@ -63,6 +63,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sync",
         "//pkg/syserror",

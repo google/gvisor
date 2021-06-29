@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -142,25 +143,25 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// address, any set of signal handlers must refer to the same address
 	// space.
 	if !opts.NewSignalHandlers && opts.NewAddressSpace {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// In order for the behavior of thread-group-directed signals to be sane,
 	// all tasks in a thread group must share signal handlers.
 	if !opts.NewThreadGroup && opts.NewSignalHandlers {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// All tasks in a thread group must be in the same PID namespace.
 	if !opts.NewThreadGroup && (opts.NewPIDNamespace || t.childPIDNamespace != nil) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// The two different ways of specifying a new PID namespace are
 	// incompatible.
 	if opts.NewPIDNamespace && t.childPIDNamespace != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// Thread groups and FS contexts cannot span user namespaces.
 	if opts.NewUserNamespace && (!opts.NewThreadGroup || !opts.NewFSContext) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Pull task registers and FPU state, a cloned task will inherit the
@@ -463,14 +464,14 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	// sense that clone(2) allows a task to share signal handlers and address
 	// spaces with tasks in other thread groups.
 	if opts.NewAddressSpace || opts.NewSignalHandlers {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	creds := t.Credentials()
 	if opts.NewThreadGroup {
 		t.tg.signalHandlers.mu.Lock()
 		if t.tg.tasksCount != 1 {
 			t.tg.signalHandlers.mu.Unlock()
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		t.tg.signalHandlers.mu.Unlock()
 		// This isn't racy because we're the only living task, and therefore

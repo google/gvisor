@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -40,7 +41,7 @@ func Syslog(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	switch command {
 	case _SYSLOG_ACTION_READ_ALL:
 		if size < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if size > logBufLen {
 			size = logBufLen

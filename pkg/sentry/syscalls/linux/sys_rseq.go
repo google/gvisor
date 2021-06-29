@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -43,6 +44,6 @@ func RSeq(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		return 0, nil, t.ClearRSeq(addr, length, signature)
 	default:
 		// Unknown flag.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }

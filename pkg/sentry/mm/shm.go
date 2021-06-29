@@ -16,16 +16,16 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // DetachShm unmaps a sysv shared memory segment.
 func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) error {
 	if addr != addr.RoundDown() {
 		// "... shmaddr is not aligned on a page boundary." - man shmdt(2)
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	var detached *shm.Shm
@@ -48,7 +48,7 @@ func (mm *MemoryManager) DetachShm(ctx context.Context, addr hostarch.Addr) erro
 
 	if detached == nil {
 		// There is no shared memory segment attached at addr.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Remove all vmas that could have been created by the same attach.

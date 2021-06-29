@@ -17,6 +17,7 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -158,7 +159,7 @@ func (ctx *AIOContext) Prepare() error {
 	defer ctx.mu.Unlock()
 	if ctx.dead {
 		// Context died after the caller looked it up.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if ctx.outstanding >= ctx.maxOutstanding {
 		// Context is busy.
@@ -297,7 +298,7 @@ func (m *aioMappable) InodeID() uint64 {
 // Msync implements memmap.MappingIdentity.Msync.
 func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	// Linux: aio_ring_fops.fsync == NULL
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -325,7 +326,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 	// Linux's fs/aio.c:aio_ring_mremap().
 	mm, ok := ms.(*MemoryManager)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	am := &mm.aioManager
 	am.mu.Lock()
@@ -333,12 +334,12 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 	oldID := uint64(srcAR.Start)
 	aioCtx, ok := am.contexts[oldID]
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	aioCtx.mu.Lock()
 	defer aioCtx.mu.Unlock()
 	if aioCtx.dead {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// Use the new ID for the AIOContext.
 	am.contexts[uint64(dstAR.Start)] = aioCtx
@@ -399,7 +400,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	id := uint64(addr)
 	if !mm.aioManager.newAIOContext(events, id) {
 		mm.MUnmap(ctx, addr, aioRingBufferSize)
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	return id, nil
 }

@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -88,12 +89,12 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 	defer d.mu.Unlock()
 
 	if d.endpoint != nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Input validation.
 	if flags.TAP && flags.TUN || !flags.TAP && !flags.TUN {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	prefix := "tun"
@@ -108,7 +109,7 @@ func (d *Device) SetIff(s *stack.Stack, name string, flags Flags) error {
 
 	endpoint, err := attachOrCreateNIC(s, name, prefix, linkCaps)
 	if err != nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	d.endpoint = endpoint
@@ -159,7 +160,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 			// Race detected: A NIC has been created in between.
 			continue
 		default:
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 	}
 }

@@ -226,6 +226,7 @@ go_library(
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fspath",
@@ -300,6 +301,7 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
@@ -311,6 +313,5 @@ go_test(
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )

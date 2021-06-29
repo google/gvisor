@@ -964,7 +964,7 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 	//
 	// See Linux equivalent in fs/namespace.c:do_add_mount.
 	if IsSymlink(inode.StableAttr) {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	// Dirent that'll replace d.

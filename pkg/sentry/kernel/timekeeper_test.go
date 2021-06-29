@@ -17,12 +17,12 @@ package kernel
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // mockClocks is a sentrytime.Clocks that simply returns the times in the
@@ -45,7 +45,7 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 	case sentrytime.Realtime:
 		return c.realtime, nil
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -43,7 +44,7 @@ func copyInNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32) (uint64,
 	// maxnode-1, not maxnode, as the number of bits.
 	bits := maxnode - 1
 	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if bits == 0 {
 		return 0, nil
@@ -58,12 +59,12 @@ func copyInNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32) (uint64,
 	// Check that only allowed bits in the first unsigned long in the nodemask
 	// are set.
 	if val&^allowedNodemask != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	// Check that all remaining bits in the nodemask are 0.
 	for i := 8; i < len(buf); i++ {
 		if buf[i] != 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 	}
 	return val, nil
@@ -74,7 +75,7 @@ func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uin
 	// bits.
 	bits := maxnode - 1
 	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if bits == 0 {
 		return nil
@@ -110,7 +111,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	flags := args[4].Uint()
 
 	if flags&^(linux.MPOL_F_NODE|linux.MPOL_F_ADDR|linux.MPOL_F_MEMS_ALLOWED) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	nodeFlag := flags&linux.MPOL_F_NODE != 0
 	addrFlag := flags&linux.MPOL_F_ADDR != 0
@@ -119,7 +120,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	// "EINVAL: The value specified by maxnode is less than the number of node
 	// IDs supported by the system." - get_mempolicy(2)
 	if nodemask != 0 && maxnode < maxNodes {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// "If flags specifies MPOL_F_MEMS_ALLOWED [...], the mode argument is
@@ -130,7 +131,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		// "It is not permitted to combine MPOL_F_MEMS_ALLOWED with either
 		// MPOL_F_ADDR or MPOL_F_NODE."
 		if nodeFlag || addrFlag {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if err := copyOutNodemask(t, nodemask, maxnode, allowedNodemask); err != nil {
 			return 0, nil, err
@@ -184,7 +185,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	// mm/mempolicy.c:do_get_mempolicy() doesn't special-case NULL; it will
 	// just (usually) fail to find a VMA at address 0 and return EFAULT.
 	if addr != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// "If flags is specified as 0, then information about the calling thread's
@@ -198,7 +199,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	policy, nodemaskVal := t.NumaPolicy()
 	if nodeFlag {
 		if policy&^linux.MPOL_MODE_FLAGS != linux.MPOL_INTERLEAVE {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		policy = linux.MPOL_DEFAULT // maxNodes == 1
 	}
@@ -240,7 +241,7 @@ func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	flags := args[5].Uint()
 
 	if flags&^linux.MPOL_MF_VALID != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// "If MPOL_MF_MOVE_ALL is passed in flags ... [the] calling thread must be
 	// privileged (CAP_SYS_NICE) to use this flag." - mbind(2)
@@ -264,11 +265,11 @@ func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nod
 	mode := linux.NumaPolicy(modeWithFlags &^ linux.MPOL_MODE_FLAGS)
 	if flags == linux.MPOL_MODE_FLAGS {
 		// Can't specify both mode flags simultaneously.
-		return 0, 0, syserror.EINVAL
+		return 0, 0, linuxerr.EINVAL
 	}
 	if mode < 0 || mode >= linux.MPOL_MAX {
 		// Must specify a valid mode.
-		return 0, 0, syserror.EINVAL
+		return 0, 0, linuxerr.EINVAL
 	}
 
 	var nodemaskVal uint64
@@ -285,22 +286,22 @@ func copyInMempolicyNodemask(t *kernel.Task, modeWithFlags linux.NumaPolicy, nod
 		// "nodemask must be specified as NULL." - set_mempolicy(2). This is inaccurate;
 		// Linux allows a nodemask to be specified, as long as it is empty.
 		if nodemaskVal != 0 {
-			return 0, 0, syserror.EINVAL
+			return 0, 0, linuxerr.EINVAL
 		}
 	case linux.MPOL_BIND, linux.MPOL_INTERLEAVE:
 		// These require a non-empty nodemask.
 		if nodemaskVal == 0 {
-			return 0, 0, syserror.EINVAL
+			return 0, 0, linuxerr.EINVAL
 		}
 	case linux.MPOL_PREFERRED:
 		// This permits an empty nodemask, as long as no flags are set.
 		if nodemaskVal == 0 && flags != 0 {
-			return 0, 0, syserror.EINVAL
+			return 0, 0, linuxerr.EINVAL
 		}
 	case linux.MPOL_LOCAL:
 		// This requires an empty nodemask and no flags set ...
 		if nodemaskVal != 0 || flags != 0 {
-			return 0, 0, syserror.EINVAL
+			return 0, 0, linuxerr.EINVAL
 		}
 		// ... and is implemented as MPOL_PREFERRED.
 		mode = linux.MPOL_PREFERRED

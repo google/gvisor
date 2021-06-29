@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -86,7 +87,7 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	flags := args[2].Uint()
 
 	if oldfd == newfd {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return dup3(t, oldfd, newfd, flags)
@@ -94,7 +95,7 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.SyscallControl, error) {
 	if flags&^linux.O_CLOEXEC != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(oldfd)
@@ -169,7 +170,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if who < 0 {
 			// Check for overflow before flipping the sign.
 			if who-1 > who {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 			ownerType = linux.F_OWNER_PGRP
 			who = -who
@@ -232,7 +233,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
@@ -269,7 +270,7 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 	case linux.F_OWNER_TID, linux.F_OWNER_PID, linux.F_OWNER_PGRP:
 		// Acceptable type.
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	a := file.SetAsyncHandler(fasync.NewVFS2(fd)).(*fasync.FileAsync)
@@ -301,7 +302,7 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 		a.SetOwnerProcessGroup(t, pg)
 		return nil
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 }
 
@@ -319,7 +320,7 @@ func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDes
 	case linux.F_WRLCK:
 		typ = lock.WriteLock
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	r, err := file.ComputeLockRange(t, uint64(flock.Start), uint64(flock.Len), flock.Whence)
 	if err != nil {
@@ -382,7 +383,7 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 		return file.UnlockPOSIX(t, t.FDTable(), r)
 
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 }
 
@@ -395,7 +396,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// Note: offset is allowed to be negative.
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(fd)
@@ -421,7 +422,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.POSIX_FADV_DONTNEED:
 	case linux.POSIX_FADV_NOREUSE:
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Sure, whatever.

@@ -17,13 +17,13 @@ package vfs2
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Getdents implements Linux syscall getdents(2).
@@ -100,7 +100,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of 8
 		if size > cb.remaining {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)
 		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)
@@ -134,7 +134,7 @@ func (cb *getdentsCallback) Handle(dirent vfs.Dirent) error {
 		size := 8 + 8 + 2 + 1 + 1 + len(dirent.Name)
 		size = (size + 7) &^ 7 // round up to multiple of sizeof(long)
 		if size > cb.remaining {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		buf = cb.t.CopyScratchBuffer(size)
 		hostarch.ByteOrder.PutUint64(buf[0:8], dirent.Ino)

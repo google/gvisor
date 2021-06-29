@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -88,25 +89,25 @@ func (FileDescriptionDefaultImpl) EventUnregister(e *waiter.Entry) {
 // PRead implements FileDescriptionImpl.PRead analogously to
 // file_operations::read == file_operations::read_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // Read implements FileDescriptionImpl.Read analogously to
 // file_operations::read == file_operations::read_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // PWrite implements FileDescriptionImpl.PWrite analogously to
 // file_operations::write == file_operations::write_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // Write implements FileDescriptionImpl.Write analogously to
 // file_operations::write == file_operations::write_iter == NULL in Linux.
 func (FileDescriptionDefaultImpl) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // IterDirents implements FileDescriptionImpl.IterDirents analogously to
@@ -125,7 +126,7 @@ func (FileDescriptionDefaultImpl) Seek(ctx context.Context, offset int64, whence
 // Sync implements FileDescriptionImpl.Sync analogously to
 // file_operations::fsync == NULL in Linux.
 func (FileDescriptionDefaultImpl) Sync(ctx context.Context) error {
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // ConfigureMMap implements FileDescriptionImpl.ConfigureMMap analogously to
@@ -333,10 +334,10 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 		offset += fd.off
 	default:
 		// fs/seq_file:seq_lseek() rejects SEEK_END etc.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset != fd.lastRead {
 		// Regenerate the file's contents immediately. Compare

@@ -43,7 +43,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, err
 	}
 	if idIn != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	id, err := t.MemoryManager().NewAIOContext(t, uint32(nrEvents))
@@ -67,7 +67,7 @@ func IoDestroy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	ctx := t.MemoryManager().DestroyAIOContext(t, id)
 	if ctx == nil {
 		// Does not exist.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Drain completed requests amd wait for pending requests until there are no
@@ -98,12 +98,12 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 	// Sanity check arguments.
 	if minEvents < 0 || minEvents > events {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	ctx, ok := t.MemoryManager().LookupAIOContext(t, id)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Setup the timeout.
@@ -115,7 +115,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 			return 0, nil, err
 		}
 		if !d.Valid() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		deadline = t.Kernel().MonotonicClock().Now().Add(d.ToDuration())
 		haveDeadline = true
@@ -172,7 +172,7 @@ func waitForRequest(ctx *mm.AIOContext, t *kernel.Task, haveDeadline bool, deadl
 		done := ctx.WaitChannel()
 		if done == nil {
 			// Context has been destroyed.
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 		if err := t.BlockWithDeadline(done, haveDeadline, deadline); err != nil {
 			return nil, err
@@ -185,7 +185,7 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 	bytes := int(cb.Bytes)
 	if bytes < 0 {
 		// Linux also requires that this field fit in ssize_t.
-		return usermem.IOSequence{}, syserror.EINVAL
+		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 
 	// Since this I/O will be asynchronous with respect to t's task goroutine,
@@ -207,7 +207,7 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 
 	default:
 		// Not a supported command.
-		return usermem.IOSequence{}, syserror.EINVAL
+		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 }
 
@@ -287,7 +287,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 		// Check that it is an eventfd.
 		if _, ok := eventFile.FileOperations.(*eventfd.EventOperations); !ok {
 			// Not an event FD.
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 
@@ -300,14 +300,14 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 	switch cb.OpCode {
 	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITE, linux.IOCB_CMD_PWRITEV:
 		if cb.Offset < 0 {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 
 	// Prepare the request.
 	ctx, ok := t.MemoryManager().LookupAIOContext(t, id)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if err := ctx.Prepare(); err != nil {
 		return err
@@ -336,7 +336,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	addr := args[2].Pointer()
 
 	if nrEvents < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	for i := int32(0); i < nrEvents; i++ {

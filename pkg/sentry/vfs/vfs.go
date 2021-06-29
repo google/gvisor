@@ -286,7 +286,7 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 	if newpop.FollowFinalSymlink {
 		oldVD.DecRef(ctx)
 		ctx.Warningf("VirtualFilesystem.LinkAt: file creation paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, newpop)
@@ -322,7 +322,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.MkdirAt: file creation paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// "Under Linux, apart from the permission bits, the S_ISVTX mode bit is
 	// also honored." - mkdir(2)
@@ -360,7 +360,7 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.MknodAt: file creation paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
@@ -403,13 +403,13 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	// filesystem implementations that do not support it).
 	if opts.Flags&linux.O_TMPFILE != 0 {
 		if opts.Flags&linux.O_DIRECTORY == 0 {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 		if opts.Flags&linux.O_CREAT != 0 {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 		if opts.Flags&linux.O_ACCMODE == linux.O_RDONLY {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 	}
 	// O_PATH causes most other flags to be ignored.
@@ -500,7 +500,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 	}
 	if oldpop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.RenameAt: source path can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	oldParentVD, oldName, err := vfs.getParentDirAndName(ctx, creds, oldpop)
@@ -522,7 +522,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 	if newpop.FollowFinalSymlink {
 		oldParentVD.DecRef(ctx)
 		ctx.Warningf("VirtualFilesystem.RenameAt: destination path can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, newpop)
@@ -562,7 +562,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.RmdirAt: file deletion paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
@@ -645,7 +645,7 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.SymlinkAt: file creation paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)
@@ -679,7 +679,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.UnlinkAt: file deletion paths can't follow final symlink")
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	rp := vfs.getResolvingPath(creds, pop)

@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -164,7 +165,7 @@ func (fs *anonFilesystem) ReadlinkAt(ctx context.Context, rp *ResolvingPath) (st
 	if !rp.Done() {
 		return "", syserror.ENOTDIR
 	}
-	return "", syserror.EINVAL
+	return "", linuxerr.EINVAL
 }
 
 // RenameAt implements FilesystemImpl.RenameAt.

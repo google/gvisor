@@ -623,7 +623,7 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	}
 	if !d.isSymlink() {
 		fs.mu.RUnlock()
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 
 	// Inode.Readlink() cannot be called holding fs locks.
@@ -649,7 +649,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Only RENAME_NOREPLACE is supported.
 	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	noReplace := opts.Flags&linux.RENAME_NOREPLACE != 0
 

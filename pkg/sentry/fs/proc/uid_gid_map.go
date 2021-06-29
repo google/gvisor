@@ -21,12 +21,12 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -108,7 +108,7 @@ const maxIDMapLines = 5
 // Read implements fs.FileOperations.Read.
 func (imfo *idMapFileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	var entries []auth.IDMapEntry
 	if imfo.iops.gids {
@@ -134,7 +134,7 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	// the file ..." - user_namespaces(7)
 	srclen := src.NumBytes()
 	if srclen >= hostarch.PageSize || offset != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	b := make([]byte, srclen)
 	if _, err := src.CopyIn(ctx, b); err != nil {
@@ -154,7 +154,7 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	}
 	lines := bytes.SplitN(b, []byte("\n"), maxIDMapLines+1)
 	if len(lines) > maxIDMapLines {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	entries := make([]auth.IDMapEntry, len(lines))
@@ -162,7 +162,7 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 		var e auth.IDMapEntry
 		_, err := fmt.Sscan(string(l), &e.FirstID, &e.FirstParentID, &e.Length)
 		if err != nil {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		entries[i] = e
 	}

@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func (d *dentry) isDir() bool {
@@ -297,7 +297,7 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	switch whence {
 	case linux.SEEK_SET:
 		if offset < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		if offset == 0 {
 			// Ensure that the next call to fd.IterDirents() calls
@@ -309,13 +309,13 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	case linux.SEEK_CUR:
 		offset += fd.off
 		if offset < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		// Don't clear fd.dirents in this case, even if offset == 0.
 		fd.off = offset
 		return fd.off, nil
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 }
 

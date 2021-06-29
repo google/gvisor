@@ -17,12 +17,12 @@ package ext
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // directory represents a directory inode. It holds the childList in memory.
@@ -218,7 +218,7 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	if whence != linux.SEEK_SET && whence != linux.SEEK_CUR {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	dir := fd.inode().impl.(*directory)
@@ -234,7 +234,7 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	if offset < 0 {
 		// lseek(2) specifies that EINVAL should be returned if the resulting offset
 		// is negative.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	n := int64(len(dir.childMap))

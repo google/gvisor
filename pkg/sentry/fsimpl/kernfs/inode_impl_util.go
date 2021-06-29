@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -158,12 +159,12 @@ type InodeNotSymlink struct{}
 
 // Readlink implements Inode.Readlink.
 func (InodeNotSymlink) Readlink(context.Context, *vfs.Mount) (string, error) {
-	return "", syserror.EINVAL
+	return "", linuxerr.EINVAL
 }
 
 // Getlink implements Inode.Getlink.
 func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	return vfs.VirtualDentry{}, "", syserror.EINVAL
+	return vfs.VirtualDentry{}, "", linuxerr.EINVAL
 }
 
 // InodeAttrs partially implements the Inode interface, specifically the

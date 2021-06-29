@@ -16,6 +16,7 @@ package usermem
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -51,7 +52,7 @@ func (b *BytesIO) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, op
 // ZeroOut implements IO.ZeroOut.
 func (b *BytesIO) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts IOOpts) (int64, error) {
 	if toZero > int64(maxInt) {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	rngN, rngErr := b.rangeCheck(addr, int(toZero))
 	if rngN == 0 {
@@ -89,7 +90,7 @@ func (b *BytesIO) rangeCheck(addr hostarch.Addr, length int) (int, error) {
 		return 0, nil
 	}
 	if length < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	max := hostarch.Addr(len(b.Bytes))
 	if addr >= max {

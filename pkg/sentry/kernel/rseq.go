@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -59,20 +60,20 @@ func (t *Task) RSeqAvailable() bool {
 func (t *Task) SetRSeq(addr hostarch.Addr, length, signature uint32) error {
 	if t.rseqAddr != 0 {
 		if t.rseqAddr != addr {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if t.rseqSignature != signature {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		return syserror.EBUSY
 	}
 
 	// rseq must be aligned and correctly sized.
 	if addr&(linux.AlignOfRSeq-1) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if length != linux.SizeOfRSeq {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if _, ok := t.MemoryManager().CheckIORange(addr, linux.SizeOfRSeq); !ok {
 		return syserror.EFAULT
@@ -103,13 +104,13 @@ func (t *Task) SetRSeq(addr hostarch.Addr, length, signature uint32) error {
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) ClearRSeq(addr hostarch.Addr, length, signature uint32) error {
 	if t.rseqAddr == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if t.rseqAddr != addr {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if length != linux.SizeOfRSeq {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if t.rseqSignature != signature {
 		return syserror.EPERM
@@ -152,10 +153,10 @@ func (t *Task) SetOldRSeqCriticalRegion(r OldRSeqCriticalRegion) error {
 		return nil
 	}
 	if r.CriticalSection.Start >= r.CriticalSection.End {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if r.CriticalSection.Contains(r.Restart) {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// TODO(jamieliu): check that r.CriticalSection and r.Restart are in
 	// the application address range, for consistency with Linux.
@@ -187,7 +188,7 @@ func (t *Task) SetOldRSeqCPUAddr(addr hostarch.Addr) error {
 	// unfortunate, but unlikely in a correct program.
 	if err := t.rseqUpdateCPU(); err != nil {
 		t.oldRSeqCPUAddr = 0
-		return syserror.EINVAL // yes, EINVAL, not err or EFAULT
+		return linuxerr.EINVAL // yes, EINVAL, not err or EFAULT
 	}
 	return nil
 }

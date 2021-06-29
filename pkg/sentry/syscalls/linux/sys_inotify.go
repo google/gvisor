@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
@@ -30,7 +31,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	flags := int(args[0].Int())
 
 	if flags&^allFlags != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	dirent := fs.NewDirent(t, anon.NewInode(t), "inotify")
@@ -72,7 +73,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
 	if !ok {
 		// Not an inotify fd.
 		file.DecRef(t)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	return ino, file, nil
@@ -91,7 +92,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	// "EINVAL: The given event mask contains no valid events."
 	// -- inotify_add_watch(2)
 	if validBits := mask & linux.ALL_INOTIFY_BITS; validBits == 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	ino, file, err := fdToInotify(t, fd)

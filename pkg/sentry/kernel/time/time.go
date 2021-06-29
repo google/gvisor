@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -322,7 +322,7 @@ func SettingFromSpec(value time.Duration, interval time.Duration, c Clock) (Sett
 // interpreted as a time relative to now.
 func SettingFromSpecAt(value time.Duration, interval time.Duration, now Time) (Setting, error) {
 	if value < 0 {
-		return Setting{}, syserror.EINVAL
+		return Setting{}, linuxerr.EINVAL
 	}
 	if value == 0 {
 		return Setting{Period: interval}, nil
@@ -338,7 +338,7 @@ func SettingFromSpecAt(value time.Duration, interval time.Duration, now Time) (S
 // interpreted as an absolute time.
 func SettingFromAbsSpec(value Time, interval time.Duration) (Setting, error) {
 	if value.Before(ZeroTime) {
-		return Setting{}, syserror.EINVAL
+		return Setting{}, linuxerr.EINVAL
 	}
 	if value.IsZero() {
 		return Setting{Period: interval}, nil

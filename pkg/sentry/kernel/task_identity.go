@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -47,7 +48,7 @@ func (t *Task) HasCapability(cp linux.Capability) bool {
 func (t *Task) SetUID(uid auth.UID) error {
 	// setuid considers -1 to be invalid.
 	if !uid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	t.mu.Lock()
@@ -56,7 +57,7 @@ func (t *Task) SetUID(uid auth.UID) error {
 	creds := t.Credentials()
 	kuid := creds.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// "setuid() sets the effective user ID of the calling process. If the
 	// effective UID of the caller is root (more precisely: if the caller has
@@ -87,14 +88,14 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 	if r.Ok() {
 		newR = creds.UserNamespace.MapToKUID(r)
 		if !newR.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	newE := creds.EffectiveKUID
 	if e.Ok() {
 		newE = creds.UserNamespace.MapToKUID(e)
 		if !newE.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	if !creds.HasCapability(linux.CAP_SETUID) {
@@ -223,7 +224,7 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 // SetGID implements the semantics of setgid(2).
 func (t *Task) SetGID(gid auth.GID) error {
 	if !gid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	t.mu.Lock()
@@ -232,7 +233,7 @@ func (t *Task) SetGID(gid auth.GID) error {
 	creds := t.Credentials()
 	kgid := creds.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if creds.HasCapability(linux.CAP_SETGID) {
 		t.setKGIDsUncheckedLocked(kgid, kgid, kgid)
@@ -255,14 +256,14 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 	if r.Ok() {
 		newR = creds.UserNamespace.MapToKGID(r)
 		if !newR.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	newE := creds.EffectiveKGID
 	if e.Ok() {
 		newE = creds.UserNamespace.MapToKGID(e)
 		if !newE.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	if !creds.HasCapability(linux.CAP_SETGID) {
@@ -349,7 +350,7 @@ func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	for i, gid := range gids {
 		kgid := creds.UserNamespace.MapToKGID(gid)
 		if !kgid.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		kgids[i] = kgid
 	}

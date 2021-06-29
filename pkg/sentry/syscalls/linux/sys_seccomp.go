@@ -17,10 +17,10 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // userSockFprog is equivalent to Linux's struct sock_fprog on amd64.
@@ -44,7 +44,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	// We only support SECCOMP_SET_MODE_FILTER at the moment.
 	if mode != linux.SECCOMP_SET_MODE_FILTER {
 		// Unsupported mode.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	tsync := flags&linux.SECCOMP_FILTER_FLAG_TSYNC != 0
@@ -52,7 +52,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	// The only flag we support now is SECCOMP_FILTER_FLAG_TSYNC.
 	if flags&^linux.SECCOMP_FILTER_FLAG_TSYNC != 0 {
 		// Unsupported flag.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	var fprog userSockFprog
@@ -66,7 +66,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	compiledFilter, err := bpf.Compile(filter)
 	if err != nil {
 		t.Debugf("Invalid seccomp-bpf filter: %v", err)
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	return t.AppendSyscallFilter(compiledFilter, tsync)

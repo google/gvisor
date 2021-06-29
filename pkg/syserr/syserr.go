@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -281,6 +282,11 @@ func FromError(err error) *Error {
 	if errno, ok := err.(unix.Errno); ok {
 		return FromHost(errno)
 	}
+
+	if linuxErr, ok := err.(*errors.Error); ok {
+		return FromHost(unix.Errno(linuxErr.Errno()))
+	}
+
 	if errno, ok := syserror.TranslateError(err); ok {
 		return FromHost(errno)
 	}

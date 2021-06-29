@@ -17,6 +17,7 @@ package dev
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -102,7 +103,7 @@ func (n *netTunFileOperations) Ioctl(ctx context.Context, file *fs.File, io user
 		}
 		stack, ok := t.NetworkContext().(*netstack.Stack)
 		if !ok {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		var req linux.IFReq

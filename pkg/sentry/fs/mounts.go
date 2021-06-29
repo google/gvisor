@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -357,7 +358,7 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 		orig, ok := mns.mounts[node]
 		if !ok {
 			// node is not a mount point.
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 
 		if orig.previous == nil {

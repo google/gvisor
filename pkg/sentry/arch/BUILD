@@ -28,6 +28,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/cpuid",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",

@@ -47,6 +47,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fspath",
         "//pkg/log",

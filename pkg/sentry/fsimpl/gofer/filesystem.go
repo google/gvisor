@@ -470,7 +470,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	name := rp.Component()
 	if dir {
 		if name == "." {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if name == ".." {
 			return syserror.ENOTEMPTY
@@ -943,7 +943,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			return nil, syserror.EISDIR
 		}
 		if opts.Flags&linux.O_DIRECT != 0 {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 		if !d.isSynthetic() {
 			if err := d.ensureSharedHandle(ctx, ats&vfs.MayRead != 0, false /* write */, false /* trunc */); err != nil {
@@ -999,7 +999,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 
 func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	if opts.Flags&linux.O_DIRECT != 0 {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	fdObj, err := d.file.connect(ctx, p9.AnonymousSocket)
 	if err != nil {
@@ -1020,7 +1020,7 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.Flags&linux.O_DIRECT != 0 {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	// We assume that the server silently inserts O_NONBLOCK in the open flags
 	// for all named pipes (because all existing gofers do this).
@@ -1188,7 +1188,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 		return "", err
 	}
 	if !d.isSymlink() {
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	return d.readlink(ctx, rp.Mount())
 }
@@ -1205,12 +1205,12 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if fs.opts.interop == InteropModeShared && opts.Flags&linux.RENAME_NOREPLACE != 0 {
 		// Requires 9P support to synchronize with other remote filesystem
 		// users.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	newName := rp.Component()
@@ -1261,7 +1261,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if renamed.isDir() {
 		if renamed == newParent || genericIsAncestorDentry(renamed, newParent) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if oldParent != newParent {
 			if err := renamed.checkPermissions(creds, vfs.MayWrite); err != nil {

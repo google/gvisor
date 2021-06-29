@@ -17,6 +17,8 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
@@ -26,8 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // IoSubmit implements linux syscall io_submit(2).
@@ -37,7 +37,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	addr := args[2].Pointer()
 
 	if nrEvents < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	for i := int32(0); i < nrEvents; i++ {
@@ -90,7 +90,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 // submitCallback processes a single callback.
 func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr hostarch.Addr) error {
 	if cb.Reserved2 != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	fd := t.GetFileVFS2(cb.FD)
@@ -110,7 +110,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 
 		// Check that it is an eventfd.
 		if _, ok := eventFD.Impl().(*eventfd.EventFileDescription); !ok {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 
@@ -123,14 +123,14 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 	switch cb.OpCode {
 	case linux.IOCB_CMD_PREAD, linux.IOCB_CMD_PREADV, linux.IOCB_CMD_PWRITE, linux.IOCB_CMD_PWRITEV:
 		if cb.Offset < 0 {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 
 	// Prepare the request.
 	aioCtx, ok := t.MemoryManager().LookupAIOContext(t, id)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if err := aioCtx.Prepare(); err != nil {
 		return err
@@ -200,7 +200,7 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 	bytes := int(cb.Bytes)
 	if bytes < 0 {
 		// Linux also requires that this field fit in ssize_t.
-		return usermem.IOSequence{}, syserror.EINVAL
+		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 
 	// Since this I/O will be asynchronous with respect to t's task goroutine,
@@ -222,6 +222,6 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 
 	default:
 		// Not a supported command.
-		return usermem.IOSequence{}, syserror.EINVAL
+		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 }

@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -29,7 +30,7 @@ import (
 // syscalls are moved into this package, then they can be unexported.
 func CopyInSigSet(t *kernel.Task, sigSetAddr hostarch.Addr, size uint) (linux.SignalSet, error) {
 	if size != linux.SignalSetSize {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	b := t.CopyScratchBuffer(8)
 	if _, err := t.CopyInBytes(sigSetAddr, b); err != nil {

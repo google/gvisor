@@ -62,10 +62,10 @@ func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	nsops := args[2].SizeT()
 	timespecAddr := args[3].Pointer()
 	if nsops <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if nsops > opsMax {
-		return 0, nil, syserror.E2BIG
+		return 0, nil, linuxerr.E2BIG
 	}
 
 	ops := make([]linux.Sembuf, nsops)
@@ -78,7 +78,7 @@ func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, err
 	}
 	if timeout.Sec < 0 || timeout.Nsec < 0 || timeout.Nsec >= 1e9 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if err := semTimedOp(t, id, ops, true, timeout.ToDuration()); err != nil {
@@ -97,10 +97,10 @@ func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	nsops := args[2].SizeT()
 
 	if nsops <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if nsops > opsMax {
-		return 0, nil, syserror.E2BIG
+		return 0, nil, linuxerr.E2BIG
 	}
 
 	ops := make([]linux.Sembuf, nsops)
@@ -114,7 +114,7 @@ func semTimedOp(t *kernel.Task, id int32, ops []linux.Sembuf, haveTimeout bool, 
 	set := t.IPCNamespace().SemaphoreRegistry().FindByID(id)
 
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
@@ -233,7 +233,7 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return uintptr(semid), nil, err
 
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
@@ -247,17 +247,17 @@ func ipcSet(t *kernel.Task, id int32, uid auth.UID, gid auth.GID, perms fs.FileP
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	creds := auth.CredentialsFromContext(t)
 	kuid := creds.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	kgid := creds.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	owner := fs.FileOwner{UID: kuid, GID: kgid}
 	return set.Change(t, creds, owner, perms)
@@ -267,7 +267,7 @@ func ipcStat(t *kernel.Task, id int32) (*linux.SemidDS, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	return set.GetStat(creds)
@@ -277,7 +277,7 @@ func semStat(t *kernel.Task, index int32) (int32, *linux.SemidDS, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByIndex(index)
 	if set == nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	ds, err := set.GetStat(creds)
@@ -290,7 +290,7 @@ func semStat(t *kernel.Task, index int32) (int32, *linux.SemidDS, error) {
 func semStatAny(t *kernel.Task, index int32) (int32, *linux.SemidDS, error) {
 	set := t.IPCNamespace().SemaphoreRegistry().FindByIndex(index)
 	if set == nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	ds, err := set.GetStatAny(creds)
@@ -304,7 +304,7 @@ func setVal(t *kernel.Task, id int32, num int32, val int16) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
@@ -315,7 +315,7 @@ func setValAll(t *kernel.Task, id int32, array hostarch.Addr) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	vals := make([]uint16, set.Size())
 	if _, err := primitive.CopyUint16SliceIn(t, array, vals); err != nil {
@@ -330,7 +330,7 @@ func getVal(t *kernel.Task, id int32, num int32) (int16, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	return set.GetVal(num, creds)
@@ -340,7 +340,7 @@ func getValAll(t *kernel.Task, id int32, array hostarch.Addr) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	vals, err := set.GetValAll(creds)
@@ -355,7 +355,7 @@ func getPID(t *kernel.Task, id int32, num int32) (int32, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	gpid, err := set.GetPID(num, creds)
@@ -374,7 +374,7 @@ func getZCnt(t *kernel.Task, id int32, num int32) (uint16, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	return set.CountZeroWaiters(num, creds)
@@ -384,7 +384,7 @@ func getNCnt(t *kernel.Task, id int32, num int32) (uint16, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
 	return set.CountNegativeWaiters(num, creds)

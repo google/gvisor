@@ -23,12 +23,12 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // TaskGoroutineState is a coarse representation of the current execution
@@ -601,7 +601,7 @@ func (t *Task) SetCPUMask(mask sched.CPUSet) error {
 
 	// Ensure that at least 1 CPU is still allowed.
 	if mask.NumCPUs() == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	if t.k.useHostCores {
