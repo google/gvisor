@@ -80,6 +80,8 @@ func getEntries6(table stack.Table, tablename linux.TableName) (linux.KernelIP6T
 		copy(entry.Entry.IPv6.SrcMask[:], rule.Filter.SrcMask)
 		copy(entry.Entry.IPv6.OutputInterface[:], rule.Filter.OutputInterface)
 		copy(entry.Entry.IPv6.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
+		copy(entry.Entry.IPv6.InputInterface[:], rule.Filter.InputInterface)
+		copy(entry.Entry.IPv6.InputInterfaceMask[:], rule.Filter.InputInterfaceMask)
 		if rule.Filter.DstInvert {
 			entry.Entry.IPv6.InverseFlags |= linux.IP6T_INV_DSTIP
 		}

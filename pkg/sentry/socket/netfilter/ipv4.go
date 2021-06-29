@@ -80,6 +80,8 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 		copy(entry.Entry.IP.SrcMask[:], rule.Filter.SrcMask)
 		copy(entry.Entry.IP.OutputInterface[:], rule.Filter.OutputInterface)
 		copy(entry.Entry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
+		copy(entry.Entry.IP.InputInterface[:], rule.Filter.InputInterface)
+		copy(entry.Entry.IP.InputInterfaceMask[:], rule.Filter.InputInterfaceMask)
 		if rule.Filter.DstInvert {
 			entry.Entry.IP.InverseFlags |= linux.IPT_INV_DSTIP
 		}
