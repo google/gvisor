@@ -290,10 +290,10 @@ func (i *inode) Mode() linux.FileMode {
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	if opts.Mask&linux.STATX__RESERVED != 0 {
-		return linux.Statx{}, syserror.EINVAL
+		return linux.Statx{}, linuxerr.EINVAL
 	}
 	if opts.Sync&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
-		return linux.Statx{}, syserror.EINVAL
+		return linux.Statx{}, linuxerr.EINVAL
 	}
 
 	fs := vfsfs.Impl().(*filesystem)
@@ -426,7 +426,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 	if m&linux.STATX_SIZE != 0 {
 		if hostStat.Mode&linux.S_IFMT != linux.S_IFREG {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if err := unix.Ftruncate(i.hostFD, int64(s.Size)); err != nil {
 			return err
@@ -731,7 +731,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 	switch whence {
 	case linux.SEEK_SET:
 		if offset < 0 {
-			return f.offset, syserror.EINVAL
+			return f.offset, linuxerr.EINVAL
 		}
 		f.offset = offset
 
@@ -741,7 +741,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 			return f.offset, syserror.EOVERFLOW
 		}
 		if f.offset+offset < 0 {
-			return f.offset, syserror.EINVAL
+			return f.offset, linuxerr.EINVAL
 		}
 		f.offset += offset
 
@@ -757,7 +757,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 			return f.offset, syserror.EOVERFLOW
 		}
 		if size+offset < 0 {
-			return f.offset, syserror.EINVAL
+			return f.offset, linuxerr.EINVAL
 		}
 		f.offset = size + offset
 
@@ -774,7 +774,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 
 	default:
 		// Invalid whence.
-		return f.offset, syserror.EINVAL
+		return f.offset, linuxerr.EINVAL
 	}
 
 	return f.offset, nil

@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -209,7 +209,7 @@ func (d *tcpSackData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 func (d *tcpSackData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -257,7 +257,7 @@ func (d *tcpRecoveryData) Generate(ctx context.Context, buf *bytes.Buffer) error
 func (d *tcpRecoveryData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -311,7 +311,7 @@ func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 func (d *tcpMemData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -396,7 +396,7 @@ func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error 
 func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -449,7 +449,7 @@ func (pr *portRange) Generate(ctx context.Context, buf *bytes.Buffer) error {
 func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -467,7 +467,7 @@ func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset i
 
 	// Port numbers must be uint16s.
 	if ports[0] < 0 || ports[1] < 0 || ports[0] > math.MaxUint16 || ports[1] > math.MaxUint16 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {

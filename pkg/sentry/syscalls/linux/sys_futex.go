@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -210,7 +211,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			// WAIT_BITSET uses an absolute timeout which is either
 			// CLOCK_MONOTONIC or CLOCK_REALTIME.
 			if mask == 0 {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 			n, err := futexWaitAbsolute(t, clockRealtime, timespec, forever, addr, private, uint32(val), mask)
 			return n, nil, err
@@ -224,7 +225,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FUTEX_WAKE_BITSET:
 		if mask == 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if val <= 0 {
 			// The Linux kernel wakes one waiter even if val is
@@ -295,7 +296,7 @@ func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	length := args[1].SizeT()
 
 	if length != uint(linux.SizeOfRobustListHead) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	t.SetRobustList(head)
 	return 0, nil, nil
@@ -310,7 +311,7 @@ func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	sizeAddr := args[2].Pointer()
 
 	if tid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	ot := t

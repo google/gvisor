@@ -17,15 +17,15 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/gohacks"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Stat implements Linux syscall stat(2).
@@ -53,7 +53,7 @@ func Newfstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flags int32) error {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	opts := vfs.StatOptions{
@@ -156,15 +156,15 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	statxAddr := args[4].Pointer()
 
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW|linux.AT_STATX_SYNC_TYPE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// Make sure that only one sync type option is set.
 	syncType := uint32(flags & linux.AT_STATX_SYNC_TYPE)
 	if syncType != 0 && !bits.IsPowerOfTwo32(syncType) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if mask&linux.STATX__RESERVED != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	opts := vfs.StatOptions{
@@ -272,7 +272,7 @@ func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) er
 
 	// Sanity check the mode.
 	if mode&^(rOK|wOK|xOK) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	path, err := copyInPath(t, pathAddr)
@@ -315,7 +315,7 @@ func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 func readlinkat(t *kernel.Task, dirfd int32, pathAddr, bufAddr hostarch.Addr, size uint) (uintptr, *kernel.SyscallControl, error) {
 	if int(size) <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	path, err := copyInPath(t, pathAddr)

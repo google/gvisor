@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -53,7 +54,7 @@ func (s *selfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	if tgid == 0 {
@@ -94,7 +95,7 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string,
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	tid := s.pidns.IDOfTask(t)

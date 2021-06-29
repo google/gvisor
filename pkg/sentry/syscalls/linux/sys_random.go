@@ -18,14 +18,14 @@ import (
 	"io"
 	"math"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -47,7 +47,7 @@ func GetRandom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// Flags are checked for validity but otherwise ignored. See above.
 	if flags & ^(_GRND_NONBLOCK|_GRND_RANDOM) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if length > math.MaxInt32 {

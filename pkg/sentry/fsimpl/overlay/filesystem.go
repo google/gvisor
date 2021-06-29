@@ -872,7 +872,7 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 			return nil, syserror.EISDIR
 		}
 		if opts.Flags&linux.O_DIRECT != 0 {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 		fd := &directoryFD{}
 		fd.LockFD.Init(&d.locks)
@@ -1028,7 +1028,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 
 	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	newName := rp.Component()
@@ -1065,7 +1065,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if renamed.isDir() {
 		if renamed == newParent || genericIsAncestorDentry(renamed, newParent) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if oldParent != newParent {
 			if err := renamed.checkPermissions(creds, vfs.MayWrite); err != nil {
@@ -1286,7 +1286,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	defer rp.Mount().EndWrite()
 	name := rp.Component()
 	if name == "." {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if name == ".." {
 		return syserror.ENOTEMPTY

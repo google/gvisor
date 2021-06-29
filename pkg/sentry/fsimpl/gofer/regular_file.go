@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -124,7 +125,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}()
 
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.
@@ -194,7 +195,7 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 // offset should be ignored by PWrite.
 func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if offset < 0 {
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.
@@ -297,7 +298,7 @@ func (fd *regularFileFD) writeCache(ctx context.Context, d *dentry, offset int64
 	pgstart := hostarch.PageRoundDown(uint64(offset))
 	pgend, ok := hostarch.PageRoundUp(uint64(offset + src.NumBytes()))
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	mr := memmap.MappableRange{pgstart, pgend}
 	var freed []memmap.FileRange
@@ -662,10 +663,10 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 			offset = size
 		}
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	return offset, nil
 }

@@ -26,9 +26,7 @@ import (
 
 // The following variables have the same meaning as their syscall equivalent.
 var (
-	E2BIG        = error(unix.E2BIG)
 	EACCES       = error(unix.EACCES)
-	EADDRINUSE   = error(unix.EADDRINUSE)
 	EAGAIN       = error(unix.EAGAIN)
 	EBADF        = error(unix.EBADF)
 	EBADFD       = error(unix.EBADFD)
@@ -43,7 +41,6 @@ var (
 	EFBIG        = error(unix.EFBIG)
 	EIDRM        = error(unix.EIDRM)
 	EINTR        = error(unix.EINTR)
-	EINVAL       = error(unix.EINVAL)
 	EIO          = error(unix.EIO)
 	EISDIR       = error(unix.EISDIR)
 	ELIBBAD      = error(unix.ELIBBAD)

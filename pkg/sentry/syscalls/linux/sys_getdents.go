@@ -19,6 +19,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -38,7 +39,7 @@ func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	minSize := int(smallestDirent(t.Arch()))
 	if size < minSize {
 		// size is smaller than smallest possible dirent.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	n, err := getdents(t, fd, addr, size, (*dirent).Serialize)
@@ -54,7 +55,7 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	minSize := int(smallestDirent64(t.Arch()))
 	if size < minSize {
 		// size is smaller than smallest possible dirent.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	n, err := getdents(t, fd, addr, size, (*dirent).Serialize64)

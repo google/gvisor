@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -32,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -846,7 +846,7 @@ func (t *Task) OOMScoreAdj() int32 {
 // value should be between -1000 and 1000 inclusive.
 func (t *Task) SetOOMScoreAdj(adj int32) error {
 	if adj > 1000 || adj < -1000 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	atomic.StoreInt32(&t.tg.oomScoreAdj, adj)
 	return nil

@@ -75,7 +75,7 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 // MMap establishes a memory mapping.
 func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error) {
 	if opts.Length == 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	length, ok := hostarch.Addr(opts.Length).RoundUp()
 	if !ok {
@@ -86,7 +86,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	if opts.Mappable != nil {
 		// Offset must be aligned.
 		if hostarch.Addr(opts.Offset).RoundDown() != hostarch.Addr(opts.Offset) {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		// Offset + length must not overflow.
 		if end := opts.Offset + opts.Length; end < opts.Offset {
@@ -100,7 +100,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		// MAP_FIXED requires addr to be page-aligned; non-fixed mappings
 		// don't.
 		if opts.Fixed {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		opts.Addr = opts.Addr.RoundDown()
 	}
@@ -109,10 +109,10 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		return 0, syserror.EACCES
 	}
 	if opts.Unmap && !opts.Fixed {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if opts.GrowsDown && opts.Mappable != nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Get the new vma.
@@ -282,18 +282,18 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 // MUnmap implements the semantics of Linux's munmap(2).
 func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length uint64) error {
 	if addr != addr.RoundDown() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if length == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	mm.mappingMu.Lock()
@@ -332,7 +332,7 @@ const (
 func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (hostarch.Addr, error) {
 	// "Note that old_address has to be page aligned." - mremap(2)
 	if oldAddr.RoundDown() != oldAddr {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Linux treats an old_size that rounds up to 0 as 0, which is otherwise a
@@ -341,13 +341,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	oldSize = uint64(oldSizeAddr)
 	newSizeAddr, ok := hostarch.Addr(newSize).RoundUp()
 	if !ok || newSizeAddr == 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	newSize = uint64(newSizeAddr)
 
 	oldEnd, ok := oldAddr.AddLength(oldSize)
 	if !ok {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	mm.mappingMu.Lock()
@@ -451,15 +451,15 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	case MRemapMustMove:
 		newAddr := opts.NewAddr
 		if newAddr.RoundDown() != newAddr {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		var ok bool
 		newAR, ok = newAddr.ToRange(newSize)
 		if !ok {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		if (hostarch.AddrRange{oldAddr, oldEnd}).Overlaps(newAR) {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// Check that the new region is valid.
@@ -505,7 +505,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
 		// Check that offset+length does not overflow.
 		if vma.off+uint64(newAR.Length()) < vma.off {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		// Inform the Mappable, if any, of the new mapping.
 		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
@@ -591,7 +591,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 // MProtect implements the semantics of Linux's mprotect(2).
 func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms hostarch.AccessType, growsDown bool) error {
 	if addr.RoundDown() != addr {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if length == 0 {
 		return nil
@@ -619,7 +619,7 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 	}
 	if growsDown {
 		if !vseg.ValuePtr().growsDown {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if ar.End <= vseg.Start() {
 			return syserror.ENOMEM
@@ -712,7 +712,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 	if addr < mm.brk.Start {
 		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return addr, syserror.EINVAL
+		return addr, linuxerr.EINVAL
 	}
 
 	// TODO(gvisor.dev/issue/156): This enforces RLIMIT_DATA, but is
@@ -781,7 +781,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 	la, _ := hostarch.Addr(length + addr.PageOffset()).RoundUp()
 	ar, ok := addr.RoundDown().ToRange(uint64(la))
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	mm.mappingMu.Lock()
@@ -899,7 +899,7 @@ type MLockAllOpts struct {
 // depending on opts.
 func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error {
 	if !opts.Current && !opts.Future {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	mm.mappingMu.Lock()
@@ -980,13 +980,13 @@ func (mm *MemoryManager) NumaPolicy(addr hostarch.Addr) (linux.NumaPolicy, uint6
 // SetNumaPolicy implements the semantics of Linux's mbind().
 func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy linux.NumaPolicy, nodemask uint64) error {
 	if !addr.IsPageAligned() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// Linux allows this to overflow.
 	la, _ := hostarch.Addr(length).RoundUp()
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if ar.Length() == 0 {
 		return nil
@@ -1022,7 +1022,7 @@ func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy
 func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork bool) error {
 	ar, ok := addr.ToRange(length)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	mm.mappingMu.Lock()
@@ -1048,7 +1048,7 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	ar, ok := addr.ToRange(length)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	mm.mappingMu.RLock()
@@ -1064,7 +1064,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
 		vma := vseg.ValuePtr()
 		if vma.mlockMode != memmap.MLockNone {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		vsegAR := vseg.Range().Intersect(ar)
 		// pseg should already correspond to either this vma or a later one,
@@ -1115,7 +1115,7 @@ type MSyncOpts struct {
 // MSync implements the semantics of Linux's msync().
 func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length uint64, opts MSyncOpts) error {
 	if addr != addr.RoundDown() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if length == 0 {
 		return nil

@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
@@ -325,7 +326,7 @@ func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset in
 	// the file ..." - user_namespaces(7)
 	srclen := src.NumBytes()
 	if srclen >= hostarch.PageSize || offset != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	b := make([]byte, srclen)
 	if _, err := src.CopyIn(ctx, b); err != nil {
@@ -345,7 +346,7 @@ func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset in
 	}
 	lines := bytes.SplitN(b, []byte("\n"), maxIDMapLines+1)
 	if len(lines) > maxIDMapLines {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	entries := make([]auth.IDMapEntry, len(lines))
@@ -353,7 +354,7 @@ func (d *idMapData) Write(ctx context.Context, src usermem.IOSequence, offset in
 		var e auth.IDMapEntry
 		_, err := fmt.Sscan(string(l), &e.FirstID, &e.FirstParentID, &e.Length)
 		if err != nil {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		entries[i] = e
 	}
@@ -461,10 +462,10 @@ func (fd *memFD) Seek(ctx context.Context, offset int64, whence int32) (int64, e
 	case linux.SEEK_CUR:
 		offset += fd.offset
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	fd.offset = offset
 	return offset, nil

@@ -21,14 +21,14 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func singlePipeFD() (int, error) {
@@ -214,7 +214,7 @@ func TestPipeRequest(t *testing.T) {
 		{
 			desc:    "Fsync on pipe returns EINVAL",
 			context: &Fsync{},
-			err:     unix.EINVAL,
+			err:     linuxerr.EINVAL,
 		},
 		{
 			desc:    "Seek on pipe returns ESPIPE",

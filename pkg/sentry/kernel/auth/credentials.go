@@ -16,6 +16,7 @@ package auth
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -203,7 +204,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 	// uid must be mapped.
 	kuid := c.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return NoID, syserror.EINVAL
+		return NoID, linuxerr.EINVAL
 	}
 	// If c has CAP_SETUID, then it can use any UID in its user namespace.
 	if c.HasCapability(linux.CAP_SETUID) {
@@ -222,7 +223,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	kgid := c.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return NoID, syserror.EINVAL
+		return NoID, linuxerr.EINVAL
 	}
 	if c.HasCapability(linux.CAP_SETGID) {
 		return kgid, nil
@@ -239,7 +240,7 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 func (c *Credentials) SetUID(uid UID) error {
 	kuid := c.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	c.RealKUID = kuid
 	c.EffectiveKUID = kuid
@@ -253,7 +254,7 @@ func (c *Credentials) SetUID(uid UID) error {
 func (c *Credentials) SetGID(gid GID) error {
 	kgid := c.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	c.RealKGID = kgid
 	c.EffectiveKGID = kgid

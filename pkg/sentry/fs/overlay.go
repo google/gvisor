@@ -19,11 +19,11 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // The virtual filesystem implements an overlay configuration. For a high-level
@@ -218,7 +218,7 @@ func newOverlayEntry(ctx context.Context, upper *Inode, lower *Inode, lowerExist
 			// We don't support copying up from character devices,
 			// named pipes, or anything weird (like proc files).
 			log.Warningf("%s not supported in lower filesytem", lower.StableAttr.Type)
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 	}
 	return &overlayEntry{

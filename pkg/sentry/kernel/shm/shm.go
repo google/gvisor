@@ -38,6 +38,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -145,7 +146,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 		//
 		// Note that 'private' always implies the creation of a new segment
 		// whether IPC_CREAT is specified or not.
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	r.mu.Lock()
@@ -175,7 +176,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 			if size > shm.size {
 				// "A segment for the given key exists, but size is greater than
 				// the size of that segment." - man shmget(2)
-				return nil, syserror.EINVAL
+				return nil, linuxerr.EINVAL
 			}
 
 			if create && exclusive {
@@ -200,7 +201,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	if val, ok := hostarch.Addr(size).RoundUp(); ok {
 		sizeAligned = uint64(val)
 	} else {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	if numPages := sizeAligned / hostarch.PageSize; r.totalPages+numPages > linux.SHMALL {
@@ -652,7 +653,7 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	uid := creds.UserNamespace.MapToKUID(auth.UID(ds.ShmPerm.UID))
 	gid := creds.UserNamespace.MapToKGID(auth.GID(ds.ShmPerm.GID))
 	if !uid.Ok() || !gid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// User may only modify the lower 9 bits of the mode. All the other bits are

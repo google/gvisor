@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -86,13 +87,13 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	uflags := args[3].Uint()
 
 	if offset < 0 || offset+nbytes < offset {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if uflags&^(linux.SYNC_FILE_RANGE_WAIT_BEFORE|
 		linux.SYNC_FILE_RANGE_WRITE|
 		linux.SYNC_FILE_RANGE_WAIT_AFTER) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if nbytes == 0 {

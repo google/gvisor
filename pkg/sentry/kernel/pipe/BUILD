@@ -21,6 +21,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/marshal/primitive",
         "//pkg/safemem",

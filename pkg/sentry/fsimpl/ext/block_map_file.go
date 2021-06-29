@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -84,7 +85,7 @@ func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 	}
 
 	if off < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	offset := uint64(off)

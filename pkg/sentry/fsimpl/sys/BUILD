@@ -26,6 +26,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/coverage",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -417,7 +418,7 @@ func (f *overlayFileOperations) FifoSize(ctx context.Context, overlayFile *File)
 	err = f.onTop(ctx, overlayFile, func(file *File, ops FileOperations) error {
 		sz, ok := ops.(FifoSizer)
 		if !ok {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		rv, err = sz.FifoSize(ctx, file)
 		return err
@@ -432,11 +433,11 @@ func (f *overlayFileOperations) SetFifoSize(size int64) (rv int64, err error) {
 
 	if f.upper == nil {
 		// Named pipes cannot be copied up and changes to the lower are prohibited.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	sz, ok := f.upper.FileOperations.(FifoSizer)
 	if !ok {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	return sz.SetFifoSize(size)
 }

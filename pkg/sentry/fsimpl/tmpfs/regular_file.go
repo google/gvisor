@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -366,7 +367,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	fsmetric.TmpfsReads.Increment()
 
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported. RWF_DSYNC/RWF_SYNC can be ignored since
@@ -407,7 +408,7 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 // final offset should be ignored by PWrite.
 func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if offset < 0 {
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported. RWF_DSYNC/RWF_SYNC can be ignored since
@@ -432,7 +433,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 	if end := offset + srclen; end < offset {
 		// Overflow.
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
@@ -476,10 +477,10 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 	case linux.SEEK_END:
 		offset += int64(atomic.LoadUint64(&fd.inode().impl.(*regularFile).size))
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	fd.off = offset
 	return offset, nil
@@ -684,7 +685,7 @@ exitLoop:
 func GetSeals(fd *vfs.FileDescription) (uint32, error) {
 	f, ok := fd.Impl().(*regularFileFD)
 	if !ok {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	rf := f.inode().impl.(*regularFile)
 	rf.dataMu.RLock()
@@ -696,7 +697,7 @@ func GetSeals(fd *vfs.FileDescription) (uint32, error) {
 func AddSeals(fd *vfs.FileDescription, val uint32) error {
 	f, ok := fd.Impl().(*regularFileFD)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	rf := f.inode().impl.(*regularFile)
 	rf.mapsMu.Lock()

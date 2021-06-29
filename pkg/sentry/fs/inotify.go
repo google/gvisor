@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -132,7 +133,7 @@ func (*Inotify) Write(context.Context, *File, usermem.IOSequence, int64) (int64,
 // Read implements FileOperations.Read.
 func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ int64) (int64, error) {
 	if dst.NumBytes() < inotifyEventBaseSize {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	i.evMu.Lock()
@@ -156,7 +157,7 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 				// write some events out.
 				return writeLen, nil
 			}
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// Linux always dequeues an available event as long as there's enough
@@ -183,7 +184,7 @@ func (*Inotify) WriteTo(context.Context, *File, io.Writer, int64, bool) (int64, 
 
 // Fsync implements FileOperations.Fsync.
 func (*Inotify) Fsync(context.Context, *File, int64, int64, SyncType) error {
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // ReadFrom implements FileOperations.ReadFrom.
@@ -329,7 +330,7 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	watch, ok := i.watches[wd]
 	if !ok {
 		i.mu.Unlock()
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Remove the watch from this instance.

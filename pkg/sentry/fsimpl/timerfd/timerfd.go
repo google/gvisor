@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -69,7 +70,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, clock ktime.Clock, 
 func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	const sizeofUint64 = 8
 	if dst.NumBytes() < sizeofUint64 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if val := atomic.SwapUint64(&tfd.val, 0); val != 0 {
 		var buf [sizeofUint64]byte

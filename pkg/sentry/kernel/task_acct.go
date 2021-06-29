@@ -18,10 +18,10 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getitimer implements getitimer(2).
@@ -44,7 +44,7 @@ func (t *Task) Getitimer(id int32) (linux.ItimerVal, error) {
 		s, _ = t.tg.itimerProfSetting.At(tm)
 		t.tg.signalHandlers.mu.Unlock()
 	default:
-		return linux.ItimerVal{}, syserror.EINVAL
+		return linux.ItimerVal{}, linuxerr.EINVAL
 	}
 	val, iv := ktime.SpecFromSetting(tm, s)
 	return linux.ItimerVal{
@@ -105,7 +105,7 @@ func (t *Task) Setitimer(id int32, newitv linux.ItimerVal) (linux.ItimerVal, err
 			return linux.ItimerVal{}, err
 		}
 	default:
-		return linux.ItimerVal{}, syserror.EINVAL
+		return linux.ItimerVal{}, linuxerr.EINVAL
 	}
 	oldval, oldiv := ktime.SpecFromSetting(tm, olds)
 	return linux.ItimerVal{

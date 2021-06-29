@@ -20,6 +20,7 @@ package futex
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -332,7 +333,7 @@ func getKey(t Target, addr hostarch.Addr, private bool) (Key, error) {
 	// Ensure the address is aligned.
 	// It must be a DWORD boundary.
 	if addr&0x3 != 0 {
-		return Key{}, syserror.EINVAL
+		return Key{}, linuxerr.EINVAL
 	}
 	if private {
 		return Key{Kind: KindPrivate, Offset: uint64(addr)}, nil
@@ -790,7 +791,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		return err
 	}
 	if prev != cur {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	b.wakeWaiterLocked(next)

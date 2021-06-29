@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -147,7 +148,7 @@ func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 		return &f.inode, nil
 	default:
 		// TODO(b/134676337): Return appropriate errors for sockets, pipes and devices.
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 }
 

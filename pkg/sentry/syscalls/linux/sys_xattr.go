@@ -183,7 +183,7 @@ func setXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 // setXattr implements setxattr(2) from the given *fs.Dirent.
 func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, size uint64, flags uint32) error {
 	if flags&^(linux.XATTR_CREATE|linux.XATTR_REPLACE) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	name, err := copyInXattrName(t, nameAddr)
@@ -196,7 +196,7 @@ func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, s
 	}
 
 	if size > linux.XATTR_SIZE_MAX {
-		return syserror.E2BIG
+		return linuxerr.E2BIG
 	}
 	buf := make([]byte, size)
 	if _, err := t.CopyInBytes(valueAddr, buf); err != nil {
@@ -334,7 +334,7 @@ func listXattr(t *kernel.Task, d *fs.Dirent, addr hostarch.Addr, size uint64) (i
 
 	listSize := xattrListSize(xattrs)
 	if listSize > linux.XATTR_SIZE_MAX {
-		return 0, syserror.E2BIG
+		return 0, linuxerr.E2BIG
 	}
 	if uint64(listSize) > requestedSize {
 		return 0, syserror.ERANGE

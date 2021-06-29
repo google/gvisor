@@ -18,6 +18,7 @@ package linux
 import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -187,7 +188,7 @@ var AMD64 = &kernel.SyscallTable{
 		132: syscalls.Supported("utime", Utime),
 		133: syscalls.PartiallySupported("mknod", Mknod, "Device creation is not generally supported. Only regular file and FIFO creation are supported.", nil),
 		134: syscalls.Error("uselib", syserror.ENOSYS, "Obsolete", nil),
-		135: syscalls.ErrorWithEvent("personality", syserror.EINVAL, "Unable to change personality.", nil),
+		135: syscalls.ErrorWithEvent("personality", linuxerr.EINVAL, "Unable to change personality.", nil),
 		136: syscalls.ErrorWithEvent("ustat", syserror.ENOSYS, "Needs filesystem support.", nil),
 		137: syscalls.PartiallySupported("statfs", Statfs, "Depends on the backing file system implementation.", nil),
 		138: syscalls.PartiallySupported("fstatfs", Fstatfs, "Depends on the backing file system implementation.", nil),
@@ -521,7 +522,7 @@ var ARM64 = &kernel.SyscallTable{
 		89:  syscalls.CapError("acct", linux.CAP_SYS_PACCT, "", nil),
 		90:  syscalls.Supported("capget", Capget),
 		91:  syscalls.Supported("capset", Capset),
-		92:  syscalls.ErrorWithEvent("personality", syserror.EINVAL, "Unable to change personality.", nil),
+		92:  syscalls.ErrorWithEvent("personality", linuxerr.EINVAL, "Unable to change personality.", nil),
 		93:  syscalls.Supported("exit", Exit),
 		94:  syscalls.Supported("exit_group", ExitGroup),
 		95:  syscalls.Supported("waitid", Waitid),

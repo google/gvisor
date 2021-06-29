@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -39,7 +40,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		log.Warningf("fusefs.Read: couldn't get kernel task from context")
-		return nil, 0, syserror.EINVAL
+		return nil, 0, linuxerr.EINVAL
 	}
 
 	// Round up to a multiple of page size.
@@ -155,7 +156,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		log.Warningf("fusefs.Read: couldn't get kernel task from context")
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// One request cannnot exceed either maxWrite or maxPages.

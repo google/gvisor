@@ -17,6 +17,7 @@ package pipe
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -90,7 +91,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 	readable := vfs.MayReadFileWithOpenFlags(statusFlags)
 	writable := vfs.MayWriteFileWithOpenFlags(statusFlags)
 	if !readable && !writable {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	fd, err := vp.newFD(mnt, vfsd, statusFlags, locks)
@@ -415,7 +416,7 @@ func Tee(ctx context.Context, dst, src *VFSPipeFD, count int64) (int64, error) {
 // Preconditions: count > 0.
 func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFromSrc bool) (int64, error) {
 	if dst.pipe == src.pipe {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	lockTwoPipes(dst.pipe, src.pipe)

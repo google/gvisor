@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -149,7 +150,7 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 
 	// If the read buffer is too small, error out.
 	if dst.NumBytes() < int64(minBuffSize) {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	fd.mu.Lock()
@@ -293,7 +294,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 		// Assert that the header isn't read into the writeBuf yet.
 		if fd.writeCursor >= hdrLen {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// We don't have the full common response header yet.
@@ -322,7 +323,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 			if !ok {
 				// Server sent us a response for a request we never sent,
 				// or for which we already received a reply (e.g. aborted), an unlikely event.
-				return 0, syserror.EINVAL
+				return 0, linuxerr.EINVAL
 			}
 
 			delete(fd.completions, hdr.Unique)
@@ -434,7 +435,7 @@ func (fd *DeviceFD) sendError(ctx context.Context, errno int32, unique linux.FUS
 	if !ok {
 		// A response for a request we never sent,
 		// or for which we already received a reply (e.g. aborted).
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	delete(fd.completions, respHdr.Unique)
 

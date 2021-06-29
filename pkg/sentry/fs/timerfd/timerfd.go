@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
@@ -121,7 +122,7 @@ func (t *TimerOperations) EventUnregister(e *waiter.Entry) {
 func (t *TimerOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	const sizeofUint64 = 8
 	if dst.NumBytes() < sizeofUint64 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if val := atomic.SwapUint64(&t.val, 0); val != 0 {
 		var buf [sizeofUint64]byte
@@ -138,7 +139,7 @@ func (t *TimerOperations) Read(ctx context.Context, file *fs.File, dst usermem.I
 
 // Write implements fs.FileOperations.Write.
 func (t *TimerOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // Notify implements ktime.TimerListener.Notify.

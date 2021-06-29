@@ -184,7 +184,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	}()
 
 	if fd.seekable && offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.
@@ -264,7 +264,7 @@ func (fd *specialFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 // offset should be ignored by PWrite.
 func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if fd.seekable && offset < 0 {
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.

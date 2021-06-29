@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -99,7 +100,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if who < 0 {
 			// Check for overflow before flipping the sign.
 			if who-1 > who {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 			ownerType = linux.F_OWNER_PGRP
 			who = -who

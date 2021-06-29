@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
@@ -98,7 +99,7 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 	// O_CLOEXEC affects file descriptors, so it must be handled outside of vfs.
 	flags &^= linux.O_CLOEXEC
 	if flags&^linux.O_NONBLOCK != 0 {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	id := uniqueid.GlobalFromContext(ctx)
@@ -200,7 +201,7 @@ func (*Inotify) Write(ctx context.Context, src usermem.IOSequence, opts WriteOpt
 // Read implements FileDescriptionImpl.Read.
 func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
 	if dst.NumBytes() < inotifyEventBaseSize {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	i.evMu.Lock()
@@ -226,7 +227,7 @@ func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOpt
 				// write some events out.
 				return writeLen, nil
 			}
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// Linux always dequeues an available event as long as there's enough
@@ -360,7 +361,7 @@ func (i *Inotify) RmWatch(ctx context.Context, wd int32) error {
 	w, ok := i.watches[wd]
 	if !ok {
 		i.mu.Unlock()
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Remove the watch from this instance.

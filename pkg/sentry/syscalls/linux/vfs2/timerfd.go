@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -29,7 +30,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	flags := args[1].Int()
 
 	if flags&^(linux.TFD_CLOEXEC|linux.TFD_NONBLOCK) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Timerfds aren't writable per se (their implementation of Write just
@@ -47,7 +48,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	case linux.CLOCK_MONOTONIC, linux.CLOCK_BOOTTIME:
 		clock = t.Kernel().MonotonicClock()
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	vfsObj := t.Kernel().VFS()
 	file, err := timerfd.New(t, vfsObj, clock, fileFlags)
@@ -72,7 +73,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	oldValAddr := args[3].Pointer()
 
 	if flags&^(linux.TFD_TIMER_ABSTIME) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(fd)
@@ -83,7 +84,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var newVal linux.Itimerspec
@@ -117,7 +118,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	tfd, ok := file.Impl().(*timerfd.TimerFileDescription)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	tm, s := tfd.GetTime()

@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -428,7 +429,7 @@ func (p *Pipe) FifoSize(context.Context, *fs.File) (int64, error) {
 // SetFifoSize implements fs.FifoSizer.SetFifoSize.
 func (p *Pipe) SetFifoSize(size int64) (int64, error) {
 	if size < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if size < MinimumPipeSize {
 		size = MinimumPipeSize // Per spec.

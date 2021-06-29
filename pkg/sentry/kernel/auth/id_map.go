@@ -17,6 +17,7 @@ package auth
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -110,7 +111,7 @@ func (ns *UserNamespace) SetUIDMap(ctx context.Context, entries []IDMapEntry) er
 	}
 	// "At least one line must be written to the file."
 	if len(entries) == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// """
 	// In order for a process to write to the /proc/[pid]/uid_map
@@ -170,11 +171,11 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 		// checks for NoID.
 		lastID := e.FirstID + e.Length
 		if lastID <= e.FirstID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		lastParentID := e.FirstParentID + e.Length
 		if lastParentID <= e.FirstParentID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		// "3. The mapped user IDs (group IDs) must in turn have a mapping in
 		// the parent user namespace."
@@ -186,10 +187,10 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 		}
 		// If either of these Adds fail, we have an overlapping range.
 		if !ns.uidMapFromParent.Add(idMapRange{e.FirstParentID, lastParentID}, e.FirstID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.uidMapToParent.Add(idMapRange{e.FirstID, lastID}, e.FirstParentID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	return nil
@@ -205,7 +206,7 @@ func (ns *UserNamespace) SetGIDMap(ctx context.Context, entries []IDMapEntry) er
 		return syserror.EPERM
 	}
 	if len(entries) == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if !c.HasCapabilityIn(linux.CAP_SETGID, ns) {
 		return syserror.EPERM
@@ -239,20 +240,20 @@ func (ns *UserNamespace) trySetGIDMap(entries []IDMapEntry) error {
 	for _, e := range entries {
 		lastID := e.FirstID + e.Length
 		if lastID <= e.FirstID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		lastParentID := e.FirstParentID + e.Length
 		if lastParentID <= e.FirstParentID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.parent.allIDsMapped(&ns.parent.gidMapToParent, e.FirstParentID, lastParentID) {
 			return syserror.EPERM
 		}
 		if !ns.gidMapFromParent.Add(idMapRange{e.FirstParentID, lastParentID}, e.FirstID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.gidMapToParent.Add(idMapRange{e.FirstID, lastID}, e.FirstParentID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	return nil

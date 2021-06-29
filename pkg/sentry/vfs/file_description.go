@@ -274,7 +274,7 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 		}
 	}
 	if flags&linux.O_DIRECT != 0 && !fd.opts.AllowDirectIO {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// TODO(gvisor.dev/issue/1035): FileDescriptionImpl.SetOAsync()?
 	const settableFlags = linux.O_APPEND | linux.O_ASYNC | linux.O_DIRECT | linux.O_NOATIME | linux.O_NONBLOCK
@@ -874,7 +874,7 @@ func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, l
 		}
 		off = int64(stat.Size)
 	default:
-		return lock.LockRange{}, syserror.EINVAL
+		return lock.LockRange{}, linuxerr.EINVAL
 	}
 
 	return lock.ComputeRange(int64(start), int64(length), off)

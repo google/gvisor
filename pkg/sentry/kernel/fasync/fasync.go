@@ -17,12 +17,12 @@ package fasync
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -248,7 +248,7 @@ func (a *FileAsync) Signal() linux.Signal {
 // to send SIGIO.
 func (a *FileAsync) SetSignal(signal linux.Signal) error {
 	if signal != 0 && !signal.IsValid() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

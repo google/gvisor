@@ -16,12 +16,12 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Mount implements Linux syscall mount(2).
@@ -83,7 +83,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// unknown or unsupported flags are passed. Since we don't implement
 	// everything, we fail explicitly on flags that are unimplemented.
 	if flags&(unsupportedOps|unsupportedFlags) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	rsys, ok := fs.FindFilesystem(fsType)
@@ -107,7 +107,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	rootInode, err := rsys.Mount(t, sourcePath, superFlags, data, nil)
 	if err != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if err := fileOpOn(t, linux.AT_FDCWD, targetPath, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
@@ -130,7 +130,7 @@ func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	const unsupported = linux.MNT_FORCE | linux.MNT_EXPIRE
 	if flags&unsupported != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)

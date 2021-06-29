@@ -158,7 +158,7 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 // CopyInPollFDs copies an array of struct pollfd unless nfds exceeds the max.
 func CopyInPollFDs(t *kernel.Task, addr hostarch.Addr, nfds uint) ([]linux.PollFD, error) {
 	if uint64(nfds) > t.ThreadGroup().Limits().GetCapped(limits.NumberOfFiles, fileCap) {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	pfd := make([]linux.PollFD, nfds)
@@ -218,7 +218,7 @@ func CopyInFDSet(t *kernel.Task, addr hostarch.Addr, nBytes, nBitsInLastPartialB
 
 func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Addr, timeout time.Duration) (uintptr, error) {
 	if nfds < 0 || nfds > fileCap {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Calculate the size of the fd sets (one bit per fd).
@@ -486,7 +486,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, err
 		}
 		if timeval.Sec < 0 || timeval.Usec < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		timeout = time.Duration(timeval.ToNsecCapped())
 	}

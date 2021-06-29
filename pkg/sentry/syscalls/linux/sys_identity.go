@@ -15,10 +15,10 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -142,7 +142,7 @@ func Setresgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 func Getgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	size := int(args[0].Int())
 	if size < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	kgids := t.Credentials().ExtraKGIDs
 	// "If size is zero, list is not modified, but the total number of
@@ -151,7 +151,7 @@ func Getgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return uintptr(len(kgids)), nil, nil
 	}
 	if size < len(kgids) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	gids := make([]auth.GID, len(kgids))
 	for i, kgid := range kgids {
@@ -167,7 +167,7 @@ func Getgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 func Setgroups(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	size := args[0].Int()
 	if size < 0 || size > maxNGroups {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if size == 0 {
 		return 0, nil, t.SetExtraGIDs(nil)

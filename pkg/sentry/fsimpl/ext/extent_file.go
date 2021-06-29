@@ -18,6 +18,7 @@ import (
 	"io"
 	"sort"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -65,7 +66,7 @@ func (f *extentFile) buildExtTree() error {
 	if f.root.Header.NumEntries > 4 {
 		// read(2) specifies that EINVAL should be returned if the file is unsuitable
 		// for reading.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	f.root.Entries = make([]disklayout.ExtentEntryPair, f.root.Header.NumEntries)
@@ -145,7 +146,7 @@ func (f *extentFile) ReadAt(dst []byte, off int64) (int, error) {
 	}
 
 	if off < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	if uint64(off) >= f.regFile.inode.diskInode.Size() {

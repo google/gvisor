@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -357,7 +358,7 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	// "The calling process must be a session leader and not have a
 	// controlling terminal already." - tty_ioctl(4)
 	if tg.processGroup.session.leader != tg || tg.tty != nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	creds := auth.CredentialsFromContext(tg.leader)
@@ -501,7 +502,7 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 
 	// pgid must be positive.
 	if pgid < 0 {
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 
 	// pg must not be empty. Empty process groups are removed from their

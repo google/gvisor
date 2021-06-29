@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -300,7 +301,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		case linux.S_IFSOCK:
 			childInode = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		child := fs.newDentry(childInode)
 		parentDir.insertChildLocked(child, name)
@@ -488,7 +489,7 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	}
 	symlink, ok := d.inode.impl.(*symlink)
 	if !ok {
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	symlink.inode.touchAtime(rp.Mount())
 	return symlink.target, nil
@@ -506,7 +507,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
 		// TODO(b/145974740): Support other renameat2 flags.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	newName := rp.Component()
@@ -541,7 +542,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// mounted filesystem.
 	if renamed.inode.isDir() {
 		if renamed == &newParentDir.dentry || genericIsAncestorDentry(renamed, &newParentDir.dentry) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if oldParentDir != newParentDir {
 			// Writability is needed to change renamed's "..".
@@ -646,7 +647,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	name := rp.Component()
 	if name == "." {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if name == ".." {
 		return syserror.ENOTEMPTY

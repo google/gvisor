@@ -212,7 +212,7 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 
 		// pgID must be non-negative.
 		if pgID < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// Process group with pgID must exist in this PID namespace.

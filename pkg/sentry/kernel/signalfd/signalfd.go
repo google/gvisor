@@ -18,6 +18,7 @@ package signalfd
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -64,7 +65,7 @@ func New(ctx context.Context, mask linux.SignalSet) (*fs.File, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// No task context? Not valid.
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	// name matches fs/signalfd.c:signalfd4.
 	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[signalfd]")

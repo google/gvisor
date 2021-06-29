@@ -274,7 +274,7 @@ func TestCopyInt32StringsInVecRequiresOneValidValue(t *testing.T) {
 			initial := []int32{1, 2}
 			dsts := append([]int32(nil), initial...)
 			if n, err := CopyInt32StringsInVec(newContext(), src.IO, src.Addrs, dsts, src.Opts); !linuxerr.Equals(linuxerr.EINVAL, err) {
-				t.Errorf("CopyInt32StringsInVec: got (%d, %v), wanted (_, %v)", n, err, syserror.EINVAL)
+				t.Errorf("CopyInt32StringsInVec: got (%d, %v), wanted (_, %v)", n, err, linuxerr.EINVAL)
 			}
 			if !reflect.DeepEqual(dsts, initial) {
 				t.Errorf("dsts: got %v, wanted %v", dsts, initial)

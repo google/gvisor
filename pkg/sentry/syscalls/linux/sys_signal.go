@@ -203,7 +203,7 @@ func Tkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	target := t.PIDNamespace().TaskWithID(tid)
@@ -226,7 +226,7 @@ func Tgkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tgid/tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tgid <= 0 || tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	targetTG := t.PIDNamespace().ThreadGroupWithID(tgid)
@@ -249,7 +249,7 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	sigsetsize := args[3].SizeT()
 
 	if sigsetsize != linux.SignalSetSize {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var newactptr *linux.SigAction
@@ -292,7 +292,7 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	sigsetsize := args[3].SizeT()
 
 	if sigsetsize != linux.SignalSetSize {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	oldmask := t.SignalMask()
 	if setaddr != 0 {
@@ -309,7 +309,7 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		case linux.SIG_SETMASK:
 			t.SetSignalMask(mask)
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 	if oldaddr != 0 {
@@ -378,7 +378,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 			return 0, nil, err
 		}
 		if !d.Valid() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		timeout = time.Duration(d.ToNsecCapped())
 	} else {
@@ -450,7 +450,7 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tgid/tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tgid <= 0 || tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Copy in the info. See RtSigqueueinfo above.
@@ -525,7 +525,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 
 	// Always check for valid flags, even if not creating.
 	if flags&^(linux.SFD_NONBLOCK|linux.SFD_CLOEXEC) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Is this a change to an existing signalfd?
@@ -545,7 +545,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 		}
 
 		// Not a signalfd.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Create a new file.

@@ -16,10 +16,10 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Shmget implements shmget(2).
@@ -51,7 +51,7 @@ func findSegment(t *kernel.Task, id shm.ID) (*shm.Shm, error) {
 	segment := r.FindByID(id)
 	if segment == nil {
 		// No segment with provided id.
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	return segment, nil
 }
@@ -64,7 +64,7 @@ func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	segment, err := findSegment(t, id)
 	if err != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	defer segment.DecRef(t)
 
@@ -106,7 +106,7 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case linux.IPC_STAT:
 		segment, err := findSegment(t, id)
 		if err != nil {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		defer segment.DecRef(t)
 
@@ -130,7 +130,7 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// Remaining commands refer to a specific segment.
 	segment, err := findSegment(t, id)
 	if err != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	defer segment.DecRef(t)
 
@@ -155,6 +155,6 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, nil
 
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
