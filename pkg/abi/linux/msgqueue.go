@@ -47,7 +47,7 @@ const (
 	MSGSSZ  = 16
 
 	// MSGSEG is simplified due to the inexistance of a ternary operator.
-	MSGSEG = (MSGPOOL * 1024) / MSGSSZ
+	MSGSEG = 0xffff
 )
 
 // MsqidDS is equivelant to struct msqid64_ds. Source:
