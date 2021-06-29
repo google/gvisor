@@ -678,28 +678,28 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	d := fd.dentry()
-	switch d.fs.opts.interop {
-	case InteropModeExclusive:
-		// Any mapping is fine.
-	case InteropModeWritethrough:
-		// Shared writable mappings require a host FD, since otherwise we can't
-		// synchronously flush memory-mapped writes to the remote file.
-		if opts.Private || !opts.MaxPerms.Write {
-			break
+	// Force sentry page caching at your own risk.
+	if !d.fs.opts.forcePageCache {
+		switch d.fs.opts.interop {
+		case InteropModeExclusive:
+			// Any mapping is fine.
+		case InteropModeWritethrough:
+			// Shared writable mappings require a host FD, since otherwise we
+			// can't synchronously flush memory-mapped writes to the remote
+			// file.
+			if opts.Private || !opts.MaxPerms.Write {
+				break
+			}
+			fallthrough
+		case InteropModeShared:
+			// All mappings require a host FD to be coherent with other
+			// filesystem users.
+			if atomic.LoadInt32(&d.mmapFD) < 0 {
+				return syserror.ENODEV
+			}
+		default:
+			panic(fmt.Sprintf("unknown InteropMode %v", d.fs.opts.interop))
 		}
-		fallthrough
-	case InteropModeShared:
-		// All mappings require a host FD to be coherent with other filesystem
-		// users.
-		if d.fs.opts.forcePageCache {
-			// Whether or not we have a host FD, we're not allowed to use it.
-			return syserror.ENODEV
-		}
-		if atomic.LoadInt32(&d.mmapFD) < 0 {
-			return syserror.ENODEV
-		}
-	default:
-		panic(fmt.Sprintf("unknown InteropMode %v", d.fs.opts.interop))
 	}
 	// After this point, d may be used as a memmap.Mappable.
 	d.pf.hostFileMapperInitOnce.Do(d.pf.hostFileMapper.Init)
@@ -708,11 +708,11 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 }
 
 func (d *dentry) mayCachePages() bool {
-	if d.fs.opts.interop == InteropModeShared {
-		return false
-	}
 	if d.fs.opts.forcePageCache {
 		return true
+	}
+	if d.fs.opts.interop == InteropModeShared {
+		return false
 	}
 	return atomic.LoadInt32(&d.mmapFD) >= 0
 }
