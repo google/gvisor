@@ -124,7 +124,7 @@ var AMD64 = &kernel.SyscallTable{
 		68:  syscalls.Supported("msgget", Msgget),
 		69:  syscalls.Supported("msgsnd", Msgsnd),
 		70:  syscalls.Supported("msgrcv", Msgrcv),
-		71:  syscalls.PartiallySupported("msgctl", Msgctl, "Only supports IPC_RMID option.", []string{"gvisor.dev/issue/135"}),
+		71:  syscalls.Supported("msgctl", Msgctl),
 		72:  syscalls.PartiallySupported("fcntl", Fcntl, "Not all options are supported.", nil),
 		73:  syscalls.PartiallySupported("flock", Flock, "Locks are held within the sandbox only.", nil),
 		74:  syscalls.PartiallySupported("fsync", Fsync, "Full data flush is not guaranteed at this time.", nil),
@@ -617,7 +617,7 @@ var ARM64 = &kernel.SyscallTable{
 		184: syscalls.ErrorWithEvent("mq_notify", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
 		185: syscalls.ErrorWithEvent("mq_getsetattr", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
 		186: syscalls.Supported("msgget", Msgget),
-		187: syscalls.PartiallySupported("msgctl", Msgctl, "Only supports IPC_RMID option.", []string{"gvisor.dev/issue/135"}),
+		187: syscalls.Supported("msgctl", Msgctl),
 		188: syscalls.Supported("msgrcv", Msgrcv),
 		189: syscalls.Supported("msgsnd", Msgsnd),
 		190: syscalls.Supported("semget", Semget),

@@ -662,8 +662,6 @@ TEST(MsgqueueTest, MsgOpGeneral) {
 
 // Test msgctl with IPC_STAT option.
 TEST(MsgqueueTest, MsgCtlIpcStat) {
-  GTEST_SKIP();
-
   auto start = absl::Now();
 
   Queue queue(msgget(IPC_PRIVATE, 0600));
@@ -734,8 +732,6 @@ TEST(MsgqueueTest, MsgCtlIpcStat) {
 
 // Test msgctl with IPC_STAT option on a write-only queue.
 TEST(MsgqueueTest, MsgCtlIpcStatWriteOnly) {
-  GTEST_SKIP();
-
   // Drop CAP_IPC_OWNER which allows us to bypass permissions.
   AutoCapability cap(CAP_IPC_OWNER, false);
 
@@ -749,8 +745,6 @@ TEST(MsgqueueTest, MsgCtlIpcStatWriteOnly) {
 
 // Test msgctl with IPC_SET option.
 TEST(MsgqueueTest, MsgCtlIpcSet) {
-  GTEST_SKIP();
-
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
@@ -767,8 +761,6 @@ TEST(MsgqueueTest, MsgCtlIpcSet) {
 
 // Test increasing msg_qbytes beyond limit with IPC_SET.
 TEST(MsgqueueTest, MsgCtlIpcSetMaxBytes) {
-  GTEST_SKIP();
-
   // Drop CAP_SYS_RESOURCE which allows us to increase msg_qbytes beyond the
   // system parameter MSGMNB.
   AutoCapability cap(CAP_SYS_RESOURCE, false);
@@ -792,8 +784,6 @@ TEST(MsgqueueTest, MsgCtlIpcSetMaxBytes) {
 
 // Test msgctl with IPC_INFO option.
 TEST(MsgqueueTest, MsgCtlIpcInfo) {
-  GTEST_SKIP();
-
   struct msginfo info;
   ASSERT_THAT(msgctl(0, IPC_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
               SyscallSucceeds());
@@ -809,8 +799,6 @@ TEST(MsgqueueTest, MsgCtlIpcInfo) {
 
 // Test msgctl with MSG_INFO option.
 TEST(MsgqueueTest, MsgCtlMsgInfo) {
-  GTEST_SKIP();
-
   struct msginfo info;
   ASSERT_THAT(msgctl(0, MSG_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
               SyscallSucceeds());
