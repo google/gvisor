@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
@@ -166,8 +165,7 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, err
 		}
 
-		perms := fs.FilePermsFromMode(linux.FileMode(s.SemPerm.Mode & 0777))
-		return 0, nil, ipcSet(t, id, auth.UID(s.SemPerm.UID), auth.GID(s.SemPerm.GID), perms)
+		return 0, nil, ipcSet(t, id, &s)
 
 	case linux.GETPID:
 		v, err := getPID(t, id, num)
@@ -243,24 +241,13 @@ func remove(t *kernel.Task, id ipc.ID) error {
 	return r.Remove(id, creds)
 }
 
-func ipcSet(t *kernel.Task, id ipc.ID, uid auth.UID, gid auth.GID, perms fs.FilePermissions) error {
+func ipcSet(t *kernel.Task, id ipc.ID, ds *linux.SemidDS) error {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
 	if set == nil {
 		return linuxerr.EINVAL
 	}
-
-	creds := auth.CredentialsFromContext(t)
-	kuid := creds.UserNamespace.MapToKUID(uid)
-	if !kuid.Ok() {
-		return linuxerr.EINVAL
-	}
-	kgid := creds.UserNamespace.MapToKGID(gid)
-	if !kgid.Ok() {
-		return linuxerr.EINVAL
-	}
-	owner := fs.FileOwner{UID: kuid, GID: kgid}
-	return set.Change(t, creds, owner, perms)
+	return set.Set(t, ds)
 }
 
 func ipcStat(t *kernel.Task, id ipc.ID) (*linux.SemidDS, error) {
