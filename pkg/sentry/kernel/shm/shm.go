@@ -619,24 +619,9 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	creds := auth.CredentialsFromContext(ctx)
-	if !s.obj.CheckOwnership(creds) {
-		return linuxerr.EPERM
+	if err := s.obj.Set(ctx, &ds.ShmPerm); err != nil {
+		return err
 	}
-
-	uid := creds.UserNamespace.MapToKUID(auth.UID(ds.ShmPerm.UID))
-	gid := creds.UserNamespace.MapToKGID(auth.GID(ds.ShmPerm.GID))
-	if !uid.Ok() || !gid.Ok() {
-		return linuxerr.EINVAL
-	}
-
-	// User may only modify the lower 9 bits of the mode. All the other bits are
-	// always 0 for the underlying inode.
-	mode := linux.FileMode(ds.ShmPerm.Mode & 0x1ff)
-	s.obj.Perms = fs.FilePermsFromMode(mode)
-
-	s.obj.Owner.UID = uid
-	s.obj.Owner.GID = gid
 
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
