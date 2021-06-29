@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/pkg/process"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/shim/utils"
 )
 
 type stateTransition int
@@ -235,6 +236,6 @@ func handleStoppedKill(signal uint32) error {
 		// already been killed.
 		return nil
 	default:
-		return errdefs.ToGRPCf(errdefs.ErrNotFound, "process not found")
+		return utils.ErrToGRPCf(errdefs.ErrNotFound, "process not found")
 	}
 }

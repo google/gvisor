@@ -12,23 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shim
+package utils
 
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/containerd/containerd/errdefs"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// errToGRPC wraps containerd's ToGRPC error mapper which depends on
+// ErrToGRPC wraps containerd's ToGRPC error mapper which depends on
 // github.com/pkg/errors to work correctly. Once we upgrade to containerd v1.4,
 // this function can go away and we can use errdefs.ToGRPC directly instead.
 //
 // TODO(gvisor.dev/issue/6232): Remove after upgrading to containerd v1.4
-func errToGRPC(err error) error {
+func ErrToGRPC(err error) error {
+	return errToGRPCMsg(err, err.Error())
+}
+
+// ErrToGRPCf maps the error to grpc error codes, assembling the formatting
+// string and combining it with the target error string.
+//
+// TODO(gvisor.dev/issue/6232): Remove after upgrading to containerd v1.4
+func ErrToGRPCf(err error, format string, args ...interface{}) error {
+	formatted := fmt.Sprintf(format, args...)
+	msg := fmt.Sprintf("%s: %s", formatted, err.Error())
+	return errToGRPCMsg(err, msg)
+}
+
+func errToGRPCMsg(err error, msg string) error {
 	if err == nil {
 		return nil
 	}
@@ -38,21 +53,21 @@ func errToGRPC(err error) error {
 
 	switch {
 	case errors.Is(err, errdefs.ErrInvalidArgument):
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Errorf(codes.InvalidArgument, msg)
 	case errors.Is(err, errdefs.ErrNotFound):
-		return status.Errorf(codes.NotFound, err.Error())
+		return status.Errorf(codes.NotFound, msg)
 	case errors.Is(err, errdefs.ErrAlreadyExists):
-		return status.Errorf(codes.AlreadyExists, err.Error())
+		return status.Errorf(codes.AlreadyExists, msg)
 	case errors.Is(err, errdefs.ErrFailedPrecondition):
-		return status.Errorf(codes.FailedPrecondition, err.Error())
+		return status.Errorf(codes.FailedPrecondition, msg)
 	case errors.Is(err, errdefs.ErrUnavailable):
-		return status.Errorf(codes.Unavailable, err.Error())
+		return status.Errorf(codes.Unavailable, msg)
 	case errors.Is(err, errdefs.ErrNotImplemented):
-		return status.Errorf(codes.Unimplemented, err.Error())
+		return status.Errorf(codes.Unimplemented, msg)
 	case errors.Is(err, context.Canceled):
-		return status.Errorf(codes.Canceled, err.Error())
+		return status.Errorf(codes.Canceled, msg)
 	case errors.Is(err, context.DeadlineExceeded):
-		return status.Errorf(codes.DeadlineExceeded, err.Error())
+		return status.Errorf(codes.DeadlineExceeded, msg)
 	}
 
 	return errdefs.ToGRPC(err)
