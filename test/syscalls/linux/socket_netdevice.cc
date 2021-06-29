@@ -37,6 +37,7 @@ using ::testing::AnyOf;
 using ::testing::Eq;
 
 TEST(NetdeviceTest, Loopback) {
+  SKIP_IF(IsRunningWithHostinet());
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
 
@@ -60,6 +61,7 @@ TEST(NetdeviceTest, Loopback) {
 }
 
 TEST(NetdeviceTest, Netmask) {
+  SKIP_IF(IsRunningWithHostinet());
   // We need an interface index to identify the loopback device.
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -135,6 +137,7 @@ TEST(NetdeviceTest, Netmask) {
 }
 
 TEST(NetdeviceTest, InterfaceName) {
+  SKIP_IF(IsRunningWithHostinet());
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
 
@@ -168,6 +171,7 @@ TEST(NetdeviceTest, InterfaceFlags) {
 }
 
 TEST(NetdeviceTest, InterfaceMTU) {
+  SKIP_IF(IsRunningWithHostinet());
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
 
@@ -181,6 +185,7 @@ TEST(NetdeviceTest, InterfaceMTU) {
 }
 
 TEST(NetdeviceTest, EthtoolGetTSInfo) {
+  SKIP_IF(IsRunningWithHostinet());
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
 
