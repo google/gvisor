@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shim
+package utils
 
 import (
 	"fmt"
@@ -39,8 +39,11 @@ func TestGRPCRoundTripsErrors(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := errdefs.FromGRPC(errToGRPC(tc.err)); !tc.test(err) {
-				t.Errorf("got %+v", err)
+			if err := errdefs.FromGRPC(ErrToGRPC(tc.err)); !tc.test(err) {
+				t.Errorf("errToGRPC got %+v", err)
+			}
+			if err := errdefs.FromGRPC(ErrToGRPCf(tc.err, "testing %s", "123")); !tc.test(err) {
+				t.Errorf("errToGRPCf got %+v", err)
 			}
 		})
 	}
