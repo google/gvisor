@@ -20,6 +20,7 @@ go_library(
         "//shim:__subpackages__",
     ],
     deps = [
+        "//pkg/cleanup",
         "//pkg/shim/runsc",
         "//pkg/shim/utils",
         "@com_github_containerd_console//:go_default_library",
