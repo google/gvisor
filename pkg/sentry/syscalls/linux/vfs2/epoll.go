@@ -35,7 +35,7 @@ var sizeofEpollEvent = (*linux.EpollEvent)(nil).SizeBytes()
 func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 	if flags&^linux.EPOLL_CLOEXEC != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
@@ -60,7 +60,7 @@ func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// "Since Linux 2.6.8, the size argument is ignored, but must be greater
 	// than zero" - epoll_create(2)
 	if size <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file, err := t.Kernel().VFS().NewEpollInstanceFD(t)
@@ -90,7 +90,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	defer epfile.DecRef(t)
 	ep, ok := epfile.Impl().(*vfs.EpollInstance)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	file := t.GetFileVFS2(fd)
 	if file == nil {
@@ -98,7 +98,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 	defer file.DecRef(t)
 	if epfile == file {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	var event linux.EpollEvent
@@ -116,14 +116,14 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}
 		return 0, nil, ep.ModifyInterest(file, fd, event)
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
 func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
 	var _EP_MAX_EVENTS = math.MaxInt32 / sizeofEpollEvent // Linux: fs/eventpoll.c:EP_MAX_EVENTS
 	if maxEvents <= 0 || maxEvents > _EP_MAX_EVENTS {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	epfile := t.GetFileVFS2(epfd)
@@ -133,7 +133,7 @@ func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents i
 	defer epfile.DecRef(t)
 	ep, ok := epfile.Impl().(*vfs.EpollInstance)
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Allocate space for a few events on the stack for the common case in

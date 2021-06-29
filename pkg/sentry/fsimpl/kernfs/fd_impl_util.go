@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -248,10 +249,10 @@ func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int
 			panic(fmt.Sprintf("Invalid GenericDirectoryFD.seekEnd = %v", fd.seekEnd))
 		}
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	fd.off = offset
 	return offset, nil

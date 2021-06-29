@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -139,13 +140,13 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	statxAddr := args[4].Pointer()
 
 	if mask&linux.STATX__RESERVED != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if flags&^(linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH|linux.AT_STATX_SYNC_TYPE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if flags&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	path, dirPath, err := copyInPath(t, pathAddr, flags&linux.AT_EMPTY_PATH != 0)

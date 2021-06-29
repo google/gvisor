@@ -21,6 +21,7 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
@@ -130,7 +131,7 @@ func (s *self) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	}
 
 	// Who is reading this link?
-	return "", syserror.EINVAL
+	return "", linuxerr.EINVAL
 }
 
 // threadSelf is more magical than "self" link.
@@ -154,7 +155,7 @@ func (s *threadSelf) Readlink(ctx context.Context, inode *fs.Inode) (string, err
 	}
 
 	// Who is reading this link?
-	return "", syserror.EINVAL
+	return "", linuxerr.EINVAL
 }
 
 // Lookup loads an Inode at name into a Dirent.

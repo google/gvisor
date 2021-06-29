@@ -18,13 +18,13 @@ import (
 	"bytes"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Brk implements linux syscall brk(2).
@@ -51,7 +51,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	// Require exactly one of MAP_PRIVATE and MAP_SHARED.
 	if private == shared {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	opts := memmap.MMapOpts{
@@ -132,7 +132,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	newAddr := args[4].Pointer()
 
 	if flags&^(linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	mayMove := flags&linux.MREMAP_MAYMOVE != 0
 	fixed := flags&linux.MREMAP_FIXED != 0
@@ -147,7 +147,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case !mayMove && fixed:
 		// "If MREMAP_FIXED is specified, then MREMAP_MAYMOVE must also be
 		// specified." - mremap(2)
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	rv, err := t.MemoryManager().MRemap(t, oldAddr, oldSize, newSize, mm.MRemapOpts{
@@ -178,7 +178,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// "The Linux implementation requires that the address addr be
 	// page-aligned, and allows length to be zero." - madvise(2)
 	if addr.RoundDown() != addr {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if length == 0 {
 		return 0, nil, nil
@@ -186,7 +186,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Not explicitly stated: length need not be page-aligned.
 	lenAddr, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	length = uint64(lenAddr)
 
@@ -217,7 +217,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, syserror.EPERM
 	default:
 		// If adv is not a valid value tell the caller.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
@@ -228,7 +228,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	vec := args[2].Pointer()
 
 	if addr != addr.RoundDown() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// "The length argument need not be a multiple of the page size, but since
 	// residency information is returned for whole pages, length is effectively
@@ -265,11 +265,11 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// semantics that are (currently) equivalent to specifying MS_ASYNC." -
 	// msync(2)
 	if flags&^(linux.MS_ASYNC|linux.MS_SYNC|linux.MS_INVALIDATE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	sync := flags&linux.MS_SYNC != 0
 	if sync && flags&linux.MS_ASYNC != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	err := t.MemoryManager().MSync(t, addr, uint64(length), mm.MSyncOpts{
 		Sync:       sync,
@@ -295,7 +295,7 @@ func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	flags := args[2].Int()
 
 	if flags&^(linux.MLOCK_ONFAULT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	mode := memmap.MLockEager
@@ -318,7 +318,7 @@ func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	flags := args[0].Int()
 
 	if flags&^(linux.MCL_CURRENT|linux.MCL_FUTURE|linux.MCL_ONFAULT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	mode := memmap.MLockEager

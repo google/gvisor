@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -60,7 +61,7 @@ func Setdomainname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, syserror.EPERM
 	}
 	if size < 0 || size > linux.UTSLen {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	name, err := t.CopyInString(nameAddr, int(size))
@@ -82,7 +83,7 @@ func Sethostname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, syserror.EPERM
 	}
 	if size < 0 || size > linux.UTSLen {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	name := make([]byte, size)

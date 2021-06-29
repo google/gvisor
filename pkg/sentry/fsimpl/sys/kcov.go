@@ -17,6 +17,7 @@ package sys
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -85,7 +86,7 @@ func (fd *kcovFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallAr
 	case linux.KCOV_DISABLE:
 		if arg != 0 {
 			// This arg is unused; it should be 0.
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		return 0, fd.kcov.DisableTrace(ctx)
 	default:

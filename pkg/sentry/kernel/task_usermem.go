@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -202,7 +203,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 			base := hostarch.Addr(hostarch.ByteOrder.Uint64(b[0:8]))
 			length := hostarch.ByteOrder.Uint64(b[8:16])
 			if length > math.MaxInt64 {
-				return hostarch.AddrRangeSeq{}, syserror.EINVAL
+				return hostarch.AddrRangeSeq{}, linuxerr.EINVAL
 			}
 			ar, ok := t.MemoryManager().CheckIORange(base, int64(length))
 			if !ok {
@@ -270,7 +271,7 @@ func (t *Task) SingleIOSequence(addr hostarch.Addr, length int, opts usermem.IOO
 // Preconditions: Same as Task.CopyInIovecs.
 func (t *Task) IovecsIOSequence(addr hostarch.Addr, iovcnt int, opts usermem.IOOpts) (usermem.IOSequence, error) {
 	if iovcnt < 0 || iovcnt > linux.UIO_MAXIOV {
-		return usermem.IOSequence{}, syserror.EINVAL
+		return usermem.IOSequence{}, linuxerr.EINVAL
 	}
 	ars, err := t.CopyInIovecs(addr, iovcnt)
 	if err != nil {

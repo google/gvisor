@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -127,7 +128,7 @@ func NewRegistry(userNS *auth.UserNamespace) *Registry {
 // exists.
 func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linux.FileMode, private, create, exclusive bool) (*Set, error) {
 	if nsems < 0 || nsems > semsMax {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	r.mu.Lock()
@@ -147,7 +148,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 
 			// Validate parameters.
 			if nsems > int32(set.Size()) {
-				return nil, syserror.EINVAL
+				return nil, linuxerr.EINVAL
 			}
 			if create && exclusive {
 				return nil, syserror.EEXIST
@@ -163,7 +164,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 
 	// Zero is only valid if an existing set is found.
 	if nsems == 0 {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	// Apply system limits.
@@ -238,7 +239,7 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 
 	set := r.semaphores[id]
 	if set == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	index, found := r.findIndexByID(id)
 	if !found {

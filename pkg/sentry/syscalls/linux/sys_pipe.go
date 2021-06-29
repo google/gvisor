@@ -16,13 +16,13 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -30,7 +30,7 @@ import (
 // pipe2 implements the actual system call with flags.
 func pipe2(t *kernel.Task, addr hostarch.Addr, flags uint) (uintptr, error) {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize)
 

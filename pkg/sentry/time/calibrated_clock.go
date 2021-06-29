@@ -19,10 +19,10 @@ package time
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // CalibratedClock implements a clock that tracks a reference clock.
@@ -259,6 +259,6 @@ func (c *CalibratedClocks) GetTime(id ClockID) (int64, error) {
 	case Realtime:
 		return c.realtime.GetTime()
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 }

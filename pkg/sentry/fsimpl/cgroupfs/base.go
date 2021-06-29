@@ -23,10 +23,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -253,7 +253,7 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence, offset in
 		// Note: This also handles zero-len writes if offset is beyond the end
 		// of src, or src is empty.
 		ctx.Warningf("cgroupfs.parseInt64FromString: failed to parse %q: %v", string(buf), err)
-		return 0, int64(n), syserror.EINVAL
+		return 0, int64(n), linuxerr.EINVAL
 	}
 
 	return val, int64(n), nil

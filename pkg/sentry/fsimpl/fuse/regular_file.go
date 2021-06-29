@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -39,7 +40,7 @@ type regularFileFD struct {
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.
@@ -56,7 +57,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	} else if size > math.MaxUint32 {
 		// FUSE only supports uint32 for size.
 		// Overflow.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// TODO(gvisor.dev/issue/3678): Add direct IO support.
@@ -143,7 +144,7 @@ func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 // final offset should be ignored by PWrite.
 func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
 	if offset < 0 {
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	// Check that flags are supported.
@@ -171,11 +172,11 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	if srclen > math.MaxUint32 {
 		// FUSE only supports uint32 for size.
 		// Overflow.
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 	if end := offset + srclen; end < offset {
 		// Overflow.
-		return 0, offset, syserror.EINVAL
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	srclen, err = vfs.CheckLimit(ctx, offset, srclen)

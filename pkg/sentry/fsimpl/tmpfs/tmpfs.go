@@ -36,6 +36,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -138,7 +139,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		mode, err := strconv.ParseUint(modeStr, 8, 32)
 		if err != nil {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		rootMode = linux.FileMode(mode & 07777)
 	}
@@ -149,12 +150,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		uid, err := strconv.ParseUint(uidStr, 10, 32)
 		if err != nil {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid uid: %q", uidStr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
 		if !kuid.Ok() {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		rootKUID = kuid
 	}
@@ -165,18 +166,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		gid, err := strconv.ParseUint(gidStr, 10, 32)
 		if err != nil {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid gid: %q", gidStr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
 		if !kgid.Ok() {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		rootKGID = kgid
 	}
 	if len(mopts) != 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
@@ -557,7 +558,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		case *directory:
 			return syserror.EISDIR
 		default:
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	if mask&linux.STATX_UID != 0 {

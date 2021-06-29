@@ -19,10 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // +stateify savable
@@ -196,10 +196,10 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	case linux.SEEK_CUR:
 		offset += fd.off
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// If the offset isn't changing (e.g. due to lseek(0, SEEK_CUR)), don't

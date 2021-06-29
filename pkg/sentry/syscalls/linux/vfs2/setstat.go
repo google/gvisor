@@ -16,15 +16,15 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const chmodMask = 0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX
@@ -105,7 +105,7 @@ func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 func fchownat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, owner, group, flags int32) error {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	path, err := copyInPath(t, pathAddr)
@@ -126,7 +126,7 @@ func populateSetStatOptionsForChown(t *kernel.Task, owner, group int32, opts *vf
 	if owner != -1 {
 		kuid := userns.MapToKUID(auth.UID(owner))
 		if !kuid.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		opts.Stat.Mask |= linux.STATX_UID
 		opts.Stat.UID = uint32(kuid)
@@ -134,7 +134,7 @@ func populateSetStatOptionsForChown(t *kernel.Task, owner, group int32, opts *vf
 	if group != -1 {
 		kgid := userns.MapToKGID(auth.GID(group))
 		if !kgid.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		opts.Stat.Mask |= linux.STATX_GID
 		opts.Stat.GID = uint32(kgid)
@@ -167,7 +167,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	length := args[1].Int64()
 
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	path, err := copyInPath(t, addr)
@@ -191,7 +191,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	length := args[1].Int64()
 
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFileVFS2(fd)
@@ -201,7 +201,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	defer file.DecRef(t)
 
 	if !file.IsWritable() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	err := file.SetStat(t, vfs.SetStatOptions{
@@ -233,7 +233,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.ENOTSUP
 	}
 	if offset < 0 || length <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	size := offset + length
@@ -340,7 +340,7 @@ func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr hostarch.Addr, op
 		return err
 	}
 	if times[0].Usec < 0 || times[0].Usec > 999999 || times[1].Usec < 0 || times[1].Usec > 999999 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
 	opts.Stat.Atime = linux.StatxTimestamp{
@@ -372,7 +372,7 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	if flags&^linux.AT_SYMLINK_NOFOLLOW != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// "If filename is NULL and dfd refers to an open file, then operate on the
@@ -405,7 +405,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, o
 	}
 	if times[0].Nsec != linux.UTIME_OMIT {
 		if times[0].Nsec != linux.UTIME_NOW && (times[0].Nsec < 0 || times[0].Nsec > 999999999) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		opts.Stat.Mask |= linux.STATX_ATIME
 		opts.Stat.Atime = linux.StatxTimestamp{
@@ -415,7 +415,7 @@ func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, o
 	}
 	if times[1].Nsec != linux.UTIME_OMIT {
 		if times[1].Nsec != linux.UTIME_NOW && (times[1].Nsec < 0 || times[1].Nsec > 999999999) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		opts.Stat.Mask |= linux.STATX_MTIME
 		opts.Stat.Mtime = linux.StatxTimestamp{

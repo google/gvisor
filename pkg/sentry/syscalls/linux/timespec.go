@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -103,7 +104,7 @@ func copyTimespecInToDuration(t *kernel.Task, timespecAddr hostarch.Addr) (time.
 			return 0, err
 		}
 		if !timespec.Valid() {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		timeout = time.Duration(timespec.ToNsecCapped())
 	}

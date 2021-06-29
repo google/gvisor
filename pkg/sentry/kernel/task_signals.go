@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -370,7 +371,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 // The following errors may be returned:
 //
 //	syserror.ESRCH - The task has exited.
-//	syserror.EINVAL - The signal is not valid.
+//	linuxerr.EINVAL - The signal is not valid.
 //	syserror.EAGAIN - THe signal is realtime, and cannot be queued.
 //
 func (t *Task) SendSignal(info *linux.SignalInfo) error {
@@ -413,7 +414,7 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 		return nil
 	}
 	if !sig.IsValid() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Signal side effects apply even if the signal is ultimately discarded.
@@ -684,7 +685,7 @@ func (t *Task) SetSignalStack(alt linux.SignalStack) bool {
 // to *actptr (if actptr is not nil) and returns the old signal action.
 func (tg *ThreadGroup) SetSigAction(sig linux.Signal, actptr *linux.SigAction) (linux.SigAction, error) {
 	if !sig.IsValid() {
-		return linux.SigAction{}, syserror.EINVAL
+		return linux.SigAction{}, linuxerr.EINVAL
 	}
 
 	tg.pidns.owner.mu.RLock()
@@ -695,7 +696,7 @@ func (tg *ThreadGroup) SetSigAction(sig linux.Signal, actptr *linux.SigAction) (
 	oldact := sh.actions[sig]
 	if actptr != nil {
 		if sig == linux.SIGKILL || sig == linux.SIGSTOP {
-			return oldact, syserror.EINVAL
+			return oldact, linuxerr.EINVAL
 		}
 
 		act := *actptr

@@ -276,7 +276,7 @@ func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 		default:
 			// "EINVAL - mode requested creation of something other than a
 			// regular file, device special file, FIFO or socket." - mknod(2)
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	})
 }
@@ -528,7 +528,7 @@ func accessAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode uint) error 
 
 	// Sanity check the mode.
 	if mode&^(rOK|wOK|xOK) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	return fileOpOn(t, dirFD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
@@ -844,7 +844,7 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	flags := args[2].Uint()
 
 	if oldfd == newfd {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	oldFile := t.GetFile(oldfd)
@@ -906,7 +906,7 @@ func fSetOwn(t *kernel.Task, fd int, file *fs.File, who int32) error {
 	if who < 0 {
 		// Check for overflow before flipping the sign.
 		if who-1 > who {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(-who))
 		a.SetOwnerProcessGroup(t, pg)
@@ -977,7 +977,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		case 2:
 			sw = fs.SeekEnd
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		// Compute the lock offset.
@@ -996,7 +996,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			}
 			off = uattr.Size
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		// Compute the lock range.
@@ -1044,7 +1044,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			file.Dirent.Inode.LockCtx.Posix.UnlockRegion(t.FDTable(), rng)
 			return 0, nil, nil
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	case linux.F_GETOWN:
 		return uintptr(fGetOwn(t, file)), nil, nil
@@ -1086,7 +1086,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			a.SetOwnerProcessGroup(t, pg)
 			return 0, nil, nil
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	case linux.F_GET_SEALS:
 		val, err := tmpfs.GetSeals(file.Dirent.Inode)
@@ -1100,14 +1100,14 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETPIPE_SZ:
 		sz, ok := file.FileOperations.(fs.FifoSizer)
 		if !ok {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		size, err := sz.FifoSize(t, file)
 		return uintptr(size), nil, err
 	case linux.F_SETPIPE_SZ:
 		sz, ok := file.FileOperations.(fs.FifoSizer)
 		if !ok {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		n, err := sz.SetFifoSize(int64(args[2].Int()))
 		return uintptr(n), nil, err
@@ -1119,7 +1119,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
@@ -1132,7 +1132,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// Note: offset is allowed to be negative.
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFile(fd)
@@ -1154,7 +1154,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.POSIX_FADV_DONTNEED:
 	case linux.POSIX_FADV_NOREUSE:
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Sure, whatever.
@@ -1237,7 +1237,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 		// dot vs. double dots.
 		switch name {
 		case ".":
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		case "..":
 			return syserror.ENOTEMPTY
 		}
@@ -1432,7 +1432,7 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Sanity check flags.
 	if flags&^(linux.AT_SYMLINK_FOLLOW|linux.AT_EMPTY_PATH) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	resolve := flags&linux.AT_SYMLINK_FOLLOW == linux.AT_SYMLINK_FOLLOW
@@ -1466,7 +1466,7 @@ func readlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, bufAddr hostarc
 
 		s, err := d.Inode.Readlink(t)
 		if linuxerr.Equals(linuxerr.ENOLINK, err) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if err != nil {
 			return err
@@ -1558,7 +1558,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	length := args[1].Int64()
 
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
@@ -1566,7 +1566,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, err
 	}
 	if dirPath {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
@@ -1584,7 +1584,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// In contrast to open(O_TRUNC), truncate(2) is only valid for file
 		// types.
 		if !fs.IsFile(d.Inode.StableAttr) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 
 		// Reject truncation if the access permissions do not allow truncation.
@@ -1618,18 +1618,18 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// Reject truncation if the file flags do not permit this operation.
 	// This is different from truncate(2) above.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// In contrast to open(O_TRUNC), truncate(2) is only valid for file
 	// types. Note that this is different from truncate(2) above, where a
 	// directory returns EISDIR.
 	if !fs.IsFile(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
@@ -1683,7 +1683,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		kuid := c.UserNamespace.MapToKUID(uid)
 		// Valid UID must be supplied if UID is to be changed.
 		if !kuid.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 
 		// "Only a privileged process (CAP_CHOWN) may change the owner
@@ -1707,7 +1707,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		kgid := c.UserNamespace.MapToKGID(gid)
 		// Valid GID must be supplied if GID is to be changed.
 		if !kgid.Ok() {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 
 		// "The owner of a file may change the group of the file to any
@@ -1809,7 +1809,7 @@ func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	flags := args[4].Int()
 
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, chownAt(t, dirFD, addr, flags&linux.AT_SYMLINK_NOFOLLOW == 0, flags&linux.AT_EMPTY_PATH != 0, uid, gid)
@@ -1914,7 +1914,7 @@ func utimes(t *kernel.Task, dirFD int32, addr hostarch.Addr, ts fs.TimeSpec, res
 	if addr == 0 && dirFD != linux.AT_FDCWD {
 		if !resolve {
 			// Linux returns EINVAL in this case. See utimes.c.
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		f := t.GetFile(dirFD)
 		if f == nil {
@@ -1997,7 +1997,7 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			return 0, nil, err
 		}
 		if !timespecIsValid(times[0]) || !timespecIsValid(times[1]) {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		// If both are UTIME_OMIT, this is a noop.
@@ -2032,7 +2032,7 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		}
 		if times[0].Usec >= 1e6 || times[0].Usec < 0 ||
 			times[1].Usec >= 1e6 || times[1].Usec < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		ts = fs.TimeSpec{
@@ -2118,7 +2118,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	defer file.DecRef(t)
 
 	if offset < 0 || length <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if mode != 0 {
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -2208,7 +2208,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		file.Dirent.Inode.LockCtx.BSD.UnlockRegion(file, rng)
 	default:
 		// flock(2): EINVAL operation is invalid.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, nil
@@ -2227,7 +2227,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 	if flags&^memfdAllFlags != 0 {
 		// Unknown bits in flags.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	allowSeals := flags&linux.MFD_ALLOW_SEALING != 0
@@ -2238,7 +2238,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, err
 	}
 	if len(name) > memfdMaxNameLen {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	name = memfdPrefix + name
 

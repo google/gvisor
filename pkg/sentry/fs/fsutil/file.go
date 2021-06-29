@@ -18,6 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -63,12 +64,12 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 		switch inode.StableAttr.Type {
 		case fs.RegularFile, fs.SpecialFile, fs.BlockDevice:
 			if offset < 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			return offset, nil
 		case fs.Directory, fs.SpecialDirectory:
 			if offset != 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			// SEEK_SET to 0 moves the directory "cursor" to the beginning.
 			if dirCursor != nil {
@@ -76,22 +77,22 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 			}
 			return 0, nil
 		default:
-			return current, syserror.EINVAL
+			return current, linuxerr.EINVAL
 		}
 	case fs.SeekCurrent:
 		switch inode.StableAttr.Type {
 		case fs.RegularFile, fs.SpecialFile, fs.BlockDevice:
 			if current+offset < 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			return current + offset, nil
 		case fs.Directory, fs.SpecialDirectory:
 			if offset != 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			return current, nil
 		default:
-			return current, syserror.EINVAL
+			return current, linuxerr.EINVAL
 		}
 	case fs.SeekEnd:
 		switch inode.StableAttr.Type {
@@ -103,14 +104,14 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 			}
 			sz := uattr.Size
 			if sz+offset < 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			return sz + offset, nil
 		// FIXME(b/34778850): This is not universally correct.
 		// Remove SpecialDirectory.
 		case fs.SpecialDirectory:
 			if offset != 0 {
-				return current, syserror.EINVAL
+				return current, linuxerr.EINVAL
 			}
 			// SEEK_END to 0 moves the directory "cursor" to the end.
 			//
@@ -121,12 +122,12 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 			// futile (EOF will always be the result).
 			return fs.FileMaxOffset, nil
 		default:
-			return current, syserror.EINVAL
+			return current, linuxerr.EINVAL
 		}
 	}
 
 	// Not a valid seek request.
-	return current, syserror.EINVAL
+	return current, linuxerr.EINVAL
 }
 
 // FileGenericSeek implements fs.FileOperations.Seek for files that use a
@@ -152,7 +153,7 @@ type FileNoSeek struct{}
 
 // Seek implements fs.FileOperations.Seek.
 func (FileNoSeek) Seek(context.Context, *fs.File, fs.SeekWhence, int64) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // FilePipeSeek implements fs.FileOperations.Seek and can be used for files
@@ -178,7 +179,7 @@ type FileNoFsync struct{}
 
 // Fsync implements fs.FileOperations.Fsync.
 func (FileNoFsync) Fsync(context.Context, *fs.File, int64, int64, fs.SyncType) error {
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // FileNoopFsync implements fs.FileOperations.Fsync for files that don't need
@@ -345,7 +346,7 @@ func NewFileStaticContentReader(b []byte) FileStaticContentReader {
 // Read implements fs.FileOperations.Read.
 func (scr *FileStaticContentReader) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset >= int64(len(scr.content)) {
 		return 0, nil
@@ -367,7 +368,7 @@ type FileNoRead struct{}
 
 // Read implements fs.FileOperations.Read.
 func (FileNoRead) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // FileNoWrite implements fs.FileOperations.Write to return EINVAL.
@@ -375,7 +376,7 @@ type FileNoWrite struct{}
 
 // Write implements fs.FileOperations.Write.
 func (FileNoWrite) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // FileNoopRead implement fs.FileOperations.Read as a noop.

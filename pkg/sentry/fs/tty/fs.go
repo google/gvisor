@@ -16,9 +16,9 @@ package tty
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ptsDevice is the pseudo-filesystem device.
@@ -64,7 +64,7 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 
 	// No options are supported.
 	if data != "" {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	return newDir(ctx, fs.NewMountSource(ctx, &superOperations{}, f, flags)), nil

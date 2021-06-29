@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -284,7 +285,7 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 // UmountAt removes the Mount at the given path.
 func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *UmountOptions) error {
 	if opts.Flags&^(linux.MNT_FORCE|linux.MNT_DETACH) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// MNT_FORCE is currently unimplemented except for the permission check.
@@ -301,19 +302,19 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	}
 	defer vd.DecRef(ctx)
 	if vd.dentry != vd.mount.root {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	vfs.mountMu.Lock()
 	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
 		defer mntns.DecRef(ctx)
 		if mntns != vd.mount.ns {
 			vfs.mountMu.Unlock()
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 
 		if vd.mount == vd.mount.ns.root {
 			vfs.mountMu.Unlock()
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 

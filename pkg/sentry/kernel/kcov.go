@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -131,13 +132,13 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 	// To simplify all the logic around mapping, we require that the length of the
 	// shared region is a multiple of the system page size.
 	if (8*size)&(hostarch.PageSize-1) != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// We need space for at least two uint64s to hold current position and a
 	// single PC.
 	if size < 2 || size > kcovAreaSizeMax {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	kcov.size = size
@@ -157,7 +158,7 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 
 	// KCOV_ENABLE must be preceded by KCOV_INIT_TRACE and an mmap call.
 	if kcov.mode != linux.KCOV_MODE_INIT || kcov.mappable == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	switch traceKind {
@@ -167,7 +168,7 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 		// We do not support KCOV_MODE_TRACE_CMP.
 		return syserror.ENOTSUP
 	default:
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	if kcov.owningTask != nil && kcov.owningTask != t {
@@ -195,7 +196,7 @@ func (kcov *Kcov) DisableTrace(ctx context.Context) error {
 	}
 
 	if t != kcov.owningTask {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	kcov.mode = linux.KCOV_MODE_INIT
 	kcov.owningTask = nil
@@ -237,7 +238,7 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 	defer kcov.mu.Unlock()
 
 	if kcov.mode != linux.KCOV_MODE_INIT {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	if kcov.mappable == nil {

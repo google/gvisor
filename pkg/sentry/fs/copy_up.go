@@ -162,7 +162,7 @@ func doCopyUp(ctx context.Context, d *Dirent) error {
 	// then try to take copyMu for writing here, we'd deadlock.
 	t := d.Inode.overlay.lower.StableAttr.Type
 	if t != RegularFile && t != Directory && t != Symlink {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Wait to get exclusive access to the upper Inode.

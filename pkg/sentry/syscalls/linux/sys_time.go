@@ -76,7 +76,7 @@ func ClockGetres(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	}
 
 	if _, err := getClock(t, clockID); err != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if addr == 0 {
@@ -95,12 +95,12 @@ type cpuClocker interface {
 func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 	if clockID < 0 {
 		if !isValidCPUClock(clockID) {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 
 		targetTask := targetTask(t, clockID)
 		if targetTask == nil {
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 
 		var target cpuClocker
@@ -117,7 +117,7 @@ func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 			// CPUCLOCK_SCHED is approximated by CPUCLOCK_PROF.
 			return target.CPUClock(), nil
 		default:
-			return nil, syserror.EINVAL
+			return nil, linuxerr.EINVAL
 		}
 	}
 
@@ -139,7 +139,7 @@ func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 	case linux.CLOCK_THREAD_CPUTIME_ID:
 		return t.CPUClock(), nil
 	default:
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 }
 
@@ -254,7 +254,7 @@ func Nanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	if !ts.Valid() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Just like linux, we cap the timeout with the max number that int64 can
@@ -277,7 +277,7 @@ func ClockNanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	}
 
 	if !req.Valid() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Only allow clock constants also allowed by Linux.
@@ -285,7 +285,7 @@ func ClockNanosleep(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		if clockID != linux.CLOCK_REALTIME &&
 			clockID != linux.CLOCK_MONOTONIC &&
 			clockID != linux.CLOCK_PROCESS_CPUTIME_ID {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 

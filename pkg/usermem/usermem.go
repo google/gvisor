@@ -22,11 +22,11 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/gohacks"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // IO provides access to the contents of a virtual memory space.
@@ -382,7 +382,7 @@ func CopyInt32StringsInVec(ctx context.Context, uio IO, ars hostarch.AddrRangeSe
 		// Parse a single value.
 		val, err := strconv.ParseInt(string(buf[i:nextI]), 10, 32)
 		if err != nil {
-			return int64(i), syserror.EINVAL
+			return int64(i), linuxerr.EINVAL
 		}
 		dsts[j] = int32(val)
 
@@ -398,7 +398,7 @@ func CopyInt32StringsInVec(ctx context.Context, uio IO, ars hostarch.AddrRangeSe
 		return int64(i), cperr
 	}
 	if j == 0 {
-		return int64(i), syserror.EINVAL
+		return int64(i), linuxerr.EINVAL
 	}
 	return int64(i), nil
 }

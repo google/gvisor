@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -110,19 +111,19 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 	switch addr.Family {
 	case linux.AF_INET:
 		if len(addr.Addr) != header.IPv4AddressSize {
-			return protocolAddress, syserror.EINVAL
+			return protocolAddress, linuxerr.EINVAL
 		}
 		if addr.PrefixLen > header.IPv4AddressSize*8 {
-			return protocolAddress, syserror.EINVAL
+			return protocolAddress, linuxerr.EINVAL
 		}
 		protocol = ipv4.ProtocolNumber
 		address = tcpip.Address(addr.Addr)
 	case linux.AF_INET6:
 		if len(addr.Addr) != header.IPv6AddressSize {
-			return protocolAddress, syserror.EINVAL
+			return protocolAddress, linuxerr.EINVAL
 		}
 		if addr.PrefixLen > header.IPv6AddressSize*8 {
-			return protocolAddress, syserror.EINVAL
+			return protocolAddress, linuxerr.EINVAL
 		}
 		protocol = ipv6.ProtocolNumber
 		address = tcpip.Address(addr.Addr)

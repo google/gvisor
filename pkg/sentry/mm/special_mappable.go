@@ -16,6 +16,7 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -144,11 +145,11 @@ func (m *SpecialMappable) Length() uint64 {
 // leak (b/143656263). Delete this function along with VFS1.
 func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
 	if length == 0 {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	alignedLen, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), usage.Anonymous)
 	if err != nil {

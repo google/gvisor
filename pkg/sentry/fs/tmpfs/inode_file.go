@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -455,7 +456,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 	end := fs.WriteEndOffset(rw.offset, int64(srcs.NumBytes()))
 	if end == math.MaxInt64 {
 		// Overflow.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Check if seals prevent either file growth or all writes.
@@ -655,7 +656,7 @@ func GetSeals(inode *fs.Inode) (uint32, error) {
 		return f.seals, nil
 	}
 	// Not a memfd inode.
-	return 0, syserror.EINVAL
+	return 0, linuxerr.EINVAL
 }
 
 // AddSeals adds new file seals to a memfd inode.
@@ -683,5 +684,5 @@ func AddSeals(inode *fs.Inode, val uint32) error {
 		return nil
 	}
 	// Not a memfd inode.
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }

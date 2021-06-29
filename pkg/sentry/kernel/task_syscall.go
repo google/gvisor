@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -380,6 +381,8 @@ func ExtractErrno(err error, sysno int) int {
 		return 0
 	case unix.Errno:
 		return int(err)
+	case *errors.Error:
+		return int(err.Errno())
 	case syserror.SyscallRestartErrno:
 		return int(err)
 	case *memmap.BusError:

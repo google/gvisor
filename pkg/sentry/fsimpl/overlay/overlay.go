@@ -40,6 +40,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -135,7 +136,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fsopts, ok := fsoptsRaw.(FilesystemOptions)
 	if fsoptsRaw != nil && !ok {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: GetFilesystemOptions.InternalData has type %T, wanted overlay.FilesystemOptions or nil", fsoptsRaw)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	vfsroot := vfs.RootFromContext(ctx)
 	if vfsroot.Ok() {
@@ -145,7 +146,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if upperPathname, ok := mopts["upperdir"]; ok {
 		if fsopts.UpperRoot.Ok() {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: both upperdir and FilesystemOptions.UpperRoot are specified")
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		delete(mopts, "upperdir")
 		// Linux overlayfs also requires a workdir when upperdir is
@@ -154,7 +155,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		upperPath := fspath.Parse(upperPathname)
 		if !upperPath.Absolute {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: upperdir %q must be absolute", upperPathname)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		upperRoot, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
 			Root:               vfsroot,
@@ -181,7 +182,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if lowerPathnamesStr, ok := mopts["lowerdir"]; ok {
 		if len(fsopts.LowerRoots) != 0 {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: both lowerdir and FilesystemOptions.LowerRoots are specified")
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		delete(mopts, "lowerdir")
 		lowerPathnames := strings.Split(lowerPathnamesStr, ":")
@@ -189,7 +190,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			lowerPath := fspath.Parse(lowerPathname)
 			if !lowerPath.Absolute {
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: lowerdir %q must be absolute", lowerPathname)
-				return nil, nil, syserror.EINVAL
+				return nil, nil, linuxerr.EINVAL
 			}
 			lowerRoot, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
 				Root:               vfsroot,
@@ -216,21 +217,21 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	if len(mopts) != 0 {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: unused options: %v", mopts)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	if len(fsopts.LowerRoots) == 0 {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: at least one lower layer is required")
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	if len(fsopts.LowerRoots) < 2 && !fsopts.UpperRoot.Ok() {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: at least two lower layers are required when no upper layer is present")
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	const maxLowerLayers = 500 // Linux: fs/overlay/super.c:OVL_MAX_STACK
 	if len(fsopts.LowerRoots) > maxLowerLayers {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: %d lower layers specified, maximum %d", len(fsopts.LowerRoots), maxLowerLayers)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	// Take extra references held by the filesystem.
@@ -283,7 +284,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: filesystem root is a whiteout")
 		root.destroyLocked(ctx)
 		fs.vfsfs.DecRef(ctx)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	root.mode = uint32(rootStat.Mode)
 	root.uid = rootStat.UID

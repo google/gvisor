@@ -319,7 +319,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
 	if mfp == nil {
 		ctx.Warningf("gofer.FilesystemType.GetFilesystem: context does not provide a pgalloc.MemoryFileProvider")
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	mopts := vfs.GenericParseMountOptions(opts.Data)
@@ -355,7 +355,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			fsopts.interop = InteropModeShared
 		default:
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid cache policy: %s=%s", moptCache, cache)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 	}
 
@@ -366,7 +366,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dfltuid, err := strconv.ParseUint(dfltuidstr, 10, 32)
 		if err != nil {
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: %s=%s", moptDfltUID, dfltuidstr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		// In Linux, dfltuid is interpreted as a UID and is converted to a KUID
 		// in the caller's user namespace, but goferfs isn't
@@ -379,7 +379,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dfltgid, err := strconv.ParseUint(dfltgidstr, 10, 32)
 		if err != nil {
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid default UID: %s=%s", moptDfltGID, dfltgidstr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		fsopts.dfltgid = auth.KGID(dfltgid)
 	}
@@ -391,7 +391,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		msize, err := strconv.ParseUint(msizestr, 10, 32)
 		if err != nil {
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid message size: %s=%s", moptMsize, msizestr)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		fsopts.msize = uint32(msize)
 	}
@@ -410,7 +410,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		maxCachedDentries, err := strconv.ParseUint(str, 10, 64)
 		if err != nil {
 			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid dentry cache limit: %s=%s", moptDentryCacheLimit, str)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 		fsopts.maxCachedDentries = maxCachedDentries
 	}
@@ -434,14 +434,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// Check for unparsed options.
 	if len(mopts) != 0 {
 		ctx.Warningf("gofer.FilesystemType.GetFilesystem: unknown options: %v", mopts)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	// Handle internal options.
 	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
 	if opts.InternalData != nil && !ok {
 		ctx.Warningf("gofer.FilesystemType.GetFilesystem: GetFilesystemOptions.InternalData has type %T, wanted gofer.InternalFilesystemOptions", opts.InternalData)
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 	// If !ok, iopts being the zero value is correct.
 
@@ -504,7 +504,7 @@ func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int
 	trans, ok := mopts[moptTransport]
 	if !ok || trans != transportModeFD {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: transport must be specified as '%s=%s'", moptTransport, transportModeFD)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	delete(mopts, moptTransport)
 
@@ -512,28 +512,28 @@ func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int
 	rfdstr, ok := mopts[moptReadFD]
 	if !ok {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD must be specified as '%s=<file descriptor>'", moptReadFD)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	delete(mopts, moptReadFD)
 	rfd, err := strconv.Atoi(rfdstr)
 	if err != nil {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid read FD: %s=%s", moptReadFD, rfdstr)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	wfdstr, ok := mopts[moptWriteFD]
 	if !ok {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: write FD must be specified as '%s=<file descriptor>'", moptWriteFD)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	delete(mopts, moptWriteFD)
 	wfd, err := strconv.Atoi(wfdstr)
 	if err != nil {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: invalid write FD: %s=%s", moptWriteFD, wfdstr)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	if rfd != wfd {
 		ctx.Warningf("gofer.getFDFromMountOptionsMap: read FD (%d) and write FD (%d) must be equal", rfd, wfd)
-		return -1, syserror.EINVAL
+		return -1, linuxerr.EINVAL
 	}
 	return rfd, nil
 }
@@ -1111,7 +1111,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		case linux.S_IFDIR:
 			return syserror.EISDIR
 		default:
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 

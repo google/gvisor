@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -214,16 +215,16 @@ func (t *Task) IntervalTimerCreate(c ktime.Clock, sigev *linux.Sigevent) (linux.
 		target, ok := t.tg.pidns.tasks[ThreadID(sigev.Tid)]
 		t.tg.pidns.owner.mu.RUnlock()
 		if !ok || target.tg != t.tg {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		it.target = target
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if sigev.Notify != linux.SIGEV_NONE {
 		it.signo = linux.Signal(sigev.Signo)
 		if !it.signo.IsValid() {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 	}
 	it.timer = ktime.NewTimer(c, it)
@@ -238,7 +239,7 @@ func (t *Task) IntervalTimerDelete(id linux.TimerID) error {
 	defer t.tg.timerMu.Unlock()
 	it := t.tg.timers[id]
 	if it == nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	delete(t.tg.timers, id)
 	it.DestroyTimer()
@@ -251,7 +252,7 @@ func (t *Task) IntervalTimerSettime(id linux.TimerID, its linux.Itimerspec, abs 
 	defer t.tg.timerMu.Unlock()
 	it := t.tg.timers[id]
 	if it == nil {
-		return linux.Itimerspec{}, syserror.EINVAL
+		return linux.Itimerspec{}, linuxerr.EINVAL
 	}
 
 	newS, err := ktime.SettingFromItimerspec(its, abs, it.timer.Clock())
@@ -269,7 +270,7 @@ func (t *Task) IntervalTimerGettime(id linux.TimerID) (linux.Itimerspec, error) 
 	defer t.tg.timerMu.Unlock()
 	it := t.tg.timers[id]
 	if it == nil {
-		return linux.Itimerspec{}, syserror.EINVAL
+		return linux.Itimerspec{}, linuxerr.EINVAL
 	}
 
 	tm, s := it.timer.Get()
@@ -285,7 +286,7 @@ func (t *Task) IntervalTimerGetoverrun(id linux.TimerID) (int32, error) {
 	defer t.tg.timerMu.Unlock()
 	it := t.tg.timers[id]
 	if it == nil {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	// By timer_create(2) invariant, either it.target == nil (in which case
 	// it.overrunLast is immutably 0) or t.tg == it.target.tg; and the fact

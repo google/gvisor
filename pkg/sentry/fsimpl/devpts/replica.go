@@ -17,6 +17,7 @@ package devpts
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -92,7 +93,7 @@ func (ri *replicaInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vf
 // SetStat implements kernfs.Inode.SetStat
 func (ri *replicaInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	return ri.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }

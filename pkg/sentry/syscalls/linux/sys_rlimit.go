@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -129,7 +130,7 @@ func Getrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	resource, ok := limits.FromLinuxResource[int(args[0].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	addr := args[1].Pointer()
 	rlim, err := newRlimit(t)
@@ -150,7 +151,7 @@ func Setrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	resource, ok := limits.FromLinuxResource[int(args[0].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	addr := args[1].Pointer()
 	rlim, err := newRlimit(t)
@@ -170,7 +171,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	resource, ok := limits.FromLinuxResource[int(args[1].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	newRlimAddr := args[2].Pointer()
 	oldRlimAddr := args[3].Pointer()
@@ -185,7 +186,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 
 	if tid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	ot := t
 	if tid > 0 {
