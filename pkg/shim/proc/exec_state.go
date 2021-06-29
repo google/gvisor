@@ -63,8 +63,8 @@ func (s *execCreatedState) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *execCreatedState) Delete(ctx context.Context) error {
-	if err := s.p.delete(ctx); err != nil {
+func (s *execCreatedState) Delete(context.Context) error {
+	if err := s.p.delete(); err != nil {
 		return err
 	}
 	s.transition(deleted)
@@ -143,8 +143,8 @@ func (s *execStoppedState) Start(context.Context) error {
 	return fmt.Errorf("cannot start a stopped process")
 }
 
-func (s *execStoppedState) Delete(ctx context.Context) error {
-	if err := s.p.delete(ctx); err != nil {
+func (s *execStoppedState) Delete(context.Context) error {
+	if err := s.p.delete(); err != nil {
 		return err
 	}
 	s.transition(deleted)
