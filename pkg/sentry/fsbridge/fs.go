@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -144,7 +145,7 @@ func (l *fsLookup) OpenPath(ctx context.Context, path string, opts vfs.OpenOptio
 
 	if opts.FileExec && d.Inode.StableAttr.Type != fs.RegularFile {
 		ctx.Infof("%q is not a regular file: %v", path, d.Inode.StableAttr.Type)
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	f, err := d.Inode.GetFile(ctx, d, flagsToFileFlags(opts.Flags))

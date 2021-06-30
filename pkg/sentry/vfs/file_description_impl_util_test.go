@@ -103,7 +103,7 @@ func (fd *testFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, erro
 
 // SetStat implements FileDescriptionImpl.SetStat.
 func (fd *testFD) SetStat(ctx context.Context, opts SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 func TestGenCountFD(t *testing.T) {

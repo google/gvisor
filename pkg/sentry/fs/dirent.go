@@ -1320,7 +1320,7 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 func (d *Dirent) checkSticky(ctx context.Context, victim *Dirent) error {
 	uattr, err := d.Inode.UnstableAttr(ctx)
 	if err != nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if !uattr.Perms.Sticky {
 		return nil
@@ -1333,7 +1333,7 @@ func (d *Dirent) checkSticky(ctx context.Context, victim *Dirent) error {
 
 	vuattr, err := victim.Inode.UnstableAttr(ctx)
 	if err != nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if vuattr.Owner.UID == creds.EffectiveKUID {
 		return nil
@@ -1341,7 +1341,7 @@ func (d *Dirent) checkSticky(ctx context.Context, victim *Dirent) error {
 	if victim.Inode.CheckCapability(ctx, linux.CAP_FOWNER) {
 		return nil
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // MayDelete determines whether `name`, a child of `d`, can be deleted or

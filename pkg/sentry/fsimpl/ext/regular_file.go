@@ -111,7 +111,7 @@ func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts 
 func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	// write(2) specifies that EBADF must be returned if the fd is not open for
 	// writing.
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.

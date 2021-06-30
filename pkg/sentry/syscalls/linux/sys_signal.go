@@ -83,7 +83,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 				return 0, nil, syserror.ESRCH
 			}
 			if !mayKill(t, target, sig) {
-				return 0, nil, syserror.EPERM
+				return 0, nil, linuxerr.EPERM
 			}
 			info := &linux.SignalInfo{
 				Signo: int32(sig),
@@ -164,7 +164,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		for _, tg := range t.PIDNamespace().ThreadGroups() {
 			if t.PIDNamespace().IDOfProcessGroup(tg.ProcessGroup()) == pgid {
 				if !mayKill(t, tg.Leader(), sig) {
-					lastErr = syserror.EPERM
+					lastErr = linuxerr.EPERM
 					continue
 				}
 
@@ -212,7 +212,7 @@ func Tkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
 }
@@ -236,7 +236,7 @@ func Tgkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
 }
@@ -339,7 +339,7 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		// these semantics apply to changing the signal stack via a
 		// ucontext during a signal handler.
 		if !t.SetSignalStack(alt) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 	}
 
@@ -427,11 +427,11 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		// If the sender is not the receiver, it can't use si_codes used by the
 		// kernel or SI_TKILL.
 		if (info.Code >= 0 || info.Code == linux.SI_TKILL) && target != t {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 
 		if !mayKill(t, target, sig) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 
 		if err := target.SendGroupSignal(&info); !linuxerr.Equals(linuxerr.ESRCH, err) {
@@ -470,11 +470,11 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	// If the sender is not the receiver, it can't use si_codes used by the
 	// kernel or SI_TKILL.
 	if (info.Code >= 0 || info.Code == linux.SI_TKILL) && target != t {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(&info)
 }
@@ -534,7 +534,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	if fd != -1 {
 		file := t.GetFile(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 

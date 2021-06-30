@@ -17,8 +17,8 @@ package ext
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // fileDescription is embedded by ext implementations of
@@ -49,7 +49,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // SetStat implements vfs.FileDescriptionImpl.StatFS.

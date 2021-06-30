@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -113,7 +114,7 @@ func checkIsRegularFile(ctx context.Context, file fsbridge.File, filename string
 	}
 	if t != linux.ModeRegular {
 		ctx.Infof("%q is not a regular file: %v", filename, t)
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	return nil
 }

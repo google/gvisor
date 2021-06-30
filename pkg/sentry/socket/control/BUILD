@@ -26,7 +26,6 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
     ],
 )
 

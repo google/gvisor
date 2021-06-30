@@ -37,7 +37,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// (and other reference-holding operations complete).
 	_, file := t.FDTable().Remove(t, fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -51,7 +51,7 @@ func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -71,7 +71,7 @@ func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		// As long as oldfd is valid, dup2() does nothing and returns newfd.
 		file := t.GetFileVFS2(oldfd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		file.DecRef(t)
 		return uintptr(newfd), nil, nil
@@ -100,7 +100,7 @@ func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.Sy
 
 	file := t.GetFileVFS2(oldfd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -120,7 +120,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file, flags := t.FDTable().GetVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -129,7 +129,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC, linux.F_GETFD, linux.F_SETFD, linux.F_GETFL:
 			// allowed
 		default:
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 	}
 
@@ -193,7 +193,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_SETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		n, err := pipefile.SetPipeSize(int64(args[2].Int()))
 		if err != nil {
@@ -203,7 +203,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.F_GETPIPE_SZ:
 		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
 		if !ok {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		return uintptr(pipefile.PipeSize()), nil, nil
 	case linux.F_GET_SEALS:
@@ -211,7 +211,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(val), nil, err
 	case linux.F_ADD_SEALS:
 		if !file.IsWritable() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		err := tmpfs.AddSeals(file, args[2].Uint())
 		return 0, nil, err
@@ -369,13 +369,13 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 	switch flock.Type {
 	case linux.F_RDLCK:
 		if !file.IsReadable() {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		return file.LockPOSIX(t, t.FDTable(), int32(t.TGIDInRoot()), lock.ReadLock, r, blocker)
 
 	case linux.F_WRLCK:
 		if !file.IsWritable() {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		return file.LockPOSIX(t, t.FDTable(), int32(t.TGIDInRoot()), lock.WriteLock, r, blocker)
 
@@ -401,12 +401,12 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	if file.StatusFlags()&linux.O_PATH != 0 {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// If the FD refers to a pipe or FIFO, return error.

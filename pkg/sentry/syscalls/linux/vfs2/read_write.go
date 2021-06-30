@@ -43,7 +43,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -74,7 +74,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -141,7 +141,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -178,7 +178,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -216,7 +216,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -294,7 +294,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -325,7 +325,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -391,7 +391,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -428,7 +428,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -466,7 +466,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -561,7 +561,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -577,13 +577,13 @@ func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.IsReadable() {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is valid.

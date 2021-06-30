@@ -16,6 +16,7 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -106,7 +107,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[0].Pointer()
 
 	if !t.HasCapability(linux.CAP_SYS_CHROOT) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	path, err := copyInPath(t, addr)

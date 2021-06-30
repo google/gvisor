@@ -28,6 +28,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -99,13 +100,13 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 		Name: name,
 		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 			if !t.HasCapability(c) {
-				return 0, nil, syserror.EPERM
+				return 0, nil, linuxerr.EPERM
 			}
 			t.Kernel().EmitUnimplementedEvent(t)
 			return 0, nil, syserror.ENOSYS
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, syserror.EPERM, c.String(), syserror.ENOSYS),
+		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, linuxerr.EPERM, c.String(), syserror.ENOSYS),
 		URLs:         urls,
 	}
 }

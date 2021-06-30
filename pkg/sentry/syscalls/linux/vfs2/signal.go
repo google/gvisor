@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // sharedSignalfd is shared between the two calls.
@@ -44,7 +43,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	if fd != -1 {
 		file := t.GetFileVFS2(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 

@@ -20,13 +20,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -204,7 +204,7 @@ var _ fs.FileOperations = (*seqFileOperations)(nil)
 
 // Write implements fs.FileOperations.Write.
 func (*seqFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EACCES
+	return 0, linuxerr.EACCES
 }
 
 // Read implements fs.FileOperations.Read.

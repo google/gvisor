@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getdents implements Linux syscall getdents(2).
@@ -43,7 +42,7 @@ func getdents(t *kernel.Task, args arch.SyscallArguments, isGetdents64 bool) (ui
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 

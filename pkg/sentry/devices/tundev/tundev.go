@@ -78,7 +78,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 	switch request {
 	case linux.TUNSETIFF:
 		if !t.HasCapability(linux.CAP_NET_ADMIN) {
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 		stack, ok := t.NetworkContext().(*netstack.Stack)
 		if !ok {

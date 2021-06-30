@@ -95,6 +95,7 @@ go_test(
         ":tmpfs",
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/refs",
         "//pkg/sentry/contexttest",

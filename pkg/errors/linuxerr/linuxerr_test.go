@@ -72,7 +72,7 @@ func BenchmarkCompareSyserror(b *testing.B) {
 	globalError = syserror.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
-		if globalError == syserror.EACCES {
+		if globalError == linuxerr.EACCES {
 			j++
 		}
 	}
@@ -109,11 +109,11 @@ func BenchmarkSwitchLinuxerr(b *testing.B) {
 }
 
 func BenchmarkSwitchSyserror(b *testing.B) {
-	globalError = syserror.EPERM
+	globalError = linuxerr.EPERM
 	j := 0
 	for i := b.N; i > 0; i-- {
 		switch globalError {
-		case syserror.EACCES:
+		case linuxerr.EACCES:
 			j++
 		case syserror.EINTR:
 			j += 2
@@ -265,7 +265,7 @@ func TestEqualsMethod(t *testing.T) {
 		{
 			name:     "linuxerr nil error not",
 			linuxErr: []*gErrors.Error{nil, linuxerr.NOERROR},
-			err:      []error{unix.Errno(1), linuxerr.EPERM, syserror.EACCES},
+			err:      []error{unix.Errno(1), linuxerr.EPERM, linuxerr.EACCES},
 			equal:    false,
 		},
 		{

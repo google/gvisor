@@ -143,7 +143,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 			// Check that caller can access semaphore set.
 			creds := auth.CredentialsFromContext(ctx)
 			if !set.checkPerms(creds, fs.PermsFromMode(mode)) {
-				return nil, syserror.EACCES
+				return nil, linuxerr.EACCES
 			}
 
 			// Validate parameters.
@@ -253,7 +253,7 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 	// "The effective user ID of the calling process must match the creator or
 	// owner of the semaphore set, or the caller must be privileged."
 	if !set.checkCredentials(creds) && !set.checkCapability(creds) {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 
 	delete(r.semaphores, set.ID)
@@ -371,7 +371,7 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 	// "The effective UID of the calling process must match the owner or creator
 	// of the semaphore set, or the caller must be privileged."
 	if !s.checkCredentials(creds) && !s.checkCapability(creds) {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 
 	s.owner = owner
@@ -396,7 +396,7 @@ func (s *Set) semStat(creds *auth.Credentials, permMask fs.PermMask) (*linux.Sem
 	defer s.mu.Unlock()
 
 	if !s.checkPerms(creds, permMask) {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	return &linux.SemidDS{
@@ -426,7 +426,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 
 	// "The calling process must have alter permission on the semaphore set."
 	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 
 	sem := s.findSem(num)
@@ -462,7 +462,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 
 	// "The calling process must have alter permission on the semaphore set."
 	if !s.checkPerms(creds, fs.PermMask{Write: true}) {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 
 	for i, val := range vals {
@@ -484,7 +484,7 @@ func (s *Set) GetVal(num int32, creds *auth.Credentials) (int16, error) {
 
 	// "The calling process must have read permission on the semaphore set."
 	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
-		return 0, syserror.EACCES
+		return 0, linuxerr.EACCES
 	}
 
 	sem := s.findSem(num)
@@ -501,7 +501,7 @@ func (s *Set) GetValAll(creds *auth.Credentials) ([]uint16, error) {
 
 	// "The calling process must have read permission on the semaphore set."
 	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	vals := make([]uint16, s.Size())
@@ -518,7 +518,7 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 
 	// "The calling process must have read permission on the semaphore set."
 	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
-		return 0, syserror.EACCES
+		return 0, linuxerr.EACCES
 	}
 
 	sem := s.findSem(num)
@@ -534,7 +534,7 @@ func (s *Set) countWaiters(num int32, creds *auth.Credentials, pred func(w *wait
 
 	// The calling process must have read permission on the semaphore set.
 	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
-		return 0, syserror.EACCES
+		return 0, linuxerr.EACCES
 	}
 
 	sem := s.findSem(num)
@@ -590,7 +590,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 	}
 
 	if !s.checkPerms(creds, fs.PermMask{Read: readOnly, Write: !readOnly}) {
-		return nil, 0, syserror.EACCES
+		return nil, 0, linuxerr.EACCES
 	}
 
 	ch, num, err := s.executeOps(ctx, ops, pid)

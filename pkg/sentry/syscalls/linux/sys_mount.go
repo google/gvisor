@@ -67,7 +67,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Must have CAP_SYS_ADMIN in the mount namespace's associated user
 	// namespace.
 	if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().UserNamespace()) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	const unsupportedOps = linux.MS_REMOUNT | linux.MS_BIND |
@@ -91,7 +91,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, syserror.ENODEV
 	}
 	if !rsys.AllowUserMount() {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	var superFlags fs.MountSourceFlags
@@ -143,7 +143,7 @@ func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	//
 	// Currently, this is always the init task's user namespace.
 	if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.MountNamespace().UserNamespace()) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	resolve := flags&linux.UMOUNT_NOFOLLOW != linux.UMOUNT_NOFOLLOW

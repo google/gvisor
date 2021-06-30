@@ -71,7 +71,7 @@ func getMMIncRef(task *kernel.Task) (*mm.MemoryManager, error) {
 func checkTaskState(t *kernel.Task) error {
 	switch t.ExitState() {
 	case kernel.TaskExitZombie:
-		return syserror.EACCES
+		return linuxerr.EACCES
 	case kernel.TaskExitDead:
 		return syserror.ESRCH
 	}
@@ -409,7 +409,7 @@ func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.De
 	// Permission to read this file is governed by PTRACE_MODE_ATTACH_FSCREDS
 	// Since we dont implement setfsuid/setfsgid we can just use PTRACE_MODE_ATTACH
 	if !kernel.ContextCanTrace(ctx, f.task, true) {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 	if err := checkTaskState(f.task); err != nil {
 		return nil, err
@@ -423,7 +423,7 @@ func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.De
 
 // SetStat implements kernfs.Inode.SetStat.
 func (*memInode) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 var _ vfs.FileDescriptionImpl = (*memFD)(nil)
@@ -513,7 +513,7 @@ func (fd *memFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, e
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *memFD) SetStat(context.Context, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -837,7 +837,7 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 // Getlink implements kernfs.Inode.Getlink.
 func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
-		return vfs.VirtualDentry{}, "", syserror.EACCES
+		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err
@@ -848,7 +848,7 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			err = syserror.EACCES
+			err = linuxerr.EACCES
 			return
 		}
 
@@ -913,7 +913,7 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 // Getlink implements kernfs.Inode.Getlink.
 func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
-		return vfs.VirtualDentry{}, "", syserror.EACCES
+		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	if err := checkTaskState(s.task); err != nil {
 		return vfs.VirtualDentry{}, "", err

@@ -47,13 +47,13 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is legitimate.
@@ -83,13 +83,13 @@ func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is valid.
@@ -117,7 +117,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -133,7 +133,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is legitimate.
@@ -163,13 +163,13 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Read the iovecs that specify the destination of the read.
@@ -194,7 +194,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -210,7 +210,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Read the iovecs that specify the destination of the read.
@@ -243,7 +243,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -259,7 +259,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Check that the file is readable.
 	if !file.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check flags field.

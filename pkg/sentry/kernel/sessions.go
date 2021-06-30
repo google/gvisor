@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -277,14 +278,14 @@ func (tg *ThreadGroup) createSession() error {
 			continue
 		}
 		if s.leader == tg {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if s.id == SessionID(id) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
 			if pg.id == ProcessGroupID(id) {
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
 		}
 	}
@@ -380,11 +381,11 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 			continue
 		}
 		if s.leader == tg {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
 			if pg.id == ProcessGroupID(id) {
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
 		}
 	}
@@ -442,17 +443,17 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	// Lookup the ProcessGroup.
 	pg := pidns.processGroups[pgid]
 	if pg == nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Disallow the join if an execve has performed, per POSIX.
 	if checkExec && tg.execed {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 
 	// See if it's in the same session as ours.
 	if pg.session != tg.processGroup.session {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Join the group; adjust children.

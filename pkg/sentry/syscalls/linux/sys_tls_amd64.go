@@ -43,7 +43,7 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.ARCH_SET_FS:
 		fsbase := args[1].Uint64()
 		if !t.Arch().SetTLS(uintptr(fsbase)) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
 		t.Kernel().EmitUnimplementedEvent(t)

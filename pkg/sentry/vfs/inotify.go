@@ -195,7 +195,7 @@ func (*Inotify) PWrite(ctx context.Context, src usermem.IOSequence, offset int64
 
 // Write implements FileDescriptionImpl.Write.
 func (*Inotify) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Read implements FileDescriptionImpl.Read.
@@ -333,7 +333,7 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 	if ws == nil {
 		// While Linux supports inotify watches on all filesystem types, watches on
 		// filesystems like kernfs are not generally useful, so we do not.
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 	// Does the target already have a watch from this inotify instance?
 	if existing := ws.Lookup(i.id); existing != nil {

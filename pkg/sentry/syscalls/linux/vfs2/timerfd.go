@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // TimerfdCreate implements Linux syscall timerfd_create(2).
@@ -78,7 +77,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -112,7 +111,7 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 

@@ -17,10 +17,10 @@ package vfs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -40,77 +40,77 @@ func (fd *opathFD) Release(context.Context) {
 
 // Allocate implements FileDescriptionImpl.Allocate.
 func (fd *opathFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // PRead implements FileDescriptionImpl.PRead.
 func (fd *opathFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Read implements FileDescriptionImpl.Read.
 func (fd *opathFD) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // PWrite implements FileDescriptionImpl.PWrite.
 func (fd *opathFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Write implements FileDescriptionImpl.Write.
 func (fd *opathFD) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Ioctl implements FileDescriptionImpl.Ioctl.
 func (fd *opathFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // IterDirents implements FileDescriptionImpl.IterDirents.
 func (fd *opathFD) IterDirents(ctx context.Context, cb IterDirentsCallback) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // Seek implements FileDescriptionImpl.Seek.
 func (fd *opathFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // ConfigureMMap implements FileDescriptionImpl.ConfigureMMap.
 func (fd *opathFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // ListXattr implements FileDescriptionImpl.ListXattr.
 func (fd *opathFD) ListXattr(ctx context.Context, size uint64) ([]string, error) {
-	return nil, syserror.EBADF
+	return nil, linuxerr.EBADF
 }
 
 // GetXattr implements FileDescriptionImpl.GetXattr.
 func (fd *opathFD) GetXattr(ctx context.Context, opts GetXattrOptions) (string, error) {
-	return "", syserror.EBADF
+	return "", linuxerr.EBADF
 }
 
 // SetXattr implements FileDescriptionImpl.SetXattr.
 func (fd *opathFD) SetXattr(ctx context.Context, opts SetXattrOptions) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // RemoveXattr implements FileDescriptionImpl.RemoveXattr.
 func (fd *opathFD) RemoveXattr(ctx context.Context, name string) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // Sync implements FileDescriptionImpl.Sync.
 func (fd *opathFD) Sync(ctx context.Context) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // SetStat implements FileDescriptionImpl.SetStat.
 func (fd *opathFD) SetStat(ctx context.Context, opts SetStatOptions) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // Stat implements FileDescriptionImpl.Stat.

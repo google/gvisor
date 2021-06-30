@@ -78,7 +78,7 @@ func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flag
 		} else {
 			dirfile := t.GetFileVFS2(dirfd)
 			if dirfile == nil {
-				return syserror.EBADF
+				return linuxerr.EBADF
 			}
 			if !path.HasComponents() {
 				// Use FileDescription.Stat() instead of
@@ -131,7 +131,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFileVFS2(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -190,7 +190,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		} else {
 			dirfile := t.GetFileVFS2(dirfd)
 			if dirfile == nil {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 			if !path.HasComponents() {
 				// Use FileDescription.Stat() instead of

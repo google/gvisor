@@ -158,7 +158,7 @@ func ClockGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 
 // ClockSettime implements linux syscall clock_settime(2).
 func ClockSettime(*kernel.Task, arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.EPERM
+	return 0, nil, linuxerr.EPERM
 }
 
 // Time implements linux syscall time(2).

@@ -482,7 +482,7 @@ func (t *Task) ptraceTraceme() error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if t.hasTracer() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if t.parent == nil {
 		// In Linux, only init can not have a parent, and init is assumed never
@@ -498,7 +498,7 @@ func (t *Task) ptraceTraceme() error {
 		return nil
 	}
 	if !t.parent.canTraceLocked(t, true) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if t.parent.exitState != TaskExitNone {
 		// Fail silently, as if we were successfully attached but then
@@ -514,21 +514,21 @@ func (t *Task) ptraceTraceme() error {
 // ptrace(PTRACE_SEIZE, target, 0, opts) if seize is true. t is the caller.
 func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	if t.tg == target.tg {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if !t.canTraceLocked(target, true) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if target.hasTracer() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// Attaching to zombies and dead tasks is not permitted; the exit
 	// notification logic relies on this. Linux allows attaching to PF_EXITING
 	// tasks, though.
 	if target.exitState >= TaskExitZombie {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if seize {
 		if err := target.ptraceSetOptionsLocked(opts); err != nil {

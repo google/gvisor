@@ -54,8 +54,8 @@ go_test(
     library = ":futex",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sync",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

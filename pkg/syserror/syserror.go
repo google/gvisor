@@ -26,9 +26,7 @@ import (
 
 // The following variables have the same meaning as their syscall equivalent.
 var (
-	EACCES       = error(unix.EACCES)
 	EAGAIN       = error(unix.EAGAIN)
-	EBADF        = error(unix.EBADF)
 	EBADFD       = error(unix.EBADFD)
 	EBUSY        = error(unix.EBUSY)
 	ECHILD       = error(unix.ECHILD)
@@ -69,7 +67,6 @@ var (
 	ENXIO        = error(unix.ENXIO)
 	EOPNOTSUPP   = error(unix.EOPNOTSUPP)
 	EOVERFLOW    = error(unix.EOVERFLOW)
-	EPERM        = error(unix.EPERM)
 	EPIPE        = error(unix.EPIPE)
 	ERANGE       = error(unix.ERANGE)
 	EREMOTE      = error(unix.EREMOTE)

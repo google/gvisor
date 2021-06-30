@@ -270,7 +270,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 	file := t.GetFile(cb.FD)
 	if file == nil {
 		// File not found.
-		return syserror.EBADF
+		return linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -280,7 +280,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 		eventFile = t.GetFile(cb.ResFD)
 		if eventFile == nil {
 			// Bad FD.
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		defer eventFile.DecRef(t)
 

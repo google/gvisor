@@ -17,10 +17,10 @@ package control
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SCMRightsVFS2 represents a SCM_RIGHTS socket control message.
@@ -51,7 +51,7 @@ func NewSCMRightsVFS2(t *kernel.Task, fds []int32) (SCMRightsVFS2, error) {
 		file := t.GetFileVFS2(fd)
 		if file == nil {
 			files.Release(t)
-			return nil, syserror.EBADF
+			return nil, linuxerr.EBADF
 		}
 		files = append(files, file)
 	}

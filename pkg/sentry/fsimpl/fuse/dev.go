@@ -123,7 +123,7 @@ func (fd *DeviceFD) Release(ctx context.Context) {
 func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	return 0, syserror.ENOSYS
@@ -133,7 +133,7 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	// We require that any Read done on this filesystem have a sane minimum
@@ -235,7 +235,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	return 0, syserror.ENOSYS
@@ -252,7 +252,7 @@ func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	// Return ENODEV if the filesystem is umounted.
@@ -392,7 +392,7 @@ func (fd *DeviceFD) EventUnregister(e *waiter.Entry) {
 func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	// Operations on /dev/fuse don't make sense until a FUSE filesystem is mounted.
 	if fd.fs == nil {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	return 0, syserror.ENOSYS

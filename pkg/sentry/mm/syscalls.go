@@ -106,7 +106,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	}
 
 	if !opts.MaxPerms.SupersetOf(opts.Perms) {
-		return 0, syserror.EACCES
+		return 0, linuxerr.EACCES
 	}
 	if opts.Unmap && !opts.Fixed {
 		return 0, linuxerr.EINVAL
@@ -645,7 +645,7 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 		// Check for permission validity before splitting vmas, for consistency
 		// with Linux.
 		if !vseg.ValuePtr().maxPerms.SupersetOf(effectivePerms) {
-			return syserror.EACCES
+			return linuxerr.EACCES
 		}
 		vseg = mm.vmas.Isolate(vseg, ar)
 
@@ -793,7 +793,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 			mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 			if mlockLimit == 0 {
 				mm.mappingMu.Unlock()
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
 			if newLockedAS := mm.lockedAS + uint64(ar.Length()) - mm.mlockedBytesRangeLocked(ar); newLockedAS > mlockLimit {
 				mm.mappingMu.Unlock()
@@ -912,7 +912,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 				mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 				if mlockLimit == 0 {
 					mm.mappingMu.Unlock()
-					return syserror.EPERM
+					return linuxerr.EPERM
 				}
 				if uint64(mm.vmas.Span()) > mlockLimit {
 					mm.mappingMu.Unlock()

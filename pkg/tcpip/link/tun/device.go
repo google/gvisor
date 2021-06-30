@@ -171,7 +171,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 	endpoint := d.endpoint
 	d.mu.RUnlock()
 	if endpoint == nil {
-		return 0, syserror.EBADFD
+		return 0, linuxerr.EBADFD
 	}
 	if !endpoint.IsAttached() {
 		return 0, syserror.EIO
@@ -243,7 +243,7 @@ func (d *Device) Read() ([]byte, error) {
 	endpoint := d.endpoint
 	d.mu.RUnlock()
 	if endpoint == nil {
-		return nil, syserror.EBADFD
+		return nil, linuxerr.EBADFD
 	}
 
 	for {

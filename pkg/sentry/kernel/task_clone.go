@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -183,7 +182,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		// in which it resides)." - clone(2). Neither chroot(2) nor
 		// user_namespaces(7) document this.
 		if t.IsChrooted() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		userns, err = creds.NewChildUserNamespace()
 		if err != nil {
@@ -191,7 +190,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		}
 	}
 	if (opts.NewPIDNamespace || opts.NewNetworkNamespace || opts.NewUTSNamespace) && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, userns) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	utsns := t.UTSNamespace()
@@ -242,7 +241,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 	if opts.SetTLS {
 		if !image.Arch.SetTLS(uintptr(opts.TLS)) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 	}
 
@@ -479,7 +478,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	}
 	if opts.NewUserNamespace {
 		if t.IsChrooted() {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		newUserNS, err := creds.NewChildUserNamespace()
 		if err != nil {
@@ -495,7 +494,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	haveCapSysAdmin := t.HasCapability(linux.CAP_SYS_ADMIN)
 	if opts.NewPIDNamespace {
 		if !haveCapSysAdmin {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
 	}
@@ -504,14 +503,14 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	if opts.NewNetworkNamespace {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		t.netns = inet.NewNamespace(t.netns)
 	}
 	if opts.NewUTSNamespace {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// Note that this must happen after NewUserNamespace, so the
 		// new user namespace is used if there is one.
@@ -520,7 +519,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	if opts.NewIPCNamespace {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"

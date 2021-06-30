@@ -47,13 +47,13 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is legitimate.
@@ -84,7 +84,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -100,7 +100,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Check that the size is legitimate.
@@ -130,13 +130,13 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Read the iovecs that specify the source of the write.
@@ -161,7 +161,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -177,7 +177,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Check that the file is writable.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Read the iovecs that specify the source of the write.
@@ -209,12 +209,12 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	flags := int(args[5].Int())
 
 	if int(args[4].Int())&0x4 == 1 {
-		return 0, nil, syserror.EACCES
+		return 0, nil, linuxerr.EACCES
 	}
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -236,7 +236,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Check that the file is writeable.
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Read the iovecs that specify the source of the write.
