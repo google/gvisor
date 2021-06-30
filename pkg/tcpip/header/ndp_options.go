@@ -233,6 +233,17 @@ func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
 		case ndpNonceOptionType:
 			return NDPNonceOption(body), false, nil
 
+		case ndpRouteInformationType:
+			if numBodyBytes > ndpRouteInformationMaxLength {
+				return nil, true, fmt.Errorf("got %d bytes for NDP Route Information option's body, expected at max %d bytes: %w", numBodyBytes, ndpRouteInformationMaxLength, ErrNDPOptMalformedBody)
+			}
+			opt := NDPRouteInformation(body)
+			if err := opt.hasError(); err != nil {
+				return nil, true, err
+			}
+
+			return opt, false, nil
+
 		case ndpPrefixInformationType:
 			// Make sure the length of a Prefix Information option
 			// body is ndpPrefixInformationLength, as per RFC 4861
@@ -929,4 +940,138 @@ func isUpperLetter(b byte) bool {
 
 func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'
+}
+
+// As per RFC 4191 section 2.3,
+//
+//  2.3.  Route Information Option
+//
+//      0                   1                   2                   3
+//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |     Type      |    Length     | Prefix Length |Resvd|Prf|Resvd|
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |                        Route Lifetime                         |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |                   Prefix (Variable Length)                    |
+//      .                                                               .
+//      .                                                               .
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+//   Fields:
+//
+//   Type        24
+//
+//
+//   Length      8-bit unsigned integer.  The length of the option
+//               (including the Type and Length fields) in units of 8
+//               octets.  The Length field is 1, 2, or 3 depending on the
+//               Prefix Length.  If Prefix Length is greater than 64, then
+//               Length must be 3.  If Prefix Length is greater than 0,
+//               then Length must be 2 or 3.  If Prefix Length is zero,
+//               then Length must be 1, 2, or 3.
+const (
+	ndpRouteInformationType      = ndpOptionIdentifier(24)
+	ndpRouteInformationMaxLength = 22
+
+	ndpRouteInformationPrefixLengthIdx  = 0
+	ndpRouteInformationFlagsIdx         = 1
+	ndpRouteInformationPrfShift         = 3
+	ndpRouteInformationPrfMask          = 3 << ndpRouteInformationPrfShift
+	ndpRouteInformationRouteLifetimeIdx = 2
+	ndpRouteInformationRoutePrefixIdx   = 6
+)
+
+// NDPRouteInformation is the NDP Router Information option, as defined by
+// RFC 4191 section 2.3.
+type NDPRouteInformation []byte
+
+func (NDPRouteInformation) kind() ndpOptionIdentifier {
+	return ndpRouteInformationType
+}
+
+func (o NDPRouteInformation) length() int {
+	return len(o)
+}
+
+func (o NDPRouteInformation) serializeInto(b []byte) int {
+	return copy(b, o)
+}
+
+// String implements fmt.Stringer.
+func (o NDPRouteInformation) String() string {
+	return fmt.Sprintf("%T", o)
+}
+
+// PrefixLength returns the length of the prefix.
+func (o NDPRouteInformation) PrefixLength() uint8 {
+	return o[ndpRouteInformationPrefixLengthIdx]
+}
+
+// RoutePreference returns the preference of the route over other routes to the
+// same destination but through a different router.
+func (o NDPRouteInformation) RoutePreference() NDPRoutePreference {
+	return NDPRoutePreference((o[ndpRouteInformationFlagsIdx] & ndpRouteInformationPrfMask) >> ndpRouteInformationPrfShift)
+}
+
+// RouteLifetime returns the lifetime of the route.
+//
+// Note, a value of 0 implies the route is now invalid and a value of
+// infinity/forever is represented by NDPInfiniteLifetime.
+func (o NDPRouteInformation) RouteLifetime() time.Duration {
+	return time.Second * time.Duration(binary.BigEndian.Uint32(o[ndpRouteInformationRouteLifetimeIdx:]))
+}
+
+// Prefix returns the prefix of the destination subnet this route is for.
+func (o NDPRouteInformation) Prefix() (tcpip.Subnet, error) {
+	prefixLength := int(o.PrefixLength())
+	if max := IPv6AddressSize * 8; prefixLength > max {
+		return tcpip.Subnet{}, fmt.Errorf("got prefix length = %d, want <= %d", prefixLength, max)
+	}
+
+	prefix := o[ndpRouteInformationRoutePrefixIdx:]
+	var addrBytes [IPv6AddressSize]byte
+	if n := copy(addrBytes[:], prefix); n != len(prefix) {
+		panic(fmt.Sprintf("got copy(addrBytes, prefix) = %d, want = %d", n, len(prefix)))
+	}
+
+	return tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(addrBytes[:]),
+		PrefixLen: prefixLength,
+	}.Subnet(), nil
+}
+
+func (o NDPRouteInformation) hasError() error {
+	l := len(o)
+	if l < ndpRouteInformationRoutePrefixIdx {
+		return fmt.Errorf("%T too small, got = %d bytes: %w", o, l, ErrNDPOptMalformedBody)
+	}
+
+	prefixLength := int(o.PrefixLength())
+	if max := IPv6AddressSize * 8; prefixLength > max {
+		return fmt.Errorf("got prefix length = %d, want <= %d: %w", prefixLength, max, ErrNDPOptMalformedBody)
+	}
+
+	//   Length      8-bit unsigned integer.  The length of the option
+	//               (including the Type and Length fields) in units of 8
+	//               octets.  The Length field is 1, 2, or 3 depending on the
+	//               Prefix Length.  If Prefix Length is greater than 64, then
+	//               Length must be 3.  If Prefix Length is greater than 0,
+	//               then Length must be 2 or 3.  If Prefix Length is zero,
+	//               then Length must be 1, 2, or 3.
+	l += 2 // Add 2 bytes for the type and length bytes.
+	lengthField := l / lengthByteUnits
+	if prefixLength > 64 {
+		if lengthField != 3 {
+			return fmt.Errorf("Length field must be 3 when Prefix Length (%d) is > 64 (got = %d): %w", prefixLength, lengthField, ErrNDPOptMalformedBody)
+		}
+	} else if prefixLength > 0 {
+		if lengthField != 2 && lengthField != 3 {
+			return fmt.Errorf("Length field must be 2 or 3 when Prefix Length (%d) is between 0 and 64 (got = %d): %w", prefixLength, lengthField, ErrNDPOptMalformedBody)
+		}
+	} else if lengthField == 0 || lengthField > 3 {
+		return fmt.Errorf("Length field must be 1, 2, or 3 when Prefix Length is zero (got = %d): %w", lengthField, ErrNDPOptMalformedBody)
+	}
+
+	return nil
 }
