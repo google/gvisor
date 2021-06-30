@@ -67,7 +67,23 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 			AddressSpaceActive: true,
 		})
 		return 0, err
-
+	case unix.SIOCGIFFLAGS:
+		cc := &usermem.IOCopyContext{
+			Ctx: ctx,
+			IO:  io,
+			Opts: usermem.IOOpts{
+				AddressSpaceActive: true,
+			},
+		}
+		var ifr linux.IFReq
+		if _, err := ifr.CopyIn(cc, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), cmd, uintptr(unsafe.Pointer(&ifr))); errno != 0 {
+			return 0, translateIOSyscallError(errno)
+		}
+		_, err := ifr.CopyOut(cc, args[2].Pointer())
+		return 0, err
 	default:
 		return 0, syserror.ENOTTY
 	}

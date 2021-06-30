@@ -459,6 +459,10 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.TIOCINQ),
 			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SIOCGIFFLAGS),
+			},
 		},
 		unix.SYS_LISTEN:   {},
 		unix.SYS_READV:    {},
