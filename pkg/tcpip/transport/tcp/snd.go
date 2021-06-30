@@ -725,6 +725,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				s.writeList.Remove(nSeg)
 				nSeg.decRef()
 			}
+
 			if !nextTooBig && seg.data.Size() < available {
 				// Segment is not full.
 				if s.Outstanding > 0 && s.ep.ops.GetDelayOption() {
@@ -917,7 +918,7 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 func (s *sender) sendData() {
 	limit := s.MaxPayloadSize
 	if s.gso {
-		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
+		limit = int(s.ep.route.GSOMaxSize() - header.TCPHeaderMaximumSize)
 	}
 	end := s.SndUna.Add(s.SndWnd)
 

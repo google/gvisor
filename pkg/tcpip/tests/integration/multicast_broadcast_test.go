@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -170,61 +169,11 @@ func TestPingMulticastBroadcast(t *testing.T) {
 }
 
 func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
-	payloadLen := header.UDPMinimumSize + len(data)
-	totalLen := header.IPv4MinimumSize + payloadLen
-	hdr := buffer.NewPrependable(totalLen)
-	u := header.UDP(hdr.Prepend(payloadLen))
-	u.Encode(&header.UDPFields{
-		SrcPort: utils.RemotePort,
-		DstPort: utils.LocalPort,
-		Length:  uint16(payloadLen),
-	})
-	copy(u.Payload(), data)
-	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
-	u.SetChecksum(^u.CalculateChecksum(sum))
-
-	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
-	ip.Encode(&header.IPv4Fields{
-		TotalLength: uint16(totalLen),
-		Protocol:    uint8(udp.ProtocolNumber),
-		TTL:         ttl,
-		SrcAddr:     src,
-		DstAddr:     dst,
-	})
-	ip.SetChecksum(^ip.CalculateChecksum())
-
-	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
-	}))
+	utils.RxUDPv4(e, src, dst, ttl, data, nil)
 }
 
 func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
-	payloadLen := header.UDPMinimumSize + len(data)
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
-	u := header.UDP(hdr.Prepend(payloadLen))
-	u.Encode(&header.UDPFields{
-		SrcPort: utils.RemotePort,
-		DstPort: utils.LocalPort,
-		Length:  uint16(payloadLen),
-	})
-	copy(u.Payload(), data)
-	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
-	u.SetChecksum(^u.CalculateChecksum(sum))
-
-	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
-	ip.Encode(&header.IPv6Fields{
-		PayloadLength:     uint16(payloadLen),
-		TransportProtocol: udp.ProtocolNumber,
-		HopLimit:          ttl,
-		SrcAddr:           src,
-		DstAddr:           dst,
-	})
-
-	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
-	}))
+	utils.RxUDPv6(e, src, dst, ttl, data, nil)
 }
 
 // TestIncomingMulticastAndBroadcast tests receiving a packet destined to some

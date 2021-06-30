@@ -16,6 +16,7 @@
 package tcp
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
@@ -74,6 +75,10 @@ const (
 	ccReno  = "reno"
 	ccCubic = "cubic"
 )
+
+var _ stack.TransportProtocol = (*protocol)(nil)
+var _ stack.ChecksummableTransportProtocol = (*protocol)(nil)
+var _ stack.SegmentAndChecksummableTransportProtocol = (*protocol)(nil)
 
 type protocol struct {
 	stack *stack.Stack
@@ -453,6 +458,84 @@ func (p *protocol) Wait() {
 // Parse implements stack.TransportProtocol.Parse.
 func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
 	return parse.TCP(pkt)
+}
+
+// UpdateTransportChecksum implements stack.ChecksummableTransportProtocol.
+func (*protocol) UpdateTransportChecksum(pkt *stack.PacketBuffer, target header.ChecksumStatus) {
+	net := pkt.Network()
+	data := pkt.Data()
+	transportHdr := pkt.TransportHeader().View()
+
+	t := header.TCP(transportHdr)
+	t.SetChecksum(header.UpdateTransportChecksum(
+		ProtocolNumber,
+		pkt.TransportChecksumStatus, /* current */
+		target,
+		t.Checksum(),
+		net.SourceAddress(),
+		net.DestinationAddress(),
+		transportHdr,
+		uint16(data.Size()),
+		data.AsRange().Checksum,
+	))
+	pkt.TransportChecksumStatus = target
+}
+
+// SegmentWithChecksum implements
+// stack.SegmentAndChecksummableTransportProtocol.
+func (p *protocol) SegmentWithChecksum(pkt *stack.PacketBuffer, mtu uint32, targetChecksum header.ChecksumStatus) (stack.PacketBufferList, tcpip.Error) {
+	netHdr := pkt.NetworkHeader().View()
+	transportHdr := pkt.TransportHeader().View()
+
+	hdrLen := uint32(netHdr.Size() + transportHdr.Size())
+	if hdrLen > mtu {
+		return stack.PacketBufferList{}, &tcpip.ErrMessageTooLong{}
+	}
+
+	data := pkt.Data().ExtractVV().Clone(nil)
+
+	resvSize := netHdr.Size() + transportHdr.Size() + pkt.AvailableHeaderBytes()
+	mtuBudget := mtu - hdrLen
+	var pkts stack.PacketBufferList
+	done := 0
+	for data.Size() > 0 {
+		var segData buffer.VectorisedView
+		data.ReadToVV(&segData, int(mtuBudget))
+
+		pb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: resvSize,
+			Data:               segData,
+		})
+		pb.GSOOptions = pkt.GSOOptions
+
+		newTransportHdr := pb.TransportHeader().Push(int(transportHdr.Size()))
+		if n := copy(newTransportHdr, transportHdr); n != len(transportHdr) {
+			panic(fmt.Sprintf("got copy(newTransportHdr, transportHdr) = %d, want = %d", n, len(transportHdr)))
+		}
+		pb.TransportProtocolNumber = pkt.TransportProtocolNumber
+		newNetHdr := pb.NetworkHeader().Push(int(netHdr.Size()))
+		if n := copy(newNetHdr, netHdr); n != len(netHdr) {
+			panic(fmt.Sprintf("got copy(newNetHdr, netHdr) = %d, want = %d", n, len(netHdr)))
+		}
+		pb.NetworkProtocolNumber = pkt.NetworkProtocolNumber
+		networkHeader := pb.Network()
+		networkHeader.SetPacketSize(uint16(pb.Size()))
+		if c, ok := networkHeader.(header.ChecksummableNetwork); ok {
+			c.CalculateAndSetChecksum()
+		}
+
+		t := header.TCP(newTransportHdr)
+		t.SetSequenceNumber(t.SequenceNumber() + uint32(done))
+		p.UpdateTransportChecksum(pb, targetChecksum)
+
+		pb.Owner = pkt.Owner
+		pb.Hash = pkt.Hash
+
+		pkts.PushBack(pb)
+		done += segData.Size()
+	}
+
+	return pkts, nil
 }
 
 // NewProtocol returns a TCP transport protocol.

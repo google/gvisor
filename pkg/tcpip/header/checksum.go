@@ -296,3 +296,89 @@ func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new tcpip.Address) uint
 
 	return xsum
 }
+
+// ChecksumStatus is the state of a checksum.
+type ChecksumStatus int
+
+const (
+	// ChecksumNotNeeded indicates that checksum calculation is not required.
+	ChecksumNotNeeded ChecksumStatus = iota
+
+	// ChecksumNone indicates that checksum calculation has not been performed.
+	ChecksumNone
+
+	// ChecksumPartial indicates that the checksum field of a header is a
+	// reflection of the pseudo header only.
+	ChecksumPartial
+
+	// ChecksumCalculated indicates that the checksum field of a header is a
+	// reflection of the pseudo header and the layer the checksum is protecting.
+	ChecksumCalculated
+)
+
+func (c ChecksumStatus) IncludesPseudoHeader() bool {
+	switch c {
+	case ChecksumNotNeeded, ChecksumNone:
+		return false
+	case ChecksumPartial, ChecksumCalculated:
+		return true
+	default:
+		panic(fmt.Sprintf("unhandled ChecksumStatus = %d", c))
+	}
+}
+
+func (c ChecksumStatus) FullChecksum() bool {
+	switch c {
+	case ChecksumNotNeeded, ChecksumNone, ChecksumPartial:
+		return false
+	case ChecksumCalculated:
+		return true
+	default:
+		panic(fmt.Sprintf("unhandled ChecksumStatus = %d", c))
+	}
+}
+
+// UpdateTransportChecksum updates the checksum of a packet to match the
+// target transport checksum status.
+func UpdateTransportChecksum(proto tcpip.TransportProtocolNumber, current, target ChecksumStatus, xsum uint16, srcAddr, dstAddr tcpip.Address, transportHdr buffer.View, dataSize uint16, dataChecksum func() uint16) uint16 {
+	switch target {
+	case ChecksumNone:
+		panic("ChecksumNone should never be a target checksum status")
+	case ChecksumNotNeeded:
+		return 0
+	case ChecksumPartial:
+		switch current {
+		case ChecksumNotNeeded:
+			return 0
+		case ChecksumCalculated:
+			// We have no way to signal to an interface that the full checksum is
+			// already calculated so we just calculate the partial checksum here
+			// and let the NIC recalculate the checksum.
+			fallthrough
+		case ChecksumNone:
+			return PseudoHeaderChecksum(proto, srcAddr, dstAddr, dataSize+uint16(len(transportHdr)))
+		case ChecksumPartial:
+			// Nothing further to do.
+			return xsum
+		default:
+			panic(fmt.Sprintf("unhandled TransportChecksumStatus = %d", current))
+		}
+	case ChecksumCalculated:
+		switch current {
+		case ChecksumNotNeeded:
+			return 0
+		case ChecksumNone:
+			xsum = PseudoHeaderChecksum(proto, srcAddr, dstAddr, dataSize+uint16(len(transportHdr)))
+			fallthrough
+		case ChecksumPartial:
+			return ^ChecksumCombine(Checksum(transportHdr, xsum), dataChecksum())
+		case ChecksumCalculated:
+			// Nothing further to do.
+			return xsum
+		default:
+			panic(fmt.Sprintf("unhandled TransportChecksumStatus = %d", current))
+		}
+	default:
+		panic(fmt.Sprintf("unhandled TransportChecksumStatus = %d", target))
+	}
+}

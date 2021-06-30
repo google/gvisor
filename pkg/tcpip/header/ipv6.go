@@ -238,6 +238,11 @@ func (b IPv6) SetTOS(t uint8, l uint32) {
 	binary.BigEndian.PutUint32(b[versTCFL:], vtf)
 }
 
+// SetPacketSize implements Network.
+func (b IPv6) SetPacketSize(v uint16) {
+	b.SetPayloadLength(v - IPv6FixedHeaderSize)
+}
+
 // SetPayloadLength sets the "payload length" field of the ipv6 header.
 func (b IPv6) SetPayloadLength(payloadLength uint16) {
 	binary.BigEndian.PutUint16(b[IPv6PayloadLenOffset:], payloadLength)

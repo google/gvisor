@@ -289,27 +289,10 @@ func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, tot
 	return header.PseudoHeaderChecksum(protocol, r.LocalAddress(), r.RemoteAddress(), totalLen)
 }
 
-// RequiresTXTransportChecksum returns false if the route does not require
-// transport checksums to be populated.
-func (r *Route) RequiresTXTransportChecksum() bool {
-	if r.local() {
-		return false
-	}
-	return r.outgoingNIC.LinkEndpoint.Capabilities()&CapabilityTXChecksumOffload == 0
-}
-
-// HasSoftwareGSOCapability returns true if the route supports software GSO.
-func (r *Route) HasSoftwareGSOCapability() bool {
+// HasGSOCapability returns true iff the route supports GSO.
+func (r *Route) HasGSOCapability() bool {
 	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == SWGSOSupported
-	}
-	return false
-}
-
-// HasHardwareGSOCapability returns true if the route supports hardware GSO.
-func (r *Route) HasHardwareGSOCapability() bool {
-	if gso, ok := r.outgoingNIC.LinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == HWGSOSupported
+		return gso.SupportedGSO() != GSONotSupported
 	}
 	return false
 }
@@ -460,16 +443,6 @@ func (r *Route) WritePacket(params NetworkHeaderParams, pkt *PacketBuffer) tcpip
 	}
 
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WritePacket(r, params, pkt)
-}
-
-// WritePackets writes a list of n packets through the given route and returns
-// the number of packets written.
-func (r *Route) WritePackets(pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error) {
-	if !r.isValidForOutgoing() {
-		return 0, &tcpip.ErrInvalidEndpointState{}
-	}
-
-	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WritePackets(r, pkts, params)
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network

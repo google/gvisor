@@ -177,6 +177,26 @@ const (
 	UnknownDestinationPacketHandled
 )
 
+// ChecksummableTransportProtocol is a transport protocol that may require
+// checksumming.
+type ChecksummableTransportProtocol interface {
+	TransportProtocol
+
+	// UpdateTransportChecksum updates the checksum of a packet to match the
+	// target transport checksum status.
+	UpdateTransportChecksum(*PacketBuffer, header.ChecksumStatus)
+}
+
+// SegmentAndChecksummableTransportProtocol is a transport protocol that
+// supports segmentation and may also require checksumming.
+type SegmentAndChecksummableTransportProtocol interface {
+	ChecksummableTransportProtocol
+
+	// SegmentWithChecksum attempts to segment a packet so it can fit in the
+	// specified MTU.
+	SegmentWithChecksum(*PacketBuffer, uint32, header.ChecksumStatus) (PacketBufferList, tcpip.Error)
+}
+
 // TransportProtocol is the interface that needs to be implemented by transport
 // protocols (e.g., tcp, udp) that want to be part of the networking stack.
 type TransportProtocol interface {
@@ -552,17 +572,14 @@ type NetworkInterface interface {
 	//
 	// WritePacket takes ownership of the packet buffer. The packet buffer's
 	// network and transport header must be set.
-	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) tcpip.Error
-
-	// WritePackets writes packets with the given protocol through the given
-	// route. Must not be called with an empty list of packet buffers.
 	//
-	// WritePackets takes ownership of the packet buffers.
+	// WritePacket performs any tasks that may be offloadable in software if the
+	// interface does not support such offloadable tasks (e.g. segmentation,
+	// checksumming).
 	//
-	// Right now, WritePackets is used only when the software segmentation
-	// offload is enabled. If it will be used for something else, syscall filters
-	// may need to be updated.
-	WritePackets(*Route, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+	// Returns the number of packets that were sent after software segmentation,
+	// if required.
+	WritePacket(*Route, tcpip.NetworkProtocolNumber, *PacketBuffer) (int, tcpip.Error)
 
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
@@ -620,11 +637,6 @@ type NetworkEndpoint interface {
 	// already been set.
 	WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
 
-	// WritePackets writes packets to the given destination address and
-	// protocol. pkts must not be zero length. It takes ownership of pkts and
-	// underlying packets.
-	WritePackets(r *Route, pkts PacketBufferList, params NetworkHeaderParams) (int, tcpip.Error)
-
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It takes ownership of pkt.
 	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error
@@ -661,6 +673,15 @@ type IPNetworkEndpointStats interface {
 
 	// IPStats returns the IP statistics of a network endpoint.
 	IPStats() *tcpip.IPStats
+}
+
+// FragmentableNetworkProtocol is a network protocol that supports
+// fragmentation.
+type FragmentableNetworkProtocol interface {
+	NetworkProtocol
+
+	// Fragment attempts to fragment a packet so it can fit in the specified MTU.
+	Fragment(pkt *PacketBuffer, mtu uint32) (PacketBufferList, tcpip.Error)
 }
 
 // ForwardingNetworkEndpoint is a network endpoint that may forward packets.
@@ -1024,10 +1045,6 @@ const (
 	// Hardware GSO types:
 	GSOTCPv4
 	GSOTCPv6
-
-	// GSOSW is used for software GSO segments which have to be sent by
-	// endpoint.WritePackets.
-	GSOSW
 )
 
 // GSO contains generic segmentation offload properties.
@@ -1045,9 +1062,6 @@ type GSO struct {
 	MSS uint16
 	// L3Len is L3 (IP) header length.
 	L3HdrLen uint16
-
-	// MaxSize is maximum GSO packet size.
-	MaxSize uint32
 }
 
 // SupportedGSO returns the type of segmentation offloading supported.

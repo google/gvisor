@@ -370,7 +370,7 @@ func (ct *ConnTrack) insertConn(conn *conn) {
 // handlePacket will manipulate the port and address of the packet if the
 // connection exists. Returns whether, after the packet traverses the tables,
 // it should create a new entry in the table.
-func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
+func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook) bool {
 	if pkt.NatDone {
 		return false
 	}
@@ -452,12 +452,8 @@ func (ct *ConnTrack) handlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 	case Prerouting, Input:
 	case Output, Postrouting:
 		// Calculate the TCP checksum and set it.
-		if pkt.GSOOptions.Type != GSONone && pkt.GSOOptions.NeedsCsum {
-			updatePseudoHeader = true
-		} else if r.RequiresTXTransportChecksum() {
-			fullChecksum = true
-			updatePseudoHeader = true
-		}
+		fullChecksum = pkt.TransportChecksumStatus.FullChecksum()
+		updatePseudoHeader = pkt.TransportChecksumStatus.IncludesPseudoHeader()
 	default:
 		panic(fmt.Sprintf("unrecognized hook = %s", hook))
 	}

@@ -18,5 +18,6 @@ go_library(
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/udp",
     ],
 )

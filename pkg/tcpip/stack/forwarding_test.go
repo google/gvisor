@@ -127,12 +127,8 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, params NetworkHeaderParam
 	b[srcAddrOffset] = r.LocalAddress()[0]
 	b[protocolNumberOffset] = byte(params.Protocol)
 
-	return f.nic.WritePacket(r, fwdTestNetNumber, pkt)
-}
-
-// WritePackets implements LinkEndpoint.WritePackets.
-func (*fwdTestNetworkEndpoint) WritePackets(*Route, PacketBufferList, NetworkHeaderParams) (int, tcpip.Error) {
-	panic("not implemented")
+	_, err := f.nic.WritePacket(r, fwdTestNetNumber, pkt)
+	return err
 }
 
 func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error {
@@ -141,7 +137,8 @@ func (f *fwdTestNetworkEndpoint) WriteHeaderIncludedPacket(r *Route, pkt *Packet
 		return &tcpip.ErrMalformedHeader{}
 	}
 
-	return f.nic.WritePacket(r, fwdTestNetNumber, pkt)
+	_, err := f.nic.WritePacket(r, fwdTestNetNumber, pkt)
+	return err
 }
 
 func (f *fwdTestNetworkEndpoint) Close() {

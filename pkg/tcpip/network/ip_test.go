@@ -188,7 +188,7 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) (int, tcpip.Error) {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -206,12 +206,7 @@ func (t *testObject) WritePacket(_ *stack.Route, protocol tcpip.NetworkProtocolN
 		dstAddr = h.DestinationAddress()
 	}
 	t.checkValues(prot, pkt.Data().AsRange().ToOwnedView(), srcAddr, dstAddr)
-	return nil
-}
-
-// WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*testObject) WritePackets(_ *stack.Route, pkt stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	panic("not implemented")
+	return 1, nil
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.

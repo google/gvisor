@@ -114,6 +114,9 @@ type Network interface {
 
 	// SetTOS sets the values of the "type of service" and "flow label" fields.
 	SetTOS(t uint8, l uint32)
+
+	// SetPacketSize sets the size of the packet, including IP headers.
+	SetPacketSize(uint16)
 }
 
 // ChecksummableNetwork is a Network that supports checksumming.
@@ -127,4 +130,8 @@ type ChecksummableNetwork interface {
 	// SetDestinationAddressAndChecksum sets the destination address and
 	// updates the checksum to reflect the new address.
 	SetDestinationAddressWithChecksumUpdate(tcpip.Address)
+
+	// CalculateAndSetChecksum calculates and sets the checksum, if the header
+	// supports checksumming.
+	CalculateAndSetChecksum()
 }

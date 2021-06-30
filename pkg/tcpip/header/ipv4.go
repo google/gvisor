@@ -359,6 +359,17 @@ func (b IPv4) SetTOS(v uint8, _ uint32) {
 	b[tos] = v
 }
 
+// SetPacketSize implements Network.
+func (b IPv4) SetPacketSize(v uint16) {
+	b.SetTotalLength(v)
+}
+
+// CalculateAndSetChecksum implements ChecksummableNetwork.
+func (b IPv4) CalculateAndSetChecksum() {
+	b.SetChecksum(0)
+	b.SetChecksum(^b.CalculateChecksum())
+}
+
 // SetTTL sets the "Time to Live" field of the IPv4 header.
 func (b IPv4) SetTTL(v byte) {
 	b[ttl] = v

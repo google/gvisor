@@ -145,11 +145,6 @@ func (*endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
 }
 
-// WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (*endpoint) WritePackets(*stack.Route, stack.PacketBufferList, stack.NetworkHeaderParams) (int, tcpip.Error) {
-	return 0, &tcpip.ErrNotSupported{}
-}
-
 func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
