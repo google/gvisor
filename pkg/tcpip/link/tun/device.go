@@ -208,6 +208,15 @@ func (d *Device) Write(data []byte) (int64, error) {
 		protocol = pktInfoHdr.Protocol()
 	case ethHdr != nil:
 		protocol = ethHdr.Type()
+	case d.flags.TUN:
+		// TUN interface with IFF_NO_PI enabled, thus
+		// we need to determine protocol from version field
+		version := data[0] >> 4
+		if version == 4 {
+			protocol = header.IPv4ProtocolNumber
+		} else if version == 6 {
+			protocol = header.IPv6ProtocolNumber
+		}
 	}
 
 	// Try to determine remote link address, default zero.
@@ -263,13 +272,6 @@ func (d *Device) encodePkt(info *channel.PacketInfo) (buffer.View, bool) {
 			Protocol: info.Proto,
 		})
 		vv.AppendView(buffer.View(hdr))
-	}
-
-	// If the packet does not already have link layer header, and the route
-	// does not exist, we can't compute it. This is possibly a raw packet, tun
-	// device doesn't support this at the moment.
-	if info.Pkt.LinkHeader().View().IsEmpty() && len(info.Route.RemoteLinkAddress) == 0 {
-		return nil, false
 	}
 
 	// Ethernet header (TAP only).
