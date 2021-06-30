@@ -127,6 +127,7 @@ func (d *dentry) StateFields() []string {
 		"name",
 		"children",
 		"childrenNames",
+		"childrenList",
 		"lowerVD",
 		"lowerMerkleVD",
 		"symlinkTarget",
@@ -150,10 +151,11 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &d.name)
 	stateSinkObject.Save(9, &d.children)
 	stateSinkObject.Save(10, &d.childrenNames)
-	stateSinkObject.Save(11, &d.lowerVD)
-	stateSinkObject.Save(12, &d.lowerMerkleVD)
-	stateSinkObject.Save(13, &d.symlinkTarget)
-	stateSinkObject.Save(14, &d.hash)
+	stateSinkObject.Save(11, &d.childrenList)
+	stateSinkObject.Save(12, &d.lowerVD)
+	stateSinkObject.Save(13, &d.lowerMerkleVD)
+	stateSinkObject.Save(14, &d.symlinkTarget)
+	stateSinkObject.Save(15, &d.hash)
 }
 
 // +checklocksignore
@@ -169,10 +171,11 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &d.name)
 	stateSourceObject.Load(9, &d.children)
 	stateSourceObject.Load(10, &d.childrenNames)
-	stateSourceObject.Load(11, &d.lowerVD)
-	stateSourceObject.Load(12, &d.lowerMerkleVD)
-	stateSourceObject.Load(13, &d.symlinkTarget)
-	stateSourceObject.Load(14, &d.hash)
+	stateSourceObject.Load(11, &d.childrenList)
+	stateSourceObject.Load(12, &d.lowerVD)
+	stateSourceObject.Load(13, &d.lowerMerkleVD)
+	stateSourceObject.Load(14, &d.symlinkTarget)
+	stateSourceObject.Load(15, &d.hash)
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 

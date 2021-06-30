@@ -283,7 +283,7 @@ func (fs *filesystem) verifyChildLocked(ctx context.Context, parent *dentry, chi
 		Mode:                  uint32(parentStat.Mode),
 		UID:                   parentStat.UID,
 		GID:                   parentStat.GID,
-		Children:              parent.childrenNames,
+		Children:              parent.childrenList,
 		HashAlgorithms:        fs.alg.toLinuxHashAlg(),
 		ReadOffset:            int64(offset),
 		ReadSize:              int64(merkletree.DigestSize(fs.alg.toLinuxHashAlg())),
@@ -404,6 +404,9 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 
 	var buf bytes.Buffer
 	d.hashMu.RLock()
+
+	d.generateChildrenList()
+
 	params := &merkletree.VerifyParams{
 		Out:            &buf,
 		Tree:           &fdReader,
@@ -412,7 +415,7 @@ func (fs *filesystem) verifyStatAndChildrenLocked(ctx context.Context, d *dentry
 		Mode:           uint32(stat.Mode),
 		UID:            stat.UID,
 		GID:            stat.GID,
-		Children:       d.childrenNames,
+		Children:       d.childrenList,
 		HashAlgorithms: fs.alg.toLinuxHashAlg(),
 		ReadOffset:     0,
 		// Set read size to 0 so only the metadata is verified.
