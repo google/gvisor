@@ -19,9 +19,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // syntheticDirectory implements kernfs.Inode for a directory created by
@@ -65,13 +65,13 @@ func (dir *syntheticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, 
 
 // NewFile implements Inode.NewFile.
 func (dir *syntheticDirectory) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewDir implements Inode.NewDir.
 func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (Inode, error) {
 	if !opts.ForSyntheticMountpoint {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	subdirI := newSyntheticDirectory(ctx, auth.CredentialsFromContext(ctx), opts.Mode&linux.PermissionsMask)
 	if err := dir.OrderedChildren.Insert(name, subdirI); err != nil {
@@ -84,17 +84,17 @@ func (dir *syntheticDirectory) NewDir(ctx context.Context, name string, opts vfs
 
 // NewLink implements Inode.NewLink.
 func (dir *syntheticDirectory) NewLink(ctx context.Context, name string, target Inode) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
 func (dir *syntheticDirectory) NewSymlink(ctx context.Context, name, target string) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewNode implements Inode.NewNode.
 func (dir *syntheticDirectory) NewNode(ctx context.Context, name string, opts vfs.MknodOptions) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // DecRef implements Inode.DecRef.

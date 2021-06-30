@@ -372,7 +372,7 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	if tty.tg != nil && tg.processGroup.session != tty.tg.processGroup.session {
 		// Stealing requires CAP_SYS_ADMIN in the root user namespace.
 		if !hasAdmin || !steal {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
 		for othertg := range tg.pidns.owner.Root.tgids {
@@ -392,7 +392,7 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	}
 
 	if !isReadable && !hasAdmin {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Set the controlling terminal and foreground process group.
@@ -514,7 +514,7 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 
 	// pg must be part of this process's session.
 	if tg.processGroup.session != pg.session {
-		return -1, syserror.EPERM
+		return -1, linuxerr.EPERM
 	}
 
 	tg.processGroup.session.foreground.id = pgid

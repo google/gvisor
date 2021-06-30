@@ -87,7 +87,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		}
 		dirfile, dirfileFlags := t.FDTable().GetVFS2(dirfd)
 		if dirfile == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		start := dirfile.VirtualDentry()
 		start.IncRef()

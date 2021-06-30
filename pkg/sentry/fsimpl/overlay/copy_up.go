@@ -52,7 +52,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		// Can be copied-up.
 	default:
 		// Can't be copied-up.
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Ensure that our parent directory is copied-up.

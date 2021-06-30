@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Mmap implements Linux syscall mmap(2).
@@ -71,13 +70,13 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		// Convert the passed FD to a file reference.
 		file := t.GetFileVFS2(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
 		// mmap unconditionally requires that the FD is readable.
 		if !file.IsReadable() {
-			return 0, nil, syserror.EACCES
+			return 0, nil, linuxerr.EACCES
 		}
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
 		if shared && !file.IsWritable() {

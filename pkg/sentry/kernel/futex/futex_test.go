@@ -21,8 +21,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -488,7 +488,7 @@ func (t *testMutex) Lock() {
 		// Wait for it to be "not locked".
 		w := NewWaiter()
 		err := t.m.WaitPrepare(w, t.d, t.a, true, testMutexLocked, ^uint32(0))
-		if err == unix.EAGAIN {
+		if linuxerr.Equals(linuxerr.EAGAIN, err) {
 			continue
 		}
 		if err != nil {

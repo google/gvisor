@@ -106,7 +106,7 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 	}
 
 	if _, ok := setableLimits[resource]; !ok {
-		return limits.Limit{}, syserror.EPERM
+		return limits.Limit{}, linuxerr.EPERM
 	}
 
 	// "A privileged process (under Linux: one with the CAP_SYS_RESOURCE
@@ -208,7 +208,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			cred.RealKGID != tcred.RealKGID ||
 			cred.RealKGID != tcred.EffectiveKGID ||
 			cred.RealKGID != tcred.SavedKGID {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 	}
 

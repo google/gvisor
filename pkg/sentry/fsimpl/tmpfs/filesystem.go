@@ -252,7 +252,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		d := vd.Dentry().Impl().(*dentry)
 		i := d.inode
 		if i.isDir() {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(atomic.LoadUint32(&i.mode)), auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid))); err != nil {
 			return err

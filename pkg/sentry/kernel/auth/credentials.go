@@ -17,7 +17,6 @@ package auth
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Credentials contains information required to authorize privileged operations
@@ -215,7 +214,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 	if kuid == c.RealKUID || kuid == c.EffectiveKUID || kuid == c.SavedKUID {
 		return kuid, nil
 	}
-	return NoID, syserror.EPERM
+	return NoID, linuxerr.EPERM
 }
 
 // UseGID checks that c can use gid in its user namespace, then translates it
@@ -231,7 +230,7 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	if kgid == c.RealKGID || kgid == c.EffectiveKGID || kgid == c.SavedKGID {
 		return kgid, nil
 	}
-	return NoID, syserror.EPERM
+	return NoID, linuxerr.EPERM
 }
 
 // SetUID translates the provided uid to the root user namespace and updates c's

@@ -29,7 +29,7 @@ import (
 func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, error) {
 	// Verify basic file flag permissions.
 	if !dst.Flags().Write || !src.Flags().Read {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 
 	// Check whether or not the objects being sliced are stream-oriented

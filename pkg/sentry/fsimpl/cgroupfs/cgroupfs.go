@@ -365,7 +365,7 @@ func (*dir) Keep() bool {
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Open implements kernfs.Inode.Open.

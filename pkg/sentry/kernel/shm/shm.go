@@ -170,7 +170,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 				// memory segment, and does not have the CAP_IPC_OWNER
 				// capability in the user namespace that governs its IPC
 				// namespace." - man shmget(2)
-				return nil, syserror.EACCES
+				return nil, linuxerr.EACCES
 			}
 
 			if size > shm.size {
@@ -559,7 +559,7 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 		// "The calling process does not have the required permissions for the
 		// requested attach type, and does not have the CAP_IPC_OWNER capability
 		// in the user namespace that governs its IPC namespace." - man shmat(2)
-		return memmap.MMapOpts{}, syserror.EACCES
+		return memmap.MMapOpts{}, linuxerr.EACCES
 	}
 	return memmap.MMapOpts{
 		Length: s.size,
@@ -596,7 +596,7 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 		// read access for shmid, and the calling process does not have the
 		// CAP_IPC_OWNER capability in the user namespace that governs its IPC
 		// namespace." - man shmctl(2)
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	var mode uint16
@@ -646,7 +646,7 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	defer s.mu.Unlock()
 
 	if !s.checkOwnership(ctx) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	creds := auth.CredentialsFromContext(ctx)

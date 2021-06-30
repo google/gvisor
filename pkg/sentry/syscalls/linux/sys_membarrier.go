@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Membarrier implements syscall membarrier(2).
@@ -53,7 +52,7 @@ func Membarrier(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 			return 0, nil, linuxerr.EINVAL
 		}
 		if cmd == linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED && !t.MemoryManager().IsMembarrierPrivateEnabled() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		return 0, nil, t.Kernel().Platform.GlobalMemoryBarrier()
 	case linux.MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED:
@@ -82,7 +81,7 @@ func Membarrier(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 			return 0, nil, linuxerr.EINVAL
 		}
 		if !t.MemoryManager().IsMembarrierRSeqEnabled() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		// MEMBARRIER_CMD_FLAG_CPU and cpu_id are ignored since we don't have
 		// the ability to preempt specific CPUs.

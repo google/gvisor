@@ -16,6 +16,7 @@ package ext
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -81,22 +82,22 @@ func (fd *symlinkFD) Release(context.Context) {}
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *symlinkFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *symlinkFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *symlinkFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *symlinkFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -106,10 +107,10 @@ func (fd *symlinkFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *symlinkFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *symlinkFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }

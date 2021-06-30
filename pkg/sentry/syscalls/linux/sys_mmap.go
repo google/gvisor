@@ -84,14 +84,14 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		// Convert the passed FD to a file reference.
 		file := t.GetFile(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
 		flags := file.Flags()
 		// mmap unconditionally requires that the FD is readable.
 		if !flags.Read {
-			return 0, nil, syserror.EACCES
+			return 0, nil, linuxerr.EACCES
 		}
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
 		if shared && !flags.Write {
@@ -214,7 +214,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, syserror.ENOSYS
 	case linux.MADV_HWPOISON:
 		// Only privileged processes are allowed to poison pages.
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	default:
 		// If adv is not a valid value tell the caller.
 		return 0, nil, linuxerr.EINVAL

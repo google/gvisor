@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Uname implements linux syscall uname.
@@ -58,7 +57,7 @@ func Setdomainname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 	utsns := t.UTSNamespace()
 	if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, utsns.UserNamespace()) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	if size < 0 || size > linux.UTSLen {
 		return 0, nil, linuxerr.EINVAL
@@ -80,7 +79,7 @@ func Sethostname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 	utsns := t.UTSNamespace()
 	if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, utsns.UserNamespace()) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	if size < 0 || size > linux.UTSLen {
 		return 0, nil, linuxerr.EINVAL

@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -66,7 +67,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
 			mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 			if mlockLimit == 0 {
-				return vmaIterator{}, hostarch.AddrRange{}, syserror.EPERM
+				return vmaIterator{}, hostarch.AddrRange{}, linuxerr.EPERM
 			}
 			newLockedAS := mm.lockedAS + opts.Length
 			if opts.Unmap {
@@ -296,7 +297,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar hostarch.AddrRang
 			perms = vma.maxPerms
 		}
 		if !perms.SupersetOf(at) {
-			return vbegin, vgap, syserror.EPERM
+			return vbegin, vgap, linuxerr.EPERM
 		}
 
 		addr = vseg.End()

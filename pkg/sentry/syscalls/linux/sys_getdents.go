@@ -67,7 +67,7 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 func getdents(t *kernel.Task, fd int32, addr hostarch.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
 	dir := t.GetFile(fd)
 	if dir == nil {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	defer dir.DecRef(t)
 

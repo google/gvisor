@@ -218,7 +218,7 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, _ *fs.Inode, size in
 		fallthrough
 	case oldSize > size && f.seals&linux.F_SEAL_SHRINK != 0: // Shrink sealed
 		f.dataMu.Unlock()
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	if oldSize != size {
@@ -279,7 +279,7 @@ func (f *fileInodeOperations) Allocate(ctx context.Context, _ *fs.Inode, offset,
 
 	// Check if current seals allow growth.
 	if f.seals&linux.F_SEAL_GROW != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	f.attr.Size = newSize
@@ -462,7 +462,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 	// Check if seals prevent either file growth or all writes.
 	switch {
 	case rw.f.seals&linux.F_SEAL_WRITE != 0: // Write sealed
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	case end > rw.f.attr.Size && rw.f.seals&linux.F_SEAL_GROW != 0: // Grow sealed
 		// When growth is sealed, Linux effectively allows writes which would
 		// normally grow the file to partially succeed up to the current EOF,
@@ -483,7 +483,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		}
 		if end <= rw.offset {
 			// Truncation would result in no data being written.
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 	}
 
@@ -551,7 +551,7 @@ func (f *fileInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingS
 
 	// Reject writable mapping if F_SEAL_WRITE is set.
 	if f.seals&linux.F_SEAL_WRITE != 0 && writable {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	f.mappings.AddMapping(ms, ar, offset, writable)
@@ -669,7 +669,7 @@ func AddSeals(inode *fs.Inode, val uint32) error {
 
 		if f.seals&linux.F_SEAL_SEAL != 0 {
 			// Seal applied which prevents addition of any new seals.
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 
 		// F_SEAL_WRITE can only be added if there are no active writable maps.

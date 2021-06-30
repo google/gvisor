@@ -62,7 +62,7 @@ func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 func checkTaskState(t *kernel.Task) error {
 	switch t.ExitState() {
 	case kernel.TaskExitZombie:
-		return syserror.EACCES
+		return linuxerr.EACCES
 	case kernel.TaskExitDead:
 		return syserror.ESRCH
 	}
@@ -273,7 +273,7 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 	e.t.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			err = syserror.EACCES
+			err = linuxerr.EACCES
 			return
 		}
 
@@ -291,7 +291,7 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 // Readlink implements fs.InodeOperations.
 func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if !kernel.ContextCanTrace(ctx, e.t, false) {
-		return "", syserror.EACCES
+		return "", linuxerr.EACCES
 	}
 
 	// Pull out the executable for /proc/TID/exe.
@@ -324,7 +324,7 @@ func newCwd(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inode
 // Readlink implements fs.InodeOperations.
 func (e *cwd) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if !kernel.ContextCanTrace(ctx, e.t, false) {
-		return "", syserror.EACCES
+		return "", linuxerr.EACCES
 	}
 	if err := checkTaskState(e.t); err != nil {
 		return "", err
@@ -381,7 +381,7 @@ func (n *namespaceSymlink) Readlink(ctx context.Context, inode *fs.Inode) (strin
 // Getlink implements fs.InodeOperations.Getlink.
 func (n *namespaceSymlink) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Dirent, error) {
 	if !kernel.ContextCanTrace(ctx, n.t, false) {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 	if err := checkTaskState(n.t); err != nil {
 		return nil, err
@@ -449,7 +449,7 @@ func (m *memData) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileF
 	// Permission to read this file is governed by PTRACE_MODE_ATTACH_FSCREDS
 	// Since we dont implement setfsuid/setfsgid we can just use PTRACE_MODE_ATTACH
 	if !kernel.ContextCanTrace(ctx, m.t, true) {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 	if err := checkTaskState(m.t); err != nil {
 		return nil, err

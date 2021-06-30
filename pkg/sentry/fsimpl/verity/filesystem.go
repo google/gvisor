@@ -830,7 +830,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	// Users should not open the Merkle tree files. Those are for verity fs
 	// use only.
 	if strings.Contains(d.name, merklePrefix) {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {

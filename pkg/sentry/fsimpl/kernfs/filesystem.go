@@ -374,7 +374,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 
 	d := vd.Dentry().Impl().(*Dentry)
 	if d.isDir() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	childI, err := parent.inode.NewLink(ctx, pc, d.inode)

@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -68,7 +69,7 @@ func fileOpOn(ctx context.Context, mntns *fs.MountNamespace, root, wd *fs.Dirent
 		rel = wd
 	} else {
 		// Need to extract the given FD.
-		return syserror.EBADF
+		return linuxerr.EBADF
 	}
 
 	// Lookup the node.

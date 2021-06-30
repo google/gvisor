@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -170,54 +171,54 @@ func (d *dirInodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name str
 //
 // Creation is never allowed.
 func (d *dirInodeOperations) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perm fs.FilePermissions) (*fs.File, error) {
-	return nil, syserror.EACCES
+	return nil, linuxerr.EACCES
 }
 
 // CreateDirectory implements fs.InodeOperations.CreateDirectory.
 //
 // Creation is never allowed.
 func (d *dirInodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // CreateLink implements fs.InodeOperations.CreateLink.
 //
 // Creation is never allowed.
 func (d *dirInodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname, newname string) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // CreateHardLink implements fs.InodeOperations.CreateHardLink.
 //
 // Creation is never allowed.
 func (d *dirInodeOperations) CreateHardLink(ctx context.Context, dir *fs.Inode, target *fs.Inode, name string) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.
 //
 // Creation is never allowed.
 func (d *dirInodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // Remove implements fs.InodeOperations.Remove.
 //
 // Removal is never allowed.
 func (d *dirInodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // RemoveDirectory implements fs.InodeOperations.RemoveDirectory.
 //
 // Removal is never allowed.
 func (d *dirInodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, name string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Bind implements fs.InodeOperations.Bind.
 func (d *dirInodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data transport.BoundEndpoint, perm fs.FilePermissions) (*fs.Dirent, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -674,7 +675,7 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 	if at.Execute {
-		return safemem.BlockSeq{}, syserror.EACCES
+		return safemem.BlockSeq{}, linuxerr.EACCES
 	}
 
 	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)

@@ -116,7 +116,7 @@ func Capset(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	switch hdr.Version {
 	case linux.LINUX_CAPABILITY_VERSION_1:
 		if tid := kernel.ThreadID(hdr.Pid); tid != 0 && tid != t.ThreadID() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		var data linux.CapUserData
 		if _, err := data.CopyIn(t, dataAddr); err != nil {
@@ -129,7 +129,7 @@ func Capset(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	case linux.LINUX_CAPABILITY_VERSION_2, linux.LINUX_CAPABILITY_VERSION_3:
 		if tid := kernel.ThreadID(hdr.Pid); tid != 0 && tid != t.ThreadID() {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		var data [2]linux.CapUserData
 		if _, err := linux.CopyCapUserDataSliceIn(t, dataAddr, data[:]); err != nil {

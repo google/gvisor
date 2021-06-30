@@ -62,27 +62,27 @@ type InodeDirectoryNoNewChildren struct{}
 
 // NewFile implements Inode.NewFile.
 func (InodeDirectoryNoNewChildren) NewFile(context.Context, string, vfs.OpenOptions) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewDir implements Inode.NewDir.
 func (InodeDirectoryNoNewChildren) NewDir(context.Context, string, vfs.MkdirOptions) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewLink implements Inode.NewLink.
 func (InodeDirectoryNoNewChildren) NewLink(context.Context, string, Inode) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewSymlink implements Inode.NewSymlink.
 func (InodeDirectoryNoNewChildren) NewSymlink(context.Context, string, string) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // NewNode implements Inode.NewNode.
 func (InodeDirectoryNoNewChildren) NewNode(context.Context, string, vfs.MknodOptions) (Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // InodeNotDirectory partially implements the Inode interface, specifically the
@@ -286,7 +286,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 	// allowed by kernfs files but does not do anything. If some other behavior is
 	// needed, the embedder should consider extending SetStat.
 	if opts.Stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_SIZE) != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
 		return syserror.EISDIR
@@ -570,7 +570,7 @@ func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 // Unlink implements Inode.Unlink.
 func (o *OrderedChildren) Unlink(ctx context.Context, name string, child Inode) error {
 	if !o.writable {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -600,7 +600,7 @@ func (o *OrderedChildren) RmDir(ctx context.Context, name string, child Inode) e
 // Postcondition: reference on any replaced dentry transferred to caller.
 func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, child, dstDir Inode) error {
 	if !o.writable {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	dst, ok := dstDir.(interface{}).(*OrderedChildren)
@@ -608,7 +608,7 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 		return syserror.EXDEV
 	}
 	if !dst.writable {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Note: There's a potential deadlock below if concurrent calls to Rename
@@ -710,7 +710,7 @@ func (s *StaticDirectory) Open(ctx context.Context, rp *vfs.ResolvingPath, d *De
 
 // SetStat implements Inode.SetStat not allowing inode attributes to be changed.
 func (*StaticDirectory) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // DecRef implements Inode.DecRef.

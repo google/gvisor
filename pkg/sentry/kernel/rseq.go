@@ -113,7 +113,7 @@ func (t *Task) ClearRSeq(addr hostarch.Addr, length, signature uint32) error {
 		return linuxerr.EINVAL
 	}
 	if t.rseqSignature != signature {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	if err := t.rseqClearCPU(); err != nil {

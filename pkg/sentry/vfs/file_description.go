@@ -253,7 +253,7 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 			return err
 		}
 		if (stat.AttributesMask&linux.STATX_ATTR_APPEND != 0) && (stat.Attributes&linux.STATX_ATTR_APPEND != 0) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	if (flags&linux.O_NOATIME != 0) && (oldFlags&linux.O_NOATIME == 0) {
@@ -267,10 +267,10 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 			return err
 		}
 		if stat.Mask&linux.STATX_UID == 0 {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if !CanActAsOwner(creds, auth.KUID(stat.UID)) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	if flags&linux.O_DIRECT != 0 && !fd.opts.AllowDirectIO {
@@ -568,7 +568,7 @@ func (fd *FileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 // Allocate grows file represented by FileDescription to offset + length bytes.
 func (fd *FileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	if !fd.IsWritable() {
-		return syserror.EBADF
+		return linuxerr.EBADF
 	}
 	if err := fd.impl.Allocate(ctx, mode, offset, length); err != nil {
 		return err
@@ -606,7 +606,7 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		return 0, syserror.ESPIPE
 	}
 	if !fd.readable {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	start := fsmetric.StartReadWait()
 	n, err := fd.impl.PRead(ctx, dst, offset, opts)
@@ -621,7 +621,7 @@ func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 // Read is similar to PRead, but does not specify an offset.
 func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
 	if !fd.readable {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	start := fsmetric.StartReadWait()
 	n, err := fd.impl.Read(ctx, dst, opts)
@@ -641,7 +641,7 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 		return 0, syserror.ESPIPE
 	}
 	if !fd.writable {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	n, err := fd.impl.PWrite(ctx, src, offset, opts)
 	if n > 0 {
@@ -653,7 +653,7 @@ func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, o
 // Write is similar to PWrite, but does not specify an offset.
 func (fd *FileDescription) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
 	if !fd.writable {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	n, err := fd.impl.Write(ctx, src, opts)
 	if n > 0 {

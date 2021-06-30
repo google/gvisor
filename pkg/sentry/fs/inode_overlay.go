@@ -569,7 +569,7 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 func overlaySetXattr(ctx context.Context, o *overlayEntry, d *Dirent, name, value string, flags uint32) error {
 	// Don't allow changes to overlay xattrs through a setxattr syscall.
 	if isXattrOverlay(name) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	if err := copyUp(ctx, d); err != nil {
@@ -601,7 +601,7 @@ func overlayListXattr(ctx context.Context, o *overlayEntry, size uint64) (map[st
 func overlayRemoveXattr(ctx context.Context, o *overlayEntry, d *Dirent, name string) error {
 	// Don't allow changes to overlay xattrs through a removexattr syscall.
 	if isXattrOverlay(name) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	if err := copyUp(ctx, d); err != nil {
@@ -688,7 +688,7 @@ func overlayGetlink(ctx context.Context, o *overlayEntry) (*Dirent, error) {
 		dirent.DecRef(ctx)
 
 		// Claim that the path is not accessible.
-		err = syserror.EACCES
+		err = linuxerr.EACCES
 		log.Warningf("Getlink not supported in overlay for %q", name)
 	}
 	return nil, err

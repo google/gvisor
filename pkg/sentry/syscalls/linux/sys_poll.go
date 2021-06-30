@@ -265,7 +265,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Ad
 				// OK. Linux is racy in the same way.
 				file := t.GetFile(fd)
 				if file == nil {
-					return 0, syserror.EBADF
+					return 0, linuxerr.EBADF
 				}
 				file.DecRef(t)
 

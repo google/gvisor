@@ -746,7 +746,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 	}
 
 	if (cur & linux.FUTEX_TID_MASK) != tid {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	var next *Waiter  // Who's the next owner?

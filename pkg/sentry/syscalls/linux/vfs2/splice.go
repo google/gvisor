@@ -58,18 +58,18 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// Get file descriptions.
 	inFile := t.GetFileVFS2(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 	outFile := t.GetFileVFS2(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
 	// Check that both files support the required directionality.
 	if !inFile.IsReadable() || !outFile.IsWritable() {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// The operation is non-blocking if anything is non-blocking.
@@ -201,18 +201,18 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	// Get file descriptions.
 	inFile := t.GetFileVFS2(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 	outFile := t.GetFileVFS2(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
 	// Check that both files support the required directionality.
 	if !inFile.IsReadable() || !outFile.IsWritable() {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// The operation is non-blocking if anything is non-blocking.
@@ -271,20 +271,20 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	inFile := t.GetFileVFS2(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 	if !inFile.IsReadable() {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	outFile := t.GetFileVFS2(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 	if !outFile.IsWritable() {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Verify that the outFile Append flag is not set.

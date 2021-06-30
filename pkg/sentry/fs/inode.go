@@ -17,6 +17,7 @@ package fs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
@@ -324,7 +325,7 @@ func (i *Inode) check(ctx context.Context, p PermMask) error {
 		return overlayCheck(ctx, i.overlay, p)
 	}
 	if !i.InodeOperations.Check(ctx, i, p) {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	return nil
 }

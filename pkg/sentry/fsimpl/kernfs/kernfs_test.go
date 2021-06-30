@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -95,7 +94,7 @@ type attrs struct {
 }
 
 func (*attrs) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 type readonlyDir struct {
@@ -197,15 +196,15 @@ func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (k
 }
 
 func (*dir) NewLink(context.Context, string, kernfs.Inode) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (*dir) NewSymlink(context.Context, string, string) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (*dir) NewNode(context.Context, string, vfs.MknodOptions) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (fsType) Name() string {

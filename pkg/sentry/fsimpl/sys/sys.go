@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -175,7 +174,7 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Open implements kernfs.Inode.Open.

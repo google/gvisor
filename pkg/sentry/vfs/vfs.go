@@ -449,7 +449,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			if opts.FileExec {
 				if fd.Mount().Flags.NoExec {
 					fd.DecRef(ctx)
-					return nil, syserror.EACCES
+					return nil, linuxerr.EACCES
 				}
 
 				// Only a regular file can be executed.
@@ -460,7 +460,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 				}
 				if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.S_IFMT != linux.S_IFREG {
 					fd.DecRef(ctx)
-					return nil, syserror.EACCES
+					return nil, linuxerr.EACCES
 				}
 			}
 
