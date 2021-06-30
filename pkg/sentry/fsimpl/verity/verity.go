@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -509,6 +510,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if err := fs.verifyStatAndChildrenLocked(ctx, d, stat); err != nil {
 			return nil, nil, err
 		}
+		d.generateChildrenList()
 	}
 
 	d.vfsd.Init(d)
@@ -564,6 +566,11 @@ type dentry struct {
 	// used by verity to check whether a child is expected. This is only
 	// populated by enableVerity. childrenNames is also protected by dirMu.
 	childrenNames map[string]struct{}
+
+	// childrenList is a complete sorted list of childrenNames. This list
+	// is generated when verity is enabled, or the first time the file is
+	// verified in non runtime enable mode.
+	childrenList []string
 
 	// lowerVD is the VirtualDentry in the underlying file system. It is
 	// never modified after initialized.
@@ -748,6 +755,17 @@ func (d *dentry) verityEnabled() bool {
 	d.hashMu.RLock()
 	defer d.hashMu.RUnlock()
 	return !d.fs.allowRuntimeEnable || len(d.hash) != 0
+}
+
+// generateChildrenList generates a sorted childrenList from childrenNames, and
+// cache it in d for hashing.
+func (d *dentry) generateChildrenList() {
+	if len(d.childrenList) == 0 && len(d.childrenNames) != 0 {
+		for child := range d.childrenNames {
+			d.childrenList = append(d.childrenList, child)
+		}
+		sort.Strings(d.childrenList)
+	}
 }
 
 // getLowerAt returns the dentry in the underlying file system, which is
@@ -963,10 +981,12 @@ func (fd *fileDescription) generateMerkleLocked(ctx context.Context) ([]byte, ui
 		return nil, 0, err
 	}
 
+	fd.d.generateChildrenList()
+
 	params := &merkletree.GenerateParams{
 		TreeReader:     &merkleReader,
 		TreeWriter:     &merkleWriter,
-		Children:       fd.d.childrenNames,
+		Children:       fd.d.childrenList,
 		HashAlgorithms: fd.d.fs.alg.toLinuxHashAlg(),
 		Name:           fd.d.name,
 		Mode:           uint32(stat.Mode),
@@ -1262,7 +1282,7 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 		Mode:                  fd.d.mode,
 		UID:                   fd.d.uid,
 		GID:                   fd.d.gid,
-		Children:              fd.d.childrenNames,
+		Children:              fd.d.childrenList,
 		HashAlgorithms:        fd.d.fs.alg.toLinuxHashAlg(),
 		ReadOffset:            offset,
 		ReadSize:              dst.NumBytes(),

@@ -151,21 +151,21 @@ type VerityDescriptor struct {
 	Mode          uint32
 	UID           uint32
 	GID           uint32
-	Children      map[string]struct{}
+	Children      []string
 	SymlinkTarget string
 	RootHash      []byte
 }
 
-func (d *VerityDescriptor) String() string {
+func (d *VerityDescriptor) encode() []byte {
 	b := new(bytes.Buffer)
 	e := gob.NewEncoder(b)
-	e.Encode(d.Children)
-	return fmt.Sprintf("Name: %s, Size: %d, Mode: %d, UID: %d, GID: %d, Children: %v, Symlink: %s, RootHash: %v", d.Name, d.FileSize, d.Mode, d.UID, d.GID, b.Bytes(), d.SymlinkTarget, d.RootHash)
+	e.Encode(d)
+	return b.Bytes()
 }
 
 // verify generates a hash from d, and compares it with expected.
 func (d *VerityDescriptor) verify(expected []byte, hashAlgorithms int) error {
-	h, err := hashData([]byte(d.String()), hashAlgorithms)
+	h, err := hashData(d.encode(), hashAlgorithms)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ type GenerateParams struct {
 	GID uint32
 	// Children is a map of children names for a directory. It should be
 	// empty for a regular file.
-	Children map[string]struct{}
+	Children []string
 	// SymlinkTarget is the target path of a symlink file, or "" if the file is not a symlink.
 	SymlinkTarget string
 	// HashAlgorithms is the algorithms used to hash data.
@@ -242,7 +242,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 
 	// If file is a symlink do not generate root hash for file content.
 	if params.SymlinkTarget != "" {
-		return hashData([]byte(descriptor.String()), params.HashAlgorithms)
+		return hashData(descriptor.encode(), params.HashAlgorithms)
 	}
 
 	layout, err := InitLayout(params.Size, params.HashAlgorithms, params.DataAndTreeInSameFile)
@@ -315,7 +315,7 @@ func Generate(params *GenerateParams) ([]byte, error) {
 		numBlocks = (numBlocks + layout.hashesPerBlock() - 1) / layout.hashesPerBlock()
 	}
 	descriptor.RootHash = root
-	return hashData([]byte(descriptor.String()), params.HashAlgorithms)
+	return hashData(descriptor.encode(), params.HashAlgorithms)
 }
 
 // VerifyParams contains the params used to verify a portion of a file against
@@ -339,7 +339,7 @@ type VerifyParams struct {
 	GID uint32
 	// Children is a map of children names for a directory. It should be
 	// empty for a regular file.
-	Children map[string]struct{}
+	Children []string
 	// SymlinkTarget is the target path of a symlink file, or "" if the file is not a symlink.
 	SymlinkTarget string
 	// HashAlgorithms is the algorithms used to hash data.
