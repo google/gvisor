@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Credentials returns t's credentials.
@@ -71,7 +70,7 @@ func (t *Task) SetUID(uid auth.UID) error {
 	// capability) and uid does not match the real UID or saved set-user-ID of
 	// the calling process."
 	if kuid != creds.RealKUID && kuid != creds.SavedKUID {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	t.setKUIDsUncheckedLocked(creds.RealKUID, kuid, creds.SavedKUID)
 	return nil
@@ -102,12 +101,12 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 		// "Unprivileged processes may only set the effective user ID to the
 		// real user ID, the effective user ID, or the saved set-user-ID."
 		if newE != creds.RealKUID && newE != creds.EffectiveKUID && newE != creds.SavedKUID {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// "Unprivileged users may only set the real user ID to the real user
 		// ID or the effective user ID."
 		if newR != creds.RealKUID && newR != creds.EffectiveKUID {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	// "If the real user ID is set (i.e., ruid is not -1) or the effective user
@@ -240,7 +239,7 @@ func (t *Task) SetGID(gid auth.GID) error {
 		return nil
 	}
 	if kgid != creds.RealKGID && kgid != creds.SavedKGID {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	t.setKGIDsUncheckedLocked(creds.RealKGID, kgid, creds.SavedKGID)
 	return nil
@@ -268,10 +267,10 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 	}
 	if !creds.HasCapability(linux.CAP_SETGID) {
 		if newE != creds.RealKGID && newE != creds.EffectiveKGID && newE != creds.SavedKGID {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if newR != creds.RealKGID && newR != creds.EffectiveKGID {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	newS := creds.SavedKGID
@@ -344,7 +343,7 @@ func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	defer t.mu.Unlock()
 	creds := t.Credentials()
 	if !creds.HasCapability(linux.CAP_SETGID) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	kgids := make([]auth.KGID, len(gids))
 	for i, gid := range gids {
@@ -368,25 +367,25 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 	// "Permitted: This is a limiting superset for the effective capabilities
 	// that the thread may assume." - capabilities(7)
 	if effective & ^permitted != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	creds := t.Credentials()
 	// "It is also a limiting superset for the capabilities that may be added
 	// to the inheritable set by a thread that does not have the CAP_SETPCAP
 	// capability in its effective set."
 	if !creds.HasCapability(linux.CAP_SETPCAP) && (inheritable & ^(creds.InheritableCaps|creds.PermittedCaps) != 0) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// "If a thread drops a capability from its permitted set, it can never
 	// reacquire that capability (unless it execve(2)s ..."
 	if permitted & ^creds.PermittedCaps != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// "... if a capability is not in the bounding set, then a thread can't add
 	// this capability to its inheritable set, even if it was in its permitted
 	// capabilities ..."
 	if inheritable & ^(creds.InheritableCaps|creds.BoundingCaps) != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
 	creds.PermittedCaps = permitted
@@ -403,7 +402,7 @@ func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 	defer t.mu.Unlock()
 	creds := t.Credentials()
 	if !creds.HasCapability(linux.CAP_SETPCAP) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
 	creds.BoundingCaps &^= auth.CapabilitySetOf(cp)
@@ -423,7 +422,7 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 	// If t just created ns, then t.creds is guaranteed to have CAP_SYS_ADMIN
 	// in ns (by rule 3 in auth.Credentials.HasCapability).
 	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	creds = creds.Fork() // The credentials object is immutable. See doc for creds.

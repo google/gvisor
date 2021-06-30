@@ -504,25 +504,25 @@ func (BadLockFD) SupportsLocks() bool {
 
 // LockBSD implements FileDescriptionImpl.LockBSD.
 func (BadLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // UnlockBSD implements FileDescriptionImpl.UnlockBSD.
 func (BadLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // LockPOSIX implements FileDescriptionImpl.LockPOSIX.
 func (BadLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
 func (BadLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
-	return syserror.EBADF
+	return linuxerr.EBADF
 }
 
 // TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (BadLockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
-	return linux.Flock{}, syserror.EBADF
+	return linux.Flock{}, linuxerr.EBADF
 }

@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Prctl implements linux syscall prctl(2).
@@ -119,7 +118,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_SET_MM:
 		if !t.HasCapability(linux.CAP_SYS_RESOURCE) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 
 		switch args[1].Int() {
@@ -128,13 +127,13 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 			file := t.GetFile(fd)
 			if file == nil {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 			defer file.DecRef(t)
 
 			// They trying to set exe to a non-file?
 			if !fs.IsFile(file.Dirent.Inode.StableAttr) {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 
 			// Set the underlying executable.

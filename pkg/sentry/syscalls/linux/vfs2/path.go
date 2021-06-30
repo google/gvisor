@@ -16,12 +16,12 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func copyInPath(t *kernel.Task, addr hostarch.Addr) (fspath.Path, error) {
@@ -53,7 +53,7 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 			dirfile := t.GetFileVFS2(dirfd)
 			if dirfile == nil {
 				root.DecRef(t)
-				return taskPathOperation{}, syserror.EBADF
+				return taskPathOperation{}, linuxerr.EBADF
 			}
 			start = dirfile.VirtualDentry()
 			start.IncRef()

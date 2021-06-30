@@ -106,22 +106,22 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Get files.
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 
 	if !inFile.Flags().Read {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
 	if !outFile.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 
 	// Verify that the outfile Append flag is not set.
@@ -197,13 +197,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// Get files.
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 
@@ -305,13 +305,13 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	// Get files.
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer inFile.DecRef(t)
 

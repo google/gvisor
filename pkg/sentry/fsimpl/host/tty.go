@@ -243,7 +243,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 
 		// Check that new process group is in the TTY session.
 		if pg.Session() != t.session {
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 
 		t.fgProcessGroup = pg

@@ -17,6 +17,7 @@ package host
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/secio"
@@ -113,7 +114,7 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 		return nil
 	}
 	if mask.UID || mask.GID {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if mask.Perms {
 		if err := unix.Fchmod(i.FD(), uint32(attr.Perms.LinuxMode())); err != nil {
@@ -224,43 +225,43 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 
 // Create implements fs.InodeOperations.Create.
 func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perm fs.FilePermissions) (*fs.File, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 
 }
 
 // CreateDirectory implements fs.InodeOperations.CreateDirectory.
 func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // CreateLink implements fs.InodeOperations.CreateLink.
 func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname string, newname string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // CreateHardLink implements fs.InodeOperations.CreateHardLink.
 func (*inodeOperations) CreateHardLink(context.Context, *fs.Inode, *fs.Inode, string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.
 func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Remove implements fs.InodeOperations.Remove.
 func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // RemoveDirectory implements fs.InodeOperations.RemoveDirectory.
 func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, name string) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Rename implements fs.InodeOperations.Rename.
 func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Bind implements fs.InodeOperations.Bind.
@@ -313,7 +314,7 @@ func (i *inodeOperations) Check(ctx context.Context, inode *fs.Inode, p fs.PermM
 
 // SetOwner implements fs.InodeOperations.SetOwner.
 func (i *inodeOperations) SetOwner(context.Context, *fs.Inode, fs.FileOwner) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // SetPermissions implements fs.InodeOperations.SetPermissions.

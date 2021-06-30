@@ -312,7 +312,7 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 
 func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode, name string, owner fs.FileOwner, perm fs.FilePermissions) error {
 	if i.session().overrides == nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Stabilize the override map while creation is in progress.

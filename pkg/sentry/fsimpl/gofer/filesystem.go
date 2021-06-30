@@ -413,7 +413,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	if parent.isSynthetic() {
 		if createInSyntheticDir == nil {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if err := createInSyntheticDir(parent, name); err != nil {
 			return err
@@ -679,7 +679,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		}
 		d := vd.Dentry().Impl().(*dentry)
 		if d.isDir() {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		gid := auth.KGID(atomic.LoadUint32(&d.gid))
 		uid := auth.KUID(atomic.LoadUint32(&d.uid))
@@ -735,7 +735,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	}, func(parent *dentry, name string) error {
 		if !opts.ForSyntheticMountpoint {
 			// Can't create non-synthetic files in synthetic directories.
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		parent.createSyntheticChildLocked(&createSyntheticOpts{
 			name: name,
@@ -794,7 +794,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return nil
 		}
 		// Retain error from gofer if synthetic file cannot be created internally.
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}, nil)
 }
 
@@ -866,7 +866,7 @@ afterTrailingSymlink:
 	if linuxerr.Equals(linuxerr.ENOENT, err) && mayCreate {
 		if parent.isSynthetic() {
 			parent.dirMu.Unlock()
-			return nil, syserror.EPERM
+			return nil, linuxerr.EPERM
 		}
 		fd, err := parent.createAndOpenChildLocked(ctx, rp, &opts, &ds)
 		parent.dirMu.Unlock()

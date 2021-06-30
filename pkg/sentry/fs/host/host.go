@@ -17,8 +17,8 @@ package host
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // filesystem is a host filesystem.
@@ -40,7 +40,7 @@ func (*filesystem) Name() string {
 
 // Mount returns an error. Mounting hostfs is not allowed.
 func (*filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, dataObj interface{}) (*fs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 // AllowUserMount prohibits users from using mount(2) with this file system.

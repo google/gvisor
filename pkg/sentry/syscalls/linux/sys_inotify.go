@@ -66,7 +66,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
 	file := t.GetFile(fd)
 	if file == nil {
 		// Invalid fd.
-		return nil, nil, syserror.EBADF
+		return nil, nil, linuxerr.EBADF
 	}
 
 	ino, ok := file.FileOperations.(*fs.Inotify)

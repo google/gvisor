@@ -435,7 +435,7 @@ func (p *Pipe) SetFifoSize(size int64) (int64, error) {
 		size = MinimumPipeSize // Per spec.
 	}
 	if size > MaximumPipeSize {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()

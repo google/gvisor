@@ -876,7 +876,7 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	// Verity files are read-only.
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -1077,7 +1077,7 @@ func (fd *fileDescription) recordChildrenLocked(ctx context.Context) error {
 // and stores its hash in its parent directory's Merkle tree.
 func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 	if !fd.d.fs.allowRuntimeEnable {
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	}
 
 	fd.d.fs.verityMu.Lock()

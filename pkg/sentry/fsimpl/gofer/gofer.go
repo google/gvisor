@@ -1091,7 +1091,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		return nil
 	}
 	if stat.Mask&^(linux.STATX_MODE|linux.STATX_UID|linux.STATX_GID|linux.STATX_ATIME|linux.STATX_MTIME|linux.STATX_SIZE) != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
 	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(atomic.LoadUint32(&d.uid)), auth.KGID(atomic.LoadUint32(&d.gid))); err != nil {
@@ -1714,7 +1714,7 @@ func (d *dentry) getXattr(ctx context.Context, creds *auth.Credentials, opts *vf
 
 func (d *dentry) setXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if d.file.isNil() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
@@ -1724,7 +1724,7 @@ func (d *dentry) setXattr(ctx context.Context, creds *auth.Credentials, opts *vf
 
 func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name string) error {
 	if d.file.isNil() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err

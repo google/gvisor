@@ -80,7 +80,7 @@ func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(ro
 		// Need to extract the given FD.
 		f = t.GetFile(dirFD)
 		if f == nil {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		rel = f.Dirent
 		if !fs.IsDir(rel.Inode.StableAttr) {
@@ -271,7 +271,7 @@ func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 			//
 			// When we start supporting block and character devices, we'll
 			// need to check for CAP_MKNOD here.
-			return syserror.EPERM
+			return linuxerr.EPERM
 
 		default:
 			// "EINVAL - mode requested creation of something other than a
@@ -596,7 +596,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -704,7 +704,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	addr := args[0].Pointer()
 
 	if !t.HasCapability(linux.CAP_SYS_CHROOT) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
@@ -759,7 +759,7 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -790,7 +790,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// (and other reference-holding operations complete).
 	file, _ := t.FDTable().Remove(t, fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -804,7 +804,7 @@ func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -825,7 +825,7 @@ func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if oldfd == newfd {
 		oldFile := t.GetFile(oldfd)
 		if oldFile == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer oldFile.DecRef(t)
 
@@ -849,7 +849,7 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	oldFile := t.GetFile(oldfd)
 	if oldFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer oldFile.DecRef(t)
 
@@ -924,7 +924,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	file, flags := t.FDTable().Get(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -957,7 +957,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		// Normally pipe and socket types lack lock operations. We diverge and use a heavy
 		// hammer by only allowing locks on files and directories.
 		if !fs.IsFile(file.Dirent.Inode.StableAttr) && !fs.IsDir(file.Dirent.Inode.StableAttr) {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 
 		// Copy in the lock request.
@@ -1010,7 +1010,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		switch flock.Type {
 		case linux.F_RDLCK:
 			if !file.Flags().Read {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
@@ -1026,7 +1026,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, nil
 		case linux.F_WRLCK:
 			if !file.Flags().Write {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
@@ -1093,7 +1093,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(val), nil, err
 	case linux.F_ADD_SEALS:
 		if !file.Flags().Write {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 		err := tmpfs.AddSeals(file.Dirent.Inode, args[2].Uint())
 		return 0, nil, err
@@ -1137,7 +1137,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -1330,10 +1330,10 @@ func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
 	// If we are not the owner, then the file must be regular and have
 	// Read+Write permissions.
 	if !fs.IsRegular(target.StableAttr) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if target.CheckPermission(t, fs.PermMask{Read: true, Write: true}) != nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	return nil
@@ -1358,7 +1358,7 @@ func linkAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int3
 	if allowEmpty && oldPath == "" {
 		target := t.GetFile(oldDirFD)
 		if target == nil {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		defer target.DecRef(t)
 		if err := mayLinkAt(t, target.Dirent.Inode); err != nil {
@@ -1611,7 +1611,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -1693,7 +1693,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		// explicitly not changing its UID.
 		isNoop := uattr.Owner.UID == kuid
 		if !(hasCap || (isOwner && isNoop)) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 
 		// The setuid and setgid bits are cleared during a chown.
@@ -1716,7 +1716,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		isNoop := uattr.Owner.GID == kgid
 		isMemberGroup := c.InGroup(kgid)
 		if !(hasCap || (isOwner && (isNoop || isMemberGroup))) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 
 		// The setuid and setgid bits are cleared during a chown.
@@ -1738,7 +1738,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 	if clearPrivilege && uattr.Perms.HasSetUIDOrGID() && !fs.IsDir(d.Inode.StableAttr) {
 		uattr.Perms.DropSetUIDAndMaybeGID()
 		if !d.Inode.SetPermissions(t, d, uattr.Perms) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 
@@ -1755,7 +1755,7 @@ func chownAt(t *kernel.Task, fd int32, addr hostarch.Addr, resolve, allowEmpty b
 		// Annoying. What's wrong with fchown?
 		file := t.GetFile(fd)
 		if file == nil {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
@@ -1793,7 +1793,7 @@ func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -1818,12 +1818,12 @@ func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 func chmod(t *kernel.Task, d *fs.Dirent, mode linux.FileMode) error {
 	// Must own file to change mode.
 	if !d.Inode.CheckOwnership(t) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	p := fs.FilePermsFromMode(mode)
 	if !d.Inode.SetPermissions(t, d, p) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// File attribute changed, generate notification.
@@ -1858,7 +1858,7 @@ func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -1889,7 +1889,7 @@ func utimes(t *kernel.Task, dirFD int32, addr hostarch.Addr, ts fs.TimeSpec, res
 		if !d.Inode.CheckOwnership(t) {
 			// Trying to set a specific time? Must be owner.
 			if (ts.ATimeOmit || !ts.ATimeSetSystemTime) && (ts.MTimeOmit || !ts.MTimeSetSystemTime) {
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
 
 			// Trying to set to current system time? Must have write access.
@@ -1918,7 +1918,7 @@ func utimes(t *kernel.Task, dirFD int32, addr hostarch.Addr, ts fs.TimeSpec, res
 		}
 		f := t.GetFile(dirFD)
 		if f == nil {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		defer f.DecRef(t)
 
@@ -2113,7 +2113,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
@@ -2125,7 +2125,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.ENOTSUP
 	}
 	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
 		return 0, nil, syserror.ESPIPE
@@ -2166,7 +2166,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	file := t.GetFile(fd)
 	if file == nil {
 		// flock(2): EBADF fd is not an open file descriptor.
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 

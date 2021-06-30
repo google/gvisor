@@ -133,7 +133,7 @@ func (fs *anonFilesystem) LinkAt(ctx context.Context, rp *ResolvingPath, vd Virt
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // MkdirAt implements FilesystemImpl.MkdirAt.
@@ -141,7 +141,7 @@ func (fs *anonFilesystem) MkdirAt(ctx context.Context, rp *ResolvingPath, opts M
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // MknodAt implements FilesystemImpl.MknodAt.
@@ -149,7 +149,7 @@ func (fs *anonFilesystem) MknodAt(ctx context.Context, rp *ResolvingPath, opts M
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // OpenAt implements FilesystemImpl.OpenAt.
@@ -173,7 +173,7 @@ func (fs *anonFilesystem) RenameAt(ctx context.Context, rp *ResolvingPath, oldPa
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // RmdirAt implements FilesystemImpl.RmdirAt.
@@ -181,7 +181,7 @@ func (fs *anonFilesystem) RmdirAt(ctx context.Context, rp *ResolvingPath) error 
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // SetStatAt implements FilesystemImpl.SetStatAt.
@@ -232,7 +232,7 @@ func (fs *anonFilesystem) SymlinkAt(ctx context.Context, rp *ResolvingPath, targ
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // UnlinkAt implements FilesystemImpl.UnlinkAt.
@@ -240,7 +240,7 @@ func (fs *anonFilesystem) UnlinkAt(ctx context.Context, rp *ResolvingPath) error
 	if !rp.Final() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // BoundEndpointAt implements FilesystemImpl.BoundEndpointAt.
@@ -275,7 +275,7 @@ func (fs *anonFilesystem) SetXattrAt(ctx context.Context, rp *ResolvingPath, opt
 	if !rp.Done() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // RemoveXattrAt implements FilesystemImpl.RemoveXattrAt.
@@ -283,7 +283,7 @@ func (fs *anonFilesystem) RemoveXattrAt(ctx context.Context, rp *ResolvingPath, 
 	if !rp.Done() {
 		return syserror.ENOTDIR
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // PrependPath implements FilesystemImpl.PrependPath.

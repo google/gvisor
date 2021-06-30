@@ -17,6 +17,7 @@ package auth
 import (
 	"math"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -114,10 +115,10 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	// process are mapped to user IDs and group IDs in the user namespace of
 	// the calling process at the time of the call." - unshare(2)
 	if !c.EffectiveKUID.In(c.UserNamespace).Ok() {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	if !c.EffectiveKGID.In(c.UserNamespace).Ok() {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	return &UserNamespace{
 		parent: c.UserNamespace,

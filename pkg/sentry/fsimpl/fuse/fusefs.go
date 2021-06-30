@@ -376,7 +376,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 			creds.RealKGID != i.fs.opts.gid ||
 			creds.EffectiveKGID != i.fs.opts.gid ||
 			creds.SavedKGID != i.fs.opts.gid {
-			return syserror.EACCES
+			return linuxerr.EACCES
 		}
 	}
 

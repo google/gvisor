@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const maxInt = int(^uint(0) >> 1)
@@ -71,7 +70,7 @@ func NewSCMRights(t *kernel.Task, fds []int32) (SCMRights, error) {
 		file := t.GetFile(fd)
 		if file == nil {
 			files.Release(t)
-			return nil, syserror.EBADF
+			return nil, linuxerr.EBADF
 		}
 		files = append(files, file)
 	}
@@ -170,7 +169,7 @@ func NewSCMCredentials(t *kernel.Task, cred linux.ControlMessageCredentials) (SC
 		return nil, err
 	}
 	if kernel.ThreadID(cred.PID) != t.ThreadGroup().ID() && !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, t.PIDNamespace().UserNamespace()) {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	return &scmCredentials{t, kuid, kgid}, nil
 }

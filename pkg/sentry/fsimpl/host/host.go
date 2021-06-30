@@ -409,7 +409,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		return nil
 	}
 	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	var hostStat unix.Stat_t
 	if err := unix.Fstat(i.hostFD, &hostStat); err != nil {
@@ -530,7 +530,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 
 	default:
 		log.Warningf("cannot import host fd %d with file type %o", i.hostFD, fileType)
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 }
 

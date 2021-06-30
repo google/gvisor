@@ -95,7 +95,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 
 	fd := t.GetFileVFS2(cb.FD)
 	if fd == nil {
-		return syserror.EBADF
+		return linuxerr.EBADF
 	}
 	defer fd.DecRef(t)
 
@@ -104,7 +104,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *linux.IOCallback, cbAddr host
 	if cb.Flags&linux.IOCB_FLAG_RESFD != 0 {
 		eventFD = t.GetFileVFS2(cb.ResFD)
 		if eventFD == nil {
-			return syserror.EBADF
+			return linuxerr.EBADF
 		}
 		defer eventFD.DecRef(t)
 

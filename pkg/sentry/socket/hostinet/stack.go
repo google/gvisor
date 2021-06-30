@@ -29,11 +29,11 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -320,12 +320,12 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
 func (s *Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
 func (s *Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
@@ -340,7 +340,7 @@ func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
 
 // SetTCPReceiveBufferSize implements inet.Stack.SetTCPReceiveBufferSize.
 func (s *Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // TCPSendBufferSize implements inet.Stack.TCPSendBufferSize.
@@ -350,7 +350,7 @@ func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
 
 // SetTCPSendBufferSize implements inet.Stack.SetTCPSendBufferSize.
 func (s *Stack) SetTCPSendBufferSize(size inet.TCPBufferSize) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // TCPSACKEnabled implements inet.Stack.TCPSACKEnabled.
@@ -360,7 +360,7 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
 func (s *Stack) SetTCPSACKEnabled(bool) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // TCPRecovery implements inet.Stack.TCPRecovery.
@@ -370,7 +370,7 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
 func (s *Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // getLine reads one line from proc file, with specified prefix.
@@ -483,7 +483,7 @@ func (s *Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
 // SetForwarding implements inet.Stack.SetForwarding.
 func (s *Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // PortRange implements inet.Stack.PortRange.
@@ -494,5 +494,5 @@ func (*Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (*Stack) SetPortRange(start uint16, end uint16) error {
-	return syserror.EACCES
+	return linuxerr.EACCES
 }

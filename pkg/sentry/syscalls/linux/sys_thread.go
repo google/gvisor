@@ -136,7 +136,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 		// Need to extract the given FD.
 		f, fdFlags := t.FDTable().Get(dirFD)
 		if f == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer f.DecRef(t)
 		closeOnExec = fdFlags.CloseOnExec

@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const allFlags = linux.IN_NONBLOCK | linux.IN_CLOEXEC
@@ -61,7 +60,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*vfs.Inotify, *vfs.FileDescription, 
 	f := t.GetFileVFS2(fd)
 	if f == nil {
 		// Invalid fd.
-		return nil, nil, syserror.EBADF
+		return nil, nil, linuxerr.EBADF
 	}
 
 	ino, ok := f.Impl().(*vfs.Inotify)

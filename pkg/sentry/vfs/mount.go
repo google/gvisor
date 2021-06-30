@@ -293,7 +293,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	// namespace, and not in the owner user namespace for the target mount. See
 	// fs/namespace.c:SYSCALL_DEFINE2(umount, ...)
 	if opts.Flags&linux.MNT_FORCE != 0 && creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})

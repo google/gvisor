@@ -625,7 +625,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		}
 		old := vd.Dentry().Impl().(*dentry)
 		if old.isDir() {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if err := old.copyUpLocked(ctx); err != nil {
 			return err
@@ -726,7 +726,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		// Disallow attempts to create whiteouts.
 		if opts.Mode&linux.S_IFMT == linux.S_IFCHR && opts.DevMajor == 0 && opts.DevMinor == 0 {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{

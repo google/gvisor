@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -178,7 +179,7 @@ func (d *Dir) Children() ([]string, map[string]fs.DentAttr) {
 func (d *Dir) removeChildLocked(ctx context.Context, name string) (*fs.Inode, error) {
 	inode, ok := d.children[name]
 	if !ok {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	delete(d.children, name)
@@ -311,7 +312,7 @@ func (d *Dir) createInodeOperationsCommon(ctx context.Context, name string, make
 // Create creates a new Inode with the given name and returns its File.
 func (d *Dir) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perms fs.FilePermissions) (*fs.File, error) {
 	if d.CreateOps == nil || d.CreateOps.NewFile == nil {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 
 	inode, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
@@ -333,7 +334,7 @@ func (d *Dir) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.F
 // CreateLink returns a new link.
 func (d *Dir) CreateLink(ctx context.Context, dir *fs.Inode, oldname, newname string) error {
 	if d.CreateOps == nil || d.CreateOps.NewSymlink == nil {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	_, err := d.createInodeOperationsCommon(ctx, newname, func() (*fs.Inode, error) {
 		return d.NewSymlink(ctx, dir, oldname)
@@ -362,7 +363,7 @@ func (d *Dir) CreateHardLink(ctx context.Context, dir *fs.Inode, target *fs.Inod
 // CreateDirectory returns a new subdirectory.
 func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, perms fs.FilePermissions) error {
 	if d.CreateOps == nil || d.CreateOps.NewDir == nil {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	_, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewDir(ctx, dir, perms)
@@ -373,7 +374,7 @@ func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, p
 // Bind implements fs.InodeOperations.Bind.
 func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport.BoundEndpoint, perms fs.FilePermissions) (*fs.Dirent, error) {
 	if d.CreateOps == nil || d.CreateOps.NewBoundEndpoint == nil {
-		return nil, syserror.EACCES
+		return nil, linuxerr.EACCES
 	}
 	inode, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewBoundEndpoint(ctx, dir, ep, perms)
@@ -392,7 +393,7 @@ func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport
 // CreateFifo implements fs.InodeOperations.CreateFifo.
 func (d *Dir) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perms fs.FilePermissions) error {
 	if d.CreateOps == nil || d.CreateOps.NewFifo == nil {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	_, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewFifo(ctx, dir, perms)

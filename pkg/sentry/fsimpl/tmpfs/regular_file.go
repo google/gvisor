@@ -186,7 +186,7 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 		// Can we grow the file?
 		if rf.seals&linux.F_SEAL_GROW != 0 {
 			rf.dataMu.Unlock()
-			return false, syserror.EPERM
+			return false, linuxerr.EPERM
 		}
 		// We only need to update the file size.
 		atomic.StoreUint64(&rf.size, newSize)
@@ -197,7 +197,7 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	// We are shrinking the file. First check if this is allowed.
 	if rf.seals&linux.F_SEAL_SHRINK != 0 {
 		rf.dataMu.Unlock()
-		return false, syserror.EPERM
+		return false, linuxerr.EPERM
 	}
 
 	// Update the file size.
@@ -234,7 +234,7 @@ func (rf *regularFile) AddMapping(ctx context.Context, ms memmap.MappingSpace, a
 
 	// Reject writable mapping if F_SEAL_WRITE is set.
 	if rf.seals&linux.F_SEAL_WRITE != 0 && writable {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	rf.mappings.AddMapping(ms, ar, offset, writable)
@@ -595,7 +595,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 	// Check if seals prevent either file growth or all writes.
 	switch {
 	case rw.file.seals&linux.F_SEAL_WRITE != 0: // Write sealed
-		return 0, syserror.EPERM
+		return 0, linuxerr.EPERM
 	case end > rw.file.size && rw.file.seals&linux.F_SEAL_GROW != 0: // Grow sealed
 		// When growth is sealed, Linux effectively allows writes which would
 		// normally grow the file to partially succeed up to the current EOF,
@@ -616,7 +616,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		}
 		if end <= rw.off {
 			// Truncation would result in no data being written.
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 	}
 
@@ -707,7 +707,7 @@ func AddSeals(fd *vfs.FileDescription, val uint32) error {
 
 	if rf.seals&linux.F_SEAL_SEAL != 0 {
 		// Seal applied which prevents addition of any new seals.
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// F_SEAL_WRITE can only be added if there are no active writable maps.

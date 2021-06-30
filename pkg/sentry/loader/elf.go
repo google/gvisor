@@ -477,7 +477,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 				// the open path would return a different
 				// error.
 				ctx.Infof("PT_INTERP path is empty: %v", path)
-				return loadedELF{}, syserror.EACCES
+				return loadedELF{}, linuxerr.EACCES
 			}
 		}
 	}

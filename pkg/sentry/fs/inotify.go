@@ -127,7 +127,7 @@ func (*Inotify) Readdir(context.Context, *File, DentrySerializer) (int64, error)
 
 // Write implements FileOperations.Write.
 func (*Inotify) Write(context.Context, *File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EBADF
+	return 0, linuxerr.EBADF
 }
 
 // Read implements FileOperations.Read.

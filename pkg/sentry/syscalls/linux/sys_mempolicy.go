@@ -246,7 +246,7 @@ func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// "If MPOL_MF_MOVE_ALL is passed in flags ... [the] calling thread must be
 	// privileged (CAP_SYS_NICE) to use this flag." - mbind(2)
 	if flags&linux.MPOL_MF_MOVE_ALL != 0 && !t.HasCapability(linux.CAP_SYS_NICE) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 
 	mode, nodemaskVal, err := copyInMempolicyNodemask(t, mode, nodemask, maxnode)

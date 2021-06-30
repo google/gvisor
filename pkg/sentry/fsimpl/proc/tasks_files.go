@@ -70,7 +70,7 @@ func (s *selfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualD
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*selfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // +stateify savable
@@ -112,7 +112,7 @@ func (s *threadSelfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vi
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*threadSelfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // dynamicBytesFileSetAttr implements a special file that allows inode

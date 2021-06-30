@@ -48,7 +48,7 @@ func FGetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
 	f := t.GetFile(fd)
 	if f == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer f.DecRef(t)
 
@@ -152,7 +152,7 @@ func FSetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
 	f := t.GetFile(fd)
 	if f == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer f.DecRef(t)
 
@@ -242,7 +242,7 @@ func checkXattrPermissions(t *kernel.Task, i *fs.Inode, perms fs.PermMask) error
 	// Restrict xattrs to regular files and directories.
 	if !xattrFileTypeOk(i) {
 		if perms.Write {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		return syserror.ENODATA
 	}
@@ -269,7 +269,7 @@ func FListXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
 	f := t.GetFile(fd)
 	if f == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer f.DecRef(t)
 
@@ -383,7 +383,7 @@ func FRemoveXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	// TODO(b/113957122): Return EBADF if the fd was opened with O_PATH.
 	f := t.GetFile(fd)
 	if f == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer f.DecRef(t)
 
