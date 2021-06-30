@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,224 @@ func TestNDPNeighborSolicit(t *testing.T) {
 	// Make sure the address got updated in the backing buffer.
 	if got := tcpip.Address(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
+	}
+}
+
+func TestNDPRouteInformationOption(t *testing.T) {
+	tests := []struct {
+		name string
+
+		length         uint8
+		prefixLength   uint8
+		prf            NDPRoutePreference
+		lifetimeS      uint32
+		prefixBytes    []byte
+		expectedPrefix tcpip.Subnet
+
+		expectedErr error
+	}{
+		{
+			name:           "Length=1 with Prefix Length = 0",
+			length:         1,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=1 but Prefix Length > 0",
+			length:       1,
+			prefixLength: 1,
+			prf:          MediumRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+		{
+			name:           "Length=2 with Prefix Length = 0",
+			length:         2,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=2 with Prefix Length in [1, 64] (1)",
+			length:       2,
+			prefixLength: 1,
+			prf:          LowRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 1,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=2 with Prefix Length in [1, 64] (64)",
+			length:       2,
+			prefixLength: 64,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 64,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=2 with Prefix Length > 64",
+			length:       2,
+			prefixLength: 65,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+		{
+			name:           "Length=3 with Prefix Length = 0",
+			length:         3,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=3 with Prefix Length in [1, 64] (1)",
+			length:       3,
+			prefixLength: 1,
+			prf:          LowRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 1,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [1, 64] (64)",
+			length:       3,
+			prefixLength: 64,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 64,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [65, 128] (65)",
+			length:       3,
+			prefixLength: 65,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 65,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [65, 128] (128)",
+			length:       3,
+			prefixLength: 128,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 128,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with (invalid) Prefix Length > 128",
+			length:       3,
+			prefixLength: 129,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			expectedRouteInformationBytes := [...]byte{
+				// Type, Length
+				24, test.length,
+
+				// Prefix Length, Prf
+				uint8(test.prefixLength), uint8(test.prf) << 3,
+
+				// Route Lifetime
+				0, 0, 0, 0,
+
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+			}
+			binary.BigEndian.PutUint32(expectedRouteInformationBytes[4:], test.lifetimeS)
+			_ = copy(expectedRouteInformationBytes[8:], test.prefixBytes)
+
+			opts := NDPOptions(expectedRouteInformationBytes[:test.length*lengthByteUnits])
+			it, err := opts.Iter(false)
+			if err != nil {
+				t.Fatalf("got Iter(false) = (_, %s), want = (_, nil)", err)
+			}
+			opt, done, err := it.Next()
+			if !errors.Is(err, test.expectedErr) {
+				t.Fatalf("got Next() = (_, _, %s), want = (_, _, %s)", err, test.expectedErr)
+			}
+			if want := test.expectedErr != nil; done != want {
+				t.Fatalf("got Next() = (_, %t, _), want = (_, %t, _)", done, want)
+			}
+			if test.expectedErr != nil {
+				return
+			}
+
+			if got := opt.kind(); got != ndpRouteInformationType {
+				t.Errorf("got kind() = %d, want = %d", got, ndpRouteInformationType)
+			}
+
+			ri, ok := opt.(NDPRouteInformation)
+			if !ok {
+				t.Fatalf("got opt = %T, want = NDPRouteInformation", opt)
+			}
+
+			if got := ri.PrefixLength(); got != test.prefixLength {
+				t.Errorf("got PrefixLength() = %d, want = %d", got, test.prefixLength)
+			}
+			if got := ri.RoutePreference(); got != test.prf {
+				t.Errorf("got RoutePreference() = %d, want = %d", got, test.prf)
+			}
+			if got, want := ri.RouteLifetime(), time.Duration(test.lifetimeS)*time.Second; got != want {
+				t.Errorf("got RouteLifetime() = %s, want = %s", got, want)
+			}
+			if got, err := ri.Prefix(); err != nil {
+				t.Errorf("Prefix(): %s", err)
+			} else if got != test.expectedPrefix {
+				t.Errorf("got Prefix() = %s, want = %s", got, test.expectedPrefix)
+			}
+
+			// Iterator should not return anything else.
+			{
+				next, done, err := it.Next()
+				if err != nil {
+					t.Errorf("got Next() = (_, _, %s), want = (_, _, nil)", err)
+				}
+				if !done {
+					t.Error("got Next() = (_, false, _), want = (_, true, _)")
+				}
+				if next != nil {
+					t.Errorf("got Next() = (%x, _, _), want = (nil, _, _)", next)
+				}
+			}
+		})
 	}
 }
 
