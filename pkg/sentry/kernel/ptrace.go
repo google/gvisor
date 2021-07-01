@@ -768,14 +768,14 @@ const (
 // ptraceClone is called at the end of a clone or fork syscall to check if t
 // should enter PTRACE_EVENT_CLONE, PTRACE_EVENT_FORK, or PTRACE_EVENT_VFORK
 // stop. child is the new task.
-func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions) bool {
+func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneArgs) bool {
 	if !t.hasTracer() {
 		return false
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	event := false
-	if !opts.Untraced {
+	if args.Flags&linux.CLONE_UNTRACED == 0 {
 		switch kind {
 		case ptraceCloneKindClone:
 			if t.ptraceOpts.TraceClone {
@@ -810,7 +810,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 	// clone(2)'s documentation of CLONE_UNTRACED and CLONE_PTRACE is
 	// confusingly wrong; see kernel/fork.c:_do_fork() => copy_process() =>
 	// include/linux/ptrace.h:ptrace_init_task().
-	if event || opts.InheritTracer {
+	if event || args.Flags&linux.CLONE_PTRACE != 0 {
 		tracer := t.Tracer()
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
