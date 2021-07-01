@@ -37,6 +37,7 @@ go_library(
         "//tools/checkescape",
         "//tools/checklocks",
         "//tools/checkunsafe",
+        "//tools/nogo/objdump",
         "//tools/worker",
         "@co_honnef_go_tools//staticcheck:go_default_library",
         "@co_honnef_go_tools//stylecheck:go_default_library",
@@ -68,6 +69,7 @@ go_library(
         "@org_golang_x_tools//go/analysis/passes/unsafeptr:go_default_library",
         "@org_golang_x_tools//go/analysis/passes/unusedresult:go_default_library",
         "@org_golang_x_tools//go/gcexportdata:go_default_library",
+        "@org_golang_x_tools//go/types/objectpath:go_default_library",
     ],
 )
 

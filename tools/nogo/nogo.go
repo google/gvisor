@@ -41,9 +41,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/facts"
 	"golang.org/x/tools/go/gcexportdata"
+	"golang.org/x/tools/go/types/objectpath"
 
 	// Special case: flags live here and change overall behavior.
-	"gvisor.dev/gvisor/tools/checkescape"
+	"gvisor.dev/gvisor/tools/nogo/objdump"
 	"gvisor.dev/gvisor/tools/worker"
 )
 
@@ -216,6 +217,11 @@ func (i *importer) Import(path string) (*types.Package, error) {
 		}
 	}
 
+	// Check the cache.
+	if pkg, ok := i.cache[path]; ok && pkg.Complete() {
+		return pkg, nil
+	}
+
 	// Actually load the data.
 	realPath, ok := i.ImportMap[path]
 	var (
@@ -327,6 +333,9 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 	// Closure to check a single package.
 	localStdlibFacts := make(stdlibFacts)
 	localStdlibErrs := make(map[string]error)
+	stdlibCachedFacts.Lookup([]string{""}, func() worker.Sizer {
+		return localStdlibFacts
+	})
 	var checkOne func(pkg string) error // Recursive.
 	checkOne = func(pkg string) error {
 		// Is this already done?
@@ -355,11 +364,11 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 		}
 
 		// Provide the input.
-		oldReader := checkescape.Reader
-		checkescape.Reader = rc // For analysis.
+		oldReader := objdump.Reader
+		objdump.Reader = rc // For analysis.
 		defer func() {
 			rc.Close()
-			checkescape.Reader = oldReader // Restore.
+			objdump.Reader = oldReader // Restore.
 		}()
 
 		// Run the analysis.
@@ -406,6 +415,56 @@ func CheckStdlib(config *StdlibConfig, analyzers []*analysis.Analyzer) (allFindi
 	return allFindings, buf.Bytes(), nil
 }
 
+// sanityCheckScope checks that all object in astTypes map to the correct
+// objects in binaryTypes. Note that we don't check whether the sets are the
+// same, we only care about the fidelity of objects in astTypes.
+//
+// When an inconsistency is identified, we record it in the astToBinaryMap.
+// This allows us to dynamically replace facts and correct for the issue. The
+// total number of mismatches is returned.
+func sanityCheckScope(astScope *types.Scope, binaryTypes *types.Package, binaryScope *types.Scope, astToBinary map[types.Object]types.Object) error {
+	for _, x := range astScope.Names() {
+		fe := astScope.Lookup(x)
+		path, err := objectpath.For(fe)
+		if err != nil {
+			continue // Not an encoded object.
+		}
+		se, err := objectpath.Object(binaryTypes, path)
+		if err != nil {
+			continue // May be unused, see below.
+		}
+		if fe.Id() != se.Id() {
+			// These types are incompatible. This means that when
+			// this objectpath is loading from the binaryTypes (for
+			// dependencies) it will resolve to a fact for that
+			// type. We don't actually care about this error since
+			// we do the rewritten, but may as well alert.
+			log.Printf("WARNING: Object %s is a victim of go/issues/44195.", fe.Id())
+		}
+		se = binaryScope.Lookup(x)
+		if se == nil {
+			// The fact may not be exported in the objectdata, if
+			// it is package internal. This is fine, as nothing out
+			// of this package can use these symbols.
+			continue
+		}
+		// Save the translation.
+		astToBinary[fe] = se
+	}
+	for i := 0; i < astScope.NumChildren(); i++ {
+		if err := sanityCheckScope(astScope.Child(i), binaryTypes, binaryScope, astToBinary); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sanityCheckTypes checks that two types are sane. The total number of
+// mismatches is returned.
+func sanityCheckTypes(astTypes, binaryTypes *types.Package, astToBinary map[types.Object]types.Object) error {
+	return sanityCheckScope(astTypes.Scope(), binaryTypes, binaryTypes.Scope(), astToBinary)
+}
+
 // CheckPackage runs all given analyzers.
 //
 // The implementation was adapted from [1], which was in turn adpated from [2].
@@ -450,15 +509,44 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 		Scopes:     make(map[ast.Node]*types.Scope),
 		Selections: make(map[*ast.SelectorExpr]*types.Selection),
 	}
-	types, err := typeConfig.Check(config.ImportPath, imp.fset, syntax, typesInfo)
+	astTypes, err := typeConfig.Check(config.ImportPath, imp.fset, syntax, typesInfo)
 	if err != nil && imp.lastErr != ErrSkip {
 		return nil, nil, fmt.Errorf("error checking types: %w", err)
 	}
 
-	// Load all package facts.
-	facts, err := facts.Decode(types, config.factLoader)
+	// Load all facts using the astTypes, although it may need reconciling
+	// later on. See the fact functions below.
+	astFacts, err := facts.Decode(astTypes, config.factLoader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error decoding facts: %w", err)
+	}
+
+	// Sanity check all types and record metadata to prevent
+	// https://github.com/golang/go/issues/44195.
+	//
+	// This block loads the binary types, whose encoding will be well
+	// defined and aligned with any downstream consumers. Below in the fact
+	// functions for the analysis, we serialize types to both the astFacts
+	// and the binaryFacts if available. The binaryFacts are the final
+	// encoded facts in order to ensure compatibility. We keep the
+	// intermediate astTypes in order to allow exporting and importing
+	// within the local package under analysis.
+	var (
+		astToBinary = make(map[types.Object]types.Object)
+		binaryFacts *facts.Set
+	)
+	if _, ok := config.ImportMap[config.ImportPath]; ok {
+		binaryTypes, err := imp.Import(config.ImportPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error loading self: %w", err)
+		}
+		if err := sanityCheckTypes(astTypes, binaryTypes, astToBinary); err != nil {
+			return nil, nil, fmt.Errorf("error sanity checking types: %w", err)
+		}
+		binaryFacts, err = facts.Decode(binaryTypes, config.factLoader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error decoding facts: %w", err)
+		}
 	}
 
 	// Register fact types and establish dependencies between analyzers.
@@ -479,15 +567,15 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 		}
 
 		// Run the analysis.
-		factFilter := make(map[reflect.Type]bool)
+		localFactsFilter := make(map[reflect.Type]bool)
 		for _, f := range a.FactTypes {
-			factFilter[reflect.TypeOf(f)] = true
+			localFactsFilter[reflect.TypeOf(f)] = true
 		}
 		p := &analysis.Pass{
 			Analyzer:  a,
 			Fset:      imp.fset,
 			Files:     syntax,
-			Pkg:       types,
+			Pkg:       astTypes,
 			TypesInfo: typesInfo,
 			ResultOf:  results, // All results.
 			Report: func(d analysis.Diagnostic) {
@@ -497,13 +585,29 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 					Message:  d.Message,
 				})
 			},
-			ImportPackageFact: facts.ImportPackageFact,
-			ExportPackageFact: facts.ExportPackageFact,
-			ImportObjectFact:  facts.ImportObjectFact,
-			ExportObjectFact:  facts.ExportObjectFact,
-			AllPackageFacts:   func() []analysis.PackageFact { return facts.AllPackageFacts(factFilter) },
-			AllObjectFacts:    func() []analysis.ObjectFact { return facts.AllObjectFacts(factFilter) },
-			TypesSizes:        typesSizes,
+			ImportPackageFact: astFacts.ImportPackageFact,
+			ExportPackageFact: func(fact analysis.Fact) {
+				astFacts.ExportPackageFact(fact)
+				if binaryFacts != nil {
+					binaryFacts.ExportPackageFact(fact)
+				}
+			},
+			ImportObjectFact: astFacts.ImportObjectFact,
+			ExportObjectFact: func(obj types.Object, fact analysis.Fact) {
+				astFacts.ExportObjectFact(obj, fact)
+				// Note that if no object is recorded in
+				// astToBinary and binaryFacts != nil, then the
+				// object doesn't appear in the exported data.
+				// It was likely an internal object to the
+				// package, and there is no meaningful
+				// downstream consumer of the fact.
+				if binaryObj, ok := astToBinary[obj]; ok && binaryFacts != nil {
+					binaryFacts.ExportObjectFact(binaryObj, fact)
+				}
+			},
+			AllPackageFacts: func() []analysis.PackageFact { return astFacts.AllPackageFacts(localFactsFilter) },
+			AllObjectFacts:  func() []analysis.ObjectFact { return astFacts.AllObjectFacts(localFactsFilter) },
+			TypesSizes:      typesSizes,
 		}
 		result, err := a.Run(p)
 		if err != nil {
@@ -528,8 +632,14 @@ func CheckPackage(config *PackageConfig, analyzers []*analysis.Analyzer, importC
 		}
 	}
 
-	// Return all findings.
-	return findings, facts.Encode(), nil
+	// Return all findings. Note that we have a preference to returning the
+	// binary facts if available, so that downstream consumers of these
+	// facts will find the export aligns with the internal type details.
+	// See the block above with the call to sanityCheckTypes.
+	if binaryFacts != nil {
+		return findings, binaryFacts.Encode(), nil
+	}
+	return findings, astFacts.Encode(), nil
 }
 
 func init() {

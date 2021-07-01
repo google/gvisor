@@ -247,16 +247,16 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 			if found && !d.isSynthetic() {
 				// First dentry is where the search is starting, just update attributes
 				// since it cannot be replaced.
-				d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr)
+				d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: acquired by lockAllMetadata.
 			}
-			d.metadataMu.Unlock()
+			d.metadataMu.Unlock() // +checklocksforce: see above.
 			continue
 		}
 
 		// Note that synthetic dentries will always fails the comparison check
 		// below.
 		if !found || d.qidPath != stats[i].QID.Path {
-			d.metadataMu.Unlock()
+			d.metadataMu.Unlock() // +checklocksforce: see above.
 			if !found && d.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
 				// it.
@@ -298,7 +298,7 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr)
+		d.updateFromP9AttrsLocked(stats[i].Valid, &stats[i].Attr) // +checklocksforce: see above.
 		d.metadataMu.Unlock()
 	}
 
@@ -354,6 +354,7 @@ func (r *revalidateState) add(name string, d *dentry) {
 	r.dentries = append(r.dentries, d)
 }
 
+// +checklocksignore
 func (r *revalidateState) lockAllMetadata() {
 	for _, d := range r.dentries {
 		d.metadataMu.Lock()
@@ -372,6 +373,7 @@ func (r *revalidateState) popFront() *dentry {
 
 // reset releases all metadata locks and resets all fields to allow this
 // instance to be reused.
+// +checklocksignore
 func (r *revalidateState) reset() {
 	if r.locked {
 		// Unlock any remaining dentries.

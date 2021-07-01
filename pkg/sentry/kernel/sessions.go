@@ -121,8 +121,9 @@ func (pg *ProcessGroup) Originator() *ThreadGroup {
 
 // IsOrphan returns true if this process group is an orphan.
 func (pg *ProcessGroup) IsOrphan() bool {
-	pg.originator.TaskSet().mu.RLock()
-	defer pg.originator.TaskSet().mu.RUnlock()
+	ts := pg.originator.TaskSet()
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
 	return pg.ancestors == 0
 }
 

@@ -41,7 +41,7 @@ func (d *dentry) readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 			d.haveTarget = true
 			d.target = target
 		}
-		d.dataMu.Unlock()
+		d.dataMu.Unlock() // +checklocksforce: guaranteed locked from above.
 	}
 	return target, err
 }

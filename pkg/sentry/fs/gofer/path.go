@@ -47,7 +47,8 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 		return nil, linuxerr.ENAMETOOLONG
 	}
 
-	cp := i.session().cachePolicy
+	s := i.session()
+	cp := s.cachePolicy
 	if cp.cacheReaddir() {
 		// Check to see if we have readdirCache that indicates the
 		// child does not exist.  Avoid holding readdirMu longer than
@@ -78,7 +79,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 		return nil, err
 	}
 
-	if i.session().overrides != nil {
+	if s.overrides != nil {
 		// Check if file belongs to a internal named pipe. Note that it doesn't need
 		// to check for sockets because it's done in newInodeOperations below.
 		deviceKey := device.MultiDeviceKey{
@@ -86,13 +87,13 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 			SecondaryDevice: i.session().connID,
 			Inode:           qids[0].Path,
 		}
-		unlock := i.session().overrides.lock()
-		if pipeInode := i.session().overrides.getPipe(deviceKey); pipeInode != nil {
-			unlock()
+		s.overrides.lock()
+		if pipeInode := s.overrides.getPipe(deviceKey); pipeInode != nil {
+			s.overrides.unlock()
 			pipeInode.IncRef()
 			return fs.NewDirent(ctx, pipeInode, name), nil
 		}
-		unlock()
+		s.overrides.unlock()
 	}
 
 	// Construct the Inode operations.
@@ -221,17 +222,20 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, t
 	if err := i.fileState.file.link(ctx, &targetOpts.fileState.file, newName); err != nil {
 		return err
 	}
-	if i.session().cachePolicy.cacheUAttrs(inode) {
+
+	s := i.session()
+	if s.cachePolicy.cacheUAttrs(inode) {
 		// Increase link count.
 		targetOpts.cachingInodeOps.IncLinks(ctx)
 	}
+
 	i.touchModificationAndStatusChangeTime(ctx, inode)
 	return nil
 }
 
 // CreateDirectory uses Create to create a directory named s under inodeOperations.
-func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s string, perm fs.FilePermissions) error {
-	if len(s) > maxFilenameLen {
+func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
+	if len(name) > maxFilenameLen {
 		return linuxerr.ENAMETOOLONG
 	}
 
@@ -247,16 +251,18 @@ func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s 
 		perm.SetGID = true
 	}
 
-	if _, err := i.fileState.file.mkdir(ctx, s, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
+	if _, err := i.fileState.file.mkdir(ctx, name, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
 	}
-	if i.session().cachePolicy.cacheUAttrs(dir) {
+
+	s := i.session()
+	if s.cachePolicy.cacheUAttrs(dir) {
 		// Increase link count.
 		//
 		// N.B. This will update the modification time.
 		i.cachingInodeOps.IncLinks(ctx)
 	}
-	if i.session().cachePolicy.cacheReaddir() {
+	if s.cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}
@@ -269,13 +275,14 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 		return nil, linuxerr.ENAMETOOLONG
 	}
 
-	if i.session().overrides == nil {
+	s := i.session()
+	if s.overrides == nil {
 		return nil, syserror.EOPNOTSUPP
 	}
 
 	// Stabilize the override map while creation is in progress.
-	unlock := i.session().overrides.lock()
-	defer unlock()
+	s.overrides.lock()
+	defer s.overrides.unlock()
 
 	sattr, iops, err := i.createEndpointFile(ctx, dir, name, perm, p9.ModeSocket)
 	if err != nil {
@@ -284,7 +291,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 
 	// Construct the positive Dirent.
 	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
-	i.session().overrides.addBoundEndpoint(iops.fileState.key, childDir, ep)
+	s.overrides.addBoundEndpoint(iops.fileState.key, childDir, ep)
 	return childDir, nil
 }
 
@@ -298,8 +305,9 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 	mode := p9.FileMode(perm.LinuxMode()) | p9.ModeNamedPipe
 
 	// N.B. FIFOs use major/minor numbers 0.
+	s := i.session()
 	if _, err := i.fileState.file.mknod(ctx, name, mode, 0, 0, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
-		if i.session().overrides == nil || !linuxerr.Equals(linuxerr.EPERM, err) {
+		if s.overrides == nil || !linuxerr.Equals(linuxerr.EPERM, err) {
 			return err
 		}
 		// If gofer doesn't support mknod, check if we can create an internal fifo.
@@ -311,13 +319,14 @@ func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name st
 }
 
 func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode, name string, owner fs.FileOwner, perm fs.FilePermissions) error {
-	if i.session().overrides == nil {
+	s := i.session()
+	if s.overrides == nil {
 		return linuxerr.EPERM
 	}
 
 	// Stabilize the override map while creation is in progress.
-	unlock := i.session().overrides.lock()
-	defer unlock()
+	s.overrides.lock()
+	defer s.overrides.unlock()
 
 	sattr, fileOps, err := i.createEndpointFile(ctx, dir, name, perm, p9.ModeNamedPipe)
 	if err != nil {
@@ -336,7 +345,7 @@ func (i *inodeOperations) createInternalFifo(ctx context.Context, dir *fs.Inode,
 
 	// Construct the positive Dirent.
 	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
-	i.session().overrides.addPipe(fileOps.fileState.key, childDir, inode)
+	s.overrides.addPipe(fileOps.fileState.key, childDir, inode)
 	return nil
 }
 
@@ -386,8 +395,9 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 		return linuxerr.ENAMETOOLONG
 	}
 
+	s := i.session()
 	var key *device.MultiDeviceKey
-	if i.session().overrides != nil {
+	if s.overrides != nil {
 		// Find out if file being deleted is a socket or pipe that needs to be
 		// removed from endpoint map.
 		if d, err := i.Lookup(ctx, dir, name); err == nil {
@@ -402,8 +412,8 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 				}
 
 				// Stabilize the override map while deletion is in progress.
-				unlock := i.session().overrides.lock()
-				defer unlock()
+				s.overrides.lock()
+				defer s.overrides.unlock()
 			}
 		}
 	}
@@ -412,7 +422,7 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 		return err
 	}
 	if key != nil {
-		i.session().overrides.remove(ctx, *key)
+		s.overrides.remove(ctx, *key)
 	}
 	i.touchModificationAndStatusChangeTime(ctx, dir)
 
@@ -429,11 +439,13 @@ func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, na
 	if err := i.fileState.file.unlinkAt(ctx, name, 0x200); err != nil {
 		return err
 	}
-	if i.session().cachePolicy.cacheUAttrs(dir) {
+
+	s := i.session()
+	if s.cachePolicy.cacheUAttrs(dir) {
 		// Decrease link count and updates atime.
 		i.cachingInodeOps.DecLinks(ctx)
 	}
-	if i.session().cachePolicy.cacheReaddir() {
+	if s.cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}
@@ -463,12 +475,13 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 	}
 
 	// Is the renamed entity a directory? Fix link counts.
+	s := i.session()
 	if fs.IsDir(i.fileState.sattr) {
 		// Update cached state.
-		if i.session().cachePolicy.cacheUAttrs(oldParent) {
+		if s.cachePolicy.cacheUAttrs(oldParent) {
 			oldParentInodeOperations.cachingInodeOps.DecLinks(ctx)
 		}
-		if i.session().cachePolicy.cacheUAttrs(newParent) {
+		if s.cachePolicy.cacheUAttrs(newParent) {
 			// Only IncLinks if there is a new addition to
 			// newParent. If this is replacement, then the total
 			// count remains the same.
@@ -477,7 +490,7 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 			}
 		}
 	}
-	if i.session().cachePolicy.cacheReaddir() {
+	if s.cachePolicy.cacheReaddir() {
 		// Mark old directory dirty.
 		oldParentInodeOperations.markDirectoryDirty()
 		if oldParent != newParent {
@@ -487,17 +500,18 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 	}
 
 	// Rename always updates ctime.
-	if i.session().cachePolicy.cacheUAttrs(inode) {
+	if s.cachePolicy.cacheUAttrs(inode) {
 		i.cachingInodeOps.TouchStatusChangeTime(ctx)
 	}
 	return nil
 }
 
 func (i *inodeOperations) touchModificationAndStatusChangeTime(ctx context.Context, inode *fs.Inode) {
-	if i.session().cachePolicy.cacheUAttrs(inode) {
+	s := i.session()
+	if s.cachePolicy.cacheUAttrs(inode) {
 		i.cachingInodeOps.TouchModificationAndStatusChangeTime(ctx)
 	}
-	if i.session().cachePolicy.cacheReaddir() {
+	if s.cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}

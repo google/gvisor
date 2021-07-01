@@ -80,23 +80,33 @@ func AsyncBarrier() {
 // Async executes a function asynchronously.
 //
 // Async must not be called recursively.
+// +checklocksignore
 func Async(f func()) {
 	workMu.RLock()
-	go func() { // S/R-SAFE: AsyncBarrier must be called.
-		defer workMu.RUnlock() // Ensure RUnlock in case of panic.
-		f()
-	}()
+	go asyncWork(f) // S/R-SAFE: AsyncBarrier must be called.
+}
+
+// +checklocksignore
+func asyncWork(f func()) {
+	// Ensure RUnlock in case of panic.
+	defer workMu.RUnlock()
+	f()
 }
 
 // AsyncWithContext is just like Async, except that it calls the asynchronous
 // function with the given context as argument. This function exists to avoid
 // needing to allocate an extra function on the heap in a hot path.
+// +checklocksignore
 func AsyncWithContext(ctx context.Context, f func(context.Context)) {
 	workMu.RLock()
-	go func() { // S/R-SAFE: AsyncBarrier must be called.
-		defer workMu.RUnlock() // Ensure RUnlock in case of panic.
-		f(ctx)
-	}()
+	go asyncWorkWithContext(ctx, f)
+}
+
+// +checklocksignore
+func asyncWorkWithContext(ctx context.Context, f func(context.Context)) {
+	// Ensure RUnlock in case of panic.
+	defer workMu.RUnlock()
+	f(ctx)
 }
 
 // AsyncErrorBarrier waits for all outstanding asynchronous work to complete, or

@@ -1,16 +1,29 @@
 # CheckLocks Analyzer
 
-<!--* freshness: { owner: 'gvisor-eng' reviewed: '2020-10-05' } *-->
+<!--* freshness: { owner: 'gvisor-eng' reviewed: '2021-03-21' } *-->
 
-Checklocks is a nogo analyzer that at compile time uses Go's static analysis
-tools to identify and flag cases where a field that is guarded by a mutex in the
-same struct is accessed outside of a mutex lock.
+Checklocks is an analyzer for lock and atomic constraints. The analyzer relies
+on explicit annotations to identify fields that should be checked for access.
 
-The analyzer relies on explicit '// +checklocks:<mutex-name>' kind of
-annotations to identify fields that should be checked for access.
+## Atomic annotations
 
-Individual struct members may be protected by annotations that indicate how they
-must be accessed. These annotations are of the form:
+Individual struct members may be noted as requiring atomic access. These
+annotations are of the form:
+
+```go
+type foo struct {
+  // +checkatomic
+  bar int32
+}
+```
+
+This will ensure that all accesses to bar are atomic, with the exception of
+operations on newly allocated objects.
+
+## Lock annotations
+
+Individual struct members may be protected by annotations that indicate locking
+requirements for accessing members. These annotations are of the form:
 
 ```go
 type foo struct {
@@ -64,30 +77,6 @@ annotations from becoming stale over time as fields are renamed, etc.
 
 # Currently not supported
 
-1.  The analyzer does not correctly handle deferred functions. e.g The following
-    code is not correctly checked by the analyzer. The defer call is never
-    evaluated. As a result if the lock was to be say unlocked twice via deferred
-    functions it would not be caught by the analyzer.
-
-    Similarly deferred anonymous functions are not evaluated either.
-
-```go
-type A struct {
-  mu sync.Mutex
-
-  // +checklocks:mu
-  x int
-}
-
-func abc() {
-  var a A
-  a.mu.Lock()
-  defer a.mu.Unlock()
-  defer a.mu.Unlock()
-  a.x = 1
-}
-```
-
 1.  Anonymous functions are not correctly evaluated. The analyzer does not
     currently support specifying annotations on anonymous functions as a result
     evaluation of a function that accesses protected fields will fail.
@@ -107,10 +96,9 @@ func abc() {
   f()
   a.mu.Unlock()
 }
-
 ```
 
-# Explicitly Not Supported
+### Explicitly Not Supported
 
 1.  Checking for embedded mutexes as sync.Locker rather than directly as
     'sync.Mutex'. In other words, the checker will not track mutex Lock and
@@ -140,3 +128,30 @@ func abc() {
     checklocks. Only struct members can be used.
 
 2.  The checker will not support checking for lock ordering violations.
+
+## Mixed mode
+
+Some members may allow read-only atomic access, but be protected against writes
+by a mutex. Generally, this imposes the following requirements:
+
+For a read, one of the following must be true:
+
+1.  A lock held be held.
+1.  The access is atomic.
+
+For a write, both of the following must be true:
+
+1.  The lock must be held.
+1.  The write must be atomic.
+
+In order to annotate a relevant field, simply apply *both* annotations from
+above. For example:
+
+```go
+type foo struct {
+  mu sync.Mutex
+  // +checklocks:mu
+  // +checkatomic
+  bar int32
+}
+```

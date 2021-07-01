@@ -330,7 +330,9 @@ func (l *listenContext) performHandshake(s *segment, opts *header.TCPSynOptions,
 	}
 	ep := h.ep
 
-	if err := h.complete(); err != nil {
+	// N.B. the endpoint is generated above by startHandshake, and will be
+	// returned locked. This first call is forced.
+	if err := h.complete(); err != nil { // +checklocksforce
 		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		ep.stats.FailedConnectionAttempts.Increment()
 		l.cleanupFailedHandshake(h)
@@ -364,6 +366,7 @@ func (l *listenContext) closeAllPendingEndpoints() {
 }
 
 // Precondition: h.ep.mu must be held.
+// +checklocks:h.ep.mu
 func (l *listenContext) cleanupFailedHandshake(h *handshake) {
 	e := h.ep
 	e.mu.Unlock()
@@ -504,7 +507,9 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	}
 
 	go func() {
-		if err := h.complete(); err != nil {
+		// Note that startHandshake returns a locked endpoint. The
+		// force call here just makes it so.
+		if err := h.complete(); err != nil { // +checklocksforce
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 			e.stats.FailedConnectionAttempts.Increment()
 			ctx.cleanupFailedHandshake(h)

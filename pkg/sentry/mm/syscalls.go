@@ -204,6 +204,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 // * vseg.Range().IsSupersetOf(ar).
 //
 // Postconditions: mm.mappingMu will be unlocked.
+// +checklocksrelease:mm.mappingMu
 func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, precommit bool) {
 	// See populateVMA above for commentary.
 	if !vseg.ValuePtr().effectivePerms.Any() {

@@ -64,7 +64,7 @@ func TestTryLockUnlock(t *testing.T) {
 	if !m.TryLock() {
 		t.Fatal("failed to aquire lock")
 	}
-	m.Unlock()
+	m.Unlock() // +checklocksforce
 	if !m.TryLock() {
 		t.Fatal("failed to aquire lock after unlock")
 	}

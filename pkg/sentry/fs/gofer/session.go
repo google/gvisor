@@ -98,9 +98,14 @@ func (e *overrideMaps) remove(ctx context.Context, key device.MultiDeviceKey) {
 // lock blocks other addition and removal operations from happening while
 // the backing file is being created or deleted. Returns a function that unlocks
 // the endpoint map.
-func (e *overrideMaps) lock() func() {
+// +checklocksacquire:e.mu
+func (e *overrideMaps) lock() {
 	e.mu.Lock()
-	return func() { e.mu.Unlock() }
+}
+
+// +checklocksrelease:e.mu
+func (e *overrideMaps) unlock() {
+	e.mu.Unlock()
 }
 
 // getBoundEndpoint returns the bound endpoint mapped to the given key.
@@ -366,8 +371,8 @@ func newOverrideMaps() *overrideMaps {
 
 // fillKeyMap populates key and dirent maps upon restore from saved pathmap.
 func (s *session) fillKeyMap(ctx context.Context) error {
-	unlock := s.overrides.lock()
-	defer unlock()
+	s.overrides.lock()
+	defer s.overrides.unlock()
 
 	for ep, dirPath := range s.overrides.pathMap {
 		_, file, err := s.attach.walk(ctx, splitAbsolutePath(dirPath))
@@ -394,8 +399,8 @@ func (s *session) fillKeyMap(ctx context.Context) error {
 // fillPathMap populates paths for overrides from dirents in direntMap
 // before save.
 func (s *session) fillPathMap(ctx context.Context) error {
-	unlock := s.overrides.lock()
-	defer unlock()
+	s.overrides.lock()
+	defer s.overrides.unlock()
 
 	for _, endpoint := range s.overrides.keyMap {
 		mountRoot := endpoint.dirent.MountRoot()
