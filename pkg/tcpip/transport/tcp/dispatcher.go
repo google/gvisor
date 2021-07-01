@@ -127,7 +127,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				case !ep.segmentQueue.empty():
 					p.epQ.enqueue(ep)
 				}
-				ep.mu.Unlock()
+				ep.mu.Unlock() // +checklocksforce
 			} else {
 				ep.newSegmentWaker.Assert()
 			}

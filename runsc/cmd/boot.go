@@ -157,10 +157,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			// we will read it again after the exec call. This works
 			// because the ReadSpecFromFile function seeks to the beginning
 			// of the file before reading.
-			if err := callSelfAsNobody(args); err != nil {
-				Fatalf("%v", err)
-			}
-			panic("callSelfAsNobody must never return success")
+			Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
+			panic("unreachable")
 		}
 	}
 
@@ -199,10 +197,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		// we will read it again after the exec call. This works
 		// because the ReadSpecFromFile function seeks to the beginning
 		// of the file before reading.
-		if err := setCapsAndCallSelf(args, caps); err != nil {
-			Fatalf("%v", err)
-		}
-		panic("setCapsAndCallSelf must never return success")
+		Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, setCapsAndCallSelf(args, caps))
+		panic("unreachable")
 	}
 
 	// Read resolved mount list and replace the original one from the spec.

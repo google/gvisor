@@ -23,6 +23,8 @@ import (
 // concurrent calls cannot deadlock.
 //
 // Preconditions: x != y.
+// +checklocksacquire:x.mu
+// +checklocksacquire:y.mu
 func lockTwoPipes(x, y *Pipe) {
 	// Lock the two pipes in order of increasing address.
 	if uintptr(unsafe.Pointer(x)) < uintptr(unsafe.Pointer(y)) {

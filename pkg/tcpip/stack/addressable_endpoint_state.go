@@ -249,7 +249,7 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 	// or we are adding a new temporary or permanent address.
 	//
 	// The address MUST be write locked at this point.
-	defer addrState.mu.Unlock()
+	defer addrState.mu.Unlock() // +checklocksforce
 
 	if permanent {
 		if addrState.mu.kind.IsPermanent() {

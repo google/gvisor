@@ -398,8 +398,8 @@ func (m *Manager) Fork() *Manager {
 }
 
 // lockBucket returns a locked bucket for the given key.
-func (m *Manager) lockBucket(k *Key) *bucket {
-	var b *bucket
+// +checklocksacquire:b.mu
+func (m *Manager) lockBucket(k *Key) (b *bucket) {
 	if k.Kind == KindSharedMappable {
 		b = m.sharedBucket
 	} else {
@@ -410,7 +410,9 @@ func (m *Manager) lockBucket(k *Key) *bucket {
 }
 
 // lockBuckets returns locked buckets for the given keys.
-func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
+// +checklocksacquire:b1.mu
+// +checklocksacquire:b2.mu
+func (m *Manager) lockBuckets(k1, k2 *Key) (b1 *bucket, b2 *bucket) {
 	// Buckets must be consistently ordered to avoid circular lock
 	// dependencies. We order buckets in m.privateBuckets by index (lowest
 	// index first), and all buckets in m.privateBuckets precede
@@ -420,8 +422,8 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
 	if k1.Kind != KindSharedMappable && k2.Kind != KindSharedMappable {
 		i1 := bucketIndexForAddr(k1.addr())
 		i2 := bucketIndexForAddr(k2.addr())
-		b1 := &m.privateBuckets[i1]
-		b2 := &m.privateBuckets[i2]
+		b1 = &m.privateBuckets[i1]
+		b2 = &m.privateBuckets[i2]
 		switch {
 		case i1 < i2:
 			b1.mu.Lock()
@@ -432,19 +434,30 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
 		default:
 			b1.mu.Lock()
 		}
-		return b1, b2
+		return b1, b2 // +checklocksforce
 	}
 
 	// At least one of b1 or b2 should be m.sharedBucket.
-	b1 := m.sharedBucket
-	b2 := m.sharedBucket
+	b1 = m.sharedBucket
+	b2 = m.sharedBucket
 	if k1.Kind != KindSharedMappable {
 		b1 = m.lockBucket(k1)
 	} else if k2.Kind != KindSharedMappable {
 		b2 = m.lockBucket(k2)
 	}
 	m.sharedBucket.mu.Lock()
-	return b1, b2
+	return b1, b2 // +checklocksforce
+}
+
+// unlockBuckets unlocks two buckets.
+// +checklocksrelease:b1.mu
+// +checklocksrelease:b2.mu
+func (m *Manager) unlockBuckets(b1, b2 *bucket) {
+	b1.mu.Unlock()
+	if b1 != b2 {
+		b2.mu.Unlock()
+	}
+	return // +checklocksforce
 }
 
 // Wake wakes up to n waiters matching the bitmask on the given addr.
@@ -477,10 +490,7 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	defer k2.release(t)
 
 	b1, b2 := m.lockBuckets(&k1, &k2)
-	defer b1.mu.Unlock()
-	if b2 != b1 {
-		defer b2.mu.Unlock()
-	}
+	defer m.unlockBuckets(b1, b2)
 
 	if checkval {
 		if err := check(t, addr, val); err != nil {
@@ -527,10 +537,7 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	defer k2.release(t)
 
 	b1, b2 := m.lockBuckets(&k1, &k2)
-	defer b1.mu.Unlock()
-	if b2 != b1 {
-		defer b2.mu.Unlock()
-	}
+	defer m.unlockBuckets(b1, b2)
 
 	done := 0
 	cond, err := atomicOp(t, addr2, op)

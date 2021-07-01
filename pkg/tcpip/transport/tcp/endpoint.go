@@ -664,6 +664,7 @@ func calculateAdvertisedMSS(userMSS uint16, r *stack.Route) uint16 {
 // The assumption behind spinning here being that background packet processing
 // should not be holding the lock for long and spinning reduces latency as we
 // avoid an expensive sleep/wakeup of of the syscall goroutine).
+// +checklocksacquire:e.mu
 func (e *endpoint) LockUser() {
 	for {
 		// Try first if the sock is locked then check if it's owned
@@ -683,7 +684,7 @@ func (e *endpoint) LockUser() {
 			continue
 		}
 		atomic.StoreUint32(&e.ownedByUser, 1)
-		return
+		return // +checklocksforce
 	}
 }
 
@@ -700,7 +701,7 @@ func (e *endpoint) LockUser() {
 // protocol goroutine altogether.
 //
 // Precondition: e.LockUser() must have been called before calling e.UnlockUser()
-// +checklocks:e.mu
+// +checklocksrelease:e.mu
 func (e *endpoint) UnlockUser() {
 	// Lock segment queue before checking so that we avoid a race where
 	// segments can be queued between the time we check if queue is empty
@@ -736,12 +737,13 @@ func (e *endpoint) UnlockUser() {
 }
 
 // StopWork halts packet processing. Only to be used in tests.
+// +checklocksacquire:e.mu
 func (e *endpoint) StopWork() {
 	e.mu.Lock()
 }
 
 // ResumeWork resumes packet processing. Only to be used in tests.
-// +checklocks:e.mu
+// +checklocksrelease:e.mu
 func (e *endpoint) ResumeWork() {
 	e.mu.Unlock()
 }
@@ -1480,6 +1482,79 @@ func (e *endpoint) isEndpointWritableLocked() (int, tcpip.Error) {
 	return avail, nil
 }
 
+// readFromPayloader reads a slice from the Payloader.
+// +checklocks:e.mu
+// +checklocks:e.sndQueueInfo.sndQueueMu
+func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions, avail int) ([]byte, tcpip.Error) {
+	// We can release locks while copying data.
+	//
+	// This is not possible if atomic is set, because we can't allow the
+	// available buffer space to be consumed by some other caller while we
+	// are copying data in.
+	if !opts.Atomic {
+		e.sndQueueInfo.sndQueueMu.Unlock()
+		defer e.sndQueueInfo.sndQueueMu.Lock()
+
+		e.UnlockUser()
+		defer e.LockUser()
+	}
+
+	// Fetch data.
+	if l := p.Len(); l < avail {
+		avail = l
+	}
+	if avail == 0 {
+		return nil, nil
+	}
+	v := make([]byte, avail)
+	n, err := p.Read(v)
+	if err != nil && err != io.EOF {
+		return nil, &tcpip.ErrBadBuffer{}
+	}
+	return v[:n], nil
+}
+
+// queueSegment reads data from the payloader and returns a segment to be sent.
+// +checklocks:e.mu
+func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*segment, int, tcpip.Error) {
+	e.sndQueueInfo.sndQueueMu.Lock()
+	defer e.sndQueueInfo.sndQueueMu.Unlock()
+
+	avail, err := e.isEndpointWritableLocked()
+	if err != nil {
+		e.stats.WriteErrors.WriteClosed.Increment()
+		return nil, 0, err
+	}
+
+	v, err := e.readFromPayloader(p, opts, avail)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !opts.Atomic {
+		// Since we released locks in between it's possible that the
+		// endpoint transitioned to a CLOSED/ERROR states so make
+		// sure endpoint is still writable before trying to write.
+		avail, err := e.isEndpointWritableLocked()
+		if err != nil {
+			e.stats.WriteErrors.WriteClosed.Increment()
+			return nil, 0, err
+		}
+
+		// Discard any excess data copied in due to avail being reduced due
+		// to a simultaneous write call to the socket.
+		if avail < len(v) {
+			v = v[:avail]
+		}
+	}
+
+	// Add data to the send queue.
+	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
+	e.sndQueueInfo.SndBufUsed += len(v)
+	e.snd.writeList.PushBack(s)
+
+	return s, len(v), nil
+}
+
 // Write writes data to the endpoint's peer.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
@@ -1489,77 +1564,13 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	e.LockUser()
 	defer e.UnlockUser()
 
-	nextSeg, n, err := func() (*segment, int, tcpip.Error) {
-		e.sndQueueInfo.sndQueueMu.Lock()
-		defer e.sndQueueInfo.sndQueueMu.Unlock()
-
-		avail, err := e.isEndpointWritableLocked()
-		if err != nil {
-			e.stats.WriteErrors.WriteClosed.Increment()
-			return nil, 0, err
-		}
-
-		v, err := func() ([]byte, tcpip.Error) {
-			// We can release locks while copying data.
-			//
-			// This is not possible if atomic is set, because we can't allow the
-			// available buffer space to be consumed by some other caller while we
-			// are copying data in.
-			if !opts.Atomic {
-				e.sndQueueInfo.sndQueueMu.Unlock()
-				defer e.sndQueueInfo.sndQueueMu.Lock()
-
-				e.UnlockUser()
-				defer e.LockUser()
-			}
-
-			// Fetch data.
-			if l := p.Len(); l < avail {
-				avail = l
-			}
-			if avail == 0 {
-				return nil, nil
-			}
-			v := make([]byte, avail)
-			n, err := p.Read(v)
-			if err != nil && err != io.EOF {
-				return nil, &tcpip.ErrBadBuffer{}
-			}
-			return v[:n], nil
-		}()
-		if len(v) == 0 || err != nil {
-			return nil, 0, err
-		}
-
-		if !opts.Atomic {
-			// Since we released locks in between it's possible that the
-			// endpoint transitioned to a CLOSED/ERROR states so make
-			// sure endpoint is still writable before trying to write.
-			avail, err := e.isEndpointWritableLocked()
-			if err != nil {
-				e.stats.WriteErrors.WriteClosed.Increment()
-				return nil, 0, err
-			}
-
-			// Discard any excess data copied in due to avail being reduced due
-			// to a simultaneous write call to the socket.
-			if avail < len(v) {
-				v = v[:avail]
-			}
-		}
-
-		// Add data to the send queue.
-		s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), v)
-		e.sndQueueInfo.SndBufUsed += len(v)
-		e.snd.writeList.PushBack(s)
-
-		return s, len(v), nil
-	}()
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
+	nextSeg, n, err := e.queueSegment(p, opts)
 	if n == 0 || err != nil {
 		return 0, err
 	}
+
 	e.sendData(nextSeg)
 	return int64(n), nil
 }
@@ -2504,6 +2515,7 @@ func (e *endpoint) listen(backlog int) tcpip.Error {
 
 // startAcceptedLoop sets up required state and starts a goroutine with the
 // main loop for accepted connections.
+// +checklocksrelease:e.mu
 func (e *endpoint) startAcceptedLoop() {
 	e.workerRunning = true
 	e.mu.Unlock()

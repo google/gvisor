@@ -947,10 +947,10 @@ func (d *dentry) cachedMetadataAuthoritative() bool {
 // updateFromP9Attrs is called to update d's metadata after an update from the
 // remote filesystem.
 // Precondition: d.metadataMu must be locked.
+// +checklocks:d.metadataMu
 func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 	if mask.Mode {
 		if got, want := uint32(attr.Mode.FileType()), d.fileType(); got != want {
-			d.metadataMu.Unlock()
 			panic(fmt.Sprintf("gofer.dentry file type changed from %#o to %#o", want, got))
 		}
 		atomic.StoreUint32(&d.mode, uint32(attr.Mode))
@@ -989,6 +989,7 @@ func (d *dentry) updateFromP9AttrsLocked(mask p9.AttrMask, attr *p9.Attr) {
 
 // Preconditions: !d.isSynthetic().
 // Preconditions: d.metadataMu is locked.
+// +checklocks:d.metadataMu
 func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	d.handleMu.RLock()
 
@@ -1020,6 +1021,7 @@ func (d *dentry) updateFromGetattr(ctx context.Context) error {
 // Preconditions:
 // * !d.isSynthetic().
 // * d.metadataMu is locked.
+// +checklocks:d.metadataMu
 func (d *dentry) updateFromGetattrLocked(ctx context.Context) error {
 	// Use d.readFile or d.writeFile, which represent 9P FIDs that have been
 	// opened, in preference to d.file, which represents a 9P fid that has not.
@@ -1044,7 +1046,8 @@ func (d *dentry) updateFromGetattrLocked(ctx context.Context) error {
 
 	_, attrMask, attr, err := file.getAttr(ctx, dentryAttrMask())
 	if handleMuRLocked {
-		d.handleMu.RUnlock() // must be released before updateFromP9AttrsLocked()
+		// handleMu must be released before updateFromP9AttrsLocked().
+		d.handleMu.RUnlock() // +checklocksforce: complex case.
 	}
 	if err != nil {
 		return err
@@ -1470,7 +1473,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		if d.isDeleted() {
 			d.watches.HandleDeletion(ctx)
 		}
-		d.destroyLocked(ctx)
+		d.destroyLocked(ctx) // +checklocksforce: renameMu must be acquired at this point.
 		return
 	}
 	// If d still has inotify watches and it is not deleted or invalidated, it
@@ -1498,7 +1501,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			delete(d.parent.children, d.name)
 			d.parent.dirMu.Unlock()
 		}
-		d.destroyLocked(ctx)
+		d.destroyLocked(ctx) // +checklocksforce: see above.
 		return
 	}
 
@@ -1527,7 +1530,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			d.fs.renameMu.Lock()
 			defer d.fs.renameMu.Unlock()
 		}
-		d.fs.evictCachedDentryLocked(ctx)
+		d.fs.evictCachedDentryLocked(ctx) // +checklocksforce: see above.
 	}
 }
 
@@ -1544,6 +1547,7 @@ func (d *dentry) removeFromCacheLocked() {
 
 // Precondition: fs.renameMu must be locked for writing; it may be temporarily
 // unlocked.
+// +checklocks:fs.renameMu
 func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 	for fs.cachedDentriesLen != 0 {
 		fs.evictCachedDentryLocked(ctx)
@@ -1552,6 +1556,7 @@ func (fs *filesystem) evictAllCachedDentriesLocked(ctx context.Context) {
 
 // Preconditions:
 // * fs.renameMu must be locked for writing; it may be temporarily unlocked.
+// +checklocks:fs.renameMu
 func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	fs.cacheMu.Lock()
 	victim := fs.cachedDentries.Back()
@@ -1588,7 +1593,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 	// will try to acquire fs.renameMu (which we have already acquired). Hence,
 	// fs.renameMu will synchronize the destroy attempts.
 	victim.cachingMu.Unlock()
-	victim.destroyLocked(ctx)
+	victim.destroyLocked(ctx) // +checklocksforce: owned as precondition, victim.fs == fs.
 }
 
 // destroyLocked destroys the dentry.
@@ -1598,6 +1603,7 @@ func (fs *filesystem) evictCachedDentryLocked(ctx context.Context) {
 // * d.refs == 0.
 // * d.parent.children[d.name] != d, i.e. d is not reachable by path traversal
 //   from its former parent dentry.
+// +checklocks:d.fs.renameMu
 func (d *dentry) destroyLocked(ctx context.Context) {
 	switch atomic.LoadInt64(&d.refs) {
 	case 0:

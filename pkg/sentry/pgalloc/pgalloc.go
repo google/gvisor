@@ -945,7 +945,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 				// NOTE(b/165896008): mincore (which is passed as checkCommitted)
 				// by f.UpdateUsage() might take a really long time. So unlock f.mu
 				// while checkCommitted runs.
-				f.mu.Unlock()
+				f.mu.Unlock() // +checklocksforce
 				err := checkCommitted(s, buf)
 				f.mu.Lock()
 				if err != nil {

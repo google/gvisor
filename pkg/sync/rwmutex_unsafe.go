@@ -37,6 +37,7 @@ const rwmutexMaxReaders = 1 << 30
 
 // TryRLock locks rw for reading. It returns true if it succeeds and false
 // otherwise. It does not block.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) TryRLock() bool {
 	if RaceEnabled {
 		RaceDisable()
@@ -65,6 +66,7 @@ func (rw *CrossGoroutineRWMutex) TryRLock() bool {
 // It should not be used for recursive read locking; a blocked Lock call
 // excludes new readers from acquiring the lock. See the documentation on the
 // RWMutex type.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) RLock() {
 	if RaceEnabled {
 		RaceDisable()
@@ -83,6 +85,7 @@ func (rw *CrossGoroutineRWMutex) RLock() {
 //
 // Preconditions:
 // * rw is locked for reading.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) RUnlock() {
 	if RaceEnabled {
 		RaceReleaseMerge(unsafe.Pointer(&rw.writerSem))
@@ -134,6 +137,7 @@ func (rw *CrossGoroutineRWMutex) TryLock() bool {
 
 // Lock locks rw for writing. If the lock is already locked for reading or
 // writing, Lock blocks until the lock is available.
+// +checklocksignore
 func (rw *CrossGoroutineRWMutex) Lock() {
 	if RaceEnabled {
 		RaceDisable()
@@ -228,6 +232,7 @@ type RWMutex struct {
 
 // TryRLock locks rw for reading. It returns true if it succeeds and false
 // otherwise. It does not block.
+// +checklocksignore
 func (rw *RWMutex) TryRLock() bool {
 	// Note lock first to enforce proper locking even if unsuccessful.
 	noteLock(unsafe.Pointer(rw))
@@ -243,6 +248,7 @@ func (rw *RWMutex) TryRLock() bool {
 // It should not be used for recursive read locking; a blocked Lock call
 // excludes new readers from acquiring the lock. See the documentation on the
 // RWMutex type.
+// +checklocksignore
 func (rw *RWMutex) RLock() {
 	noteLock(unsafe.Pointer(rw))
 	rw.m.RLock()
@@ -261,6 +267,7 @@ func (rw *RWMutex) RUnlock() {
 
 // TryLock locks rw for writing. It returns true if it succeeds and false
 // otherwise. It does not block.
+// +checklocksignore
 func (rw *RWMutex) TryLock() bool {
 	// Note lock first to enforce proper locking even if unsuccessful.
 	noteLock(unsafe.Pointer(rw))
@@ -273,6 +280,7 @@ func (rw *RWMutex) TryLock() bool {
 
 // Lock locks rw for writing. If the lock is already locked for reading or
 // writing, Lock blocks until the lock is available.
+// +checklocksignore
 func (rw *RWMutex) Lock() {
 	noteLock(unsafe.Pointer(rw))
 	rw.m.Lock()

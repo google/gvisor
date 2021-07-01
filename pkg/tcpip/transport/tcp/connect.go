@@ -511,6 +511,7 @@ func (h *handshake) start() {
 }
 
 // complete completes the TCP 3-way handshake initiated by h.start().
+// +checklocks:h.ep.mu
 func (h *handshake) complete() tcpip.Error {
 	// Set up the wakers.
 	var s sleep.Sleeper
@@ -1283,42 +1284,45 @@ func (e *endpoint) disableKeepaliveTimer() {
 	e.keepalive.Unlock()
 }
 
+// protocolMainLoopDone is called at the end of protocolMainLoop.
+// +checklocksrelease:e.mu
+func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer, closeWaker *sleep.Waker) {
+	if e.snd != nil {
+		e.snd.resendTimer.cleanup()
+		e.snd.probeTimer.cleanup()
+		e.snd.reorderTimer.cleanup()
+	}
+
+	if closeTimer != nil {
+		closeTimer.Stop()
+	}
+
+	e.completeWorkerLocked()
+
+	if e.drainDone != nil {
+		close(e.drainDone)
+	}
+
+	e.mu.Unlock()
+
+	e.drainClosingSegmentQueue()
+
+	// When the protocol loop exits we should wake up our waiters.
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+}
+
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
 // goroutine and is responsible for sending segments and handling received
 // segments.
 func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) tcpip.Error {
+	var (
+		closeTimer tcpip.Timer
+		closeWaker sleep.Waker
+	)
+
 	e.mu.Lock()
-	var closeTimer tcpip.Timer
-	var closeWaker sleep.Waker
-
-	epilogue := func() {
-		// e.mu is expected to be hold upon entering this section.
-		if e.snd != nil {
-			e.snd.resendTimer.cleanup()
-			e.snd.probeTimer.cleanup()
-			e.snd.reorderTimer.cleanup()
-		}
-
-		if closeTimer != nil {
-			closeTimer.Stop()
-		}
-
-		e.completeWorkerLocked()
-
-		if e.drainDone != nil {
-			close(e.drainDone)
-		}
-
-		e.mu.Unlock()
-
-		e.drainClosingSegmentQueue()
-
-		// When the protocol loop exits we should wake up our waiters.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
-	}
-
 	if handshake {
-		if err := e.h.complete(); err != nil {
+		if err := e.h.complete(); err != nil { // +checklocksforce
 			e.lastErrorMu.Lock()
 			e.lastError = err
 			e.lastErrorMu.Unlock()
@@ -1327,8 +1331,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 			e.hardError = err
 
 			e.workerCleanup = true
-			// Lock released below.
-			epilogue()
+			e.protocolMainLoopDone(closeTimer, &closeWaker)
 			return err
 		}
 	}
@@ -1472,7 +1475,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 						// Only block the worker if the endpoint
 						// is not in closed state or error state.
 						close(e.drainDone)
-						e.mu.Unlock()
+						e.mu.Unlock() // +checklocksforce
 						<-e.undrain
 						e.mu.Lock()
 					}
@@ -1533,8 +1536,6 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 		if err != nil {
 			e.resetConnectionLocked(err)
 		}
-		// Lock released below.
-		epilogue()
 	}
 
 loop:
@@ -1558,6 +1559,7 @@ loop:
 			// just want to terminate the loop and cleanup the
 			// endpoint.
 			cleanupOnError(nil)
+			e.protocolMainLoopDone(closeTimer, &closeWaker)
 			return nil
 		case StateTimeWait:
 			fallthrough
@@ -1566,6 +1568,7 @@ loop:
 		default:
 			if err := funcs[v].f(); err != nil {
 				cleanupOnError(err)
+				e.protocolMainLoopDone(closeTimer, &closeWaker)
 				return nil
 			}
 		}
@@ -1589,13 +1592,13 @@ loop:
 	// Handle any StateError transition from StateTimeWait.
 	if e.EndpointState() == StateError {
 		cleanupOnError(nil)
+		e.protocolMainLoopDone(closeTimer, &closeWaker)
 		return nil
 	}
 
 	e.transitionToStateCloseLocked()
 
-	// Lock released below.
-	epilogue()
+	e.protocolMainLoopDone(closeTimer, &closeWaker)
 
 	// A new SYN was received during TIME_WAIT and we need to abort
 	// the timewait and redirect the segment to the listener queue
@@ -1665,6 +1668,7 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 // should be executed after releasing the endpoint registrations. This is
 // done in cases where a new SYN is received during TIME_WAIT that carries
 // a sequence number larger than one see on the connection.
+// +checklocks:e.mu
 func (e *endpoint) doTimeWait() (twReuse func()) {
 	// Trigger a 2 * MSL time wait state. During this period
 	// we will drop all incoming segments.

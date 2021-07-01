@@ -32,6 +32,18 @@ func (m *CrossGoroutineMutex) state() *int32 {
 	return &(*syncMutex)(unsafe.Pointer(&m.Mutex)).state
 }
 
+// Lock locks the underlying Mutex.
+// +checklocksignore
+func (m *CrossGoroutineMutex) Lock() {
+	m.Mutex.Lock()
+}
+
+// Unlock unlocks the underlying Mutex.
+// +checklocksignore
+func (m *CrossGoroutineMutex) Unlock() {
+	m.Mutex.Unlock()
+}
+
 const (
 	mutexUnlocked = 0
 	mutexLocked   = 1
@@ -62,6 +74,7 @@ type Mutex struct {
 
 // Lock locks m. If the lock is already in use, the calling goroutine blocks
 // until the mutex is available.
+// +checklocksignore
 func (m *Mutex) Lock() {
 	noteLock(unsafe.Pointer(m))
 	m.m.Lock()
@@ -80,6 +93,7 @@ func (m *Mutex) Unlock() {
 
 // TryLock tries to acquire the mutex. It returns true if it succeeds and false
 // otherwise. TryLock does not block.
+// +checklocksignore
 func (m *Mutex) TryLock() bool {
 	// Note lock first to enforce proper locking even if unsuccessful.
 	noteLock(unsafe.Pointer(m))

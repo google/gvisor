@@ -157,6 +157,7 @@ func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 //
 // mu must be held by the caller. waitFor returns with mu held, but it will
 // drop mu before blocking for any reader/writers.
+// +checklocks:mu
 func waitFor(mu *sync.Mutex, wakeupChan *chan struct{}, sleeper amutex.Sleeper) bool {
 	// Ideally this function would simply use a condition variable. However, the
 	// wait needs to be interruptible via 'sleeper', so we must sychronize via a

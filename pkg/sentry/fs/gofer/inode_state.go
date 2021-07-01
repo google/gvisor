@@ -112,13 +112,6 @@ func (i *inodeFileState) loadLoading(_ struct{}) {
 // +checklocks:i.loading
 func (i *inodeFileState) afterLoad() {
 	load := func() (err error) {
-		// See comment on i.loading().
-		defer func() {
-			if err == nil {
-				i.loading.Unlock()
-			}
-		}()
-
 		// Manually restore the p9.File.
 		name, ok := i.s.inodeMappings[i.sattr.InodeID]
 		if !ok {
@@ -167,6 +160,9 @@ func (i *inodeFileState) afterLoad() {
 			i.savedUAttr = nil
 		}
 
+		// See comment on i.loading(). This only unlocks on the
+		// non-error path.
+		i.loading.Unlock() // +checklocksforce: per comment.
 		return nil
 	}
 
