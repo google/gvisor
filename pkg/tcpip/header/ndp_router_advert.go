@@ -16,8 +16,11 @@ package header
 
 import (
 	"encoding/binary"
+	"fmt"
 	"time"
 )
+
+var _ fmt.Stringer = NDPRoutePreference(0)
 
 // NDPRoutePreference is the preference values for default routers or
 // more-specific routes.
@@ -63,6 +66,22 @@ const (
 	// It MUST NOT be sent.
 	ReservedRoutePreference = 0b10
 )
+
+// String implements fmt.Stringer.
+func (p NDPRoutePreference) String() string {
+	switch p {
+	case HighRoutePreference:
+		return "HighRoutePreference"
+	case MediumRoutePreference:
+		return "MediumRoutePreference"
+	case LowRoutePreference:
+		return "LowRoutePreference"
+	case ReservedRoutePreference:
+		return "ReservedRoutePreference"
+	default:
+		return fmt.Sprintf("NDPRoutePreference(%d)", p)
+	}
+}
 
 // NDPRouterAdvert is an NDP Router Advertisement message. It will only contain
 // the body of an ICMPv6 packet.
