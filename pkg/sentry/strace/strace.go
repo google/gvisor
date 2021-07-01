@@ -133,6 +133,9 @@ func dump(t *kernel.Task, addr hostarch.Addr, size uint, maximumBlobSize uint) s
 }
 
 func path(t *kernel.Task, addr hostarch.Addr) string {
+	if addr == 0 {
+		return "<null>"
+	}
 	path, err := t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return fmt.Sprintf("%#x (error decoding path: %s)", addr, err)
