@@ -582,7 +582,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 	readOnly := true
 	for _, op := range ops {
 		if s.findSem(int32(op.SemNum)) == nil {
-			return nil, 0, syserror.EFBIG
+			return nil, 0, linuxerr.EFBIG
 		}
 		if op.SemOp != 0 {
 			readOnly = false

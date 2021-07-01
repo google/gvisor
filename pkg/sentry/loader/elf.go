@@ -624,18 +624,18 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.Fil
 	if err != nil {
 		if linuxerr.Equals(linuxerr.ENOEXEC, err) {
 			// Bad interpreter.
-			err = syserror.ELIBBAD
+			err = linuxerr.ELIBBAD
 		}
 		return loadedELF{}, err
 	}
 
 	if info.os != initial.os {
 		ctx.Infof("Initial ELF OS %v and interpreter ELF OS %v differ", initial.os, info.os)
-		return loadedELF{}, syserror.ELIBBAD
+		return loadedELF{}, linuxerr.ELIBBAD
 	}
 	if info.arch != initial.arch {
 		ctx.Infof("Initial ELF arch %v and interpreter ELF arch %v differ", initial.arch, info.arch)
-		return loadedELF{}, syserror.ELIBBAD
+		return loadedELF{}, linuxerr.ELIBBAD
 	}
 
 	// The interpreter is not given a load offset, as its location does not

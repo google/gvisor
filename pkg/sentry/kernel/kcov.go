@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // kcovAreaSizeMax is the maximum number of uint64 entries allowed in the kcov
@@ -126,7 +125,7 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 	defer kcov.mu.Unlock()
 
 	if kcov.mode != linux.KCOV_MODE_DISABLED {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	// To simplify all the logic around mapping, we require that the length of the
@@ -166,13 +165,13 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 		kcov.mode = linux.KCOV_MODE_TRACE_PC
 	case linux.KCOV_TRACE_CMP:
 		// We do not support KCOV_MODE_TRACE_CMP.
-		return syserror.ENOTSUP
+		return linuxerr.ENOTSUP
 	default:
 		return linuxerr.EINVAL
 	}
 
 	if kcov.owningTask != nil && kcov.owningTask != t {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	kcov.owningTask = t

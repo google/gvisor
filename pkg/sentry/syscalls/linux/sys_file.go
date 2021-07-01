@@ -153,7 +153,7 @@ func openAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint) (fd uin
 		}
 
 		if fs.IsSymlink(d.Inode.StableAttr) && !resolve {
-			return syserror.ELOOP
+			return linuxerr.ELOOP
 		}
 
 		fileFlags := linuxToFlags(flags)
@@ -351,7 +351,7 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 			// If O_NOFOLLOW was passed, then don't try to resolve
 			// anything.
 			if flags&linux.O_NOFOLLOW != 0 {
-				return syserror.ELOOP
+				return linuxerr.ELOOP
 			}
 
 			// Try to resolve the symlink directly to a Dirent.
@@ -810,7 +810,7 @@ func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{})
 	if err != nil {
-		return 0, nil, syserror.EMFILE
+		return 0, nil, linuxerr.EMFILE
 	}
 	return uintptr(newFD), nil, nil
 }
@@ -1015,7 +1015,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
 				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.ReadLock, rng, nil) {
-					return 0, nil, syserror.EAGAIN
+					return 0, nil, linuxerr.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
@@ -1031,7 +1031,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
 				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.WriteLock, rng, nil) {
-					return 0, nil, syserror.EAGAIN
+					return 0, nil, linuxerr.EAGAIN
 				}
 			} else {
 				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
@@ -1143,7 +1143,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// If the FD refers to a pipe or FIFO, return error.
 	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	switch advice {
@@ -1225,7 +1225,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 
 	// Special case: removing the root always returns EBUSY.
 	if path == "/" {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
@@ -1239,7 +1239,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 		case ".":
 			return linuxerr.EINVAL
 		case "..":
-			return syserror.ENOTEMPTY
+			return linuxerr.ENOTEMPTY
 		}
 
 		if err := d.MayDelete(t, root, name); err != nil {
@@ -1574,7 +1574,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			Signo: int32(linux.SIGXFSZ),
 			Code:  linux.SI_USER,
 		})
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 
 	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
@@ -1637,7 +1637,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			Signo: int32(linux.SIGXFSZ),
 			Code:  linux.SI_USER,
 		})
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 
 	if err := file.Dirent.Inode.Truncate(t, file.Dirent, length); err != nil {
@@ -2066,7 +2066,7 @@ func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD in
 		// the root) with EBUSY.
 		switch oldName {
 		case "", ".", "..":
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 
 		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
@@ -2078,7 +2078,7 @@ func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD in
 			// (i.e.  the root) with EBUSY.
 			switch newName {
 			case "", ".", "..":
-				return syserror.EBUSY
+				return linuxerr.EBUSY
 			}
 
 			return fs.Rename(t, root, oldParent, oldName, newParent, newName)
@@ -2122,30 +2122,30 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	if mode != 0 {
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOTSUP
+		return 0, nil, linuxerr.ENOTSUP
 	}
 	if !file.Flags().Write {
 		return 0, nil, linuxerr.EBADF
 	}
 	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		return 0, nil, syserror.EISDIR
 	}
 	if !fs.IsRegular(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ENODEV
+		return 0, nil, linuxerr.ENODEV
 	}
 	size := offset + length
 	if size < 0 {
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 	if uint64(size) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
 		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
 			Code:  linux.SI_USER,
 		})
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 
 	if err := file.Dirent.Inode.Allocate(t, file.Dirent, offset, length); err != nil {
@@ -2184,7 +2184,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
 			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.WriteLock, rng, nil) {
-				return 0, nil, syserror.EWOULDBLOCK
+				return 0, nil, linuxerr.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
@@ -2196,7 +2196,7 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if nonblocking {
 			// Since we're nonblocking we pass a nil lock.Blocker implementation.
 			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.ReadLock, rng, nil) {
-				return 0, nil, syserror.EWOULDBLOCK
+				return 0, nil, linuxerr.EWOULDBLOCK
 			}
 		} else {
 			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.

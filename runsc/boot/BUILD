@@ -95,7 +95,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/watchdog",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/loopback",

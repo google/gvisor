@@ -83,7 +83,7 @@ func Semtimedop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 	if err := semTimedOp(t, id, ops, true, timeout.ToDuration()); err != nil {
 		if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-			return 0, nil, syserror.EAGAIN
+			return 0, nil, linuxerr.EAGAIN
 		}
 		return 0, nil, err
 	}

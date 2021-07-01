@@ -197,7 +197,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 	case *symlink:
 		if opts.Flags&linux.O_PATH == 0 {
 			// Can't open symlinks without O_PATH.
-			return nil, syserror.ELOOP
+			return nil, linuxerr.ELOOP
 		}
 		var fd symlinkFD
 		fd.LockFD.Init(&in.locks)

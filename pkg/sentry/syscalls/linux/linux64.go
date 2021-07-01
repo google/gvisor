@@ -351,7 +351,7 @@ var AMD64 = &kernel.SyscallTable{
 		295: syscalls.Supported("preadv", Preadv),
 		296: syscalls.Supported("pwritev", Pwritev),
 		297: syscalls.Supported("rt_tgsigqueueinfo", RtTgsigqueueinfo),
-		298: syscalls.ErrorWithEvent("perf_event_open", syserror.ENODEV, "No support for perf counters", nil),
+		298: syscalls.ErrorWithEvent("perf_event_open", linuxerr.ENODEV, "No support for perf counters", nil),
 		299: syscalls.PartiallySupported("recvmmsg", RecvMMsg, "Not all flags and control messages are supported.", nil),
 		300: syscalls.ErrorWithEvent("fanotify_init", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		301: syscalls.ErrorWithEvent("fanotify_mark", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
@@ -671,7 +671,7 @@ var ARM64 = &kernel.SyscallTable{
 		238: syscalls.CapError("migrate_pages", linux.CAP_SYS_NICE, "", nil),
 		239: syscalls.CapError("move_pages", linux.CAP_SYS_NICE, "", nil), // requires cap_sys_nice (mostly)
 		240: syscalls.Supported("rt_tgsigqueueinfo", RtTgsigqueueinfo),
-		241: syscalls.ErrorWithEvent("perf_event_open", syserror.ENODEV, "No support for perf counters", nil),
+		241: syscalls.ErrorWithEvent("perf_event_open", linuxerr.ENODEV, "No support for perf counters", nil),
 		242: syscalls.Supported("accept4", Accept4),
 		243: syscalls.PartiallySupported("recvmmsg", RecvMMsg, "Not all flags and control messages are supported.", nil),
 		260: syscalls.Supported("wait4", Wait4),

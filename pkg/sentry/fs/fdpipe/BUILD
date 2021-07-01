@@ -39,6 +39,7 @@ go_test(
     library = ":fdpipe",
     deps = [
         "//pkg/context",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fdnotifier",

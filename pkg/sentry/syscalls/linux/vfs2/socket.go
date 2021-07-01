@@ -754,7 +754,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr hostarch.Addr, fl
 	}
 
 	if msg.IovLen > linux.UIO_MAXIOV {
-		return 0, syserror.EMSGSIZE
+		return 0, linuxerr.EMSGSIZE
 	}
 	dst, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,
@@ -785,7 +785,7 @@ func recvSingleMsg(t *kernel.Task, s socket.SocketVFS2, msgPtr hostarch.Addr, fl
 	}
 
 	if msg.ControlLen > maxControlLen {
-		return 0, syserror.ENOBUFS
+		return 0, linuxerr.ENOBUFS
 	}
 	n, mflags, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
 	if e != nil {
@@ -1019,7 +1019,7 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 	if msg.ControlLen > 0 {
 		// Put an upper bound to prevent large allocations.
 		if msg.ControlLen > maxControlLen {
-			return 0, syserror.ENOBUFS
+			return 0, linuxerr.ENOBUFS
 		}
 		controlData = make([]byte, msg.ControlLen)
 		if _, err := t.CopyInBytes(hostarch.Addr(msg.Control), controlData); err != nil {
@@ -1039,7 +1039,7 @@ func sendSingleMsg(t *kernel.Task, s socket.SocketVFS2, file *vfs.FileDescriptio
 
 	// Read data then call the sendmsg implementation.
 	if msg.IovLen > linux.UIO_MAXIOV {
-		return 0, syserror.EMSGSIZE
+		return 0, linuxerr.EMSGSIZE
 	}
 	src, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func TestLookup(t *testing.T) {
@@ -390,7 +389,7 @@ func (d *dir) GetXattr(_ context.Context, _ *fs.Inode, name string, _ uint64) (s
 			return "y", nil
 		}
 	}
-	return "", syserror.ENOATTR
+	return "", linuxerr.ENOATTR
 }
 
 // GetFile implements InodeOperations.GetFile.

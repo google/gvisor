@@ -68,7 +68,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -295,7 +294,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		ctx.Infof("cgroupfs.FilesystemType.GetFilesystem: failed to register new hierarchy with controllers %v: %v", wantControllers, err)
 		rootD.DecRef(ctx)
 		fs.VFSFilesystem().DecRef(ctx)
-		return nil, nil, syserror.EBUSY
+		return nil, nil, linuxerr.EBUSY
 	}
 
 	// Move all existing tasks to the root of the new hierarchy.

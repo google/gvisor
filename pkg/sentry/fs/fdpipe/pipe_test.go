@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -209,7 +210,7 @@ func TestPipeRequest(t *testing.T) {
 		{
 			desc:    "ReadDir on pipe returns ENOTDIR",
 			context: &ReadDir{},
-			err:     unix.ENOTDIR,
+			err:     linuxerr.ENOTDIR,
 		},
 		{
 			desc:    "Fsync on pipe returns EINVAL",
@@ -219,7 +220,7 @@ func TestPipeRequest(t *testing.T) {
 		{
 			desc:    "Seek on pipe returns ESPIPE",
 			context: &Seek{},
-			err:     unix.ESPIPE,
+			err:     linuxerr.ESPIPE,
 		},
 		{
 			desc:    "Readv on pipe from empty buffer returns nil",
@@ -248,7 +249,7 @@ func TestPipeRequest(t *testing.T) {
 			desc:    "Writev on pipe from non-empty buffer and closed partner returns EPIPE",
 			context: &Writev{Src: usermem.BytesIOSequence([]byte("hello"))},
 			flags:   fs.FileFlags{Write: true},
-			err:     unix.EPIPE,
+			err:     linuxerr.EPIPE,
 		},
 		{
 			desc:            "Writev on pipe from non-empty buffer and open partner succeeds",
@@ -307,7 +308,11 @@ func TestPipeRequest(t *testing.T) {
 			t.Errorf("%s: unknown request type %T", test.desc, test.context)
 		}
 
-		if unwrapError(err) != test.err {
+		if linuxErr, ok := test.err.(*errors.Error); ok {
+			if !linuxerr.Equals(linuxErr, unwrapError(err)) {
+				t.Errorf("%s: got error %v, want %v", test.desc, err, test.err)
+			}
+		} else if test.err != unwrapError(err) {
 			t.Errorf("%s: got error %v, want %v", test.desc, err, test.err)
 		}
 	}

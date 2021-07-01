@@ -163,7 +163,7 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 		region.End()
 		t.SleepFinish(true)
 		// We've timed out.
-		return syserror.ETIMEDOUT
+		return linuxerr.ETIMEDOUT
 	}
 }
 

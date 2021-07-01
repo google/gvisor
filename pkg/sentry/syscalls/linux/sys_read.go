@@ -128,7 +128,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Is reading at an offset supported?
 	if !file.Flags().Pread {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Check that the file is readable.
@@ -205,7 +205,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Is reading at an offset supported?
 	if !file.Flags().Pread {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Check that the file is readable.
@@ -254,7 +254,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Is reading at an offset supported?
 	if offset > -1 && !file.Flags().Pread {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Check that the file is readable.

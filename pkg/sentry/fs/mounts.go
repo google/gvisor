@@ -282,7 +282,7 @@ func (mns *MountNamespace) withMountLocked(node *Dirent, fn func() error) error 
 	// Linux allows mounting over the root (?). It comes with a strange set
 	// of semantics. We'll just not do this for now.
 	if node.parent == nil {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	// For both mount and unmount, we take this lock so we can swap out the
@@ -381,7 +381,7 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 			if refs := m.DirentRefs(); refs < 2 {
 				panic(fmt.Sprintf("have %d refs on unmount, expect 2 or more", refs))
 			} else if refs != 2 {
-				return syserror.EBUSY
+				return linuxerr.EBUSY
 			}
 		}
 
@@ -567,8 +567,8 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 	// Resolve the path.
 	target, err := node.Inode.Getlink(ctx)
 
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		// Make sure we didn't exhaust the traversal budget.
 		if *remainingTraversals == 0 {
 			target.DecRef(ctx)
@@ -578,11 +578,11 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, rema
 		node.DecRef(ctx) // Drop the original reference.
 		return target, nil
 
-	case unix.ENOLINK:
+	case linuxerr.Equals(linuxerr.ENOLINK, err):
 		// Not a symlink.
 		return node, nil
 
-	case ErrResolveViaReadlink:
+	case err == ErrResolveViaReadlink:
 		defer node.DecRef(ctx) // See above.
 
 		// First, check if we should traverse.

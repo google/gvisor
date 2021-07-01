@@ -17,6 +17,7 @@ package vfs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -174,7 +175,7 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 		// that cyclic polling is not introduced after the check.
 		defer epollCycleMu.Unlock()
 		if subep.mightPoll(ep) {
-			return syserror.ELOOP
+			return linuxerr.ELOOP
 		}
 	}
 

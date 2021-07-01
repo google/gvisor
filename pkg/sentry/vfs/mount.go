@@ -160,7 +160,7 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
 		ctx.Warningf("Unknown filesystem type: %s", fsTypeName)
-		return nil, syserror.ENODEV
+		return nil, linuxerr.ENODEV
 	}
 	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
 	if err != nil {
@@ -193,10 +193,10 @@ func (vfs *VirtualFilesystem) NewDisconnectedMount(fs *Filesystem, root *Dentry,
 func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth.Credentials, source string, fsTypeName string, opts *MountOptions) (*Mount, error) {
 	rft := vfs.getFilesystemType(fsTypeName)
 	if rft == nil {
-		return nil, syserror.ENODEV
+		return nil, linuxerr.ENODEV
 	}
 	if !opts.InternalMount && !rft.opts.AllowUserMount {
-		return nil, syserror.ENODEV
+		return nil, linuxerr.ENODEV
 	}
 	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
 	if err != nil {
@@ -327,7 +327,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		if len(vd.mount.children) != 0 {
 			vfs.mounts.seq.EndWrite()
 			vfs.mountMu.Unlock()
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		// We are holding a reference on vd.mount.
 		expectedRefs := int64(1)
@@ -337,7 +337,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		if atomic.LoadInt64(&vd.mount.refs)&^math.MinInt64 != expectedRefs { // mask out MSB
 			vfs.mounts.seq.EndWrite()
 			vfs.mountMu.Unlock()
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 	}
 	vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(vd.mount, &umountRecursiveOptions{
@@ -711,7 +711,7 @@ func (vfs *VirtualFilesystem) SetMountReadOnly(mnt *Mount, ro bool) error {
 func (mnt *Mount) CheckBeginWrite() error {
 	if atomic.AddInt64(&mnt.writers, 1) < 0 {
 		atomic.AddInt64(&mnt.writers, -1)
-		return syserror.EROFS
+		return linuxerr.EROFS
 	}
 	return nil
 }
@@ -729,7 +729,7 @@ func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 	}
 	if ro {
 		if !atomic.CompareAndSwapInt64(&mnt.writers, 0, math.MinInt64) {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		return nil
 	}

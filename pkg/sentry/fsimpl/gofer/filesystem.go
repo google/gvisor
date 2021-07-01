@@ -245,7 +245,7 @@ afterSymlink:
 // * dentry at name has been revalidated
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 	if len(name) > maxFilenameLen {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 	if child, ok := parent.children[name]; ok || parent.isSynthetic() {
 		if child == nil {
@@ -373,7 +373,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	defer parent.dirMu.Unlock()
 
 	if len(name) > maxFilenameLen {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 	// Check for existence only if caching information is available. Otherwise,
 	// don't check for existence just yet. We will check for existence if the
@@ -473,7 +473,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			return linuxerr.EINVAL
 		}
 		if name == ".." {
-			return syserror.ENOTEMPTY
+			return linuxerr.ENOTEMPTY
 		}
 	} else {
 		if name == "." || name == ".." {
@@ -541,7 +541,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 				// This is definitely not an empty directory, irrespective of
 				// fs.opts.interop.
 				vfsObj.AbortDeleteDentry(&child.vfsd)
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 			// If InteropModeShared is in effect and the first call to
 			// PrepareDeleteDentry above succeeded, then child wasn't
@@ -556,7 +556,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 				for _, grandchild := range child.children {
 					if grandchild != nil {
 						vfsObj.AbortDeleteDentry(&child.vfsd)
-						return syserror.ENOTEMPTY
+						return linuxerr.ENOTEMPTY
 					}
 				}
 			}
@@ -675,7 +675,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, _ **[]*dentry) error {
 		if rp.Mount() != vd.Mount() {
-			return syserror.EXDEV
+			return linuxerr.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
 		if d.isDir() {
@@ -691,7 +691,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.ENOENT
 		}
 		if d.nlink == math.MaxUint32 {
-			return syserror.EMLINK
+			return linuxerr.EMLINK
 		}
 		if err := parent.file.link(ctx, d.file, childName); err != nil {
 			return err
@@ -963,10 +963,10 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		return &fd.vfsfd, nil
 	case linux.S_IFLNK:
 		// Can't open symlinks without O_PATH, which is handled at the VFS layer.
-		return nil, syserror.ELOOP
+		return nil, linuxerr.ELOOP
 	case linux.S_IFSOCK:
 		if d.isSynthetic() {
-			return nil, syserror.ENXIO
+			return nil, linuxerr.ENXIO
 		}
 		if d.fs.iopts.OpenSocketsByConnecting {
 			return d.openSocketByConnecting(ctx, opts)
@@ -1218,11 +1218,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
 			return syserror.EEXIST
 		}
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
@@ -1299,7 +1299,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return syserror.EISDIR
 			}
 			if genericIsAncestorDentry(replaced, renamed) {
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 		} else {
 			if rp.MustBeDir() || renamed.isDir() {
@@ -1508,7 +1508,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 			return d.endpoint, nil
 		}
 	}
-	return nil, syserror.ECONNREFUSED
+	return nil, linuxerr.ECONNREFUSED
 }
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.

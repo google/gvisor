@@ -257,7 +257,7 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 
 	// Return ENODEV if the filesystem is umounted.
 	if fd.fs.umounted {
-		return 0, syserror.ENODEV
+		return 0, linuxerr.ENODEV
 	}
 
 	var cn, n int64

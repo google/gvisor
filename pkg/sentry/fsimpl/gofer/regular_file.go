@@ -653,12 +653,12 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 			offset += size
 		case linux.SEEK_DATA:
 			if offset > size {
-				return 0, syserror.ENXIO
+				return 0, linuxerr.ENXIO
 			}
 			// Use offset as specified.
 		case linux.SEEK_HOLE:
 			if offset > size {
-				return 0, syserror.ENXIO
+				return 0, linuxerr.ENXIO
 			}
 			offset = size
 		}
@@ -696,7 +696,7 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 			// All mappings require a host FD to be coherent with other
 			// filesystem users.
 			if atomic.LoadInt32(&d.mmapFD) < 0 {
-				return syserror.ENODEV
+				return linuxerr.ENODEV
 			}
 		default:
 			panic(fmt.Sprintf("unknown InteropMode %v", d.fs.opts.interop))

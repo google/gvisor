@@ -25,8 +25,8 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -515,8 +515,8 @@ func assertReaderHungup(t *testing.T, desc string, reader io.Reader) bool {
 }
 
 func assertWriterHungup(t *testing.T, desc string, writer io.Writer) bool {
-	if _, err := writer.Write([]byte("hello")); unwrapError(err) != unix.EPIPE {
-		t.Errorf("%s: write to self after hangup got error %v, want %v", desc, err, unix.EPIPE)
+	if _, err := writer.Write([]byte("hello")); !linuxerr.Equals(linuxerr.EPIPE, unwrapError(err)) {
+		t.Errorf("%s: write to self after hangup got error %v, want %v", desc, err, linuxerr.EPIPE)
 		return false
 	}
 	return true

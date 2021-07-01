@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Mount implements Linux syscall mount(2).
@@ -88,7 +87,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	rsys, ok := fs.FindFilesystem(fsType)
 	if !ok {
-		return 0, nil, syserror.ENODEV
+		return 0, nil, linuxerr.ENODEV
 	}
 	if !rsys.AllowUserMount() {
 		return 0, nil, linuxerr.EPERM

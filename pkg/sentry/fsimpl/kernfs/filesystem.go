@@ -71,7 +71,7 @@ afterSymlink:
 		return d.parent, nil
 	}
 	if len(name) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 	d.dirMu.Lock()
 	next, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), d, name, d.children[name])
@@ -218,7 +218,7 @@ func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string
 		return syserror.EEXIST
 	}
 	if len(name) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 	if _, ok := parent.children[name]; ok {
 		return syserror.EEXIST
@@ -238,7 +238,7 @@ func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string
 func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) error {
 	parent := d.parent
 	if parent == nil {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	if parent.vfsd.IsDead() {
 		return syserror.ENOENT
@@ -365,7 +365,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return syserror.ENOENT
 	}
 	if rp.Mount() != vd.Mount() {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
@@ -543,7 +543,7 @@ afterTrailingSymlink:
 		return nil, syserror.EISDIR
 	}
 	if len(pc) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 	// Determine whether or not we need to create a file.
 	child, err := fs.stepExistingLocked(ctx, rp, parent, false /* mayFollowSymlinks */)
@@ -655,7 +655,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
@@ -683,7 +683,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if noReplace {
 			return syserror.EEXIST
 		}
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	err = checkCreateLocked(ctx, rp.Credentials(), newName, dstDir)
@@ -777,7 +777,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return syserror.ENOTDIR
 	}
 	if d.inode.HasChildren() {
-		return syserror.ENOTEMPTY
+		return linuxerr.ENOTEMPTY
 	}
 	virtfs := rp.VirtualFilesystem()
 	parentDentry := d.parent
@@ -930,7 +930,7 @@ func (fs *Filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
 		return nil, err
 	}
-	return nil, syserror.ECONNREFUSED
+	return nil, linuxerr.ECONNREFUSED
 }
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
@@ -943,7 +943,7 @@ func (fs *Filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 		return nil, err
 	}
 	// kernfs currently does not support extended attributes.
-	return nil, syserror.ENOTSUP
+	return nil, linuxerr.ENOTSUP
 }
 
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
@@ -956,7 +956,7 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		return "", err
 	}
 	// kernfs currently does not support extended attributes.
-	return "", syserror.ENOTSUP
+	return "", linuxerr.ENOTSUP
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
@@ -969,7 +969,7 @@ func (fs *Filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		return err
 	}
 	// kernfs currently does not support extended attributes.
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -982,7 +982,7 @@ func (fs *Filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		return err
 	}
 	// kernfs currently does not support extended attributes.
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

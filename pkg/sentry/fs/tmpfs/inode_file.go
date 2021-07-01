@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -151,7 +150,7 @@ func (*fileInodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldPare
 // GetFile implements fs.InodeOperations.GetFile.
 func (f *fileInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	if fs.IsSocket(d.Inode.StableAttr) {
-		return nil, syserror.ENXIO
+		return nil, linuxerr.ENXIO
 	}
 
 	if flags.Write {
@@ -675,7 +674,7 @@ func AddSeals(inode *fs.Inode, val uint32) error {
 		// F_SEAL_WRITE can only be added if there are no active writable maps.
 		if f.seals&linux.F_SEAL_WRITE == 0 && val&linux.F_SEAL_WRITE != 0 {
 			if f.writableMappingPages > 0 {
-				return syserror.EBUSY
+				return linuxerr.EBUSY
 			}
 		}
 

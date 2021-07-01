@@ -339,7 +339,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	}
 
 	if timeout == 0 {
-		return nil, syserror.EAGAIN
+		return nil, linuxerr.EAGAIN
 	}
 
 	// Unblock signals we're waiting for. Remember the original signal mask so
@@ -360,8 +360,8 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	if info := t.dequeueSignalLocked(mask); info != nil {
 		return info, nil
 	}
-	if err == syserror.ETIMEDOUT {
-		return nil, syserror.EAGAIN
+	if err == linuxerr.ETIMEDOUT {
+		return nil, linuxerr.EAGAIN
 	}
 	return nil, err
 }
@@ -372,7 +372,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 //
 //	syserror.ESRCH - The task has exited.
 //	linuxerr.EINVAL - The signal is not valid.
-//	syserror.EAGAIN - THe signal is realtime, and cannot be queued.
+//	linuxerr.EAGAIN - THe signal is realtime, and cannot be queued.
 //
 func (t *Task) SendSignal(info *linux.SignalInfo) error {
 	t.tg.pidns.owner.mu.RLock()
@@ -451,7 +451,7 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 	}
 	if !q.enqueue(info, timer) {
 		if sig.IsRealtime() {
-			return syserror.EAGAIN
+			return linuxerr.EAGAIN
 		}
 		t.Debugf("Discarding duplicate signal %d", sig)
 		if timer != nil {

@@ -332,7 +332,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	// EROFS is returned if write access is needed.
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) || opts.Flags&(linux.O_CREAT|linux.O_EXCL|linux.O_TMPFILE) != 0 {
-		return nil, syserror.EROFS
+		return nil, linuxerr.EROFS
 	}
 	return inode.open(rp, vfsd, &opts)
 }
@@ -397,7 +397,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
@@ -410,7 +410,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
@@ -424,7 +424,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
@@ -438,7 +438,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.
@@ -452,7 +452,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return syserror.ENOTDIR
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
@@ -462,7 +462,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
@@ -476,7 +476,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return err
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.
@@ -490,7 +490,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return syserror.EISDIR
 	}
 
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // BoundEndpointAt implements vfs.FilesystemImpl.BoundEndpointAt.
@@ -504,7 +504,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	}
 
 	// TODO(b/134676337): Support sockets.
-	return nil, syserror.ECONNREFUSED
+	return nil, linuxerr.ECONNREFUSED
 }
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
@@ -513,7 +513,7 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 	if err != nil {
 		return nil, err
 	}
-	return nil, syserror.ENOTSUP
+	return nil, linuxerr.ENOTSUP
 }
 
 // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
@@ -522,7 +522,7 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	if err != nil {
 		return "", err
 	}
-	return "", syserror.ENOTSUP
+	return "", linuxerr.ENOTSUP
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
@@ -531,7 +531,7 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	if err != nil {
 		return err
 	}
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -540,7 +540,7 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	if err != nil {
 		return err
 	}
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

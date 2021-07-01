@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var fsInfo = fs.Info{
@@ -49,7 +49,7 @@ var fsInfo = fs.Info{
 func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	// Don't allow renames across different mounts.
 	if newParent.MountSource != oldParent.MountSource {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 
 	op := oldParent.InodeOperations.(*Dir)

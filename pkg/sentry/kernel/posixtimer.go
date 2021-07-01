@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // IntervalTimer represents a POSIX interval timer as described by
@@ -176,7 +175,7 @@ func (t *Task) IntervalTimerCreate(c ktime.Clock, sigev *linux.Sigevent) (linux.
 			break
 		}
 		if t.tg.nextTimerID == end {
-			return 0, syserror.EAGAIN
+			return 0, linuxerr.EAGAIN
 		}
 	}
 

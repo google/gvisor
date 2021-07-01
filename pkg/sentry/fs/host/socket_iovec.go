@@ -16,8 +16,8 @@ package host
 
 import (
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -66,9 +66,9 @@ func buildIovec(bufs [][]byte, maxlen int64, truncate bool) (length int64, iovec
 	if length > maxlen {
 		if truncate {
 			stopLen = maxlen
-			err = syserror.EAGAIN
+			err = linuxerr.EAGAIN
 		} else {
-			return 0, nil, nil, syserror.EMSGSIZE
+			return 0, nil, nil, linuxerr.EMSGSIZE
 		}
 	}
 

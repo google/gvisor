@@ -309,7 +309,7 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		if ats.MayWrite() {
 			return linuxerr.EPERM
 		}
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	case strings.HasPrefix(name, linux.XATTR_USER_PREFIX):
 		// In the user.* namespace, only regular files and directories can have
 		// extended attributes. For sticky directories, only the owner and
@@ -319,7 +319,7 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 			if ats.MayWrite() {
 				return linuxerr.EPERM
 			}
-			return syserror.ENODATA
+			return linuxerr.ENODATA
 		}
 		if filetype == linux.ModeDirectory && mode&linux.ModeSticky != 0 && ats.MayWrite() && !CanActAsOwner(creds, kuid) {
 			return linuxerr.EPERM

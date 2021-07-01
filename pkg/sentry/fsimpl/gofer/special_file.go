@@ -355,7 +355,7 @@ func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	if !fd.seekable {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()

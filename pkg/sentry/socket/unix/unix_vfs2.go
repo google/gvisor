@@ -254,7 +254,7 @@ func (s *SocketVFS2) Ioctl(ctx context.Context, uio usermem.IO, args arch.Syscal
 
 // PRead implements vfs.FileDescriptionImpl.
 func (s *SocketVFS2) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // Read implements vfs.FileDescriptionImpl.
@@ -283,7 +283,7 @@ func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 
 // PWrite implements vfs.FileDescriptionImpl.
 func (s *SocketVFS2) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // Write implements vfs.FileDescriptionImpl.

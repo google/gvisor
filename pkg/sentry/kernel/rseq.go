@@ -65,7 +65,7 @@ func (t *Task) SetRSeq(addr hostarch.Addr, length, signature uint32) error {
 		if t.rseqSignature != signature {
 			return linuxerr.EINVAL
 		}
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	// rseq must be aligned and correctly sized.
