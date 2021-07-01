@@ -1717,3 +1717,32 @@ func TestNDPOptionsIter(t *testing.T) {
 		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
 	}
 }
+
+func TestNDPRoutePreferenceStringer(t *testing.T) {
+	p := NDPRoutePreference(0)
+	for {
+		var wantStr string
+		switch p {
+		case 0b01:
+			wantStr = "HighRoutePreference"
+		case 0b00:
+			wantStr = "MediumRoutePreference"
+		case 0b11:
+			wantStr = "LowRoutePreference"
+		case 0b10:
+			wantStr = "ReservedRoutePreference"
+		default:
+			wantStr = fmt.Sprintf("NDPRoutePreference(%d)", p)
+		}
+
+		if gotStr := p.String(); gotStr != wantStr {
+			t.Errorf("got NDPRoutePreference(%d).String() = %s, want = %s", p, gotStr, wantStr)
+		}
+
+		p++
+		if p == 0 {
+			// Overflowed, we hit all values.
+			break
+		}
+	}
+}
