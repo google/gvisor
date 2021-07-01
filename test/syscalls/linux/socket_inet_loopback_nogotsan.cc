@@ -104,16 +104,25 @@ INSTANTIATE_TEST_SUITE_P(All, SocketInetLoopbackTest,
 using SocketMultiProtocolInetLoopbackTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
-TEST_P(SocketMultiProtocolInetLoopbackTest, BindAvoidsListeningPortsReuseAddr) {
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       TCPBindAvoidsOtherBoundPortsReuseAddr) {
   ProtocolTestParam const& param = GetParam();
-  // UDP sockets are allowed to bind/listen on the port w/ SO_REUSEADDR, for TCP
-  // this is only permitted if there is no other listening socket.
+  // UDP sockets are allowed to bind/listen on an already bound port w/
+  // SO_REUSEADDR even when requesting a port from the kernel. In case of TCP
+  // rebinding is only permitted when SO_REUSEADDR is set and an explicit port
+  // is specified. When a zero port is specified to the bind() call then an
+  // already bound port will not be picked.
   SKIP_IF(param.type != SOCK_STREAM);
 
   DisableSave ds;  // Too many syscalls.
 
   // A map of port to file descriptor binding the port.
-  std::map<uint16_t, FileDescriptor> listen_sockets;
+  std::map<uint16_t, FileDescriptor> bound_sockets;
+
+  // Reduce number of ephemeral ports if permitted to reduce running time of
+  // the test.
+  [[maybe_unused]] const int nports =
+      ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
 
   // Exhaust all ephemeral ports.
   while (true) {
@@ -139,12 +148,59 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, BindAvoidsListeningPortsReuseAddr) {
         SyscallSucceeds());
     uint16_t port = reinterpret_cast<sockaddr_in*>(&bound_addr)->sin_port;
 
-    // Newly bound port should not already be in use by a listening socket.
-    ASSERT_EQ(listen_sockets.find(port), listen_sockets.end());
-    auto fd = bound_fd.get();
-    listen_sockets.insert(std::make_pair(port, std::move(bound_fd)));
-    ASSERT_THAT(listen(fd, SOMAXCONN), SyscallSucceeds());
+    auto [iter, inserted] = bound_sockets.emplace(port, std::move(bound_fd));
+    ASSERT_TRUE(inserted);
   }
+}
+
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       UDPBindMayBindOtherBoundPortsReuseAddr) {
+  ProtocolTestParam const& param = GetParam();
+  // UDP sockets are allowed to bind/listen on an already bound port w/
+  // SO_REUSEADDR even when requesting a port from the kernel.
+  SKIP_IF(param.type != SOCK_DGRAM);
+
+  DisableSave ds;  // Too many syscalls.
+
+  // A map of port to file descriptor binding the port.
+  std::map<uint16_t, FileDescriptor> bound_sockets;
+
+  // Reduce number of ephemeral ports if permitted to reduce running time of
+  // the test.
+  [[maybe_unused]] const int nports =
+      ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
+
+  // Exhaust all ephemeral ports.
+  bool duplicate_binding = false;
+  while (true) {
+    // Bind the v4 loopback on a v4 socket.
+    TestAddress const& test_addr = V4Loopback();
+    sockaddr_storage bound_addr = test_addr.addr;
+    FileDescriptor bound_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+
+    ASSERT_THAT(setsockopt(bound_fd.get(), SOL_SOCKET, SO_REUSEADDR,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+
+    ASSERT_THAT(
+        bind(bound_fd.get(), AsSockAddr(&bound_addr), test_addr.addr_len),
+        SyscallSucceeds());
+
+    // Get the port that we bound.
+    socklen_t bound_addr_len = test_addr.addr_len;
+    ASSERT_THAT(
+        getsockname(bound_fd.get(), AsSockAddr(&bound_addr), &bound_addr_len),
+        SyscallSucceeds());
+    uint16_t port = reinterpret_cast<sockaddr_in*>(&bound_addr)->sin_port;
+
+    auto [iter, inserted] = bound_sockets.emplace(port, std::move(bound_fd));
+    if (!inserted) {
+      duplicate_binding = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(duplicate_binding);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllFamilies, SocketMultiProtocolInetLoopbackTest,

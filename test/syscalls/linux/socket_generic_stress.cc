@@ -37,49 +37,11 @@
 namespace gvisor {
 namespace testing {
 
-constexpr char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
-
-PosixErrorOr<int> NumPorts() {
-  int min = 0;
-  int max = 1 << 16;
-
-  // Read the ephemeral range from /proc.
-  ASSIGN_OR_RETURN_ERRNO(std::string rangefile, GetContents(kRangeFile));
-  const std::string err_msg =
-      absl::StrFormat("%s has invalid content: %s", kRangeFile, rangefile);
-  if (rangefile.back() != '\n') {
-    return PosixError(EINVAL, err_msg);
-  }
-  rangefile.pop_back();
-  std::vector<std::string> range =
-      absl::StrSplit(rangefile, absl::ByAnyChar("\t "));
-  if (range.size() < 2 || !absl::SimpleAtoi(range.front(), &min) ||
-      !absl::SimpleAtoi(range.back(), &max)) {
-    return PosixError(EINVAL, err_msg);
-  }
-
-  // If we can open as writable, limit the range.
-  if (!access(kRangeFile, W_OK)) {
-    ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd,
-                           Open(kRangeFile, O_WRONLY | O_TRUNC, 0));
-    max = min + 50;
-    const std::string small_range = absl::StrFormat("%d %d", min, max);
-    int n = write(fd.get(), small_range.c_str(), small_range.size());
-    if (n < 0) {
-      return PosixError(
-          errno,
-          absl::StrFormat("write(%d [%s], \"%s\", %d)", fd.get(), kRangeFile,
-                          small_range.c_str(), small_range.size()));
-    }
-  }
-  return max - min;
-}
-
 // Test fixture for tests that apply to pairs of connected sockets.
 using ConnectStressTest = SocketPairTest;
 
 TEST_P(ConnectStressTest, Reset) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     const std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -103,7 +65,7 @@ TEST_P(ConnectStressTest, Reset) {
 // Tests that opening too many connections -- without closing them -- does lead
 // to port exhaustion.
 TEST_P(ConnectStressTest, TooManyOpen) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   int err_num = 0;
   std::vector<std::unique_ptr<SocketPair>> sockets =
       std::vector<std::unique_ptr<SocketPair>>(nports);
@@ -164,7 +126,7 @@ class PersistentListenerConnectStressTest : public SocketPairTest {
 };
 
 TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
@@ -185,7 +147,7 @@ TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     const std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -206,7 +168,7 @@ TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, Close) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());

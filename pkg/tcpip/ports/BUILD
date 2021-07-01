@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
     ],
 )
 

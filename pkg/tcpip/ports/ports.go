@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 const (
@@ -122,7 +123,7 @@ type deviceToDest map[tcpip.NICID]destToCounter
 // If either of the port reuse flags is enabled on any of the nodes, all nodes
 // sharing a port must share at least one reuse flag. This matches Linux's
 // behavior.
-func (dd deviceToDest) isAvailable(res Reservation) bool {
+func (dd deviceToDest) isAvailable(res Reservation, portSpecified bool) bool {
 	flagBits := res.Flags.Bits()
 	if res.BindToDevice == 0 {
 		intersection := FlagMask
@@ -138,6 +139,9 @@ func (dd deviceToDest) isAvailable(res Reservation) bool {
 				return false
 			}
 		}
+		if !portSpecified && res.Transport == header.TCPProtocolNumber {
+			return false
+		}
 		return true
 	}
 
@@ -146,16 +150,26 @@ func (dd deviceToDest) isAvailable(res Reservation) bool {
 	if dests, ok := dd[0]; ok {
 		var count int
 		intersection, count = dests.intersectionFlags(res)
-		if count > 0 && intersection&flagBits == 0 {
-			return false
+		if count > 0 {
+			if intersection&flagBits == 0 {
+				return false
+			}
+			if !portSpecified && res.Transport == header.TCPProtocolNumber {
+				return false
+			}
 		}
 	}
 
 	if dests, ok := dd[res.BindToDevice]; ok {
 		flags, count := dests.intersectionFlags(res)
 		intersection &= flags
-		if count > 0 && intersection&flagBits == 0 {
-			return false
+		if count > 0 {
+			if intersection&flagBits == 0 {
+				return false
+			}
+			if !portSpecified && res.Transport == header.TCPProtocolNumber {
+				return false
+			}
 		}
 	}
 
@@ -168,12 +182,12 @@ type addrToDevice map[tcpip.Address]deviceToDest
 // isAvailable checks whether an IP address is available to bind to. If the
 // address is the "any" address, check all other addresses. Otherwise, just
 // check against the "any" address and the provided address.
-func (ad addrToDevice) isAvailable(res Reservation) bool {
+func (ad addrToDevice) isAvailable(res Reservation, portSpecified bool) bool {
 	if res.Addr == anyIPAddress {
 		// If binding to the "any" address then check that there are no
 		// conflicts with all addresses.
 		for _, devices := range ad {
-			if !devices.isAvailable(res) {
+			if !devices.isAvailable(res, portSpecified) {
 				return false
 			}
 		}
@@ -182,14 +196,14 @@ func (ad addrToDevice) isAvailable(res Reservation) bool {
 
 	// Check that there is no conflict with the "any" address.
 	if devices, ok := ad[anyIPAddress]; ok {
-		if !devices.isAvailable(res) {
+		if !devices.isAvailable(res, portSpecified) {
 			return false
 		}
 	}
 
 	// Check that this is no conflict with the provided address.
 	if devices, ok := ad[res.Addr]; ok {
-		if !devices.isAvailable(res) {
+		if !devices.isAvailable(res, portSpecified) {
 			return false
 		}
 	}
@@ -310,7 +324,7 @@ func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort Por
 	// If a port is specified, just try to reserve it for all network
 	// protocols.
 	if res.Port != 0 {
-		if !pm.reserveSpecificPortLocked(res) {
+		if !pm.reserveSpecificPortLocked(res, true /* portSpecified */) {
 			return 0, &tcpip.ErrPortInUse{}
 		}
 		if testPort != nil {
@@ -330,7 +344,7 @@ func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort Por
 	// A port wasn't specified, so try to find one.
 	return pm.PickEphemeralPort(rng, func(p uint16) (bool, tcpip.Error) {
 		res.Port = p
-		if !pm.reserveSpecificPortLocked(res) {
+		if !pm.reserveSpecificPortLocked(res, false /* portSpecified */) {
 			return false, nil
 		}
 		if testPort != nil {
@@ -350,12 +364,12 @@ func (pm *PortManager) ReservePort(rng *rand.Rand, res Reservation, testPort Por
 
 // reserveSpecificPortLocked tries to reserve the given port on all given
 // protocols.
-func (pm *PortManager) reserveSpecificPortLocked(res Reservation) bool {
+func (pm *PortManager) reserveSpecificPortLocked(res Reservation, portSpecified bool) bool {
 	// Make sure the port is available.
 	for _, network := range res.Networks {
 		desc := portDescriptor{network, res.Transport, res.Port}
 		if addrs, ok := pm.allocatedPorts[desc]; ok {
-			if !addrs.isAvailable(res) {
+			if !addrs.isAvailable(res, portSpecified) {
 				return false
 			}
 		}

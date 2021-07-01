@@ -576,6 +576,10 @@ void SetupTimeWaitClose(const TestAddress* listener,
                         bool accept_close, sockaddr_storage* listen_addr,
                         sockaddr_storage* conn_bound_addr);
 
+// MaybeLimitEphemeralPorts attempts to reduce the number of ephemeral ports and
+// returns the number of ephemeral ports.
+PosixErrorOr<int> MaybeLimitEphemeralPorts();
+
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
                                    SocketType type, bool reuse_addr);
