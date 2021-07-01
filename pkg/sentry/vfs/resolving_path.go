@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -327,7 +328,7 @@ func (rp *ResolvingPath) ShouldFollowSymlink() bool {
 // Postconditions: If HandleSymlink returns a nil error, then !rp.Done().
 func (rp *ResolvingPath) HandleSymlink(target string) error {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return syserror.ELOOP
+		return linuxerr.ELOOP
 	}
 	if len(target) == 0 {
 		return syserror.ENOENT
@@ -377,7 +378,7 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 // Preconditions: !rp.Done().
 func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return syserror.ELOOP
+		return linuxerr.ELOOP
 	}
 	rp.symlinks++
 	// Consume the path component that represented the magic link.

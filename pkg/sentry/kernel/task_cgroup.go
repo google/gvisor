@@ -20,8 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // EnterInitialCgroups moves t into an initial set of cgroups.
@@ -67,7 +67,7 @@ func (t *Task) EnterCgroup(c Cgroup) error {
 				//
 				// TODO(b/183137098): Implement cgroup migration.
 				log.Warningf("Cgroup migration is not implemented")
-				return syserror.EBUSY
+				return linuxerr.EBUSY
 			}
 		}
 	}

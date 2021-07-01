@@ -283,7 +283,7 @@ type InodeOperations interface {
 	//
 	// Any error returned from Getlink other than ErrResolveViaReadlink
 	// indicates the caller's inability to traverse this Inode as a link
-	// (e.g. syserror.ENOLINK indicates that the Inode is not a link,
+	// (e.g. linuxerr.ENOLINK indicates that the Inode is not a link,
 	// syscall.EPERM indicates that traversing the link is not allowed, etc).
 	Getlink(context.Context, *Inode) (*Dirent, error)
 

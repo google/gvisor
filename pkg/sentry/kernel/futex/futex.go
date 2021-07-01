@@ -123,7 +123,7 @@ func check(t Target, addr hostarch.Addr, val uint32) error {
 		return err
 	}
 	if cur != val {
-		return syserror.EAGAIN
+		return linuxerr.EAGAIN
 	}
 	return nil
 }
@@ -671,7 +671,7 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint
 			return false, err
 		}
 		if (cur & linux.FUTEX_TID_MASK) == tid {
-			return false, syserror.EDEADLK
+			return false, linuxerr.EDEADLK
 		}
 
 		if (cur & linux.FUTEX_TID_MASK) == 0 {
@@ -774,7 +774,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		if prev != cur {
 			// Let user mode handle CAS races. This is different than lock, which
 			// retries when CAS fails.
-			return syserror.EAGAIN
+			return linuxerr.EAGAIN
 		}
 		return nil
 	}

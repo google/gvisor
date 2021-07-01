@@ -160,7 +160,7 @@ func tryLockPI(t *kernel.Task, addr hostarch.Addr, private bool) error {
 		return err
 	}
 	if !locked {
-		return syserror.EWOULDBLOCK
+		return linuxerr.EWOULDBLOCK
 	}
 	return nil
 }

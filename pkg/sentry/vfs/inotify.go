@@ -185,12 +185,12 @@ func (i *Inotify) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // PRead implements FileDescriptionImpl.PRead.
 func (*Inotify) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // PWrite implements FileDescriptionImpl.PWrite.
 func (*Inotify) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // Write implements FileDescriptionImpl.Write.

@@ -299,7 +299,7 @@ func (i *Inode) RemoveXattr(ctx context.Context, d *Dirent, name string) error {
 func (i *Inode) CheckPermission(ctx context.Context, p PermMask) error {
 	// First check the outer-most mounted filesystem.
 	if p.Write && i.MountSource.Flags.ReadOnly {
-		return syserror.EROFS
+		return linuxerr.EROFS
 	}
 
 	if i.overlay != nil {
@@ -313,7 +313,7 @@ func (i *Inode) CheckPermission(ctx context.Context, p PermMask) error {
 		// we should not attempt to modify the writable layer if it
 		// is mounted read-only.
 		if p.Write && overlayUpperMountSource(i.MountSource).Flags.ReadOnly {
-			return syserror.EROFS
+			return linuxerr.EROFS
 		}
 	}
 

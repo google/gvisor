@@ -23,9 +23,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	pb "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -155,7 +155,7 @@ func (s *socketEmitter) Emit(msg proto.Message) (bool, error) {
 	for done := 0; done < len(p); {
 		n, err := s.socket.Write(p[done:])
 		if err != nil {
-			return (err == unix.EPIPE), err
+			return linuxerr.Equals(linuxerr.EPIPE, err), err
 		}
 		done += n
 	}

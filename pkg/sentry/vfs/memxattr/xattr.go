@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -49,7 +50,7 @@ func (x *SimpleExtendedAttributes) GetXattr(creds *auth.Credentials, mode linux.
 	value, ok := x.xattrs[opts.Name]
 	x.mu.RUnlock()
 	if !ok {
-		return "", syserror.ENODATA
+		return "", linuxerr.ENODATA
 	}
 	// Check that the size of the buffer provided in getxattr(2) is large enough
 	// to contain the value.
@@ -69,7 +70,7 @@ func (x *SimpleExtendedAttributes) SetXattr(creds *auth.Credentials, mode linux.
 	defer x.mu.Unlock()
 	if x.xattrs == nil {
 		if opts.Flags&linux.XATTR_REPLACE != 0 {
-			return syserror.ENODATA
+			return linuxerr.ENODATA
 		}
 		x.xattrs = make(map[string]string)
 	}
@@ -79,7 +80,7 @@ func (x *SimpleExtendedAttributes) SetXattr(creds *auth.Credentials, mode linux.
 		return syserror.EEXIST
 	}
 	if !ok && opts.Flags&linux.XATTR_REPLACE != 0 {
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	}
 
 	x.xattrs[opts.Name] = opts.Value
@@ -120,7 +121,7 @@ func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode lin
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if _, ok := x.xattrs[name]; !ok {
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	}
 	delete(x.xattrs, name)
 	return nil

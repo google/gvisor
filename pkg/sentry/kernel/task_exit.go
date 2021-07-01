@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -942,7 +943,7 @@ func (t *Task) waitOnce(opts *WaitOptions) (*WaitResult, error) {
 	if anyWaitableTasks {
 		return nil, ErrNoWaitableEvent
 	}
-	return nil, syserror.ECHILD
+	return nil, linuxerr.ECHILD
 }
 
 // Preconditions: The TaskSet mutex must be locked for writing.

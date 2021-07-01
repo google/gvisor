@@ -113,7 +113,7 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, errOrig, intr er
 		// Do not consume the error and return it as EFBIG.
 		// Simultaneously send a SIGXFSZ per setrlimit(2).
 		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
-		return true, syserror.EFBIG
+		return true, linuxerr.EFBIG
 	case linuxerr.Equals(linuxerr.EINTR, translatedErr):
 		// The syscall was interrupted. Return nil if it completed
 		// partially, otherwise return the error code that the syscall

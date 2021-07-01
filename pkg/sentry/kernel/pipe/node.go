@@ -113,7 +113,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 			// read side isn't open yet.
 			if flags.NonBlocking {
 				w.DecRef(ctx)
-				return nil, syserror.ENXIO
+				return nil, linuxerr.ENXIO
 			}
 
 			if !waitFor(&i.mu, &i.rWakeup, ctx) {
@@ -136,5 +136,5 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 }
 
 func (*inodeOperations) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
-	return syserror.EPIPE
+	return linuxerr.EPIPE
 }

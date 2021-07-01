@@ -1159,7 +1159,7 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest hosta
 	// enabled, in which case fd.d.hash should be set.
 	if len(fd.d.hash) == 0 {
 		if fd.d.fs.allowRuntimeEnable {
-			return 0, syserror.ENODATA
+			return 0, linuxerr.ENODATA
 		}
 		return 0, fd.d.fs.alertIntegrityViolation("Ioctl measureVerity: no hash found")
 	}
@@ -1169,7 +1169,7 @@ func (fd *fileDescription) measureVerity(ctx context.Context, verityDigest hosta
 		return 0, err
 	}
 	if metadata.DigestSize < uint16(len(fd.d.hash)) {
-		return 0, syserror.EOVERFLOW
+		return 0, linuxerr.EOVERFLOW
 	}
 
 	// Populate the output digest size, since DigestSize is both input and
@@ -1298,12 +1298,12 @@ func (fd *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, of
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EROFS
+	return 0, linuxerr.EROFS
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EROFS
+	return 0, linuxerr.EROFS
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
@@ -1319,7 +1319,7 @@ func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapO
 
 	// Check if mmap is allowed on the lower filesystem.
 	if !opts.SentryOwnedContent {
-		return syserror.ENODEV
+		return linuxerr.ENODEV
 	}
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }

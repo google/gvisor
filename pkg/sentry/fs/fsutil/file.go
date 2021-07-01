@@ -46,7 +46,7 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 
 	// Does the Inode represents a non-seekable type?
 	if fs.IsPipe(inode.StableAttr) || fs.IsSocket(inode.StableAttr) {
-		return current, syserror.ESPIPE
+		return current, linuxerr.ESPIPE
 	}
 
 	// Does the Inode represent a character device?
@@ -162,7 +162,7 @@ type FilePipeSeek struct{}
 
 // Seek implements fs.FileOperations.Seek.
 func (FilePipeSeek) Seek(context.Context, *fs.File, fs.SeekWhence, int64) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // FileNotDirReaddir implements fs.FileOperations.Readdir for non-directories.
@@ -205,7 +205,7 @@ type FileNoMMap struct{}
 
 // ConfigureMMap implements fs.FileOperations.ConfigureMMap.
 func (FileNoMMap) ConfigureMMap(context.Context, *fs.File, *memmap.MMapOpts) error {
-	return syserror.ENODEV
+	return linuxerr.ENODEV
 }
 
 // GenericConfigureMMap implements fs.FileOperations.ConfigureMMap for most

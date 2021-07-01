@@ -380,7 +380,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		mlockLimit := limits.FromContext(ctx).Get(limits.MemoryLocked).Cur
 		if creds := auth.CredentialsFromContext(ctx); !creds.HasCapabilityIn(linux.CAP_IPC_LOCK, creds.UserNamespace.Root()) {
 			if newLockedAS := mm.lockedAS - oldSize + newSize; newLockedAS > mlockLimit {
-				return 0, syserror.EAGAIN
+				return 0, linuxerr.EAGAIN
 			}
 		}
 	}
@@ -860,7 +860,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 					return syserror.ENOMEM
 				}
 				if linuxerr.Equals(linuxerr.ENOMEM, err) {
-					return syserror.EAGAIN
+					return linuxerr.EAGAIN
 				}
 				return err
 			}
@@ -1151,7 +1151,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 		vma := vseg.ValuePtr()
 		if opts.Invalidate && vma.mlockMode != memmap.MLockNone {
 			mm.mappingMu.RUnlock()
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		// It's only possible to have dirtied the Mappable through a shared
 		// mapping. Don't check if the mapping is writable, because mprotect

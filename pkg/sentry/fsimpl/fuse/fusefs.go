@@ -397,7 +397,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		return nil, syserror.ENOTDIR
 	}
 	if opts.Flags&linux.O_LARGEFILE == 0 && atomic.LoadUint64(&i.size) > linux.MAX_NON_LFS {
-		return nil, syserror.EOVERFLOW
+		return nil, linuxerr.EOVERFLOW
 	}
 
 	var fd *fileDescription

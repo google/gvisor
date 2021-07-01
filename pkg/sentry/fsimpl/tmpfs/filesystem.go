@@ -71,7 +71,7 @@ afterSymlink:
 		return d.parent, nil
 	}
 	if len(name) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 	child, ok := dir.childMap[name]
 	if !ok {
@@ -165,7 +165,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return syserror.EEXIST
 	}
 	if len(name) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 	if _, ok := parentDir.childMap[name]; ok {
 		return syserror.EEXIST
@@ -247,7 +247,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parentDir *directory, name string) error {
 		if rp.Mount() != vd.Mount() {
-			return syserror.EXDEV
+			return linuxerr.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
 		i := d.inode
@@ -261,7 +261,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return syserror.ENOENT
 		}
 		if i.nlink == maxLinks {
-			return syserror.EMLINK
+			return linuxerr.EMLINK
 		}
 		i.incLinksLocked()
 		i.watches.Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
@@ -275,7 +275,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, true /* dir */, func(parentDir *directory, name string) error {
 		creds := rp.Credentials()
 		if parentDir.inode.nlink == maxLinks {
-			return syserror.EMLINK
+			return linuxerr.EMLINK
 		}
 		parentDir.inode.incLinksLocked() // from child's ".."
 		childDir := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
@@ -373,7 +373,7 @@ afterTrailingSymlink:
 		return nil, syserror.EISDIR
 	}
 	if len(name) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 	// Determine whether or not we need to create a file.
 	child, ok := parentDir.childMap[name]
@@ -467,13 +467,13 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		return &fd.vfsfd, nil
 	case *symlink:
 		// Can't open symlinks without O_PATH, which is handled at the VFS layer.
-		return nil, syserror.ELOOP
+		return nil, linuxerr.ELOOP
 	case *namedPipe:
 		return impl.pipe.Open(ctx, rp.Mount(), &d.vfsd, opts.Flags, &d.inode.locks)
 	case *deviceFile:
 		return rp.VirtualFilesystem().OpenDeviceSpecialFile(ctx, rp.Mount(), &d.vfsd, impl.kind, impl.major, impl.minor, opts)
 	case *socketFile:
-		return nil, syserror.ENXIO
+		return nil, linuxerr.ENXIO
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", d.inode.impl))
 	}
@@ -515,11 +515,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
 			return syserror.EEXIST
 		}
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
@@ -570,7 +570,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return syserror.EISDIR
 			}
 			if len(replacedDir.childMap) != 0 {
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 		} else {
 			if rp.MustBeDir() {
@@ -582,7 +582,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	} else {
 		if renamed.inode.isDir() && newParentDir.inode.nlink == maxLinks {
-			return syserror.EMLINK
+			return linuxerr.EMLINK
 		}
 	}
 	// tmpfs never calls VFS.InvalidateDentry(), so newParentDir.dentry can
@@ -650,7 +650,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return linuxerr.EINVAL
 	}
 	if name == ".." {
-		return syserror.ENOTEMPTY
+		return linuxerr.ENOTEMPTY
 	}
 	child, ok := parentDir.childMap[name]
 	if !ok {
@@ -664,7 +664,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return syserror.ENOTDIR
 	}
 	if len(childDir.childMap) != 0 {
-		return syserror.ENOTEMPTY
+		return linuxerr.ENOTEMPTY
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -807,11 +807,11 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	switch impl := d.inode.impl.(type) {
 	case *socketFile:
 		if impl.ep == nil {
-			return nil, syserror.ECONNREFUSED
+			return nil, linuxerr.ECONNREFUSED
 		}
 		return impl.ep, nil
 	default:
-		return nil, syserror.ECONNREFUSED
+		return nil, linuxerr.ECONNREFUSED
 	}
 }
 

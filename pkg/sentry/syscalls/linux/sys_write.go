@@ -95,7 +95,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Is writing at an offset supported?
 	if !file.Flags().Pwrite {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Check that the file is writable.
@@ -172,7 +172,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	// Is writing at an offset supported?
 	if !file.Flags().Pwrite {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Check that the file is writable.
@@ -225,7 +225,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Is writing at an offset supported?
 	if offset > -1 && !file.Flags().Pwrite {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is

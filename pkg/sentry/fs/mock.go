@@ -17,7 +17,6 @@ package fs
 import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // MockInodeOperations implements InodeOperations for testing Inodes.
@@ -173,5 +172,5 @@ func (n *MockInodeOperations) RemoveDirectory(context.Context, *Inode, string) e
 
 // Getlink implements fs.InodeOperations.Getlink.
 func (n *MockInodeOperations) Getlink(context.Context, *Inode) (*Dirent, error) {
-	return nil, syserror.ENOLINK
+	return nil, linuxerr.ENOLINK
 }

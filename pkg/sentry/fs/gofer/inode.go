@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -476,7 +477,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 	switch d.Inode.StableAttr.Type {
 	case fs.Socket:
 		if i.session().overrides != nil {
-			return nil, syserror.ENXIO
+			return nil, linuxerr.ENXIO
 		}
 		return i.getFileSocket(ctx, d, flags)
 	case fs.Pipe:
@@ -676,7 +677,7 @@ func (i *inodeOperations) Readlink(ctx context.Context, inode *fs.Inode) (string
 // Getlink implementfs fs.InodeOperations.Getlink.
 func (i *inodeOperations) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 	if !fs.IsSymlink(i.fileState.sattr) {
-		return nil, syserror.ENOLINK
+		return nil, linuxerr.ENOLINK
 	}
 	return nil, fs.ErrResolveViaReadlink
 }
@@ -714,7 +715,7 @@ func (i *inodeOperations) configureMMap(file *fs.File, opts *memmap.MMapOpts) er
 	if i.fileState.hostMappable != nil {
 		return fsutil.GenericConfigureMMap(file, i.fileState.hostMappable, opts)
 	}
-	return syserror.ENODEV
+	return linuxerr.ENODEV
 }
 
 func init() {

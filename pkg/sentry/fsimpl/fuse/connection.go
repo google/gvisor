@@ -19,9 +19,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -252,11 +252,11 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 	}
 
 	if !conn.connected {
-		return nil, syserror.ENOTCONN
+		return nil, linuxerr.ENOTCONN
 	}
 
 	if conn.connInitError {
-		return nil, syserror.ECONNREFUSED
+		return nil, linuxerr.ECONNREFUSED
 	}
 
 	fut, err := conn.callFuture(t, r)
@@ -306,7 +306,7 @@ func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureRes
 		conn.mu.Unlock()
 		// we checked connected before,
 		// this must be due to aborted connection.
-		return nil, syserror.ECONNABORTED
+		return nil, linuxerr.ECONNABORTED
 	}
 	conn.mu.Unlock()
 

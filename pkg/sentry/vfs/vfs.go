@@ -494,7 +494,7 @@ func (vfs *VirtualFilesystem) ReadlinkAt(ctx context.Context, creds *auth.Creden
 func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credentials, oldpop, newpop *PathOperation, opts *RenameOptions) error {
 	if !oldpop.Path.Begin.Ok() {
 		if oldpop.Path.Absolute {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		return syserror.ENOENT
 	}
@@ -509,13 +509,13 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 	}
 	if oldName == "." || oldName == ".." {
 		oldParentVD.DecRef(ctx)
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	if !newpop.Path.Begin.Ok() {
 		oldParentVD.DecRef(ctx)
 		if newpop.Path.Absolute {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		return syserror.ENOENT
 	}
@@ -556,7 +556,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with unlinkat(dirfd, "", AT_REMOVEDIR).
 		if pop.Path.Absolute {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		return syserror.ENOENT
 	}
@@ -673,7 +673,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with unlinkat(dirfd, "", 0).
 		if pop.Path.Absolute {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		return syserror.ENOENT
 	}

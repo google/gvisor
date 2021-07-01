@@ -128,7 +128,7 @@ func (l *fsLookup) OpenPath(ctx context.Context, path string, opts vfs.OpenOptio
 	defer d.DecRef(ctx)
 
 	if !resolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
-		return nil, syserror.ELOOP
+		return nil, linuxerr.ELOOP
 	}
 
 	fsPerm := openOptionsToPermMask(&opts)

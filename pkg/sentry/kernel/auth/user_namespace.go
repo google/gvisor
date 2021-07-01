@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
@@ -106,7 +105,7 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	if c.UserNamespace.depth() >= maxUserNamespaceDepth {
 		// "... Calls to unshare(2) or clone(2) that would cause this limit to
 		// be exceeded fail with the error EUSERS." - user_namespaces(7)
-		return nil, syserror.EUSERS
+		return nil, linuxerr.EUSERS
 	}
 	// "EPERM: CLONE_NEWUSER was specified in flags, but either the effective
 	// user ID or the effective group ID of the caller does not have a mapping

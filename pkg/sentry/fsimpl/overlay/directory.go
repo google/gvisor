@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func (d *dentry) isDir() bool {
@@ -70,7 +69,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 				return nil
 			}
 			// Non-whiteout file in the directory prevents rmdir.
-			return syserror.ENOTEMPTY
+			return linuxerr.ENOTEMPTY
 		}))
 		if err != nil {
 			readdirErr = err
@@ -89,7 +88,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 			}
 			if stat.RdevMajor != 0 || stat.RdevMinor != 0 {
 				// This file is a real character device, not a whiteout.
-				readdirErr = syserror.ENOTEMPTY
+				readdirErr = linuxerr.ENOTEMPTY
 				return false
 			}
 			whiteouts[maybeWhiteoutName] = isUpper

@@ -244,7 +244,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr hostarch.Addr, maxlen int, o
 		}
 		addr = end
 	}
-	return gohacks.StringFromImmutableBytes(buf), syserror.ENAMETOOLONG
+	return gohacks.StringFromImmutableBytes(buf), linuxerr.ENAMETOOLONG
 }
 
 // CopyOutVec copies bytes from src to the memory mapped at ars in uio. The

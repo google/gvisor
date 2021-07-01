@@ -1704,7 +1704,7 @@ func (d *dentry) listXattr(ctx context.Context, creds *auth.Credentials, size ui
 
 func (d *dentry) getXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
 	if d.file.isNil() {
-		return "", syserror.ENODATA
+		return "", linuxerr.ENODATA
 	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err

@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
@@ -268,7 +269,7 @@ func (f *fileOperations) Flush(context.Context, *fs.File) error {
 // ConfigureMMap implements fs.FileOperations.ConfigureMMap.
 func (f *fileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MMapOpts) error {
 	if !canMap(file.Dirent.Inode) {
-		return syserror.ENODEV
+		return linuxerr.ENODEV
 	}
 	return fsutil.GenericConfigureMMap(file, f.iops.cachingInodeOps, opts)
 }

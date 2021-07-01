@@ -74,7 +74,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 				newLockedAS -= mm.mlockedBytesRangeLocked(ar)
 			}
 			if newLockedAS > mlockLimit {
-				return vmaIterator{}, hostarch.AddrRange{}, syserror.EAGAIN
+				return vmaIterator{}, hostarch.AddrRange{}, linuxerr.EAGAIN
 			}
 		}
 	}

@@ -47,7 +47,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Name is the default filesystem name.
@@ -278,7 +277,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if rootStat.Mask&rootStatMask != rootStatMask {
 		root.destroyLocked(ctx)
 		fs.vfsfs.DecRef(ctx)
-		return nil, nil, syserror.EREMOTE
+		return nil, nil, linuxerr.EREMOTE
 	}
 	if isWhiteout(&rootStat) {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: filesystem root is a whiteout")

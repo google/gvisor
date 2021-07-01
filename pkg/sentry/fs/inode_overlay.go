@@ -344,7 +344,7 @@ func overlayRemove(ctx context.Context, o *overlayEntry, parent *Dirent, child *
 			return err
 		}
 		if ser.Written() != 0 {
-			return syserror.ENOTEMPTY
+			return linuxerr.ENOTEMPTY
 		}
 	}
 	if child.Inode.overlay.upper != nil {
@@ -375,7 +375,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 	// Maybe some day we can allow the more complicated case of
 	// non-overlay X overlay renames, but that's not necessary right now.
 	if renamed.Inode.overlay == nil || newParent.Inode.overlay == nil || oldParent.Inode.overlay == nil {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 
 	if replacement {
@@ -421,7 +421,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 				// need to bother checking for them.
 				if len(children) > 0 {
 					replaced.DecRef(ctx)
-					return syserror.ENOTEMPTY
+					return linuxerr.ENOTEMPTY
 				}
 			}
 
@@ -553,7 +553,7 @@ func overlayGetXattr(ctx context.Context, o *overlayEntry, name string, size uin
 	// Don't forward the value of the extended attribute if it would
 	// unexpectedly change the behavior of a wrapping overlay layer.
 	if isXattrOverlay(name) {
-		return "", syserror.ENODATA
+		return "", linuxerr.ENODATA
 	}
 
 	o.copyMu.RLock()
