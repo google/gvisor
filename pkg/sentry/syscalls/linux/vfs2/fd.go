@@ -57,7 +57,7 @@ func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	newFD, err := t.NewFDFromVFS2(0, file, kernel.FDFlags{})
 	if err != nil {
-		return 0, nil, syserror.EMFILE
+		return 0, nil, linuxerr.EMFILE
 	}
 	return uintptr(newFD), nil, nil
 }
@@ -411,7 +411,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	// If the FD refers to a pipe or FIFO, return error.
 	if _, isPipe := file.Impl().(*pipe.VFSPipeFD); isPipe {
-		return 0, nil, syserror.ESPIPE
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	switch advice {

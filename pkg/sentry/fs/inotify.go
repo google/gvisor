@@ -117,7 +117,7 @@ func (i *Inotify) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // Seek implements FileOperations.Seek.
 func (*Inotify) Seek(context.Context, *File, SeekWhence, int64) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // Readdir implements FileOperatons.Readdir.
@@ -199,7 +199,7 @@ func (*Inotify) Flush(context.Context, *File) error {
 
 // ConfigureMMap implements FileOperations.ConfigureMMap.
 func (*Inotify) ConfigureMMap(context.Context, *File, *memmap.MMapOpts) error {
-	return syserror.ENODEV
+	return linuxerr.ENODEV
 }
 
 // UnstableAttr implements FileOperations.UnstableAttr.

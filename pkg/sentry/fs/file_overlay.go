@@ -358,7 +358,7 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 	}
 
 	if !o.isMappableLocked() {
-		return syserror.ENODEV
+		return linuxerr.ENODEV
 	}
 
 	// FIXME(jamieliu): This is a copy/paste of fsutil.GenericConfigureMMap,

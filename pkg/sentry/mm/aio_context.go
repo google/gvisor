@@ -163,7 +163,7 @@ func (ctx *AIOContext) Prepare() error {
 	}
 	if ctx.outstanding >= ctx.maxOutstanding {
 		// Context is busy.
-		return syserror.EAGAIN
+		return linuxerr.EAGAIN
 	}
 	ctx.outstanding++
 	return nil

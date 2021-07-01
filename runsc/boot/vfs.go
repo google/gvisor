@@ -45,7 +45,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -663,7 +662,7 @@ func (c *containerMounter) mountTmpVFS2(ctx context.Context, conf *config.Config
 
 		err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
 			if dirent.Name != "." && dirent.Name != ".." {
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 			return nil
 		}))

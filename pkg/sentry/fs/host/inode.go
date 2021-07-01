@@ -277,7 +277,7 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) transport.
 // GetFile implements fs.InodeOperations.GetFile.
 func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	if fs.IsSocket(d.Inode.StableAttr) {
-		return nil, syserror.ENXIO
+		return nil, linuxerr.ENXIO
 	}
 
 	return newFile(ctx, d, flags, i), nil
@@ -393,7 +393,7 @@ func (i *inodeOperations) Readlink(ctx context.Context, inode *fs.Inode) (string
 // Getlink implements fs.InodeOperations.Getlink.
 func (i *inodeOperations) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 	if !fs.IsSymlink(i.fileState.sattr) {
-		return nil, syserror.ENOLINK
+		return nil, linuxerr.ENOLINK
 	}
 	return nil, fs.ErrResolveViaReadlink
 }

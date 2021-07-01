@@ -1375,7 +1375,7 @@ func (d *Dirent) mayDelete(ctx context.Context, victim *Dirent) error {
 	}
 
 	if victim.IsRoot() {
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 
 	return nil

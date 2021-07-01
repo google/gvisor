@@ -219,7 +219,7 @@ func (i *InodeSimpleExtendedAttributes) GetXattr(_ context.Context, _ *fs.Inode,
 	value, ok := i.xattrs[name]
 	i.mu.RUnlock()
 	if !ok {
-		return "", syserror.ENOATTR
+		return "", linuxerr.ENOATTR
 	}
 	return value, nil
 }
@@ -230,7 +230,7 @@ func (i *InodeSimpleExtendedAttributes) SetXattr(_ context.Context, _ *fs.Inode,
 	defer i.mu.Unlock()
 	if i.xattrs == nil {
 		if flags&linux.XATTR_REPLACE != 0 {
-			return syserror.ENODATA
+			return linuxerr.ENODATA
 		}
 		i.xattrs = make(map[string]string)
 	}
@@ -240,7 +240,7 @@ func (i *InodeSimpleExtendedAttributes) SetXattr(_ context.Context, _ *fs.Inode,
 		return syserror.EEXIST
 	}
 	if !ok && flags&linux.XATTR_REPLACE != 0 {
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	}
 
 	i.xattrs[name] = value
@@ -266,7 +266,7 @@ func (i *InodeSimpleExtendedAttributes) RemoveXattr(_ context.Context, _ *fs.Ino
 		delete(i.xattrs, name)
 		return nil
 	}
-	return syserror.ENOATTR
+	return linuxerr.ENOATTR
 }
 
 // staticFile is a file with static contents. It is returned by
@@ -449,12 +449,12 @@ type InodeNotSymlink struct{}
 
 // Readlink implements fs.InodeOperations.Readlink.
 func (InodeNotSymlink) Readlink(context.Context, *fs.Inode) (string, error) {
-	return "", syserror.ENOLINK
+	return "", linuxerr.ENOLINK
 }
 
 // Getlink implements fs.InodeOperations.Getlink.
 func (InodeNotSymlink) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
-	return nil, syserror.ENOLINK
+	return nil, linuxerr.ENOLINK
 }
 
 // InodeNoExtendedAttributes can be used by Inodes that do not support

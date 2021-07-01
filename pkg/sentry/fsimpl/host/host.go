@@ -115,7 +115,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 	// be memory-mappable.
 	if !seekable && fileType == unix.S_IFREG {
 		ctx.Infof("host.newInode: host FD %d is a non-seekable regular file", hostFD)
-		return nil, syserror.ESPIPE
+		return nil, linuxerr.ESPIPE
 	}
 
 	i := &inode{
@@ -471,7 +471,7 @@ func (i *inode) DecRef(ctx context.Context) {
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	// Once created, we cannot re-open a socket fd through /proc/[pid]/fd/.
 	if i.Mode().FileType() == linux.S_IFSOCK {
-		return nil, syserror.ENXIO
+		return nil, linuxerr.ENXIO
 	}
 	return i.open(ctx, d, rp.Mount(), opts.Flags)
 }
@@ -590,7 +590,7 @@ func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, off
 
 	i := f.inode
 	if !i.seekable {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 
 	return readFromHostFD(ctx, i.hostFD, dst, offset, opts.Flags)
@@ -661,7 +661,7 @@ func readFromHostFD(ctx context.Context, hostFD int, dst usermem.IOSequence, off
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	if !f.inode.seekable {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 
 	return f.writeToHostFD(ctx, src, offset, opts.Flags)
@@ -722,7 +722,7 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (int64, error) {
 	i := f.inode
 	if !i.seekable {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 
 	f.offsetMu.Lock()
@@ -738,7 +738,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 	case linux.SEEK_CUR:
 		// Check for overflow. Note that underflow cannot occur, since f.offset >= 0.
 		if offset > math.MaxInt64-f.offset {
-			return f.offset, syserror.EOVERFLOW
+			return f.offset, linuxerr.EOVERFLOW
 		}
 		if f.offset+offset < 0 {
 			return f.offset, linuxerr.EINVAL
@@ -754,7 +754,7 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 
 		// Check for overflow. Note that underflow cannot occur, since size >= 0.
 		if offset > math.MaxInt64-size {
-			return f.offset, syserror.EOVERFLOW
+			return f.offset, linuxerr.EOVERFLOW
 		}
 		if size+offset < 0 {
 			return f.offset, linuxerr.EINVAL
@@ -791,7 +791,7 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 	// NOTE(b/38213152): Technically, some obscure char devices can be memory
 	// mapped, but we only allow regular files.
 	if f.inode.ftype != unix.S_IFREG {
-		return syserror.ENODEV
+		return linuxerr.ENODEV
 	}
 	i := f.inode
 	i.CachedMappable.InitFileMapperOnce()

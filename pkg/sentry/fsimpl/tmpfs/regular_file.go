@@ -713,7 +713,7 @@ func AddSeals(fd *vfs.FileDescription, val uint32) error {
 	// F_SEAL_WRITE can only be added if there are no active writable maps.
 	if rf.seals&linux.F_SEAL_WRITE == 0 && val&linux.F_SEAL_WRITE != 0 {
 		if rf.writableMappingPages > 0 {
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 	}
 

@@ -208,7 +208,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 		args.File = nil
 	}
 
-	return loadedELF{}, nil, nil, nil, syserror.ELOOP
+	return loadedELF{}, nil, nil, nil, linuxerr.ELOOP
 }
 
 // Load loads args.File into a MemoryManager. If args.File is nil, the path

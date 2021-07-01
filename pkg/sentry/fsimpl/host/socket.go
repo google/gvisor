@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -159,7 +158,7 @@ func (c *ConnectedEndpoint) Send(ctx context.Context, data [][]byte, controlMess
 	if n < totalLen && err == nil {
 		// The host only returns a short write if it would otherwise
 		// block (and only for stream sockets).
-		err = syserror.EAGAIN
+		err = linuxerr.EAGAIN
 	}
 	if n > 0 && !linuxerr.Equals(linuxerr.EAGAIN, err) {
 		// The caller may need to block to send more data, but

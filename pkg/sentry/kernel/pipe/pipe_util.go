@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -86,7 +87,7 @@ func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error)
 	if n > 0 {
 		p.Notify(waiter.ReadableEvents)
 	}
-	if err == unix.EPIPE {
+	if linuxerr.Equals(linuxerr.EPIPE, err) {
 		// If we are returning EPIPE send SIGPIPE to the task.
 		if sendSig := linux.SignalNoInfoFuncFromContext(ctx); sendSig != nil {
 			sendSig(linux.SIGPIPE)

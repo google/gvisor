@@ -209,7 +209,7 @@ func (d *Dir) removeChildLocked(ctx context.Context, name string) (*fs.Inode, er
 // Remove removes the named non-directory.
 func (d *Dir) Remove(ctx context.Context, _ *fs.Inode, name string) error {
 	if len(name) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 
 	d.mu.Lock()
@@ -227,7 +227,7 @@ func (d *Dir) Remove(ctx context.Context, _ *fs.Inode, name string) error {
 // RemoveDirectory removes the named directory.
 func (d *Dir) RemoveDirectory(ctx context.Context, _ *fs.Inode, name string) error {
 	if len(name) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 
 	d.mu.Lock()
@@ -241,7 +241,7 @@ func (d *Dir) RemoveDirectory(ctx context.Context, _ *fs.Inode, name string) err
 	if ok, err := hasChildren(ctx, childInode); err != nil {
 		return err
 	} else if ok {
-		return syserror.ENOTEMPTY
+		return linuxerr.ENOTEMPTY
 	}
 
 	// Child was empty. Proceed with removal.
@@ -260,7 +260,7 @@ func (d *Dir) RemoveDirectory(ctx context.Context, _ *fs.Inode, name string) err
 // with a reference.
 func (d *Dir) Lookup(ctx context.Context, _ *fs.Inode, p string) (*fs.Dirent, error) {
 	if len(p) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 
 	d.mu.Lock()
@@ -293,7 +293,7 @@ func (d *Dir) walkLocked(ctx context.Context, p string) (*fs.Inode, error) {
 // makeInodeOperations. It is the common logic for creating a new child.
 func (d *Dir) createInodeOperationsCommon(ctx context.Context, name string, makeInodeOperations func() (*fs.Inode, error)) (*fs.Inode, error) {
 	if len(name) > linux.NAME_MAX {
-		return nil, syserror.ENAMETOOLONG
+		return nil, linuxerr.ENAMETOOLONG
 	}
 
 	d.mu.Lock()
@@ -345,7 +345,7 @@ func (d *Dir) CreateLink(ctx context.Context, dir *fs.Inode, oldname, newname st
 // CreateHardLink creates a new hard link.
 func (d *Dir) CreateHardLink(ctx context.Context, dir *fs.Inode, target *fs.Inode, name string) error {
 	if len(name) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 
 	d.mu.Lock()
@@ -497,14 +497,14 @@ func hasChildren(ctx context.Context, inode *fs.Inode) (bool, error) {
 func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, newParent fs.InodeOperations, newName string, replacement bool) error {
 	op, ok := oldParent.(*Dir)
 	if !ok {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	np, ok := newParent.(*Dir)
 	if !ok {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if len(newName) > linux.NAME_MAX {
-		return syserror.ENAMETOOLONG
+		return linuxerr.ENAMETOOLONG
 	}
 
 	np.mu.Lock()
@@ -522,7 +522,7 @@ func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, n
 			if ok, err := hasChildren(ctx, replaced); err != nil {
 				return err
 			} else if ok {
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 		}
 

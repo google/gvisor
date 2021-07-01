@@ -605,7 +605,7 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 
 	dst, ok := dstDir.(interface{}).(*OrderedChildren)
 	if !ok {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if !dst.writable {
 		return linuxerr.EPERM
@@ -654,7 +654,7 @@ type InodeSymlink struct {
 
 // Open implements Inode.Open.
 func (InodeSymlink) Open(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return nil, syserror.ELOOP
+	return nil, linuxerr.ELOOP
 }
 
 // StaticDirectory is a standard implementation of a directory with static

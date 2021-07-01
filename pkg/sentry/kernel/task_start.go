@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -299,7 +300,7 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 		// Did we do a full cycle?
 		if tid == ns.last {
 			// No tid available.
-			return 0, syserror.EAGAIN
+			return 0, linuxerr.EAGAIN
 		}
 	}
 }

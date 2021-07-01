@@ -66,7 +66,7 @@ func (FileDescriptionDefaultImpl) StatFS(ctx context.Context) (linux.Statfs, err
 // should technically return EISDIR. Allocate should never be called for a
 // directory, because it requires a writable fd.
 func (FileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.ENODEV
+	return linuxerr.ENODEV
 }
 
 // Readiness implements waiter.Waitable.Readiness analogously to
@@ -120,7 +120,7 @@ func (FileDescriptionDefaultImpl) IterDirents(ctx context.Context, cb IterDirent
 // Seek implements FileDescriptionImpl.Seek analogously to
 // file_operations::llseek == NULL in Linux.
 func (FileDescriptionDefaultImpl) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	return 0, syserror.ESPIPE
+	return 0, linuxerr.ESPIPE
 }
 
 // Sync implements FileDescriptionImpl.Sync analogously to
@@ -132,7 +132,7 @@ func (FileDescriptionDefaultImpl) Sync(ctx context.Context) error {
 // ConfigureMMap implements FileDescriptionImpl.ConfigureMMap analogously to
 // file_operations::mmap == NULL in Linux.
 func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
-	return syserror.ENODEV
+	return linuxerr.ENODEV
 }
 
 // Ioctl implements FileDescriptionImpl.Ioctl analogously to
@@ -145,25 +145,25 @@ func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, arg
 // inode_operations::listxattr == NULL in Linux.
 func (FileDescriptionDefaultImpl) ListXattr(ctx context.Context, size uint64) ([]string, error) {
 	// This isn't exactly accurate; see FileDescription.ListXattr.
-	return nil, syserror.ENOTSUP
+	return nil, linuxerr.ENOTSUP
 }
 
 // GetXattr implements FileDescriptionImpl.GetXattr analogously to
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
 func (FileDescriptionDefaultImpl) GetXattr(ctx context.Context, opts GetXattrOptions) (string, error) {
-	return "", syserror.ENOTSUP
+	return "", linuxerr.ENOTSUP
 }
 
 // SetXattr implements FileDescriptionImpl.SetXattr analogously to
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
 func (FileDescriptionDefaultImpl) SetXattr(ctx context.Context, opts SetXattrOptions) error {
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // RemoveXattr implements FileDescriptionImpl.RemoveXattr analogously to
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
 func (FileDescriptionDefaultImpl) RemoveXattr(ctx context.Context, name string) error {
-	return syserror.ENOTSUP
+	return linuxerr.ENOTSUP
 }
 
 // DirectoryFileDescriptionDefaultImpl may be embedded by implementations of
@@ -468,27 +468,27 @@ func (NoLockFD) SupportsLocks() bool {
 
 // LockBSD implements FileDescriptionImpl.LockBSD.
 func (NoLockFD) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, block fslock.Blocker) error {
-	return syserror.ENOLCK
+	return linuxerr.ENOLCK
 }
 
 // UnlockBSD implements FileDescriptionImpl.UnlockBSD.
 func (NoLockFD) UnlockBSD(ctx context.Context, uid fslock.UniqueID) error {
-	return syserror.ENOLCK
+	return linuxerr.ENOLCK
 }
 
 // LockPOSIX implements FileDescriptionImpl.LockPOSIX.
 func (NoLockFD) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPID int32, t fslock.LockType, r fslock.LockRange, block fslock.Blocker) error {
-	return syserror.ENOLCK
+	return linuxerr.ENOLCK
 }
 
 // UnlockPOSIX implements FileDescriptionImpl.UnlockPOSIX.
 func (NoLockFD) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
-	return syserror.ENOLCK
+	return linuxerr.ENOLCK
 }
 
 // TestPOSIX implements FileDescriptionImpl.TestPOSIX.
 func (NoLockFD) TestPOSIX(ctx context.Context, uid fslock.UniqueID, t fslock.LockType, r fslock.LockRange) (linux.Flock, error) {
-	return linux.Flock{}, syserror.ENOLCK
+	return linux.Flock{}, linuxerr.ENOLCK
 }
 
 // BadLockFD implements Lock*/Unlock* portion of FileDescriptionImpl interface

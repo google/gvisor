@@ -244,7 +244,7 @@ func checkXattrPermissions(t *kernel.Task, i *fs.Inode, perms fs.PermMask) error
 		if perms.Write {
 			return linuxerr.EPERM
 		}
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	}
 
 	return i.CheckPermission(t, perms)

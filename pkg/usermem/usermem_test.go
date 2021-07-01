@@ -214,7 +214,7 @@ func TestCopyStringInNoTerminatingZeroByte(t *testing.T) {
 
 func TestCopyStringInTruncatedByMaxlen(t *testing.T) {
 	got, err := CopyStringIn(newContext(), newBytesIOString(strings.Repeat("A", 10)), 0, 5, IOOpts{})
-	if want, wantErr := strings.Repeat("A", 5), syserror.ENAMETOOLONG; got != want || err != wantErr {
+	if want, wantErr := strings.Repeat("A", 5), linuxerr.ENAMETOOLONG; got != want || err != wantErr {
 		t.Errorf("CopyStringIn: got (%q, %v), wanted (%q, %v)", got, err, want, wantErr)
 	}
 }

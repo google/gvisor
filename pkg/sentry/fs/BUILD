@@ -117,7 +117,6 @@ go_test(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/contexttest",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

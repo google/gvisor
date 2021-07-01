@@ -58,7 +58,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 	// Ensure that our parent directory is copied-up.
 	if d.parent == nil {
 		// d is a filesystem root with no upper layer.
-		return syserror.EROFS
+		return linuxerr.EROFS
 	}
 	if err := d.parent.copyUpLocked(ctx); err != nil {
 		return err
@@ -272,7 +272,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		}
 		if upperStat.Mask&linux.STATX_INO == 0 {
 			cleanupUndoCopyUp()
-			return syserror.EREMOTE
+			return linuxerr.EREMOTE
 		}
 		atomic.StoreUint32(&d.devMajor, upperStat.DevMajor)
 		atomic.StoreUint32(&d.devMinor, upperStat.DevMinor)

@@ -80,7 +80,7 @@ func (vp *VFSPipe) ReaderWriterPair(ctx context.Context, mnt *vfs.Mount, vfsd *v
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (*VFSPipe) Allocate(context.Context, uint64, uint64, uint64) error {
-	return syserror.ESPIPE
+	return linuxerr.ESPIPE
 }
 
 // Open opens the pipe represented by vp.
@@ -132,7 +132,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 			// side isn't open yet.
 			if statusFlags&linux.O_NONBLOCK != 0 {
 				fd.DecRef(ctx)
-				return nil, syserror.ENXIO
+				return nil, linuxerr.ENXIO
 			}
 			// Wait for a reader to open the other end.
 			if !waitFor(&vp.mu, &vp.rWakeup, ctx) {
@@ -225,7 +225,7 @@ func (fd *VFSPipeFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (fd *VFSPipeFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.ESPIPE
+	return linuxerr.ESPIPE
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

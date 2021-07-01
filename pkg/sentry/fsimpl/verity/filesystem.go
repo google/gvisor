@@ -712,7 +712,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	// Verity file system is read-only.
 	if ats&vfs.MayWrite != 0 {
-		return syserror.EROFS
+		return linuxerr.EROFS
 	}
 	var ds *[]*dentry
 	fs.renameMu.RLock()
@@ -762,26 +762,26 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	// Verity fs is read-only.
 	if opts.Flags&(linux.O_WRONLY|linux.O_CREAT) != 0 {
-		return nil, syserror.EROFS
+		return nil, linuxerr.EROFS
 	}
 
 	var ds *[]*dentry
@@ -839,7 +839,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 
 	// Verity fs is read-only.
 	if ats&vfs.MayWrite != 0 {
-		return nil, syserror.EROFS
+		return nil, linuxerr.EROFS
 	}
 
 	// Get the path to the target file. This is only used to provide path
@@ -973,19 +973,19 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
 func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.
 func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
 func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
@@ -1025,13 +1025,13 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.
 func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // BoundEndpointAt implements vfs.FilesystemImpl.BoundEndpointAt.
@@ -1042,7 +1042,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 	if _, err := fs.resolveLocked(ctx, rp, &ds); err != nil {
 		return nil, err
 	}
-	return nil, syserror.ECONNREFUSED
+	return nil, linuxerr.ECONNREFUSED
 }
 
 // ListXattrAt implements vfs.FilesystemImpl.ListXattrAt.
@@ -1080,13 +1080,13 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
 func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetXattrOptions) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
 func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, name string) error {
 	// Verity file system is read-only.
-	return syserror.EROFS
+	return linuxerr.EROFS
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

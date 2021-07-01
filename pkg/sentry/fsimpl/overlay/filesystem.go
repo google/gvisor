@@ -246,7 +246,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			return false
 		}
 		if stat.Mask&mask != mask {
-			lookupErr = syserror.EREMOTE
+			lookupErr = linuxerr.EREMOTE
 			return false
 		}
 
@@ -366,7 +366,7 @@ func (fs *filesystem) lookupLayerLocked(ctx context.Context, parent *dentry, nam
 			// Linux's overlayfs tends to return EREMOTE in cases where a file
 			// is unusable for reasons that are not better captured by another
 			// errno.
-			lookupErr = syserror.EREMOTE
+			lookupErr = linuxerr.EREMOTE
 			return false
 		}
 		if isWhiteout(&stat) {
@@ -621,7 +621,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		if rp.Mount() != vd.Mount() {
-			return syserror.EXDEV
+			return linuxerr.EXDEV
 		}
 		old := vd.Dentry().Impl().(*dentry)
 		if old.isDir() {
@@ -1036,11 +1036,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
 			return syserror.EEXIST
 		}
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	mnt := rp.Mount()
 	if mnt != oldParentVD.Mount() {
-		return syserror.EXDEV
+		return linuxerr.EXDEV
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
@@ -1108,7 +1108,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return syserror.EISDIR
 			}
 			if genericIsAncestorDentry(replaced, renamed) {
-				return syserror.ENOTEMPTY
+				return linuxerr.ENOTEMPTY
 			}
 			replaced.dirMu.Lock()
 			defer replaced.dirMu.Unlock()
@@ -1289,7 +1289,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return linuxerr.EINVAL
 	}
 	if name == ".." {
-		return syserror.ENOTEMPTY
+		return linuxerr.ENOTEMPTY
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)

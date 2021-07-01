@@ -230,7 +230,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, linuxerr.EBADF
 	}
 	if mode != 0 {
-		return 0, nil, syserror.ENOTSUP
+		return 0, nil, linuxerr.ENOTSUP
 	}
 	if offset < 0 || length <= 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -238,7 +238,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	size := offset + length
 	if size < 0 {
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 	limit := limits.FromContext(t).Get(limits.FileSize).Cur
 	if uint64(size) >= limit {
@@ -246,7 +246,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			Signo: int32(linux.SIGXFSZ),
 			Code:  linux.SI_USER,
 		})
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 
 	return 0, nil, file.Allocate(t, mode, uint64(offset), uint64(length))
@@ -468,7 +468,7 @@ func handleSetSizeError(t *kernel.Task, err error) error {
 	if err == syserror.ErrExceedsFileSizeLimit {
 		// Convert error to EFBIG and send a SIGXFSZ per setrlimit(2).
 		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
-		return syserror.EFBIG
+		return linuxerr.EFBIG
 	}
 	return err
 }

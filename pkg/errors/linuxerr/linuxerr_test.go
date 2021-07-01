@@ -69,7 +69,7 @@ func BenchmarkCompareLinuxerr(b *testing.B) {
 }
 
 func BenchmarkCompareSyserror(b *testing.B) {
-	globalError = syserror.EAGAIN
+	globalError = linuxerr.EAGAIN
 	j := 0
 	for i := b.N; i > 0; i-- {
 		if globalError == linuxerr.EACCES {
@@ -117,7 +117,7 @@ func BenchmarkSwitchSyserror(b *testing.B) {
 			j++
 		case syserror.EINTR:
 			j += 2
-		case syserror.EAGAIN:
+		case linuxerr.EAGAIN:
 			j += 3
 		}
 	}

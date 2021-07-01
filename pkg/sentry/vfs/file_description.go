@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -603,7 +602,7 @@ func (fd *FileDescription) EventUnregister(e *waiter.Entry) {
 // partial reads with a nil error.
 func (fd *FileDescription) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
 	if fd.opts.DenyPRead {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 	if !fd.readable {
 		return 0, linuxerr.EBADF
@@ -638,7 +637,7 @@ func (fd *FileDescription) Read(ctx context.Context, dst usermem.IOSequence, opt
 // return partial writes with a nil error.
 func (fd *FileDescription) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
 	if fd.opts.DenyPWrite {
-		return 0, syserror.ESPIPE
+		return 0, linuxerr.ESPIPE
 	}
 	if !fd.writable {
 		return 0, linuxerr.EBADF

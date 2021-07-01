@@ -166,6 +166,8 @@ var (
 	EWOULDBLOCK = EAGAIN
 	EDEADLOCK   = EDEADLK
 	ENONET      = ENOENT
+	ENOATTR     = ENODATA
+	ENOTSUP     = EOPNOTSUPP
 )
 
 // A nil *errors.Error denotes no error and is placed at the 0 index of

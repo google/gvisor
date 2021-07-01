@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -128,7 +127,7 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 		protocol = ipv6.ProtocolNumber
 		address = tcpip.Address(addr.Addr)
 	default:
-		return protocolAddress, syserror.ENOTSUP
+		return protocolAddress, linuxerr.ENOTSUP
 	}
 
 	protocolAddress = tcpip.ProtocolAddress{

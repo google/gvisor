@@ -90,7 +90,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	inOffset := int64(-1)
 	if inOffsetPtr != 0 {
 		if inIsPipe {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 		if inFile.Options().DenyPRead {
 			return 0, nil, linuxerr.EINVAL
@@ -105,7 +105,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	outOffset := int64(-1)
 	if outOffsetPtr != 0 {
 		if outIsPipe {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 		if outFile.Options().DenyPWrite {
 			return 0, nil, linuxerr.EINVAL
@@ -306,7 +306,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	offset := int64(-1)
 	if offsetAddr != 0 {
 		if inFile.Options().DenyPRead {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 		var offsetP primitive.Int64
 		if _, err := offsetP.CopyIn(t, offsetAddr); err != nil {

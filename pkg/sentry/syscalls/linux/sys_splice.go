@@ -143,7 +143,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Verify that when offset address is not null, infile must be
 		// seekable. The fs.Splice routine itself validates basic read.
 		if !inFile.Flags().Pread {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 
 		// Copy in the offset.
@@ -227,7 +227,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	switch {
 	case fs.IsPipe(inFileAttr) && !fs.IsPipe(outFileAttr):
 		if inOffset != 0 {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 		if outOffset != 0 {
 			if !outFile.Flags().Pwrite {
@@ -245,7 +245,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	case !fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if outOffset != 0 {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 		if inOffset != 0 {
 			if !inFile.Flags().Pread {
@@ -263,7 +263,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	case fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
 		if inOffset != 0 || outOffset != 0 {
-			return 0, nil, syserror.ESPIPE
+			return 0, nil, linuxerr.ESPIPE
 		}
 
 		// We may not refer to the same pipe; otherwise it's a continuous loop.

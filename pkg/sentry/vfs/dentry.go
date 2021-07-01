@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Dentry represents a node in a Filesystem tree at which a file exists.
@@ -200,7 +200,7 @@ func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dent
 	vfs.mountMu.Lock()
 	if mntns.mountpoints[d] != 0 {
 		vfs.mountMu.Unlock()
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	d.mu.Lock()
 	vfs.mountMu.Unlock()
@@ -253,12 +253,12 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 	vfs.mountMu.Lock()
 	if mntns.mountpoints[from] != 0 {
 		vfs.mountMu.Unlock()
-		return syserror.EBUSY
+		return linuxerr.EBUSY
 	}
 	if to != nil {
 		if mntns.mountpoints[to] != 0 {
 			vfs.mountMu.Unlock()
-			return syserror.EBUSY
+			return linuxerr.EBUSY
 		}
 		to.mu.Lock()
 	}

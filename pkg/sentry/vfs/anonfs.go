@@ -157,7 +157,7 @@ func (fs *anonFilesystem) OpenAt(ctx context.Context, rp *ResolvingPath, opts Op
 	if !rp.Done() {
 		return nil, syserror.ENOTDIR
 	}
-	return nil, syserror.ENODEV
+	return nil, linuxerr.ENODEV
 }
 
 // ReadlinkAt implements FilesystemImpl.ReadlinkAt.
@@ -251,7 +251,7 @@ func (fs *anonFilesystem) BoundEndpointAt(ctx context.Context, rp *ResolvingPath
 	if err := GenericCheckPermissions(rp.Credentials(), MayWrite, anonFileMode, anonFileUID, anonFileGID); err != nil {
 		return nil, err
 	}
-	return nil, syserror.ECONNREFUSED
+	return nil, linuxerr.ECONNREFUSED
 }
 
 // ListXattrAt implements FilesystemImpl.ListXattrAt.
@@ -267,7 +267,7 @@ func (fs *anonFilesystem) GetXattrAt(ctx context.Context, rp *ResolvingPath, opt
 	if !rp.Done() {
 		return "", syserror.ENOTDIR
 	}
-	return "", syserror.ENOTSUP
+	return "", linuxerr.ENOTSUP
 }
 
 // SetXattrAt implements FilesystemImpl.SetXattrAt.
