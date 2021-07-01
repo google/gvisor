@@ -62,7 +62,8 @@ func run([]string) int {
 
 	// Check & load the configuration.
 	if *packageFile != "" && *stdlibFile != "" {
-		log.Fatalf("unable to perform stdlib and package analysis; provide only one!")
+		fmt.Fprintf(os.Stderr, "unable to perform stdlib and package analysis; provide only one!")
+		return 1
 	}
 
 	// Run the configuration.
@@ -75,18 +76,21 @@ func run([]string) int {
 		c := loadConfig(*packageFile, new(nogo.PackageConfig)).(*nogo.PackageConfig)
 		findings, factData, err = nogo.CheckPackage(c, nogo.AllAnalyzers, nil)
 	} else {
-		log.Fatalf("please provide at least one of package or stdlib!")
+		fmt.Fprintf(os.Stderr, "please provide at least one of package or stdlib!")
+		return 1
 	}
 
 	// Check that analysis was successful.
 	if err != nil {
-		log.Fatalf("error performing analysis: %v", err)
+		fmt.Fprintf(os.Stderr, "error performing analysis: %v", err)
+		return 1
 	}
 
 	// Save facts.
 	if *factsOutput != "" {
 		if err := ioutil.WriteFile(*factsOutput, factData, 0644); err != nil {
-			log.Fatalf("error saving findings to %q: %v", *factsOutput, err)
+			fmt.Fprintf(os.Stderr, "error saving findings to %q: %v", *factsOutput, err)
+			return 1
 		}
 	}
 
@@ -94,10 +98,12 @@ func run([]string) int {
 	if *findingsOutput != "" {
 		w, err := os.OpenFile(*findingsOutput, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			log.Fatalf("error opening output file %q: %v", *findingsOutput, err)
+			fmt.Fprintf(os.Stderr, "error opening output file %q: %v", *findingsOutput, err)
+			return 1
 		}
 		if err := nogo.WriteFindingsTo(w, findings, false /* json */); err != nil {
-			log.Fatalf("error writing findings to %q: %v", *findingsOutput, err)
+			fmt.Fprintf(os.Stderr, "error writing findings to %q: %v", *findingsOutput, err)
+			return 1
 		}
 	} else {
 		for _, finding := range findings {

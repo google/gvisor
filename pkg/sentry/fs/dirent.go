@@ -488,11 +488,11 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be
 	// expensive, if possible release the lock and re-acquire it.
 	if walkMayUnlock {
-		d.mu.Unlock()
+		d.mu.Unlock() // +checklocksforce: results in an inconsistent block.
 	}
 	c, err := d.Inode.Lookup(ctx, name)
 	if walkMayUnlock {
-		d.mu.Lock()
+		d.mu.Lock() // +checklocksforce: see above.
 	}
 	// No dice.
 	if err != nil {
@@ -594,21 +594,27 @@ func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
 
 // lockDirectory should be called for any operation that changes this `d`s
 // children (creating or removing them).
-func (d *Dirent) lockDirectory() func() {
+// +checklocksacquire:d.dirMu
+// +checklocksacquire:d.mu
+func (d *Dirent) lockDirectory() {
 	renameMu.RLock()
 	d.dirMu.Lock()
 	d.mu.Lock()
-	return func() {
-		d.mu.Unlock()
-		d.dirMu.Unlock()
-		renameMu.RUnlock()
-	}
+}
+
+// unlockDirectory is the reverse of lockDirectory.
+// +checklocksrelease:d.dirMu
+// +checklocksrelease:d.mu
+func (d *Dirent) unlockDirectory() {
+	d.mu.Unlock()
+	d.dirMu.Unlock()
+	renameMu.RUnlock() // +checklocksforce: see lockDirectory.
 }
 
 // Create creates a new regular file in this directory.
 func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags FileFlags, perms FilePermissions) (*File, error) {
-	unlock := d.lockDirectory()
-	defer unlock()
+	d.lockDirectory()
+	defer d.unlockDirectory()
 
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
@@ -670,8 +676,8 @@ func (d *Dirent) finishCreate(ctx context.Context, child *Dirent, name string) {
 // genericCreate executes create if name does not exist. Removes a negative Dirent at name if
 // create succeeds.
 func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, create func() error) error {
-	unlock := d.lockDirectory()
-	defer unlock()
+	d.lockDirectory()
+	defer d.unlockDirectory()
 
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
@@ -1021,8 +1027,8 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath 
 		panic("Dirent.Remove: root must not be nil")
 	}
 
-	unlock := d.lockDirectory()
-	defer unlock()
+	d.lockDirectory()
+	defer d.unlockDirectory()
 
 	// Try to walk to the node.
 	child, err := d.walk(ctx, root, name, false /* may unlock */)
@@ -1082,8 +1088,8 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 		panic("Dirent.Remove: root must not be nil")
 	}
 
-	unlock := d.lockDirectory()
-	defer unlock()
+	d.lockDirectory()
+	defer d.unlockDirectory()
 
 	// Check for dots.
 	if name == "." {
@@ -1259,17 +1265,15 @@ func (d *Dirent) dropExtendedReference() {
 	d.Inode.MountSource.fscache.Remove(d)
 }
 
-// lockForRename takes locks on oldParent and newParent as required by Rename
-// and returns a function that will unlock the locks taken. The returned
-// function must be called even if a non-nil error is returned.
-func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName string) (func(), error) {
+// lockForRename takes locks on oldParent and newParent as required by Rename.
+// On return, unlockForRename must always be called, even with an error.
+// +checklocksacquire:oldParent.mu
+// +checklocksacquire:newParent.mu
+func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName string) error {
 	renameMu.Lock()
 	if oldParent == newParent {
 		oldParent.mu.Lock()
-		return func() {
-			oldParent.mu.Unlock()
-			renameMu.Unlock()
-		}, nil
+		return nil // +checklocksforce: only one lock exists.
 	}
 
 	// Renaming between directories is a bit subtle:
@@ -1297,11 +1301,7 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 				// itself.
 				err = unix.EINVAL
 			}
-			return func() {
-				newParent.mu.Unlock()
-				oldParent.mu.Unlock()
-				renameMu.Unlock()
-			}, err
+			return err
 		}
 		child = p
 	}
@@ -1310,11 +1310,21 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 	// have no relationship; in either case we can do this:
 	newParent.mu.Lock()
 	oldParent.mu.Lock()
-	return func() {
+	return nil
+}
+
+// unlockForRename is the opposite of lockForRename.
+// +checklocksrelease:oldParent.mu
+// +checklocksrelease:newParent.mu
+func unlockForRename(oldParent, newParent *Dirent) {
+	if oldParent == newParent {
 		oldParent.mu.Unlock()
-		newParent.mu.Unlock()
-		renameMu.Unlock()
-	}, nil
+		renameMu.Unlock() // +checklocksforce: only one lock exists.
+		return
+	}
+	newParent.mu.Unlock()
+	oldParent.mu.Unlock()
+	renameMu.Unlock() // +checklocksforce: not tracked.
 }
 
 func (d *Dirent) checkSticky(ctx context.Context, victim *Dirent) error {
@@ -1353,8 +1363,8 @@ func (d *Dirent) MayDelete(ctx context.Context, root *Dirent, name string) error
 		return err
 	}
 
-	unlock := d.lockDirectory()
-	defer unlock()
+	d.lockDirectory()
+	defer d.unlockDirectory()
 
 	victim, err := d.walk(ctx, root, name, true /* may unlock */)
 	if err != nil {
@@ -1392,8 +1402,8 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	}
 
 	// Acquire global renameMu lock, and mu locks on oldParent/newParent.
-	unlock, err := lockForRename(oldParent, oldName, newParent, newName)
-	defer unlock()
+	err := lockForRename(oldParent, oldName, newParent, newName)
+	defer unlockForRename(oldParent, newParent)
 	if err != nil {
 		return err
 	}

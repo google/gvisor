@@ -61,21 +61,19 @@ package checkescape
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"io"
 	"log"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
+	"gvisor.dev/gvisor/tools/nogo/objdump"
 )
 
 const (
@@ -90,21 +88,6 @@ const (
 
 	// exempt is the exemption annotation.
 	exempt = "// escapes"
-)
-
-var (
-	// Binary is the binary under analysis.
-	//
-	// See Reader, below.
-	binary = flag.String("binary", "", "binary under analysis")
-
-	// Reader is the input stream.
-	//
-	// This may be set instead of Binary.
-	Reader io.Reader
-
-	// objdumpTool is the tool used to dump a binary.
-	objdumpTool = flag.String("objdump_tool", "", "tool used to dump a binary")
 )
 
 // EscapeReason is an escape reason.
@@ -374,31 +357,6 @@ func MergeAll(others []Escapes) (es Escapes) {
 // Note that the map uses <basename.go>:<line> because that is all that is
 // provided in the objdump format. Since this is all local, it is sufficient.
 func loadObjdump() (map[string][]string, error) {
-	var (
-		args  []string
-		stdin io.Reader
-	)
-	if *binary != "" {
-		args = append(args, *binary)
-	} else if Reader != nil {
-		stdin = Reader
-	} else {
-		// We have no input stream or binary.
-		return nil, fmt.Errorf("no binary or reader provided")
-	}
-
-	// Construct our command.
-	cmd := exec.Command(*objdumpTool, args...)
-	cmd.Stdin = stdin
-	cmd.Stderr = os.Stderr
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
 	// Identify calls by address or name. Note that this is also
 	// constructed dynamically below, as we encounted the addresses.
 	// This is because some of the functions (duffzero) may have
@@ -431,78 +389,83 @@ func loadObjdump() (map[string][]string, error) {
 	// Build the map.
 	nextFunc := "" // For funcsAllowed.
 	m := make(map[string][]string)
-	r := bufio.NewReader(out)
-NextLine:
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-		fields := strings.Fields(line)
+	if err := objdump.Load(func(origR io.Reader) error {
+		r := bufio.NewReader(origR)
+	NextLine:
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil && err != io.EOF {
+				return err
+			}
+			fields := strings.Fields(line)
 
-		// Is this an "allowed" function definition?
-		if len(fields) >= 2 && fields[0] == "TEXT" {
-			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
-			if _, ok := funcsAllowed[nextFunc]; !ok {
-				nextFunc = "" // Don't record addresses.
+			// Is this an "allowed" function definition?
+			if len(fields) >= 2 && fields[0] == "TEXT" {
+				nextFunc = strings.TrimSuffix(fields[1], "(SB)")
+				if _, ok := funcsAllowed[nextFunc]; !ok {
+					nextFunc = "" // Don't record addresses.
+				}
 			}
-		}
-		if nextFunc != "" && len(fields) > 2 {
-			// Save the given address (in hex form, as it appears).
-			addrsAllowed[fields[1]] = struct{}{}
-		}
+			if nextFunc != "" && len(fields) > 2 {
+				// Save the given address (in hex form, as it appears).
+				addrsAllowed[fields[1]] = struct{}{}
+			}
 
-		// We recognize lines corresponding to actual code (not the
-		// symbol name or other metadata) and annotate them if they
-		// correspond to an explicit CALL instruction. We assume that
-		// the lack of a CALL for a given line is evidence that escape
-		// analysis has eliminated an allocation.
-		//
-		// Lines look like this (including the first space):
-		//  gohacks_unsafe.go:33  0xa39                   488b442408              MOVQ 0x8(SP), AX
-		if len(fields) >= 5 && line[0] == ' ' {
-			if !strings.Contains(fields[3], "CALL") {
-				continue
-			}
-			site := fields[0]
-			target := strings.TrimSuffix(fields[4], "(SB)")
+			// We recognize lines corresponding to actual code (not the
+			// symbol name or other metadata) and annotate them if they
+			// correspond to an explicit CALL instruction. We assume that
+			// the lack of a CALL for a given line is evidence that escape
+			// analysis has eliminated an allocation.
+			//
+			// Lines look like this (including the first space):
+			//  gohacks_unsafe.go:33  0xa39                   488b442408              MOVQ 0x8(SP), AX
+			if len(fields) >= 5 && line[0] == ' ' {
+				if !strings.Contains(fields[3], "CALL") {
+					continue
+				}
+				site := fields[0]
+				target := strings.TrimSuffix(fields[4], "(SB)")
 
-			// Ignore strings containing allowed functions.
-			if _, ok := funcsAllowed[target]; ok {
-				continue
-			}
-			if _, ok := addrsAllowed[target]; ok {
-				continue
-			}
-			if len(fields) > 5 {
-				// This may be a future relocation. Some
-				// objdump versions describe this differently.
-				// If it contains any of the functions allowed
-				// above as a string, we let it go.
-				softTarget := strings.Join(fields[5:], " ")
-				for name := range funcsAllowed {
-					if strings.Contains(softTarget, name) {
+				// Ignore strings containing allowed functions.
+				if _, ok := funcsAllowed[target]; ok {
+					continue
+				}
+				if _, ok := addrsAllowed[target]; ok {
+					continue
+				}
+				if len(fields) > 5 {
+					// This may be a future relocation. Some
+					// objdump versions describe this differently.
+					// If it contains any of the functions allowed
+					// above as a string, we let it go.
+					softTarget := strings.Join(fields[5:], " ")
+					for name := range funcsAllowed {
+						if strings.Contains(softTarget, name) {
+							continue NextLine
+						}
+					}
+				}
+
+				// Does this exist already?
+				existing, ok := m[site]
+				if !ok {
+					existing = make([]string, 0, 1)
+				}
+				for _, other := range existing {
+					if target == other {
 						continue NextLine
 					}
 				}
+				existing = append(existing, target)
+				m[site] = existing // Update.
 			}
-
-			// Does this exist already?
-			existing, ok := m[site]
-			if !ok {
-				existing = make([]string, 0, 1)
+			if err == io.EOF {
+				break
 			}
-			for _, other := range existing {
-				if target == other {
-					continue NextLine
-				}
-			}
-			existing = append(existing, target)
-			m[site] = existing // Update.
 		}
-		if err == io.EOF {
-			break
-		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	// Zap any accidental false positives.
@@ -516,11 +479,6 @@ NextLine:
 			filteredCalls = append(filteredCalls, call)
 		}
 		final[site] = filteredCalls
-	}
-
-	// Wait for the dump to finish.
-	if err := cmd.Wait(); err != nil {
-		return nil, err
 	}
 
 	return final, nil

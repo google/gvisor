@@ -32,10 +32,11 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) transport.
 		return nil
 	}
 
-	if i.session().overrides != nil {
-		unlock := i.session().overrides.lock()
-		defer unlock()
-		ep := i.session().overrides.getBoundEndpoint(i.fileState.key)
+	s := i.session()
+	if s.overrides != nil {
+		s.overrides.lock()
+		defer s.overrides.unlock()
+		ep := s.overrides.getBoundEndpoint(i.fileState.key)
 		if ep != nil {
 			return ep
 		}

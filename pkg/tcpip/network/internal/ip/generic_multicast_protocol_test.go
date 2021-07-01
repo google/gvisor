@@ -126,7 +126,7 @@ func (m *mockMulticastGroupProtocol) sendQueuedReports() {
 // Precondition: m.mu must be read locked.
 func (m *mockMulticastGroupProtocol) Enabled() bool {
 	if m.mu.TryLock() {
-		m.mu.Unlock()
+		m.mu.Unlock() // +checklocksforce: TryLock.
 		m.t.Fatal("got write lock, expected to not take the lock; generic multicast protocol must take the read or write lock before calling Enabled")
 	}
 
@@ -138,11 +138,11 @@ func (m *mockMulticastGroupProtocol) Enabled() bool {
 // Precondition: m.mu must be locked.
 func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
 	if m.mu.TryLock() {
-		m.mu.Unlock()
+		m.mu.Unlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got write lock, expected to not take the lock; generic multicast protocol must take the write lock before sending report for %s", groupAddress)
 	}
 	if m.mu.TryRLock() {
-		m.mu.RUnlock()
+		m.mu.RUnlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got read lock, expected to not take the lock; generic multicast protocol must take the write lock before sending report for %s", groupAddress)
 	}
 
@@ -155,11 +155,11 @@ func (m *mockMulticastGroupProtocol) SendReport(groupAddress tcpip.Address) (boo
 // Precondition: m.mu must be locked.
 func (m *mockMulticastGroupProtocol) SendLeave(groupAddress tcpip.Address) tcpip.Error {
 	if m.mu.TryLock() {
-		m.mu.Unlock()
+		m.mu.Unlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got write lock, expected to not take the lock; generic multicast protocol must take the write lock before sending leave for %s", groupAddress)
 	}
 	if m.mu.TryRLock() {
-		m.mu.RUnlock()
+		m.mu.RUnlock() // +checklocksforce: TryLock.
 		m.t.Fatalf("got read lock, expected to not take the lock; generic multicast protocol must take the write lock before sending leave for %s", groupAddress)
 	}
 

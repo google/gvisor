@@ -363,7 +363,7 @@ func (ct *ConnTrack) insertConn(conn *conn) {
 	// Unlocking can happen in any order.
 	ct.buckets[tupleBucket].mu.Unlock()
 	if tupleBucket != replyBucket {
-		ct.buckets[replyBucket].mu.Unlock()
+		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
 	}
 }
 
@@ -626,7 +626,7 @@ func (ct *ConnTrack) reapTupleLocked(tuple *tuple, bucket int, now time.Time) bo
 
 	// Don't re-unlock if both tuples are in the same bucket.
 	if differentBuckets {
-		ct.buckets[replyBucket].mu.Unlock()
+		ct.buckets[replyBucket].mu.Unlock() // +checklocksforce
 	}
 
 	return true

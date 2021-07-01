@@ -198,6 +198,22 @@ NogoInfo = provider(
     },
 )
 
+def _select_objfile(files):
+    """Returns (.a file, .x file, is_archive).
+
+    If no .a file is available, then the first .x file will be returned
+    instead, and vice versa. If neither are available, then the first provided
+    file will be returned."""
+    a_files = [f for f in files if f.path.endswith(".a")]
+    x_files = [f for f in files if f.path.endswith(".x")]
+    if not len(x_files) and not len(a_files):
+        return (files[0], files[0], False)
+    if not len(x_files):
+        x_files = a_files
+    if not len(a_files):
+        a_files = x_files
+    return a_files[0], x_files[0], True
+
 def _nogo_aspect_impl(target, ctx):
     # If this is a nogo rule itself (and not the shadow of a go_library or
     # go_binary rule created by such a rule), then we simply return nothing.
@@ -232,20 +248,14 @@ def _nogo_aspect_impl(target, ctx):
             deps = deps + info.deps
 
     # Start with all target files and srcs as input.
-    inputs = target.files.to_list() + srcs
+    binaries = target.files.to_list()
+    inputs = binaries + srcs
 
     # Generate a shell script that dumps the binary. Annoyingly, this seems
     # necessary as the context in which a run_shell command runs does not seem
     # to cleanly allow us redirect stdout to the actual output file. Perhaps
     # I'm missing something here, but the intermediate script does work.
-    binaries = target.files.to_list()
-    objfiles = [f for f in binaries if f.path.endswith(".a")]
-    if len(objfiles) > 0:
-        # Prefer the .a files for go_library targets.
-        target_objfile = objfiles[0]
-    else:
-        # Use the raw binary for go_binary and go_test targets.
-        target_objfile = binaries[0]
+    target_objfile, target_xfile, has_objfile = _select_objfile(binaries)
     inputs.append(target_objfile)
 
     # Extract the importpath for this package.
@@ -274,10 +284,8 @@ def _nogo_aspect_impl(target, ctx):
         # Configure where to find the binary & fact files. Note that this will
         # use .x and .a regardless of whether this is a go_binary rule, since
         # these dependencies must be go_library rules.
-        x_files = [f.path for f in info.binaries if f.path.endswith(".x")]
-        if not len(x_files):
-            x_files = [f.path for f in info.binaries if f.path.endswith(".a")]
-        import_map[info.importpath] = x_files[0]
+        _, x_file, _ = _select_objfile(info.binaries)
+        import_map[info.importpath] = x_file.path
         fact_map[info.importpath] = info.facts.path
 
         # Collect all findings; duplicates are resolved at the end.
@@ -286,6 +294,11 @@ def _nogo_aspect_impl(target, ctx):
         # Ensure the above are available as inputs.
         inputs.append(info.facts)
         inputs += info.binaries
+
+    # Add the module itself, for the type sanity check. This applies only to
+    # the libraries, and not binaries or tests.
+    if has_objfile:
+        import_map[importpath] = target_xfile.path
 
     # Add the standard library facts.
     stdlib_info = ctx.attr._nogo_stdlib[NogoStdlibInfo]

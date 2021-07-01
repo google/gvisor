@@ -652,6 +652,7 @@ func (t *Task) forgetTracerLocked() {
 // Preconditions:
 // * The signal mutex must be locked.
 // * The caller must be running on the task goroutine.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) ptraceSignalLocked(info *linux.SignalInfo) bool {
 	if linux.Signal(info.Signo) == linux.SIGKILL {
 		return false

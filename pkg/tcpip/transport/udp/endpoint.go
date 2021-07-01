@@ -364,6 +364,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 // reacquire the mutex in exclusive mode.
 //
 // Returns true for retry if preparation should be retried.
+// +checklocks:e.mu
 func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err tcpip.Error) {
 	switch e.EndpointState() {
 	case StateInitial:
@@ -380,10 +381,8 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err tcpip
 	}
 
 	e.mu.RUnlock()
-	defer e.mu.RLock()
-
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	defer e.mu.DowngradeLock()
 
 	// The state changed when we released the shared locked and re-acquired
 	// it in exclusive mode. Try again.
@@ -449,37 +448,20 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	return n, err
 }
 
-func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
-	if err := e.LastError(); err != nil {
-		return 0, err
-	}
-
-	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
-	if opts.More {
-		return 0, &tcpip.ErrInvalidOptionValue{}
-	}
-
-	to := opts.To
-
+func (e *endpoint) buildUDPPacketInfo(p tcpip.Payloader, opts tcpip.WriteOptions) (udpPacketInfo, tcpip.Error) {
 	e.mu.RLock()
-	lockReleased := false
-	defer func() {
-		if lockReleased {
-			return
-		}
-		e.mu.RUnlock()
-	}()
+	defer e.mu.RUnlock()
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
-		return 0, &tcpip.ErrClosedForSend{}
+		return udpPacketInfo{}, &tcpip.ErrClosedForSend{}
 	}
 
 	// Prepare for write.
 	for {
-		retry, err := e.prepareForWrite(to)
+		retry, err := e.prepareForWrite(opts.To)
 		if err != nil {
-			return 0, err
+			return udpPacketInfo{}, err
 		}
 
 		if !retry {
@@ -489,34 +471,34 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	route := e.route
 	dstPort := e.dstPort
-	if to != nil {
+	if opts.To != nil {
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
-		nicID := to.NIC
+		nicID := opts.To.NIC
 		if nicID == 0 {
 			nicID = tcpip.NICID(e.ops.GetBindToDevice())
 		}
 		if e.BindNICID != 0 {
 			if nicID != 0 && nicID != e.BindNICID {
-				return 0, &tcpip.ErrNoRoute{}
+				return udpPacketInfo{}, &tcpip.ErrNoRoute{}
 			}
 
 			nicID = e.BindNICID
 		}
 
-		if to.Port == 0 {
+		if opts.To.Port == 0 {
 			// Port 0 is an invalid port to send to.
-			return 0, &tcpip.ErrInvalidEndpointState{}
+			return udpPacketInfo{}, &tcpip.ErrInvalidEndpointState{}
 		}
 
-		dst, netProto, err := e.checkV4MappedLocked(*to)
+		dst, netProto, err := e.checkV4MappedLocked(*opts.To)
 		if err != nil {
-			return 0, err
+			return udpPacketInfo{}, err
 		}
 
 		r, _, err := e.connectRoute(nicID, dst, netProto)
 		if err != nil {
-			return 0, err
+			return udpPacketInfo{}, err
 		}
 		defer r.Release()
 
@@ -525,12 +507,12 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 
 	if !e.ops.GetBroadcast() && route.IsOutboundBroadcast() {
-		return 0, &tcpip.ErrBroadcastDisabled{}
+		return udpPacketInfo{}, &tcpip.ErrBroadcastDisabled{}
 	}
 
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
-		return 0, &tcpip.ErrBadBuffer{}
+		return udpPacketInfo{}, &tcpip.ErrBadBuffer{}
 	}
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
@@ -548,24 +530,39 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 				v,
 			)
 		}
-		return 0, &tcpip.ErrMessageTooLong{}
+		return udpPacketInfo{}, &tcpip.ErrMessageTooLong{}
 	}
 
 	ttl := e.ttl
 	useDefaultTTL := ttl == 0
-
 	if header.IsV4MulticastAddress(route.RemoteAddress()) || header.IsV6MulticastAddress(route.RemoteAddress()) {
 		ttl = e.multicastTTL
 		// Multicast allows a 0 TTL.
 		useDefaultTTL = false
 	}
 
-	localPort := e.ID.LocalPort
-	sendTOS := e.sendTOS
-	owner := e.owner
-	noChecksum := e.SocketOptions().GetNoChecksum()
-	lockReleased = true
-	e.mu.RUnlock()
+	return udpPacketInfo{
+		route:         route,
+		data:          buffer.View(v),
+		localPort:     e.ID.LocalPort,
+		remotePort:    dstPort,
+		ttl:           ttl,
+		useDefaultTTL: useDefaultTTL,
+		tos:           e.sendTOS,
+		owner:         e.owner,
+		noChecksum:    e.SocketOptions().GetNoChecksum(),
+	}, nil
+}
+
+func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
+	if err := e.LastError(); err != nil {
+		return 0, err
+	}
+
+	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
+	if opts.More {
+		return 0, &tcpip.ErrInvalidOptionValue{}
+	}
 
 	// Do not hold lock when sending as loopback is synchronous and if the UDP
 	// datagram ends up generating an ICMP response then it can result in a
@@ -577,10 +574,15 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	//
 	// See: https://golang.org/pkg/sync/#RWMutex for details on why recursive read
 	// locking is prohibited.
-	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), localPort, dstPort, ttl, useDefaultTTL, sendTOS, owner, noChecksum); err != nil {
+	u, err := e.buildUDPPacketInfo(p, opts)
+	if err != nil {
 		return 0, err
 	}
-	return int64(len(v)), nil
+	n, err := u.send()
+	if err != nil {
+		return 0, err
+	}
+	return int64(n), nil
 }
 
 // OnReuseAddressSet implements tcpip.SocketOptionsHandler.
@@ -817,14 +819,30 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	return nil
 }
 
-// sendUDP sends a UDP segment via the provided network endpoint and under the
-// provided identity.
-func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8, owner tcpip.PacketOwner, noChecksum bool) tcpip.Error {
+// udpPacketInfo contains all information required to send a UDP packet.
+//
+// This should be used as a value-only type, which exists in order to simplify
+// return value syntax. It should not be exported or extended.
+type udpPacketInfo struct {
+	route         *stack.Route
+	data          buffer.View
+	localPort     uint16
+	remotePort    uint16
+	ttl           uint8
+	useDefaultTTL bool
+	tos           uint8
+	owner         tcpip.PacketOwner
+	noChecksum    bool
+}
+
+// send sends the given packet.
+func (u *udpPacketInfo) send() (int, tcpip.Error) {
+	vv := u.data.ToVectorisedView()
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-		Data:               data,
+		ReserveHeaderBytes: header.UDPMinimumSize + int(u.route.MaxHeaderLength()),
+		Data:               vv,
 	})
-	pkt.Owner = owner
+	pkt.Owner = u.owner
 
 	// Initialize the UDP header.
 	udp := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
@@ -832,8 +850,8 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 
 	length := uint16(pkt.Size())
 	udp.Encode(&header.UDPFields{
-		SrcPort: localPort,
-		DstPort: remotePort,
+		SrcPort: u.localPort,
+		DstPort: u.remotePort,
 		Length:  length,
 	})
 
@@ -841,30 +859,30 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	// On IPv4, UDP checksum is optional, and a zero value indicates the
 	// transmitter skipped the checksum generation (RFC768).
 	// On IPv6, UDP checksum is not optional (RFC2460 Section 8.1).
-	if r.RequiresTXTransportChecksum() &&
-		(!noChecksum || r.NetProto() == header.IPv6ProtocolNumber) {
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
-		for _, v := range data.Views() {
+	if u.route.RequiresTXTransportChecksum() &&
+		(!u.noChecksum || u.route.NetProto() == header.IPv6ProtocolNumber) {
+		xsum := u.route.PseudoHeaderChecksum(ProtocolNumber, length)
+		for _, v := range vv.Views() {
 			xsum = header.Checksum(v, xsum)
 		}
 		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
-	if useDefaultTTL {
-		ttl = r.DefaultTTL()
+	if u.useDefaultTTL {
+		u.ttl = u.route.DefaultTTL()
 	}
-	if err := r.WritePacket(stack.NetworkHeaderParams{
+	if err := u.route.WritePacket(stack.NetworkHeaderParams{
 		Protocol: ProtocolNumber,
-		TTL:      ttl,
-		TOS:      tos,
+		TTL:      u.ttl,
+		TOS:      u.tos,
 	}, pkt); err != nil {
-		r.Stats().UDP.PacketSendErrors.Increment()
-		return err
+		u.route.Stats().UDP.PacketSendErrors.Increment()
+		return 0, err
 	}
 
 	// Track count of packets sent.
-	r.Stats().UDP.PacketsSent.Increment()
-	return nil
+	u.route.Stats().UDP.PacketsSent.Increment()
+	return len(u.data), nil
 }
 
 // checkV4MappedLocked determines the effective network protocol and converts

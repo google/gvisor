@@ -4,5 +4,17 @@ package(licenses = ["notice"])
 
 go_library(
     name = "test",
-    srcs = ["test.go"],
+    srcs = [
+        "alignment.go",
+        "atomics.go",
+        "basics.go",
+        "branches.go",
+        "closures.go",
+        "defer.go",
+        "incompat.go",
+        "methods.go",
+        "parameters.go",
+        "return.go",
+        "test.go",
+    ],
 )

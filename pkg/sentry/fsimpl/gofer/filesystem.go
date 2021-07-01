@@ -147,6 +147,7 @@ func putDentrySlice(ds *[]*dentry) {
 // but dentry slices are allocated lazily, and it's much easier to say "defer
 // fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
 // fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
+// +checklocksrelease:fs.renameMu
 func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, dsp **[]*dentry) {
 	fs.renameMu.RUnlock()
 	if *dsp == nil {
@@ -159,6 +160,7 @@ func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, dsp **
 	putDentrySlice(*dsp)
 }
 
+// +checklocksrelease:fs.renameMu
 func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
 	if *ds == nil {
 		fs.renameMu.Unlock()
@@ -540,7 +542,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			if child.syntheticChildren != 0 {
 				// This is definitely not an empty directory, irrespective of
 				// fs.opts.interop.
-				vfsObj.AbortDeleteDentry(&child.vfsd)
+				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: PrepareDeleteDentry called if child != nil.
 				return linuxerr.ENOTEMPTY
 			}
 			// If InteropModeShared is in effect and the first call to
@@ -550,12 +552,12 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			// still exist) would be a waste of time.
 			if child.cachedMetadataAuthoritative() {
 				if !child.isDir() {
-					vfsObj.AbortDeleteDentry(&child.vfsd)
+					vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 					return syserror.ENOTDIR
 				}
 				for _, grandchild := range child.children {
 					if grandchild != nil {
-						vfsObj.AbortDeleteDentry(&child.vfsd)
+						vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 						return linuxerr.ENOTEMPTY
 					}
 				}
@@ -565,12 +567,12 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	} else {
 		// child must be a non-directory file.
 		if child != nil && child.isDir() {
-			vfsObj.AbortDeleteDentry(&child.vfsd)
+			vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			return syserror.EISDIR
 		}
 		if rp.MustBeDir() {
 			if child != nil {
-				vfsObj.AbortDeleteDentry(&child.vfsd)
+				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			}
 			return syserror.ENOTDIR
 		}
@@ -583,7 +585,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		err = parent.file.unlinkAt(ctx, name, flags)
 		if err != nil {
 			if child != nil {
-				vfsObj.AbortDeleteDentry(&child.vfsd)
+				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			}
 			return err
 		}
@@ -601,7 +603,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 
 	if child != nil {
-		vfsObj.CommitDeleteDentry(ctx, &child.vfsd)
+		vfsObj.CommitDeleteDentry(ctx, &child.vfsd) // +checklocksforce: see above.
 		child.setDeleted()
 		if child.isSynthetic() {
 			parent.syntheticChildren--

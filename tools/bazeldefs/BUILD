@@ -46,6 +46,11 @@ genrule(
     outs = ["version.txt"],
     cmd = "cat bazel-out/stable-status.txt | grep STABLE_VERSION | cut -d' ' -f2- | sed 's/^[^[:digit:]]*//g' >$@",
     stamp = True,
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
     visibility = ["//:sandbox"],
 )
 

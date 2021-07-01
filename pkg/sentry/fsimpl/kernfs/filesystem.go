@@ -752,7 +752,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		fs.deferDecRef(replaced)
 		replaceVFSD = replaced.VFSDentry()
 	}
-	virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD)
+	virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD) // +checklocksforce: to may be nil, that's okay.
 	return nil
 }
 
@@ -788,7 +788,7 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	defer mntns.DecRef(ctx)
 	vfsd := d.VFSDentry()
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
-		return err
+		return err // +checklocksforce: vfsd is not locked.
 	}
 
 	if err := parentDentry.inode.RmDir(ctx, d.name, d.inode); err != nil {
