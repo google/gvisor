@@ -54,6 +54,11 @@ const (
 	// Advertisements, as a host.
 	defaultDiscoverDefaultRouters = true
 
+	// defaultDiscoverMoreSpecificRoutes is the default configuration for
+	// whether or not to discover more-specific routes from incoming Router
+	// Advertisements, as a host.
+	defaultDiscoverMoreSpecificRoutes = true
+
 	// defaultDiscoverOnLinkPrefixes is the default configuration for
 	// whether or not to discover on-link prefixes from incoming Router
 	// Advertisements' Prefix Information option, as a host.
@@ -352,12 +357,18 @@ type NDPConfigurations struct {
 
 	// DiscoverDefaultRouters determines whether or not default routers are
 	// discovered from Router Advertisements, as per RFC 4861 section 6. This
-	// configuration is ignored if HandleRAs is false.
+	// configuration is ignored if RAs will not be processed (see HandleRAs).
 	DiscoverDefaultRouters bool
+
+	// DiscoverMoreSpecificRoutes determines whether or not more specific routes
+	// are discovered from Router Advertisements, as per RFC 4191. This
+	// configuration is ignored if RAs will not be processed (see HandleRAs).
+	DiscoverMoreSpecificRoutes bool
 
 	// DiscoverOnLinkPrefixes determines whether or not on-link prefixes are
 	// discovered from Router Advertisements' Prefix Information option, as per
-	// RFC 4861 section 6. This configuration is ignored if HandleRAs is false.
+	// RFC 4861 section 6. This configuration is ignored if RAs will not be
+	// processed (see HandleRAs).
 	DiscoverOnLinkPrefixes bool
 
 	// AutoGenGlobalAddresses determines whether or not an IPv6 endpoint performs
@@ -408,6 +419,7 @@ func DefaultNDPConfigurations() NDPConfigurations {
 		MaxRtrSolicitationDelay:      defaultMaxRtrSolicitationDelay,
 		HandleRAs:                    defaultHandleRAs,
 		DiscoverDefaultRouters:       defaultDiscoverDefaultRouters,
+		DiscoverMoreSpecificRoutes:   defaultDiscoverMoreSpecificRoutes,
 		DiscoverOnLinkPrefixes:       defaultDiscoverOnLinkPrefixes,
 		AutoGenGlobalAddresses:       defaultAutoGenGlobalAddresses,
 		AutoGenTempGlobalAddresses:   defaultAutoGenTempGlobalAddresses,
@@ -786,6 +798,32 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			if opt.AutonomousAddressConfigurationFlag() {
 				ndp.handleAutonomousPrefixInformation(opt)
 			}
+
+		case header.NDPRouteInformation:
+			if !ndp.configs.DiscoverMoreSpecificRoutes {
+				continue
+			}
+
+			dest, err := opt.Prefix()
+			if err != nil {
+				panic(fmt.Sprintf("%T.Prefix(): %s", opt, err))
+			}
+
+			prf := opt.RoutePreference()
+			if prf == header.ReservedRoutePreference {
+				// As per RFC 4191 section 2.3,
+				//
+				//   Prf (Route Preference)
+				//       2-bit signed integer.  The Route Preference indicates
+				//       whether to prefer the router associated with this prefix
+				//       over others, when multiple identical prefixes (for
+				//       different routers) have been received.  If the Reserved
+				//       (10) value is received, the Route Information Option MUST
+				//       be ignored.
+				continue
+			}
+
+			ndp.handleOffLinkRouteDiscovery(offLinkRoute{dest: dest, router: ip}, opt.RouteLifetime(), prf)
 		}
 
 		// TODO(b/141556115): Do (MTU) Parameter Discovery.

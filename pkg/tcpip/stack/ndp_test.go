@@ -1152,6 +1152,39 @@ func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, on
 	})
 }
 
+// raBufWithRIO returns a valid NDP Router Advertisement with a single Route
+// Information option.
+//
+// All fields in the RA will be zero except the RIO option.
+func raBufWithRIO(t *testing.T, ip tcpip.Address, prefix tcpip.AddressWithPrefix, lifetimeSeconds uint32, prf header.NDPRoutePreference) *stack.PacketBuffer {
+	// buf will hold the route information option after the Type and Length
+	// fields.
+	//
+	//  2.3.  Route Information Option
+	//
+	//      0                   1                   2                   3
+	//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//      |     Type      |    Length     | Prefix Length |Resvd|Prf|Resvd|
+	//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//      |                        Route Lifetime                         |
+	//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//      |                   Prefix (Variable Length)                    |
+	//      .                                                               .
+	//      .                                                               .
+	//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	var buf [22]byte
+	buf[0] = uint8(prefix.PrefixLen)
+	buf[1] = byte(prf) << 3
+	binary.BigEndian.PutUint32(buf[2:], lifetimeSeconds)
+	if n := copy(buf[6:], prefix.Address); n != len(prefix.Address) {
+		t.Fatalf("got copy(...) = %d, want = %d", n, len(prefix.Address))
+	}
+	return raBufWithOpts(ip, 0 /* router lifetime */, header.NDPOptionsSerializer{
+		header.NDPRouteInformation(buf[:]),
+	})
+}
+
 func TestDynamicConfigurationsDisabled(t *testing.T) {
 	const (
 		nicID              = 1
@@ -1308,8 +1341,8 @@ func boolToUint64(v bool) uint64 {
 	return 0
 }
 
-func checkOffLinkRouteEvent(e ndpOffLinkRouteEvent, nicID tcpip.NICID, router tcpip.Address, prf header.NDPRoutePreference, updated bool) string {
-	return cmp.Diff(ndpOffLinkRouteEvent{nicID: nicID, subnet: header.IPv6EmptySubnet, router: router, prf: prf, updated: updated}, e, cmp.AllowUnexported(e))
+func checkOffLinkRouteEvent(e ndpOffLinkRouteEvent, nicID tcpip.NICID, subnet tcpip.Subnet, router tcpip.Address, prf header.NDPRoutePreference, updated bool) string {
+	return cmp.Diff(ndpOffLinkRouteEvent{nicID: nicID, subnet: subnet, router: router, prf: prf, updated: updated}, e, cmp.AllowUnexported(e))
 }
 
 func testWithRAs(t *testing.T, f func(*testing.T, ipv6.HandleRAsConfiguration, bool)) {
@@ -1342,122 +1375,167 @@ func testWithRAs(t *testing.T, f func(*testing.T, ipv6.HandleRAsConfiguration, b
 	}
 }
 
-func TestRouterDiscovery(t *testing.T) {
+func TestOffLinkRouteDiscovery(t *testing.T) {
 	const nicID = 1
 
-	testWithRAs(t, func(t *testing.T, handleRAs ipv6.HandleRAsConfiguration, forwarding bool) {
-		ndpDisp := ndpDispatcher{
-			offLinkRouteC: make(chan ndpOffLinkRouteEvent, 1),
-		}
-		e := channel.New(0, 1280, linkAddr1)
-		clock := faketime.NewManualClock()
-		s := stack.New(stack.Options{
-			NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
-				NDPConfigs: ipv6.NDPConfigurations{
-					HandleRAs:              handleRAs,
-					DiscoverDefaultRouters: true,
-				},
-				NDPDisp: &ndpDisp,
-			})},
-			Clock: clock,
+	moreSpecificPrefix := tcpip.AddressWithPrefix{Address: testutil.MustParse6("a00::"), PrefixLen: 16}
+	tests := []struct {
+		name string
+
+		discoverDefaultRouters     bool
+		discoverMoreSpecificRoutes bool
+
+		dest tcpip.Subnet
+		ra   func(*testing.T, tcpip.Address, uint16, header.NDPRoutePreference) *stack.PacketBuffer
+	}{
+		{
+			name:                       "Default router discovery",
+			discoverDefaultRouters:     true,
+			discoverMoreSpecificRoutes: false,
+			dest:                       header.IPv6EmptySubnet,
+			ra: func(_ *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) *stack.PacketBuffer {
+				return raBufWithPrf(router, lifetimeSeconds, prf)
+			},
+		},
+		{
+			name:                       "More-specific route discovery",
+			discoverDefaultRouters:     false,
+			discoverMoreSpecificRoutes: true,
+			dest:                       moreSpecificPrefix.Subnet(),
+			ra: func(t *testing.T, router tcpip.Address, lifetimeSeconds uint16, prf header.NDPRoutePreference) *stack.PacketBuffer {
+				return raBufWithRIO(t, router, moreSpecificPrefix, uint32(lifetimeSeconds), prf)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			testWithRAs(t, func(t *testing.T, handleRAs ipv6.HandleRAsConfiguration, forwarding bool) {
+				ndpDisp := ndpDispatcher{
+					offLinkRouteC: make(chan ndpOffLinkRouteEvent, 1),
+				}
+				e := channel.New(0, 1280, linkAddr1)
+				clock := faketime.NewManualClock()
+				s := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
+						NDPConfigs: ipv6.NDPConfigurations{
+							HandleRAs:                  handleRAs,
+							DiscoverDefaultRouters:     test.discoverDefaultRouters,
+							DiscoverMoreSpecificRoutes: test.discoverMoreSpecificRoutes,
+						},
+						NDPDisp: &ndpDisp,
+					})},
+					Clock: clock,
+				})
+
+				expectOffLinkRouteEvent := func(addr tcpip.Address, prf header.NDPRoutePreference, updated bool) {
+					t.Helper()
+
+					select {
+					case e := <-ndpDisp.offLinkRouteC:
+						if diff := checkOffLinkRouteEvent(e, nicID, test.dest, addr, prf, updated); diff != "" {
+							t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
+						}
+					default:
+						t.Fatal("expected router discovery event")
+					}
+				}
+
+				expectAsyncOffLinkRouteInvalidationEvent := func(addr tcpip.Address, timeout time.Duration) {
+					t.Helper()
+
+					clock.Advance(timeout)
+					select {
+					case e := <-ndpDisp.offLinkRouteC:
+						var prf header.NDPRoutePreference
+						if diff := checkOffLinkRouteEvent(e, nicID, test.dest, addr, prf, false); diff != "" {
+							t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
+						}
+					default:
+						t.Fatal("timed out waiting for router discovery event")
+					}
+				}
+
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
+				}
+
+				if err := s.CreateNIC(nicID, e); err != nil {
+					t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+				}
+
+				// Rx an RA from lladdr2 with zero lifetime. It should not be
+				// remembered.
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, 0, header.MediumRoutePreference))
+				select {
+				case <-ndpDisp.offLinkRouteC:
+					t.Fatal("unexpectedly updated an off-link route with 0 lifetime")
+				default:
+				}
+
+				// Discover an off-link route through llAddr2.
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, 1000, header.ReservedRoutePreference))
+				if test.discoverMoreSpecificRoutes {
+					// The reserved value is considered invalid with more-specific route
+					// discovery so we inject the same packet but with the default
+					// (medium) preference value.
+					select {
+					case <-ndpDisp.offLinkRouteC:
+						t.Fatal("unexpectedly updated an off-link route with a reserved preference value")
+					default:
+					}
+					e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, 1000, header.MediumRoutePreference))
+				}
+				expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, true)
+
+				// Rx an RA from another router (lladdr3) with non-zero lifetime and
+				// non-default preference value.
+				const l3LifetimeSeconds = 6
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr3, l3LifetimeSeconds, header.HighRoutePreference))
+				expectOffLinkRouteEvent(llAddr3, header.HighRoutePreference, true)
+
+				// Rx an RA from lladdr2 with lesser lifetime and default (medium)
+				// preference value.
+				const l2LifetimeSeconds = 2
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, l2LifetimeSeconds, header.MediumRoutePreference))
+				select {
+				case <-ndpDisp.offLinkRouteC:
+					t.Fatal("should not receive a off-link route event when updating lifetimes for known routers")
+				default:
+				}
+
+				// Rx an RA from lladdr2 with a different preference.
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, l2LifetimeSeconds, header.LowRoutePreference))
+				expectOffLinkRouteEvent(llAddr2, header.LowRoutePreference, true)
+
+				// Wait for lladdr2's router invalidation job to execute. The lifetime
+				// of the router should have been updated to the most recent (smaller)
+				// lifetime.
+				//
+				// Wait for the normal lifetime plus an extra bit for the
+				// router to get invalidated. If we don't get an invalidation
+				// event after this time, then something is wrong.
+				expectAsyncOffLinkRouteInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second)
+
+				// Rx an RA from lladdr2 with huge lifetime.
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, 1000, header.MediumRoutePreference))
+				expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, true)
+
+				// Rx an RA from lladdr2 with zero lifetime. It should be invalidated.
+				e.InjectInbound(header.IPv6ProtocolNumber, test.ra(t, llAddr2, 0, header.MediumRoutePreference))
+				expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, false)
+
+				// Wait for lladdr3's router invalidation job to execute. The lifetime
+				// of the router should have been updated to the most recent (smaller)
+				// lifetime.
+				//
+				// Wait for the normal lifetime plus an extra bit for the
+				// router to get invalidated. If we don't get an invalidation
+				// event after this time, then something is wrong.
+				expectAsyncOffLinkRouteInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second)
+			})
 		})
-
-		expectOffLinkRouteEvent := func(addr tcpip.Address, prf header.NDPRoutePreference, updated bool) {
-			t.Helper()
-
-			select {
-			case e := <-ndpDisp.offLinkRouteC:
-				if diff := checkOffLinkRouteEvent(e, nicID, addr, prf, updated); diff != "" {
-					t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
-				}
-			default:
-				t.Fatal("expected router discovery event")
-			}
-		}
-
-		expectAsyncOffLinkRouteInvalidationEvent := func(addr tcpip.Address, timeout time.Duration) {
-			t.Helper()
-
-			clock.Advance(timeout)
-			select {
-			case e := <-ndpDisp.offLinkRouteC:
-				var prf header.NDPRoutePreference
-				if diff := checkOffLinkRouteEvent(e, nicID, addr, prf, false); diff != "" {
-					t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
-				}
-			default:
-				t.Fatal("timed out waiting for router discovery event")
-			}
-		}
-
-		if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, forwarding); err != nil {
-			t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", ipv6.ProtocolNumber, forwarding, err)
-		}
-
-		if err := s.CreateNIC(nicID, e); err != nil {
-			t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
-		}
-
-		// Rx an RA from lladdr2 with zero lifetime. It should not be
-		// remembered.
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufSimple(llAddr2, 0))
-		select {
-		case <-ndpDisp.offLinkRouteC:
-			t.Fatal("unexpectedly updated an off-link route with 0 lifetime")
-		default:
-		}
-
-		// Rx an RA from lladdr2 with a huge lifetime and reserved preference value
-		// (which should be interpreted as the default (medium) preference value).
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPrf(llAddr2, 1000, header.ReservedRoutePreference))
-		expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, true)
-
-		// Rx an RA from another router (lladdr3) with non-zero lifetime and
-		// non-default preference value.
-		const l3LifetimeSeconds = 6
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPrf(llAddr3, l3LifetimeSeconds, header.HighRoutePreference))
-		expectOffLinkRouteEvent(llAddr3, header.HighRoutePreference, true)
-
-		// Rx an RA from lladdr2 with lesser lifetime and default (medium)
-		// preference value.
-		const l2LifetimeSeconds = 2
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufSimple(llAddr2, l2LifetimeSeconds))
-		select {
-		case <-ndpDisp.offLinkRouteC:
-			t.Fatal("should not receive a off-link route event when updating lifetimes for known routers")
-		default:
-		}
-
-		// Rx an RA from lladdr2 with a different preference.
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPrf(llAddr2, l2LifetimeSeconds, header.LowRoutePreference))
-		expectOffLinkRouteEvent(llAddr2, header.LowRoutePreference, true)
-
-		// Wait for lladdr2's router invalidation job to execute. The lifetime
-		// of the router should have been updated to the most recent (smaller)
-		// lifetime.
-		//
-		// Wait for the normal lifetime plus an extra bit for the
-		// router to get invalidated. If we don't get an invalidation
-		// event after this time, then something is wrong.
-		expectAsyncOffLinkRouteInvalidationEvent(llAddr2, l2LifetimeSeconds*time.Second)
-
-		// Rx an RA from lladdr2 with huge lifetime.
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufSimple(llAddr2, 1000))
-		expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, true)
-
-		// Rx an RA from lladdr2 with zero lifetime. It should be invalidated.
-		e.InjectInbound(header.IPv6ProtocolNumber, raBufSimple(llAddr2, 0))
-		expectOffLinkRouteEvent(llAddr2, header.MediumRoutePreference, false)
-
-		// Wait for lladdr3's router invalidation job to execute. The lifetime
-		// of the router should have been updated to the most recent (smaller)
-		// lifetime.
-		//
-		// Wait for the normal lifetime plus an extra bit for the
-		// router to get invalidated. If we don't get an invalidation
-		// event after this time, then something is wrong.
-		expectAsyncOffLinkRouteInvalidationEvent(llAddr3, l3LifetimeSeconds*time.Second)
-	})
+	}
 }
 
 // TestRouterDiscoveryMaxRouters tests that only
@@ -1494,7 +1572,7 @@ func TestRouterDiscoveryMaxRouters(t *testing.T) {
 		if i <= ipv6.MaxDiscoveredOffLinkRoutes {
 			select {
 			case e := <-ndpDisp.offLinkRouteC:
-				if diff := checkOffLinkRouteEvent(e, nicID, llAddr, header.MediumRoutePreference, true); diff != "" {
+				if diff := checkOffLinkRouteEvent(e, nicID, header.IPv6EmptySubnet, llAddr, header.MediumRoutePreference, true); diff != "" {
 					t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
 				}
 			default:
@@ -4583,7 +4661,7 @@ func TestNoCleanupNDPStateWhenForwardingEnabled(t *testing.T) {
 	)
 	select {
 	case e := <-ndpDisp.offLinkRouteC:
-		if diff := checkOffLinkRouteEvent(e, nicID, llAddr3, header.MediumRoutePreference, true /* discovered */); diff != "" {
+		if diff := checkOffLinkRouteEvent(e, nicID, header.IPv6EmptySubnet, llAddr3, header.MediumRoutePreference, true /* discovered */); diff != "" {
 			t.Errorf("off-link route event mismatch (-want +got):\n%s", diff)
 		}
 	default:
