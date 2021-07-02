@@ -115,7 +115,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	e.ops.SetHeaderIncluded(!associated)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
-	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
+	e.ops.SetReceiveBufferSize(32*1024, false /* notify */, false /* ignoreMax */)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
@@ -125,14 +125,14 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 
 	var rs tcpip.ReceiveBufferSizeOption
 	if err := s.Option(&rs); err == nil {
-		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */)
+		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */, false /* ignoreMax */)
 	}
 
 	// Unassociated endpoints are write-only and users call Write() with IP
 	// headers included. Because they're write-only, We don't need to
 	// register with the stack.
 	if !associated {
-		e.ops.SetReceiveBufferSize(0, false)
+		e.ops.SetReceiveBufferSize(0, false /* notify */, false /* ignoreMax */)
 		e.waiterQueue = nil
 		return e, nil
 	}

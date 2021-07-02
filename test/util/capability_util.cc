@@ -14,6 +14,8 @@
 
 #include "test/util/capability_util.h"
 
+#ifdef __linux__
+
 #include <linux/capability.h>
 #include <sched.h>
 #include <sys/mman.h>
@@ -79,3 +81,5 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __linux__

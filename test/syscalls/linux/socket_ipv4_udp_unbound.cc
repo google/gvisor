@@ -15,6 +15,9 @@
 #include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
 
 #include <arpa/inet.h>
+#ifdef __linux__
+#include <linux/capability.h>
+#endif  // __linux__
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -27,6 +30,7 @@
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"
@@ -2235,8 +2239,8 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufBelowMin) {
   ASSERT_EQ(min, val);
 }
 
-// Check that setting SO_RCVBUF above max is clamped to the maximum
-// receive buffer size.
+// Check that setting SO_RCVBUF above max is clamped to the maximum receive
+// buffer size.
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufAboveMax) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -2262,6 +2266,43 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufAboveMax) {
               SyscallSucceeds());
   ASSERT_EQ(max, val);
 }
+
+#ifdef __linux__
+
+// Check that setting SO_RCVBUFFORCE above max is not clamped to the maximum
+// receive buffer size.
+TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBufForceAboveMax) {
+  std::unique_ptr<FileDescriptor> sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(sock->get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(sock->get(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  int sso = setsockopt(sock->get(), SOL_SOCKET, SO_RCVBUFFORCE, &above_max,
+                       sizeof(above_max));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
+    return;
+  }
+  ASSERT_THAT(sso, SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(sock->get(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+  // The system doubles the passed-in maximum.
+  ASSERT_EQ(above_max * 2, val);
+}
+
+#endif  // __linux__
 
 // Check that setting SO_RCVBUF min <= rcvBufSz <= max is honored.
 TEST_P(IPv4UDPUnboundSocketTest, SetSocketRecvBuf) {
