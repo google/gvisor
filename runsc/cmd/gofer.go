@@ -265,7 +265,8 @@ func isReadonlyMount(opts []string) bool {
 func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
-	if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
+	procPath := "/proc"
+	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", procPath); err != nil {
 		Fatalf("error converting mounts: %v", err)
 	}
 
@@ -278,21 +279,24 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// We need a directory to construct a new root and we know that
 		// runsc can't start without /proc, so we can use it for this.
 		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
-		if err := unix.Mount("runsc-root", "/proc", "tmpfs", flags, ""); err != nil {
+		if err := specutils.SafeMount("runsc-root", "/proc", "tmpfs", flags, "", procPath); err != nil {
 			Fatalf("error mounting tmpfs: %v", err)
 		}
 
 		// Prepare tree structure for pivot_root(2).
 		os.Mkdir("/proc/proc", 0755)
 		os.Mkdir("/proc/root", 0755)
+		// This cannot use SafeMount because there's no available procfs. But we
+		// know that /proc is an empty tmpfs mount, so this is safe.
 		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
 			Fatalf("error mounting proc: %v", err)
 		}
 		root = "/proc/root"
+		procPath = "/proc/proc"
 	}
 
 	// Mount root path followed by submounts.
-	if err := unix.Mount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+	if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
 		return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
 	}
 
@@ -300,12 +304,12 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
 	}
-	if err := unix.Mount("", root, "", uintptr(flags), ""); err != nil {
+	if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
 		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := setupMounts(conf, spec.Mounts, root); err != nil {
+	if err := setupMounts(conf, spec.Mounts, root, procPath); err != nil {
 		Fatalf("error setting up FS: %v", err)
 	}
 
@@ -327,7 +331,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", root)
 		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC)
-		if err := unix.Mount(root, root, "bind", flags, ""); err != nil {
+		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
 			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
 		}
 	}
@@ -343,10 +347,10 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	return nil
 }
 
-// setupMounts binds mount all mounts specified in the spec in their correct
+// setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
+func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
 	for _, m := range mounts {
 		if !specutils.Is9PMount(m, conf.VFS2) {
 			continue
@@ -364,14 +368,14 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root string) error {
 		}
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
-		if err := specutils.Mount(m.Source, dst, m.Type, flags); err != nil {
-			return fmt.Errorf("mounting %v: %v", m, err)
+		if err := specutils.Mount(m.Source, dst, m.Type, flags, procPath); err != nil {
+			return fmt.Errorf("mounting %+v: %v", m, err)
 		}
 
 		// Set propagation options that cannot be set together with other options.
 		flags = specutils.PropOptionsToFlags(m.Options)
 		if flags != 0 {
-			if err := unix.Mount("", dst, "", uintptr(flags), ""); err != nil {
+			if err := specutils.SafeMount("", dst, "", uintptr(flags), "", procPath); err != nil {
 				return fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
 			}
 		}

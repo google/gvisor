@@ -30,7 +30,7 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	chrootDst := filepath.Join(chroot, dst)
 	log.Infof("Mounting %q at %q", src, chrootDst)
 
-	if err := specutils.Mount(src, chrootDst, typ, flags); err != nil {
+	if err := specutils.Mount(src, chrootDst, typ, flags, "/proc"); err != nil {
 		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
 	}
 	return nil
@@ -70,11 +70,11 @@ func setUpChroot(pidns bool) error {
 
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
-	if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
+	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", "/proc"); err != nil {
 		return fmt.Errorf("error converting mounts: %v", err)
 	}
 
-	if err := unix.Mount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, ""); err != nil {
+	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func setUpChroot(pidns bool) error {
 		}
 	}
 
-	if err := unix.Mount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, ""); err != nil {
+	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 
