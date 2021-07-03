@@ -140,6 +140,16 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	return int64(n), nPushed > 0, nil
 }
 
+// discardPending all pending readable data in the queue
+func (q *queue) discardPending() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.readBuf = nil
+	q.waitBuf = nil
+	q.waitBufLen = 0
+	q.readable = false
+}
+
 // write writes to q from userspace.
 //
 // Preconditions: l.termiosMu must be held for reading.

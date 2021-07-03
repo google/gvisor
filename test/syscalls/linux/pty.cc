@@ -1327,6 +1327,52 @@ TEST_F(PtyTest, SetMasterWindowSize) {
   EXPECT_EQ(retrieved_ws.ws_col, kCols);
 }
 
+TEST_F(PtyTest, DiscardPendingInputAndSetMaster) {
+  DisableCanonical();
+
+  constexpr char kInput1[] = "Pending";
+  EXPECT_THAT(WriteFd(master_.get(), kInput1, sizeof(kInput1) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput1) - 1));
+
+  // Wait for the input queue to fill.
+  ASSERT_NO_ERRNO(WaitUntilReceived(replica_.get(), strlen(kInput1)));
+
+  // Call TCSETSF so pending input is discarded.
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
+  EXPECT_THAT(ioctl(replica_.get(), TCSETSF, &t), SyscallSucceeds());
+
+  constexpr char kInput2[] = "Hello\n";
+  ASSERT_THAT(WriteFd(master_.get(), &kInput2, sizeof(kInput2) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput2) - 1));
+
+  char buf[100] = {};
+  ExpectReadable(replica_, strlen(kInput2), buf);
+  EXPECT_STREQ(buf, kInput2);
+
+  ExpectFinished(replica_);
+}
+
+TEST_F(PtyTest, DiscardPendingInputAndSetReplica) {
+  constexpr char kInput1[] = "Pending";
+  EXPECT_THAT(WriteFd(replica_.get(), kInput1, sizeof(kInput1) - 1),
+              SyscallSucceedsWithValue(sizeof(kInput1) - 1));
+
+  // Wait for the input queue to fill.
+  ASSERT_NO_ERRNO(WaitUntilReceived(master_.get(), sizeof(kInput1) - 1));
+
+  // Call TCSETSF so pending input is discarded.
+  struct kernel_termios t = {};
+  EXPECT_THAT(ioctl(master_.get(), TCGETS, &t), SyscallSucceeds());
+  EXPECT_THAT(ioctl(master_.get(), TCSETSF, &t), SyscallSucceeds());
+
+  char buf[100] = {};
+  ExpectReadable(master_, sizeof(kInput1) - 1, buf);
+  EXPECT_STREQ(buf, kInput1);
+
+  ExpectFinished(master_);
+}
+
 class JobControlTest : public ::testing::Test {
  protected:
   void SetUp() override {
