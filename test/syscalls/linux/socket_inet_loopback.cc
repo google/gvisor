@@ -707,7 +707,7 @@ TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
 
   // Try many iterations to catch a race with socket close and handshake
   // completion.
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 0; i < 100; ++i) {
     FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
     ASSERT_THAT(
