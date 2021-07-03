@@ -217,7 +217,7 @@ func ReadMounts(f *os.File) ([]specs.Mount, error) {
 	}
 	var mounts []specs.Mount
 	if err := json.Unmarshal(bytes, &mounts); err != nil {
-		return nil, fmt.Errorf("error unmarshaling mounts: %v\n %s", err, string(bytes))
+		return nil, fmt.Errorf("error unmarshaling mounts: %v\nJSON bytes:\n%s", err, string(bytes))
 	}
 	return mounts, nil
 }
@@ -434,8 +434,10 @@ func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
 
-// Mount creates the mount point and calls Mount with the given flags.
-func Mount(src, dst, typ string, flags uint32) error {
+// Mount creates the mount point and calls Mount with the given flags. procPath
+// is the path to procfs. If it is "", procfs is assumed to be mounted at
+// /proc.
+func Mount(src, dst, typ string, flags uint32, procPath string) error {
 	// Create the mount point inside. The type must be the same as the
 	// source (file or directory).
 	var isDir bool
@@ -468,10 +470,44 @@ func Mount(src, dst, typ string, flags uint32) error {
 	}
 
 	// Do the mount.
-	if err := unix.Mount(src, dst, typ, uintptr(flags), ""); err != nil {
+	if err := SafeMount(src, dst, typ, uintptr(flags), "", procPath); err != nil {
 		return fmt.Errorf("mount(%q, %q, %d) failed: %v", src, dst, flags, err)
 	}
 	return nil
+}
+
+// ErrSymlinkMount is returned by SafeMount when the mount destination is found
+// to be a symlink.
+type ErrSymlinkMount struct {
+	error
+}
+
+// SafeMount is like unix.Mount, but will fail if dst is a symlink. procPath is
+// the path to procfs. If it is "", procfs is assumed to be mounted at /proc.
+func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) error {
+	// Open the destination.
+	fd, err := unix.Open(dst, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("failed to safely mount: Open(%s, _, _): %w", dst, err)
+	}
+	defer unix.Close(fd)
+
+	// Use /proc/self/fd/ to verify that we opened the intended destination. This
+	// guards against dst being a symlink, in which case we could accidentally
+	// mount over the symlink's target.
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	safePath := filepath.Join(procPath, "self/fd", strconv.Itoa(fd))
+	target, err := os.Readlink(safePath)
+	if err != nil {
+		return fmt.Errorf("failed to safely mount: Readlink(%s): %w", safePath, err)
+	}
+	if dst != target {
+		return &ErrSymlinkMount{fmt.Errorf("failed to safely mount: expected to open %s, but found %s", dst, target)}
+	}
+
+	return unix.Mount(src, safePath, fstype, flags, data)
 }
 
 // ContainsStr returns true if 'str' is inside 'strs'.
