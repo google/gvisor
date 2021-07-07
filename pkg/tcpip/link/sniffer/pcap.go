@@ -55,8 +55,7 @@ type pcapPacketHeader struct {
 	OriginalLength uint32
 }
 
-func newPCAPPacketHeader(incLen, orgLen uint32) pcapPacketHeader {
-	now := time.Now()
+func newPCAPPacketHeader(now time.Time, incLen, orgLen uint32) pcapPacketHeader {
 	return pcapPacketHeader{
 		Seconds:        uint32(now.Unix()),
 		Microseconds:   uint32(now.Nanosecond() / 1000),
