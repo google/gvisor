@@ -18,10 +18,10 @@ package signalfd
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -91,7 +91,7 @@ func (sfd *SignalFileDescription) Read(ctx context.Context, dst usermem.IOSequen
 	info, err := sfd.target.Sigtimedwait(sfd.Mask(), 0)
 	if err != nil {
 		// There must be no signal available.
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 
 	// Copy out the signal info using the specified format.

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // inode represents an ext inode.
@@ -186,7 +185,7 @@ func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, opts *vfs.OpenOpt
 		// Can't open directories writably. This check is not necessary for a read
 		// only filesystem but will be required when write is implemented.
 		if ats&vfs.MayWrite != 0 {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		var fd directoryFD
 		fd.LockFD.Init(&in.locks)

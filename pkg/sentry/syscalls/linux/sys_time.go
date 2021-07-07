@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // The most significant 29 bits hold either a pid or a file descriptor.
@@ -214,7 +213,7 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem host
 	case linuxerr.Equals(linuxerr.ETIMEDOUT, err):
 		// Slept for entire timeout.
 		return nil
-	case err == syserror.ErrInterrupted:
+	case err == linuxerr.ErrInterrupted:
 		// Interrupted.
 		remaining := end.Sub(c.Now())
 		if remaining <= 0 {
@@ -235,9 +234,9 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem host
 				end: end,
 				rem: rem,
 			})
-			return syserror.ERESTART_RESTARTBLOCK
+			return linuxerr.ERESTART_RESTARTBLOCK
 		}
-		return syserror.ERESTARTNOHAND
+		return linuxerr.ERESTARTNOHAND
 	default:
 		panic(fmt.Sprintf("Impossible BlockWithTimer error %v", err))
 	}

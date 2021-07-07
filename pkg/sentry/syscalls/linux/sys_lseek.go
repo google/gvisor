@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -49,7 +48,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	offset, serr := file.Seek(t, sw, offset)
-	err := handleIOError(t, false /* partialResult */, serr, syserror.ERESTARTSYS, "lseek", file)
+	err := handleIOError(t, false /* partialResult */, serr, linuxerr.ERESTARTSYS, "lseek", file)
 	if err != nil {
 		return 0, nil, err
 	}

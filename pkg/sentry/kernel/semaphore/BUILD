@@ -31,7 +31,6 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )
 
@@ -43,8 +42,8 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
-        "//pkg/syserror",
     ],
 )

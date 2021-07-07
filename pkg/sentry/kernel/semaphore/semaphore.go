@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -151,14 +150,14 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 				return nil, linuxerr.EINVAL
 			}
 			if create && exclusive {
-				return nil, syserror.EEXIST
+				return nil, linuxerr.EEXIST
 			}
 			return set, nil
 		}
 
 		if !create {
 			// Semaphore not found and should not be created.
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 	}
 
@@ -172,10 +171,10 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 	// Map semaphores and map indexes in a registry are of the same size,
 	// check map semaphores only here for the system limit.
 	if len(r.semaphores) >= setsMax {
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 	if r.totalSems() > int(semsTotalMax-nsems) {
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 
 	// Finally create a new set.
@@ -294,7 +293,7 @@ func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.File
 	}
 
 	log.Warningf("Semaphore map is full, they must be leaking")
-	return nil, syserror.ENOMEM
+	return nil, linuxerr.ENOMEM
 }
 
 // FindByID looks up a set given an ID.
@@ -418,7 +417,7 @@ func (s *Set) semStat(creds *auth.Credentials, permMask fs.PermMask) (*linux.Sem
 // SetVal overrides a semaphore value, waking up waiters as needed.
 func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid int32) error {
 	if val < 0 || val > valueMax {
-		return syserror.ERANGE
+		return linuxerr.ERANGE
 	}
 
 	s.mu.Lock()
@@ -431,7 +430,7 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 
 	sem := s.findSem(num)
 	if sem == nil {
-		return syserror.ERANGE
+		return linuxerr.ERANGE
 	}
 
 	// TODO(gvisor.dev/issue/137): Clear undo entries in all processes.
@@ -453,7 +452,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 
 	for _, val := range vals {
 		if val > valueMax {
-			return syserror.ERANGE
+			return linuxerr.ERANGE
 		}
 	}
 
@@ -489,7 +488,7 @@ func (s *Set) GetVal(num int32, creds *auth.Credentials) (int16, error) {
 
 	sem := s.findSem(num)
 	if sem == nil {
-		return 0, syserror.ERANGE
+		return 0, linuxerr.ERANGE
 	}
 	return sem.value, nil
 }
@@ -523,7 +522,7 @@ func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
 
 	sem := s.findSem(num)
 	if sem == nil {
-		return 0, syserror.ERANGE
+		return 0, linuxerr.ERANGE
 	}
 	return sem.pid, nil
 }
@@ -539,7 +538,7 @@ func (s *Set) countWaiters(num int32, creds *auth.Credentials, pred func(w *wait
 
 	sem := s.findSem(num)
 	if sem == nil {
-		return 0, syserror.ERANGE
+		return 0, linuxerr.ERANGE
 	}
 	var cnt uint16
 	for w := sem.waiters.Front(); w != nil; w = w.Next() {
@@ -575,7 +574,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 
 	// Did it race with a removal operation?
 	if s.dead {
-		return nil, 0, syserror.EIDRM
+		return nil, 0, linuxerr.EIDRM
 	}
 
 	// Validate the operations.
@@ -614,7 +613,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 			if tmpVals[op.SemNum] != 0 {
 				// Semaphore isn't 0, must wait.
 				if op.SemFlg&linux.IPC_NOWAIT != 0 {
-					return nil, 0, syserror.ErrWouldBlock
+					return nil, 0, linuxerr.ErrWouldBlock
 				}
 
 				w := newWaiter(op.SemOp)
@@ -625,12 +624,12 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 			if op.SemOp < 0 {
 				// Handle 'wait' operation.
 				if -op.SemOp > valueMax {
-					return nil, 0, syserror.ERANGE
+					return nil, 0, linuxerr.ERANGE
 				}
 				if -op.SemOp > tmpVals[op.SemNum] {
 					// Not enough resources, must wait.
 					if op.SemFlg&linux.IPC_NOWAIT != 0 {
-						return nil, 0, syserror.ErrWouldBlock
+						return nil, 0, linuxerr.ErrWouldBlock
 					}
 
 					w := newWaiter(op.SemOp)
@@ -640,7 +639,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 			} else {
 				// op.SemOp > 0: Handle 'signal' operation.
 				if tmpVals[op.SemNum] > valueMax-op.SemOp {
-					return nil, 0, syserror.ERANGE
+					return nil, 0, linuxerr.ERANGE
 				}
 			}
 

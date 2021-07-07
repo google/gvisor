@@ -66,6 +66,5 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )

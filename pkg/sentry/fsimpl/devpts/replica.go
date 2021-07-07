@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -142,7 +141,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, arg
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	switch cmd := args[1].Uint(); cmd {
@@ -180,7 +179,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, arg
 		return rfd.inode.t.setForegroundProcessGroup(ctx, args, false /* isMaster */)
 	default:
 		maybeEmitUnimplementedEvent(ctx, cmd)
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 

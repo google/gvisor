@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -288,7 +287,7 @@ func (s *socketOpsCommon) Accept(t *kernel.Task, peerRequested bool, flags int, 
 	fd, syscallErr := accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
 	if blocking {
 		var ch chan struct{}
-		for syscallErr == syserror.ErrWouldBlock {
+		for syscallErr == linuxerr.ErrWouldBlock {
 			if ch != nil {
 				if syscallErr = t.Block(ch); syscallErr != nil {
 					break
@@ -535,7 +534,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	n, err := copyToDst()
 	// recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
 	if flags&(unix.MSG_DONTWAIT|unix.MSG_ERRQUEUE) == 0 {
-		for err == syserror.ErrWouldBlock {
+		for err == linuxerr.ErrWouldBlock {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
 			if n != 0 {
@@ -707,7 +706,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	var ch chan struct{}
 	n, err := src.CopyInTo(t, sendmsgFromBlocks)
 	if flags&unix.MSG_DONTWAIT == 0 {
-		for err == syserror.ErrWouldBlock {
+		for err == linuxerr.ErrWouldBlock {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
 			if n != 0 {
@@ -716,7 +715,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 			if ch != nil {
 				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-						err = syserror.ErrWouldBlock
+						err = linuxerr.ErrWouldBlock
 					}
 					break
 				}
@@ -735,7 +734,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 
 func translateIOSyscallError(err error) error {
 	if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
 	return err
 }

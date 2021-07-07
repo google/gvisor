@@ -17,7 +17,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/tcpip/link/tun",
         "//pkg/usermem",
         "//pkg/waiter",

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -82,7 +81,7 @@ func (tfd *TimerFileDescription) Read(ctx context.Context, dst usermem.IOSequenc
 		}
 		return sizeofUint64, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 // Clock returns the timer fd's Clock.

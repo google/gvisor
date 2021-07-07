@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -109,7 +108,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 // stat implements stat from the given *fs.Dirent.
 func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr hostarch.Addr) error {
 	if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	uattr, err := d.Inode.UnstableAttr(t)
 	if err != nil {
@@ -171,7 +170,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 		uattr, err := d.Inode.UnstableAttr(t)
 		if err != nil {

@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SyscallRestartBlock represents the restart block for a syscall restartable
@@ -383,8 +382,6 @@ func ExtractErrno(err error, sysno int) int {
 		return int(err)
 	case *errors.Error:
 		return int(err.Errno())
-	case syserror.SyscallRestartErrno:
-		return int(err)
 	case *memmap.BusError:
 		// Bus errors may generate SIGBUS, but for syscalls they still
 		// return EFAULT. See case in task_run.go where the fault is
@@ -397,8 +394,8 @@ func ExtractErrno(err error, sysno int) int {
 	case *os.SyscallError:
 		return ExtractErrno(err.Err, sysno)
 	default:
-		if errno, ok := syserror.TranslateError(err); ok {
-			return int(errno)
+		if errno, ok := linuxerr.TranslateError(err); ok {
+			return int(errno.Errno())
 		}
 	}
 	panic(fmt.Sprintf("Unknown syscall %d error: %v", sysno, err))

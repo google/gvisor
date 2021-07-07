@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Supported returns a syscall that is fully supported.
@@ -103,10 +102,10 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 				return 0, nil, linuxerr.EPERM
 			}
 			t.Kernel().EmitUnimplementedEvent(t)
-			return 0, nil, syserror.ENOSYS
+			return 0, nil, linuxerr.ENOSYS
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, linuxerr.EPERM, c.String(), syserror.ENOSYS),
+		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, linuxerr.EPERM, c.String(), linuxerr.ENOSYS),
 		URLs:         urls,
 	}
 }

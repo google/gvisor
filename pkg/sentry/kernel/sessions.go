@@ -17,7 +17,6 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SessionID is the public identifier.
@@ -373,7 +372,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 
 	// Check whether a process still exists or not.
 	if id == 0 {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// Per above, check for a Session leader or existing group.

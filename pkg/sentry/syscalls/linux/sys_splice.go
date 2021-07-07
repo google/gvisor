@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -46,9 +45,9 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 
 	for {
 		n, err = fs.Splice(t, outFile, inFile, opts)
-		if n != 0 || err != syserror.ErrWouldBlock {
+		if n != 0 || err != linuxerr.ErrWouldBlock {
 			break
-		} else if err == syserror.ErrWouldBlock && nonBlocking {
+		} else if err == linuxerr.ErrWouldBlock && nonBlocking {
 			break
 		}
 
@@ -177,7 +176,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// We can only pass a single file to handleIOError, so pick inFile
 	// arbitrarily. This is used only for debugging purposes.
-	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, linuxerr.ERESTARTSYS, "sendfile", inFile)
 }
 
 // Splice implements splice(2).
@@ -287,7 +286,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "splice", inFile)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "splice", inFile)
 }
 
 // Tee imlements tee(2).
@@ -340,5 +339,5 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	}
 
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "tee", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, linuxerr.ERESTARTSYS, "tee", inFile)
 }

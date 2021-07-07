@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -195,7 +194,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	attrs, err := next.Inode.overlay.lower.UnstableAttr(ctx)
 	if err != nil {
 		log.Warningf("copy up failed to get lower attributes: %v", err)
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	var childUpperInode *Inode
@@ -211,7 +210,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		childFile, err := parentUpper.Create(ctx, root, next.name, FileFlags{Read: true, Write: true}, attrs.Perms)
 		if err != nil {
 			log.Warningf("copy up failed to create file: %v", err)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		defer childFile.DecRef(ctx)
 		childUpperInode = childFile.Dirent.Inode
@@ -219,13 +218,13 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	case Directory:
 		if err := parentUpper.CreateDirectory(ctx, root, next.name, attrs.Perms); err != nil {
 			log.Warningf("copy up failed to create directory: %v", err)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
 			werr := fmt.Errorf("copy up failed to lookup directory: %v", err)
 			cleanupUpper(ctx, parentUpper, next.name, werr)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
@@ -235,17 +234,17 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		link, err := childLower.Readlink(ctx)
 		if err != nil {
 			log.Warningf("copy up failed to read symlink value: %v", err)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		if err := parentUpper.CreateLink(ctx, root, link, next.name); err != nil {
 			log.Warningf("copy up failed to create symlink: %v", err)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		childUpper, err := parentUpper.Lookup(ctx, next.name)
 		if err != nil {
 			werr := fmt.Errorf("copy up failed to lookup symlink: %v", err)
 			cleanupUpper(ctx, parentUpper, next.name, werr)
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		defer childUpper.DecRef(ctx)
 		childUpperInode = childUpper.Inode
@@ -259,14 +258,14 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	if err := copyAttributesLocked(ctx, childUpperInode, next.Inode.overlay.lower); err != nil {
 		werr := fmt.Errorf("copy up failed to copy up attributes: %v", err)
 		cleanupUpper(ctx, parentUpper, next.name, werr)
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Copy the entire file.
 	if err := copyContentsLocked(ctx, childUpperInode, next.Inode.overlay.lower, attrs.Size); err != nil {
 		werr := fmt.Errorf("copy up failed to copy up contents: %v", err)
 		cleanupUpper(ctx, parentUpper, next.name, werr)
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	lowerMappable := next.Inode.overlay.lower.Mappable()
@@ -274,7 +273,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	if lowerMappable != nil && upperMappable == nil {
 		werr := fmt.Errorf("copy up failed: cannot ensure memory mapping coherence")
 		cleanupUpper(ctx, parentUpper, next.name, werr)
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Propagate memory mappings to the upper Inode.

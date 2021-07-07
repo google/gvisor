@@ -70,7 +70,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/unet",
         "//pkg/usermem",

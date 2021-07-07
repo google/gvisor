@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func overlayHasWhiteout(ctx context.Context, parent *Inode, name string) bool {
@@ -103,7 +102,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 				// Upper fs is not OK with a negative Dirent
 				// being cached in the Dirent tree, so don't
 				// return one.
-				return nil, false, syserror.ENOENT
+				return nil, false, linuxerr.ENOENT
 			}
 			entry, err := newOverlayEntry(ctx, upperInode, nil, false)
 			if err != nil {
@@ -165,7 +164,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		if negativeUpperChild {
 			return NewNegativeDirent(name), false, nil
 		}
-		return nil, false, syserror.ENOENT
+		return nil, false, linuxerr.ENOENT
 	}
 
 	// Did we find a lower Inode? Remember this because we may decide we don't

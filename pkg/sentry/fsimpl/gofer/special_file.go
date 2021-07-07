@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -191,7 +190,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	if d := fd.dentry(); d.cachedMetadataAuthoritative() {
@@ -230,7 +229,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	buf := make([]byte, dst.NumBytes())
 	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
-		err = syserror.ErrWouldBlock
+		err = linuxerr.ErrWouldBlock
 	}
 	if n == 0 {
 		return bufN, err
@@ -271,7 +270,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, offset, syserror.EOPNOTSUPP
+		return 0, offset, linuxerr.EOPNOTSUPP
 	}
 
 	d := fd.dentry()
@@ -318,7 +317,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset))
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
-		err = syserror.ErrWouldBlock
+		err = linuxerr.ErrWouldBlock
 	}
 	// Update offset if the offset is valid.
 	if offset >= 0 {

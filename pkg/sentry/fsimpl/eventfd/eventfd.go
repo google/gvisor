@@ -22,11 +22,11 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -149,7 +149,7 @@ func (efd *EventFileDescription) hostReadLocked(ctx context.Context, dst usermem
 	var buf [8]byte
 	if _, err := unix.Read(efd.hostfd, buf[:]); err != nil {
 		if err == unix.EWOULDBLOCK {
-			return syserror.ErrWouldBlock
+			return linuxerr.ErrWouldBlock
 		}
 		return err
 	}
@@ -167,7 +167,7 @@ func (efd *EventFileDescription) read(ctx context.Context, dst usermem.IOSequenc
 	// We can't complete the read if the value is currently zero.
 	if efd.val == 0 {
 		efd.mu.Unlock()
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
 
 	// Update the value based on the mode the event is operating in.
@@ -200,7 +200,7 @@ func (efd *EventFileDescription) hostWriteLocked(val uint64) error {
 	hostarch.ByteOrder.PutUint64(buf[:], val)
 	_, err := unix.Write(efd.hostfd, buf[:])
 	if err == unix.EWOULDBLOCK {
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
 	return err
 }
@@ -232,7 +232,7 @@ func (efd *EventFileDescription) Signal(val uint64) error {
 	// uint64 minus 1.
 	if val > math.MaxUint64-1-efd.val {
 		efd.mu.Unlock()
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
 
 	efd.val += val

@@ -96,7 +96,7 @@ type dirInfo struct {
 // LINT.IfChange
 
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
-// EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
+// EWOULDBLOCK. This is so they can be transformed into linuxerr.ErrWouldBlock.
 func isBlockError(err error) bool {
 	if linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err) {
 		return true

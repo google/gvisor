@@ -13,9 +13,9 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cpuid",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sync",
-        "//pkg/syserror",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

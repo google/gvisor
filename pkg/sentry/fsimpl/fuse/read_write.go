@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ReadInPages sends FUSE_READ requests for the size after round it up to
@@ -221,7 +220,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 
 		// Write more than requested? EIO.
 		if out.Size > toWrite {
-			return 0, syserror.EIO
+			return 0, linuxerr.EIO
 		}
 
 		written += out.Size

@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -126,7 +125,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 				endpoint, ok := linkEP.(*tunEndpoint)
 				if !ok {
 					// Not a NIC created by tun device.
-					return nil, syserror.EOPNOTSUPP
+					return nil, linuxerr.EOPNOTSUPP
 				}
 				if !endpoint.TryIncRef() {
 					// Race detected: NIC got deleted in between.
@@ -174,7 +173,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 		return 0, linuxerr.EBADFD
 	}
 	if !endpoint.IsAttached() {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 
 	dataLen := int64(len(data))
@@ -249,7 +248,7 @@ func (d *Device) Read() ([]byte, error) {
 	for {
 		info, ok := endpoint.Read()
 		if !ok {
-			return nil, syserror.ErrWouldBlock
+			return nil, linuxerr.ErrWouldBlock
 		}
 
 		v, ok := d.encodePkt(&info)

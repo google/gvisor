@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Error represents an internal error.
@@ -52,12 +51,12 @@ func New(message string, linuxTranslation errno.Errno) *Error {
 	}
 
 	e := error(unix.Errno(err.errno))
-	// syserror.ErrWouldBlock gets translated to linuxerr.EWOULDBLOCK and
+	// linuxerr.ErrWouldBlock gets translated to linuxerr.EWOULDBLOCK and
 	// enables proper blocking semantics. This should temporary address the
 	// class of blocking bugs that keep popping up with the current state of
 	// the error space.
 	if err.errno == linuxerr.EWOULDBLOCK.Errno() {
-		e = syserror.ErrWouldBlock
+		e = linuxerr.ErrWouldBlock
 	}
 	linuxBackwardsTranslations[err.errno] = linuxBackwardsTranslation{err: e, ok: true}
 
@@ -287,8 +286,14 @@ func FromError(err error) *Error {
 		return FromHost(unix.Errno(linuxErr.Errno()))
 	}
 
-	if errno, ok := syserror.TranslateError(err); ok {
-		return FromHost(errno)
-	}
 	panic("unknown error: " + err.Error())
+}
+
+// ConvertIntr converts the provided error code (err) to another one (intr) if
+// the first error corresponds to an interrupted operation.
+func ConvertIntr(err, intr error) error {
+	if err == linuxerr.ErrInterrupted {
+		return intr
+	}
+	return err
 }

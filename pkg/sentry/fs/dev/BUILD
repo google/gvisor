@@ -34,7 +34,6 @@ go_library(
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/socket/netstack",
-        "//pkg/syserror",
         "//pkg/tcpip/link/tun",
         "//pkg/usermem",
         "//pkg/waiter",

@@ -279,7 +279,6 @@ go_library(
         "//pkg/state/wire",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
         "//pkg/usermem",

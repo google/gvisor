@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // taskInode represents the inode for /proc/PID/ directory.
@@ -50,7 +49,7 @@ var _ kernfs.Inode = (*taskInode)(nil)
 
 func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns *kernel.PIDNamespace, isThreadGroup bool, fakeCgroupControllers map[string]string) (kernfs.Inode, error) {
 	if task.ExitState() == kernel.TaskExitDead {
-		return nil, syserror.ESRCH
+		return nil, linuxerr.ESRCH
 	}
 
 	contents := map[string]kernfs.Inode{

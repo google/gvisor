@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // inodeOperations implements fs.InodeOperations for pipes.
@@ -95,7 +94,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 		if i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
 			if !waitFor(&i.mu, &i.wWakeup, ctx) {
 				r.DecRef(ctx)
-				return nil, syserror.ErrInterrupted
+				return nil, linuxerr.ErrInterrupted
 			}
 		}
 
@@ -118,7 +117,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 			if !waitFor(&i.mu, &i.rWakeup, ctx) {
 				w.DecRef(ctx)
-				return nil, syserror.ErrInterrupted
+				return nil, linuxerr.ErrInterrupted
 			}
 		}
 		return w, nil

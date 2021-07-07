@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -465,7 +464,7 @@ func (t *Task) ptraceUnfreezeLocked() {
 // stop.
 func (t *Task) ptraceUnstop(mode ptraceSyscallMode, singlestep bool, sig linux.Signal) error {
 	if sig != 0 && !sig.IsValid() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -532,7 +531,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	}
 	if seize {
 		if err := target.ptraceSetOptionsLocked(opts); err != nil {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 	}
 	target.ptraceTracer.Store(t)
@@ -569,7 +568,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 // ptrace stop.
 func (t *Task) ptraceDetach(target *Task, sig linux.Signal) error {
 	if sig != 0 && !sig.IsValid() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -940,7 +939,7 @@ func (t *Task) ptraceKill(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	target.tg.signalHandlers.mu.Lock()
 	defer target.tg.signalHandlers.mu.Unlock()
@@ -964,10 +963,10 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceSeized {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	target.tg.signalHandlers.mu.Lock()
 	defer target.tg.signalHandlers.mu.Unlock()
@@ -1022,7 +1021,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// specified by pid.
 	target := t.tg.pidns.TaskWithID(pid)
 	if target == nil {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// PTRACE_ATTACH and PTRACE_SEIZE do not require that target is not already
@@ -1030,7 +1029,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	if req == linux.PTRACE_ATTACH || req == linux.PTRACE_SEIZE {
 		seize := req == linux.PTRACE_SEIZE
 		if seize && addr != 0 {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		return t.ptraceAttach(target, seize, uintptr(data))
 	}
@@ -1047,7 +1046,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	t.tg.pidns.owner.mu.RLock()
 	if target.Tracer() != t {
 		t.tg.pidns.owner.mu.RUnlock()
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceFreeze() {
 		t.tg.pidns.owner.mu.RUnlock()
@@ -1055,7 +1054,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		// PTRACE_TRACEME, PTRACE_INTERRUPT, and PTRACE_KILL) require the
 		// tracee to be in a ptrace-stop, otherwise they fail with ESRCH." -
 		// ptrace(2)
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	t.tg.pidns.owner.mu.RUnlock()
 	// Even if the target has a ptrace-stop active, the tracee's task goroutine
@@ -1120,13 +1119,13 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !target.ptraceSeized {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		if target.ptraceSiginfo == nil {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		if target.ptraceSiginfo.Code>>8 != linux.PTRACE_EVENT_STOP {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		target.tg.signalHandlers.mu.Lock()
 		defer target.tg.signalHandlers.mu.Unlock()

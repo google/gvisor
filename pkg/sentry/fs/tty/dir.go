@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -155,12 +154,12 @@ func (d *dirInodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name str
 	n, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
 		// Not found.
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	s, ok := d.replicas[uint32(n)]
 	if !ok {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	s.IncRef()
@@ -235,7 +234,7 @@ func (d *dirInodeOperations) allocateTerminal(ctx context.Context) (*Terminal, e
 
 	n := d.next
 	if n == math.MaxUint32 {
-		return nil, syserror.ENOMEM
+		return nil, linuxerr.ENOMEM
 	}
 
 	if _, ok := d.replicas[n]; ok {
@@ -335,10 +334,10 @@ func (df *dirFileOperations) Readdir(ctx context.Context, file *fs.File, seriali
 
 // Read implements FileOperations.Read
 func (df *dirFileOperations) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Write implements FileOperations.Write.
 func (df *dirFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }

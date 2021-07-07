@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -170,7 +169,7 @@ type FileNotDirReaddir struct{}
 
 // Readdir implements fs.FileOperations.FileNotDirReaddir.
 func (FileNotDirReaddir) Readdir(context.Context, *fs.File, fs.DentrySerializer) (int64, error) {
-	return 0, syserror.ENOTDIR
+	return 0, linuxerr.ENOTDIR
 }
 
 // FileNoFsync implements fs.FileOperations.Fsync for files that don't support
@@ -223,7 +222,7 @@ type FileNoIoctl struct{}
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (FileNoIoctl) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // FileNoSplice implements fs.FileOperations.ReadFrom and
@@ -232,12 +231,12 @@ type FileNoSplice struct{}
 
 // WriteTo implements fs.FileOperations.WriteTo.
 func (FileNoSplice) WriteTo(context.Context, *fs.File, io.Writer, int64, bool) (int64, error) {
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // ReadFrom implements fs.FileOperations.ReadFrom.
 func (FileNoSplice) ReadFrom(context.Context, *fs.File, io.Reader, int64) (int64, error) {
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // DirFileOperations implements most of fs.FileOperations for directories,
@@ -255,12 +254,12 @@ type DirFileOperations struct {
 
 // Read implements fs.FileOperations.Read
 func (*DirFileOperations) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Write implements fs.FileOperations.Write.
 func (*DirFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // StaticDirFileOperations implements fs.FileOperations for directories with

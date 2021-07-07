@@ -20,7 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // extentFile is a type of regular file which uses extents to store file data.
@@ -234,7 +233,7 @@ func (f *extentFile) readFromExtent(ex *disklayout.Extent, off uint64, dst []byt
 
 	n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], int64(readStart))
 	if n < toRead {
-		return n, syserror.EIO
+		return n, linuxerr.EIO
 	}
 	return n, nil
 }

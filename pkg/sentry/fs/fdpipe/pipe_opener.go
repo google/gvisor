@@ -21,9 +21,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // NonBlockingOpener is a generic host file opener used to retry opening host
@@ -40,7 +40,7 @@ func Open(ctx context.Context, opener NonBlockingOpener, flags fs.FileFlags) (fs
 	p := &pipeOpenState{}
 	canceled := false
 	for {
-		if file, err := p.TryOpen(ctx, opener, flags); err != syserror.ErrWouldBlock {
+		if file, err := p.TryOpen(ctx, opener, flags); err != linuxerr.ErrWouldBlock {
 			return file, err
 		}
 
@@ -51,7 +51,7 @@ func Open(ctx context.Context, opener NonBlockingOpener, flags fs.FileFlags) (fs
 			if p.hostFile != nil {
 				p.hostFile.Close()
 			}
-			return nil, syserror.ErrInterrupted
+			return nil, linuxerr.ErrInterrupted
 		}
 
 		cancel := ctx.SleepStart()
@@ -106,13 +106,13 @@ func (p *pipeOpenState) TryOpen(ctx context.Context, opener NonBlockingOpener, f
 		}
 		return newPipeOperations(ctx, opener, flags, f, nil)
 
-	// Handle opening O_WRONLY blocking: convert ENXIO to syserror.ErrWouldBlock.
+	// Handle opening O_WRONLY blocking: convert ENXIO to linuxerr.ErrWouldBlock.
 	// See TryOpenWriteOnly for more details.
 	case flags.Write:
 		return p.TryOpenWriteOnly(ctx, opener)
 
 	default:
-		// Handle opening O_RDONLY blocking: convert EOF from read to syserror.ErrWouldBlock.
+		// Handle opening O_RDONLY blocking: convert EOF from read to linuxerr.ErrWouldBlock.
 		// See TryOpenReadOnly for more details.
 		return p.TryOpenReadOnly(ctx, opener)
 	}
@@ -120,7 +120,7 @@ func (p *pipeOpenState) TryOpen(ctx context.Context, opener NonBlockingOpener, f
 
 // TryOpenReadOnly tries to open a host pipe read only but only returns a fs.File when
 // there is a coordinating writer.  Call TryOpenReadOnly repeatedly on the same pipeOpenState
-// until syserror.ErrWouldBlock is no longer returned.
+// until linuxerr.ErrWouldBlock is no longer returned.
 //
 // How it works:
 //
@@ -150,7 +150,7 @@ func (p *pipeOpenState) TryOpenReadOnly(ctx context.Context, opener NonBlockingO
 	if n == 0 {
 		// EOF means that we're not ready yet.
 		if rerr == nil || rerr == io.EOF {
-			return nil, syserror.ErrWouldBlock
+			return nil, linuxerr.ErrWouldBlock
 		}
 		// Any error that is not EWOULDBLOCK also means we're not
 		// ready yet, and probably never will be ready.  In this
@@ -175,16 +175,16 @@ func (p *pipeOpenState) TryOpenReadOnly(ctx context.Context, opener NonBlockingO
 
 // TryOpenWriteOnly tries to open a host pipe write only but only returns a fs.File when
 // there is a coordinating reader.  Call TryOpenWriteOnly repeatedly on the same pipeOpenState
-// until syserror.ErrWouldBlock is no longer returned.
+// until linuxerr.ErrWouldBlock is no longer returned.
 //
 // How it works:
 //
 // Opening a pipe write only will return ENXIO until readers are available.  Converts the ENXIO
-// to an syserror.ErrWouldBlock, to tell callers to retry.
+// to an linuxerr.ErrWouldBlock, to tell callers to retry.
 func (*pipeOpenState) TryOpenWriteOnly(ctx context.Context, opener NonBlockingOpener) (*pipeOperations, error) {
 	hostFile, err := opener.NonBlockingOpen(ctx, fs.PermMask{Write: true})
 	if unwrapError(err) == unix.ENXIO {
-		return nil, syserror.ErrWouldBlock
+		return nil, linuxerr.ErrWouldBlock
 	}
 	if err != nil {
 		return nil, err

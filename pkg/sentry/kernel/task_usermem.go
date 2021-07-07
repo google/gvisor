@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -105,7 +104,7 @@ func (t *Task) CopyInVector(addr hostarch.Addr, maxElemSize, maxTotalSize int) (
 		// Each string has a zero terminating byte counted, so copying out a string
 		// requires at least one byte of space. Also, see the calculation below.
 		if maxTotalSize <= 0 {
-			return nil, syserror.ENOMEM
+			return nil, linuxerr.ENOMEM
 		}
 		thisMax := maxElemSize
 		if maxTotalSize < thisMax {
@@ -133,7 +132,7 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 	case 8:
 		const itemLen = 16
 		if _, ok := addr.AddLength(uint64(src.NumRanges()) * itemLen); !ok {
-			return syserror.EFAULT
+			return linuxerr.EFAULT
 		}
 
 		b := t.CopyScratchBuffer(itemLen)
@@ -148,7 +147,7 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 		}
 
 	default:
-		return syserror.ENOSYS
+		return linuxerr.ENOSYS
 	}
 
 	return nil
@@ -191,7 +190,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 	case 8:
 		const itemLen = 16
 		if _, ok := addr.AddLength(uint64(numIovecs) * itemLen); !ok {
-			return hostarch.AddrRangeSeq{}, syserror.EFAULT
+			return hostarch.AddrRangeSeq{}, linuxerr.EFAULT
 		}
 
 		b := t.CopyScratchBuffer(itemLen)
@@ -207,7 +206,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 			}
 			ar, ok := t.MemoryManager().CheckIORange(base, int64(length))
 			if !ok {
-				return hostarch.AddrRangeSeq{}, syserror.EFAULT
+				return hostarch.AddrRangeSeq{}, linuxerr.EFAULT
 			}
 
 			if numIovecs == 1 {
@@ -220,7 +219,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 		}
 
 	default:
-		return hostarch.AddrRangeSeq{}, syserror.ENOSYS
+		return hostarch.AddrRangeSeq{}, linuxerr.ENOSYS
 	}
 
 	// Truncate to MAX_RW_COUNT.
@@ -253,7 +252,7 @@ func (t *Task) SingleIOSequence(addr hostarch.Addr, length int, opts usermem.IOO
 	}
 	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {
-		return usermem.IOSequence{}, syserror.EFAULT
+		return usermem.IOSequence{}, linuxerr.EFAULT
 	}
 	return usermem.IOSequence{
 		IO:    t.MemoryManager(),
@@ -313,7 +312,7 @@ func (cc *taskCopyContext) getMemoryManager() (*mm.MemoryManager, error) {
 	tmm := cc.t.MemoryManager()
 	cc.t.mu.Unlock()
 	if !tmm.IncUsers() {
-		return nil, syserror.EFAULT
+		return nil, linuxerr.EFAULT
 	}
 	return tmm, nil
 }

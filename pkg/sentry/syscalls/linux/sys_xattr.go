@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -74,7 +73,7 @@ func getXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 	n := 0
 	err = fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(_ *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		n, err = getXattr(t, d, nameAddr, valueAddr, size)
@@ -100,7 +99,7 @@ func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, s
 
 	// TODO(b/148380782): Support xattrs in namespaces other than "user".
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	// If getxattr(2) is called with size 0, the size of the value will be
@@ -117,7 +116,7 @@ func getXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, s
 	}
 	n := len(value)
 	if uint64(n) > requestedSize {
-		return 0, syserror.ERANGE
+		return 0, linuxerr.ERANGE
 	}
 
 	// Don't copy out the attribute value if size is 0.
@@ -173,7 +172,7 @@ func setXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlink
 
 	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(_ *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		return setXattr(t, d, nameAddr, valueAddr, uint64(size), flags)
@@ -205,7 +204,7 @@ func setXattr(t *kernel.Task, d *fs.Dirent, nameAddr, valueAddr hostarch.Addr, s
 	value := string(buf)
 
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
+		return linuxerr.EOPNOTSUPP
 	}
 
 	if err := d.Inode.SetXattr(t, d, name, value, flags); err != nil {
@@ -219,12 +218,12 @@ func copyInXattrName(t *kernel.Task, nameAddr hostarch.Addr) (string, error) {
 	name, err := t.CopyInString(nameAddr, linux.XATTR_NAME_MAX+1)
 	if err != nil {
 		if linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
-			return "", syserror.ERANGE
+			return "", linuxerr.ERANGE
 		}
 		return "", err
 	}
 	if len(name) == 0 {
-		return "", syserror.ERANGE
+		return "", linuxerr.ERANGE
 	}
 	return name, nil
 }
@@ -294,7 +293,7 @@ func listXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSymlin
 	n := 0
 	err = fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(_ *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		n, err = listXattr(t, d, listAddr, size)
@@ -337,7 +336,7 @@ func listXattr(t *kernel.Task, d *fs.Dirent, addr hostarch.Addr, size uint64) (i
 		return 0, linuxerr.E2BIG
 	}
 	if uint64(listSize) > requestedSize {
-		return 0, syserror.ERANGE
+		return 0, linuxerr.ERANGE
 	}
 
 	// Don't copy out the attributes if size is 0.
@@ -401,7 +400,7 @@ func removeXattrFromPath(t *kernel.Task, args arch.SyscallArguments, resolveSyml
 
 	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolveSymlink, func(_ *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		return removeXattr(t, d, nameAddr)
@@ -420,7 +419,7 @@ func removeXattr(t *kernel.Task, d *fs.Dirent, nameAddr hostarch.Addr) error {
 	}
 
 	if !strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return syserror.EOPNOTSUPP
+		return linuxerr.EOPNOTSUPP
 	}
 
 	if err := d.Inode.RemoveXattr(t, d, name); err != nil {

@@ -54,7 +54,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/safemem",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

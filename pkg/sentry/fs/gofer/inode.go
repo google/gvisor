@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	gErr "gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -32,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // inodeOperations implements fs.InodeOperations.
@@ -719,12 +719,12 @@ func (i *inodeOperations) configureMMap(file *fs.File, opts *memmap.MMapOpts) er
 }
 
 func init() {
-	syserror.AddErrorUnwrapper(func(err error) (unix.Errno, bool) {
+	linuxerr.AddErrorUnwrapper(func(err error) (*gErr.Error, bool) {
 		if _, ok := err.(p9.ErrSocket); ok {
 			// Treat as an I/O error.
-			return unix.EIO, true
+			return linuxerr.EIO, true
 		}
-		return 0, false
+		return nil, false
 	})
 }
 

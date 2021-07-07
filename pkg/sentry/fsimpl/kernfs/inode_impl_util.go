@@ -26,7 +26,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // InodeNoopRefCount partially implements the Inode interface, specifically the
@@ -289,7 +288,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 		return linuxerr.EPERM
 	}
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
 		return err
@@ -475,7 +474,7 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 
 	s, ok := o.set[name]
 	if !ok {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	s.inode.IncRef() // This ref is passed to the dentry upon creation via Init.
@@ -511,7 +510,7 @@ func (o *OrderedChildren) insert(name string, child Inode, static bool) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if _, ok := o.set[name]; ok {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	s := &slot{
 		name:   name,
@@ -559,7 +558,7 @@ func (o *OrderedChildren) replaceChildLocked(ctx context.Context, name string, n
 func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if s.inode != child {
 		panic(fmt.Sprintf("Inode doesn't match what kernfs thinks! OrderedChild: %+v, kernfs: %+v", s.inode, child))
@@ -746,5 +745,5 @@ type InodeNoStatFS struct{}
 
 // StatFS implements Inode.StatFS.
 func (*InodeNoStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
-	return linux.Statfs{}, syserror.ENOSYS
+	return linux.Statfs{}, linuxerr.ENOSYS
 }

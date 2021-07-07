@@ -4,7 +4,10 @@ package(licenses = ["notice"])
 
 go_library(
     name = "linuxerr",
-    srcs = ["linuxerr.go"],
+    srcs = [
+        "internal.go",
+        "linuxerr.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux/errno",
@@ -20,7 +23,6 @@ go_test(
         ":linuxerr",
         "//pkg/abi/linux/errno",
         "//pkg/errors",
-        "//pkg/syserror",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

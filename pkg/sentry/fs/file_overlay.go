@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -246,7 +245,7 @@ func (f *overlayFileOperations) onTop(ctx context.Context, file *File, fn func(*
 			// Something very wrong; return a generic filesystem
 			// error to avoid propagating internals.
 			f.upperMu.Unlock()
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 
 		// Save upper file.
@@ -408,7 +407,7 @@ func (f *overlayFileOperations) Ioctl(ctx context.Context, overlayFile *File, io
 		// copy up on any ioctl would be too drastic. In the future, it can have a
 		// list of ioctls that are safe to send to lower and a list that triggers a
 		// copy up.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 	return f.upper.FileOperations.Ioctl(ctx, f.upper, io, args)
 }

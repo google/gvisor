@@ -27,6 +27,11 @@ import (
 
 const maxErrno uint32 = errno.EHWPOISON + 1
 
+// The following have the same logical meaning as their syscall.Errno (or
+// unix.Errno) equivalents. The individual errors are not equivalent to syscall
+// or unix equivalents (e.g. linuxerr.ENOENT != unix.ENOENT). However, errors's
+// errnos will convert to equal the unix.Errno and syscall.Errno equivalents
+// (e.g. unix.Errno(linuxerr.ENOENT.Errno()) == unix.ENOENT).
 var (
 	NOERROR = errors.New(errno.NOERRNO, "not an error")
 	EPERM   = errors.New(errno.EPERM, "operation not permitted")
@@ -177,7 +182,7 @@ var (
 var errNotValidError = errors.New(errno.Errno(maxErrno), "not a valid error")
 
 // The following errorSlice holds errors by errno for fast translation between
-// errnos (especially uint32(sycall.Errno)) and *Error.
+// errnos (especially uint32(sycall.Errno)) and *errors.Error.
 var errorSlice = []*errors.Error{
 	// Errno values from include/uapi/asm-generic/errno-base.h.
 	errno.NOERRNO: NOERROR,

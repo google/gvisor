@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -151,7 +150,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			panic("at least one end of splice must be a pipe")
 		}
 
-		if n != 0 || err != syserror.ErrWouldBlock || nonBlock {
+		if n != 0 || err != linuxerr.ErrWouldBlock || nonBlock {
 			break
 		}
 		if err = dw.waitForBoth(t); err != nil {
@@ -173,7 +172,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
 	// This is used only for debugging purposes.
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "splice", outFile)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, linuxerr.ERESTARTSYS, "splice", outFile)
 }
 
 // Tee implements Linux syscall tee(2).
@@ -241,7 +240,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	defer dw.destroy()
 	for {
 		n, err = pipe.Tee(t, outPipeFD, inPipeFD, count)
-		if n != 0 || err != syserror.ErrWouldBlock || nonBlock {
+		if n != 0 || err != linuxerr.ErrWouldBlock || nonBlock {
 			break
 		}
 		if err = dw.waitForBoth(t); err != nil {
@@ -251,7 +250,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	if n != 0 {
 		// If a partial write is completed, the error is dropped. Log it here.
-		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
+		if err != nil && err != io.EOF && err != linuxerr.ErrWouldBlock {
 			log.Debugf("tee completed a partial write with error: %v", err)
 			err = nil
 		}
@@ -259,7 +258,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
 	// This is used only for debugging purposes.
-	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, syserror.ERESTARTSYS, "tee", inFile)
+	return uintptr(n), nil, slinux.HandleIOErrorVFS2(t, n != 0, err, linuxerr.ERESTARTSYS, "tee", inFile)
 }
 
 // Sendfile implements linux system call sendfile(2).
@@ -360,10 +359,10 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				break
 			}
 			if err == nil && t.Interrupted() {
-				err = syserror.ErrInterrupted
+				err = linuxerr.ErrInterrupted
 				break
 			}
-			if err == syserror.ErrWouldBlock && !nonBlock {
+			if err == linuxerr.ErrWouldBlock && !nonBlock {
 				err = dw.waitForBoth(t)
 			}
 			if err != nil {
@@ -389,7 +388,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				var writeN int64
 				writeN, err = outFile.Write(t, usermem.BytesIOSequence(wbuf), vfs.WriteOptions{})
 				wbuf = wbuf[writeN:]
-				if err == syserror.ErrWouldBlock && !nonBlock {
+				if err == linuxerr.ErrWouldBlock && !nonBlock {
 					err = dw.waitForOut(t)
 				}
 				if err != nil {
@@ -420,10 +419,10 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				break
 			}
 			if err == nil && t.Interrupted() {
-				err = syserror.ErrInterrupted
+				err = linuxerr.ErrInterrupted
 				break
 			}
-			if err == syserror.ErrWouldBlock && !nonBlock {
+			if err == linuxerr.ErrWouldBlock && !nonBlock {
 				err = dw.waitForBoth(t)
 			}
 			if err != nil {
@@ -441,7 +440,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	if total != 0 {
-		if err != nil && err != io.EOF && err != syserror.ErrWouldBlock {
+		if err != nil && err != io.EOF && err != linuxerr.ErrWouldBlock {
 			// If a partial write is completed, the error is dropped. Log it here.
 			log.Debugf("sendfile completed a partial write with error: %v", err)
 			err = nil
@@ -450,7 +449,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
 	// This is used only for debugging purposes.
-	return uintptr(total), nil, slinux.HandleIOErrorVFS2(t, total != 0, err, syserror.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(total), nil, slinux.HandleIOErrorVFS2(t, total != 0, err, linuxerr.ERESTARTSYS, "sendfile", inFile)
 }
 
 // dualWaiter is used to wait on one or both vfs.FileDescriptions. It is not

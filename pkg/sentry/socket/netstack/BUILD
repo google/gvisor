@@ -42,7 +42,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/tun",

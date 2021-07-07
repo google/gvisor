@@ -60,7 +60,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -239,7 +238,7 @@ func (FilesystemType) Release(ctx context.Context) {}
 // mode, it returns EIO, otherwise it panic.
 func (fs *filesystem) alertIntegrityViolation(msg string) error {
 	if fs.action == ErrorOnViolation {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	panic(msg)
 }
@@ -882,7 +881,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	if !fd.d.isDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
@@ -1215,7 +1214,7 @@ func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.
 	case linux.FS_IOC_GETFLAGS:
 		return fd.verityFlags(ctx, args[2].Pointer())
 	default:
-		return 0, syserror.ENOSYS
+		return 0, linuxerr.ENOSYS
 	}
 }
 

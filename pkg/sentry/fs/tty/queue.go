@@ -17,12 +17,12 @@ package tty
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -110,7 +110,7 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	defer q.mu.Unlock()
 
 	if !q.readable {
-		return 0, false, syserror.ErrWouldBlock
+		return 0, false, linuxerr.ErrWouldBlock
 	}
 
 	if dst.NumBytes() > canonMaxBytes {
@@ -155,7 +155,7 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 		room := waitBufMaxBytes - q.waitBufLen
 		// If out of room, return EAGAIN.
 		if room == 0 && copyLen > 0 {
-			return 0, syserror.ErrWouldBlock
+			return 0, linuxerr.ErrWouldBlock
 		}
 		// Cap the size of the wait buffer.
 		if copyLen > room {

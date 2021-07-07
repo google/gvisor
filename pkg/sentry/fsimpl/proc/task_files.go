@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -73,7 +72,7 @@ func checkTaskState(t *kernel.Task) error {
 	case kernel.TaskExitZombie:
 		return linuxerr.EACCES
 	case kernel.TaskExitDead:
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	return nil
 }
@@ -110,7 +109,7 @@ var _ dynamicInode = (*auxvData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *auxvData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if d.task.ExitState() == kernel.TaskExitDead {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	m, err := getMMIncRef(d.task)
 	if err != nil {
@@ -160,7 +159,7 @@ var _ dynamicInode = (*cmdlineData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if d.task.ExitState() == kernel.TaskExitDead {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	m, err := getMMIncRef(d.task)
 	if err != nil {
@@ -228,7 +227,7 @@ func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		if int(arEnvv.Length()) > remaining {
 			end, ok := arEnvv.Start.AddLength(uint64(remaining))
 			if !ok {
-				return syserror.EFAULT
+				return linuxerr.EFAULT
 			}
 			arEnvv.End = end
 		}
@@ -486,12 +485,12 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 	n, readErr := m.CopyIn(ctx, hostarch.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
 	if n > 0 {
 		if _, err := dst.CopyOut(ctx, buf[:n]); err != nil {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		return int64(n), nil
 	}
 	if readErr != nil {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 	return 0, nil
 }
@@ -763,7 +762,7 @@ var _ vfs.WritableDynamicBytesSource = (*oomScoreAdj)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (o *oomScoreAdj) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if o.task.ExitState() == kernel.TaskExitDead {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	fmt.Fprintf(buf, "%d\n", o.task.OOMScoreAdj())
 	return nil
@@ -785,7 +784,7 @@ func (o *oomScoreAdj) Write(ctx context.Context, src usermem.IOSequence, offset 
 	}
 
 	if o.task.ExitState() == kernel.TaskExitDead {
-		return 0, syserror.ESRCH
+		return 0, linuxerr.ESRCH
 	}
 	if err := o.task.SetOOMScoreAdj(v); err != nil {
 		return 0, err
@@ -825,7 +824,7 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer root.DecRef(ctx)
 
@@ -857,7 +856,7 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 		// (with locks held).
 		exec = mm.Executable()
 		if exec == nil {
-			err = syserror.ESRCH
+			err = linuxerr.ESRCH
 		}
 	})
 	if err != nil {
@@ -901,7 +900,7 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer root.DecRef(ctx)
 
@@ -921,7 +920,7 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 	cwd := s.task.FSContext().WorkingDirectoryVFS2()
 	if !cwd.Ok() {
 		// It could have raced with process deletion.
-		return vfs.VirtualDentry{}, "", syserror.ESRCH
+		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
 	}
 	return cwd, "", nil
 }
@@ -1124,7 +1123,7 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error 
 	// exit this file show a task is in no cgroups, which is incorrect. Instead,
 	// once a task has left its cgroups, we return an error.
 	if d.task.ExitState() >= kernel.TaskExitInitiated {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	d.task.GenerateProcTaskCgroup(buf)

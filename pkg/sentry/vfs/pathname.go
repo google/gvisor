@@ -16,9 +16,9 @@ package vfs
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var fspathBuilderPool = sync.Pool{
@@ -137,7 +137,7 @@ loop:
 // Linux's sys_getcwd().
 func (vfs *VirtualFilesystem) PathnameForGetcwd(ctx context.Context, vfsroot, vd VirtualDentry) (string, error) {
 	if vd.dentry.IsDead() {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 
 	b := getFSPathBuilder()

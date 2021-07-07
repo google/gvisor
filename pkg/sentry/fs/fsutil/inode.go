@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -167,7 +166,7 @@ func (i *InodeSimpleAttributes) DropLink() {
 // StatFS implements fs.InodeOperations.StatFS.
 func (i *InodeSimpleAttributes) StatFS(context.Context) (fs.Info, error) {
 	if i.fsType == 0 {
-		return fs.Info{}, syserror.ENOSYS
+		return fs.Info{}, linuxerr.ENOSYS
 	}
 	return fs.Info{Type: i.fsType}, nil
 }
@@ -237,7 +236,7 @@ func (i *InodeSimpleExtendedAttributes) SetXattr(_ context.Context, _ *fs.Inode,
 
 	_, ok := i.xattrs[name]
 	if ok && flags&linux.XATTR_CREATE != 0 {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	if !ok && flags&linux.XATTR_REPLACE != 0 {
 		return linuxerr.ENODATA
@@ -294,7 +293,7 @@ type InodeNoStatFS struct{}
 
 // StatFS implements fs.InodeOperations.StatFS.
 func (InodeNoStatFS) StatFS(context.Context) (fs.Info, error) {
-	return fs.Info{}, syserror.ENOSYS
+	return fs.Info{}, linuxerr.ENOSYS
 }
 
 // InodeStaticFileGetter implements GetFile for a file with static contents.
@@ -332,47 +331,47 @@ type InodeNotDirectory struct{}
 
 // Lookup implements fs.InodeOperations.Lookup.
 func (InodeNotDirectory) Lookup(context.Context, *fs.Inode, string) (*fs.Dirent, error) {
-	return nil, syserror.ENOTDIR
+	return nil, linuxerr.ENOTDIR
 }
 
 // Create implements fs.InodeOperations.Create.
 func (InodeNotDirectory) Create(context.Context, *fs.Inode, string, fs.FileFlags, fs.FilePermissions) (*fs.File, error) {
-	return nil, syserror.ENOTDIR
+	return nil, linuxerr.ENOTDIR
 }
 
 // CreateLink implements fs.InodeOperations.CreateLink.
 func (InodeNotDirectory) CreateLink(context.Context, *fs.Inode, string, string) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // CreateHardLink implements fs.InodeOperations.CreateHardLink.
 func (InodeNotDirectory) CreateHardLink(context.Context, *fs.Inode, *fs.Inode, string) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // CreateDirectory implements fs.InodeOperations.CreateDirectory.
 func (InodeNotDirectory) CreateDirectory(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Bind implements fs.InodeOperations.Bind.
 func (InodeNotDirectory) Bind(context.Context, *fs.Inode, string, transport.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
-	return nil, syserror.ENOTDIR
+	return nil, linuxerr.ENOTDIR
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.
 func (InodeNotDirectory) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Remove implements fs.InodeOperations.Remove.
 func (InodeNotDirectory) Remove(context.Context, *fs.Inode, string) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // RemoveDirectory implements fs.InodeOperations.RemoveDirectory.
 func (InodeNotDirectory) RemoveDirectory(context.Context, *fs.Inode, string) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Rename implements fs.FileOperations.Rename.
@@ -401,7 +400,7 @@ type InodeIsDirTruncate struct{}
 
 // Truncate implements fs.InodeOperations.Truncate.
 func (InodeIsDirTruncate) Truncate(context.Context, *fs.Inode, int64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }
 
 // InodeNoopTruncate implements fs.InodeOperations.Truncate as a noop.
@@ -425,7 +424,7 @@ type InodeNotOpenable struct{}
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (InodeNotOpenable) GetFile(context.Context, *fs.Dirent, fs.FileFlags) (*fs.File, error) {
-	return nil, syserror.EIO
+	return nil, linuxerr.EIO
 }
 
 // InodeNotVirtual can be used by Inodes that are not virtual.
@@ -463,22 +462,22 @@ type InodeNoExtendedAttributes struct{}
 
 // GetXattr implements fs.InodeOperations.GetXattr.
 func (InodeNoExtendedAttributes) GetXattr(context.Context, *fs.Inode, string, uint64) (string, error) {
-	return "", syserror.EOPNOTSUPP
+	return "", linuxerr.EOPNOTSUPP
 }
 
 // SetXattr implements fs.InodeOperations.SetXattr.
 func (InodeNoExtendedAttributes) SetXattr(context.Context, *fs.Inode, string, string, uint32) error {
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 // ListXattr implements fs.InodeOperations.ListXattr.
 func (InodeNoExtendedAttributes) ListXattr(context.Context, *fs.Inode, uint64) (map[string]struct{}, error) {
-	return nil, syserror.EOPNOTSUPP
+	return nil, linuxerr.EOPNOTSUPP
 }
 
 // RemoveXattr implements fs.InodeOperations.RemoveXattr.
 func (InodeNoExtendedAttributes) RemoveXattr(context.Context, *fs.Inode, string) error {
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 // InodeNoopRelease implements fs.InodeOperations.Release as a noop.
@@ -513,7 +512,7 @@ type InodeNotAllocatable struct{}
 
 // Allocate implements fs.InodeOperations.Allocate.
 func (InodeNotAllocatable) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 // InodeNoopAllocate implements fs.InodeOperations.Allocate as a noop.
@@ -529,5 +528,5 @@ type InodeIsDirAllocate struct{}
 
 // Allocate implements fs.InodeOperations.Allocate.
 func (InodeIsDirAllocate) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }

@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const opsMax = 500 // SEMOPM
@@ -140,7 +139,7 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case linux.SETVAL:
 		val := args[3].Int()
 		if val > math.MaxInt16 {
-			return 0, nil, syserror.ERANGE
+			return 0, nil, linuxerr.ERANGE
 		}
 		return 0, nil, setVal(t, id, num, int16(val))
 

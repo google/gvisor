@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/hostarch",
@@ -48,7 +49,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",
@@ -63,10 +63,10 @@ go_test(
     library = ":gofer",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/p9",
         "//pkg/p9/p9test",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

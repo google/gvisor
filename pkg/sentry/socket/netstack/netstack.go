@@ -55,7 +55,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -457,7 +456,7 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 	}
 	n, _, _, _, _, err := s.nonBlockingRead(ctx, dst, false, false, false)
 	if err == syserr.ErrWouldBlock {
-		return int64(n), syserror.ErrWouldBlock
+		return int64(n), linuxerr.ErrWouldBlock
 	}
 	if err != nil {
 		return 0, err.ToError()
@@ -490,14 +489,14 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	r := src.Reader(ctx)
 	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 	if err != nil {
 		return 0, syserr.TranslateNetstackError(err).ToError()
 	}
 
 	if n < src.NumBytes() {
-		return n, syserror.ErrWouldBlock
+		return n, linuxerr.ErrWouldBlock
 	}
 
 	return n, nil
@@ -2910,7 +2909,7 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
 		if !s.timestampValid {
-			return 0, syserror.ENOENT
+			return 0, linuxerr.ENOENT
 		}
 
 		tv := linux.NsecToTimeval(s.timestampNS)
@@ -3016,7 +3015,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		unimpl.EmitUnimplementedEvent(ctx)
 	}
 
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // interfaceIoctl implements interface requests.

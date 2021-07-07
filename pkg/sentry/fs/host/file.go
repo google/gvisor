@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -201,7 +200,7 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		writer := fd.NewReadWriter(f.iops.fileState.FD())
 		n, err := src.CopyInTo(ctx, safemem.FromIOWriter{writer})
 		if isBlockError(err) {
-			err = syserror.ErrWouldBlock
+			err = linuxerr.ErrWouldBlock
 		}
 		return n, err
 	}
@@ -232,7 +231,7 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 			if n != 0 {
 				err = nil
 			} else {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 		}
 		return n, err

@@ -37,7 +37,6 @@ import (
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -492,7 +491,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 	case unix.S_IFSOCK:
 		if i.isTTY {
 			log.Warningf("cannot use host socket fd %d as TTY", i.hostFD)
-			return nil, syserror.ENOTTY
+			return nil, linuxerr.ENOTTY
 		}
 
 		ep, err := newEndpoint(ctx, i.hostFD, &i.queue)
@@ -585,7 +584,7 @@ func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	i := f.inode
@@ -602,7 +601,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	i := f.inode
@@ -619,7 +618,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 			if total != 0 {
 				err = nil
 			} else {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 		}
 		return total, err
@@ -673,7 +672,7 @@ func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opt
 	if !i.seekable {
 		n, err := f.writeToHostFD(ctx, src, -1, opts.Flags)
 		if isBlockError(err) {
-			err = syserror.ErrWouldBlock
+			err = linuxerr.ErrWouldBlock
 		}
 		return n, err
 	}
@@ -701,7 +700,7 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 	hostFD := f.inode.hostFD
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // AccessTypes is a bitmask of Unix file permissions.
@@ -195,7 +194,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 			return err
 		}
 		if limit < int64(stat.Size) {
-			return syserror.ErrExceedsFileSizeLimit
+			return linuxerr.ErrExceedsFileSizeLimit
 		}
 	}
 	if stat.Mask&linux.STATX_MODE != 0 {
@@ -282,7 +281,7 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 		return size, nil
 	}
 	if offset >= int64(fileSizeLimit) {
-		return 0, syserror.ErrExceedsFileSizeLimit
+		return 0, linuxerr.ErrExceedsFileSizeLimit
 	}
 	remaining := int64(fileSizeLimit) - offset
 	if remaining < size {

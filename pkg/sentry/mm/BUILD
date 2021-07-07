@@ -144,7 +144,6 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/tcpip/buffer",
         "//pkg/usermem",
     ],

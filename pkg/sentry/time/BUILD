@@ -39,7 +39,6 @@ go_library(
         "//pkg/log",
         "//pkg/metric",
         "//pkg/sync",
-        "//pkg/syserror",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

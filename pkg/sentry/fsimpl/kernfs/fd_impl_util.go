@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -99,7 +98,7 @@ func NewGenericDirectoryFD(m *vfs.Mount, d *Dentry, children *OrderedChildren, l
 func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) error {
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	fd.LockFD.Init(locks)
 	fd.seekEnd = fdOpts.SeekEnd

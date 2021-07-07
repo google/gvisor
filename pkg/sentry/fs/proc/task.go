@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -47,7 +46,7 @@ import (
 // no longer in use.
 func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 	if t.ExitState() == kernel.TaskExitDead {
-		return nil, syserror.ESRCH
+		return nil, linuxerr.ESRCH
 	}
 	var m *mm.MemoryManager
 	t.WithMuLocked(func(t *kernel.Task) {
@@ -64,7 +63,7 @@ func checkTaskState(t *kernel.Task) error {
 	case kernel.TaskExitZombie:
 		return linuxerr.EACCES
 	case kernel.TaskExitDead:
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	return nil
 }
@@ -182,7 +181,7 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 
 	tasks := f.t.ThreadGroup().MemberIDs(f.pidns)
 	if len(tasks) == 0 {
-		return offset, syserror.ENOENT
+		return offset, linuxerr.ENOENT
 	}
 
 	if offset == 0 {
@@ -234,15 +233,15 @@ var _ fs.FileOperations = (*subtasksFile)(nil)
 func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent, error) {
 	tid, err := strconv.ParseUint(p, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	task := s.p.pidns.TaskWithID(kernel.ThreadID(tid))
 	if task == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	if task.ThreadGroup() != s.t.ThreadGroup() {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	td := s.p.newTaskDir(ctx, task, dir.MountSource, false)
@@ -282,7 +281,7 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 		// (with locks held).
 		file = mm.Executable()
 		if file == nil {
-			err = syserror.ESRCH
+			err = linuxerr.ESRCH
 		}
 	})
 	return
@@ -332,14 +331,14 @@ func (e *cwd) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	cwd := e.t.FSContext().WorkingDirectory()
 	if cwd == nil {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer cwd.DecRef(ctx)
 
 	root := fs.RootFromContext(ctx)
 	if root == nil {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer root.DecRef(ctx)
 
@@ -474,12 +473,12 @@ func (m *memDataFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	n, readErr := mm.CopyIn(ctx, hostarch.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
 	if n > 0 {
 		if _, err := dst.CopyOut(ctx, buf[:n]); err != nil {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		return int64(n), nil
 	}
 	if readErr != nil {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 	return 0, nil
 }
@@ -1004,7 +1003,7 @@ func (o *oomScoreAdj) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 // Read implements fs.FileOperations.Read.
 func (f *oomScoreAdjFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if f.t.ExitState() == kernel.TaskExitDead {
-		return 0, syserror.ESRCH
+		return 0, linuxerr.ESRCH
 	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%d\n", f.t.OOMScoreAdj())
@@ -1031,7 +1030,7 @@ func (f *oomScoreAdjFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	}
 
 	if f.t.ExitState() == kernel.TaskExitDead {
-		return 0, syserror.ESRCH
+		return 0, linuxerr.ESRCH
 	}
 	if err := f.t.SetOOMScoreAdj(v); err != nil {
 		return 0, err

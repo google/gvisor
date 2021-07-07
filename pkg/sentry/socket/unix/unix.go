@@ -38,7 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -494,7 +493,7 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 	}
 
 	n, err := src.CopyInTo(t, &w)
-	if err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if err != linuxerr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		return int(n), syserr.FromError(err)
 	}
 
@@ -514,13 +513,13 @@ func (s *socketOpsCommon) SendMsg(t *kernel.Task, src usermem.IOSequence, to []b
 
 		n, err = src.CopyInTo(t, &w)
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 
 		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 			break
 		}
@@ -648,7 +647,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	}
 
 	var total int64
-	if n, err := doRead(); err != syserror.ErrWouldBlock || dontWait {
+	if n, err := doRead(); err != linuxerr.ErrWouldBlock || dontWait {
 		var from linux.SockAddr
 		var fromLen uint32
 		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
@@ -683,7 +682,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	defer s.EventUnregister(&e)
 
 	for {
-		if n, err := doRead(); err != syserror.ErrWouldBlock {
+		if n, err := doRead(); err != linuxerr.ErrWouldBlock {
 			var from linux.SockAddr
 			var fromLen uint32
 			if r.From != nil {

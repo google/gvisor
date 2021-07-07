@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // TaskConfig defines the configuration of a new Task (see below).
@@ -170,7 +169,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		// doesn't matter too much since the caller will exit before it returns
 		// to userspace. If the caller isn't in the same thread group, then
 		// we're in uncharted territory and can return whatever we want.
-		return nil, syserror.EINTR
+		return nil, linuxerr.EINTR
 	}
 	if err := ts.assignTIDsLocked(t); err != nil {
 		return nil, err
@@ -268,7 +267,7 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 		// fail with the error ENOMEM; it is not possible to create a new
 		// processes [sic] in a PID namespace whose init process has
 		// terminated." - pid_namespaces(7)
-		return 0, syserror.ENOMEM
+		return 0, linuxerr.ENOMEM
 	}
 	tid := ns.last
 	for {

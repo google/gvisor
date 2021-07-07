@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -134,7 +133,7 @@ func (t *TimerOperations) Read(ctx context.Context, file *fs.File, dst usermem.I
 		}
 		return sizeofUint64, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 // Write implements fs.FileOperations.Write.

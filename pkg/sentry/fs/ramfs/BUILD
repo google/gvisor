@@ -21,7 +21,6 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],

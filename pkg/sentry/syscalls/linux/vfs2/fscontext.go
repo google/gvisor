@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getcwd implements Linux syscall getcwd(2).
@@ -40,7 +39,7 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Note this is >= because we need a terminator.
 	if uint(len(s)) >= size {
-		return 0, nil, syserror.ERANGE
+		return 0, nil, linuxerr.ERANGE
 	}
 
 	// Construct a byte slice containing a NUL terminator.

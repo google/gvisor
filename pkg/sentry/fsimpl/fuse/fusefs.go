@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -394,7 +393,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	isDir := i.InodeAttrs.Mode().IsDir()
 	// return error if specified to open directory but inode is not a directory.
 	if !isDir && opts.Mode.IsDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	if opts.Flags&linux.O_LARGEFILE == 0 && atomic.LoadUint64(&i.size) > linux.MAX_NON_LFS {
 		return nil, linuxerr.EOVERFLOW
@@ -612,7 +611,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		return nil, err
 	}
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
-		return nil, syserror.EIO
+		return nil, linuxerr.EIO
 	}
 	child := i.fs.newInode(ctx, out.NodeID, out.Attr)
 	return child, nil

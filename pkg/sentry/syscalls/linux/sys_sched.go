@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -45,7 +44,7 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	r := SchedParam{schedPriority: onlyPriority}
 	if _, err := r.CopyOut(t, param); err != nil {
@@ -62,7 +61,7 @@ func SchedGetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	return onlyScheduler, nil, nil
 }
@@ -79,7 +78,7 @@ func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	var r SchedParam
 	if _, err := r.CopyIn(t, param); err != nil {

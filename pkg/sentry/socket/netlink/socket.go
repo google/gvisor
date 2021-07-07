@@ -39,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -214,7 +213,7 @@ func (s *socketOpsCommon) ConnectedPasscred() bool {
 // Ioctl implements fs.FileOperations.Ioctl.
 func (*Socket) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // ExtractSockAddr extracts the SockAddrNetlink from b.
@@ -530,7 +529,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 		}
 	}
 
-	if n, err := doRead(); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if n, err := doRead(); err != linuxerr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		var mflags int
 		if n < int64(r.MsgSize) {
 			mflags |= linux.MSG_TRUNC
@@ -548,7 +547,7 @@ func (s *socketOpsCommon) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags 
 	defer s.EventUnregister(&e)
 
 	for {
-		if n, err := doRead(); err != syserror.ErrWouldBlock {
+		if n, err := doRead(); err != linuxerr.ErrWouldBlock {
 			var mflags int
 			if n < int64(r.MsgSize) {
 				mflags |= linux.MSG_TRUNC

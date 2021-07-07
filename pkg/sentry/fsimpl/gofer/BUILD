@@ -79,7 +79,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",

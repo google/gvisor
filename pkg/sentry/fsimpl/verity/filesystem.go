@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -116,7 +115,7 @@ func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*de
 // * !rp.Done().
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
 	if !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
@@ -166,7 +165,7 @@ afterSymlink:
 // verifyChildLocked verifies the hash of child against the already verified
 // hash of the parent to ensure the child is expected.  verifyChild triggers a
 // sentry panic if unexpected modifications to the file system are detected. In
-// ErrorOnViolation mode it returns a syserror instead.
+// ErrorOnViolation mode it returns a linuxerr instead.
 //
 // Preconditions:
 // * fs.renameMu must be locked.
@@ -547,7 +546,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 
 	if parent.verityEnabled() {
 		if _, ok := parent.childrenNames[name]; !ok {
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 	}
 
@@ -685,7 +684,7 @@ func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 		d = next
 	}
 	if !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -705,7 +704,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 		d = next
 	}
 	if rp.MustBeDir() && !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -737,7 +736,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	}
 	if opts.CheckSearchable {
 		if !d.isDir() {
-			return nil, syserror.ENOTDIR
+			return nil, linuxerr.ENOTDIR
 		}
 		if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err

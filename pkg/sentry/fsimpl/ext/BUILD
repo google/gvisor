@@ -64,7 +64,6 @@ go_library(
         "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

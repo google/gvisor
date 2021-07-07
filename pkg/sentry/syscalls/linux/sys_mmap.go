@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // Brk implements linux syscall brk(2).
@@ -211,7 +211,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	case linux.MADV_REMOVE:
 		// These "suggestions" have application-visible side effects, so we
 		// have to indicate that we don't support them.
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	case linux.MADV_HWPOISON:
 		// Only privileged processes are allowed to poison pages.
 		return 0, nil, linuxerr.EPERM
@@ -235,18 +235,18 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// rounded up to the next multiple of the page size." - mincore(2)
 	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 
 	// Pretend that all mapped pages are "resident in core".
 	mapped := t.MemoryManager().VirtualMemorySizeRange(ar)
 	// "ENOMEM: addr to addr + length contained unmapped memory."
 	if mapped != uint64(la) {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 	resident := bytes.Repeat([]byte{1}, int(mapped/hostarch.PageSize))
 	_, err := t.CopyOutBytes(vec, resident)
@@ -277,7 +277,7 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	})
 	// MSync calls fsync, the same interrupt conversion rules apply, see
 	// mm/msync.c, fsync POSIX.1-2008.
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // Mlock implements linux syscall mlock(2).

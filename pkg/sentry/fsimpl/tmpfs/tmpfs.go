@@ -44,7 +44,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Name is the default filesystem name.
@@ -556,7 +555,7 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 				needsCtimeBump = true
 			}
 		case *directory:
-			return syserror.EISDIR
+			return linuxerr.EISDIR
 		default:
 			return linuxerr.EINVAL
 		}
@@ -731,7 +730,7 @@ func checkXattrName(name string) error {
 	if strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
 		return nil
 	}
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error) {

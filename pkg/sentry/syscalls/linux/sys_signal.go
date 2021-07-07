@@ -25,7 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // "For a process to have permission to send a signal it must
@@ -80,7 +80,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		for {
 			target := t.PIDNamespace().TaskWithID(pid)
 			if target == nil {
-				return 0, nil, syserror.ESRCH
+				return 0, nil, linuxerr.ESRCH
 			}
 			if !mayKill(t, target, sig) {
 				return 0, nil, linuxerr.EPERM
@@ -146,7 +146,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		if delivered > 0 {
 			return 0, nil, lastErr
 		}
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	default:
 		// "If pid equals 0, then sig is sent to every process in the process
 		// group of the calling process."
@@ -160,7 +160,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 		// If pid != -1 (i.e. signalling a process group), the returned error
 		// is the last error from any call to group_send_sig_info.
-		lastErr := syserror.ESRCH
+		lastErr := error(linuxerr.ESRCH)
 		for _, tg := range t.PIDNamespace().ThreadGroups() {
 			if t.PIDNamespace().IDOfProcessGroup(tg.ProcessGroup()) == pgid {
 				if !mayKill(t, tg.Leader(), sig) {
@@ -208,7 +208,7 @@ func Tkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	target := t.PIDNamespace().TaskWithID(tid)
 	if target == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	if !mayKill(t, target, sig) {
@@ -232,7 +232,7 @@ func Tgkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	targetTG := t.PIDNamespace().ThreadGroupWithID(tgid)
 	target := t.PIDNamespace().TaskWithID(tid)
 	if targetTG == nil || target == nil || target.ThreadGroup() != targetTG {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	if !mayKill(t, target, sig) {
@@ -348,7 +348,7 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // Pause implements linux syscall pause(2).
 func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
+	return 0, nil, syserr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RtSigpending implements linux syscall rt_sigpending(2).
@@ -421,7 +421,7 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		// Deliver to the given task's thread group.
 		target := t.PIDNamespace().TaskWithID(pid)
 		if target == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 
 		// If the sender is not the receiver, it can't use si_codes used by the
@@ -464,7 +464,7 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	targetTG := t.PIDNamespace().ThreadGroupWithID(tgid)
 	target := t.PIDNamespace().TaskWithID(tid)
 	if targetTG == nil || target == nil || target.ThreadGroup() != targetTG {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	// If the sender is not the receiver, it can't use si_codes used by the
@@ -496,7 +496,7 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	t.SetSavedSignalMask(oldmask)
 
 	// Perform the wait.
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
+	return 0, nil, syserr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RestartSyscall implements the linux syscall restart_syscall(2).
@@ -512,7 +512,7 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// function is never null by (re)initializing it with one that translates
 	// the restart into EINTR. We'll emulate that behaviour.
 	t.Debugf("Restart block missing in restart_syscall(2). Did ptrace inject a return value of ERESTART_RESTARTBLOCK?")
-	return 0, nil, syserror.EINTR
+	return 0, nil, linuxerr.EINTR
 }
 
 // sharedSignalfd is shared between the two calls.

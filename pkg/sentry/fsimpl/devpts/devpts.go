@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Name is the filesystem name.
@@ -180,7 +179,7 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.nextIdx == math.MaxUint32 {
-		return nil, syserror.ENOMEM
+		return nil, linuxerr.ENOMEM
 	}
 	idx := i.nextIdx
 	i.nextIdx++
@@ -241,7 +240,7 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 	// Not a static entry.
 	idx, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -250,7 +249,7 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 		return ri, nil
 
 	}
-	return nil, syserror.ENOENT
+	return nil, linuxerr.ENOENT
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.

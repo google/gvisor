@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // LINT.IfChange
@@ -58,7 +58,7 @@ func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	defer file.DecRef(t)
 
 	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncAll)
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // Fdatasync implements linux syscall fdatasync(2).
@@ -74,7 +74,7 @@ func Fdatasync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	defer file.DecRef(t)
 
 	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncData)
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // SyncFileRange implements linux syscall sync_file_rage(2)
@@ -112,7 +112,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	if uflags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
 		uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 
 	// SYNC_FILE_RANGE_WRITE initiates write-out of all dirty pages in the
@@ -137,7 +137,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		err = file.Fsync(t, offset, fs.FileMaxOffset, fs.SyncData)
 	}
 
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // LINT.ThenChange(vfs2/sync.go)

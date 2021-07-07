@@ -116,7 +116,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/uniqueid",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
@@ -137,7 +136,6 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
