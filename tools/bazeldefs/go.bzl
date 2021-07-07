@@ -6,8 +6,11 @@ load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", 
 load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 
 gazelle = _gazelle
+
 go_embed_data = _go_embed_data
+
 go_path = _go_path
+
 bazel_worker_proto = "//tools/bazeldefs:worker_protocol_go_proto"
 
 def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
@@ -15,10 +18,19 @@ def _go_proto_or_grpc_library(go_library_func, name, **kwargs):
         # If importpath is explicit, pass straight through.
         go_library_func(name = name, **kwargs)
         return
-    deps = [
-        dep.replace("_proto", "_go_proto")
-        for dep in (kwargs.pop("deps", []) or [])
-    ]
+    deps = []
+    for d in (kwargs.pop("deps", []) or []):
+        if d == "@com_google_protobuf//:timestamp_proto":
+            # Special case: this proto has its Go definitions in a different
+            # repository.
+            deps.append("@org_golang_google_protobuf//" +
+                        "types/known/timestamppb")
+            continue
+        if "//" in d:
+            repo, path = d.split("//", 1)
+            deps.append(repo + "//" + path.replace("_proto", "_go_proto"))
+        else:
+            deps.append(d.replace("_proto", "_go_proto"))
     go_library_func(
         name = name + "_go_proto",
         importpath = "gvisor.dev/gvisor/" + native.package_name() + "/" + name + "_go_proto",
@@ -130,18 +142,18 @@ def go_context(ctx, goos = None, goarch = None, std = False):
     elif goarch != go_ctx.sdk.goarch:
         fail("Internal GOARCH (%s) doesn't match GoSdk GOARCH (%s)." % (goarch, go_ctx.sdk.goarch))
     return struct(
-        go = go_ctx.go,
         env = go_ctx.env,
-        nogo_args = [],
-        stdlib_srcs = go_ctx.sdk.srcs,
-        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
-        goos = go_ctx.sdk.goos,
+        go = go_ctx.go,
         goarch = go_ctx.sdk.goarch,
+        goos = go_ctx.sdk.goos,
         gotags = go_ctx.tags,
+        nogo_args = [],
+        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs + go_ctx.sdk.tools + go_ctx.stdlib.libs),
+        stdlib_srcs = go_ctx.sdk.srcs,
     )
 
 def select_goarch():
-    return select_arch(arm64 = "arm64", amd64 = "amd64")
+    return select_arch(amd64 = "amd64", arm64 = "arm64")
 
 def select_goos():
     return select_system(linux = "linux")
