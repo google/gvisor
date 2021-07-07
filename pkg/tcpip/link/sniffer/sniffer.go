@@ -155,7 +155,7 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 		if max := int(e.maxPCAPLen); length > max {
 			length = max
 		}
-		if err := binary.Write(writer, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(totalLength))); err != nil {
+		if err := binary.Write(writer, binary.BigEndian, newPCAPPacketHeader(time.Now(), uint32(length), uint32(totalLength))); err != nil {
 			panic(err)
 		}
 		write := func(b []byte) {
