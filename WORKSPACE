@@ -1254,7 +1254,7 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 rules_pkg_dependencies()
 
 # System Call test dependencies.
-# grpc also has a dependency on abseil but as this is before grpc dependency 
+# grpc also has a dependency on abseil but as this is before grpc dependency
 # declaration, it will take precedence over grpc's one
 # Version LTS 20210324.2
 http_archive(
@@ -1305,6 +1305,15 @@ http_archive(
         "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
     ],
 )
+
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "528927e398f4e290001886894dac17c5c6a2e5548f3fb68004cfb01af901b53a",
+    strip_prefix = "protobuf-3.17.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.17.3.zip"],
+)
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+protobuf_deps()
 
 # Schemas for testing.
 http_file(

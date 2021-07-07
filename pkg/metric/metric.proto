@@ -16,6 +16,8 @@ syntax = "proto3";
 
 package gvisor;
 
+import "google/protobuf/timestamp.proto";
+
 // MetricMetadata contains all of the metadata describing a single metric.
 message MetricMetadata {
   // name is the unique name of the metric, usually in a "directory" format
@@ -63,6 +65,7 @@ message MetricMetadata {
 // future MetricUpdates.
 message MetricRegistration {
   repeated MetricMetadata metrics = 1;
+  repeated string stages = 2;
 }
 
 // MetricValue the value of a metric at a single point in time.
@@ -79,9 +82,20 @@ message MetricValue {
   repeated string field_values = 4;
 }
 
+// StageTiming represents a new stage that's been reached by the Sentry.
+message StageTiming {
+  string stage = 1;
+  google.protobuf.Timestamp started = 2;
+  google.protobuf.Timestamp ended = 3;
+}
+
 // MetricUpdate contains new values for multiple distinct metrics.
 //
 // Metrics whose values have not changed are not included.
 message MetricUpdate {
   repeated MetricValue metrics = 1;
+  // Timing information of initialization stages reached since last update.
+  // The first MetricUpdate will include multiple entries, since metric
+  // initialization happens relatively late in the Sentry startup process.
+  repeated StageTiming stage_timing = 2;
 }
