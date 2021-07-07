@@ -87,11 +87,7 @@ func NewWithPrefix(lower stack.LinkEndpoint, logPrefix string) stack.LinkEndpoin
 }
 
 func zoneOffset() (int32, error) {
-	loc, err := time.LoadLocation("Local")
-	if err != nil {
-		return 0, err
-	}
-	date := time.Date(0, 0, 0, 0, 0, 0, 0, loc)
+	date := time.Date(0, 0, 0, 0, 0, 0, 0, time.Local)
 	_, offset := date.Zone()
 	return int32(offset), nil
 }
