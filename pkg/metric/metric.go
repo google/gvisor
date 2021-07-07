@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
+	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -52,6 +54,27 @@ var (
 			name:          "operation_type",
 			allowedValues: []string{"opened_write_execute_file"},
 		})
+)
+
+// InitStage is the name of a Sentry initialization stage.
+type InitStage string
+
+// List of all Sentry initialization stages.
+var (
+	InitRestoreConfig InitStage = "restore_config"
+	InitExecConfig    InitStage = "exec_config"
+	InitRestore       InitStage = "restore"
+	InitCreateProcess InitStage = "create_process"
+	InitTaskStart     InitStage = "task_start"
+
+	// allStages is the list of allowed stages.
+	allStages = []InitStage{
+		InitRestoreConfig,
+		InitExecConfig,
+		InitRestore,
+		InitCreateProcess,
+		InitTaskStart,
+	}
 )
 
 // Uint64Metric encapsulates a uint64 that represents some kind of metric to be
@@ -97,6 +120,10 @@ func Initialize() error {
 	m := pb.MetricRegistration{}
 	for _, v := range allMetrics.m {
 		m.Metrics = append(m.Metrics, v.metadata)
+	}
+	m.Stages = make([]string, 0, len(allStages))
+	for _, s := range allStages {
+		m.Stages = append(m.Stages, string(s))
 	}
 	if err := eventchannel.Emit(&m); err != nil {
 		return fmt.Errorf("unable to emit metric initialize event: %w", err)
@@ -287,34 +314,66 @@ func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
 	}
 }
 
-// metricSet holds named metrics.
+// stageTiming contains timing data for an initialization stage.
+type stageTiming struct {
+	stage   InitStage
+	started time.Time
+	// ended is the zero time when the stage has not ended yet.
+	ended time.Time
+}
+
+// inProgress returns whether this stage hasn't ended yet.
+func (s stageTiming) inProgress() bool {
+	return !s.started.IsZero() && s.ended.IsZero()
+}
+
+// metricSet holds metric data.
 type metricSet struct {
+	// Map of metrics.
 	m map[string]customUint64Metric
+
+	// mu protects the fields below.
+	mu sync.RWMutex
+
+	// Information about the stages reached by the Sentry. Only appended to, so
+	// reading a shallow copy of the slice header concurrently is safe.
+	finished []stageTiming
+
+	// The current stage in progress.
+	currentStage stageTiming
 }
 
 // makeMetricSet returns a new metricSet.
 func makeMetricSet() metricSet {
 	return metricSet{
-		m: make(map[string]customUint64Metric),
+		m:        make(map[string]customUint64Metric),
+		finished: make([]stageTiming, 0, len(allStages)),
 	}
 }
 
 // Values returns a snapshot of all values in m.
 func (m *metricSet) Values() metricValues {
-	vals := make(metricValues)
+	m.mu.Lock()
+	stages := m.finished[:]
+	m.mu.Unlock()
+
+	vals := metricValues{
+		m:      make(map[string]interface{}, len(m.m)),
+		stages: stages,
+	}
 
 	for k, v := range m.m {
 		fields := v.metadata.GetFields()
 		switch len(fields) {
 		case 0:
-			vals[k] = v.value()
+			vals.m[k] = v.value()
 		case 1:
 			values := fields[0].GetAllowedValues()
 			fieldsMap := make(map[string]uint64)
 			for _, fieldValue := range values {
 				fieldsMap[fieldValue] = v.value(fieldValue)
 			}
-			vals[k] = fieldsMap
+			vals.m[k] = fieldsMap
 		default:
 			panic(fmt.Sprintf("Unsupported number of metric fields: %d", len(fields)))
 		}
@@ -322,10 +381,16 @@ func (m *metricSet) Values() metricValues {
 	return vals
 }
 
-// metricValues contains a copy of the values of all metrics. It is a map
-// with key as metric name and value can be either uint64 or map[string]uint64
-// to support metrics with one field.
-type metricValues map[string]interface{}
+// metricValues contains a copy of the values of all metrics.
+type metricValues struct {
+	// m is a map with key as metric name and value can be either uint64 or
+	// map[string]uint64 to support metrics with one field.
+	m map[string]interface{}
+
+	// Information on when initialization stages were reached. Does not include
+	// the currently-ongoing stage, if any.
+	stages []stageTiming
+}
 
 var (
 	// emitMu protects metricsAtLastEmit and ensures that all emitted
@@ -354,8 +419,8 @@ func EmitMetricUpdate() {
 	m := pb.MetricUpdate{}
 	// On the first call metricsAtLastEmit will be empty. Include all
 	// metrics then.
-	for k, v := range snapshot {
-		prev, ok := metricsAtLastEmit[k]
+	for k, v := range snapshot.m {
+		prev, ok := metricsAtLastEmit.m[k]
 		switch t := v.(type) {
 		case uint64:
 			// Metric exists and value did not change.
@@ -386,8 +451,23 @@ func EmitMetricUpdate() {
 		}
 	}
 
+	for s := len(metricsAtLastEmit.stages); s < len(snapshot.stages); s++ {
+		newStage := snapshot.stages[s]
+		m.StageTiming = append(m.StageTiming, &pb.StageTiming{
+			Stage: string(newStage.stage),
+			Started: &timestamppb.Timestamp{
+				Seconds: newStage.started.Unix(),
+				Nanos:   int32(newStage.started.Nanosecond()),
+			},
+			Ended: &timestamppb.Timestamp{
+				Seconds: newStage.ended.Unix(),
+				Nanos:   int32(newStage.ended.Nanosecond()),
+			},
+		})
+	}
+
 	metricsAtLastEmit = snapshot
-	if len(m.Metrics) == 0 {
+	if len(m.Metrics) == 0 && len(m.StageTiming) == 0 {
 		return
 	}
 
@@ -399,9 +479,52 @@ func EmitMetricUpdate() {
 		for _, metric := range m.Metrics {
 			log.Debugf("%s: %+v", metric.Name, metric.Value)
 		}
+		for _, stage := range m.StageTiming {
+			duration := time.Duration(stage.Ended.Seconds-stage.Started.Seconds)*time.Second + time.Duration(stage.Ended.Nanos-stage.Started.Nanos)*time.Nanosecond
+			log.Debugf("Stage %s took %v", stage.GetStage(), duration)
+		}
 	}
 
 	if err := eventchannel.Emit(&m); err != nil {
 		log.Warningf("Unable to emit metrics: %s", err)
 	}
+}
+
+// StartStage should be called when an initialization stage is started.
+// It returns a function that must be called to indicate that the stage ended.
+// Alternatively, future calls to StartStage will implicitly indicate that the
+// previous stage ended.
+// Stage information will be emitted in the next call to EmitMetricUpdate after
+// a stage has ended.
+//
+// This function may (and is expected to) be called prior to final
+// initialization of this metric library, as it has to capture early stages
+// of Sentry initialization.
+func StartStage(stage InitStage) func() {
+	now := time.Now()
+	allMetrics.mu.Lock()
+	defer allMetrics.mu.Unlock()
+	if allMetrics.currentStage.inProgress() {
+		endStage(now)
+	}
+	allMetrics.currentStage.stage = stage
+	allMetrics.currentStage.started = now
+	return func() {
+		now := time.Now()
+		allMetrics.mu.Lock()
+		defer allMetrics.mu.Unlock()
+		// The current stage may have been ended by another call to StartStage, so
+		// double-check prior to clearing the current stage.
+		if allMetrics.currentStage.inProgress() && allMetrics.currentStage.stage == stage {
+			endStage(now)
+		}
+	}
+}
+
+// endStage marks allMetrics.currentStage as ended, adding it to the list of
+// finished stages. It assumes allMetrics.mu is locked.
+func endStage(when time.Time) {
+	allMetrics.currentStage.ended = when
+	allMetrics.finished = append(allMetrics.finished, allMetrics.currentStage)
+	allMetrics.currentStage = stageTiming{}
 }
