@@ -188,8 +188,8 @@ func doRun(t *testing.T, vfsEnabled bool) {
 	}
 
 	// Wait for the application to exit.  It should succeed.
-	if status := l.WaitExit(); status.Code != 0 || status.Signo != 0 {
-		t.Errorf("application exited with status %+v, want 0", status)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Errorf("application exited with %s, want exit status 0", status)
 	}
 }
 

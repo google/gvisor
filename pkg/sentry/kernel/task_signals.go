@@ -157,7 +157,8 @@ func (t *Task) PendingSignals() linux.SignalSet {
 
 // deliverSignal delivers the given signal and returns the following run state.
 func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRunState {
-	sigact := computeAction(linux.Signal(info.Signo), act)
+	sig := linux.Signal(info.Signo)
+	sigact := computeAction(sig, act)
 
 	if t.haveSyscallReturn {
 		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
@@ -198,14 +199,14 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 		}
 
 		// Attach an fault address if appropriate.
-		switch linux.Signal(info.Signo) {
+		switch sig {
 		case linux.SIGSEGV, linux.SIGFPE, linux.SIGILL, linux.SIGTRAP, linux.SIGBUS:
 			ucs.FaultAddr = info.Addr()
 		}
 
 		eventchannel.Emit(ucs)
 
-		t.PrepareGroupExit(ExitStatus{Signo: int(info.Signo)})
+		t.PrepareGroupExit(linux.WaitStatusTerminationSignal(sig))
 		return (*runExit)(nil)
 
 	case SignalActionStop:
@@ -225,12 +226,12 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 
 			// Send a forced SIGSEGV. If the signal that couldn't be delivered
 			// was a SIGSEGV, force the handler to SIG_DFL.
-			t.forceSignal(linux.SIGSEGV, linux.Signal(info.Signo) == linux.SIGSEGV /* unconditional */)
+			t.forceSignal(linux.SIGSEGV, sig == linux.SIGSEGV /* unconditional */)
 			t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 		}
 
 	default:
-		panic(fmt.Sprintf("Unknown signal action %+v, %d?", info, computeAction(linux.Signal(info.Signo), act)))
+		panic(fmt.Sprintf("Unknown signal action %+v, %d?", info, computeAction(sig, act)))
 	}
 	return (*runInterrupt)(nil)
 }
@@ -506,7 +507,7 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 		// ignores tg.execing.
 		if !tg.exiting {
 			tg.exiting = true
-			tg.exitStatus = ExitStatus{Signo: int(linux.SIGKILL)}
+			tg.exitStatus = linux.WaitStatusTerminationSignal(linux.SIGKILL)
 		}
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
 			t.killLocked()

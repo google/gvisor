@@ -126,7 +126,7 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 
 	// Wait for completion.
 	newTG.WaitExited()
-	*waitStatus = newTG.ExitStatus().Status()
+	*waitStatus = uint32(newTG.ExitStatus())
 	return nil
 }
 

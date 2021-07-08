@@ -912,7 +912,7 @@ func (t *Task) ptraceExit() {
 		return
 	}
 	t.tg.signalHandlers.mu.Lock()
-	status := t.exitStatus.Status()
+	status := t.exitStatus
 	t.tg.signalHandlers.mu.Unlock()
 	t.Debugf("Entering PTRACE_EVENT_EXIT stop")
 	t.ptraceEventLocked(linux.PTRACE_EVENT_EXIT, uint64(status))

@@ -1299,11 +1299,11 @@ func (k *Kernel) WaitExited() {
 }
 
 // Kill requests that all tasks in k immediately exit as if group exiting with
-// status es. Kill does not wait for tasks to exit.
-func (k *Kernel) Kill(es ExitStatus) {
+// status ws. Kill does not wait for tasks to exit.
+func (k *Kernel) Kill(ws linux.WaitStatus) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	k.tasks.Kill(es)
+	k.tasks.Kill(ws)
 }
 
 // Pause requests that all tasks in k temporarily stop executing, and blocks

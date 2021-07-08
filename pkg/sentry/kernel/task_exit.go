@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -36,58 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// An ExitStatus is a value communicated from an exiting task or thread group
-// to the party that reaps it.
-//
-// +stateify savable
-type ExitStatus struct {
-	// Code is the numeric value passed to the call to exit or exit_group that
-	// caused the exit. If the exit was not caused by such a call, Code is 0.
-	Code int
-
-	// Signo is the signal that caused the exit. If the exit was not caused by
-	// a signal, Signo is 0.
-	Signo int
-}
-
-func (es ExitStatus) String() string {
-	var b strings.Builder
-	if code := es.Code; code != 0 {
-		if b.Len() != 0 {
-			b.WriteByte(' ')
-		}
-		_, _ = fmt.Fprintf(&b, "Code=%d", code)
-	}
-	if signal := es.Signo; signal != 0 {
-		if b.Len() != 0 {
-			b.WriteByte(' ')
-		}
-		_, _ = fmt.Fprintf(&b, "Signal=%d", signal)
-	}
-	return b.String()
-}
-
-// Signaled returns true if the ExitStatus indicates that the exiting task or
-// thread group was killed by a signal.
-func (es ExitStatus) Signaled() bool {
-	return es.Signo != 0
-}
-
-// Status returns the numeric representation of the ExitStatus returned by e.g.
-// the wait4() system call.
-func (es ExitStatus) Status() uint32 {
-	return ((uint32(es.Code) & 0xff) << 8) | (uint32(es.Signo) & 0xff)
-}
-
-// ShellExitCode returns the numeric exit code that Bash would return for an
-// exit status of es.
-func (es ExitStatus) ShellExitCode() int {
-	if es.Signaled() {
-		return 128 + es.Signo
-	}
-	return es.Code
-}
 
 // TaskExitState represents a step in the task exit path.
 //
@@ -164,13 +111,13 @@ func (t *Task) killedLocked() bool {
 	return t.pendingSignals.pendingSet&linux.SignalSetOf(linux.SIGKILL) != 0
 }
 
-// PrepareExit indicates an exit with status es.
+// PrepareExit indicates an exit with the given status.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) PrepareExit(es ExitStatus) {
+func (t *Task) PrepareExit(ws linux.WaitStatus) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	t.exitStatus = es
+	t.exitStatus = ws
 }
 
 // PrepareGroupExit indicates a group exit with status es to t's thread group.
@@ -181,7 +128,7 @@ func (t *Task) PrepareExit(es ExitStatus) {
 // ptrace.)
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) PrepareGroupExit(es ExitStatus) {
+func (t *Task) PrepareGroupExit(ws linux.WaitStatus) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	if t.tg.exiting || t.tg.execing != nil {
@@ -199,8 +146,8 @@ func (t *Task) PrepareGroupExit(es ExitStatus) {
 		return
 	}
 	t.tg.exiting = true
-	t.tg.exitStatus = es
-	t.exitStatus = es
+	t.tg.exitStatus = ws
+	t.exitStatus = ws
 	for sibling := t.tg.tasks.Front(); sibling != nil; sibling = sibling.Next() {
 		if sibling != t {
 			sibling.killLocked()
@@ -208,11 +155,11 @@ func (t *Task) PrepareGroupExit(es ExitStatus) {
 	}
 }
 
-// Kill requests that all tasks in ts exit as if group exiting with status es.
+// Kill requests that all tasks in ts exit as if group exiting with status ws.
 // Kill does not wait for tasks to exit.
 //
 // Kill has no analogue in Linux; it's provided for save/restore only.
-func (ts *TaskSet) Kill(es ExitStatus) {
+func (ts *TaskSet) Kill(ws linux.WaitStatus) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.Root.exiting = true
@@ -220,7 +167,7 @@ func (ts *TaskSet) Kill(es ExitStatus) {
 		t.tg.signalHandlers.mu.Lock()
 		if !t.tg.exiting {
 			t.tg.exiting = true
-			t.tg.exitStatus = es
+			t.tg.exitStatus = ws
 		}
 		t.killLocked()
 		t.tg.signalHandlers.mu.Unlock()
@@ -731,10 +678,10 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 	info.SetUID(int32(t.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	if t.exitStatus.Signaled() {
 		info.Code = linux.CLD_KILLED
-		info.SetStatus(int32(t.exitStatus.Signo))
+		info.SetStatus(int32(t.exitStatus.TerminationSignal()))
 	} else {
 		info.Code = linux.CLD_EXITED
-		info.SetStatus(int32(t.exitStatus.Code))
+		info.SetStatus(int32(t.exitStatus.ExitStatus()))
 	}
 	// TODO(b/72102453): Set utime, stime.
 	return info
@@ -742,7 +689,7 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 
 // ExitStatus returns t's exit status, which is only guaranteed to be
 // meaningful if t.ExitState() != TaskExitNone.
-func (t *Task) ExitStatus() ExitStatus {
+func (t *Task) ExitStatus() linux.WaitStatus {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -752,7 +699,7 @@ func (t *Task) ExitStatus() ExitStatus {
 
 // ExitStatus returns the exit status that would be returned by a consuming
 // wait*() on tg.
-func (tg *ThreadGroup) ExitStatus() ExitStatus {
+func (tg *ThreadGroup) ExitStatus() linux.WaitStatus {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
 	tg.signalHandlers.mu.Lock()
@@ -763,7 +710,9 @@ func (tg *ThreadGroup) ExitStatus() ExitStatus {
 	return tg.leader.exitStatus
 }
 
-// TerminationSignal returns the thread group's termination signal.
+// TerminationSignal returns the thread group's termination signal, which is
+// the signal that will be sent to its leader's parent when all threads have
+// exited.
 func (tg *ThreadGroup) TerminationSignal() linux.Signal {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
@@ -889,8 +838,8 @@ type WaitResult struct {
 	// Event is exactly one of the events defined above.
 	Event waiter.EventMask
 
-	// Status is the numeric status associated with the event.
-	Status uint32
+	// Status is the wait status associated with the event.
+	Status linux.WaitStatus
 }
 
 // Wait waits for an event from a thread group that is a child of t's thread
@@ -1043,7 +992,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	}
 	pid := t.tg.pidns.tids[target]
 	uid := target.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()
-	status := target.exitStatus.Status()
+	status := target.exitStatus
 	if !opts.ConsumeEvent {
 		return &WaitResult{
 			Task:   target,
@@ -1057,7 +1006,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	// differ from that reported by a consuming wait; the latter will return
 	// the group exit code if one is available.
 	if target.tg.exiting {
-		status = target.tg.exitStatus.Status()
+		status = target.tg.exitStatus
 	}
 	// t may be (in the thread group of) target's parent, tracer, or both. We
 	// don't need to check for !exitTracerAcked because tracees are detached
@@ -1123,12 +1072,11 @@ func (t *Task) waitCollectChildGroupStopLocked(target *Task, opts *WaitOptions) 
 		target.tg.groupStopWaitable = false
 	}
 	return &WaitResult{
-		Task:  target,
-		TID:   pid,
-		UID:   uid,
-		Event: EventChildGroupStop,
-		// There is no name for these status constants.
-		Status: (uint32(sig)&0xff)<<8 | 0x7f,
+		Task:   target,
+		TID:    pid,
+		UID:    uid,
+		Event:  EventChildGroupStop,
+		Status: linux.WaitStatusStopped(uint32(sig)),
 	}
 }
 
@@ -1149,7 +1097,7 @@ func (t *Task) waitCollectGroupContinueLocked(target *Task, opts *WaitOptions) *
 		TID:    pid,
 		UID:    uid,
 		Event:  EventGroupContinue,
-		Status: 0xffff,
+		Status: linux.WaitStatusContinued(),
 	}
 }
 
@@ -1177,7 +1125,7 @@ func (t *Task) waitCollectTraceeStopLocked(target *Task, opts *WaitOptions) *Wai
 		TID:    pid,
 		UID:    uid,
 		Event:  EventTraceeStop,
-		Status: uint32(code)<<8 | 0x7f,
+		Status: linux.WaitStatusStopped(uint32(code)),
 	}
 }
 

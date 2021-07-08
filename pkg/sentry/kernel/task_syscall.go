@@ -161,7 +161,7 @@ func (t *Task) doSyscall() taskRunState {
 			// ok
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("Syscall %d: killed by seccomp", sysno)
-			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
 		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("Syscall %d: stopping for PTRACE_EVENT_SECCOMP", sysno)
@@ -311,7 +311,7 @@ func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 			return &runVsyscallAfterPtraceEventSeccomp{addr, sysno, caller}
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("vsyscall %d: killed by seccomp", sysno)
-			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
 		default:
 			panic(fmt.Sprintf("Unknown seccomp result %d", r))
@@ -338,7 +338,7 @@ func (r *runVsyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
 	// Documentation/prctl/seccomp_filter.txt. On Linux, changing orig_ax or ip
 	// causes do_exit(SIGSYS), and changing sp is ignored.
 	if (sysno != ^uintptr(0) && sysno != r.sysno) || hostarch.Addr(t.Arch().IP()) != r.addr {
-		t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+		t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 		return (*runExit)(nil)
 	}
 	if sysno == ^uintptr(0) {
