@@ -232,7 +232,7 @@ type Task struct {
 	// exitStatus is the task's exit status.
 	//
 	// exitStatus is protected by the signal mutex.
-	exitStatus ExitStatus
+	exitStatus linux.WaitStatus
 
 	// syscallRestartBlock represents a custom restart function to run in
 	// restart_syscall(2) to resume an interrupted syscall.

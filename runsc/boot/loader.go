@@ -1051,7 +1051,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 // to exit.
 func (l *Loader) wait(tg *kernel.ThreadGroup) uint32 {
 	tg.WaitExited()
-	return tg.ExitStatus().Status()
+	return uint32(tg.ExitStatus())
 }
 
 // WaitForStartSignal waits for a start signal from the control server.
@@ -1060,7 +1060,7 @@ func (l *Loader) WaitForStartSignal() {
 }
 
 // WaitExit waits for the root container to exit, and returns its exit status.
-func (l *Loader) WaitExit() kernel.ExitStatus {
+func (l *Loader) WaitExit() linux.WaitStatus {
 	// Wait for container.
 	l.k.WaitExited()
 
