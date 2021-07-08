@@ -3624,6 +3624,38 @@ func TestMaxRTO(t *testing.T) {
 	}
 }
 
+// TestZeroSizedWriteRetransmit tests that a zero sized write should not
+// result in a panic on an RTO as no segment should have been queued for
+// a zero sized write.
+func TestZeroSizedWriteRetransmit(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+
+	var r bytes.Reader
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	// Now do a non-zero sized write to trigger actual sending of data.
+	r.Reset(make([]byte, 1))
+	_, err = c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	// Do not ACK the packet and expect an original transmit and a
+	// retransmit. This should not cause a panic.
+	for i := 0; i < 2; i++ {
+		checker.IPv4(t, c.GetPacket(),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+			),
+		)
+	}
+}
+
 // TestRetransmitIPv4IDUniqueness tests that the IPv4 Identification field is
 // unique on retransmits.
 func TestRetransmitIPv4IDUniqueness(t *testing.T) {
