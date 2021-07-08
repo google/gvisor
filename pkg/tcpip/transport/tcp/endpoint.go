@@ -1530,6 +1530,12 @@ func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 	if err != nil {
 		return nil, 0, err
 	}
+
+	// Do not queue zero length segments.
+	if len(v) == 0 {
+		return nil, 0, nil
+	}
+
 	if !opts.Atomic {
 		// Since we released locks in between it's possible that the
 		// endpoint transitioned to a CLOSED/ERROR states so make
