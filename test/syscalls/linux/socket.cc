@@ -119,6 +119,9 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
   // Send more than what will fit inside the send/receive buffers, so that it is
   // split into multiple messages.
   constexpr int kBufSize = 0x100000;
+  // Heap allocation is async-signal-unsafe and thus cannot occur between fork()
+  // and execve().
+  std::vector<char> buf(kBufSize);
 
   pid_t pid = fork();
   if (pid == 0) {
@@ -127,7 +130,6 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
     // Construct a message with some control message.
     struct msghdr msg = {};
     char control[CMSG_SPACE(sizeof(int))] = {};
-    std::vector<char> buf(kBufSize);
     struct iovec iov = {};
     msg.msg_control = control;
     msg.msg_controllen = sizeof(control);
@@ -154,7 +156,6 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
 
   struct msghdr msg = {};
   char control[CMSG_SPACE(sizeof(int))] = {};
-  std::vector<char> buf(kBufSize);
   struct iovec iov = {};
   msg.msg_control = &control;
   msg.msg_controllen = sizeof(control);
