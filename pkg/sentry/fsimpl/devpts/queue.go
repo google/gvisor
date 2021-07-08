@@ -98,17 +98,19 @@ func (q *queue) readableSize(t *kernel.Task, io usermem.IO, args arch.SyscallArg
 
 }
 
-// read reads from q to userspace. It returns the number of bytes read as well
-// as whether the read caused more readable data to become available (whether
+// read reads from q to userspace. It returns:
+// - The number of bytes read
+// - Whether the read caused more readable data to become available (whether
 // data was pushed from the wait buffer to the read buffer).
+// - Whether any data was echoed back (need to notify readers).
 //
 // Preconditions: l.termiosMu must be held for reading.
-func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, error) {
+func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	if !q.readable {
-		return 0, false, syserror.ErrWouldBlock
+		return 0, false, false, syserror.ErrWouldBlock
 	}
 
 	if dst.NumBytes() > canonMaxBytes {
@@ -131,19 +133,20 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 		return n, nil
 	}))
 	if err != nil {
-		return 0, false, err
+		return 0, false, false, err
 	}
 
 	// Move data from the queue's wait buffer to its read buffer.
-	nPushed := q.pushWaitBufLocked(l)
+	nPushed, notifyEcho := q.pushWaitBufLocked(l)
 
-	return int64(n), nPushed > 0, nil
+	return int64(n), nPushed > 0, notifyEcho, nil
 }
 
 // write writes to q from userspace.
+// The returned boolean indicates whether any data was echoed back.
 //
 // Preconditions: l.termiosMu must be held for reading.
-func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscipline) (int64, error) {
+func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscipline) (int64, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -173,44 +176,49 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 		return n, nil
 	}))
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
 	// Push data from the wait to the read buffer.
-	q.pushWaitBufLocked(l)
+	_, notifyEcho := q.pushWaitBufLocked(l)
 
-	return n, nil
+	return n, notifyEcho, nil
 }
 
 // writeBytes writes to q from b.
+// The returned boolean indicates whether any data was echoed back.
 //
 // Preconditions: l.termiosMu must be held for reading.
-func (q *queue) writeBytes(b []byte, l *lineDiscipline) {
+func (q *queue) writeBytes(b []byte, l *lineDiscipline) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	// Write to the wait buffer.
 	q.waitBufAppend(b)
-	q.pushWaitBufLocked(l)
+	_, notifyEcho := q.pushWaitBufLocked(l)
+	return notifyEcho
 }
 
 // pushWaitBufLocked fills the queue's read buffer with data from the wait
 // buffer.
+// The returned boolean indicates whether any data was echoed back.
 //
 // Preconditions:
 // * l.termiosMu must be held for reading.
 // * q.mu must be locked.
-func (q *queue) pushWaitBufLocked(l *lineDiscipline) int {
+func (q *queue) pushWaitBufLocked(l *lineDiscipline) (int, bool) {
 	if q.waitBufLen == 0 {
-		return 0
+		return 0, false
 	}
 
 	// Move data from the wait to the read buffer.
 	var total int
 	var i int
+	var notifyEcho bool
 	for i = 0; i < len(q.waitBuf); i++ {
-		n := q.transform(l, q, q.waitBuf[i])
+		n, echo := q.transform(l, q, q.waitBuf[i])
 		total += n
+		notifyEcho = notifyEcho || echo
 		if n != len(q.waitBuf[i]) {
 			// The read buffer filled up without consuming the
 			// entire buffer.
@@ -223,7 +231,7 @@ func (q *queue) pushWaitBufLocked(l *lineDiscipline) int {
 	q.waitBuf = q.waitBuf[i:]
 	q.waitBufLen -= uint64(total)
 
-	return total
+	return total, notifyEcho
 }
 
 // Precondition: q.mu must be locked.

@@ -70,6 +70,10 @@ const (
 //    +------------------------| output queue |<--------------------------+
 //        (outputQueueRead)    +--------------+    (outputQueueWrite)
 //
+// There is special handling for the ECHO option, where bytes written to the
+// input queue are also output back to the terminal by being written to
+// l.outQueue by the input queue transformer.
+//
 // Lock order:
 //  termiosMu
 //    inQueue.mu
@@ -126,7 +130,6 @@ func (l *lineDiscipline) getTermios(task *kernel.Task, args arch.SyscallArgument
 // setTermios sets a linux.Termios for the tty.
 func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.Lock()
-	defer l.termiosMu.Unlock()
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
@@ -141,7 +144,10 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 		l.inQueue.pushWaitBufLocked(l)
 		l.inQueue.readable = true
 		l.inQueue.mu.Unlock()
+		l.termiosMu.Unlock()
 		l.replicaWaiter.Notify(waiter.ReadableEvents)
+	} else {
+		l.termiosMu.Unlock()
 	}
 
 	return 0, err
@@ -179,27 +185,36 @@ func (l *lineDiscipline) inputQueueReadSize(t *kernel.Task, io usermem.IO, args 
 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
-	defer l.termiosMu.RUnlock()
-	n, pushed, err := l.inQueue.read(ctx, dst, l)
+	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l)
+	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
 	}
 	if n > 0 {
-		l.masterWaiter.Notify(waiter.WritableEvents)
+		if notifyEcho {
+			l.masterWaiter.Notify(waiter.ReadableEvents | waiter.WritableEvents)
+		} else {
+			l.masterWaiter.Notify(waiter.WritableEvents)
+		}
 		if pushed {
 			l.replicaWaiter.Notify(waiter.ReadableEvents)
 		}
 		return n, nil
+	} else if notifyEcho {
+		l.masterWaiter.Notify(waiter.ReadableEvents)
 	}
 	return 0, syserror.ErrWouldBlock
 }
 
 func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
-	defer l.termiosMu.RUnlock()
-	n, err := l.inQueue.write(ctx, src, l)
+	n, notifyEcho, err := l.inQueue.write(ctx, src, l)
+	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
+	}
+	if notifyEcho {
+		l.masterWaiter.Notify(waiter.ReadableEvents)
 	}
 	if n > 0 {
 		l.replicaWaiter.Notify(waiter.ReadableEvents)
@@ -214,8 +229,9 @@ func (l *lineDiscipline) outputQueueReadSize(t *kernel.Task, io usermem.IO, args
 
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
-	defer l.termiosMu.RUnlock()
-	n, pushed, err := l.outQueue.read(ctx, dst, l)
+	// Ignore notifyEcho, as it cannot happen when reading from the output queue.
+	n, pushed, _, err := l.outQueue.read(ctx, dst, l)
+	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
 	}
@@ -231,8 +247,9 @@ func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequ
 
 func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
-	defer l.termiosMu.RUnlock()
-	n, err := l.outQueue.write(ctx, src, l)
+	// Ignore notifyEcho, as it cannot happen when writing to the output queue.
+	n, _, err := l.outQueue.write(ctx, src, l)
+	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
 	}
@@ -246,7 +263,8 @@ func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSeq
 // transformer is a helper interface to make it easier to stateify queue.
 type transformer interface {
 	// transform functions require queue's mutex to be held.
-	transform(*lineDiscipline, *queue, []byte) int
+	// The boolean indicates whether there was any echoed bytes.
+	transform(*lineDiscipline, *queue, []byte) (int, bool)
 }
 
 // outputQueueTransformer implements transformer. It performs line discipline
@@ -261,7 +279,7 @@ type outputQueueTransformer struct{}
 // Preconditions:
 // * l.termiosMu must be held for reading.
 // * q.mu must be held.
-func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) int {
+func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// transformOutput is effectively always in noncanonical mode, as the
 	// master termios never has ICANON set.
 
@@ -270,7 +288,7 @@ func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte
 		if len(q.readBuf) > 0 {
 			q.readable = true
 		}
-		return len(buf)
+		return len(buf), false
 	}
 
 	var ret int
@@ -321,7 +339,7 @@ func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte
 	if len(q.readBuf) > 0 {
 		q.readable = true
 	}
-	return ret
+	return ret, false
 }
 
 // inputQueueTransformer implements transformer. It performs line discipline
@@ -334,15 +352,17 @@ type inputQueueTransformer struct{}
 // transformed according to flags set in the termios struct. See
 // drivers/tty/n_tty.c:n_tty_receive_char_special for an analogous kernel
 // function.
+// It returns an extra boolean indicating whether any characters need to be
+// echoed, in which case we need to notify readers.
 //
 // Preconditions:
 // * l.termiosMu must be held for reading.
 // * q.mu must be held.
-func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) int {
+func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// If there's a line waiting to be read in canonical mode, don't write
 	// anything else to the read buffer.
 	if l.termios.LEnabled(linux.ICANON) && q.readable {
-		return 0
+		return 0, false
 	}
 
 	maxBytes := nonCanonMaxBytes
@@ -351,6 +371,7 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 	}
 
 	var ret int
+	var notifyEcho bool
 	for len(buf) > 0 && len(q.readBuf) < canonMaxBytes {
 		size := l.peek(buf)
 		cBytes := append([]byte{}, buf[:size]...)
@@ -397,7 +418,7 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 		// Anything written to the readBuf will have to be echoed.
 		if l.termios.LEnabled(linux.ECHO) {
 			l.outQueue.writeBytes(cBytes, l)
-			l.masterWaiter.Notify(waiter.ReadableEvents)
+			notifyEcho = true
 		}
 
 		// If we finish a line, make it available for reading.
@@ -412,7 +433,7 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 		q.readable = true
 	}
 
-	return ret
+	return ret, notifyEcho
 }
 
 // shouldDiscard returns whether c should be discarded. In canonical mode, if
