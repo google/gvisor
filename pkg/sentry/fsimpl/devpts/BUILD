@@ -60,5 +60,6 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/sentry/contexttest",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )

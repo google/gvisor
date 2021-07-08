@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestSimpleMasterToReplica(t *testing.T) {
@@ -49,6 +50,39 @@ func TestSimpleMasterToReplica(t *testing.T) {
 	}
 
 	outStr := string(outBytes[:nr])
+	inStr := string(inBytes)
+	if outStr != inStr {
+		t.Fatalf("written and read strings do not match: got %q, want %q", outStr, inStr)
+	}
+}
+
+type callback func(*waiter.Entry, waiter.EventMask)
+
+func (cb callback) Callback(entry *waiter.Entry, mask waiter.EventMask) {
+	cb(entry, mask)
+}
+
+func TestEchoDeadlock(t *testing.T) {
+	ctx := contexttest.Context(t)
+	termios := linux.DefaultReplicaTermios
+	termios.LocalFlags |= linux.ECHO
+	ld := newLineDiscipline(termios)
+	outBytes := make([]byte, 32)
+	dst := usermem.BytesIOSequence(outBytes)
+	entry := &waiter.Entry{Callback: callback(func(*waiter.Entry, waiter.EventMask) {
+		ld.inputQueueRead(ctx, dst)
+	})}
+	ld.masterWaiter.EventRegister(entry, waiter.ReadableEvents)
+	defer ld.masterWaiter.EventUnregister(entry)
+	inBytes := []byte("hello, tty\n")
+	n, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(inBytes))
+	if err != nil {
+		t.Fatalf("inputQueueWrite: %v", err)
+	}
+	if int(n) != len(inBytes) {
+		t.Fatalf("read wrong length: got %d, want %d", n, len(inBytes))
+	}
+	outStr := string(outBytes[:n])
 	inStr := string(inBytes)
 	if outStr != inStr {
 		t.Fatalf("written and read strings do not match: got %q, want %q", outStr, inStr)
