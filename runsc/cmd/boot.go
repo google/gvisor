@@ -255,7 +255,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	ws := l.WaitExit()
 	log.Infof("application exiting with %+v", ws)
 	waitStatus := args[1].(*unix.WaitStatus)
-	*waitStatus = unix.WaitStatus(ws.Status())
+	*waitStatus = unix.WaitStatus(ws)
 	l.Destroy()
 	return subcommands.ExitSuccess
 }

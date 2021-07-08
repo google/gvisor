@@ -235,7 +235,7 @@ func (t *Task) traceExitEvent() {
 	if !trace.IsEnabled() {
 		return
 	}
-	trace.Logf(t.traceContext, traceCategory, "exit status: 0x%x", t.exitStatus.Status())
+	trace.Logf(t.traceContext, traceCategory, "exit status: %s", t.exitStatus)
 }
 
 // traceExecEvent is called when a task calls exec.

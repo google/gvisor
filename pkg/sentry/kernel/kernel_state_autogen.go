@@ -1636,34 +1636,6 @@ func (r *runSyscallAfterExecStop) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.image)
 }
 
-func (es *ExitStatus) StateTypeName() string {
-	return "pkg/sentry/kernel.ExitStatus"
-}
-
-func (es *ExitStatus) StateFields() []string {
-	return []string{
-		"Code",
-		"Signo",
-	}
-}
-
-func (es *ExitStatus) beforeSave() {}
-
-// +checklocksignore
-func (es *ExitStatus) StateSave(stateSinkObject state.Sink) {
-	es.beforeSave()
-	stateSinkObject.Save(0, &es.Code)
-	stateSinkObject.Save(1, &es.Signo)
-}
-
-func (es *ExitStatus) afterLoad() {}
-
-// +checklocksignore
-func (es *ExitStatus) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &es.Code)
-	stateSourceObject.Load(1, &es.Signo)
-}
-
 func (r *runExit) StateTypeName() string {
 	return "pkg/sentry/kernel.runExit"
 }
@@ -2596,7 +2568,6 @@ func init() {
 	state.Register((*vforkStop)(nil))
 	state.Register((*execStop)(nil))
 	state.Register((*runSyscallAfterExecStop)(nil))
-	state.Register((*ExitStatus)(nil))
 	state.Register((*runExit)(nil))
 	state.Register((*runExitMain)(nil))
 	state.Register((*runExitNotify)(nil))

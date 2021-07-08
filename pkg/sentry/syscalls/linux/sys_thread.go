@@ -17,7 +17,6 @@ package linux
 import (
 	"path"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -188,15 +187,15 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 
 // Exit implements linux syscall exit(2).
 func Exit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	status := int(args[0].Int())
-	t.PrepareExit(kernel.ExitStatus{Code: status})
+	status := args[0].Int()
+	t.PrepareExit(linux.WaitStatusExit(status & 0xff))
 	return 0, kernel.CtrlDoExit, nil
 }
 
 // ExitGroup implements linux syscall exit_group(2).
 func ExitGroup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	status := int(args[0].Int())
-	t.PrepareGroupExit(kernel.ExitStatus{Code: status})
+	status := args[0].Int()
+	t.PrepareGroupExit(linux.WaitStatusExit(status & 0xff))
 	return 0, kernel.CtrlDoExit, nil
 }
 
@@ -316,7 +315,7 @@ func wait4(t *kernel.Task, pid int, statusAddr hostarch.Addr, options int, rusag
 		return 0, err
 	}
 	if statusAddr != 0 {
-		if _, err := primitive.CopyUint32Out(t, statusAddr, wr.Status); err != nil {
+		if _, err := primitive.CopyUint32Out(t, statusAddr, uint32(wr.Status)); err != nil {
 			return 0, err
 		}
 	}
@@ -419,23 +418,22 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 	si.SetPID(int32(wr.TID))
 	si.SetUID(int32(wr.UID))
-	// TODO(b/73541790): convert kernel.ExitStatus to functions and make
-	// WaitResult.Status a linux.WaitStatus.
-	s := unix.WaitStatus(wr.Status)
+	s := wr.Status
 	switch {
 	case s.Exited():
 		si.Code = linux.CLD_EXITED
 		si.SetStatus(int32(s.ExitStatus()))
 	case s.Signaled():
-		si.Code = linux.CLD_KILLED
-		si.SetStatus(int32(s.Signal()))
-	case s.CoreDump():
-		si.Code = linux.CLD_DUMPED
-		si.SetStatus(int32(s.Signal()))
+		if s.CoreDumped() {
+			si.Code = linux.CLD_DUMPED
+		} else {
+			si.Code = linux.CLD_KILLED
+		}
+		si.SetStatus(int32(s.TerminationSignal()))
 	case s.Stopped():
 		if wr.Event == kernel.EventTraceeStop {
 			si.Code = linux.CLD_TRAPPED
-			si.SetStatus(int32(s.TrapCause()))
+			si.SetStatus(int32(s.PtraceEvent()))
 		} else {
 			si.Code = linux.CLD_STOPPED
 			si.SetStatus(int32(s.StopSignal()))
