@@ -224,6 +224,14 @@ func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, descript
 	}
 }
 
+// MustRegisterCustomUint64MicrosecondsMetric calls RegisterCustomUint64Metric for metrics
+// with microseconds as unit and panics if it returns an error.
+func MustRegisterCustomUint64MicrosecondsMetric(name string, cumulative, sync bool, description string, value func(...string) uint64, fields ...Field) {
+	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_MICROSECONDS, description, value, fields...); err != nil {
+		panic(fmt.Sprintf("Unable to register metric %q: %s", name, err))
+	}
+}
+
 // NewUint64Metric creates and registers a new cumulative metric with the given
 // name.
 //

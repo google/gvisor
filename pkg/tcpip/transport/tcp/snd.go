@@ -144,6 +144,10 @@ type sender struct {
 	// probeTimer and probeWaker are used to schedule PTO for RACK TLP algorithm.
 	probeTimer timer       `state:"nosave"`
 	probeWaker sleep.Waker `state:"nosave"`
+
+	// startRecovery records the time when the endpoint entered fast/SACK
+	// recovery or RTO recovery.
+	startRecovery tcpip.MonotonicTime
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -493,6 +497,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	}
 
 	s.state = tcpip.RTORecovery
+	s.startRecovery = s.ep.stack.Clock().NowMonotonic()
 	s.cc.HandleRTOExpired()
 
 	// Mark the next segment to be sent as the first unacknowledged one and
@@ -969,6 +974,7 @@ func (s *sender) enterRecovery() {
 	s.FastRecovery.MaxCwnd = s.SndCwnd + s.Outstanding
 	s.FastRecovery.HighRxt = s.SndUna
 	s.FastRecovery.RescueRxt = s.SndUna
+	s.startRecovery = s.ep.stack.Clock().NowMonotonic()
 	if s.ep.SACKPermitted {
 		s.state = tcpip.SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
@@ -992,6 +998,11 @@ func (s *sender) leaveRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.SndCwnd = s.Ssthresh
+
+	// Record time spent in Fast or SACK recovery.
+	diff := uint64(s.ep.stack.Clock().NowMonotonic().Sub(s.startRecovery).Microseconds())
+	s.ep.stack.Stats().TCP.TimeToRecover.IncrementBy(diff)
+
 	s.cc.PostRecovery()
 }
 
@@ -1419,6 +1430,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		if !s.FastRecovery.Active {
 			s.cc.Update(originalOutstanding - s.Outstanding)
 			if s.FastRecovery.Last.LessThan(s.SndUna) {
+				// Record the time spent in RTO recovery before
+				// marking the endpoint to Open state.
+				if s.state == tcpip.RTORecovery {
+					diff := uint64(s.ep.stack.Clock().NowMonotonic().Sub(s.startRecovery).Microseconds())
+					s.ep.stack.Stats().TCP.TimeToRecover.IncrementBy(diff)
+				}
+
 				s.state = tcpip.Open
 				// Update RACK when we are exiting fast or RTO
 				// recovery as described in the RFC

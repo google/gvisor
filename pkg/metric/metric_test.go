@@ -497,3 +497,79 @@ func TestMetricUpdateStageTiming(t *testing.T) {
 		checkStage(update.StageTiming[1], "last_stage_2")
 	}
 }
+
+func TestEmitMetricUpdateWithMicroseconds(t *testing.T) {
+	defer reset()
+
+	foo, err := NewUint64Metric("/fooDuration", false, pb.MetricMetadata_UNITS_MICROSECONDS, fooDescription)
+	if err != nil {
+		t.Fatalf("NewUint64Metric got err %v want nil", err)
+	}
+
+	if err := Initialize(); err != nil {
+		t.Fatalf("Initialize(): %s", err)
+	}
+
+	// Don't care about the registration metrics.
+	emitter.Reset()
+	EmitMetricUpdate()
+
+	if len(emitter) != 1 {
+		t.Fatalf("EmitMetricUpdate emitted %d events want 1", len(emitter))
+	}
+
+	update, ok := emitter[0].(*pb.MetricUpdate)
+	if !ok {
+		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
+	}
+
+	if len(update.Metrics) != 1 {
+		t.Errorf("MetricUpdate got %d metrics want 2", len(update.Metrics))
+	}
+
+	// Both are included for their initial values.
+	m := update.Metrics[0]
+	if m.Name != "/fooDuration" {
+		t.Errorf("/fooDuration not found: %+v", emitter)
+	}
+
+	uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
+	if !ok {
+		t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
+	}
+	if uv.Uint64Value != 0 {
+		t.Errorf("%v: Value got %v want 0", m, uv.Uint64Value)
+	}
+
+	// Increment fooDuration. Only it is included in the next update.
+	foo.Increment()
+
+	emitter.Reset()
+	EmitMetricUpdate()
+
+	if len(emitter) != 1 {
+		t.Fatalf("EmitMetricUpdate emitted %d events want 1", len(emitter))
+	}
+
+	update, ok = emitter[0].(*pb.MetricUpdate)
+	if !ok {
+		t.Fatalf("emitter %v got %T want pb.MetricUpdate", emitter[0], emitter[0])
+	}
+
+	if len(update.Metrics) != 1 {
+		t.Errorf("MetricUpdate got %d metrics want 1", len(update.Metrics))
+	}
+
+	m = update.Metrics[0]
+	if m.Name != "/fooDuration" {
+		t.Errorf("Metric %+v name got %q want '/fooDuration'", m, m.Name)
+	}
+
+	uv, ok = m.Value.(*pb.MetricValue_Uint64Value)
+	if !ok {
+		t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
+	}
+	if uv.Uint64Value != 1 {
+		t.Errorf("%v: Value got %v want 1", m, uv.Uint64Value)
+	}
+}

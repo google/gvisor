@@ -8010,3 +8010,74 @@ func generateRandomPayload(t *testing.T, n int) []byte {
 	}
 	return buf
 }
+
+func TestTimeToRecoverMetric(t *testing.T) {
+	const maxPayload = 536
+	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+	const latency = 10 * time.Millisecond
+
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000 /* rcvWnd */, -1 /* epRcvBuf */)
+
+	data := make([]byte, 2*maxPayload)
+	var r bytes.Reader
+	r.Reset(data[:maxPayload])
+	_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	bytesRead := 0
+	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+
+	if got := c.Stack().Stats().TCP.TimeToRecover.Value(); got > 0 {
+		t.Errorf("got stats.TCP.TimeToRecover.Value() = %d, want = 0", got)
+	}
+
+	// Wait for RTO.
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("GetSockOpt failed: %v", err)
+	}
+	time.Sleep(info.RTO)
+
+	// Expect retransmission after RTO.
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, 0)
+	bytesRead += maxPayload
+
+	// Send ACK to recover from RTO.
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload)
+
+	// Check time to recover after RTO recovery.
+	time.Sleep(latency)
+	timeToRecover := c.Stack().Stats().TCP.TimeToRecover.Value()
+	if timeToRecover == 0 {
+		t.Errorf("got stats.TCP.TimeToRecover.Value() = %d, want > 0", timeToRecover)
+	}
+
+	r.Reset(data[maxPayload:])
+	_, err = c.EP.Write(&r, tcpip.WriteOptions{})
+	if err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+
+	// Two more ACKs to trigger fast recovery.
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload)
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload)
+
+	// Expect retransmission after fast recovery.
+	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+	bytesRead += maxPayload
+
+	// Send ACK to recover from fast recovery.
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytesRead)
+
+	// Check time to recover after fast recovery.
+	time.Sleep(latency)
+	if newTTR := c.Stack().Stats().TCP.TimeToRecover.Value(); newTTR <= timeToRecover {
+		t.Errorf("got stats.TCP.TimeToRecover.Value() = %d, want > %d", newTTR, timeToRecover)
+	}
+}

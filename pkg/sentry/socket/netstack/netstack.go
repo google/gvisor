@@ -77,6 +77,12 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 	return &cm
 }
 
+func mustCreateMicrosecondsMetric(name, description string) *tcpip.StatCounter {
+	var cm tcpip.StatCounter
+	metric.MustRegisterCustomUint64MicrosecondsMetric(name, true /* cumulative */, false /* sync */, description, cm.Value)
+	return &cm
+}
+
 // Metrics contains metrics exported by netstack.
 var Metrics = tcpip.Stats{
 	DroppedPackets: mustCreateMetric("/netstack/dropped_packets", "Number of packets dropped at the transport layer."),
@@ -273,6 +279,7 @@ var Metrics = tcpip.Stats{
 		Timeouts:                           mustCreateMetric("/netstack/tcp/timeouts", "Number of times RTO expired."),
 		ChecksumErrors:                     mustCreateMetric("/netstack/tcp/checksum_errors", "Number of segments dropped due to bad checksums."),
 		FailedPortReservations:             mustCreateMetric("/netstack/tcp/failed_port_reservations", "Number of time TCP failed to reserve a port."),
+		TimeToRecover:                      mustCreateMicrosecondsMetric("/netstack/tcp/time_to_recover", "Duration spent in recovery by the connection."),
 	},
 	UDP: tcpip.UDPStats{
 		PacketsReceived:          mustCreateMetric("/netstack/udp/packets_received", "Number of UDP datagrams received via HandlePacket."),
