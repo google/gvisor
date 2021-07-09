@@ -142,7 +142,8 @@ type Config struct {
 	// Rootless allows the sandbox to be started with a user that is not root.
 	// Defense in depth measures are weaker in rootless mode. Specifically, the
 	// sandbox and Gofer process run as root inside a user namespace with root
-	// mapped to the caller's user.
+	// mapped to the caller's user. When using rootless, the container root path
+	// should not have a symlink.
 	Rootless bool `flag:"rootless"`
 
 	// AlsoLogToStderr allows to send log messages to stderr.
@@ -175,7 +176,8 @@ type Config struct {
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
-	// necessary in test environments that have limited capabilities.
+	// necessary in test environments that have limited capabilities. When
+	// disabling chroot, the container root path should not have a symlink.
 	TestOnlyAllowRunAsCurrentUserWithoutChroot bool `flag:"TESTONLY-unsafe-nonroot"`
 
 	// TestOnlyTestNameEnv should only be used in tests. It looks up for the

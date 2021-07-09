@@ -30,7 +30,7 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	chrootDst := filepath.Join(chroot, dst)
 	log.Infof("Mounting %q at %q", src, chrootDst)
 
-	if err := specutils.Mount(src, chrootDst, typ, flags, "/proc"); err != nil {
+	if err := specutils.SafeSetupAndMount(src, chrootDst, typ, flags, "/proc"); err != nil {
 		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
 	}
 	return nil
