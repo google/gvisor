@@ -284,8 +284,12 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		}
 
 		// Prepare tree structure for pivot_root(2).
-		os.Mkdir("/proc/proc", 0755)
-		os.Mkdir("/proc/root", 0755)
+		if err := os.Mkdir("/proc/proc", 0755); err != nil {
+			Fatalf("error creating /proc/proc: %v", err)
+		}
+		if err := os.Mkdir("/proc/root", 0755); err != nil {
+			Fatalf("error creating /proc/root: %v", err)
+		}
 		// This cannot use SafeMount because there's no available procfs. But we
 		// know that /proc is an empty tmpfs mount, so this is safe.
 		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
