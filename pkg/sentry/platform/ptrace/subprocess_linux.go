@@ -181,7 +181,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
 	// the description of the BPF program built above.
-	if errno := seccomp.SetFilter(instrs); errno != 0 {
+	if errno := seccomp.SetFilterInChild(instrs); errno != 0 {
 		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
