@@ -27,8 +27,6 @@ import (
 // EnterInitialCgroups moves t into an initial set of cgroups.
 //
 // Precondition: t isn't in any cgroups yet, t.cgs is empty.
-//
-// +checklocksignore parent.mu is conditionally acquired.
 func (t *Task) EnterInitialCgroups(parent *Task) {
 	var inherit map[Cgroup]struct{}
 	if parent != nil {
