@@ -368,7 +368,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		}
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
-		if err := specutils.Mount(m.Source, dst, m.Type, flags, procPath); err != nil {
+		if err := specutils.SafeSetupAndMount(m.Source, dst, m.Type, flags, procPath); err != nil {
 			return fmt.Errorf("mounting %+v: %v", m, err)
 		}
 

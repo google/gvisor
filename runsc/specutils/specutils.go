@@ -434,12 +434,12 @@ func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
 
-// Mount creates the mount point and calls Mount with the given flags. procPath
-// is the path to procfs. If it is "", procfs is assumed to be mounted at
-// /proc.
-func Mount(src, dst, typ string, flags uint32, procPath string) error {
-	// Create the mount point inside. The type must be the same as the
-	// source (file or directory).
+// SafeSetupAndMount creates the mount point and calls Mount with the given
+// flags. procPath is the path to procfs. If it is "", procfs is assumed to be
+// mounted at /proc.
+func SafeSetupAndMount(src, dst, typ string, flags uint32, procPath string) error {
+	// Create the mount point inside. The type must be the same as the source
+	// (file or directory).
 	var isDir bool
 	if typ == "proc" {
 		// Special case, as there is no source directory for proc mounts.
@@ -484,6 +484,10 @@ type ErrSymlinkMount struct {
 
 // SafeMount is like unix.Mount, but will fail if dst is a symlink. procPath is
 // the path to procfs. If it is "", procfs is assumed to be mounted at /proc.
+//
+// SafeMount can fail when dst contains a symlink. However, it is called in the
+// normal case with a destination consisting of a known root (/proc/root) and
+// symlink-free path (from resolveSymlink).
 func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) error {
 	// Open the destination.
 	fd, err := unix.Open(dst, unix.O_PATH|unix.O_CLOEXEC, 0)
