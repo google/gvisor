@@ -17,6 +17,8 @@
 #ifndef GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 #define GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 
+#ifdef __linux__
+
 #include <errno.h>
 #include <linux/capability.h>
 #include <sys/syscall.h>
@@ -120,4 +122,7 @@ class AutoCapability {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __linux__
+
 #endif  // GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_

@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
@@ -1700,7 +1701,20 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-		ep.SocketOptions().SetReceiveBufferSize(int64(v), true /* notify */)
+		ep.SocketOptions().SetReceiveBufferSize(int64(v), true /* notify */, false /* ignoreMax */)
+		return nil
+
+	case linux.SO_RCVBUFFORCE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		if creds := auth.CredentialsFromContext(t); !creds.HasCapability(linux.CAP_NET_ADMIN) {
+			return syserr.ErrNotPermitted
+		}
+
+		v := hostarch.ByteOrder.Uint32(optVal)
+		ep.SocketOptions().SetReceiveBufferSize(int64(v), true /* notify */, true /* ignoreMax */)
 		return nil
 
 	case linux.SO_REUSEADDR:

@@ -833,7 +833,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.ops.SetMulticastLoop(true)
 	e.ops.SetQuickAck(true)
 	e.ops.SetSendBufferSize(DefaultSendBufferSize, false /* notify */)
-	e.ops.SetReceiveBufferSize(DefaultReceiveBufferSize, false /* notify */)
+	e.ops.SetReceiveBufferSize(DefaultReceiveBufferSize, false /* notify */, false /* ignoreMax */)
 
 	var ss tcpip.TCPSendBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
@@ -842,7 +842,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 
 	var rs tcpip.TCPReceiveBufferSizeRangeOption
 	if err := s.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
-		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */)
+		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */, false /* ignoreMax */)
 	}
 
 	var cs tcpip.CongestionControlOption
@@ -1238,7 +1238,7 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 		rcvBufSize := int(e.ops.GetReceiveBufferSize())
 		if rcvWnd > rcvBufSize {
 			availBefore := wndFromSpace(e.receiveBufferAvailableLocked(rcvBufSize))
-			e.ops.SetReceiveBufferSize(int64(rcvWnd), false /* notify */)
+			e.ops.SetReceiveBufferSize(int64(rcvWnd), false /* notify */, false /* ignoreMax */)
 			availAfter := wndFromSpace(e.receiveBufferAvailableLocked(rcvWnd))
 			if crossed, above := e.windowCrossedACKThresholdLocked(availAfter-availBefore, rcvBufSize); crossed && above {
 				e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)

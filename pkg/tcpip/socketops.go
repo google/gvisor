@@ -60,7 +60,7 @@ type SocketOptionsHandler interface {
 	// buffer size. It also returns the newly set value.
 	OnSetSendBufferSize(v int64) (newSz int64)
 
-	// OnSetReceiveBufferSize is invoked to set the SO_RCVBUFSIZE.
+	// OnSetReceiveBufferSize is invoked by SO_RCVBUF and SO_RCVBUFFORCE.
 	OnSetReceiveBufferSize(v, oldSz int64) (newSz int64)
 }
 
@@ -657,8 +657,10 @@ func (so *SocketOptions) GetReceiveBufferSize() int64 {
 	return so.receiveBufferSize.Load()
 }
 
-// SetReceiveBufferSize sets value for SO_RCVBUF option.
-func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bool) {
+// SetReceiveBufferSize sets value for SO_RCVBUF option. When ignoreMax is true
+// this acts like SO_RCVBUFFORCE, ignoring the system's maximum receive buffer
+// size.
+func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify, ignoreMax bool) {
 	if !notify {
 		so.receiveBufferSize.Store(receiveBufferSize)
 		return
@@ -670,8 +672,9 @@ func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bo
 	ss := so.getReceiveBufferLimits(so.stackHandler)
 	min := int64(ss.Min)
 	max := int64(ss.Max)
+
 	// Validate the send buffer size with min and max values.
-	if v > max {
+	if !ignoreMax && v > max {
 		v = max
 	}
 

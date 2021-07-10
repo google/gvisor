@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #ifdef __linux__
+#include <linux/capability.h>
 #include <linux/filter.h>
 #endif  // __linux__
 #include <netinet/in.h>
@@ -30,6 +31,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -1925,6 +1927,40 @@ TEST_P(SimpleTcpSocketTest, SetTCPWindowClampAboveHalfMinRcvBuf) {
 }
 
 #ifdef __linux__
+
+// Check that setting SO_RCVBUFFORCE above max is not clamped to the maximum
+// receive buffer size.
+TEST_P(SimpleTcpSocketTest, SetSocketRecvBufForceAboveMax) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(sock.get(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(getsockopt(sock.get(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+              SyscallSucceeds());
+
+  int above_max = max + 1;
+  int sso = setsockopt(sock.get(), SOL_SOCKET, SO_RCVBUFFORCE, &above_max,
+                       sizeof(above_max));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
+    return;
+  }
+  ASSERT_THAT(sso, SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(getsockopt(sock.get(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+              SyscallSucceeds());
+  // The system doubles the passed-in maximum.
+  ASSERT_EQ(above_max * 2, val);
+}
 
 // TODO(gvisor.dev/2746): Support SO_ATTACH_FILTER/SO_DETACH_FILTER.
 // gVisor currently silently ignores attaching a filter.

@@ -184,7 +184,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.ops.InitHandler(e, e.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	e.ops.SetMulticastLoop(true)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
-	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
+	e.ops.SetReceiveBufferSize(32*1024, false /* notify */, false /* ignoreMax */)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
@@ -194,7 +194,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 
 	var rs tcpip.ReceiveBufferSizeOption
 	if err := s.Option(&rs); err == nil {
-		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */)
+		e.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */, false /* ignoreMax */)
 	}
 
 	return e
