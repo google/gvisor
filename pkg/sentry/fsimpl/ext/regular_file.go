@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -125,7 +124,7 @@ func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *regularFileFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.

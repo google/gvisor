@@ -107,13 +107,13 @@ go_test(
     library = ":fsutil",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // KeyKind indicates the type of a Key.
@@ -166,7 +165,7 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 			case linux.FUTEX_OP_XOR:
 				newVal = oldVal ^ opArg
 			default:
-				return false, syserror.ENOSYS
+				return false, linuxerr.ENOSYS
 			}
 			prev, err := t.CompareAndSwapUint32(addr, oldVal, newVal)
 			if err != nil {
@@ -192,7 +191,7 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 	case linux.FUTEX_OP_CMP_GE:
 		return oldVal >= cmpArg, nil
 	default:
-		return false, syserror.ENOSYS
+		return false, linuxerr.ENOSYS
 	}
 }
 

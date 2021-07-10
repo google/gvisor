@@ -157,7 +157,7 @@ const (
 	EHWPOISON
 )
 
-// errnos derived from other errnos
+// errnos derived from other errnos.
 const (
 	EWOULDBLOCK = EAGAIN
 	EDEADLOCK   = EDEADLK

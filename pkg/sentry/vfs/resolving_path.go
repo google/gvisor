@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ResolvingPath represents the state of an in-progress path resolution, shared
@@ -331,7 +330,7 @@ func (rp *ResolvingPath) HandleSymlink(target string) error {
 		return linuxerr.ELOOP
 	}
 	if len(target) == 0 {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	rp.symlinks++
 	targetPath := fspath.Parse(target)

@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -46,7 +45,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry, error) {
 	dir, ok := d.inode.impl.(*directory)
 	if !ok {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, err
@@ -75,7 +74,7 @@ afterSymlink:
 	}
 	child, ok := dir.childMap[name]
 	if !ok {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
 		return nil, err
@@ -113,7 +112,7 @@ func walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) 
 	}
 	dir, ok := d.inode.impl.(*directory)
 	if !ok {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return dir, nil
 }
@@ -133,7 +132,7 @@ func resolveLocked(ctx context.Context, rp *vfs.ResolvingPath) (*dentry, error) 
 		d = next
 	}
 	if rp.MustBeDir() && !d.inode.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -162,21 +161,21 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	if len(name) > linux.NAME_MAX {
 		return linuxerr.ENAMETOOLONG
 	}
 	if _, ok := parentDir.childMap[name]; ok {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	if !dir && rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	// tmpfs never calls VFS.InvalidateDentry(), so parentDir.dentry can only
 	// be dead if it was deleted.
 	if parentDir.dentry.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -221,7 +220,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	}
 	if opts.CheckSearchable {
 		if !d.inode.isDir() {
-			return nil, syserror.ENOTDIR
+			return nil, linuxerr.ENOTDIR
 		}
 		if err := d.inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
@@ -258,7 +257,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return err
 		}
 		if i.nlink == 0 {
-			return syserror.ENOENT
+			return linuxerr.ENOENT
 		}
 		if i.nlink == maxLinks {
 			return linuxerr.EMLINK
@@ -313,7 +312,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	if opts.Flags&linux.O_TMPFILE != 0 {
 		// Not yet supported.
-		return nil, syserror.EOPNOTSUPP
+		return nil, linuxerr.EOPNOTSUPP
 	}
 
 	// Handle O_CREAT and !O_CREAT separately, since in the latter case we
@@ -345,10 +344,10 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if rp.Done() {
 		// Reject attempts to open mount root directory with O_CREAT.
 		if rp.MustBeDir() {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		if mustCreate {
-			return nil, syserror.EEXIST
+			return nil, linuxerr.EEXIST
 		}
 		start.IncRef()
 		defer start.DecRef(ctx)
@@ -366,11 +365,11 @@ afterTrailingSymlink:
 	}
 	// Reject attempts to open directories with O_CREAT.
 	if rp.MustBeDir() {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	if len(name) > linux.NAME_MAX {
 		return nil, linuxerr.ENAMETOOLONG
@@ -402,7 +401,7 @@ afterTrailingSymlink:
 		return fd, nil
 	}
 	if mustCreate {
-		return nil, syserror.EEXIST
+		return nil, linuxerr.EEXIST
 	}
 	// Is the file mounted over?
 	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
@@ -419,7 +418,7 @@ afterTrailingSymlink:
 		goto afterTrailingSymlink
 	}
 	if rp.MustBeDir() && !child.inode.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	child.IncRef()
 	defer child.DecRef(ctx)
@@ -457,7 +456,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	case *directory:
 		// Can't open directories writably.
 		if ats&vfs.MayWrite != 0 {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		var fd directoryFD
 		fd.LockFD.Init(&d.inode.locks)
@@ -513,7 +512,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return linuxerr.EBUSY
 	}
@@ -532,7 +531,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	renamed, ok := oldParentDir.childMap[oldName]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := oldParentDir.mayDelete(rp.Credentials(), renamed); err != nil {
 		return err
@@ -552,7 +551,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	} else {
 		if opts.MustBeDir || rp.MustBeDir() {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 	}
 
@@ -562,22 +561,22 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	replaced, ok := newParentDir.childMap[newName]
 	if ok {
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		replacedDir, ok := replaced.inode.impl.(*directory)
 		if ok {
 			if !renamed.inode.isDir() {
-				return syserror.EISDIR
+				return linuxerr.EISDIR
 			}
 			if len(replacedDir.childMap) != 0 {
 				return linuxerr.ENOTEMPTY
 			}
 		} else {
 			if rp.MustBeDir() {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 			if renamed.inode.isDir() {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 		}
 	} else {
@@ -588,7 +587,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// tmpfs never calls VFS.InvalidateDentry(), so newParentDir.dentry can
 	// only be dead if it was deleted.
 	if newParentDir.dentry.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Linux places this check before some of those above; we do it here for
@@ -654,14 +653,14 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	child, ok := parentDir.childMap[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
 	childDir, ok := child.inode.impl.(*directory)
 	if !ok {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	if len(childDir.childMap) != 0 {
 		return linuxerr.ENOTEMPTY
@@ -754,20 +753,20 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	child, ok := parentDir.childMap[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
 	if child.inode.isDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if rp.MustBeDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {

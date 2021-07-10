@@ -492,7 +492,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flag
 	case unix.S_IFSOCK:
 		if i.isTTY {
 			log.Warningf("cannot use host socket fd %d as TTY", i.hostFD)
-			return nil, syserror.ENOTTY
+			return nil, linuxerr.ENOTTY
 		}
 
 		ep, err := newEndpoint(ctx, i.hostFD, &i.queue)
@@ -585,7 +585,7 @@ func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	i := f.inode
@@ -602,7 +602,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	i := f.inode
@@ -701,7 +701,7 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 	hostFD := f.inode.hostFD
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)

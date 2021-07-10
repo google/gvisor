@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // +stateify savable
@@ -58,7 +57,7 @@ func (s *selfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 	}
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	if tgid == 0 {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	return strconv.FormatUint(uint64(tgid), 10), nil
 }
@@ -100,7 +99,7 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string,
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	tid := s.pidns.IDOfTask(t)
 	if tid == 0 || tgid == 0 {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	return fmt.Sprintf("%d/task/%d", tgid, tid), nil
 }

@@ -148,7 +148,7 @@ func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, 
 func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	// Ignore arg[0]. This is the real FD:
@@ -189,7 +189,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 
 		pidns := kernel.PIDNamespaceFromContext(ctx)
 		if pidns == nil {
-			return 0, syserror.ENOTTY
+			return 0, linuxerr.ENOTTY
 		}
 
 		t.mu.Lock()
@@ -213,14 +213,14 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from tty_check_change()
 			// to -ENOTTY.
 			if linuxerr.Equals(linuxerr.EIO, err) {
-				return 0, syserror.ENOTTY
+				return 0, linuxerr.ENOTTY
 			}
 			return 0, err
 		}
 
 		// Check that calling task's process group is in the TTY session.
 		if task.ThreadGroup().Session() != t.session {
-			return 0, syserror.ENOTTY
+			return 0, linuxerr.ENOTTY
 		}
 
 		var pgIDP primitive.Int32
@@ -238,7 +238,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		pidns := task.PIDNamespace()
 		pg := pidns.ProcessGroupWithID(pgID)
 		if pg == nil {
-			return 0, syserror.ESRCH
+			return 0, linuxerr.ESRCH
 		}
 
 		// Check that new process group is in the TTY session.
@@ -303,7 +303,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		unimpl.EmitUnimplementedEvent(ctx)
 		fallthrough
 	default:
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 
@@ -346,7 +346,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 		// If the signal is SIGTTIN, then we are attempting to read
 		// from the TTY. Don't send the signal and return EIO.
 		if sig == linux.SIGTTIN {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 
 		// Otherwise, we are writing or changing terminal state. This is allowed.
@@ -355,7 +355,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 
 	// If the process group is an orphan, return EIO.
 	if pg.IsOrphan() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Otherwise, send the signal to the process group and return ERESTARTSYS.

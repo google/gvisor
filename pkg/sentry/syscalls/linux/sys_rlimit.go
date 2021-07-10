@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // rlimit describes an implementation of 'struct rlimit', which may vary from
@@ -44,7 +43,7 @@ func newRlimit(t *kernel.Task) (rlimit, error) {
 		// On 64-bit system, struct rlimit and struct rlimit64 are identical.
 		return &rlimit64{}, nil
 	default:
-		return nil, syserror.ENOSYS
+		return nil, linuxerr.ENOSYS
 	}
 }
 
@@ -159,7 +158,7 @@ func Setrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 	if _, err := rlim.CopyIn(t, addr); err != nil {
-		return 0, nil, syserror.EFAULT
+		return 0, nil, linuxerr.EFAULT
 	}
 	_, err = prlimit64(t, resource, rlim.toLimit())
 	return 0, nil, err
@@ -180,7 +179,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if newRlimAddr != 0 {
 		var nrl rlimit64
 		if err := nrl.copyIn(t, newRlimAddr); err != nil {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		newLim = nrl.toLimit()
 	}
@@ -191,7 +190,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	ot := t
 	if tid > 0 {
 		if ot = t.PIDNamespace().TaskWithID(tid); ot == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
@@ -219,7 +218,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	if oldRlimAddr != 0 {
 		if err := makeRlimit64(oldLim).copyOut(t, oldRlimAddr); err != nil {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 	}
 

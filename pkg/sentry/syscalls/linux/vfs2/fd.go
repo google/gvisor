@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Close implements Linux syscall close(2).
@@ -42,7 +41,7 @@ func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	defer file.DecRef(t)
 
 	err := file.OnClose(t)
-	return 0, nil, slinux.HandleIOErrorVFS2(t, false /* partial */, err, syserror.EINTR, "close", file)
+	return 0, nil, slinux.HandleIOErrorVFS2(t, false /* partial */, err, linuxerr.EINTR, "close", file)
 }
 
 // Dup implements Linux syscall dup(2).
@@ -283,21 +282,21 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 	case linux.F_OWNER_TID:
 		task := t.PIDNamespace().TaskWithID(kernel.ThreadID(pid))
 		if task == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerTask(t, task)
 		return nil
 	case linux.F_OWNER_PID:
 		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(pid))
 		if tg == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerThreadGroup(t, tg)
 		return nil
 	case linux.F_OWNER_PGRP:
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(pid))
 		if pg == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerProcessGroup(t, pg)
 		return nil

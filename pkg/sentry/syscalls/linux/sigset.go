@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // CopyInSigSet copies in a sigset_t, checks its size, and ensures that KILL and
@@ -67,6 +66,6 @@ func copyInSigSetWithSize(t *kernel.Task, addr hostarch.Addr) (hostarch.Addr, ui
 		maskSize := uint(hostarch.ByteOrder.Uint64(in[8:]))
 		return maskAddr, maskSize, nil
 	default:
-		return 0, 0, syserror.ENOSYS
+		return 0, 0, linuxerr.ENOSYS
 	}
 }

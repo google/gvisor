@@ -17,9 +17,9 @@ package ext
 import (
 	"io"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // readFromDisk performs a binary read from disk into the given struct from
@@ -28,7 +28,7 @@ func readFromDisk(dev io.ReaderAt, abOff int64, v marshal.Marshallable) error {
 	n := v.SizeBytes()
 	buf := make([]byte, n)
 	if read, _ := dev.ReadAt(buf, abOff); read < int(n) {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	v.UnmarshalBytes(buf)

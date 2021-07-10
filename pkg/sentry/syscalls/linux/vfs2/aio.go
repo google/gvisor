@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -56,7 +55,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			}
 			cbAddr = hostarch.Addr(cbAddrP)
 		default:
-			return 0, nil, syserror.ENOSYS
+			return 0, nil, linuxerr.ENOSYS
 		}
 
 		// Copy in this callback.

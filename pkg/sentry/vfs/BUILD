@@ -137,7 +137,6 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

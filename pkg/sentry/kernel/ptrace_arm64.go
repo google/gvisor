@@ -23,5 +23,5 @@ import (
 
 // ptraceArch implements arch-specific ptrace commands.
 func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) error {
-	return syserror.EIO
+	return linuxerr.EIO
 }

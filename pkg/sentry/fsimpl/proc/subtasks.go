@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // subtasksInode represents the inode for /proc/[pid]/task/ directory.
@@ -71,15 +70,15 @@ func (fs *filesystem) newSubtasks(ctx context.Context, task *kernel.Task, pidns 
 func (i *subtasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
 	tid, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	subTask := i.pidns.TaskWithID(kernel.ThreadID(tid))
 	if subTask == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	if subTask.ThreadGroup() != i.task.ThreadGroup() {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	return i.fs.newTaskInode(ctx, subTask, i.pidns, false, i.cgroupControllers)
 }
@@ -88,7 +87,7 @@ func (i *subtasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, 
 func (i *subtasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	tasks := i.task.ThreadGroup().MemberIDs(i.pidns)
 	if len(tasks) == 0 {
-		return offset, syserror.ENOENT
+		return offset, linuxerr.ENOENT
 	}
 	if relOffset >= int64(len(tasks)) {
 		return offset, nil
@@ -124,7 +123,7 @@ type subtasksFD struct {
 
 func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	return fd.GenericDirectoryFD.IterDirents(ctx, cb)
 }
@@ -132,7 +131,7 @@ func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallbac
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *subtasksFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
-		return 0, syserror.ENOENT
+		return 0, linuxerr.ENOENT
 	}
 	return fd.GenericDirectoryFD.Seek(ctx, offset, whence)
 }
@@ -140,7 +139,7 @@ func (fd *subtasksFD) Seek(ctx context.Context, offset int64, whence int32) (int
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *subtasksFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
-		return linux.Statx{}, syserror.ENOENT
+		return linux.Statx{}, linuxerr.ENOENT
 	}
 	return fd.GenericDirectoryFD.Stat(ctx, opts)
 }
@@ -148,7 +147,7 @@ func (fd *subtasksFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Sta
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *subtasksFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	return fd.GenericDirectoryFD.SetStat(ctx, opts)
 }

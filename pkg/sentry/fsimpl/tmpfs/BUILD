@@ -103,7 +103,6 @@ go_test(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
     ],
 )
 

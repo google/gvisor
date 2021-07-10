@@ -27,16 +27,16 @@ import (
 	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/tools/go_marshal/analysis"
 	"gvisor.dev/gvisor/tools/go_marshal/test"
 )
 
-var simulatedErr error = syserror.EFAULT
+var simulatedErr error = linuxerr.EFAULT
 
 // mockCopyContext implements marshal.CopyContext.
 type mockCopyContext struct {

@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -76,7 +75,7 @@ func (t *Task) SetRSeq(addr hostarch.Addr, length, signature uint32) error {
 		return linuxerr.EINVAL
 	}
 	if _, ok := t.MemoryManager().CheckIORange(addr, linux.SizeOfRSeq); !ok {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 
 	t.rseqAddr = addr
@@ -93,7 +92,7 @@ func (t *Task) SetRSeq(addr hostarch.Addr, length, signature uint32) error {
 		t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 
 	return nil

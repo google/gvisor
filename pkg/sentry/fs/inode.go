@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Inode is a file system object that can be simultaneously referenced by different
@@ -357,7 +356,7 @@ func (i *Inode) SetTimestamps(ctx context.Context, d *Dirent, ts TimeSpec) error
 // Truncate calls i.InodeOperations.Truncate with i as the Inode.
 func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
 	if IsDir(i.StableAttr) {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 
 	if i.overlay != nil {

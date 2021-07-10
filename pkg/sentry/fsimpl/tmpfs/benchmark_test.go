@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Differences from stat_benchmark:
@@ -147,7 +146,7 @@ func BenchmarkVFS1TmpfsStat(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				err := fileOpOn(ctx, mntns, root, root, linux.AT_FDCWD, filePath, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
 					if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-						return syserror.ENOTDIR
+						return linuxerr.ENOTDIR
 					}
 					uattr, err := d.Inode.UnstableAttr(ctx)
 					if err != nil {
@@ -342,7 +341,7 @@ func BenchmarkVFS1TmpfsMountStat(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				err := fileOpOn(ctx, mntns, root, root, linux.AT_FDCWD, filePath, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
 					if dirPath && !fs.IsDir(d.Inode.StableAttr) {
-						return syserror.ENOTDIR
+						return linuxerr.ENOTDIR
 					}
 					uattr, err := d.Inode.UnstableAttr(ctx)
 					if err != nil {

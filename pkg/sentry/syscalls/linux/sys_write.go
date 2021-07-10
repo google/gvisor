@@ -231,7 +231,7 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
 	// accepted as a valid flag argument for pwritev2.
 	if flags&^linux.RWF_VALID != 0 {
-		return uintptr(flags), nil, syserror.EOPNOTSUPP
+		return uintptr(flags), nil, linuxerr.EOPNOTSUPP
 	}
 
 	// Check that the file is writeable.

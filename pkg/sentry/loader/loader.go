@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -91,7 +90,7 @@ type LoadArgs struct {
 func openPath(ctx context.Context, args LoadArgs) (fsbridge.File, error) {
 	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
@@ -172,7 +171,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 		// (e.g., #!a).
 		if err != nil && err != io.ErrUnexpectedEOF {
 			if err == io.EOF {
-				err = syserror.ENOEXEC
+				err = linuxerr.ENOEXEC
 			}
 			return loadedELF{}, nil, nil, nil, err
 		}
@@ -190,7 +189,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 
 		case bytes.Equal(hdr[:2], []byte(interpreterScriptMagic)):
 			if args.CloseOnExec {
-				return loadedELF{}, nil, nil, nil, syserror.ENOENT
+				return loadedELF{}, nil, nil, nil, linuxerr.ENOENT
 			}
 			args.Filename, args.Argv, err = parseInterpreterScript(ctx, args.Filename, args.File, args.Argv)
 			if err != nil {
@@ -202,7 +201,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 
 		default:
 			ctx.Infof("Unknown magic: %v", hdr)
-			return loadedELF{}, nil, nil, nil, syserror.ENOEXEC
+			return loadedELF{}, nil, nil, nil, linuxerr.ENOEXEC
 		}
 		// Set to nil in case we loop on a Interpreter Script.
 		args.File = nil

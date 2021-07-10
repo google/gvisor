@@ -19,8 +19,8 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -43,14 +43,14 @@ func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.Fil
 	// Short read is OK.
 	if err != nil && err != io.ErrUnexpectedEOF {
 		if err == io.EOF {
-			err = syserror.ENOEXEC
+			err = linuxerr.ENOEXEC
 		}
 		return "", []string{}, err
 	}
 	line = line[:n]
 
 	if !bytes.Equal(line[:2], []byte(interpreterScriptMagic)) {
-		return "", []string{}, syserror.ENOEXEC
+		return "", []string{}, linuxerr.ENOEXEC
 	}
 	// Ignore #!.
 	line = line[2:]
@@ -82,7 +82,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.Fil
 
 	if string(interp) == "" {
 		ctx.Infof("Interpreter script contains no interpreter: %v", line)
-		return "", []string{}, syserror.ENOEXEC
+		return "", []string{}, linuxerr.ENOEXEC
 	}
 
 	// Build the new argument list:

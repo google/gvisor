@@ -266,7 +266,7 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
 	// accepted as a valid flag argument for preadv2.
 	if flags&^linux.RWF_VALID != 0 {
-		return 0, nil, syserror.EOPNOTSUPP
+		return 0, nil, linuxerr.EOPNOTSUPP
 	}
 
 	// Read the iovecs that specify the destination of the read.

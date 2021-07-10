@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -55,7 +54,7 @@ func GetRandom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	ar, ok := addr.ToRange(uint64(length))
 	if !ok {
-		return 0, nil, syserror.EFAULT
+		return 0, nil, linuxerr.EFAULT
 	}
 
 	// "If the urandom source has been initialized, reads of up to 256 bytes

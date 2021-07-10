@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
@@ -352,7 +353,7 @@ func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	if err != nil {
 		// This is an odd error, we treat it as evidence that
 		// something is terribly wrong with the filesystem.
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Update the offset.

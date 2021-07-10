@@ -21,9 +21,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // initX86FPState (defined in asm files) sets up initial state.
@@ -70,7 +70,7 @@ const ptraceFPRegsSize = 512
 // PtraceGetFPRegs implements Context.PtraceGetFPRegs.
 func (s *State) PtraceGetFPRegs(dst io.Writer, maxlen int) (int, error) {
 	if maxlen < ptraceFPRegsSize {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	return dst.Write((*s)[:ptraceFPRegsSize])
@@ -79,7 +79,7 @@ func (s *State) PtraceGetFPRegs(dst io.Writer, maxlen int) (int, error) {
 // PtraceSetFPRegs implements Context.PtraceSetFPRegs.
 func (s *State) PtraceSetFPRegs(src io.Reader, maxlen int) (int, error) {
 	if maxlen < ptraceFPRegsSize {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	var f [ptraceFPRegsSize]byte

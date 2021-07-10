@@ -2910,7 +2910,7 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
 		if !s.timestampValid {
-			return 0, syserror.ENOENT
+			return 0, linuxerr.ENOENT
 		}
 
 		tv := linux.NsecToTimeval(s.timestampNS)
@@ -3016,7 +3016,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		unimpl.EmitUnimplementedEvent(ctx)
 	}
 
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // interfaceIoctl implements interface requests.

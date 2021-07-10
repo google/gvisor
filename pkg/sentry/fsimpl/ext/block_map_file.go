@@ -20,7 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -160,7 +159,7 @@ func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, ds
 
 		n, _ := f.regFile.inode.fs.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
 		if n < toRead {
-			return n, syserror.EIO
+			return n, linuxerr.EIO
 		}
 		return n, nil
 	}

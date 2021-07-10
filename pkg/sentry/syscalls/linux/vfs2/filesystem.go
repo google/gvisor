@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Link implements Linux syscall link(2).
@@ -46,7 +45,7 @@ func linkat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd 
 		return linuxerr.EINVAL
 	}
 	if flags&linux.AT_EMPTY_PATH != 0 && !t.HasCapability(linux.CAP_DAC_READ_SEARCH) {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	oldpath, err := copyInPath(t, oldpathAddr)
@@ -320,7 +319,7 @@ func symlinkat(t *kernel.Task, targetAddr hostarch.Addr, newdirfd int32, linkpat
 		return err
 	}
 	if len(target) == 0 {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	linkpath, err := copyInPath(t, linkpathAddr)
 	if err != nil {

@@ -63,10 +63,10 @@ go_test(
     library = ":gofer",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/p9",
         "//pkg/p9/p9test",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fs",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

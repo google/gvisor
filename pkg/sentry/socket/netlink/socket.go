@@ -214,7 +214,7 @@ func (s *socketOpsCommon) ConnectedPasscred() bool {
 // Ioctl implements fs.FileOperations.Ioctl.
 func (*Socket) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // ExtractSockAddr extracts the SockAddrNetlink from b.

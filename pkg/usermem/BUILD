@@ -18,7 +18,6 @@ go_library(
         "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/safemem",
-        "//pkg/syserror",
     ],
 )
 
@@ -34,6 +33,5 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/safemem",
-        "//pkg/syserror",
     ],
 )

@@ -115,7 +115,7 @@ func BenchmarkSwitchSyserror(b *testing.B) {
 		switch globalError {
 		case linuxerr.EACCES:
 			j++
-		case syserror.EINTR:
+		case linuxerr.EINTR:
 			j += 2
 		case linuxerr.EAGAIN:
 			j += 3
@@ -277,13 +277,13 @@ func TestEqualsMethod(t *testing.T) {
 		{
 			name:     "equal errors",
 			linuxErr: []*gErrors.Error{linuxerr.ESRCH},
-			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			err:      []error{linuxerr.ESRCH, linuxerr.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
 			equal:    true,
 		},
 		{
 			name:     "unequal errors",
 			linuxErr: []*gErrors.Error{linuxerr.ENOENT},
-			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			err:      []error{linuxerr.ESRCH, linuxerr.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
 			equal:    false,
 		},
 		{

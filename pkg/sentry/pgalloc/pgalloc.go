@@ -39,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
@@ -404,7 +403,7 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 	// Find a range in the underlying file.
 	fr, ok := findAvailableRange(&f.usage, f.fileSize, length, alignment)
 	if !ok {
-		return memmap.FileRange{}, syserror.ENOMEM
+		return memmap.FileRange{}, linuxerr.ENOMEM
 	}
 
 	// Expand the file if needed.
