@@ -20,6 +20,7 @@
 #include "benchmark/benchmark.h"
 #include "test/util/logging.h"
 
+extern bool FLAGS_gtest_list_tests;
 extern bool FLAGS_benchmark_list_tests;
 extern std::string FLAGS_benchmark_filter;
 
@@ -40,12 +41,18 @@ void TestInit(int* argc, char*** argv) {
 }
 
 int RunAllTests() {
-  if (FLAGS_benchmark_list_tests || FLAGS_benchmark_filter != ".") {
-    benchmark::RunSpecifiedBenchmarks();
-    return 0;
-  } else {
+  if (::testing::FLAGS_gtest_list_tests) {
     return RUN_ALL_TESTS();
   }
+  if (FLAGS_benchmark_list_tests) {
+    benchmark::RunSpecifiedBenchmarks();
+    return 0;
+  }
+
+  // Run selected tests & benchmarks.
+  int rc = RUN_ALL_TESTS();
+  benchmark::RunSpecifiedBenchmarks();
+  return rc;
 }
 
 }  // namespace testing
