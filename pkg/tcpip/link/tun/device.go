@@ -126,7 +126,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 				endpoint, ok := linkEP.(*tunEndpoint)
 				if !ok {
 					// Not a NIC created by tun device.
-					return nil, syserror.EOPNOTSUPP
+					return nil, linuxerr.EOPNOTSUPP
 				}
 				if !endpoint.TryIncRef() {
 					// Race detected: NIC got deleted in between.

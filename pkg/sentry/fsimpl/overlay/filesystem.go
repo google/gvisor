@@ -138,7 +138,7 @@ func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*de
 // * !rp.Done().
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, lookupLayer, error) {
 	if !d.isDir() {
-		return nil, lookupLayerNone, syserror.ENOTDIR
+		return nil, lookupLayerNone, linuxerr.ENOTDIR
 	}
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, lookupLayerNone, err
@@ -438,7 +438,7 @@ func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 		d = next
 	}
 	if !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -458,7 +458,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 		d = next
 	}
 	if rp.MustBeDir() && !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -480,7 +480,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	if parent.vfsd.IsDead() {
 		return syserror.ENOENT
@@ -495,14 +495,14 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 
 	// Determine if a file already exists at name.
 	if _, ok := parent.children[name]; ok {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	childLayer, err := fs.lookupLayerLocked(ctx, parent, name)
 	if err != nil {
 		return err
 	}
 	if childLayer.existsInOverlay() {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	if !dir && rp.MustBeDir() {
@@ -593,7 +593,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	}
 	if opts.CheckSearchable {
 		if !d.isDir() {
-			return nil, syserror.ENOTDIR
+			return nil, linuxerr.ENOTDIR
 		}
 		if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
@@ -783,7 +783,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, syserror.EISDIR
 		}
 		if mustCreate {
-			return nil, syserror.EEXIST
+			return nil, linuxerr.EEXIST
 		}
 		if start.isRegularFile() && mayWrite {
 			if err := start.copyUpLocked(ctx); err != nil {
@@ -823,7 +823,7 @@ afterTrailingSymlink:
 	}
 	// Open existing child or follow symlink.
 	if mustCreate {
-		return nil, syserror.EEXIST
+		return nil, linuxerr.EEXIST
 	}
 	if child.isSymlink() && rp.ShouldFollowSymlink() {
 		target, err := child.readlink(ctx)
@@ -837,7 +837,7 @@ afterTrailingSymlink:
 		goto afterTrailingSymlink
 	}
 	if rp.MustBeDir() && !child.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	if child.isRegularFile() && mayWrite {
 		if err := child.copyUpLocked(ctx); err != nil {
@@ -1034,7 +1034,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return linuxerr.EBUSY
 	}
@@ -1074,7 +1074,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	} else {
 		if opts.MustBeDir || rp.MustBeDir() {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 	}
 
@@ -1100,7 +1100,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if replaced != nil {
 		if opts.Flags&linux.RENAME_NOREPLACE != 0 {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		replacedVFSD = &replaced.vfsd
 		if replaced.isDir() {
@@ -1118,7 +1118,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		} else {
 			if rp.MustBeDir() || renamed.isDir() {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 		}
 	}
@@ -1310,7 +1310,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	if !child.isDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err
@@ -1536,7 +1536,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return syserror.EISDIR
 	}
 	if rp.MustBeDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
@@ -1659,7 +1659,7 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 	// Return EOPNOTSUPP when fetching an overlay attribute.
 	// See fs/overlayfs/super.c:ovl_own_xattr_get().
 	if isOverlayXattr(opts.Name) {
-		return "", syserror.EOPNOTSUPP
+		return "", linuxerr.EOPNOTSUPP
 	}
 
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
@@ -1697,7 +1697,7 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 	// Return EOPNOTSUPP when setting an overlay attribute.
 	// See fs/overlayfs/super.c:ovl_own_xattr_set().
 	if isOverlayXattr(opts.Name) {
-		return syserror.EOPNOTSUPP
+		return linuxerr.EOPNOTSUPP
 	}
 
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_set().
@@ -1742,7 +1742,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 	// Linux passes the remove request to xattr_handler->set.
 	// See fs/xattr.c:vfs_removexattr().
 	if isOverlayXattr(name) {
-		return syserror.EOPNOTSUPP
+		return linuxerr.EOPNOTSUPP
 	}
 
 	if err := mnt.CheckBeginWrite(); err != nil {

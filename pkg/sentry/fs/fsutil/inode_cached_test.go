@@ -20,13 +20,13 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -244,7 +244,7 @@ func (*sliceBackingFile) FD() int {
 }
 
 func (f *sliceBackingFile) Allocate(ctx context.Context, offset int64, length int64) error {
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 type noopMappingSpace struct{}

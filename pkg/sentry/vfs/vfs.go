@@ -279,7 +279,7 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 	if !newpop.Path.Begin.Ok() {
 		oldVD.DecRef(ctx)
 		if newpop.Path.Absolute {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return syserror.ENOENT
 	}
@@ -316,7 +316,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with mkdirat(dirfd, "", mode).
 		if pop.Path.Absolute {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return syserror.ENOENT
 	}
@@ -354,7 +354,7 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with mknodat(dirfd, "", mode, dev).
 		if pop.Path.Absolute {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return syserror.ENOENT
 	}
@@ -639,7 +639,7 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 		// pop.Path should not be empty in operations that create/delete files.
 		// This is consistent with symlinkat(oldpath, newdirfd, "").
 		if pop.Path.Absolute {
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		}
 		return syserror.ENOENT
 	}
@@ -834,7 +834,7 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 	switch {
 	case err == nil:
 		if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 		// Directory already exists.
 		return nil

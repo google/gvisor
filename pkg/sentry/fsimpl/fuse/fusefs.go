@@ -394,7 +394,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	isDir := i.InodeAttrs.Mode().IsDir()
 	// return error if specified to open directory but inode is not a directory.
 	if !isDir && opts.Mode.IsDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	if opts.Flags&linux.O_LARGEFILE == 0 && atomic.LoadUint64(&i.size) > linux.MAX_NON_LFS {
 		return nil, linuxerr.EOVERFLOW

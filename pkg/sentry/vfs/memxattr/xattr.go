@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SimpleExtendedAttributes implements extended attributes using a map of
@@ -55,7 +54,7 @@ func (x *SimpleExtendedAttributes) GetXattr(creds *auth.Credentials, mode linux.
 	// Check that the size of the buffer provided in getxattr(2) is large enough
 	// to contain the value.
 	if opts.Size != 0 && uint64(len(value)) > opts.Size {
-		return "", syserror.ERANGE
+		return "", linuxerr.ERANGE
 	}
 	return value, nil
 }
@@ -77,7 +76,7 @@ func (x *SimpleExtendedAttributes) SetXattr(creds *auth.Credentials, mode linux.
 
 	_, ok := x.xattrs[opts.Name]
 	if ok && opts.Flags&linux.XATTR_CREATE != 0 {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	if !ok && opts.Flags&linux.XATTR_REPLACE != 0 {
 		return linuxerr.ENODATA
@@ -107,7 +106,7 @@ func (x *SimpleExtendedAttributes) ListXattr(creds *auth.Credentials, size uint6
 	}
 	x.mu.RUnlock()
 	if size != 0 && uint64(listSize) > size {
-		return nil, syserror.ERANGE
+		return nil, linuxerr.ERANGE
 	}
 	return names, nil
 }

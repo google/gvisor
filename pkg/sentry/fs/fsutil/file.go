@@ -170,7 +170,7 @@ type FileNotDirReaddir struct{}
 
 // Readdir implements fs.FileOperations.FileNotDirReaddir.
 func (FileNotDirReaddir) Readdir(context.Context, *fs.File, fs.DentrySerializer) (int64, error) {
-	return 0, syserror.ENOTDIR
+	return 0, linuxerr.ENOTDIR
 }
 
 // FileNoFsync implements fs.FileOperations.Fsync for files that don't support
@@ -223,7 +223,7 @@ type FileNoIoctl struct{}
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (FileNoIoctl) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // FileNoSplice implements fs.FileOperations.ReadFrom and

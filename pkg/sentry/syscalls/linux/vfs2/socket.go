@@ -722,7 +722,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	for i := uint64(0); i < uint64(vlen); i++ {
 		mp, ok := msgPtr.AddLength(i * multipleMessageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		var n uintptr
 		if n, err = recvSingleMsg(t, s, mp, flags, haveDeadline, deadline); err != nil {
@@ -732,7 +732,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Copy the received length to the caller.
 		lp, ok := mp.AddLength(messageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break
@@ -984,7 +984,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	for i := uint64(0); i < uint64(vlen); i++ {
 		mp, ok := msgPtr.AddLength(i * multipleMessageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		var n uintptr
 		if n, err = sendSingleMsg(t, s, file, mp, flags); err != nil {
@@ -994,7 +994,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Copy the received length to the caller.
 		lp, ok := mp.AddLength(messageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break

@@ -188,7 +188,7 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 		num:  num,
 	}
 	if _, ok := ep.interest[key]; ok {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	// Register interest in file.

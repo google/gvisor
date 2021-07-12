@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A ThreadGroup is a logical grouping of tasks that has widespread
@@ -420,7 +419,7 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 
 	if tg.tty == nil || tg.tty != tty {
 		tg.signalHandlers.mu.Unlock()
-		return syserror.ENOTTY
+		return linuxerr.ENOTTY
 	}
 
 	// "If the process was session leader, then send SIGHUP and SIGCONT to
@@ -474,7 +473,7 @@ func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (int32, error) {
 	// "When fd does not refer to the controlling terminal of the calling
 	// process, -1 is returned" - tcgetpgrp(3)
 	if tg.tty != tty {
-		return -1, syserror.ENOTTY
+		return -1, linuxerr.ENOTTY
 	}
 
 	return int32(tg.processGroup.session.foreground.id), nil
@@ -497,7 +496,7 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
-		return -1, syserror.ENOTTY
+		return -1, linuxerr.ENOTTY
 	}
 
 	// pgid must be positive.
@@ -509,7 +508,7 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	// pid namespaces.
 	pg, ok := tg.pidns.processGroups[pgid]
 	if !ok {
-		return -1, syserror.ESRCH
+		return -1, linuxerr.ESRCH
 	}
 
 	// pg must be part of this process's session.

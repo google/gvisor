@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -102,7 +101,7 @@ func (fd *symlinkFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *symlinkFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.

@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // DefaultTraversalLimit provides a sensible default traversal limit that may
@@ -498,7 +497,7 @@ func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path 
 		if current != root {
 			if !IsDir(current.Inode.StableAttr) {
 				current.DecRef(ctx) // Drop reference from above.
-				return nil, syserror.ENOTDIR
+				return nil, linuxerr.ENOTDIR
 			}
 			if err := current.Inode.CheckPermission(ctx, PermMask{Execute: true}); err != nil {
 				current.DecRef(ctx) // Drop reference from above.

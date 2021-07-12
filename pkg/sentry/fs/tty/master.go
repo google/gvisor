@@ -17,13 +17,13 @@ package tty
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -157,7 +157,7 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, file *fs.File, io use
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	switch cmd := args[1].Uint(); cmd {
@@ -201,7 +201,7 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, file *fs.File, io use
 		return mf.t.setForegroundProcessGroup(ctx, args, true /* isMaster */)
 	default:
 		maybeEmitUnimplementedEvent(ctx, cmd)
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 

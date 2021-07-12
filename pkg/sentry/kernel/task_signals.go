@@ -371,7 +371,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 //
 // The following errors may be returned:
 //
-//	syserror.ESRCH - The task has exited.
+//	linuxerr.ESRCH - The task has exited.
 //	linuxerr.EINVAL - The signal is not valid.
 //	linuxerr.EAGAIN - THe signal is realtime, and cannot be queued.
 //
@@ -408,7 +408,7 @@ func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
 
 func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
 	if t.exitState == TaskExitDead {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	sig := linux.Signal(info.Signo)
 	if sig == 0 {

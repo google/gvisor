@@ -277,7 +277,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 
 	s := i.session()
 	if s.overrides == nil {
-		return nil, syserror.EOPNOTSUPP
+		return nil, linuxerr.EOPNOTSUPP
 	}
 
 	// Stabilize the override map while creation is in progress.

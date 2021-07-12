@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // IO provides access to the contents of a virtual memory space.
@@ -163,7 +162,7 @@ func (rw *IOReadWriter) Read(dst []byte) (int, error) {
 		// Disallow wraparound.
 		rw.Addr = ^hostarch.Addr(0)
 		if err != nil {
-			err = syserror.EFAULT
+			err = linuxerr.EFAULT
 		}
 	}
 	return n, err
@@ -179,7 +178,7 @@ func (rw *IOReadWriter) Write(src []byte) (int, error) {
 		// Disallow wraparound.
 		rw.Addr = ^hostarch.Addr(0)
 		if err != nil {
-			err = syserror.EFAULT
+			err = linuxerr.EFAULT
 		}
 	}
 	return n, err
@@ -214,7 +213,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr hostarch.Addr, maxlen int, o
 		}
 		end, ok := addr.AddLength(uint64(readlen))
 		if !ok {
-			return gohacks.StringFromImmutableBytes(buf[:done]), syserror.EFAULT
+			return gohacks.StringFromImmutableBytes(buf[:done]), linuxerr.EFAULT
 		}
 		// Shorten the read to avoid crossing page boundaries, since faulting
 		// in a page unnecessarily is expensive. This also ensures that partial

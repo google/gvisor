@@ -19,7 +19,6 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

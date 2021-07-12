@@ -114,7 +114,7 @@ func (FileDescriptionDefaultImpl) Write(ctx context.Context, src usermem.IOSeque
 // file_operations::iterate == file_operations::iterate_shared == NULL in
 // Linux.
 func (FileDescriptionDefaultImpl) IterDirents(ctx context.Context, cb IterDirentsCallback) error {
-	return syserror.ENOTDIR
+	return linuxerr.ENOTDIR
 }
 
 // Seek implements FileDescriptionImpl.Seek analogously to
@@ -138,7 +138,7 @@ func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memma
 // Ioctl implements FileDescriptionImpl.Ioctl analogously to
 // file_operations::unlocked_ioctl == NULL in Linux.
 func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // ListXattr implements FileDescriptionImpl.ListXattr analogously to
@@ -358,7 +358,7 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 // Preconditions: fd.mu must be locked.
 func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
 	if opts.Flags&^(linux.RWF_HIPRI|linux.RWF_DSYNC|linux.RWF_SYNC) != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 	limit, err := CheckLimit(ctx, offset, src.NumBytes())
 	if err != nil {

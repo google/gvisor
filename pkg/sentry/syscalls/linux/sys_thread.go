@@ -154,7 +154,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 			wd = f.Dirent
 			wd.IncRef()
 			if !fs.IsDir(wd.Inode.StableAttr) {
-				return 0, nil, syserror.ENOTDIR
+				return 0, nil, linuxerr.ENOTDIR
 			}
 		}
 	}
@@ -503,7 +503,7 @@ func SchedSetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	} else {
 		task = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid))
 		if task == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
@@ -536,7 +536,7 @@ func SchedGetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	} else {
 		task = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid))
 		if task == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
@@ -589,7 +589,7 @@ func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if pid != 0 {
 		ot := t.PIDNamespace().TaskWithID(pid)
 		if ot == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 		tg = ot.ThreadGroup()
 		if tg.Leader() != ot {
@@ -598,7 +598,7 @@ func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 		// Setpgid only operates on child threadgroups.
 		if tg != t.ThreadGroup() && (tg.Leader().Parent() == nil || tg.Leader().Parent().ThreadGroup() != t.ThreadGroup()) {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
@@ -653,7 +653,7 @@ func Getpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	target := t.PIDNamespace().TaskWithID(tid)
 	if target == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	return uintptr(t.PIDNamespace().IDOfProcessGroup(target.ThreadGroup().ProcessGroup())), nil, nil
@@ -673,7 +673,7 @@ func Getsid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	target := t.PIDNamespace().TaskWithID(tid)
 	if target == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	return uintptr(t.PIDNamespace().IDOfSession(target.ThreadGroup().Session())), nil, nil
@@ -697,7 +697,7 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		if task == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 
 		// From kernel/sys.c:getpriority:
@@ -743,7 +743,7 @@ func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		if task == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 
 		task.SetNiceness(niceval)
