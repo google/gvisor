@@ -479,6 +479,7 @@ cc_binary(
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:logging",
