@@ -23,23 +23,41 @@ import (
 // Getpid executes a trivial system call.
 func Getpid()
 
-// Touch touches the value in the first register.
-func Touch()
+// AddrOfGetpid returns the address of Getpid.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func AddrOfGetpid() uintptr
 
-// SyscallLoop executes a syscall and loops.
-func SyscallLoop()
+// AddrOfTouch returns the address of a function that touches the value in the
+// first register.
+func AddrOfTouch() uintptr
+func touch()
 
-// SpinLoop spins on the CPU.
-func SpinLoop()
+// AddrOfSyscallLoop returns the address of a function that executes a syscall
+// and loops.
+func AddrOfSyscallLoop() uintptr
+func syscallLoop()
 
-// HaltLoop immediately halts and loops.
-func HaltLoop()
+// AddrOfSpinLoop returns the address of a function that spins on the CPU.
+func AddrOfSpinLoop() uintptr
+func spinLoop()
 
-// TwiddleRegsFault twiddles registers then faults.
-func TwiddleRegsFault()
+// AddrOfHaltLoop returns the address of a function that immediately halts and
+// loops.
+func AddrOfHaltLoop() uintptr
+func haltLoop()
 
-// TwiddleRegsSyscall twiddles registers then executes a syscall.
-func TwiddleRegsSyscall()
+// AddrOfTwiddleRegsFault returns the address of a function that twiddles
+// registers then faults.
+func AddrOfTwiddleRegsFault() uintptr
+func twiddleRegsFault()
+
+// AddrOfTwiddleRegsSyscall returns the address of a function that twiddles
+// registers then executes a syscall.
+func AddrOfTwiddleRegsSyscall() uintptr
+func twiddleRegsSyscall()
 
 // FloatingPointWorks is a floating point test.
 //

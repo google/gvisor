@@ -85,6 +85,13 @@ func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
 // signal stack. It should only execute raw system calls and functions that are
 // explicitly marked go:nosplit.
 //
+// Ideally, this function should switch to gsignal, as runtime.sigtramp does,
+// but that is tedious given all the runtime internals. That said, using
+// gsignal inside a signal handler is not _required_, provided we avoid stack
+// splits and allocations. Note that calling any splittable function here will
+// be flaky; if the signal stack is below the G stack then we will trigger a
+// split and crash. If above, we won't trigger a split.
+//
 // +checkescape:all
 //
 //go:nosplit

@@ -80,6 +80,29 @@ TEXT ·xsaveopt(SB),NOSPLIT,$0-8
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37;
 	RET
 
+// writeFS writes to the FS base.
+//
+// This is written in assembly because it must be safe to call before the Go
+// environment is set up. See comment on start().
+//
+// Preconditions: must be running in the lower address space, as it accesses
+// global data.
+TEXT ·writeFS(SB),NOSPLIT,$8-8
+	MOVQ addr+0(FP), AX
+
+	CMPB ·hasFSGSBASE(SB), $1
+	JNE msr
+
+	PUSHQ AX
+	CALL ·wrfsbase(SB)
+	POPQ AX
+	RET
+msr:
+	PUSHQ AX
+	CALL ·wrfsmsr(SB)
+	POPQ AX
+	RET
+
 // wrfsbase writes to the FS base.
 //
 // The code corresponds to:
