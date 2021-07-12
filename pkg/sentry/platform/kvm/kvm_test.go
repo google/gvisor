@@ -120,13 +120,13 @@ func TestKernelFloatingPoint(t *testing.T) {
 	})
 }
 
-func applicationTest(t testHarness, useHostMappings bool, target func(), fn func(*vCPU, *arch.Registers, *pagetables.PageTables) bool) {
+func applicationTest(t testHarness, useHostMappings bool, targetFn uintptr, fn func(*vCPU, *arch.Registers, *pagetables.PageTables) bool) {
 	// Initialize registers & page tables.
 	var (
 		regs arch.Registers
 		pt   *pagetables.PageTables
 	)
-	testutil.SetTestTarget(&regs, target)
+	testutil.SetTestTarget(&regs, targetFn)
 
 	kvmTest(t, func(k *KVM) {
 		// Create new page tables.
@@ -157,7 +157,7 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 }
 
 func TestApplicationSyscall(t *testing.T) {
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -171,7 +171,7 @@ func TestApplicationSyscall(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -187,7 +187,7 @@ func TestApplicationSyscall(t *testing.T) {
 }
 
 func TestApplicationFault(t *testing.T) {
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTouch(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
@@ -202,7 +202,7 @@ func TestApplicationFault(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTouch(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
@@ -219,7 +219,7 @@ func TestApplicationFault(t *testing.T) {
 }
 
 func TestRegistersSyscall(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleRegsSyscall, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTwiddleRegsSyscall(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si linux.SignalInfo
@@ -242,7 +242,7 @@ func TestRegistersSyscall(t *testing.T) {
 }
 
 func TestRegistersFault(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleRegsFault, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTwiddleRegsFault(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
 		for {
 			var si linux.SignalInfo
@@ -266,7 +266,7 @@ func TestRegistersFault(t *testing.T) {
 }
 
 func TestBounce(t *testing.T) {
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSpinLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
@@ -281,7 +281,7 @@ func TestBounce(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSpinLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
 			c.BounceToKernel()
@@ -300,7 +300,7 @@ func TestBounce(t *testing.T) {
 }
 
 func TestBounceStress(t *testing.T) {
-	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSpinLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		randomSleep := func() {
 			// O(hundreds of microseconds) is appropriate to ensure
 			// different overlaps and different schedules.
@@ -336,7 +336,7 @@ func TestBounceStress(t *testing.T) {
 
 func TestInvalidate(t *testing.T) {
 	var data uintptr // Used below.
-	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTouch(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, &data) // Read legitimate value.
 		for {
 			var si linux.SignalInfo
@@ -377,7 +377,7 @@ func IsFault(err error, si *linux.SignalInfo) bool {
 }
 
 func TestEmptyAddressSpace(t *testing.T) {
-	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, false, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -391,7 +391,7 @@ func TestEmptyAddressSpace(t *testing.T) {
 		}
 		return false
 	})
-	applicationTest(t, false, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, false, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -467,7 +467,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 		i int // Iteration includes machine.Get() / machine.Put().
 		a int // Count for ErrContextInterrupt.
 	)
-	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,
@@ -489,7 +489,7 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 
 func BenchmarkKernelSyscall(b *testing.B) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
-	applicationTest(b, true, testutil.Getpid, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		// iteration does not include machine.Get() / machine.Put().
 		for i := 0; i < b.N; i++ {
 			testutil.Getpid()
@@ -504,7 +504,7 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 		i int
 		a int
 	)
-	applicationTest(b, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(b, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		if _, err := c.SwitchToUser(ring0.SwitchOpts{
 			Registers:          regs,

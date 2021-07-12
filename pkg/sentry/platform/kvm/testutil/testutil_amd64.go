@@ -22,12 +22,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
-// TwiddleSegments reads segments into known registers.
-func TwiddleSegments()
+// AddrOfTwiddleSegments return the address of a function that reads segments
+// into known registers.
+func AddrOfTwiddleSegments() uintptr
+func twiddleSegments()
 
 // SetTestTarget sets the rip appropriately.
-func SetTestTarget(regs *arch.Registers, fn func()) {
-	regs.Rip = uint64(reflect.ValueOf(fn).Pointer())
+func SetTestTarget(regs *arch.Registers, fn uintptr) {
+	regs.Rip = uint64(fn)
 }
 
 // SetTouchTarget sets rax appropriately.

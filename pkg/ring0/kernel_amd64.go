@@ -21,7 +21,12 @@ import (
 	"reflect"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
+
+// HaltAndWriteFSBase halts execution. On resume, it sets FS_BASE from the
+// value in regs.
+func HaltAndWriteFSBase(regs *arch.Registers)
 
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
@@ -240,7 +245,6 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	// Perform the switch.
 	swapgs()                                                       // GS will be swapped on return.
-	WriteFS(uintptr(regs.Fs_base))                                 // escapes: no. Set application FS.
 	WriteGS(uintptr(regs.Gs_base))                                 // escapes: no. Set application GS.
 	LoadFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy in floating point.
 	if switchOpts.FullRestore {
@@ -249,38 +253,49 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 		vector = sysret(c, regs, uintptr(userCR3))
 	}
 	SaveFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy out floating point.
-	WriteFS(uintptr(c.registers.Fs_base))                          // escapes: no. Restore kernel FS.
 	RestoreKernelFPState()                                         // escapes: no. Restore kernel MXCSR.
 	return
 }
 
 var sentryXCR0 = xgetbv(0)
 
-// start is the CPU entrypoint.
+// startGo is the CPU entrypoint.
 //
-// This is called from the Start asm stub (see entry_amd64.go); on return the
+// This is called from the start asm stub (see entry_amd64.go); on return the
 // registers in c.registers will be restored (not segments).
 //
+// Note that any code written in Go should adhere to Go expected environment:
+// * Initialized floating point state (required for optimizations using
+//   floating point instructions).
+// * Go TLS in FS_BASE (this is required by splittable functions, calls into
+//   the runtime, calls to assembly functions (Go 1.17+ ABI wrappers access
+//   TLS)).
+//
 //go:nosplit
-func start(c *CPU) {
-	// Save per-cpu & FS segment.
+func startGo(c *CPU) {
+	// Save per-cpu.
 	WriteGS(kernelAddr(c.kernelEntry))
-	WriteFS(uintptr(c.registers.Fs_base))
 
+	//
+	// TODO(mpratt): Note that per the note above, this should be done
+	// before entering Go code. However for simplicity we leave it here for
+	// now, since the small critical sections with undefined FPU state
+	// should only contain very limited use of floating point instructions
+	// (notably, use of XMM15 as a zero register).
 	fninit()
 	// Need to sync XCR0 with the host, because xsave and xrstor can be
 	// called from different contexts.
 	xsetbv(0, sentryXCR0)
 
 	// Set the syscall target.
-	wrmsr(_MSR_LSTAR, kernelFunc(sysenter))
+	wrmsr(_MSR_LSTAR, kernelFunc(addrOfSysenter()))
 	wrmsr(_MSR_SYSCALL_MASK, KernelFlagsClear|_RFLAGS_DF)
 
 	// NOTE: This depends on having the 64-bit segments immediately
 	// following the 32-bit user segments. This is simply the way the
 	// sysret instruction is designed to work (it assumes they follow).
 	wrmsr(_MSR_STAR, uintptr(uint64(Kcode)<<32|uint64(Ucode32)<<48))
-	wrmsr(_MSR_CSTAR, kernelFunc(sysenter))
+	wrmsr(_MSR_CSTAR, kernelFunc(addrOfSysenter()))
 }
 
 // SetCPUIDFaulting sets CPUID faulting per the boolean value.

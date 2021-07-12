@@ -28,7 +28,7 @@ import (
 )
 
 func TestSegments(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTwiddleSegments(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestSegments(regs)
 		for {
 			var si linux.SignalInfo
@@ -55,7 +55,7 @@ func TestSegments(t *testing.T) {
 func stmxcsr(addr *uint32)
 
 func TestMXCSR(t *testing.T) {
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		var si linux.SignalInfo
 		switchOpts := ring0.SwitchOpts{
 			Registers:          regs,
