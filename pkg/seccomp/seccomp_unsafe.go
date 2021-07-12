@@ -68,6 +68,10 @@ func SetFilter(instrs []linux.BPFInstruction) error {
 // - Since fork()ed child processes cannot perform heap allocation, it returns
 // a unix.Errno rather than an error.
 //
+// - The race instrumentation has to be disabled for all functions that are
+// called in a forked child.
+//
+//go:norace
 //go:nosplit
 func SetFilterInChild(instrs []linux.BPFInstruction) unix.Errno {
 	if _, _, errno := unix.RawSyscall6(unix.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0, 0); errno != 0 {

@@ -120,6 +120,17 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 		return nil, err
 	}
 
+	return forkStub(flags, instrs)
+}
+
+// In the child, this function must not acquire any locks, because they might
+// have been locked at the time of the fork. This means no rescheduling, no
+// malloc calls, and no new stack segments.  For the same reason compiler does
+// not race instrument it.
+//
+//
+//go:norace
+func forkStub(flags uintptr, instrs []linux.BPFInstruction) (*thread, error) {
 	// Declare all variables up front in order to ensure that there's no
 	// need for allocations between beforeFork & afterFork.
 	var (
