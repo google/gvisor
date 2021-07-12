@@ -56,8 +56,10 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   sudo rm -rf "${HOME}/go"
 fi
 
-# Kill any running containers (clear state).
-CONTAINERS="$(docker ps -q)"
-if ! test -z "${CONTAINERS}"; then
-  docker container kill ${CONTAINERS} 2>/dev/null || true
-fi
+# Kill any running containers (clear state), except for "bootstrap".
+for container in $(docker ps -q); do
+  maybe_kill="$(docker inspect -f '{{if ne "/bootstrap" .Name}}true{{ end }}' "${container}")"
+  if test -n "${maybe_kill}"; then
+    docker container kill "${container}"
+  fi
+done
