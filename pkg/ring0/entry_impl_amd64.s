@@ -66,8 +66,8 @@
 #define PTRACE_FLAGS    0x90
 #define PTRACE_RSP      0x98
 #define PTRACE_SS       0xa0
-#define PTRACE_FS       0xa8
-#define PTRACE_GS       0xb0
+#define PTRACE_FS_BASE  0xa8
+#define PTRACE_GS_BASE  0xb0
 // Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -158,9 +158,31 @@
 #define LOAD_KERNEL_STACK(entry) \
 	MOVQ ENTRY_STACK_TOP(entry), SP;
 
+// ADDR_OF_FUNC defines a function named 'name' that returns the address of
+// 'symbol'.
+#define ADDR_OF_FUNC(name, symbol) \
+TEXT name,$0-8; \
+	MOVQ $symbol, AX; \
+	MOVQ AX, ret+0(FP); \
+	RET
+
 // See kernel.go.
 TEXT ·Halt(SB),NOSPLIT,$0
 	HLT
+	RET
+
+// See kernel_amd64.go.
+TEXT ·HaltAndWriteFSBase(SB),NOSPLIT,$8-8
+	HLT
+
+	// Restore FS_BASE.
+	MOVQ regs+0(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX  // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	RET
 
 // See entry_amd64.go.
@@ -177,8 +199,29 @@ TEXT ·jumpToKernel(SB),NOSPLIT,$0
 	MOVQ AX, 0(SP)
 	RET
 
+// jumpToUser changes execution to the user address space.
+//
+// This works by changing the return value to the user version.
+TEXT ·jumpToUser(SB),NOSPLIT,$0
+	// N.B. we can't access KernelStartAddress from the upper half (data
+	// pages not available), so just naively clear all the upper bits.
+	// We are assuming a 47-bit virtual address space.
+	MOVQ $0x00007fffffffffff, AX
+	MOVQ 0(SP), BX
+	ANDQ BX, AX // Future return value.
+	MOVQ AX, 0(SP)
+	RET
+
 // See entry_amd64.go.
 TEXT ·sysret(SB),NOSPLIT,$0-24
+	// Set application FS. We can't do this in Go because Go code needs FS.
+	MOVQ regs+8(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	CALL ·jumpToKernel(SB)
 	// Save original state and stack. sysenter() or exception()
 	// from APP(gr3) will switch to this stack, set the return
@@ -212,6 +255,14 @@ TEXT ·sysret(SB),NOSPLIT,$0-24
 
 // See entry_amd64.go.
 TEXT ·iret(SB),NOSPLIT,$0-24
+	// Set application FS. We can't do this in Go because Go code needs FS.
+	MOVQ regs+8(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	CALL ·jumpToKernel(SB)
 	// Save original state and stack. sysenter() or exception()
 	// from APP(gr3) will switch to this stack, set the return
@@ -254,12 +305,28 @@ TEXT ·resume(SB),NOSPLIT,$0
 	IRET()
 
 // See entry_amd64.go.
-TEXT ·Start(SB),NOSPLIT,$0
+TEXT ·start(SB),NOSPLIT,$0
+	// N.B. This is the vCPU entrypoint. It is not called from Go code and
+	// thus pushes and pops values on the stack until calling into Go
+	// (startGo) because we aren't usually a typical Go assembly frame.
+
 	PUSHQ $0x0            // Previous frame pointer.
 	MOVQ SP, BP           // Set frame pointer.
-	PUSHQ AX              // First argument (CPU).
-	CALL ·start(SB)       // Call Go hook.
+
+	PUSHQ AX              // Save CPU.
+
+	// Set up environment required by Go before calling startGo: Go needs
+	// FS_BASE and floating point initialized.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+	PUSHQ BX              // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
+	// First argument (CPU) already at bottom of stack.
+	CALL ·startGo(SB)     // Call Go hook.
 	JMP ·resume(SB)       // Restore to registers.
+
+ADDR_OF_FUNC(·AddrOfStart(SB), ·start(SB));
 
 // See entry_amd64.go.
 TEXT ·sysenter(SB),NOSPLIT,$0
@@ -287,6 +354,18 @@ user:
 	MOVQ CPU_REGISTERS+PTRACE_RSP(AX), SP  // Get stacks.
 	MOVQ $0, CPU_ERROR_CODE(AX)            // Clear error code.
 	MOVQ $1, CPU_ERROR_TYPE(AX)            // Set error type to user.
+
+	CALL ·jumpToUser(SB)
+
+	// Restore kernel FS_BASE.
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+
+	PUSHQ BX                               // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
 
 	// Return to the kernel, where the frame is:
 	//
@@ -321,6 +400,8 @@ kernel:
 	CALL ·kernelSyscall(SB) // Call the trampoline.
 	POPQ AX                 // Pop vCPU.
 	JMP ·resume(SB)
+
+ADDR_OF_FUNC(·addrOfSysenter(SB), ·sysenter(SB));
 
 // exception is a generic exception handler.
 //
@@ -368,6 +449,16 @@ user:
 	MOVQ 40(SP), DI; MOVQ DI, PTRACE_RSP(AX)
 	MOVQ 48(SP), SI; MOVQ SI, PTRACE_SS(AX)
 
+	CALL ·jumpToUser(SB)
+
+	// Restore kernel FS_BASE.
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+
+	PUSHQ BX                               // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
 	// Copy out and return.
 	MOVQ ENTRY_CPU_SELF(GS), AX           // Load vCPU.
 	MOVQ 0(SP), BX                        // Load vector.
@@ -406,36 +497,38 @@ kernel:
 	POPQ AX                   // Pop vCPU.
 	JMP ·resume(SB)
 
-#define EXCEPTION_WITH_ERROR(value, symbol) \
+#define EXCEPTION_WITH_ERROR(value, symbol, addr) \
+ADDR_OF_FUNC(addr, symbol); \
 TEXT symbol,NOSPLIT,$0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);
 
-#define EXCEPTION_WITHOUT_ERROR(value, symbol) \
+#define EXCEPTION_WITHOUT_ERROR(value, symbol, addr) \
+ADDR_OF_FUNC(addr, symbol); \
 TEXT symbol,NOSPLIT,$0; \
 	PUSHQ $0x0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);
 
-EXCEPTION_WITHOUT_ERROR(DivideByZero, ·divideByZero(SB))
-EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB))
-EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB))
-EXCEPTION_WITHOUT_ERROR(Breakpoint, ·breakpoint(SB))
-EXCEPTION_WITHOUT_ERROR(Overflow, ·overflow(SB))
-EXCEPTION_WITHOUT_ERROR(BoundRangeExceeded, ·boundRangeExceeded(SB))
-EXCEPTION_WITHOUT_ERROR(InvalidOpcode, ·invalidOpcode(SB))
-EXCEPTION_WITHOUT_ERROR(DeviceNotAvailable, ·deviceNotAvailable(SB))
-EXCEPTION_WITH_ERROR(DoubleFault, ·doubleFault(SB))
-EXCEPTION_WITHOUT_ERROR(CoprocessorSegmentOverrun, ·coprocessorSegmentOverrun(SB))
-EXCEPTION_WITH_ERROR(InvalidTSS, ·invalidTSS(SB))
-EXCEPTION_WITH_ERROR(SegmentNotPresent, ·segmentNotPresent(SB))
-EXCEPTION_WITH_ERROR(StackSegmentFault, ·stackSegmentFault(SB))
-EXCEPTION_WITH_ERROR(GeneralProtectionFault, ·generalProtectionFault(SB))
-EXCEPTION_WITH_ERROR(PageFault, ·pageFault(SB))
-EXCEPTION_WITHOUT_ERROR(X87FloatingPointException, ·x87FloatingPointException(SB))
-EXCEPTION_WITH_ERROR(AlignmentCheck, ·alignmentCheck(SB))
-EXCEPTION_WITHOUT_ERROR(MachineCheck, ·machineCheck(SB))
-EXCEPTION_WITHOUT_ERROR(SIMDFloatingPointException, ·simdFloatingPointException(SB))
-EXCEPTION_WITHOUT_ERROR(VirtualizationException, ·virtualizationException(SB))
-EXCEPTION_WITH_ERROR(SecurityException, ·securityException(SB))
-EXCEPTION_WITHOUT_ERROR(SyscallInt80, ·syscallInt80(SB))
+EXCEPTION_WITHOUT_ERROR(DivideByZero, ·divideByZero(SB), ·addrOfDivideByZero(SB))
+EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB), ·addrOfDebug(SB))
+EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB), ·addrOfNMI(SB))
+EXCEPTION_WITHOUT_ERROR(Breakpoint, ·breakpoint(SB), ·addrOfBreakpoint(SB))
+EXCEPTION_WITHOUT_ERROR(Overflow, ·overflow(SB), ·addrOfOverflow(SB))
+EXCEPTION_WITHOUT_ERROR(BoundRangeExceeded, ·boundRangeExceeded(SB), ·addrOfBoundRangeExceeded(SB))
+EXCEPTION_WITHOUT_ERROR(InvalidOpcode, ·invalidOpcode(SB), ·addrOfInvalidOpcode(SB))
+EXCEPTION_WITHOUT_ERROR(DeviceNotAvailable, ·deviceNotAvailable(SB), ·addrOfDeviceNotAvailable(SB))
+EXCEPTION_WITH_ERROR(DoubleFault, ·doubleFault(SB), ·addrOfDoubleFault(SB))
+EXCEPTION_WITHOUT_ERROR(CoprocessorSegmentOverrun, ·coprocessorSegmentOverrun(SB), ·addrOfCoprocessorSegmentOverrun(SB))
+EXCEPTION_WITH_ERROR(InvalidTSS, ·invalidTSS(SB), ·addrOfInvalidTSS(SB))
+EXCEPTION_WITH_ERROR(SegmentNotPresent, ·segmentNotPresent(SB), ·addrOfSegmentNotPresent(SB))
+EXCEPTION_WITH_ERROR(StackSegmentFault, ·stackSegmentFault(SB), ·addrOfStackSegmentFault(SB))
+EXCEPTION_WITH_ERROR(GeneralProtectionFault, ·generalProtectionFault(SB), ·addrOfGeneralProtectionFault(SB))
+EXCEPTION_WITH_ERROR(PageFault, ·pageFault(SB), ·addrOfPageFault(SB))
+EXCEPTION_WITHOUT_ERROR(X87FloatingPointException, ·x87FloatingPointException(SB), ·addrOfX87FloatingPointException(SB))
+EXCEPTION_WITH_ERROR(AlignmentCheck, ·alignmentCheck(SB), ·addrOfAlignmentCheck(SB))
+EXCEPTION_WITHOUT_ERROR(MachineCheck, ·machineCheck(SB), ·addrOfMachineCheck(SB))
+EXCEPTION_WITHOUT_ERROR(SIMDFloatingPointException, ·simdFloatingPointException(SB), ·addrOfSimdFloatingPointException(SB))
+EXCEPTION_WITHOUT_ERROR(VirtualizationException, ·virtualizationException(SB), ·addrOfVirtualizationException(SB))
+EXCEPTION_WITH_ERROR(SecurityException, ·securityException(SB), ·addrOfSecurityException(SB))
+EXCEPTION_WITHOUT_ERROR(SyscallInt80, ·syscallInt80(SB), ·addrOfSyscallInt80(SB))

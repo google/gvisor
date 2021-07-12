@@ -31,6 +31,13 @@ import (
 // executed from kernel mode or not and the appropriate stub is called.
 func sysenter()
 
+// addrOfSysenter returns the start address of sysenter.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func addrOfSysenter() uintptr
+
 // swapgs swaps the current GS value.
 //
 // This must be called prior to sysret/iret.
@@ -38,6 +45,9 @@ func swapgs()
 
 // jumpToKernel jumps to the kernel version of the current RIP.
 func jumpToKernel()
+
+// jumpToUser jumps to the user version of the current RIP.
+func jumpToUser()
 
 // sysret returns to userspace from a system call.
 //
@@ -65,7 +75,12 @@ func exception()
 // This is used when processing kernel exceptions and syscalls.
 func resume()
 
-// Start is the CPU entrypoint.
+// start is the CPU entrypoint.
+//
+// See requirements below.
+func start()
+
+// AddrOfStart return the address of the CPU entrypoint.
 //
 // The following start conditions must be satisfied:
 //
@@ -78,7 +93,11 @@ func resume()
 //  * c.EFER() should be the current EFER value.
 //
 // The CPU state will be set to c.Registers().
-func Start()
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func AddrOfStart() uintptr
 
 // Exception stubs.
 func divideByZero()
@@ -104,28 +123,56 @@ func virtualizationException()
 func securityException()
 func syscallInt80()
 
+// These returns the start address of the functions above.
+//
+// In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
+// wrapper function rather than the function itself. We must reference from
+// assembly to get the ABI0 (i.e., primary) address.
+func addrOfDivideByZero() uintptr
+func addrOfDebug() uintptr
+func addrOfNMI() uintptr
+func addrOfBreakpoint() uintptr
+func addrOfOverflow() uintptr
+func addrOfBoundRangeExceeded() uintptr
+func addrOfInvalidOpcode() uintptr
+func addrOfDeviceNotAvailable() uintptr
+func addrOfDoubleFault() uintptr
+func addrOfCoprocessorSegmentOverrun() uintptr
+func addrOfInvalidTSS() uintptr
+func addrOfSegmentNotPresent() uintptr
+func addrOfStackSegmentFault() uintptr
+func addrOfGeneralProtectionFault() uintptr
+func addrOfPageFault() uintptr
+func addrOfX87FloatingPointException() uintptr
+func addrOfAlignmentCheck() uintptr
+func addrOfMachineCheck() uintptr
+func addrOfSimdFloatingPointException() uintptr
+func addrOfVirtualizationException() uintptr
+func addrOfSecurityException() uintptr
+func addrOfSyscallInt80() uintptr
+
 // Exception handler index.
-var handlers = map[Vector]func(){
-	DivideByZero:               divideByZero,
-	Debug:                      debug,
-	NMI:                        nmi,
-	Breakpoint:                 breakpoint,
-	Overflow:                   overflow,
-	BoundRangeExceeded:         boundRangeExceeded,
-	InvalidOpcode:              invalidOpcode,
-	DeviceNotAvailable:         deviceNotAvailable,
-	DoubleFault:                doubleFault,
-	CoprocessorSegmentOverrun:  coprocessorSegmentOverrun,
-	InvalidTSS:                 invalidTSS,
-	SegmentNotPresent:          segmentNotPresent,
-	StackSegmentFault:          stackSegmentFault,
-	GeneralProtectionFault:     generalProtectionFault,
-	PageFault:                  pageFault,
-	X87FloatingPointException:  x87FloatingPointException,
-	AlignmentCheck:             alignmentCheck,
-	MachineCheck:               machineCheck,
-	SIMDFloatingPointException: simdFloatingPointException,
-	VirtualizationException:    virtualizationException,
-	SecurityException:          securityException,
-	SyscallInt80:               syscallInt80,
+var handlers = map[Vector]uintptr{
+	DivideByZero:               addrOfDivideByZero(),
+	Debug:                      addrOfDebug(),
+	NMI:                        addrOfNMI(),
+	Breakpoint:                 addrOfBreakpoint(),
+	Overflow:                   addrOfOverflow(),
+	BoundRangeExceeded:         addrOfBoundRangeExceeded(),
+	InvalidOpcode:              addrOfInvalidOpcode(),
+	DeviceNotAvailable:         addrOfDeviceNotAvailable(),
+	DoubleFault:                addrOfDoubleFault(),
+	CoprocessorSegmentOverrun:  addrOfCoprocessorSegmentOverrun(),
+	InvalidTSS:                 addrOfInvalidTSS(),
+	SegmentNotPresent:          addrOfSegmentNotPresent(),
+	StackSegmentFault:          addrOfStackSegmentFault(),
+	GeneralProtectionFault:     addrOfGeneralProtectionFault(),
+	PageFault:                  addrOfPageFault(),
+	X87FloatingPointException:  addrOfX87FloatingPointException(),
+	AlignmentCheck:             addrOfAlignmentCheck(),
+	MachineCheck:               addrOfMachineCheck(),
+	SIMDFloatingPointException: addrOfSimdFloatingPointException(),
+	VirtualizationException:    addrOfVirtualizationException(),
+	SecurityException:          addrOfSecurityException(),
+	SyscallInt80:               addrOfSyscallInt80(),
 }

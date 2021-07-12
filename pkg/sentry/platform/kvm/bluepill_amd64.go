@@ -74,8 +74,27 @@ func (c *vCPU) KernelSyscall() {
 	// therefore be guaranteed that there is no floating point state to be
 	// loaded on resuming from halt. We only worry about saving on exit.
 	ring0.SaveFloatingPoint(c.floatingPointState.BytePointer()) // escapes: no.
-	ring0.Halt()
-	ring0.WriteFS(uintptr(regs.Fs_base)) // escapes: no, reload host segment.
+	// N.B. Since KernelSyscall is called when the kernel makes a syscall,
+	// FS_BASE is already set for correct execution of this function.
+	//
+	// Refresher on syscall/exception handling:
+	// 1. When the sentry is in guest mode and makes a syscall, it goes to
+	// sysenter(), which saves the register state (including RIP of SYSCALL
+	// instruction) to vCPU.registers.
+	// 2. It then calls KernelSyscall, which rewinds the IP and executes
+	// HLT.
+	// 3. HLT does a VM-exit to bluepillHandler, which returns from the
+	// signal handler using vCPU.registers, directly to the SYSCALL
+	// instruction.
+	// 4. Later, when we want to re-use the vCPU (perhaps on a different
+	// host thread), we set the new thread's registers in vCPU.registers
+	// (as opposed to setting the KVM registers with KVM_SET_REGS).
+	// 5. KVM_RUN thus enters the guest with the old register state,
+	// immediately following the HLT instruction, returning here.
+	// 6. We then restore FS_BASE and the full registers from vCPU.register
+	// to return from sysenter() back to the desired bluepill point from
+	// the host.
+	ring0.HaltAndWriteFSBase(regs) // escapes: no, reload host segment.
 }
 
 // KernelException handles kernel exceptions.
@@ -93,8 +112,8 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 	}
 	// See above.
 	ring0.SaveFloatingPoint(c.floatingPointState.BytePointer()) // escapes: no.
-	ring0.Halt()
-	ring0.WriteFS(uintptr(regs.Fs_base)) // escapes: no; reload host segment.
+	// See above.
+	ring0.HaltAndWriteFSBase(regs) // escapes: no, reload host segment.
 }
 
 // bluepillArchExit is called during bluepillEnter.

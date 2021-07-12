@@ -35,7 +35,6 @@ func kernelAddr(obj interface{}) uintptr {
 // kernelFunc returns the address of the given function.
 //
 //go:nosplit
-func kernelFunc(fn func()) uintptr {
-	fnptr := (**uintptr)(unsafe.Pointer(&fn))
-	return KernelStartAddress | **fnptr
+func kernelFunc(fn uintptr) uintptr {
+	return KernelStartAddress | fn
 }

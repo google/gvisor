@@ -318,8 +318,8 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define PTRACE_FLAGS    0x%02x\n", reflect.ValueOf(&p.Eflags).Pointer()-reflect.ValueOf(p).Pointer())
 	fmt.Fprintf(w, "#define PTRACE_RSP      0x%02x\n", reflect.ValueOf(&p.Rsp).Pointer()-reflect.ValueOf(p).Pointer())
 	fmt.Fprintf(w, "#define PTRACE_SS       0x%02x\n", reflect.ValueOf(&p.Ss).Pointer()-reflect.ValueOf(p).Pointer())
-	fmt.Fprintf(w, "#define PTRACE_FS       0x%02x\n", reflect.ValueOf(&p.Fs_base).Pointer()-reflect.ValueOf(p).Pointer())
-	fmt.Fprintf(w, "#define PTRACE_GS       0x%02x\n", reflect.ValueOf(&p.Gs_base).Pointer()-reflect.ValueOf(p).Pointer())
+	fmt.Fprintf(w, "#define PTRACE_FS_BASE  0x%02x\n", reflect.ValueOf(&p.Fs_base).Pointer()-reflect.ValueOf(p).Pointer())
+	fmt.Fprintf(w, "#define PTRACE_GS_BASE  0x%02x\n", reflect.ValueOf(&p.Gs_base).Pointer()-reflect.ValueOf(p).Pointer())
 }
 
 // Useful bits.

@@ -66,8 +66,8 @@
 #define PTRACE_FLAGS    0x90
 #define PTRACE_RSP      0x98
 #define PTRACE_SS       0xa0
-#define PTRACE_FS       0xa8
-#define PTRACE_GS       0xb0
+#define PTRACE_FS_BASE  0xa8
+#define PTRACE_GS_BASE  0xb0
 // Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
