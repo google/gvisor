@@ -26,6 +26,7 @@ import (
 
 // unmaskAllSignals unmasks all signals on the current thread.
 //
+//go:norace
 //go:nosplit
 func unmaskAllSignals() unix.Errno {
 	var set linux.SignalSet
