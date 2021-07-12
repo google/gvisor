@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -109,7 +108,7 @@ func (s *SocketVFS2) EventUnregister(e *waiter.Entry) {
 // Ioctl implements vfs.FileDescriptionImpl.
 func (*SocketVFS2) Ioctl(context.Context, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
-	return 0, syserror.ENOTTY
+	return 0, linuxerr.ENOTTY
 }
 
 // PRead implements vfs.FileDescriptionImpl.
@@ -122,7 +121,7 @@ func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	if dst.NumBytes() == 0 {
@@ -143,7 +142,7 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	n, err := s.sendMsg(ctx, src, nil, 0, socket.ControlMessages{})

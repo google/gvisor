@@ -183,7 +183,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 				// "IPC_CREAT and IPC_EXCL were specified in shmflg, but a
 				// shared memory segment already exists for key."
 				//  - man shmget(2)
-				return nil, syserror.EEXIST
+				return nil, linuxerr.EEXIST
 			}
 
 			shm.IncRef()
@@ -512,7 +512,7 @@ func (*Shm) CopyMapping(context.Context, memmap.MappingSpace, hostarch.AddrRange
 func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > s.fr.Length() {
-		err = &memmap.BusError{syserror.EFAULT}
+		err = &memmap.BusError{linuxerr.EFAULT}
 	}
 	if source := optional.Intersect(memmap.MappableRange{0, s.fr.Length()}); source.Length() != 0 {
 		return []memmap.Translation{

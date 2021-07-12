@@ -1292,7 +1292,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	// to the remote filesystem. This is inconsistent with Linux's 9p client,
 	// but consistent with other filesystems (e.g. FUSE).
 	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
-		return syserror.EOPNOTSUPP
+		return linuxerr.EOPNOTSUPP
 	}
 	mode := linux.FileMode(atomic.LoadUint32(&d.mode))
 	kuid := auth.KUID(atomic.LoadUint32(&d.uid))

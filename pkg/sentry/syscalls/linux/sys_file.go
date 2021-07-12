@@ -85,7 +85,7 @@ func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(ro
 		rel = f.Dirent
 		if !fs.IsDir(rel.Inode.StableAttr) {
 			f.DecRef(t)
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 	}
 
@@ -167,11 +167,11 @@ func openAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint) (fd uin
 		} else {
 			// If O_DIRECTORY is set, but the file is not a directory, then fail.
 			if fileFlags.Directory {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 			// If it's a directory, then make sure.
 			if dirPath {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 		}
 
@@ -220,7 +220,7 @@ func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Do we have the appropriate permissions on the parent?
@@ -261,7 +261,7 @@ func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 			// Instead of emulating this seemingly useless behaviour, we'll
 			// indicate that the filesystem doesn't support the creation of
 			// sockets.
-			return syserror.EOPNOTSUPP
+			return linuxerr.EOPNOTSUPP
 
 		case linux.ModeCharacterDevice:
 			fallthrough
@@ -326,7 +326,7 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 		)
 		for {
 			if !fs.IsDir(parent.Inode.StableAttr) {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 
 			// Start by looking up the dirent at 'name'.
@@ -340,7 +340,7 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 			// O_EXCL flag was passed, then we can immediately
 			// return EEXIST.
 			if flags&linux.O_EXCL != 0 {
-				return syserror.EEXIST
+				return linuxerr.EEXIST
 			}
 
 			// If we have a non-symlink, then we can proceed.
@@ -685,7 +685,7 @@ func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Note this is >= because we need a terminator.
 	if uint(len(s)) >= size {
-		return 0, nil, syserror.ERANGE
+		return 0, nil, linuxerr.ERANGE
 	}
 
 	// Copy out the path name for the node.
@@ -715,7 +715,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Is it a directory?
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Does it have execute permissions?
@@ -740,7 +740,7 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Is it a directory?
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Does it have execute permissions?
@@ -765,7 +765,7 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Is it a directory?
 	if !fs.IsDir(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ENOTDIR
+		return 0, nil, linuxerr.ENOTDIR
 	}
 
 	// Does it have execute permissions?
@@ -1067,21 +1067,21 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		case linux.F_OWNER_TID:
 			task := t.PIDNamespace().TaskWithID(kernel.ThreadID(owner.PID))
 			if task == nil {
-				return 0, nil, syserror.ESRCH
+				return 0, nil, linuxerr.ESRCH
 			}
 			a.SetOwnerTask(t, task)
 			return 0, nil, nil
 		case linux.F_OWNER_PID:
 			tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(owner.PID))
 			if tg == nil {
-				return 0, nil, syserror.ESRCH
+				return 0, nil, linuxerr.ESRCH
 			}
 			a.SetOwnerThreadGroup(t, tg)
 			return 0, nil, nil
 		case linux.F_OWNER_PGRP:
 			pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(owner.PID))
 			if pg == nil {
-				return 0, nil, syserror.ESRCH
+				return 0, nil, linuxerr.ESRCH
 			}
 			a.SetOwnerProcessGroup(t, pg)
 			return 0, nil, nil
@@ -1173,7 +1173,7 @@ func mkdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Does this directory exist already?
@@ -1183,7 +1183,7 @@ func mkdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMod
 		case err == nil:
 			// The directory existed.
 			defer f.DecRef(t)
-			return syserror.EEXIST
+			return linuxerr.EEXIST
 		case linuxerr.Equals(linuxerr.EACCES, err):
 			// Permission denied while walking to the directory.
 			return err
@@ -1230,7 +1230,7 @@ func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Linux returns different ernos when the path ends in single
@@ -1278,7 +1278,7 @@ func symlinkAt(t *kernel.Task, dirFD int32, newAddr hostarch.Addr, oldAddr hosta
 
 	return fileOpAt(t, dirFD, newPath, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Make sure we have write permissions on the parent directory.
@@ -1368,7 +1368,7 @@ func linkAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int3
 		// Resolve the target directory.
 		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 
 			// Make sure we have write permissions on the parent directory.
@@ -1389,7 +1389,7 @@ func linkAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int3
 		// Next resolve newDirFD and newAddr to the parent dirent and name.
 		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 
 			// Make sure we have write permissions on the parent directory.
@@ -1520,7 +1520,7 @@ func unlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		if err := d.MayDelete(t, root, name); err != nil {
@@ -2059,7 +2059,7 @@ func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD in
 
 	return fileOpAt(t, oldDirFD, oldPath, func(root *fs.Dirent, oldParent *fs.Dirent, oldName string, _ uint) error {
 		if !fs.IsDir(oldParent.Inode.StableAttr) {
-			return syserror.ENOTDIR
+			return linuxerr.ENOTDIR
 		}
 
 		// Rename rejects paths that end in ".", "..", or empty (i.e.
@@ -2071,7 +2071,7 @@ func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD in
 
 		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
+				return linuxerr.ENOTDIR
 			}
 
 			// Rename rejects paths that end in ".", "..", or empty

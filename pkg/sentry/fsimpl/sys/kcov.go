@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -90,7 +89,7 @@ func (fd *kcovFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallAr
 		}
 		return 0, fd.kcov.DisableTrace(ctx)
 	default:
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 

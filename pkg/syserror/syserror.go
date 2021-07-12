@@ -26,23 +26,16 @@ import (
 
 // The following variables have the same meaning as their syscall equivalent.
 var (
-	EEXIST     = error(unix.EEXIST)
-	EFAULT     = error(unix.EFAULT)
-	EIDRM      = error(unix.EIDRM)
-	EINTR      = error(unix.EINTR)
-	EIO        = error(unix.EIO)
-	EISDIR     = error(unix.EISDIR)
-	ENOENT     = error(unix.ENOENT)
-	ENOEXEC    = error(unix.ENOEXEC)
-	ENOMEM     = error(unix.ENOMEM)
-	ENOTSOCK   = error(unix.ENOTSOCK)
-	ENOSPC     = error(unix.ENOSPC)
-	ENOSYS     = error(unix.ENOSYS)
-	ENOTDIR    = error(unix.ENOTDIR)
-	ENOTTY     = error(unix.ENOTTY)
-	EOPNOTSUPP = error(unix.EOPNOTSUPP)
-	ERANGE     = error(unix.ERANGE)
-	ESRCH      = error(unix.ESRCH)
+	EIDRM    = error(unix.EIDRM)
+	EINTR    = error(unix.EINTR)
+	EIO      = error(unix.EIO)
+	EISDIR   = error(unix.EISDIR)
+	ENOENT   = error(unix.ENOENT)
+	ENOEXEC  = error(unix.ENOEXEC)
+	ENOMEM   = error(unix.ENOMEM)
+	ENOTSOCK = error(unix.ENOTSOCK)
+	ENOSPC   = error(unix.ENOSPC)
+	ENOSYS   = error(unix.ENOSYS)
 )
 
 var (

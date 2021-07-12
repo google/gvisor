@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -90,7 +89,7 @@ func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uin
 	if bits > 64 {
 		remAddr, ok := addr.AddLength(8)
 		if !ok {
-			return syserror.EFAULT
+			return linuxerr.EFAULT
 		}
 		remUint64 := (bits - 1) / 64
 		if _, err := t.MemoryManager().ZeroOut(t, remAddr, int64(remUint64)*8, usermem.IOOpts{

@@ -37,7 +37,7 @@ import (
 func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr, at hostarch.AccessType, sp hostarch.Addr) error {
 	ar, ok := addr.RoundDown().ToRange(hostarch.PageSize)
 	if !ok {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 
 	// Don't bother trying existingPMAsLocked; in most cases, if we did have
@@ -357,7 +357,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	// All cases require that a vma exists at oldAddr.
 	vseg := mm.vmas.FindSegment(oldAddr)
 	if !vseg.Ok() {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	// Behavior matrix:
@@ -404,7 +404,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 		// Check that oldEnd maps to the same vma as oldAddr.
 		if vseg.End() < oldEnd {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		// "Grow" the existing vma by creating a new mergeable one.
 		vma := vseg.ValuePtr()
@@ -494,7 +494,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 	// Check that oldEnd maps to the same vma as oldAddr.
 	if vseg.End() < oldEnd {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	// Check against RLIMIT_AS.
@@ -732,7 +732,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 	if !ok {
 		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return addr, syserror.EFAULT
+		return addr, linuxerr.EFAULT
 	}
 
 	switch {
@@ -972,7 +972,7 @@ func (mm *MemoryManager) NumaPolicy(addr hostarch.Addr) (linux.NumaPolicy, uint6
 	defer mm.mappingMu.RUnlock()
 	vseg := mm.vmas.FindSegment(addr)
 	if !vseg.Ok() {
-		return 0, 0, syserror.EFAULT
+		return 0, 0, linuxerr.EFAULT
 	}
 	vma := vseg.ValuePtr()
 	return vma.numaPolicy, vma.numaNodemask, nil
@@ -1005,7 +1005,7 @@ func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy
 		if !vseg.Ok() || lastEnd < vseg.Start() {
 			// "EFAULT: ... there was an unmapped hole in the specified memory
 			// range specified [sic] by addr and len." - mbind(2)
-			return syserror.EFAULT
+			return linuxerr.EFAULT
 		}
 		vseg = mm.vmas.Isolate(vseg, ar)
 		vma := vseg.ValuePtr()
@@ -1193,7 +1193,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr hostarch.Addr) (futex.Key, error) {
 	ar, ok := addr.ToRange(4) // sizeof(int32).
 	if !ok {
-		return futex.Key{}, syserror.EFAULT
+		return futex.Key{}, linuxerr.EFAULT
 	}
 
 	mm.mappingMu.RLock()

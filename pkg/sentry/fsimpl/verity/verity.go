@@ -882,7 +882,7 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *fileDescription) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	if !fd.d.isDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()

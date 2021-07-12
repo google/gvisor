@@ -283,21 +283,21 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 	case linux.F_OWNER_TID:
 		task := t.PIDNamespace().TaskWithID(kernel.ThreadID(pid))
 		if task == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerTask(t, task)
 		return nil
 	case linux.F_OWNER_PID:
 		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(pid))
 		if tg == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerThreadGroup(t, tg)
 		return nil
 	case linux.F_OWNER_PGRP:
 		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(pid))
 		if pg == nil {
-			return syserror.ESRCH
+			return linuxerr.ESRCH
 		}
 		a.SetOwnerProcessGroup(t, pg)
 		return nil

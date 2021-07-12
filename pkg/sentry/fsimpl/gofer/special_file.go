@@ -191,7 +191,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	if d := fd.dentry(); d.cachedMetadataAuthoritative() {
@@ -271,7 +271,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, offset, syserror.EOPNOTSUPP
+		return 0, offset, linuxerr.EOPNOTSUPP
 	}
 
 	d := fd.dentry()

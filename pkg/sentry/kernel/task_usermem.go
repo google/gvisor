@@ -133,7 +133,7 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 	case 8:
 		const itemLen = 16
 		if _, ok := addr.AddLength(uint64(src.NumRanges()) * itemLen); !ok {
-			return syserror.EFAULT
+			return linuxerr.EFAULT
 		}
 
 		b := t.CopyScratchBuffer(itemLen)
@@ -191,7 +191,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 	case 8:
 		const itemLen = 16
 		if _, ok := addr.AddLength(uint64(numIovecs) * itemLen); !ok {
-			return hostarch.AddrRangeSeq{}, syserror.EFAULT
+			return hostarch.AddrRangeSeq{}, linuxerr.EFAULT
 		}
 
 		b := t.CopyScratchBuffer(itemLen)
@@ -207,7 +207,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 			}
 			ar, ok := t.MemoryManager().CheckIORange(base, int64(length))
 			if !ok {
-				return hostarch.AddrRangeSeq{}, syserror.EFAULT
+				return hostarch.AddrRangeSeq{}, linuxerr.EFAULT
 			}
 
 			if numIovecs == 1 {
@@ -253,7 +253,7 @@ func (t *Task) SingleIOSequence(addr hostarch.Addr, length int, opts usermem.IOO
 	}
 	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {
-		return usermem.IOSequence{}, syserror.EFAULT
+		return usermem.IOSequence{}, linuxerr.EFAULT
 	}
 	return usermem.IOSequence{
 		IO:    t.MemoryManager(),
@@ -313,7 +313,7 @@ func (cc *taskCopyContext) getMemoryManager() (*mm.MemoryManager, error) {
 	tmm := cc.t.MemoryManager()
 	cc.t.mu.Unlock()
 	if !tmm.IncUsers() {
-		return nil, syserror.EFAULT
+		return nil, linuxerr.EFAULT
 	}
 	return tmm, nil
 }

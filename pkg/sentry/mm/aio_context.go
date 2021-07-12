@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -306,7 +305,7 @@ func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar ho
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(ar.Length()) != aioRingBufferSize {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 	return nil
 }
@@ -320,7 +319,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(dstAR.Length()) != aioRingBufferSize {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 	// Require that the mapping correspond to a live AIOContext. Compare
 	// Linux's fs/aio.c:aio_ring_mremap().
@@ -351,7 +350,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
-		err = &memmap.BusError{syserror.EFAULT}
+		err = &memmap.BusError{linuxerr.EFAULT}
 	}
 	if source := optional.Intersect(memmap.MappableRange{0, m.fr.Length()}); source.Length() != 0 {
 		return []memmap.Translation{

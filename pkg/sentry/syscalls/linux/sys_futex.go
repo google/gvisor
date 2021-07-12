@@ -317,7 +317,7 @@ func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	ot := t
 	if tid != 0 {
 		if ot = t.PIDNamespace().TaskWithID(kernel.ThreadID(tid)); ot == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
