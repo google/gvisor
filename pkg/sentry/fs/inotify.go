@@ -122,7 +122,7 @@ func (*Inotify) Seek(context.Context, *File, SeekWhence, int64) (int64, error) {
 
 // Readdir implements FileOperatons.Readdir.
 func (*Inotify) Readdir(context.Context, *File, DentrySerializer) (int64, error) {
-	return 0, syserror.ENOTDIR
+	return 0, linuxerr.ENOTDIR
 }
 
 // Write implements FileOperations.Write.
@@ -223,7 +223,7 @@ func (i *Inotify) Ioctl(ctx context.Context, _ *File, io usermem.IO, args arch.S
 		return 0, err
 
 	default:
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 

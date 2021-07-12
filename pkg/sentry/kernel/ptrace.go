@@ -940,7 +940,7 @@ func (t *Task) ptraceKill(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	target.tg.signalHandlers.mu.Lock()
 	defer target.tg.signalHandlers.mu.Unlock()
@@ -964,7 +964,7 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceSeized {
 		return syserror.EIO
@@ -1022,7 +1022,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// specified by pid.
 	target := t.tg.pidns.TaskWithID(pid)
 	if target == nil {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// PTRACE_ATTACH and PTRACE_SEIZE do not require that target is not already
@@ -1047,7 +1047,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	t.tg.pidns.owner.mu.RLock()
 	if target.Tracer() != t {
 		t.tg.pidns.owner.mu.RUnlock()
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceFreeze() {
 		t.tg.pidns.owner.mu.RUnlock()
@@ -1055,7 +1055,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		// PTRACE_TRACEME, PTRACE_INTERRUPT, and PTRACE_KILL) require the
 		// tracee to be in a ptrace-stop, otherwise they fail with ESRCH." -
 		// ptrace(2)
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	t.tg.pidns.owner.mu.RUnlock()
 	// Even if the target has a ptrace-stop active, the tracee's task goroutine

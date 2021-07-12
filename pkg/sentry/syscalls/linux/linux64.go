@@ -356,12 +356,12 @@ var AMD64 = &kernel.SyscallTable{
 		300: syscalls.ErrorWithEvent("fanotify_init", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		301: syscalls.ErrorWithEvent("fanotify_mark", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		302: syscalls.Supported("prlimit64", Prlimit64),
-		303: syscalls.Error("name_to_handle_at", syserror.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
-		304: syscalls.Error("open_by_handle_at", syserror.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
+		303: syscalls.Error("name_to_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
+		304: syscalls.Error("open_by_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		305: syscalls.CapError("clock_adjtime", linux.CAP_SYS_TIME, "", nil),
 		306: syscalls.PartiallySupported("syncfs", Syncfs, "Depends on backing file system.", nil),
 		307: syscalls.PartiallySupported("sendmmsg", SendMMsg, "Not all flags and control messages are supported.", nil),
-		308: syscalls.ErrorWithEvent("setns", syserror.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
+		308: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
 		309: syscalls.Supported("getcpu", Getcpu),
 		310: syscalls.ErrorWithEvent("process_vm_readv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
 		311: syscalls.ErrorWithEvent("process_vm_writev", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
@@ -678,11 +678,11 @@ var ARM64 = &kernel.SyscallTable{
 		261: syscalls.Supported("prlimit64", Prlimit64),
 		262: syscalls.ErrorWithEvent("fanotify_init", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		263: syscalls.ErrorWithEvent("fanotify_mark", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
-		264: syscalls.Error("name_to_handle_at", syserror.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
-		265: syscalls.Error("open_by_handle_at", syserror.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
+		264: syscalls.Error("name_to_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
+		265: syscalls.Error("open_by_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		266: syscalls.CapError("clock_adjtime", linux.CAP_SYS_TIME, "", nil),
 		267: syscalls.PartiallySupported("syncfs", Syncfs, "Depends on backing file system.", nil),
-		268: syscalls.ErrorWithEvent("setns", syserror.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
+		268: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
 		269: syscalls.PartiallySupported("sendmmsg", SendMMsg, "Not all flags and control messages are supported.", nil),
 		270: syscalls.ErrorWithEvent("process_vm_readv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
 		271: syscalls.ErrorWithEvent("process_vm_writev", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),

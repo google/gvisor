@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -114,7 +113,7 @@ func (s *socketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
@@ -133,7 +132,7 @@ func (s *socketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)

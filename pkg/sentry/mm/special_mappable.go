@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SpecialMappable implements memmap.MappingIdentity and memmap.Mappable with
@@ -95,7 +94,7 @@ func (*SpecialMappable) CopyMapping(context.Context, memmap.MappingSpace, hostar
 func (m *SpecialMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
-		err = &memmap.BusError{syserror.EFAULT}
+		err = &memmap.BusError{linuxerr.EFAULT}
 	}
 	if source := optional.Intersect(memmap.MappableRange{0, m.fr.Length()}); source.Length() != 0 {
 		return []memmap.Translation{

@@ -18,12 +18,12 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // existingPMAsLocked checks that pmas exist for all addresses in ar, and
@@ -116,7 +116,7 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 	var alignerr error
 	if !ok {
 		end = ar.End.RoundDown()
-		alignerr = syserror.EFAULT
+		alignerr = linuxerr.EFAULT
 	}
 	ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 
@@ -162,7 +162,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars hostarch.Addr
 		var alignerr error
 		if !ok {
 			end = ar.End.RoundDown()
-			alignerr = syserror.EFAULT
+			alignerr = linuxerr.EFAULT
 		}
 		ar = hostarch.AddrRange{ar.Start.RoundDown(), end}
 

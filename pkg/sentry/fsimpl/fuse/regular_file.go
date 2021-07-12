@@ -47,7 +47,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	size := dst.NumBytes()
@@ -151,7 +151,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, offset, syserror.EOPNOTSUPP
+		return 0, offset, linuxerr.EOPNOTSUPP
 	}
 
 	inode := fd.inode()

@@ -511,7 +511,7 @@ func (o *OrderedChildren) insert(name string, child Inode, static bool) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if _, ok := o.set[name]; ok {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 	s := &slot{
 		name:   name,

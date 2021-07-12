@@ -35,7 +35,6 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/limits",
-        "//pkg/syserror",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

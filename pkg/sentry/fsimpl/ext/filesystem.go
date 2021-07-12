@@ -89,7 +89,7 @@ var _ vfs.FilesystemImpl = (*filesystem)(nil)
 // * inode == vfsd.Impl().(*Dentry).inode.
 func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode, write bool) (*vfs.Dentry, *inode, error) {
 	if !inode.isDir() {
-		return nil, nil, syserror.ENOTDIR
+		return nil, nil, linuxerr.ENOTDIR
 	}
 	if err := inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 		return nil, nil, err
@@ -181,7 +181,7 @@ func walkLocked(ctx context.Context, rp *vfs.ResolvingPath, write bool) (*vfs.De
 		}
 	}
 	if rp.MustBeDir() && !inode.isDir() {
-		return nil, nil, syserror.ENOTDIR
+		return nil, nil, linuxerr.ENOTDIR
 	}
 	return vfsd, inode, nil
 }
@@ -210,7 +210,7 @@ func walkParentLocked(ctx context.Context, rp *vfs.ResolvingPath, write bool) (*
 		}
 	}
 	if !inode.isDir() {
-		return nil, nil, syserror.ENOTDIR
+		return nil, nil, linuxerr.ENOTDIR
 	}
 	return vfsd, inode, nil
 }
@@ -302,7 +302,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 
 	if opts.CheckSearchable {
 		if !inode.isDir() {
-			return nil, syserror.ENOTDIR
+			return nil, linuxerr.ENOTDIR
 		}
 		if err := inode.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err
@@ -390,7 +390,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	if rp.Done() {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	if _, _, err := fs.walk(ctx, rp, true); err != nil {
@@ -403,7 +403,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	if rp.Done() {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	if _, _, err := fs.walk(ctx, rp, true); err != nil {
@@ -416,7 +416,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	if rp.Done() {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	_, _, err := fs.walk(ctx, rp, true)
@@ -449,7 +449,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 
 	if !inode.isDir() {
-		return syserror.ENOTDIR
+		return linuxerr.ENOTDIR
 	}
 
 	return linuxerr.EROFS
@@ -468,7 +468,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	if rp.Done() {
-		return syserror.EEXIST
+		return linuxerr.EEXIST
 	}
 
 	_, _, err := fs.walk(ctx, rp, true)

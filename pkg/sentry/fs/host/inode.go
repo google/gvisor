@@ -266,7 +266,7 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 
 // Bind implements fs.InodeOperations.Bind.
 func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data transport.BoundEndpoint, perm fs.FilePermissions) (*fs.Dirent, error) {
-	return nil, syserror.EOPNOTSUPP
+	return nil, linuxerr.EOPNOTSUPP
 }
 
 // BoundEndpoint implements fs.InodeOperations.BoundEndpoint.

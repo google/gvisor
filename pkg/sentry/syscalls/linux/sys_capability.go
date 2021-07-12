@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func lookupCaps(t *kernel.Task, tid kernel.ThreadID) (permitted, inheritable, effective auth.CapabilitySet, err error) {
@@ -32,7 +31,7 @@ func lookupCaps(t *kernel.Task, tid kernel.ThreadID) (permitted, inheritable, ef
 		t = t.PIDNamespace().TaskWithID(tid)
 	}
 	if t == nil {
-		err = syserror.ESRCH
+		err = linuxerr.ESRCH
 		return
 	}
 	creds := t.Credentials()

@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const maxInt = int(^uint(0) >> 1)
@@ -94,11 +93,11 @@ func (b *BytesIO) rangeCheck(addr hostarch.Addr, length int) (int, error) {
 	}
 	max := hostarch.Addr(len(b.Bytes))
 	if addr >= max {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 	end, ok := addr.AddLength(uint64(length))
 	if !ok || end > max {
-		return int(max - addr), syserror.EFAULT
+		return int(max - addr), linuxerr.EFAULT
 	}
 	return length, nil
 }

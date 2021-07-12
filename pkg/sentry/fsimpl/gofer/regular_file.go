@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -132,7 +131,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	//
 	// TODO(gvisor.dev/issue/2601): Support select preadv2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, syserror.EOPNOTSUPP
+		return 0, linuxerr.EOPNOTSUPP
 	}
 
 	// Check for reading at EOF before calling into MM (but not under
@@ -202,7 +201,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	//
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if opts.Flags&^linux.RWF_HIPRI != 0 {
-		return 0, offset, syserror.EOPNOTSUPP
+		return 0, offset, linuxerr.EOPNOTSUPP
 	}
 
 	d := fd.dentry()

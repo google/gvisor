@@ -289,7 +289,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar hostarch.AddrRang
 		vma := vseg.ValuePtr()
 		if addr < vseg.Start() {
 			// TODO(jamieliu): Implement vma.growsDown here.
-			return vbegin, vgap, syserror.EFAULT
+			return vbegin, vgap, linuxerr.EFAULT
 		}
 
 		perms := vma.effectivePerms
@@ -309,7 +309,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar hostarch.AddrRang
 	}
 
 	// Ran out of vmas before ar.End.
-	return vbegin, vgap, syserror.EFAULT
+	return vbegin, vgap, linuxerr.EFAULT
 }
 
 // getVecVMAsLocked ensures that vmas exist for all addresses in ars, and

@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Registers represents the CPU registers for this architecture.
@@ -354,7 +353,7 @@ func (s *State) PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int,
 	switch regset {
 	case _NT_PRSTATUS:
 		if maxlen < ptraceRegistersSize {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		return s.PtraceGetRegs(dst)
 	case _NT_PRFPREG:
@@ -371,7 +370,7 @@ func (s *State) PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int,
 	switch regset {
 	case _NT_PRSTATUS:
 		if maxlen < ptraceRegistersSize {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		return s.PtraceSetRegs(src)
 	case _NT_PRFPREG:

@@ -277,13 +277,13 @@ func TestEqualsMethod(t *testing.T) {
 		{
 			name:     "equal errors",
 			linuxErr: []*gErrors.Error{linuxerr.ESRCH},
-			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			err:      []error{linuxerr.ESRCH, linuxerr.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
 			equal:    true,
 		},
 		{
 			name:     "unequal errors",
 			linuxErr: []*gErrors.Error{linuxerr.ENOENT},
-			err:      []error{linuxerr.ESRCH, syserror.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
+			err:      []error{linuxerr.ESRCH, linuxerr.ESRCH, unix.Errno(linuxerr.ESRCH.Errno())},
 			equal:    false,
 		},
 		{

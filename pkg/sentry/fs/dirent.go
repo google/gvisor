@@ -864,7 +864,7 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	// Once we have written entries for "." and "..", future errors from
 	// IterateDir will be hidden.
 	if !IsDir(d.Inode.StableAttr) {
-		return 0, syserror.ENOTDIR
+		return 0, linuxerr.ENOTDIR
 	}
 
 	// This is a special case for lseek(fd, 0, SEEK_END).

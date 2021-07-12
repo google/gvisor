@@ -116,7 +116,7 @@ func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*de
 // * !rp.Done().
 func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, error) {
 	if !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
@@ -685,7 +685,7 @@ func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 		d = next
 	}
 	if !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -705,7 +705,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 		d = next
 	}
 	if rp.MustBeDir() && !d.isDir() {
-		return nil, syserror.ENOTDIR
+		return nil, linuxerr.ENOTDIR
 	}
 	return d, nil
 }
@@ -737,7 +737,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 	}
 	if opts.CheckSearchable {
 		if !d.isDir() {
-			return nil, syserror.ENOTDIR
+			return nil, linuxerr.ENOTDIR
 		}
 		if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
 			return nil, err

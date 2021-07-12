@@ -47,7 +47,7 @@ import (
 // no longer in use.
 func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 	if t.ExitState() == kernel.TaskExitDead {
-		return nil, syserror.ESRCH
+		return nil, linuxerr.ESRCH
 	}
 	var m *mm.MemoryManager
 	t.WithMuLocked(func(t *kernel.Task) {
@@ -64,7 +64,7 @@ func checkTaskState(t *kernel.Task) error {
 	case kernel.TaskExitZombie:
 		return linuxerr.EACCES
 	case kernel.TaskExitDead:
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	return nil
 }
@@ -282,7 +282,7 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 		// (with locks held).
 		file = mm.Executable()
 		if file == nil {
-			err = syserror.ESRCH
+			err = linuxerr.ESRCH
 		}
 	})
 	return
@@ -332,14 +332,14 @@ func (e *cwd) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	cwd := e.t.FSContext().WorkingDirectory()
 	if cwd == nil {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer cwd.DecRef(ctx)
 
 	root := fs.RootFromContext(ctx)
 	if root == nil {
 		// It could have raced with process deletion.
-		return "", syserror.ESRCH
+		return "", linuxerr.ESRCH
 	}
 	defer root.DecRef(ctx)
 
@@ -474,7 +474,7 @@ func (m *memDataFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	n, readErr := mm.CopyIn(ctx, hostarch.Addr(offset), buf, usermem.IOOpts{IgnorePermissions: true})
 	if n > 0 {
 		if _, err := dst.CopyOut(ctx, buf[:n]); err != nil {
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		return int64(n), nil
 	}
@@ -1004,7 +1004,7 @@ func (o *oomScoreAdj) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 // Read implements fs.FileOperations.Read.
 func (f *oomScoreAdjFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if f.t.ExitState() == kernel.TaskExitDead {
-		return 0, syserror.ESRCH
+		return 0, linuxerr.ESRCH
 	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%d\n", f.t.OOMScoreAdj())
@@ -1031,7 +1031,7 @@ func (f *oomScoreAdjFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	}
 
 	if f.t.ExitState() == kernel.TaskExitDead {
-		return 0, syserror.ESRCH
+		return 0, linuxerr.ESRCH
 	}
 	if err := f.t.SetOOMScoreAdj(v); err != nil {
 		return 0, err

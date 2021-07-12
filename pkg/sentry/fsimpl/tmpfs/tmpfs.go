@@ -731,7 +731,7 @@ func checkXattrName(name string) error {
 	if strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
 		return nil
 	}
-	return syserror.EOPNOTSUPP
+	return linuxerr.EOPNOTSUPP
 }
 
 func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error) {

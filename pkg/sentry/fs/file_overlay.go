@@ -408,7 +408,7 @@ func (f *overlayFileOperations) Ioctl(ctx context.Context, overlayFile *File, io
 		// copy up on any ioctl would be too drastic. In the future, it can have a
 		// list of ioctls that are safe to send to lower and a list that triggers a
 		// copy up.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 	return f.upper.FileOperations.Ioctl(ctx, f.upper, io, args)
 }
