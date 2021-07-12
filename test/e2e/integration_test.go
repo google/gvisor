@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -426,10 +427,10 @@ func TestTmpMount(t *testing.T) {
 // Test that it is allowed to mount a file on top of /dev files, e.g.
 // /dev/random.
 func TestMountOverDev(t *testing.T) {
-	if usingVFS2, err := dockerutil.UsingVFS2(); !usingVFS2 {
-		t.Skip("VFS1 doesn't allow /dev/random to be mounted.")
-	} else if err != nil {
+	if vfs2, err := dockerutil.UsingVFS2(); err != nil {
 		t.Fatalf("Failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2 {
+		t.Skip("VFS1 doesn't allow /dev/random to be mounted.")
 	}
 
 	random, err := ioutil.TempFile(testutil.TmpDir(), "random")
@@ -574,11 +575,12 @@ func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	if got, err := d.Run(ctx, dockerutil.RunOpts{
+	opts := dockerutil.RunOpts{
 		Image:   "basic/integrationtest",
 		WorkDir: "/root",
 		CapAdd:  capAdd,
-	}, args...); err != nil {
+	}
+	if got, err := d.Run(ctx, opts, args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	} else if got != "" {
 		t.Errorf("test failed:\n%s", got)
@@ -606,6 +608,107 @@ func TestBindOverlay(t *testing.T) {
 	// Check the output contains what we want.
 	if want := "foobar-asdf"; !strings.Contains(got, want) {
 		t.Fatalf("docker run output is missing %q: %s", want, got)
+	}
+}
+
+func TestStdios(t *testing.T) {
+	if vfs2, err := dockerutil.UsingVFS2(); err != nil {
+		t.Fatalf("Failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2 {
+		t.Skip("VFS1 doesn't adjust stdios user")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	testStdios(t, func(user string, args ...string) (string, error) {
+		defer d.CleanUp(ctx)
+		opts := dockerutil.RunOpts{
+			Image: "basic/alpine",
+			User:  user,
+		}
+		return d.Run(ctx, opts, args...)
+	})
+}
+
+func TestStdiosExec(t *testing.T) {
+	if vfs2, err := dockerutil.UsingVFS2(); err != nil {
+		t.Fatalf("Failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2 {
+		t.Skip("VFS1 doesn't adjust stdios user")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	runOpts := dockerutil.RunOpts{Image: "basic/alpine"}
+	if err := d.Spawn(ctx, runOpts, "sleep", "100"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	testStdios(t, func(user string, args ...string) (string, error) {
+		opts := dockerutil.ExecOpts{User: user}
+		return d.Exec(ctx, opts, args...)
+	})
+}
+
+func testStdios(t *testing.T, run func(string, ...string) (string, error)) {
+	const cmd = "stat -L /proc/self/fd/0 /proc/self/fd/1 /proc/self/fd/2 | grep 'Uid:'"
+	got, err := run("123", "/bin/sh", "-c", cmd)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if len(got) == 0 {
+		t.Errorf("Unexpected empty output from %q", cmd)
+	}
+	re := regexp.MustCompile(`Uid: \(\s*(\w+)\/.*\)`)
+	for _, line := range strings.SplitN(got, "\n", 3) {
+		t.Logf("stat -L: %s", line)
+		matches := re.FindSubmatch([]byte(line))
+		if len(matches) != 2 {
+			t.Fatalf("wrong output format: %q: matches: %v", line, matches)
+		}
+		if want, got := "123", string(matches[1]); want != got {
+			t.Errorf("wrong user, want: %q, got: %q", want, got)
+		}
+	}
+
+	// Check that stdout and stderr can be open and written to. This checks
+	// that ownership and permissions are correct inside gVisor.
+	got, err = run("456", "/bin/sh", "-c", "echo foobar | tee /proc/self/fd/1 > /proc/self/fd/2")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	t.Logf("echo foobar: %q", got)
+	// Check it repeats twice, once for stdout and once for stderr.
+	if want := "foobar\nfoobar\n"; want != got {
+		t.Errorf("Wrong echo output, want: %q, got: %q", want, got)
+	}
+
+	// Check that timestamps can be changed. Setting timestamps require an extra
+	// write check _after_ the file was opened, and may fail if the underlying
+	// host file is not setup correctly.
+	if _, err := run("789", "touch", "/proc/self/fd/0", "/proc/self/fd/1", "/proc/self/fd/2"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+}
+
+func TestStdiosChown(t *testing.T) {
+	if vfs2, err := dockerutil.UsingVFS2(); err != nil {
+		t.Fatalf("Failed to read config for runtime %s: %v", dockerutil.Runtime(), err)
+	} else if !vfs2 {
+		t.Skip("VFS1 doesn't adjust stdios user")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{Image: "basic/alpine"}
+	if _, err := d.Run(ctx, opts, "chown", "123", "/proc/self/fd/0", "/proc/self/fd/1", "/proc/self/fd/2"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 }
 

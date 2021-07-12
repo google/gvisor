@@ -105,11 +105,11 @@ type execDesc struct {
 	name string
 }
 
-func execMany(t *testing.T, execs []execDesc) {
+func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
 	for _, exec := range execs {
 		t.Run(exec.name, func(t *testing.T) {
 			args := &control.ExecArgs{Argv: exec.cmd}
-			if ws, err := exec.c.executeSync(args); err != nil {
+			if ws, err := exec.c.executeSync(conf, args); err != nil {
 				t.Errorf("error executing %+v: %v", args, err)
 			} else if ws.ExitStatus() != exec.want {
 				t.Errorf("%q: exec %q got exit status: %d, want: %d", exec.name, exec.cmd, ws.ExitStatus(), exec.want)
@@ -217,7 +217,7 @@ func TestMultiPIDNS(t *testing.T) {
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err := execPS(containers[0])
+			got, err := execPS(conf, containers[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -229,7 +229,7 @@ func TestMultiPIDNS(t *testing.T) {
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[1])
+			got, err = execPS(conf, containers[1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -313,7 +313,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err := execPS(containers[0])
+			got, err := execPS(conf, containers[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -328,7 +328,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[1])
+			got, err = execPS(conf, containers[1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -341,7 +341,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[2])
+			got, err = execPS(conf, containers[2])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -541,7 +541,7 @@ func TestExecWait(t *testing.T) {
 		WorkingDirectory: "/",
 		KUID:             0,
 	}
-	pid, err := containers[0].Execute(args)
+	pid, err := containers[0].Execute(conf, args)
 	if err != nil {
 		t.Fatalf("error executing: %v", err)
 	}
@@ -744,7 +744,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 				Filename: app,
 				Argv:     []string{app, "fork-bomb"},
 			}
-			if _, err := containers[1].Execute(args); err != nil {
+			if _, err := containers[1].Execute(conf, args); err != nil {
 				t.Fatalf("error exec'ing: %v", err)
 			}
 
@@ -821,7 +821,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 		Filename: "/bin/sleep",
 		Argv:     []string{"/bin/sleep", "100"},
 	}
-	if _, err := containers[1].Execute(args); err != nil {
+	if _, err := containers[1].Execute(conf, args); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
 	}
 	expectedPL1 = append(expectedPL1, newProcessBuilder().PID(4).Cmd("sleep").Process())
@@ -882,7 +882,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			Filename: app,
 			Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
 		}
-		if _, err := containers[1].Execute(args); err != nil {
+		if _, err := containers[1].Execute(conf, args); err != nil {
 			t.Fatalf("error exec'ing: %v", err)
 		}
 		// Wait for these new processes to start.
@@ -1317,7 +1317,7 @@ func TestMultiContainerSharedMount(t *testing.T) {
 					name: "dir removed from container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1382,7 +1382,7 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 					name: "fails to write to container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1440,7 +1440,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 					name: "file appears in container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 
 			containers[1].Destroy()
 
@@ -1490,7 +1490,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 					name: "file removed from container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1543,7 +1543,7 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 					name: "directory is mounted in container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1654,7 +1654,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Check that container isn't running anymore.
-	if _, err := execute(c, "/bin/true"); err == nil {
+	if _, err := execute(conf, c, "/bin/true"); err == nil {
 		t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 	}
 
@@ -1669,7 +1669,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
 		}
-		if _, err := execute(c, "/bin/true"); err != nil {
+		if _, err := execute(conf, c, "/bin/true"); err != nil {
 			t.Fatalf("Container %q was affected by another container: %v", c.ID, err)
 		}
 	}
@@ -1691,7 +1691,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Check that entire sandbox isn't running anymore.
 	for _, c := range containers {
-		if _, err := execute(c, "/bin/true"); err == nil {
+		if _, err := execute(conf, c, "/bin/true"); err == nil {
 			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
 	}
@@ -1867,7 +1867,7 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			defer cleanup()
 
 			// Exec into the root container synchronously.
-			if _, err := execute(containers[0], "/bin/sh", "-c", execCmd); err != nil {
+			if _, err := execute(conf, containers[0], "/bin/sh", "-c", execCmd); err != nil {
 				t.Errorf("error executing %+v: %v", execCmd, err)
 			}
 
@@ -2056,7 +2056,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 		Argv:     []string{"/bin/sh", "-c", cmdExec},
 		Envv:     []string{"VAR=foo", "VAR=bar"},
 	}
-	if ws, err := containers[0].executeSync(execArgs); err != nil || ws.ExitStatus() != 0 {
+	if ws, err := containers[0].executeSync(conf, execArgs); err != nil || ws.ExitStatus() != 0 {
 		t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
 	}
 
