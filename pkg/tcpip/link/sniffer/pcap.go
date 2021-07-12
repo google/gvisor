@@ -39,8 +39,6 @@ type pcapHeader struct {
 	Network uint32
 }
 
-const pcapPacketHeaderLen = 16
-
 type pcapPacketHeader struct {
 	// Seconds is the timestamp seconds.
 	Seconds uint32
