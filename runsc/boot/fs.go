@@ -69,7 +69,7 @@ const (
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "uid", "gid"}
 
-func addOverlay(ctx context.Context, conf *config.Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
+func addOverlay(ctx context.Context, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.
 	upperFlags := lowerFlags
 	upperFlags.ReadOnly = false
@@ -744,7 +744,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 
 	if useOverlay {
 		log.Debugf("Adding overlay on top of shared mount %q", hint.name)
-		inode, err = addOverlay(ctx, conf, inode, hint.mount.Type, mf)
+		inode, err = addOverlay(ctx, inode, hint.mount.Type, mf)
 		if err != nil {
 			return nil, err
 		}
@@ -785,7 +785,7 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *config.Con
 	if conf.Overlay && !c.root.Readonly {
 		log.Debugf("Adding overlay on top of root mount")
 		// Overlay a tmpfs filesystem on top of the root.
-		rootInode, err = addOverlay(ctx, conf, rootInode, "root-overlay-upper", mf)
+		rootInode, err = addOverlay(ctx, rootInode, "root-overlay-upper", mf)
 		if err != nil {
 			return nil, err
 		}
@@ -901,7 +901,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 	if useOverlay {
 		log.Debugf("Adding overlay on top of mount %q", m.Destination)
-		inode, err = addOverlay(ctx, conf, inode, m.Type, mf)
+		inode, err = addOverlay(ctx, inode, m.Type, mf)
 		if err != nil {
 			return err
 		}

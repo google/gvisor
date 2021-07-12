@@ -49,7 +49,7 @@ import (
 //
 // Run the following container to test it:
 //  docker run -di --runtime=runsc -p 8080:80 -v $PWD:/usr/local/apache2/htdocs/ httpd:2.4
-func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *config.Config) error {
+func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	log.Infof("Setting up network")
 
 	switch conf.Network {
@@ -301,13 +301,13 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 
 	// Use SO_RCVBUFFORCE/SO_SNDBUFFORCE because on linux the receive/send buffer
 	// for an AF_PACKET socket is capped by "net.core.rmem_max/wmem_max".
-	// wmem_max/rmem_max default to a unusually low value of 208KB. This is too low
-	// for gVisor to be able to receive packets at high throughputs without
+	// wmem_max/rmem_max default to a unusually low value of 208KB. This is too
+	// low for gVisor to be able to receive packets at high throughputs without
 	// incurring packet drops.
 	const bufSize = 4 << 20 // 4MB.
 
 	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, bufSize); err != nil {
-		unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize)
+		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize)
 		sz, _ := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF)
 
 		if sz < bufSize {
@@ -316,10 +316,10 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	}
 
 	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUFFORCE, bufSize); err != nil {
-		unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize)
+		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize)
 		sz, _ := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF)
 		if sz < bufSize {
-			log.Warningf("Failed to increase snd buffer to %d on SOCK_RAW on %s. Curent buffer %d: %v", bufSize, iface.Name, sz, err)
+			log.Warningf("Failed to increase snd buffer to %d on SOCK_RAW on %s. Current buffer %d: %v", bufSize, iface.Name, sz, err)
 		}
 	}
 

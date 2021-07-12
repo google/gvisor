@@ -51,10 +51,10 @@ const (
 
 // verityXattrs are the extended attributes used by verity file system.
 var verityXattrs = map[string]struct{}{
-	"user.merkle.offset":         struct{}{},
-	"user.merkle.size":           struct{}{},
-	"user.merkle.childrenOffset": struct{}{},
-	"user.merkle.childrenSize":   struct{}{},
+	"user.merkle.offset":         {},
+	"user.merkle.size":           {},
+	"user.merkle.childrenOffset": {},
+	"user.merkle.childrenSize":   {},
 }
 
 // join is equivalent to path.Join() but skips path.Clean() which is expensive.

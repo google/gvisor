@@ -42,7 +42,7 @@ func (*Pause) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (*Pause) SetFlags(f *flag.FlagSet) {
+func (*Pause) SetFlags(*flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.

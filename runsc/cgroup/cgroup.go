@@ -424,10 +424,9 @@ func (c *Cgroup) Uninstall() error {
 // restores cgroup to the original state.
 func (c *Cgroup) Join() (func(), error) {
 	// First save the current state so it can be restored.
-	undo := func() {}
 	paths, err := loadPaths("self")
 	if err != nil {
-		return undo, err
+		return nil, err
 	}
 	var undoPaths []string
 	for ctrlr, path := range paths {
@@ -438,8 +437,7 @@ func (c *Cgroup) Join() (func(), error) {
 		}
 	}
 
-	// Replace empty undo with the real thing before changes are made to cgroups.
-	undo = func() {
+	cu := cleanup.Make(func() {
 		for _, path := range undoPaths {
 			log.Debugf("Restoring cgroup %q", path)
 			// Writing the value 0 to a cgroup.procs file causes
@@ -449,7 +447,8 @@ func (c *Cgroup) Join() (func(), error) {
 				log.Warningf("Error restoring cgroup %q: %v", path, err)
 			}
 		}
-	}
+	})
+	defer cu.Clean()
 
 	// Now join the cgroups.
 	for key, ctrlr := range controllers {
@@ -461,10 +460,10 @@ func (c *Cgroup) Join() (func(), error) {
 			if ctrlr.optional() && os.IsNotExist(err) {
 				continue
 			}
-			return undo, err
+			return nil, err
 		}
 	}
-	return undo, nil
+	return cu.Release(), nil
 }
 
 // CPUQuota returns the CFS CPU quota.

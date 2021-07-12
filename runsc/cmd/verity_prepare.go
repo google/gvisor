@@ -88,7 +88,7 @@ func (c *VerityPrepare) Execute(_ context.Context, f *flag.FlagSet, args ...inte
 		},
 		Hostname: hostname,
 		Mounts: []specs.Mount{
-			specs.Mount{
+			{
 				Source:      c.dir,
 				Destination: "/verityroot",
 				Type:        "bind",

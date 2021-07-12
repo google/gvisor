@@ -103,7 +103,7 @@ func (s *Syscalls) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (s *Syscalls) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
 	out, ok := outputMap[s.format]
 	if !ok {
 		Fatalf("Unsupported output format %q", s.format)

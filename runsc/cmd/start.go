@@ -43,7 +43,7 @@ func (*Start) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (*Start) SetFlags(f *flag.FlagSet) {}
+func (*Start) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
 func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {

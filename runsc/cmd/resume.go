@@ -43,7 +43,7 @@ func (*Resume) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (r *Resume) SetFlags(f *flag.FlagSet) {
+func (r *Resume) SetFlags(*flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
