@@ -42,6 +42,36 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// These are the modes that are stored with virtualOwner.
+const virtualOwnerModes = linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID
+
+// +stateify savable
+type virtualOwner struct {
+	// This field is initialized at creation time and is immutable.
+	enabled bool
+
+	// mu protects the fields below and they can be accessed using atomic memory
+	// operations.
+	mu  sync.Mutex `state:"nosave"`
+	uid uint32
+	gid uint32
+	// mode is also stored, otherwise setting the host file to `0000` could remove
+	// access to the file.
+	mode uint32
+}
+
+func (v *virtualOwner) atomicUID() uint32 {
+	return atomic.LoadUint32(&v.uid)
+}
+
+func (v *virtualOwner) atomicGID() uint32 {
+	return atomic.LoadUint32(&v.gid)
+}
+
+func (v *virtualOwner) atomicMode() uint32 {
+	return atomic.LoadUint32(&v.mode)
+}
+
 // inode implements kernfs.Inode.
 //
 // +stateify savable
@@ -98,6 +128,11 @@ type inode struct {
 	// Event queue for blocking operations.
 	queue waiter.Queue
 
+	// virtualOwner caches ownership and permission information to override the
+	// underlying file owner and permission. This is used to allow the unstrusted
+	// application to change these fields without affecting the host.
+	virtualOwner virtualOwner
+
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
 	// and buf are protected by bufMu. haveBuf is accessed using atomic memory
@@ -147,7 +182,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 type NewFDOptions struct {
 	// If Savable is true, the host file descriptor may be saved/restored by
 	// numeric value; the sandbox API requires a corresponding host FD with the
-	// same numeric value to be provieded at time of restore.
+	// same numeric value to be provided at time of restore.
 	Savable bool
 
 	// If IsTTY is true, the file descriptor is a TTY.
@@ -157,6 +192,12 @@ type NewFDOptions struct {
 	// the new file description will inherit flags from hostFD.
 	HaveFlags bool
 	Flags     uint32
+
+	// VirtualOwner allow the host file to have owner and permissions different
+	// than the underlying host file.
+	VirtualOwner bool
+	UID          auth.KUID
+	GID          auth.KGID
 }
 
 // NewFD returns a vfs.FileDescription representing the given host file
@@ -168,8 +209,8 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 
 	// Retrieve metadata.
-	var s unix.Stat_t
-	if err := unix.Fstat(hostFD, &s); err != nil {
+	var stat unix.Stat_t
+	if err := unix.Fstat(hostFD, &stat); err != nil {
 		return nil, err
 	}
 
@@ -183,11 +224,19 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 		flags = uint32(flagsInt)
 	}
 
-	d := &kernfs.Dentry{}
-	i, err := newInode(ctx, fs, hostFD, opts.Savable, linux.FileMode(s.Mode).FileType(), opts.IsTTY)
+	fileType := linux.FileMode(stat.Mode).FileType()
+	i, err := newInode(ctx, fs, hostFD, opts.Savable, fileType, opts.IsTTY)
 	if err != nil {
 		return nil, err
 	}
+	if opts.VirtualOwner {
+		i.virtualOwner.enabled = true
+		i.virtualOwner.uid = uint32(opts.UID)
+		i.virtualOwner.gid = uint32(opts.GID)
+		i.virtualOwner.mode = stat.Mode
+	}
+
+	d := &kernfs.Dentry{}
 	d.Init(&fs.Filesystem, i)
 
 	// i.open will take a reference on d.
@@ -196,15 +245,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	// For simplicity, fileDescription.offset is set to 0. Technically, we
 	// should only set to 0 on files that are not seekable (sockets, pipes,
 	// etc.), and use the offset from the host fd otherwise when importing.
-	return i.open(ctx, d, mnt, flags)
-}
-
-// ImportFD sets up and returns a vfs.FileDescription from a donated fd.
-func ImportFD(ctx context.Context, mnt *vfs.Mount, hostFD int, isTTY bool) (*vfs.FileDescription, error) {
-	return NewFD(ctx, mnt, hostFD, &NewFDOptions{
-		Savable: true,
-		IsTTY:   isTTY,
-	})
+	return i.open(ctx, d, mnt, fileType, flags)
 }
 
 // filesystemType implements vfs.FilesystemType.
@@ -270,7 +311,7 @@ func (fs *filesystem) MountOptions() string {
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	var s unix.Stat_t
-	if err := unix.Fstat(i.hostFD, &s); err != nil {
+	if err := i.stat(&s); err != nil {
 		return err
 	}
 	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
@@ -279,7 +320,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 // Mode implements kernfs.Inode.Mode.
 func (i *inode) Mode() linux.FileMode {
 	var s unix.Stat_t
-	if err := unix.Fstat(i.hostFD, &s); err != nil {
+	if err := i.stat(&s); err != nil {
 		// Retrieving the mode from the host fd using fstat(2) should not fail.
 		// If the syscall does not succeed, something is fundamentally wrong.
 		panic(fmt.Sprintf("failed to retrieve mode from host fd %d: %v", i.hostFD, err))
@@ -306,7 +347,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		// Fallback to fstat(2), if statx(2) is not supported on the host.
 		//
 		// TODO(b/151263641): Remove fallback.
-		return i.fstat(fs)
+		return i.statxFromStat(fs)
 	}
 	if err != nil {
 		return linux.Statx{}, err
@@ -330,19 +371,35 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 	// device numbers.
 	ls.Mask |= s.Mask & linux.STATX_ALL
 	if s.Mask&linux.STATX_TYPE != 0 {
-		ls.Mode |= s.Mode & linux.S_IFMT
+		if i.virtualOwner.enabled {
+			ls.Mode |= uint16(i.virtualOwner.atomicMode()) & linux.S_IFMT
+		} else {
+			ls.Mode |= s.Mode & linux.S_IFMT
+		}
 	}
 	if s.Mask&linux.STATX_MODE != 0 {
-		ls.Mode |= s.Mode &^ linux.S_IFMT
+		if i.virtualOwner.enabled {
+			ls.Mode |= uint16(i.virtualOwner.atomicMode()) &^ linux.S_IFMT
+		} else {
+			ls.Mode |= s.Mode &^ linux.S_IFMT
+		}
 	}
 	if s.Mask&linux.STATX_NLINK != 0 {
 		ls.Nlink = s.Nlink
 	}
 	if s.Mask&linux.STATX_UID != 0 {
-		ls.UID = s.Uid
+		if i.virtualOwner.enabled {
+			ls.UID = i.virtualOwner.atomicUID()
+		} else {
+			ls.UID = s.Uid
+		}
 	}
 	if s.Mask&linux.STATX_GID != 0 {
-		ls.GID = s.Gid
+		if i.virtualOwner.enabled {
+			ls.GID = i.virtualOwner.atomicGID()
+		} else {
+			ls.GID = s.Gid
+		}
 	}
 	if s.Mask&linux.STATX_ATIME != 0 {
 		ls.Atime = unixToLinuxStatxTimestamp(s.Atime)
@@ -366,7 +423,7 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 	return ls, nil
 }
 
-// fstat is a best-effort fallback for inode.Stat() if the host does not
+// statxFromStat is a best-effort fallback for inode.Stat() if the host does not
 // support statx(2).
 //
 // We ignore the mask and sync flags in opts and simply supply
@@ -374,9 +431,9 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 // of a mask or sync flags. fstat(2) does not provide any metadata
 // equivalent to Statx.Attributes, Statx.AttributesMask, or Statx.Btime, so
 // those fields remain empty.
-func (i *inode) fstat(fs *filesystem) (linux.Statx, error) {
+func (i *inode) statxFromStat(fs *filesystem) (linux.Statx, error) {
 	var s unix.Stat_t
-	if err := unix.Fstat(i.hostFD, &s); err != nil {
+	if err := i.stat(&s); err != nil {
 		return linux.Statx{}, err
 	}
 
@@ -400,7 +457,21 @@ func (i *inode) fstat(fs *filesystem) (linux.Statx, error) {
 	}, nil
 }
 
+func (i *inode) stat(stat *unix.Stat_t) error {
+	if err := unix.Fstat(i.hostFD, stat); err != nil {
+		return err
+	}
+	if i.virtualOwner.enabled {
+		stat.Uid = i.virtualOwner.atomicUID()
+		stat.Gid = i.virtualOwner.atomicGID()
+		stat.Mode = i.virtualOwner.atomicMode()
+	}
+	return nil
+}
+
 // SetStat implements kernfs.Inode.SetStat.
+//
+// +checklocksignore
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	s := &opts.Stat
 
@@ -408,11 +479,22 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m == 0 {
 		return nil
 	}
-	if m&^(linux.STATX_MODE|linux.STATX_SIZE|linux.STATX_ATIME|linux.STATX_MTIME) != 0 {
+	supportedModes := uint32(linux.STATX_MODE | linux.STATX_SIZE | linux.STATX_ATIME | linux.STATX_MTIME)
+	if i.virtualOwner.enabled {
+		if m&virtualOwnerModes != 0 {
+			// Take lock if any of the virtual owner fields will be updated.
+			i.virtualOwner.mu.Lock()
+			defer i.virtualOwner.mu.Unlock()
+		}
+
+		supportedModes |= virtualOwnerModes
+	}
+	if m&^supportedModes != 0 {
 		return linuxerr.EPERM
 	}
+
 	var hostStat unix.Stat_t
-	if err := unix.Fstat(i.hostFD, &hostStat); err != nil {
+	if err := i.stat(&hostStat); err != nil {
 		return err
 	}
 	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
@@ -420,8 +502,12 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 
 	if m&linux.STATX_MODE != 0 {
-		if err := unix.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
-			return err
+		if i.virtualOwner.enabled {
+			i.virtualOwner.mode = uint32(opts.Stat.Mode)
+		} else {
+			if err := unix.Fchmod(i.hostFD, uint32(s.Mode)); err != nil {
+				return err
+			}
 		}
 	}
 	if m&linux.STATX_SIZE != 0 {
@@ -449,6 +535,14 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 			return err
 		}
 	}
+	if i.virtualOwner.enabled {
+		if m&linux.STATX_UID != 0 {
+			i.virtualOwner.uid = opts.Stat.UID
+		}
+		if m&linux.STATX_GID != 0 {
+			i.virtualOwner.gid = opts.Stat.GID
+		}
+	}
 	return nil
 }
 
@@ -473,16 +567,15 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	if i.Mode().FileType() == linux.S_IFSOCK {
 		return nil, linuxerr.ENXIO
 	}
-	return i.open(ctx, d, rp.Mount(), opts.Flags)
-}
-
-func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, flags uint32) (*vfs.FileDescription, error) {
-	var s unix.Stat_t
-	if err := unix.Fstat(i.hostFD, &s); err != nil {
+	var stat unix.Stat_t
+	if err := i.stat(&stat); err != nil {
 		return nil, err
 	}
-	fileType := s.Mode & linux.FileTypeMask
+	fileType := linux.FileMode(stat.Mode).FileType()
+	return i.open(ctx, d, rp.Mount(), fileType, opts.Flags)
+}
 
+func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, fileType linux.FileMode, flags uint32) (*vfs.FileDescription, error) {
 	// Constrain flags to a subset we can handle.
 	//
 	// TODO(gvisor.dev/issue/2601): Support O_NONBLOCK by adding RWF_NOWAIT to pread/pwrite calls.

@@ -310,7 +310,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			defer tty.Close()
 		}
 
-		if err := c.Sandbox.CreateContainer(c.ID, tty); err != nil {
+		if err := c.Sandbox.CreateContainer(conf, c.ID, tty); err != nil {
 			return nil, err
 		}
 	}
@@ -480,13 +480,13 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
-func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
+func (c *Container) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
 	log.Debugf("Execute in container, cid: %s, args: %+v", c.ID, args)
 	if err := c.requireStatus("execute in", Created, Running); err != nil {
 		return 0, err
 	}
 	args.ContainerID = c.ID
-	return c.Sandbox.Execute(args)
+	return c.Sandbox.Execute(conf, args)
 }
 
 // Event returns events for the container.
@@ -910,6 +910,9 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, args...)
 	cmd.ExtraFiles = goferEnds
+
+	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
+	// shown as `exe`.
 	cmd.Args[0] = "runsc-gofer"
 
 	if attached {

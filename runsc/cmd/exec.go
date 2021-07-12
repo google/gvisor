@@ -146,12 +146,12 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if ex.detach {
 		return ex.execChildAndWait(waitStatus)
 	}
-	return ex.exec(c, e, waitStatus)
+	return ex.exec(conf, c, e, waitStatus)
 }
 
-func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
+func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.ExecArgs, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	// Start the new process and get its pid.
-	pid, err := c.Execute(e)
+	pid, err := c.Execute(conf, e)
 	if err != nil {
 		return Errorf("executing processes for container: %v", err)
 	}

@@ -288,7 +288,7 @@ func TestJobControlSignalExec(t *testing.T) {
 		StdioIsPty: true,
 	}
 
-	pid, err := c.Execute(execArgs)
+	pid, err := c.Execute(conf, execArgs)
 	if err != nil {
 		t.Fatalf("error executing: %v", err)
 	}

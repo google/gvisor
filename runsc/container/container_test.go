@@ -60,15 +60,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
+func execute(conf *config.Config, cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
 	args := &control.ExecArgs{
 		Filename: name,
 		Argv:     append([]string{name}, arg...),
 	}
-	return cont.executeSync(args)
+	return cont.executeSync(conf, args)
 }
 
-func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, error) {
+func executeCombinedOutput(conf *config.Config, cont *Container, name string, arg ...string) ([]byte, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte,
 		Argv:        append([]string{name}, arg...),
 		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
 	}
-	ws, err := cont.executeSync(args)
+	ws, err := cont.executeSync(conf, args)
 	w.Close()
 	if err != nil {
 		return nil, err
@@ -94,8 +94,8 @@ func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte,
 }
 
 // executeSync synchronously executes a new process.
-func (c *Container) executeSync(args *control.ExecArgs) (unix.WaitStatus, error) {
-	pid, err := c.Execute(args)
+func (c *Container) executeSync(conf *config.Config, args *control.ExecArgs) (unix.WaitStatus, error) {
+	pid, err := c.Execute(conf, args)
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
 	}
@@ -172,8 +172,8 @@ func blockUntilWaitable(pid int) error {
 }
 
 // execPS executes `ps` inside the container and return the processes.
-func execPS(c *Container) ([]*control.Process, error) {
-	out, err := executeCombinedOutput(c, "/bin/ps", "-e")
+func execPS(conf *config.Config, c *Container) ([]*control.Process, error) {
+	out, err := executeCombinedOutput(conf, c, "/bin/ps", "-e")
 	if err != nil {
 		return nil, err
 	}
@@ -864,7 +864,7 @@ func TestExec(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					// t.Parallel()
-					if ws, err := cont.executeSync(&tc.args); err != nil {
+					if ws, err := cont.executeSync(conf, &tc.args); err != nil {
 						t.Fatalf("executeAsync(%+v): %v", tc.args, err)
 					} else if ws != 0 {
 						t.Fatalf("executeAsync(%+v) failed with exit: %v", tc.args, ws)
@@ -882,7 +882,7 @@ func TestExec(t *testing.T) {
 				}
 				defer unix.Close(fds[0])
 
-				_, err = cont.executeSync(&control.ExecArgs{
+				_, err = cont.executeSync(conf, &control.ExecArgs{
 					Argv: []string{"/nonexist"},
 					FilePayload: urpc.FilePayload{
 						Files: []*os.File{os.NewFile(uintptr(fds[1]), "sock")},
@@ -937,7 +937,7 @@ func TestExecProcList(t *testing.T) {
 			// start running exec (which blocks).
 			ch := make(chan error)
 			go func() {
-				exitStatus, err := cont.executeSync(execArgs)
+				exitStatus, err := cont.executeSync(conf, execArgs)
 				if err != nil {
 					ch <- err
 				} else if exitStatus != 0 {
@@ -1544,7 +1544,7 @@ func TestCapabilities(t *testing.T) {
 			}
 
 			// "exe" should fail because we don't have the necessary permissions.
-			if _, err := cont.executeSync(execArgs); err == nil {
+			if _, err := cont.executeSync(conf, execArgs); err == nil {
 				t.Fatalf("container executed without error, but an error was expected")
 			}
 
@@ -1553,7 +1553,7 @@ func TestCapabilities(t *testing.T) {
 				EffectiveCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 			}
 			// "exe" should not fail this time.
-			if _, err := cont.executeSync(execArgs); err != nil {
+			if _, err := cont.executeSync(conf, execArgs); err != nil {
 				t.Fatalf("container failed to exec %v: %v", args, err)
 			}
 		})
@@ -1664,7 +1664,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Read mounts to check that root is readonly.
-			out, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
+			out, err := executeCombinedOutput(conf, c, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
 			if err != nil {
 				t.Fatalf("exec failed: %v", err)
 			}
@@ -1674,7 +1674,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err := execute(c, "/bin/touch", "/foo")
+			ws, err := execute(conf, c, "/bin/touch", "/foo")
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -1723,7 +1723,7 @@ func TestReadonlyMount(t *testing.T) {
 
 			// Read mounts to check that volume is readonly.
 			cmd := fmt.Sprintf("mount | grep ' %s ' | grep -o -e '(.*)'", dir)
-			out, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
+			out, err := executeCombinedOutput(conf, c, "/bin/sh", "-c", cmd)
 			if err != nil {
 				t.Fatalf("exec failed, err: %v", err)
 			}
@@ -1733,7 +1733,7 @@ func TestReadonlyMount(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err := execute(c, "/bin/touch", path.Join(dir, "file"))
+			ws, err := execute(conf, c, "/bin/touch", path.Join(dir, "file"))
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -2278,13 +2278,13 @@ func TestMountPropagation(t *testing.T) {
 
 	// Check that mount didn't propagate to private mount.
 	privFile := filepath.Join(priv, "mnt", "file")
-	if ws, err := execute(cont, "/usr/bin/test", "!", "-f", privFile); err != nil || ws != 0 {
+	if ws, err := execute(conf, cont, "/usr/bin/test", "!", "-f", privFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test ! -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 
 	// Check that mount propagated to slave mount.
 	slaveFile := filepath.Join(slave, "mnt", "file")
-	if ws, err := execute(cont, "/usr/bin/test", "-f", slaveFile); err != nil || ws != 0 {
+	if ws, err := execute(conf, cont, "/usr/bin/test", "-f", slaveFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 }
@@ -2350,7 +2350,7 @@ func TestMountSymlink(t *testing.T) {
 			// Check that symlink was resolved and mount was created where the symlink
 			// is pointing to.
 			file := path.Join(target, "file")
-			if ws, err := execute(cont, "/usr/bin/test", "-f", file); err != nil || ws != 0 {
+			if ws, err := execute(conf, cont, "/usr/bin/test", "-f", file); err != nil || ws != 0 {
 				t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
 			}
 		})
@@ -2589,7 +2589,7 @@ func TestRlimitsExec(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	got, err := executeCombinedOutput(cont, "/bin/sh", "-c", "ulimit -n")
+	got, err := executeCombinedOutput(conf, cont, "/bin/sh", "-c", "ulimit -n")
 	if err != nil {
 		t.Fatal(err)
 	}

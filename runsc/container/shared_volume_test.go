@@ -72,7 +72,7 @@ func TestSharedVolume(t *testing.T) {
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", filename},
 	}
-	if ws, err := c.executeSync(argsTestFile); err != nil {
+	if ws, err := c.executeSync(conf, argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", ws.ExitStatus(), err)
@@ -84,7 +84,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// Now we should be able to test the file from within the sandbox.
-	if ws, err := c.executeSync(argsTestFile); err != nil {
+	if ws, err := c.executeSync(conf, argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("test %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -97,7 +97,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// File should no longer exist at the old path within the sandbox.
-	if ws, err := c.executeSync(argsTestFile); err != nil {
+	if ws, err := c.executeSync(conf, argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", filename, ws.ExitStatus())
@@ -108,7 +108,7 @@ func TestSharedVolume(t *testing.T) {
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", newFilename},
 	}
-	if ws, err := c.executeSync(argsTestNewFile); err != nil {
+	if ws, err := c.executeSync(conf, argsTestNewFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("test %q exited with code %v, wanted zero", newFilename, ws.ExitStatus())
@@ -120,7 +120,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// Renamed file should no longer exist at the old path within the sandbox.
-	if ws, err := c.executeSync(argsTestNewFile); err != nil {
+	if ws, err := c.executeSync(conf, argsTestNewFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", newFilename, ws.ExitStatus())
@@ -133,7 +133,7 @@ func TestSharedVolume(t *testing.T) {
 		KUID:     auth.KUID(os.Getuid()),
 		KGID:     auth.KGID(os.Getgid()),
 	}
-	if ws, err := c.executeSync(argsTouch); err != nil {
+	if ws, err := c.executeSync(conf, argsTouch); err != nil {
 		t.Fatalf("unexpected error touching file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("touch %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -154,7 +154,7 @@ func TestSharedVolume(t *testing.T) {
 		Filename: "/bin/rm",
 		Argv:     []string{"rm", filename},
 	}
-	if ws, err := c.executeSync(argsRemove); err != nil {
+	if ws, err := c.executeSync(conf, argsRemove); err != nil {
 		t.Fatalf("unexpected error removing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("remove %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -166,9 +166,9 @@ func TestSharedVolume(t *testing.T) {
 	}
 }
 
-func checkFile(c *Container, filename string, want []byte) error {
+func checkFile(conf *config.Config, c *Container, filename string, want []byte) error {
 	cpy := filename + ".copy"
-	if _, err := execute(c, "/bin/cp", "-f", filename, cpy); err != nil {
+	if _, err := execute(conf, c, "/bin/cp", "-f", filename, cpy); err != nil {
 		return fmt.Errorf("unexpected error copying file %q to %q: %v", filename, cpy, err)
 	}
 	got, err := ioutil.ReadFile(cpy)
@@ -226,16 +226,16 @@ func TestSharedVolumeFile(t *testing.T) {
 	if err := ioutil.WriteFile(filename, []byte(want), 0666); err != nil {
 		t.Fatalf("Error writing to %q: %v", filename, err)
 	}
-	if err := checkFile(c, filename, want); err != nil {
+	if err := checkFile(conf, c, filename, want); err != nil {
 		t.Fatal(err.Error())
 	}
 
 	// Append to file inside the container and check that content is not lost.
-	if _, err := execute(c, "/bin/bash", "-c", "echo -n sandbox- >> "+filename); err != nil {
+	if _, err := execute(conf, c, "/bin/bash", "-c", "echo -n sandbox- >> "+filename); err != nil {
 		t.Fatalf("unexpected error appending file %q: %v", filename, err)
 	}
 	want = []byte("host-sandbox-")
-	if err := checkFile(c, filename, want); err != nil {
+	if err := checkFile(conf, c, filename, want); err != nil {
 		t.Fatal(err.Error())
 	}
 
@@ -250,7 +250,7 @@ func TestSharedVolumeFile(t *testing.T) {
 		t.Fatalf("Error writing to file %q: %v", filename, err)
 	}
 	want = []byte("host-sandbox-host")
-	if err := checkFile(c, filename, want); err != nil {
+	if err := checkFile(conf, c, filename, want); err != nil {
 		t.Fatal(err.Error())
 	}
 
@@ -259,7 +259,7 @@ func TestSharedVolumeFile(t *testing.T) {
 		t.Fatalf("Error truncating file %q: %v", filename, err)
 	}
 	want = want[:5]
-	if err := checkFile(c, filename, want); err != nil {
+	if err := checkFile(conf, c, filename, want); err != nil {
 		t.Fatal(err.Error())
 	}
 }
