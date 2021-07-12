@@ -894,7 +894,9 @@ func TestMultiContainerKillAll(t *testing.T) {
 		if tc.killContainer {
 			// First kill the init process to make the container be stopped with
 			// processes still running inside.
-			containers[1].SignalContainer(unix.SIGKILL, false)
+			if err := containers[1].SignalContainer(unix.SIGKILL, false); err != nil {
+				t.Fatalf("SignalContainer(): %v", err)
+			}
 			op := func() error {
 				c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 				if err != nil {
@@ -912,7 +914,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 
 		c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 		if err != nil {
-			t.Fatalf("failed to load child container %q: %v", c.ID, err)
+			t.Fatalf("failed to load child container %q: %v", ids[1], err)
 		}
 		// Kill'Em All
 		if err := c.SignalContainer(unix.SIGKILL, true); err != nil {
@@ -1040,7 +1042,8 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			startCont.Start(conf) // ignore failures, start can fail if destroy runs first.
+			// Ignore failures, start can fail if destroy runs first.
+			_ = startCont.Start(conf)
 		}()
 
 		wg.Add(1)
@@ -1980,7 +1983,7 @@ func TestMultiContainerEvent(t *testing.T) {
 
 		if busyUsage <= sleepUsage {
 			t.Logf("Busy container usage lower than sleep (busy: %d, sleep: %d), retrying...", busyUsage, sleepUsage)
-			return fmt.Errorf("Busy container should have higher usage than sleep, busy: %d, sleep: %d", busyUsage, sleepUsage)
+			return fmt.Errorf("busy container should have higher usage than sleep, busy: %d, sleep: %d", busyUsage, sleepUsage)
 		}
 		return nil
 	}

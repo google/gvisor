@@ -97,7 +97,9 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 		if err != nil {
 			log.Warningf("Error while marshalling event %v: %v", ev.Event, err)
 		} else {
-			os.Stdout.Write(b)
+			if _, err := os.Stdout.Write(b); err != nil {
+				Fatalf("Error writing to stdout: %v", err)
+			}
 		}
 
 		// If we're only running once, break. If we're only running

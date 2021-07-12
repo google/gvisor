@@ -65,15 +65,6 @@ func configTestName(conf *Config) string {
 	return "RWMount"
 }
 
-func assertPanic(t *testing.T, f func()) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("function did not panic")
-		}
-	}()
-	f()
-}
-
 func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
 	want := make([]byte, len(content))
 	copy(want, content)
@@ -195,7 +186,7 @@ func setup(fileType uint32) (string, string, error) {
 	}
 	root, err := a.Attach()
 	if err != nil {
-		return "", "", fmt.Errorf("Attach failed, err: %v", err)
+		return "", "", fmt.Errorf("attach failed, err: %v", err)
 	}
 	defer root.Close()
 
@@ -290,10 +281,10 @@ func checkIDs(f p9.File, uid, gid int) error {
 		return fmt.Errorf("GetAttr() failed, err: %v", err)
 	}
 	if want := p9.UID(uid); stat.UID != want {
-		return fmt.Errorf("Wrong UID, want: %v, got: %v", want, stat.UID)
+		return fmt.Errorf("wrong UID, want: %v, got: %v", want, stat.UID)
 	}
 	if want := p9.GID(gid); stat.GID != want {
-		return fmt.Errorf("Wrong GID, want: %v, got: %v", want, stat.GID)
+		return fmt.Errorf("wrong GID, want: %v, got: %v", want, stat.GID)
 	}
 	return nil
 }
@@ -574,7 +565,7 @@ func SetGetXattr(l *localFile, name string, value string) error {
 		return err
 	}
 	if ret != value {
-		return fmt.Errorf("Got value %s, want %s", ret, value)
+		return fmt.Errorf("got value %s, want %s", ret, value)
 	}
 	return nil
 }

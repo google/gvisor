@@ -53,7 +53,10 @@ func TestMain(m *testing.M) {
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
-	specutils.MaybeRunAsRoot()
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
 	os.Exit(m.Run())
 }
 
@@ -523,9 +526,11 @@ func TestLifecycle(t *testing.T) {
 				ws, err := c.Wait()
 				if err != nil {
 					ch <- err
+					return
 				}
 				if got, want := ws.Signal(), unix.SIGTERM; got != want {
 					ch <- fmt.Errorf("got signal %v, want %v", got, want)
+					return
 				}
 				ch <- nil
 			}()
@@ -1525,7 +1530,9 @@ func TestCapabilities(t *testing.T) {
 			defer os.Remove(exePath)
 
 			// Need to traverse the intermediate directory.
-			os.Chmod(rootDir, 0755)
+			if err := os.Chmod(rootDir, 0755); err != nil {
+				t.Fatal(err)
+			}
 
 			execArgs := &control.ExecArgs{
 				Filename:         exePath,
@@ -2153,7 +2160,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 		go func() {
 			defer wg.Done()
 			// Ignore failures, start can fail if destroy runs first.
-			startCont.Start(conf)
+			_ = startCont.Start(conf)
 		}()
 
 		wg.Add(1)

@@ -58,7 +58,7 @@ func (i *Install) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (i *Install) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (i *Install) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	// Grab the name and arguments.
 	runtimeArgs := f.Args()
 
@@ -134,7 +134,7 @@ func (u *Uninstall) SetFlags(fs *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (u *Uninstall) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (u *Uninstall) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
 	log.Printf("Removing runtime %q from %q.", u.Runtime, u.ConfigFile)
 
 	c, err := readConfig(u.ConfigFile)

@@ -173,7 +173,7 @@ func checkFile(c *Container, filename string, want []byte) error {
 	}
 	got, err := ioutil.ReadFile(cpy)
 	if err != nil {
-		return fmt.Errorf("Error reading file %q: %v", filename, err)
+		return fmt.Errorf("error reading file %q: %v", filename, err)
 	}
 	if !bytes.Equal(got, want) {
 		return fmt.Errorf("file content inside the sandbox is wrong, got: %q, want: %q", got, want)

@@ -41,21 +41,37 @@ func TestDefault(t *testing.T) {
 	}
 }
 
-func setDefault(name string) {
+func setDefault(name string) error {
 	fl := flag.CommandLine.Lookup(name)
-	fl.Value.Set(fl.DefValue)
+	return fl.Value.Set(fl.DefValue)
 }
 
 func TestFromFlags(t *testing.T) {
-	flag.CommandLine.Lookup("root").Value.Set("some-path")
-	flag.CommandLine.Lookup("debug").Value.Set("true")
-	flag.CommandLine.Lookup("num-network-channels").Value.Set("123")
-	flag.CommandLine.Lookup("network").Value.Set("none")
+	if err := flag.CommandLine.Lookup("root").Value.Set("some-path"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	if err := flag.CommandLine.Lookup("debug").Value.Set("true"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	if err := flag.CommandLine.Lookup("num-network-channels").Value.Set("123"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	if err := flag.CommandLine.Lookup("network").Value.Set("none"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
 	defer func() {
-		setDefault("root")
-		setDefault("debug")
-		setDefault("num-network-channels")
-		setDefault("network")
+		if err := setDefault("root"); err != nil {
+			t.Errorf("Flag set: %v", err)
+		}
+		if err := setDefault("debug"); err != nil {
+			t.Errorf("Flag set: %v", err)
+		}
+		if err := setDefault("num-network-channels"); err != nil {
+			t.Errorf("Flag set: %v", err)
+		}
+		if err := setDefault("network"); err != nil {
+			t.Errorf("Flag set: %v", err)
+		}
 	}()
 
 	c, err := NewFromFlags()

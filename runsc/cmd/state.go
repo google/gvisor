@@ -45,7 +45,7 @@ func (*State) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (*State) SetFlags(f *flag.FlagSet) {}
+func (*State) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
 func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
@@ -71,6 +71,8 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	if err != nil {
 		Fatalf("marshaling container state: %v", err)
 	}
-	os.Stdout.Write(b)
+	if _, err := os.Stdout.Write(b); err != nil {
+		Fatalf("Error writing to stdout: %v", err)
+	}
 	return subcommands.ExitSuccess
 }

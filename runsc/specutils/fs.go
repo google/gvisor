@@ -67,8 +67,8 @@ var optionsMap = map[string]mapping{
 
 // verityMountOptions is the set of valid verity mount option keys.
 var verityMountOptions = map[string]struct{}{
-	"verity.roothash": struct{}{},
-	"verity.action":   struct{}{},
+	"verity.roothash": {},
+	"verity.action":   {},
 }
 
 // propOptionsMap is similar to optionsMap, but it lists propagation options

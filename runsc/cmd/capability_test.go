@@ -122,6 +122,9 @@ func TestCapabilities(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	specutils.MaybeRunAsRoot()
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
 	os.Exit(m.Run())
 }
