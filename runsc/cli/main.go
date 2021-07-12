@@ -243,7 +243,7 @@ func Main(version string) {
 	subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
 	// Check for leaks and write coverage report before os.Exit().
 	refsvfs2.DoLeakCheck()
-	coverage.Report()
+	_ = coverage.Report()
 	if subcmdCode == subcommands.ExitSuccess {
 		log.Infof("Exiting with status: %v", ws)
 		if ws.Signaled() {

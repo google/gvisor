@@ -264,10 +264,10 @@ func (s *StateFile) lockForNew() error {
 
 	// Checks if the container already exists by looking for the metadata file.
 	if _, err := os.Stat(s.statePath()); err == nil {
-		s.unlock()
+		s.unlockOrDie()
 		return fmt.Errorf("container already exists")
 	} else if !os.IsNotExist(err) {
-		s.unlock()
+		s.unlockOrDie()
 		return fmt.Errorf("looking for existing container: %v", err)
 	}
 	return nil
@@ -284,6 +284,15 @@ func (s *StateFile) unlock() error {
 		return fmt.Errorf("releasing lock on %q: %v", s.flock, err)
 	}
 	return nil
+}
+
+func (s *StateFile) unlockOrDie() {
+	if !s.flock.Locked() {
+		panic("unlock called without lock held")
+	}
+	if err := s.flock.Unlock(); err != nil {
+		panic(fmt.Sprintf("Error releasing lock on %q: %v", s.flock, err))
+	}
 }
 
 // saveLocked saves 'v' to the state file.
@@ -308,7 +317,7 @@ func (s *StateFile) load(v interface{}) error {
 	if err := s.lock(); err != nil {
 		return err
 	}
-	defer s.unlock()
+	defer s.unlockOrDie()
 
 	metaBytes, err := ioutil.ReadFile(s.statePath())
 	if err != nil {

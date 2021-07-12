@@ -308,7 +308,9 @@ func TestJobControlSignalExec(t *testing.T) {
 	}
 
 	// Execute sleep.
-	ptyMaster.Write([]byte("sleep 100\n"))
+	if _, err := ptyMaster.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("ptyMaster.Write: %v", err)
+	}
 
 	// Wait for it to start. Sleep's PPID is bash's PID.
 	expectedPL = append(expectedPL, newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process())
@@ -411,7 +413,9 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// which makes this a suitable Reader for WaitUntilRead.
 	ptyBuf := newBlockingBuffer()
 	tee := io.TeeReader(ptyMaster, ptyBuf)
-	go io.Copy(os.Stderr, tee)
+	go func() {
+		_, _ = io.Copy(os.Stderr, tee)
+	}()
 
 	// Start the container.
 	if err := c.Start(conf); err != nil {
@@ -444,7 +448,9 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	}
 
 	// Execute sleep via the terminal.
-	ptyMaster.Write([]byte("sleep 100\n"))
+	if _, err := ptyMaster.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("ptyMaster.Write(): %v", err)
+	}
 
 	// Wait for sleep to start.
 	expectedPL = append(expectedPL, newProcessBuilder().PID(2).PPID(1).Cmd("sleep").Process())
@@ -563,13 +569,15 @@ func TestMultiContainerTerminal(t *testing.T) {
 				// file. Writes after a certain point will block unless we drain the
 				// PTY, so we must continually copy from it.
 				//
-				// We log the output to stderr for debugabilitly, and also to a buffer,
+				// We log the output to stderr for debuggability, and also to a buffer,
 				// since we wait on particular output from bash below. We use a custom
 				// blockingBuffer which is thread-safe and also blocks on Read calls,
 				// which makes this a suitable Reader for WaitUntilRead.
 				ptyBuf := newBlockingBuffer()
 				tee := io.TeeReader(tc.master, ptyBuf)
-				go io.Copy(os.Stderr, tee)
+				go func() {
+					_, _ = io.Copy(os.Stderr, tee)
+				}()
 
 				// Wait for bash to start.
 				expectedPL := []*control.Process{
@@ -581,7 +589,9 @@ func TestMultiContainerTerminal(t *testing.T) {
 
 				// Execute echo command and check that it was executed correctly. Use
 				// a variable to ensure it's not matching against command echo.
-				tc.master.Write([]byte("echo foo-${PWD}-123\n"))
+				if _, err := tc.master.Write([]byte("echo foo-${PWD}-123\n")); err != nil {
+					t.Fatalf("master.Write(): %v", err)
+				}
 				if err := testutil.WaitUntilRead(ptyBuf, "foo-/-123", 5*time.Second); err != nil {
 					t.Fatalf("echo didn't execute: %v", err)
 				}

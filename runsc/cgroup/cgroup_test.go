@@ -800,7 +800,7 @@ func TestLoadPaths(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-			} else if !strings.Contains(err.Error(), tc.err) {
+			} else if err == nil || !strings.Contains(err.Error(), tc.err) {
 				t.Fatalf("Wrong error message, want: *%s*, got: %v", tc.err, err)
 			}
 			for key, vWant := range tc.want {

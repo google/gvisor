@@ -225,25 +225,25 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 		args := strings.Split(cmd, " ")
 		cmd := exec.Command(args[0], args[1:]...)
 		if err := cmd.Run(); err != nil {
-			c.cleanupNet(cid, dev, "", "", "")
+			c.cleanupNet(cid, "", "", "")
 			return nil, fmt.Errorf("failed to run %q: %v", cmd, err)
 		}
 	}
 
 	resolvPath, err := makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n", spec)
 	if err != nil {
-		c.cleanupNet(cid, dev, "", "", "")
+		c.cleanupNet(cid, "", "", "")
 		return nil, err
 	}
 	hostnamePath, err := makeFile("/etc/hostname", cid+"\n", spec)
 	if err != nil {
-		c.cleanupNet(cid, dev, resolvPath, "", "")
+		c.cleanupNet(cid, resolvPath, "", "")
 		return nil, err
 	}
 	hosts := fmt.Sprintf("127.0.0.1\tlocalhost\n%s\t%s\n", c.ip, cid)
 	hostsPath, err := makeFile("/etc/hosts", hosts, spec)
 	if err != nil {
-		c.cleanupNet(cid, dev, resolvPath, hostnamePath, "")
+		c.cleanupNet(cid, resolvPath, hostnamePath, "")
 		return nil, err
 	}
 
@@ -253,7 +253,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 	}
 	addNamespace(spec, netns)
 
-	return func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
+	return func() { c.cleanupNet(cid, resolvPath, hostnamePath, hostsPath) }, nil
 }
 
 // cleanupNet tries to cleanup the network setup in setupNet.
@@ -263,7 +263,7 @@ func (c *Do) setupNet(cid string, spec *specs.Spec) (func(), error) {
 //
 // Unfortunately none of this can be automatically cleaned up on process exit,
 // we must do so explicitly.
-func (c *Do) cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath string) {
+func (c *Do) cleanupNet(cid, resolvPath, hostnamePath, hostsPath string) {
 	_, peer := deviceNames(cid)
 
 	cmds := []string{

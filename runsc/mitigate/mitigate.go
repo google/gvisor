@@ -159,7 +159,7 @@ func (c ThreadGroup) String() string {
 func getThreads(data string) ([]Thread, error) {
 	// Each processor entry should start with the
 	// processor key. Find the beginings of each.
-	r := buildRegex(processorKey, `\d+`)
+	r := buildRegex(processorKey)
 	indices := r.FindAllStringIndex(data, -1)
 	if len(indices) < 1 {
 		return nil, fmt.Errorf("no cpus found for: %q", data)
@@ -437,14 +437,14 @@ func parseIntegerResult(data, key string) (int64, error) {
 }
 
 // buildRegex builds a regex for parsing each CPU field.
-func buildRegex(key, match string) *regexp.Regexp {
+func buildRegex(key string) *regexp.Regexp {
 	reg := fmt.Sprintf(`(?m)^%s\s*:\s*(.*)$`, key)
 	return regexp.MustCompile(reg)
 }
 
 // parseRegex parses data with key inserted into a standard regex template.
 func parseRegex(data, key, match string) (string, error) {
-	r := buildRegex(key, match)
+	r := buildRegex(key)
 	matches := r.FindStringSubmatch(data)
 
 	if len(matches) < 2 {

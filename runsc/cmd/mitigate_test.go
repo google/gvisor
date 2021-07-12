@@ -153,11 +153,7 @@ func (m *Mitigate) doExecuteTest(t *testing.T, name, data string, want int, want
 func checkErr(want, got error) error {
 	switch {
 	case want == nil && got == nil:
-	case want != nil && got == nil:
-		fallthrough
-	case want == nil && got != nil:
-		fallthrough
-	case want.Error() != strings.Trim(got.Error(), " "):
+	case want == nil || got == nil || want.Error() != strings.Trim(got.Error(), " "):
 		return fmt.Errorf("got: %v want: %v", got, want)
 	}
 	return nil

@@ -208,7 +208,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	if err := c.Saver.lockForNew(); err != nil {
 		return nil, err
 	}
-	defer c.Saver.unlock()
+	defer c.Saver.unlockOrDie()
 
 	// If the metadata annotations indicate that this container should be started
 	// in an existing sandbox, we must do so. These are the possible metadata
@@ -340,7 +340,7 @@ func (c *Container) Start(conf *config.Config) error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	unlock := cleanup.Make(func() { c.Saver.unlock() })
+	unlock := cleanup.Make(c.Saver.unlockOrDie)
 	defer unlock.Clean()
 
 	if err := c.requireStatus("start", Created); err != nil {
@@ -426,7 +426,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlock()
+	defer c.Saver.unlockOrDie()
 
 	if err := c.requireStatus("restore", Created); err != nil {
 		return err
@@ -614,7 +614,7 @@ func (c *Container) Pause() error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlock()
+	defer c.Saver.unlockOrDie()
 
 	if c.Status != Created && c.Status != Running {
 		return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
@@ -634,7 +634,7 @@ func (c *Container) Resume() error {
 	if err := c.Saver.lock(); err != nil {
 		return err
 	}
-	defer c.Saver.unlock()
+	defer c.Saver.unlockOrDie()
 
 	if c.Status != Paused {
 		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
@@ -675,8 +675,8 @@ func (c *Container) Destroy() error {
 		return err
 	}
 	defer func() {
-		c.Saver.unlock()
-		c.Saver.close()
+		c.Saver.unlockOrDie()
+		_ = c.Saver.close()
 	}()
 
 	// Stored for later use as stop() sets c.Sandbox to nil.
@@ -1020,10 +1020,10 @@ func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
 		return fn()
 	}
 	restore, err := cg.Join()
-	defer restore()
 	if err != nil {
 		return err
 	}
+	defer restore()
 	return fn()
 }
 

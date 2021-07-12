@@ -91,7 +91,7 @@ func (cm *containerManager) Event(_ *struct{}, out *EventOut) error {
 	// Memory usage.
 	// TODO(gvisor.dev/issue/172): Per-container accounting.
 	mem := cm.l.k.MemoryFile()
-	mem.UpdateUsage()
+	_ = mem.UpdateUsage() // best effort to update.
 	_, totalUsage := usage.MemoryAccounting.Copy()
 	out.Event.Data.Memory.Usage = MemoryEntry{
 		Usage: totalUsage,

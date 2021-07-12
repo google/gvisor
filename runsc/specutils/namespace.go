@@ -270,7 +270,10 @@ func MaybeRunAsRoot() error {
 	go func() {
 		for {
 			// Forward all signals to child process.
-			cmd.Process.Signal(<-ch)
+			sig := <-ch
+			if err := cmd.Process.Signal(sig); err != nil {
+				log.Warningf("Error forwarding signal %v to child (PID %d)", sig, cmd.Process.Pid)
+			}
 		}
 	}()
 	if err := cmd.Wait(); err != nil {

@@ -58,7 +58,7 @@ func Errorf(format string, args ...interface{}) subcommands.ExitStatus {
 		panic(err)
 	}
 	if ErrorLogger != nil {
-		ErrorLogger.Write(b)
+		_, _ = ErrorLogger.Write(b)
 	}
 
 	return subcommands.ExitFailure

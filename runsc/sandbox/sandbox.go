@@ -209,7 +209,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 	defer conn.Close()
 
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid, spec, conf); err != nil {
+	if err := setupNetwork(conn, s.Pid, conf); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 
@@ -282,7 +282,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, fil
 	defer conn.Close()
 
 	// Configure the network.
-	if err := setupNetwork(conn, s.Pid, spec, conf); err != nil {
+	if err := setupNetwork(conn, s.Pid, conf); err != nil {
 		return fmt.Errorf("setting up network: %v", err)
 	}
 

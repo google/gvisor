@@ -102,7 +102,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 				c.CreatedAt.Format(time.RFC3339Nano),
 				c.Owner)
 		}
-		w.Flush()
+		_ = w.Flush()
 	case "json":
 		// Print just the states.
 		var states []specs.State

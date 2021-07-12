@@ -29,7 +29,7 @@ func TestWaitForReadyHappy(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	var count int
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
@@ -42,7 +42,9 @@ func TestWaitForReadyHappy(t *testing.T) {
 	if err != nil {
 		t.Errorf("ProcessWaitReady got: %v, expected: nil", err)
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestWaitForReadyFail(t *testing.T) {
@@ -50,7 +52,7 @@ func TestWaitForReadyFail(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	var count int
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
@@ -58,12 +60,14 @@ func TestWaitForReadyFail(t *testing.T) {
 			count++
 			return false, nil
 		}
-		return false, fmt.Errorf("Fake error")
+		return false, fmt.Errorf("fake error")
 	})
 	if err == nil {
 		t.Errorf("ProcessWaitReady got: nil, expected: error")
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestWaitForReadyNotRunning(t *testing.T) {
@@ -71,7 +75,7 @@ func TestWaitForReadyNotRunning(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
 		return false, nil
@@ -89,15 +93,17 @@ func TestWaitForReadyTimeout(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	err := WaitForReady(cmd.Process.Pid, 50*time.Millisecond, func() (bool, error) {
 		return false, nil
 	})
-	if !strings.Contains(err.Error(), "not running yet") {
+	if err == nil || !strings.Contains(err.Error(), "not running yet") {
 		t.Errorf("ProcessWaitReady got: %v, expected: not running yet", err)
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestSpecInvalid(t *testing.T) {
