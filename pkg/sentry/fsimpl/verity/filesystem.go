@@ -851,11 +851,18 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 		return nil, err
 	}
 
+	tmpOpts := *opts
+
+	// Open the lowerFD with O_PATH if a symlink is opened for verity.
+	if tmpOpts.Flags&linux.O_NOFOLLOW != 0 && d.isSymlink() {
+		tmpOpts.Flags |= linux.O_PATH
+	}
+
 	// Open the file in the underlying file system.
 	lowerFD, err := rp.VirtualFilesystem().OpenAt(ctx, d.fs.creds, &vfs.PathOperation{
 		Root:  d.lowerVD,
 		Start: d.lowerVD,
-	}, opts)
+	}, &tmpOpts)
 
 	// The file should exist, as we succeeded in finding its dentry. If it's
 	// missing, it indicates an unexpected modification to the file system.
@@ -893,7 +900,6 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 	// be called if a verity FD is successfully created.
 	defer merkleReader.DecRef(ctx)
 
-	lowerFlags := lowerFD.StatusFlags()
 	lowerFDOpts := lowerFD.Options()
 	var merkleWriter *vfs.FileDescription
 	var parentMerkleWriter *vfs.FileDescription
@@ -946,7 +952,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 		isDir:              d.isDir(),
 	}
 
-	if err := fd.vfsfd.Init(fd, lowerFlags, rp.Mount(), &d.vfsd, &lowerFDOpts); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), &d.vfsd, &lowerFDOpts); err != nil {
 		return nil, err
 	}
 	lowerFD.IncRef()
