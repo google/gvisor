@@ -602,7 +602,7 @@ func (fs *Filesystem) StateTypeName() string {
 func (fs *Filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
-		"droppedDentries",
+		"deferredDecRefs",
 		"nextInoMinusOne",
 		"cachedDentries",
 		"cachedDentriesLen",
@@ -617,7 +617,7 @@ func (fs *Filesystem) beforeSave() {}
 func (fs *Filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
-	stateSinkObject.Save(1, &fs.droppedDentries)
+	stateSinkObject.Save(1, &fs.deferredDecRefs)
 	stateSinkObject.Save(2, &fs.nextInoMinusOne)
 	stateSinkObject.Save(3, &fs.cachedDentries)
 	stateSinkObject.Save(4, &fs.cachedDentriesLen)
@@ -630,7 +630,7 @@ func (fs *Filesystem) afterLoad() {}
 // +checklocksignore
 func (fs *Filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
-	stateSourceObject.Load(1, &fs.droppedDentries)
+	stateSourceObject.Load(1, &fs.deferredDecRefs)
 	stateSourceObject.Load(2, &fs.nextInoMinusOne)
 	stateSourceObject.Load(3, &fs.cachedDentries)
 	stateSourceObject.Load(4, &fs.cachedDentriesLen)

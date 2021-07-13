@@ -803,13 +803,17 @@ type exeSymlink struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
 
+	fs   *filesystem
 	task *kernel.Task
 }
 
 var _ kernfs.Inode = (*exeSymlink)(nil)
 
 func (fs *filesystem) newExeSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
-	inode := &exeSymlink{task: task}
+	inode := &exeSymlink{
+		fs:   fs,
+		task: task,
+	}
 	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
@@ -820,14 +824,14 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer exec.DecRef(ctx)
+	defer s.fs.SafeDecRef(ctx, exec)
 
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
 		// It could have raced with process deletion.
 		return "", linuxerr.ESRCH
 	}
-	defer root.DecRef(ctx)
+	defer s.fs.SafeDecRef(ctx, root)
 
 	vfsObj := exec.Mount().Filesystem().VirtualFilesystem()
 	name, _ := vfsObj.PathnameWithDeleted(ctx, root, exec)
@@ -879,13 +883,17 @@ type cwdSymlink struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
 
+	fs   *filesystem
 	task *kernel.Task
 }
 
 var _ kernfs.Inode = (*cwdSymlink)(nil)
 
 func (fs *filesystem) newCwdSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
-	inode := &cwdSymlink{task: task}
+	inode := &cwdSymlink{
+		fs:   fs,
+		task: task,
+	}
 	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
@@ -896,14 +904,14 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer cwd.DecRef(ctx)
+	defer s.fs.SafeDecRef(ctx, cwd)
 
 	root := vfs.RootFromContext(ctx)
 	if !root.Ok() {
 		// It could have raced with process deletion.
 		return "", linuxerr.ESRCH
 	}
-	defer root.DecRef(ctx)
+	defer s.fs.SafeDecRef(ctx, root)
 
 	vfsObj := cwd.Mount().Filesystem().VirtualFilesystem()
 	name, _ := vfsObj.PathnameWithDeleted(ctx, root, cwd)
@@ -923,6 +931,7 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 		// It could have raced with process deletion.
 		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
 	}
+	// The reference is transferred to the caller.
 	return cwd, "", nil
 }
 
@@ -932,6 +941,7 @@ func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 type mountInfoData struct {
 	kernfs.DynamicBytesFile
 
+	fs   *filesystem
 	task *kernel.Task
 }
 
@@ -952,7 +962,7 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil
 	}
-	defer rootDir.DecRef(ctx)
+	defer i.fs.SafeDecRef(ctx, rootDir)
 	i.task.Kernel().VFS().GenerateProcMountInfo(ctx, rootDir, buf)
 	return nil
 }
@@ -963,6 +973,7 @@ func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 type mountsData struct {
 	kernfs.DynamicBytesFile
 
+	fs   *filesystem
 	task *kernel.Task
 }
 
@@ -983,7 +994,7 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		// Root has been destroyed. Don't try to read mounts.
 		return nil
 	}
-	defer rootDir.DecRef(ctx)
+	defer i.fs.SafeDecRef(ctx, rootDir)
 	i.task.Kernel().VFS().GenerateProcMounts(ctx, rootDir, buf)
 	return nil
 }

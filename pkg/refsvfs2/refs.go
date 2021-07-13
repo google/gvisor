@@ -28,6 +28,11 @@ type RefCounter interface {
 	// DecRef decrements the object's reference count. Users of refs_template.Refs
 	// may specify a destructor to be called once the reference count reaches zero.
 	DecRef(ctx context.Context)
+}
+
+// TryRefCounter is like RefCounter but allow the ref increment to be tried.
+type TryRefCounter interface {
+	RefCounter
 
 	// TryIncRef attempts to increment the reference count, but may fail if all
 	// references have already been dropped, in which case it returns false. If

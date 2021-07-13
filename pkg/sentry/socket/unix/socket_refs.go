@@ -81,7 +81,7 @@ func (r *socketOperationsRefs) IncRef() {
 	}
 }
 
-// TryIncRef implements refs.RefCounter.TryIncRef.
+// TryIncRef implements refs.TryRefCounter.TryIncRef.
 //
 // To do this safely without a loop, a speculative reference is first acquired
 // on the object. This allows multiple concurrent TryIncRef calls to distinguish

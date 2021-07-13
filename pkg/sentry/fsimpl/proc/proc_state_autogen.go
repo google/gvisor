@@ -460,6 +460,7 @@ func (s *fdSymlink) StateFields() []string {
 		"InodeAttrs",
 		"InodeNoopRefCount",
 		"InodeSymlink",
+		"fs",
 		"task",
 		"fd",
 	}
@@ -474,8 +475,9 @@ func (s *fdSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.InodeAttrs)
 	stateSinkObject.Save(2, &s.InodeNoopRefCount)
 	stateSinkObject.Save(3, &s.InodeSymlink)
-	stateSinkObject.Save(4, &s.task)
-	stateSinkObject.Save(5, &s.fd)
+	stateSinkObject.Save(4, &s.fs)
+	stateSinkObject.Save(5, &s.task)
+	stateSinkObject.Save(6, &s.fd)
 }
 
 func (s *fdSymlink) afterLoad() {}
@@ -486,8 +488,9 @@ func (s *fdSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.InodeAttrs)
 	stateSourceObject.Load(2, &s.InodeNoopRefCount)
 	stateSourceObject.Load(3, &s.InodeSymlink)
-	stateSourceObject.Load(4, &s.task)
-	stateSourceObject.Load(5, &s.fd)
+	stateSourceObject.Load(4, &s.fs)
+	stateSourceObject.Load(5, &s.task)
+	stateSourceObject.Load(6, &s.fd)
 }
 
 func (i *fdInfoDirInode) StateTypeName() string {
@@ -546,6 +549,7 @@ func (d *fdInfoData) StateTypeName() string {
 func (d *fdInfoData) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
+		"fs",
 		"task",
 		"fd",
 	}
@@ -557,8 +561,9 @@ func (d *fdInfoData) beforeSave() {}
 func (d *fdInfoData) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.DynamicBytesFile)
-	stateSinkObject.Save(1, &d.task)
-	stateSinkObject.Save(2, &d.fd)
+	stateSinkObject.Save(1, &d.fs)
+	stateSinkObject.Save(2, &d.task)
+	stateSinkObject.Save(3, &d.fd)
 }
 
 func (d *fdInfoData) afterLoad() {}
@@ -566,8 +571,9 @@ func (d *fdInfoData) afterLoad() {}
 // +checklocksignore
 func (d *fdInfoData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.DynamicBytesFile)
-	stateSourceObject.Load(1, &d.task)
-	stateSourceObject.Load(2, &d.fd)
+	stateSourceObject.Load(1, &d.fs)
+	stateSourceObject.Load(2, &d.task)
+	stateSourceObject.Load(3, &d.fd)
 }
 
 func (d *auxvData) StateTypeName() string {
@@ -1011,6 +1017,7 @@ func (s *exeSymlink) StateFields() []string {
 		"InodeAttrs",
 		"InodeNoopRefCount",
 		"InodeSymlink",
+		"fs",
 		"task",
 	}
 }
@@ -1024,7 +1031,8 @@ func (s *exeSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.InodeAttrs)
 	stateSinkObject.Save(2, &s.InodeNoopRefCount)
 	stateSinkObject.Save(3, &s.InodeSymlink)
-	stateSinkObject.Save(4, &s.task)
+	stateSinkObject.Save(4, &s.fs)
+	stateSinkObject.Save(5, &s.task)
 }
 
 func (s *exeSymlink) afterLoad() {}
@@ -1035,7 +1043,8 @@ func (s *exeSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.InodeAttrs)
 	stateSourceObject.Load(2, &s.InodeNoopRefCount)
 	stateSourceObject.Load(3, &s.InodeSymlink)
-	stateSourceObject.Load(4, &s.task)
+	stateSourceObject.Load(4, &s.fs)
+	stateSourceObject.Load(5, &s.task)
 }
 
 func (s *cwdSymlink) StateTypeName() string {
@@ -1048,6 +1057,7 @@ func (s *cwdSymlink) StateFields() []string {
 		"InodeAttrs",
 		"InodeNoopRefCount",
 		"InodeSymlink",
+		"fs",
 		"task",
 	}
 }
@@ -1061,7 +1071,8 @@ func (s *cwdSymlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.InodeAttrs)
 	stateSinkObject.Save(2, &s.InodeNoopRefCount)
 	stateSinkObject.Save(3, &s.InodeSymlink)
-	stateSinkObject.Save(4, &s.task)
+	stateSinkObject.Save(4, &s.fs)
+	stateSinkObject.Save(5, &s.task)
 }
 
 func (s *cwdSymlink) afterLoad() {}
@@ -1072,7 +1083,8 @@ func (s *cwdSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.InodeAttrs)
 	stateSourceObject.Load(2, &s.InodeNoopRefCount)
 	stateSourceObject.Load(3, &s.InodeSymlink)
-	stateSourceObject.Load(4, &s.task)
+	stateSourceObject.Load(4, &s.fs)
+	stateSourceObject.Load(5, &s.task)
 }
 
 func (i *mountInfoData) StateTypeName() string {
@@ -1082,6 +1094,7 @@ func (i *mountInfoData) StateTypeName() string {
 func (i *mountInfoData) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
+		"fs",
 		"task",
 	}
 }
@@ -1092,7 +1105,8 @@ func (i *mountInfoData) beforeSave() {}
 func (i *mountInfoData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.DynamicBytesFile)
-	stateSinkObject.Save(1, &i.task)
+	stateSinkObject.Save(1, &i.fs)
+	stateSinkObject.Save(2, &i.task)
 }
 
 func (i *mountInfoData) afterLoad() {}
@@ -1100,7 +1114,8 @@ func (i *mountInfoData) afterLoad() {}
 // +checklocksignore
 func (i *mountInfoData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.DynamicBytesFile)
-	stateSourceObject.Load(1, &i.task)
+	stateSourceObject.Load(1, &i.fs)
+	stateSourceObject.Load(2, &i.task)
 }
 
 func (i *mountsData) StateTypeName() string {
@@ -1110,6 +1125,7 @@ func (i *mountsData) StateTypeName() string {
 func (i *mountsData) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
+		"fs",
 		"task",
 	}
 }
@@ -1120,7 +1136,8 @@ func (i *mountsData) beforeSave() {}
 func (i *mountsData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.DynamicBytesFile)
-	stateSinkObject.Save(1, &i.task)
+	stateSinkObject.Save(1, &i.fs)
+	stateSinkObject.Save(2, &i.task)
 }
 
 func (i *mountsData) afterLoad() {}
@@ -1128,7 +1145,8 @@ func (i *mountsData) afterLoad() {}
 // +checklocksignore
 func (i *mountsData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.DynamicBytesFile)
-	stateSourceObject.Load(1, &i.task)
+	stateSourceObject.Load(1, &i.fs)
+	stateSourceObject.Load(2, &i.task)
 }
 
 func (s *namespaceSymlink) StateTypeName() string {

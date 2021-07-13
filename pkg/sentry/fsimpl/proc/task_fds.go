@@ -42,12 +42,12 @@ func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) 
 	return file, flags
 }
 
-func taskFDExists(ctx context.Context, t *kernel.Task, fd int32) bool {
+func taskFDExists(ctx context.Context, fs *filesystem, t *kernel.Task, fd int32) bool {
 	file, _ := getTaskFD(t, fd)
 	if file == nil {
 		return false
 	}
-	file.DecRef(ctx)
+	fs.SafeDecRefFD(ctx, file)
 	return true
 }
 
@@ -145,7 +145,7 @@ func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.task, fd) {
+	if !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
 	return i.fs.newFDSymlink(ctx, i.task, fd, i.fs.NextIno()), nil
@@ -198,6 +198,7 @@ type fdSymlink struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
 
+	fs   *filesystem
 	task *kernel.Task
 	fd   int32
 }
@@ -206,6 +207,7 @@ var _ kernfs.Inode = (*fdSymlink)(nil)
 
 func (fs *filesystem) newFDSymlink(ctx context.Context, task *kernel.Task, fd int32, ino uint64) kernfs.Inode {
 	inode := &fdSymlink{
+		fs:   fs,
 		task: task,
 		fd:   fd,
 	}
@@ -218,9 +220,9 @@ func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) 
 	if file == nil {
 		return "", syserror.ENOENT
 	}
-	defer file.DecRef(ctx)
+	defer s.fs.SafeDecRefFD(ctx, file)
 	root := vfs.RootFromContext(ctx)
-	defer root.DecRef(ctx)
+	defer s.fs.SafeDecRef(ctx, root)
 
 	// Note: it's safe to reenter kernfs from Readlink if needed to resolve path.
 	return s.task.Kernel().VFS().PathnameWithDeleted(ctx, root, file.VirtualDentry())
@@ -231,7 +233,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 	if file == nil {
 		return vfs.VirtualDentry{}, "", syserror.ENOENT
 	}
-	defer file.DecRef(ctx)
+	defer s.fs.SafeDecRefFD(ctx, file)
 	vd := file.VirtualDentry()
 	vd.IncRef()
 	return vd, "", nil
@@ -239,7 +241,7 @@ func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDen
 
 // Valid implements kernfs.Inode.Valid.
 func (s *fdSymlink) Valid(ctx context.Context) bool {
-	return taskFDExists(ctx, s.task, s.fd)
+	return taskFDExists(ctx, s.fs, s.task, s.fd)
 }
 
 // fdInfoDirInode represents the inode for /proc/[pid]/fdinfo directory.
@@ -279,10 +281,11 @@ func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode,
 		return nil, syserror.ENOENT
 	}
 	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.task, fd) {
+	if !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, syserror.ENOENT
 	}
 	data := &fdInfoData{
+		fs:   i.fs,
 		task: i.task,
 		fd:   fd,
 	}
@@ -316,6 +319,7 @@ func (i *fdInfoDirInode) DecRef(ctx context.Context) {
 type fdInfoData struct {
 	kernfs.DynamicBytesFile
 
+	fs   *filesystem
 	task *kernel.Task
 	fd   int32
 }
@@ -328,7 +332,7 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if file == nil {
 		return syserror.ENOENT
 	}
-	defer file.DecRef(ctx)
+	defer d.fs.SafeDecRefFD(ctx, file)
 	// TODO(b/121266871): Include pos, locks, and other data. For now we only
 	// have flags.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
@@ -339,5 +343,5 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Valid implements kernfs.Inode.Valid.
 func (d *fdInfoData) Valid(ctx context.Context) bool {
-	return taskFDExists(ctx, d.task, d.fd)
+	return taskFDExists(ctx, d.fs, d.task, d.fd)
 }
