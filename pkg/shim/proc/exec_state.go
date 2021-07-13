@@ -64,9 +64,7 @@ func (s *execCreatedState) Start(ctx context.Context) error {
 }
 
 func (s *execCreatedState) Delete(context.Context) error {
-	if err := s.p.delete(); err != nil {
-		return err
-	}
+	s.p.delete()
 	s.transition(deleted)
 	return nil
 }
@@ -144,9 +142,7 @@ func (s *execStoppedState) Start(context.Context) error {
 }
 
 func (s *execStoppedState) Delete(context.Context) error {
-	if err := s.p.delete(); err != nil {
-		return err
-	}
+	s.p.delete()
 	s.transition(deleted)
 	return nil
 }

@@ -113,7 +113,7 @@ func (e *execProcess) Delete(ctx context.Context) error {
 	return e.execState.Delete(ctx)
 }
 
-func (e *execProcess) delete() error {
+func (e *execProcess) delete() {
 	e.wg.Wait()
 	if e.io != nil {
 		for _, c := range e.closers {
@@ -121,7 +121,6 @@ func (e *execProcess) delete() error {
 		}
 		e.io.Close()
 	}
-	return nil
 }
 
 func (e *execProcess) Resize(ws console.WinSize) error {

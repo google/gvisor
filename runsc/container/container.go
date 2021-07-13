@@ -310,7 +310,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			defer tty.Close()
 		}
 
-		if err := c.Sandbox.CreateContainer(conf, c.ID, tty); err != nil {
+		if err := c.Sandbox.CreateSubcontainer(conf, c.ID, tty); err != nil {
 			return nil, err
 		}
 	}
@@ -388,7 +388,7 @@ func (c *Container) Start(conf *config.Config) error {
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
-			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, stdios, goferFiles)
+			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles)
 		}); err != nil {
 			return err
 		}
