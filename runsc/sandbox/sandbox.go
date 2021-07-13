@@ -65,6 +65,11 @@ type Sandbox struct {
 	// is not running.
 	Pid int `json:"pid"`
 
+	// UID is the user ID in the parent namespace that the sandbox is running as.
+	UID int `json:"uid"`
+	// GID is the group ID in the parent namespace that the sandbox is running as.
+	GID int `json:"gid"`
+
 	// Cgroup has the cgroup configuration for the sandbox.
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
 
@@ -176,18 +181,22 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 }
 
 // CreateContainer creates a non-root container inside the sandbox.
-func (s *Sandbox) CreateContainer(cid string, tty *os.File) error {
+func (s *Sandbox) CreateContainer(conf *config.Config, cid string, tty *os.File) error {
 	log.Debugf("Create non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
-	sandboxConn, err := s.sandboxConnect()
-	if err != nil {
-		return fmt.Errorf("couldn't connect to sandbox: %v", err)
-	}
-	defer sandboxConn.Close()
 
 	var files []*os.File
 	if tty != nil {
 		files = []*os.File{tty}
 	}
+	if err := s.configureStdios(conf, files); err != nil {
+		return err
+	}
+
+	sandboxConn, err := s.sandboxConnect()
+	if err != nil {
+		return fmt.Errorf("couldn't connect to sandbox: %v", err)
+	}
+	defer sandboxConn.Close()
 
 	args := boot.CreateArgs{
 		CID:         cid,
@@ -225,6 +234,11 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 // StartContainer starts running a non-root container inside the sandbox.
 func (s *Sandbox) StartContainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File) error {
 	log.Debugf("Start non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
+
+	if err := s.configureStdios(conf, stdios); err != nil {
+		return err
+	}
+
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
 		return fmt.Errorf("couldn't connect to sandbox: %v", err)
@@ -318,8 +332,13 @@ func (s *Sandbox) NewCGroup() (*cgroup.Cgroup, error) {
 
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
-func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
+func (s *Sandbox) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", args.ContainerID, s.ID)
+
+	if err := s.configureStdios(conf, args.Files); err != nil {
+		return 0, err
+	}
+
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return 0, s.connError(err)
@@ -505,6 +524,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	var stdios [3]*os.File
 
 	// If the console control socket file is provided, then create a new
 	// pty master/replica pair and set the TTY on the sandbox process.
@@ -525,11 +545,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.SysProcAttr.Ctty = nextFD
 
 		// Pass the tty as all stdio fds to sandbox.
-		for i := 0; i < 3; i++ {
-			cmd.ExtraFiles = append(cmd.ExtraFiles, tty)
-			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
-			nextFD++
-		}
+		stdios[0] = tty
+		stdios[1] = tty
+		stdios[2] = tty
 
 		if conf.Debug {
 			// If debugging, send the boot process stdio to the
@@ -541,11 +559,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	} else {
 		// If not using a console, pass our current stdio as the
 		// container stdio via flags.
-		for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
-			cmd.ExtraFiles = append(cmd.ExtraFiles, f)
-			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
-			nextFD++
-		}
+		stdios[0] = os.Stdin
+		stdios[1] = os.Stdout
+		stdios[2] = os.Stderr
 
 		if conf.Debug {
 			// If debugging, send the boot process stdio to the
@@ -595,6 +611,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		nss = append(nss, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 
+	// These are set to the uid/gid that the sandbox process will use.
+	s.UID = os.Getuid()
+	s.GID = os.Getgid()
+
 	// User namespace depends on the network type. Host network requires to run
 	// inside the user namespace specified in the spec or the current namespace
 	// if none is configured.
@@ -636,51 +656,49 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			const nobody = 65534
 			if conf.Rootless {
 				log.Infof("Rootless mode: sandbox will run as nobody inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
-				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
-					{
-						ContainerID: nobody,
-						HostID:      os.Getuid(),
-						Size:        1,
-					},
-				}
-				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
-					{
-						ContainerID: nobody,
-						HostID:      os.Getgid(),
-						Size:        1,
-					},
-				}
-
 			} else {
 				// Map nobody in the new namespace to nobody in the parent namespace.
-				//
-				// A sandbox process will construct an empty
-				// root for itself, so it has to have
-				// CAP_SYS_ADMIN and CAP_SYS_CHROOT capabilities.
-				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
-					{
-						ContainerID: nobody,
-						HostID:      nobody,
-						Size:        1,
-					},
-				}
-				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
-					{
-						ContainerID: nobody,
-						HostID:      nobody,
-						Size:        1,
-					},
-				}
+				s.UID = nobody
+				s.GID = nobody
 			}
 
 			// Set credentials to run as user and group nobody.
 			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: nobody, Gid: nobody}
+			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+				{
+					ContainerID: nobody,
+					HostID:      s.UID,
+					Size:        1,
+				},
+			}
+			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+				{
+					ContainerID: nobody,
+					HostID:      s.GID,
+					Size:        1,
+				},
+			}
+
+			// A sandbox process will construct an empty root for itself, so it has
+			// to have CAP_SYS_ADMIN and CAP_SYS_CHROOT capabilities.
 			cmd.SysProcAttr.AmbientCaps = append(cmd.SysProcAttr.AmbientCaps, uintptr(capability.CAP_SYS_ADMIN), uintptr(capability.CAP_SYS_CHROOT))
+
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
 	}
 
+	if err := s.configureStdios(conf, stdios[:]); err != nil {
+		return fmt.Errorf("configuring stdios: %w", err)
+	}
+	for _, file := range stdios {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, file)
+		cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
+	// shown as `exe`.
 	cmd.Args[0] = "runsc-sandbox"
 
 	if s.Cgroup != nil {
@@ -1165,6 +1183,23 @@ func (s *Sandbox) waitForStopped() error {
 		return nil
 	}
 	return backoff.Retry(op, b)
+}
+
+// configureStdios change stdios ownership to give access to the sandbox
+// process. This may be skipped depending on the configuration.
+func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error {
+	if conf.Rootless || conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// Cannot change ownership without CAP_CHOWN.
+		return nil
+	}
+
+	for _, file := range stdios {
+		log.Debugf("Changing %q ownership to %d/%d", file.Name(), s.UID, s.GID)
+		if err := file.Chown(s.UID, s.GID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // deviceFileForPlatform opens the device file for the given platform. If the

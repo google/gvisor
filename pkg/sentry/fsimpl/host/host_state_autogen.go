@@ -30,6 +30,40 @@ func (r *ConnectedEndpointRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
+func (v *virtualOwner) StateTypeName() string {
+	return "pkg/sentry/fsimpl/host.virtualOwner"
+}
+
+func (v *virtualOwner) StateFields() []string {
+	return []string{
+		"enabled",
+		"uid",
+		"gid",
+		"mode",
+	}
+}
+
+func (v *virtualOwner) beforeSave() {}
+
+// +checklocksignore
+func (v *virtualOwner) StateSave(stateSinkObject state.Sink) {
+	v.beforeSave()
+	stateSinkObject.Save(0, &v.enabled)
+	stateSinkObject.Save(1, &v.uid)
+	stateSinkObject.Save(2, &v.gid)
+	stateSinkObject.Save(3, &v.mode)
+}
+
+func (v *virtualOwner) afterLoad() {}
+
+// +checklocksignore
+func (v *virtualOwner) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &v.enabled)
+	stateSourceObject.Load(1, &v.uid)
+	stateSourceObject.Load(2, &v.gid)
+	stateSourceObject.Load(3, &v.mode)
+}
+
 func (i *inode) StateTypeName() string {
 	return "pkg/sentry/fsimpl/host.inode"
 }
@@ -51,6 +85,7 @@ func (i *inode) StateFields() []string {
 		"isTTY",
 		"savable",
 		"queue",
+		"virtualOwner",
 		"haveBuf",
 		"buf",
 	}
@@ -74,8 +109,9 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.isTTY)
 	stateSinkObject.Save(13, &i.savable)
 	stateSinkObject.Save(14, &i.queue)
-	stateSinkObject.Save(15, &i.haveBuf)
-	stateSinkObject.Save(16, &i.buf)
+	stateSinkObject.Save(15, &i.virtualOwner)
+	stateSinkObject.Save(16, &i.haveBuf)
+	stateSinkObject.Save(17, &i.buf)
 }
 
 // +checklocksignore
@@ -95,8 +131,9 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.isTTY)
 	stateSourceObject.Load(13, &i.savable)
 	stateSourceObject.Load(14, &i.queue)
-	stateSourceObject.Load(15, &i.haveBuf)
-	stateSourceObject.Load(16, &i.buf)
+	stateSourceObject.Load(15, &i.virtualOwner)
+	stateSourceObject.Load(16, &i.haveBuf)
+	stateSourceObject.Load(17, &i.buf)
 	stateSourceObject.AfterLoad(i.afterLoad)
 }
 
@@ -279,6 +316,7 @@ func (t *TTYFileDescription) StateLoad(stateSourceObject state.Source) {
 
 func init() {
 	state.Register((*ConnectedEndpointRefs)(nil))
+	state.Register((*virtualOwner)(nil))
 	state.Register((*inode)(nil))
 	state.Register((*filesystemType)(nil))
 	state.Register((*filesystem)(nil))

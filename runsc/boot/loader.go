@@ -715,7 +715,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 			return fmt.Errorf("using TTY, stdios not expected: %d", l)
 		}
 		if ep.hostTTY == nil {
-			return fmt.Errorf("terminal enabled but no TTY provided (--console-socket possibly passed)")
+			return fmt.Errorf("terminal enabled but no TTY provided. Did you set --console-socket on create?")
 		}
 		info.stdioFDs = []*fd.FD{ep.hostTTY, ep.hostTTY, ep.hostTTY}
 		ep.hostTTY = nil
@@ -734,7 +734,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid strin
 func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
-	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs)
+	fdTable, ttyFile, ttyFileVFS2, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.spec.Process.User)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
@@ -980,7 +980,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		tty:     ttyFile,
 		ttyVFS2: ttyFileVFS2,
 	}
-	log.Debugf("updated processes: %s", l.processes)
+	log.Debugf("updated processes: %v", l.processes)
 
 	return tgid, nil
 }
@@ -1024,7 +1024,7 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) e
 
 		l.mu.Lock()
 		delete(l.processes, eid)
-		log.Debugf("updated processes (removal): %s", l.processes)
+		log.Debugf("updated processes (removal): %v", l.processes)
 		l.mu.Unlock()
 		return nil
 	}
@@ -1092,7 +1092,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 		return inet.NewRootNamespace(s, creator), nil
 
 	default:
-		panic(fmt.Sprintf("invalid network configuration: %d", conf.Network))
+		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
 
 }
@@ -1212,7 +1212,7 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 		return nil
 
 	default:
-		panic(fmt.Sprintf("unknown signal delivery mode %s", mode))
+		panic(fmt.Sprintf("unknown signal delivery mode %v", mode))
 	}
 }
 
@@ -1337,14 +1337,14 @@ func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileOperations, *hostvfs2
 	return ep.tty, ep.ttyVFS2, nil
 }
 
-func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user specs.User) (*kernel.FDTable, *host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	if len(stdioFDs) != 3 {
 		return nil, nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
 
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
-	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, console, stdioFDs)
+	ttyFile, ttyFileVFS2, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), stdioFDs)
 	if err != nil {
 		fdTable.DecRef(ctx)
 		return nil, nil, nil, err

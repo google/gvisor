@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	hostvfs2 "gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -31,9 +32,9 @@ import (
 // sets up TTY for the first 3 FDs in the slice representing stdin, stdout,
 // stderr. Used FDs are either closed or released. It's safe for the caller to
 // close any remaining files upon return.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []*fd.FD) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
+func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds []*fd.FD) (*host.TTYFileOperations, *hostvfs2.TTYFileDescription, error) {
 	if kernel.VFS2Enabled {
-		ttyFile, err := importVFS2(ctx, fdTable, console, fds)
+		ttyFile, err := importVFS2(ctx, fdTable, console, uid, gid, fds)
 		return nil, ttyFile, err
 	}
 	ttyFile, err := importFS(ctx, fdTable, console, fds)
@@ -89,7 +90,7 @@ func importFS(ctx context.Context, fdTable *kernel.FDTable, console bool, fds []
 	return ttyFile.FileOperations.(*host.TTYFileOperations), nil
 }
 
-func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdioFDs []*fd.FD) (*hostvfs2.TTYFileDescription, error) {
+func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, stdioFDs []*fd.FD) (*hostvfs2.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
@@ -103,7 +104,13 @@ func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdi
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
 				var err error
-				appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD.FD(), true /* isTTY */)
+				appFile, err = hostvfs2.NewFD(ctx, k.HostMount(), hostFD.FD(), &hostvfs2.NewFDOptions{
+					Savable:      true,
+					IsTTY:        true,
+					VirtualOwner: true,
+					UID:          uid,
+					GID:          gid,
+				})
 				if err != nil {
 					return nil, err
 				}
@@ -121,7 +128,12 @@ func importVFS2(ctx context.Context, fdTable *kernel.FDTable, console bool, stdi
 			}
 		} else {
 			var err error
-			appFile, err = hostvfs2.ImportFD(ctx, k.HostMount(), hostFD.FD(), false /* isTTY */)
+			appFile, err = hostvfs2.NewFD(ctx, k.HostMount(), hostFD.FD(), &hostvfs2.NewFDOptions{
+				Savable:      true,
+				VirtualOwner: true,
+				UID:          uid,
+				GID:          gid,
+			})
 			if err != nil {
 				return nil, err
 			}
