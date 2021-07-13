@@ -52,7 +52,7 @@
 //     vfs.VirtualFilesystem.mountMu
 //       vfs.Dentry.mu
 //   (inode implementation locks, if any)
-// kernfs.Filesystem.droppedDentriesMu
+// kernfs.Filesystem.deferredDecRefsMu
 package kernfs
 
 import (
@@ -76,12 +76,12 @@ import (
 type Filesystem struct {
 	vfsfs vfs.Filesystem
 
-	droppedDentriesMu sync.Mutex `state:"nosave"`
+	deferredDecRefsMu sync.Mutex `state:"nosave"`
 
-	// droppedDentries is a list of dentries waiting to be DecRef()ed. This is
+	// deferredDecRefs is a list of dentries waiting to be DecRef()ed. This is
 	// used to defer dentry destruction until mu can be acquired for
-	// writing. Protected by droppedDentriesMu.
-	droppedDentries []*Dentry
+	// writing. Protected by deferredDecRefsMu.
+	deferredDecRefs []refsvfs2.RefCounter
 
 	// mu synchronizes the lifetime of Dentries on this filesystem. Holding it
 	// for reading guarantees continued existence of any resolved dentries, but
@@ -131,25 +131,49 @@ type Filesystem struct {
 // deferDecRef defers dropping a dentry ref until the next call to
 // processDeferredDecRefs{,Locked}. See comment on Filesystem.mu.
 // This may be called while Filesystem.mu or Dentry.dirMu is locked.
-func (fs *Filesystem) deferDecRef(d *Dentry) {
-	fs.droppedDentriesMu.Lock()
-	fs.droppedDentries = append(fs.droppedDentries, d)
-	fs.droppedDentriesMu.Unlock()
+func (fs *Filesystem) deferDecRef(d refsvfs2.RefCounter) {
+	fs.deferredDecRefsMu.Lock()
+	fs.deferredDecRefs = append(fs.deferredDecRefs, d)
+	fs.deferredDecRefsMu.Unlock()
+}
+
+// SafeDecRefFD safely DecRef the FileDescription making sure DecRef is deferred
+// in case Filesystem.mu is held. See comment on Filesystem.mu.
+func (fs *Filesystem) SafeDecRefFD(ctx context.Context, fd *vfs.FileDescription) {
+	if d, ok := fd.Dentry().Impl().(*Dentry); ok && d.fs == fs {
+		// Only defer if dentry belongs to this filesystem, since locks cannot cross
+		// filesystems.
+		fs.deferDecRef(fd)
+		return
+	}
+	fd.DecRef(ctx)
+}
+
+// SafeDecRef safely DecRef the virtual dentry making sure DecRef is deferred
+// in case Filesystem.mu is held. See comment on Filesystem.mu.
+func (fs *Filesystem) SafeDecRef(ctx context.Context, vd vfs.VirtualDentry) {
+	if d, ok := vd.Dentry().Impl().(*Dentry); ok && d.fs == fs {
+		// Only defer if dentry belongs to this filesystem, since locks cannot cross
+		// filesystems.
+		fs.deferDecRef(&vd)
+		return
+	}
+	vd.DecRef(ctx)
 }
 
 // processDeferredDecRefs calls vfs.Dentry.DecRef on all dentries in the
-// droppedDentries list. See comment on Filesystem.mu.
+// deferredDecRefs list. See comment on Filesystem.mu.
 //
 // Precondition: Filesystem.mu or Dentry.dirMu must NOT be locked.
 func (fs *Filesystem) processDeferredDecRefs(ctx context.Context) {
-	fs.droppedDentriesMu.Lock()
-	for _, d := range fs.droppedDentries {
-		// Defer the DecRef call so that we are not holding droppedDentriesMu
+	fs.deferredDecRefsMu.Lock()
+	for _, d := range fs.deferredDecRefs {
+		// Defer the DecRef call so that we are not holding deferredDecRefsMu
 		// when DecRef is called.
 		defer d.DecRef(ctx)
 	}
-	fs.droppedDentries = fs.droppedDentries[:0] // Keep slice memory for reuse.
-	fs.droppedDentriesMu.Unlock()
+	fs.deferredDecRefs = fs.deferredDecRefs[:0] // Keep slice memory for reuse.
+	fs.deferredDecRefsMu.Unlock()
 }
 
 // VFSFilesystem returns the generic vfs filesystem object.
