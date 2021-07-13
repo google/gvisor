@@ -899,7 +899,7 @@ func TestUnmodifiedSymlinkFileReadSucceeds(t *testing.T) {
 				t.Fatalf("SymlinkAt: %v", err)
 			}
 
-			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_NOFOLLOW, linux.ModeRegular)
 
 			if err != nil {
 				t.Fatalf("openVerityAt symlink: %v", err)
@@ -1034,7 +1034,7 @@ func TestDeletedSymlinkFileReadFails(t *testing.T) {
 				t.Fatalf("SymlinkAt: %v", err)
 			}
 
-			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_NOFOLLOW, linux.ModeRegular)
 
 			if err != nil {
 				t.Fatalf("openVerityAt symlink: %v", err)
@@ -1136,7 +1136,7 @@ func TestModifiedSymlinkFileReadFails(t *testing.T) {
 			}
 
 			// Open symlink file to get the fd for ioctl in new step.
-			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_PATH|linux.O_NOFOLLOW, linux.ModeRegular)
+			fd, err := openVerityAt(ctx, vfsObj, root, symlink, linux.O_NOFOLLOW, linux.ModeRegular)
 			if err != nil {
 				t.Fatalf("OpenAt symlink: %v", err)
 			}
