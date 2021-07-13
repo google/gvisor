@@ -15,16 +15,11 @@
 package tcpip
 
 import (
-	"math"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
-
-// PacketOverheadFactor is used to multiply the value provided by the user on a
-// SetSockOpt for setting the send/receive buffer sizes sockets.
-const PacketOverheadFactor = 2
 
 // SocketOptionsHandler holds methods that help define endpoint specific
 // behavior for socket level socket options. These must be implemented by
@@ -617,39 +612,20 @@ func (so *SocketOptions) GetSendBufferSize() int64 {
 	return so.sendBufferSize.Load()
 }
 
+// SendBufferLimits returns the [min, max) range of allowable send buffer
+// sizes.
+func (so *SocketOptions) SendBufferLimits() (min, max int64) {
+	limits := so.getSendBufferLimits(so.stackHandler)
+	return int64(limits.Min), int64(limits.Max)
+}
+
 // SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
 // stack handler should be invoked to set the send buffer size.
 func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
-	v := sendBufferSize
-
-	if !notify {
-		so.sendBufferSize.Store(v)
-		return
+	if notify {
+		sendBufferSize = so.handler.OnSetSendBufferSize(sendBufferSize)
 	}
-
-	// Make sure the send buffer size is within the min and max
-	// allowed.
-	ss := so.getSendBufferLimits(so.stackHandler)
-	min := int64(ss.Min)
-	max := int64(ss.Max)
-	// Validate the send buffer size with min and max values.
-	// Multiply it by factor of 2.
-	if v > max {
-		v = max
-	}
-
-	if v < math.MaxInt32/PacketOverheadFactor {
-		v *= PacketOverheadFactor
-		if v < min {
-			v = min
-		}
-	} else {
-		v = math.MaxInt32
-	}
-
-	// Notify endpoint about change in buffer size.
-	newSz := so.handler.OnSetSendBufferSize(v)
-	so.sendBufferSize.Store(newSz)
+	so.sendBufferSize.Store(sendBufferSize)
 }
 
 // GetReceiveBufferSize gets value for SO_RCVBUF option.
@@ -657,36 +633,19 @@ func (so *SocketOptions) GetReceiveBufferSize() int64 {
 	return so.receiveBufferSize.Load()
 }
 
-// SetReceiveBufferSize sets value for SO_RCVBUF option.
+// ReceiveBufferLimits returns the [min, max) range of allowable receive buffer
+// sizes.
+func (so *SocketOptions) ReceiveBufferLimits() (min, max int64) {
+	limits := so.getReceiveBufferLimits(so.stackHandler)
+	return int64(limits.Min), int64(limits.Max)
+}
+
+// SetReceiveBufferSize sets the value of the SO_RCVBUF option, optionally
+// notifying the owning endpoint.
 func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bool) {
-	if !notify {
-		so.receiveBufferSize.Store(receiveBufferSize)
-		return
+	if notify {
+		oldSz := so.receiveBufferSize.Load()
+		receiveBufferSize = so.handler.OnSetReceiveBufferSize(receiveBufferSize, oldSz)
 	}
-
-	// Make sure the send buffer size is within the min and max
-	// allowed.
-	v := receiveBufferSize
-	ss := so.getReceiveBufferLimits(so.stackHandler)
-	min := int64(ss.Min)
-	max := int64(ss.Max)
-	// Validate the send buffer size with min and max values.
-	if v > max {
-		v = max
-	}
-
-	// Multiply it by factor of 2.
-	if v < math.MaxInt32/PacketOverheadFactor {
-		v *= PacketOverheadFactor
-		if v < min {
-			v = min
-		}
-	} else {
-		v = math.MaxInt32
-	}
-
-	oldSz := so.receiveBufferSize.Load()
-	// Notify endpoint about change in buffer size.
-	newSz := so.handler.OnSetReceiveBufferSize(v, oldSz)
-	so.receiveBufferSize.Store(newSz)
+	so.receiveBufferSize.Store(receiveBufferSize)
 }
