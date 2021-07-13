@@ -132,7 +132,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	// headers included. Because they're write-only, We don't need to
 	// register with the stack.
 	if !associated {
-		e.ops.SetReceiveBufferSize(0, false)
+		e.ops.SetReceiveBufferSize(0, false /* notify */)
 		e.waiterQueue = nil
 		return e, nil
 	}
