@@ -1093,14 +1093,21 @@ PosixErrorOr<int> MaybeLimitEphemeralPorts() {
   if (!access(kRangeFile, W_OK)) {
     ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd,
                            Open(kRangeFile, O_WRONLY | O_TRUNC, 0));
-    max = min + 50;
-    const std::string small_range = absl::StrFormat("%d %d", min, max);
+    int newMax = min + 50;
+    const std::string small_range = absl::StrFormat("%d %d", min, newMax);
     int n = write(fd.get(), small_range.c_str(), small_range.size());
     if (n < 0) {
-      return PosixError(
-          errno,
-          absl::StrFormat("write(%d [%s], \"%s\", %d)", fd.get(), kRangeFile,
-                          small_range.c_str(), small_range.size()));
+      // Hostinet doesn't allow modifying the host port range. And if we're root
+      // (as we are in some tests), access and open will succeed even if the
+      // file mode is readonly.
+      if (errno != EACCES) {
+        return PosixError(
+            errno,
+            absl::StrFormat("write(%d [%s], \"%s\", %d)", fd.get(), kRangeFile,
+                            small_range.c_str(), small_range.size()));
+      }
+    } else {
+      max = newMax;
     }
   }
   return max - min;
