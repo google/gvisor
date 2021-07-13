@@ -59,6 +59,23 @@ func pivotRoot(root string) error {
 	return nil
 }
 
+func copyFile(dst, src string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = out.ReadFrom(in)
+	return err
+}
+
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
 func setUpChroot(pidns bool) error {
@@ -76,6 +93,14 @@ func setUpChroot(pidns bool) error {
 
 	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
+	}
+
+	if err := os.Mkdir(filepath.Join(chroot, "etc"), 0755); err != nil {
+		return fmt.Errorf("error creating /etc in chroot: %v", err)
+	}
+
+	if err := copyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
+		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
 	if pidns {
