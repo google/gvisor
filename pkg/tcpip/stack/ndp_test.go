@@ -5356,14 +5356,19 @@ func TestRouterSolicitation(t *testing.T) {
 						RandSource: &randSource,
 					})
 
-					if err := s.CreateNIC(nicID, &e); err != nil {
-						t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+					opts := stack.NICOptions{Disabled: true}
+					if err := s.CreateNICWithOptions(nicID, &e, opts); err != nil {
+						t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, opts, err)
 					}
 
 					if addr := test.nicAddr; addr != "" {
 						if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, addr); err != nil {
 							t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, addr, err)
 						}
+					}
+
+					if err := s.EnableNIC(nicID); err != nil {
+						t.Fatalf("EnableNIC(%d): %s", nicID, err)
 					}
 
 					// Make sure each RS is sent at the right time.
