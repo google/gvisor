@@ -1682,6 +1682,26 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 	return nil
 }
 
+func clampBufSize(newSz, min, max int64) int64 {
+	// packetOverheadFactor is used to multiply the value provided by the user on
+	// a setsockopt(2) for setting the send/receive buffer sizes sockets.
+	const packetOverheadFactor = 2
+
+	if newSz > max {
+		newSz = max
+	}
+
+	if newSz < math.MaxInt32/packetOverheadFactor {
+		newSz *= packetOverheadFactor
+		if newSz < min {
+			newSz = min
+		}
+	} else {
+		newSz = math.MaxInt32
+	}
+	return newSz
+}
+
 // setSockOptSocket implements SetSockOpt when level is SOL_SOCKET.
 func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
@@ -1691,7 +1711,9 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-		ep.SocketOptions().SetSendBufferSize(int64(v), true /* notify */)
+		min, max := ep.SocketOptions().SendBufferLimits()
+		clamped := clampBufSize(int64(v), min, max)
+		ep.SocketOptions().SetSendBufferSize(clamped, true /* notify */)
 		return nil
 
 	case linux.SO_RCVBUF:
@@ -1700,7 +1722,9 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 		}
 
 		v := hostarch.ByteOrder.Uint32(optVal)
-		ep.SocketOptions().SetReceiveBufferSize(int64(v), true /* notify */)
+		min, max := ep.SocketOptions().ReceiveBufferLimits()
+		clamped := clampBufSize(int64(v), min, max)
+		ep.SocketOptions().SetReceiveBufferSize(clamped, true /* notify */)
 		return nil
 
 	case linux.SO_REUSEADDR:

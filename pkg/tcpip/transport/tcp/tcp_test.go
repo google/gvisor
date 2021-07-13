@@ -2147,7 +2147,7 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 
 	// Bump up the receive buffer size such that, when the receive window grows,
 	// the scaled window exceeds maxUint16.
-	c.EP.SocketOptions().SetReceiveBufferSize(int64(opt.Max), true)
+	c.EP.SocketOptions().SetReceiveBufferSize(int64(opt.Max)*2, true /* notify */)
 
 	// Keep the payload size < segment overhead and such that it is a multiple
 	// of the window scaled value. This enables the test to perform equality
@@ -2267,7 +2267,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	initialWnd := header.TCP(header.IPv4(pkt).Payload()).WindowSize() << c.RcvdWindowScale
 	initialLastAcceptableSeq := iss.Add(seqnum.Size(initialWnd))
 	// Now shrink the receive buffer to half its original size.
-	c.EP.SocketOptions().SetReceiveBufferSize(int64(rcvBufSize/2), true)
+	c.EP.SocketOptions().SetReceiveBufferSize(int64(rcvBufSize), true /* notify */)
 
 	data := generateRandomPayload(t, rcvBufSize)
 	// Send a payload of half the size of rcvBufSize.
@@ -2523,7 +2523,7 @@ func TestScaledWindowAccept(t *testing.T) {
 	defer ep.Close()
 
 	// Set the window size greater than the maximum non-scaled window.
-	ep.SocketOptions().SetReceiveBufferSize(65535*3, true)
+	ep.SocketOptions().SetReceiveBufferSize(65535*6, true /* notify */)
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
@@ -2595,7 +2595,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 	defer ep.Close()
 
 	// Set the window size greater than the maximum non-scaled window.
-	ep.SocketOptions().SetReceiveBufferSize(65535*3, true)
+	ep.SocketOptions().SetReceiveBufferSize(65535*6, true /* notify */)
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
@@ -3188,7 +3188,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	// Set the buffer size to a deterministic size so that we can check the
 	// window scaling option.
 	const rcvBufferSize = 0x20000
-	ep.SocketOptions().SetReceiveBufferSize(rcvBufferSize, true)
+	ep.SocketOptions().SetReceiveBufferSize(rcvBufferSize*2, true /* notify */)
 
 	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %s", err)
@@ -3327,7 +3327,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	// window scaling option.
 	const rcvBufferSize = 0x20000
 	const wndScale = 3
-	c.EP.SocketOptions().SetReceiveBufferSize(rcvBufferSize, true)
+	c.EP.SocketOptions().SetReceiveBufferSize(rcvBufferSize*2, true /* notify */)
 
 	// Start connection attempt.
 	we, ch := waiter.NewChannelEntry(nil)
@@ -4667,52 +4667,6 @@ func TestDefaultBufferSizes(t *testing.T) {
 
 	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*2)
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*3)
-}
-
-func TestMinMaxBufferSizes(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
-	})
-
-	// Check the default values.
-	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
-	if err != nil {
-		t.Fatalf("NewEndpoint failed; %s", err)
-	}
-	defer ep.Close()
-
-	// Change the min/max values for send/receive
-	{
-		opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 200, Default: tcp.DefaultReceiveBufferSize * 2, Max: tcp.DefaultReceiveBufferSize * 20}
-		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
-		}
-	}
-
-	{
-		opt := tcpip.TCPSendBufferSizeRangeOption{Min: 300, Default: tcp.DefaultSendBufferSize * 3, Max: tcp.DefaultSendBufferSize * 30}
-		if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-			t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
-		}
-	}
-
-	// Set values below the min/2.
-	ep.SocketOptions().SetReceiveBufferSize(99, true)
-	checkRecvBufferSize(t, ep, 200)
-
-	ep.SocketOptions().SetSendBufferSize(149, true)
-
-	checkSendBufferSize(t, ep, 300)
-
-	// Set values above the max.
-	ep.SocketOptions().SetReceiveBufferSize(1+tcp.DefaultReceiveBufferSize*20, true)
-	// Values above max are capped at max and then doubled.
-	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20*2)
-
-	ep.SocketOptions().SetSendBufferSize(1+tcp.DefaultSendBufferSize*30, true)
-	// Values above max are capped at max and then doubled.
-	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30*2)
 }
 
 func TestBindToDeviceOption(t *testing.T) {
@@ -7752,7 +7706,7 @@ func TestIncreaseWindowOnBufferResize(t *testing.T) {
 
 	// Increasing the buffer from should generate an ACK,
 	// since window grew from small value to larger equal MSS
-	c.EP.SocketOptions().SetReceiveBufferSize(rcvBuf*2, true)
+	c.EP.SocketOptions().SetReceiveBufferSize(rcvBuf*4, true /* notify */)
 	checker.IPv4(t, c.GetPacket(),
 		checker.PayloadLen(header.TCPMinimumSize),
 		checker.TCP(

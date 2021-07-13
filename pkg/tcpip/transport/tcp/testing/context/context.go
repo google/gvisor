@@ -757,7 +757,7 @@ func (c *Context) Create(epRcvBuf int) {
 	}
 
 	if epRcvBuf != -1 {
-		c.EP.SocketOptions().SetReceiveBufferSize(int64(epRcvBuf), true /* notify */)
+		c.EP.SocketOptions().SetReceiveBufferSize(int64(epRcvBuf)*2, true /* notify */)
 	}
 }
 
