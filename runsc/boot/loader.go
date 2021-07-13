@@ -633,8 +633,8 @@ func (l *Loader) run() error {
 	return l.k.Start()
 }
 
-// createContainer creates a new container inside the sandbox.
-func (l *Loader) createContainer(cid string, tty *fd.FD) error {
+// createSubcontainer creates a new container inside the sandbox.
+func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -646,10 +646,10 @@ func (l *Loader) createContainer(cid string, tty *fd.FD) error {
 	return nil
 }
 
-// startContainer starts a child container. It returns the thread group ID of
+// startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startContainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -851,9 +851,9 @@ func (l *Loader) startGoferMonitor(cid string, goferFDs []*fd.FD) {
 	}()
 }
 
-// destroyContainer stops a container if it is still running and cleans up its
-// filesystem.
-func (l *Loader) destroyContainer(cid string) error {
+// destroySubcontainer stops a container if it is still running and cleans up
+// its filesystem.
+func (l *Loader) destroySubcontainer(cid string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -1001,7 +1001,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 
 	// Check for leaks and write coverage report after the root container has
 	// exited. This guarantees that the report is written in cases where the
-	// sandbox is killed by a signal after the ContainerWait request is completed.
+	// sandbox is killed by a signal after the ContMgrWait request is completed.
 	if l.root.procArgs.ContainerID == cid {
 		// All sentry-created resources should have been released at this point.
 		refsvfs2.DoLeakCheck()

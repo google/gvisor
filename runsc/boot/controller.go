@@ -41,80 +41,74 @@ import (
 )
 
 const (
-	// ContainerCheckpoint checkpoints a container.
-	ContainerCheckpoint = "containerManager.Checkpoint"
+	// ContMgrCheckpoint checkpoints a container.
+	ContMgrCheckpoint = "containerManager.Checkpoint"
 
-	// ContainerCreate creates a container.
-	ContainerCreate = "containerManager.Create"
+	// ContMgrCreateSubcontainer creates a sub-container.
+	ContMgrCreateSubcontainer = "containerManager.CreateSubcontainer"
 
-	// ContainerDestroy is used to stop a non-root container and free all
+	// ContMgrDestroySubcontainer is used to stop a sub-container and free all
 	// associated resources in the sandbox.
-	ContainerDestroy = "containerManager.Destroy"
+	ContMgrDestroySubcontainer = "containerManager.DestroySubcontainer"
 
-	// ContainerEvent is the URPC endpoint for getting stats about the
-	// container used by "runsc events".
-	ContainerEvent = "containerManager.Event"
+	// ContMgrEvent gets stats about the container used by "runsc events".
+	ContMgrEvent = "containerManager.Event"
 
-	// ContainerExecuteAsync is the URPC endpoint for executing a command in a
-	// container.
-	ContainerExecuteAsync = "containerManager.ExecuteAsync"
+	// ContMgrExecuteAsync executes a command in a container.
+	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
-	// ContainerPause pauses the container.
-	ContainerPause = "containerManager.Pause"
+	// ContMgrPause pauses the sandbox (note that individual containers cannot be
+	// paused).
+	ContMgrPause = "containerManager.Pause"
 
-	// ContainerProcesses is the URPC endpoint for getting the list of
-	// processes running in a container.
-	ContainerProcesses = "containerManager.Processes"
+	// ContMgrProcesses lists processes running in a container.
+	ContMgrProcesses = "containerManager.Processes"
 
-	// ContainerRestore restores a container from a statefile.
-	ContainerRestore = "containerManager.Restore"
+	// ContMgrRestore restores a container from a statefile.
+	ContMgrRestore = "containerManager.Restore"
 
-	// ContainerResume unpauses the paused container.
-	ContainerResume = "containerManager.Resume"
+	// ContMgrResume unpauses the paused sandbox (note that individual containers
+	// cannot be resumed).
+	ContMgrResume = "containerManager.Resume"
 
-	// ContainerSignal is used to send a signal to a container.
-	ContainerSignal = "containerManager.Signal"
+	// ContMgrSignal sends a signal to a container.
+	ContMgrSignal = "containerManager.Signal"
 
-	// ContainerSignalProcess is used to send a signal to a particular
-	// process in a container.
-	ContainerSignalProcess = "containerManager.SignalProcess"
+	// ContMgrStartSubcontainer starts a sub-container inside a running sandbox.
+	ContMgrStartSubcontainer = "containerManager.StartSubcontainer"
 
-	// ContainerStart is the URPC endpoint for running a non-root container
-	// within a sandbox.
-	ContainerStart = "containerManager.Start"
+	// ContMgrWait waits on the init process of the container and returns its
+	// ExitStatus.
+	ContMgrWait = "containerManager.Wait"
 
-	// ContainerWait is used to wait on the init process of the container
-	// and return its ExitStatus.
-	ContainerWait = "containerManager.Wait"
+	// ContMgrWaitPID waits on a process with a certain PID in the sandbox and
+	// return its ExitStatus.
+	ContMgrWaitPID = "containerManager.WaitPID"
 
-	// ContainerWaitPID is used to wait on a process with a certain PID in
-	// the sandbox and return its ExitStatus.
-	ContainerWaitPID = "containerManager.WaitPID"
+	// ContMgrRootContainerStart starts a new sandbox with a root container.
+	ContMgrRootContainerStart = "containerManager.StartRoot"
+)
 
-	// NetworkCreateLinksAndRoutes is the URPC endpoint for creating links
-	// and routes in a network stack.
+const (
+	// NetworkCreateLinksAndRoutes creates links and routes in a network stack.
 	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
 
-	// RootContainerStart is the URPC endpoint for starting a new sandbox
-	// with root container.
-	RootContainerStart = "containerManager.StartRoot"
-
-	// SandboxStacks collects sandbox stacks for debugging.
-	SandboxStacks = "debug.Stacks"
+	// DebugStacks collects sandbox stacks for debugging.
+	DebugStacks = "debug.Stacks"
 )
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	CPUProfile   = "Profile.CPU"
-	HeapProfile  = "Profile.Heap"
-	BlockProfile = "Profile.Block"
-	MutexProfile = "Profile.Mutex"
-	Trace        = "Profile.Trace"
+	ProfileCPU   = "Profile.CPU"
+	ProfileHeap  = "Profile.Heap"
+	ProfileBlock = "Profile.Block"
+	ProfileMutex = "Profile.Mutex"
+	ProfileTrace = "Profile.Trace"
 )
 
 // Logging related commands (see logging.go for more details).
 const (
-	ChangeLogging = "Logging.Change"
+	LoggingChange = "Logging.Change"
 )
 
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
@@ -214,9 +208,9 @@ type CreateArgs struct {
 	urpc.FilePayload
 }
 
-// Create creates a container within a sandbox.
-func (cm *containerManager) Create(args *CreateArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Create: %s", args.CID)
+// CreateSubcontainer creates a container within a sandbox.
+func (cm *containerManager) CreateSubcontainer(args *CreateArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateSubcontainer: %s", args.CID)
 
 	if len(args.Files) > 1 {
 		return fmt.Errorf("start arguments must have at most 1 files for TTY")
@@ -229,7 +223,7 @@ func (cm *containerManager) Create(args *CreateArgs, _ *struct{}) error {
 			return fmt.Errorf("error dup'ing TTY file: %w", err)
 		}
 	}
-	return cm.l.createContainer(args.CID, tty)
+	return cm.l.createSubcontainer(args.CID, tty)
 }
 
 // StartArgs contains arguments to the Start method.
@@ -249,13 +243,13 @@ type StartArgs struct {
 	urpc.FilePayload
 }
 
-// Start runs a created container within a sandbox.
-func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
+// StartSubcontainer runs a created container within a sandbox.
+func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) error {
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")
 	}
-	log.Debugf("containerManager.Start, cid: %s, args: %+v", args.CID, args)
+	log.Debugf("containerManager.StartSubcontainer, cid: %s, args: %+v", args.CID, args)
 	if args.Spec == nil {
 		return errors.New("start arguments missing spec")
 	}
@@ -303,19 +297,19 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		}
 	}()
 
-	if err := cm.l.startContainer(args.Spec, args.Conf, args.CID, stdios, goferFDs); err != nil {
-		log.Debugf("containerManager.Start failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs); err != nil {
+		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
 	log.Debugf("Container started, cid: %s", args.CID)
 	return nil
 }
 
-// Destroy stops a container if it is still running and cleans up its
-// filesystem.
-func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.destroy, cid: %s", *cid)
-	return cm.l.destroyContainer(*cid)
+// DestroySubcontainer stops a container if it is still running and cleans up
+// its filesystem.
+func (cm *containerManager) DestroySubcontainer(cid *string, _ *struct{}) error {
+	log.Debugf("containerManager.DestroySubcontainer, cid: %s", *cid)
+	return cm.l.destroySubcontainer(*cid)
 }
 
 // ExecuteAsync starts running a command on a created or running sandbox. It
@@ -346,7 +340,7 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	return state.Save(o, nil)
 }
 
-// Pause suspends a container.
+// Pause suspends a sandbox.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
 	log.Debugf("containerManager.Pause")
 	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
@@ -488,7 +482,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	return nil
 }
 
-// Resume unpauses a container.
+// Resume unpauses a sandbox.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
 	log.Debugf("containerManager.Resume")
 	cm.l.k.Unpause()
