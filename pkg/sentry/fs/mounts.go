@@ -307,6 +307,9 @@ func (mns *MountNamespace) withMountLocked(node *Dirent, fn func() error) error 
 
 // Mount mounts a `inode` over the subtree at `node`.
 func (mns *MountNamespace) Mount(ctx context.Context, mountPoint *Dirent, inode *Inode) error {
+	if IsDir(mountPoint.Inode.StableAttr) != IsDir(inode.StableAttr) {
+		return syserror.ENOTDIR
+	}
 	return mns.withMountLocked(mountPoint, func() error {
 		replacement, err := mountPoint.mount(ctx, inode)
 		if err != nil {
