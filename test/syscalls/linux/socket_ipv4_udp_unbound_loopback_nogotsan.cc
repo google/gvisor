@@ -31,7 +31,7 @@ using IPv4UDPUnboundSocketNogotsanTest = SimpleSocketTest;
 // We disable S/R because this test creates a large number of sockets.
 TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPConnectPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  constexpr int kClients = 65536;
+  const int kClients = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   // Bind the first socket to the loopback and take note of the selected port.
   auto addr = V4Loopback();
   ASSERT_THAT(bind(receiver1->get(), AsSockAddr(&addr.addr), addr.addr_len),
@@ -61,7 +61,7 @@ TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPConnectPortExhaustion) {
 // We disable S/R because this test creates a large number of sockets.
 TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  constexpr int kClients = 65536;
+  const int kClients = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   auto addr = V4Loopback();
   // Disable cooperative S/R as we are making too many syscalls.
   DisableSave ds;
