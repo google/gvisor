@@ -1032,6 +1032,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "io_uring_setup_test",
+    testonly = 1,
+    srcs = ["io_uring_setup.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "@com_google_absl//absl/time",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:time_util",
+    ],
+)
+
+cc_binary(
     name = "verity_ioctl_test",
     testonly = 1,
     srcs = ["verity_ioctl.cc"],
