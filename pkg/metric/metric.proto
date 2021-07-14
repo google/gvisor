@@ -46,6 +46,7 @@ message MetricMetadata {
   enum Units {
     UNITS_NONE = 0;
     UNITS_NANOSECONDS = 1;
+    UNITS_MICROSECONDS = 2;
   }
 
   // units is the units of the metric value.

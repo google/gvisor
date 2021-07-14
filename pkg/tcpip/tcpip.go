@@ -1845,6 +1845,9 @@ type TCPStats struct {
 	// FailedPortReservations is the number of times TCP failed to reserve
 	// a port.
 	FailedPortReservations *StatCounter
+
+	// TimeToRecover is the time spent by the connection during recovery.
+	TimeToRecover *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
