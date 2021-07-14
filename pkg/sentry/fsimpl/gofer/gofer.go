@@ -215,6 +215,10 @@ type filesystemOptions struct {
 	// way that application FDs representing "special files" such as sockets
 	// do. Note that this disables client caching and mmap for regular files.
 	regularFilesUseSpecialFileFD bool
+
+	// If useLisafs is true, then the client will use lisafs protocol to
+	// communicate with the server instead of 9P.
+	useLisa bool
 }
 
 // InteropMode controls the client's interaction with other remote filesystem
@@ -427,6 +431,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptOverlayfsStaleRead]; ok {
 		delete(mopts, moptOverlayfsStaleRead)
 		fsopts.overlayfsStaleRead = true
+	}
+	if lisafs, ok := mopts["lisafs"]; ok {
+		delete(mopts, "lisafs")
+		fsopts.useLisa = lisafs == "true"
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
 	// "cache=none".

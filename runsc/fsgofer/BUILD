@@ -9,11 +9,13 @@ go_library(
         "fsgofer_amd64_unsafe.go",
         "fsgofer_arm64_unsafe.go",
         "fsgofer_unsafe.go",
+        "lisafs.go",
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/cleanup",
         "//pkg/fd",
+        "//pkg/lisafs",
         "//pkg/log",
         "//pkg/p9",
         "//pkg/sync",
