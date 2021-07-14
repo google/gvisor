@@ -29,7 +29,11 @@ genrule(
           "-std=c++17 " +
           "-static " +
           "-nostdlib " +
+          "-fPIC " +
           "-ffreestanding " +
+          "-Wl,--image-base=0x3f0000000000 " +
+          "-Wl,-Ttext=0x3f0000001000 " +
+          "-Wl,--build-id=none " +
           "-o " +
           "$(location rseq) " +
           select_arch(
