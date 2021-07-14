@@ -150,6 +150,9 @@ type filesystem struct {
 
 	// syncableDentries contains all non-synthetic dentries. specialFileFDs
 	// contains all open specialFileFDs. These fields are protected by syncMu.
+	// syncableDentries do not hold references to the dentries and may contain
+	// dentries that have been destroyed. Use d.tryIncRefFromCache() to safely
+	// acquire a reference to the dentry.
 	syncMu           sync.Mutex `state:"nosave"`
 	syncableDentries map[*dentry]struct{}
 	specialFileFDs   map[*specialFileFD]struct{}
@@ -582,10 +585,10 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.dataMu.Unlock()
 		// Close host FDs if they exist.
 		if d.readFD >= 0 {
-			unix.Close(int(d.readFD))
+			_ = unix.Close(int(d.readFD))
 		}
 		if d.writeFD >= 0 && d.readFD != d.writeFD {
-			unix.Close(int(d.writeFD))
+			_ = unix.Close(int(d.writeFD))
 		}
 		d.readFD = -1
 		d.writeFD = -1
@@ -1353,6 +1356,23 @@ func (d *dentry) TryIncRef() bool {
 	}
 }
 
+// tryIncRefFromCache is similar from TryIncRef() except that it allows a
+// reference to be added to a dentry with in the cache (d.refs==0).
+func (d *dentry) tryIncRefFromCache() bool {
+	for {
+		r := atomic.LoadInt64(&d.refs)
+		if r < 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&d.refs, r, r+1) {
+			if d.LogRefs() {
+				refsvfs2.LogTryIncRef(d, r+1)
+			}
+			return true
+		}
+	}
+}
+
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
 	if d.decRefNoCaching() == 0 {
@@ -1637,18 +1657,18 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.dataMu.Unlock()
 	// Clunk open fids and close open host FDs.
 	if !d.readFile.isNil() {
-		d.readFile.close(ctx)
+		_ = d.readFile.close(ctx)
 	}
 	if !d.writeFile.isNil() && d.readFile != d.writeFile {
-		d.writeFile.close(ctx)
+		_ = d.writeFile.close(ctx)
 	}
 	d.readFile = p9file{}
 	d.writeFile = p9file{}
 	if d.readFD >= 0 {
-		unix.Close(int(d.readFD))
+		_ = unix.Close(int(d.readFD))
 	}
 	if d.writeFD >= 0 && d.readFD != d.writeFD {
-		unix.Close(int(d.writeFD))
+		_ = unix.Close(int(d.writeFD))
 	}
 	d.readFD = -1
 	d.writeFD = -1
