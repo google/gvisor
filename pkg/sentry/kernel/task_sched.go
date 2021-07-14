@@ -637,9 +637,10 @@ func assignCPU(allowed sched.CPUSet, tid ThreadID) (cpu int32) {
 	n := int(tid) % int(allowed.NumCPUs())
 	// ... then pick the nth CPU in allowed.
 	allowed.ForEachCPU(func(c uint) {
-		if n--; n == 0 {
+		if n == 0 {
 			cpu = int32(c)
 		}
+		n--
 	})
 	return cpu
 }

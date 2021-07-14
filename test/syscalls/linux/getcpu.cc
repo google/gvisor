@@ -34,6 +34,19 @@ TEST(GetcpuTest, IsValidCpuStress) {
   }
 }
 
+TEST(GetcpuTest, IsValidCpu) {
+  const int num_cpus = NumCPUs();
+  for (int i = 0; i < num_cpus; i++) {
+    cpu_set_t set = {};
+    int cpu;
+    CPU_SET(i, &set);
+    ASSERT_THAT(sched_setaffinity(getpid(), sizeof(set), &set),
+                SyscallSucceeds());
+    ASSERT_THAT(cpu = sched_getcpu(), SyscallSucceeds());
+    ASSERT_EQ(cpu, i);
+  }
+}
+
 }  // namespace
 
 }  // namespace testing

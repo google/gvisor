@@ -29,35 +29,41 @@ func TestTaskCPU(t *testing.T) {
 		{
 			mask: []byte{0xff},
 			tid:  1,
-			cpu:  0,
+			cpu:  1,
 		},
 		{
 			mask: []byte{0xff},
 			tid:  10,
-			cpu:  1,
+			cpu:  2,
 		},
 		{
 			// more than 8 cpus.
 			mask: []byte{0xff, 0xff},
 			tid:  10,
-			cpu:  9,
+			cpu:  10,
 		},
 		{
 			// missing the first cpu.
 			mask: []byte{0xfe},
 			tid:  1,
-			cpu:  1,
+			cpu:  2,
 		},
 		{
 			mask: []byte{0xfe},
 			tid:  10,
-			cpu:  3,
+			cpu:  4,
 		},
 		{
 			// missing the fifth cpu.
 			mask: []byte{0xef},
 			tid:  10,
-			cpu:  2,
+			cpu:  3,
+		},
+		{
+			// only the fifth cpu.
+			mask: []byte{0x10},
+			tid:  10,
+			cpu:  4,
 		},
 	} {
 		assigned := assignCPU(test.mask, test.tid)
