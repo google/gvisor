@@ -363,12 +363,15 @@ func reciprocalScale(val, n uint32) uint32 {
 // ports then uses it to select a socket. In this case, all packets from one
 // address will be sent to same endpoint.
 func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32) TransportEndpoint {
+	mpep.mu.RLock()
 	if len(mpep.endpoints) == 1 {
 		return mpep.endpoints[0]
 	}
 
 	if mpep.flags.SharedFlags().ToFlags().Effective().MostRecent {
-		return mpep.endpoints[len(mpep.endpoints)-1]
+		ep := mpep.endpoints[len(mpep.endpoints)-1]
+		mpep.mu.RUnlock()
+		return ep
 	}
 
 	payload := []byte{
@@ -385,7 +388,9 @@ func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32
 	hash := h.Sum32()
 
 	idx := reciprocalScale(hash, uint32(len(mpep.endpoints)))
-	return mpep.endpoints[idx]
+	ep := mpep.endpoints[idx]
+	mpep.mu.RUnlock()
+	return ep
 }
 
 func (ep *multiPortEndpoint) handlePacketAll(id TransportEndpointID, pkt *PacketBuffer) {
