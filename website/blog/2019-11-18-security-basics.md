@@ -188,11 +188,11 @@ for direct access to some files. And most files will be remotely accessed
 through the Gofers, in which case no FDs are donated to the Sentry.
 
 The Sentry itself is only allowed access to specific
-[whitelisted syscalls](https://github.com/google/gvisor/blob/master/runsc/config/config.go).
+[allowlisted syscalls](https://github.com/google/gvisor/blob/master/runsc/config/config.go).
 Without networking, the Sentry needs 53 host syscalls in order to function, and
-with networking, it uses an additional 15[^8]. By limiting the whitelist to only
+with networking, it uses an additional 15[^8]. By limiting the allowlist to only
 these needed syscalls, we radically reduce the amount of host OS attack surface.
-If any attempts are made to call something outside the whitelist, it is
+If any attempts are made to call something outside the allowlist, it is
 immediately blocked and the sandbox is killed by the Host OS.
 
 ### Sentry/Gofer Interface:
@@ -280,6 +280,8 @@ We will also use it to introduce Google's Vulnerability Reward Program[^14], and
 other ways the community can contribute to help make gVisor safe, fast and
 stable.
 <br>
+<br>
+**Updated (2021-07-14):** this post was updated to use more inclusive language.
 <br>
 
 --------------------------------------------------------------------------------
