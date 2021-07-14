@@ -61,8 +61,8 @@ steps:
     label: ":test_tube: Unit tests"
     command: make unit-tests
   - <<: *common
-    label: ":test_tube: runsc tests"
-    command: make runsc-tests
+    label: ":test_tube: Container tests"
+    command: make container-tests
 
   # All system call tests.
   - <<: *common

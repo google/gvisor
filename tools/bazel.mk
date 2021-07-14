@@ -64,7 +64,7 @@ STARTUP_OPTIONS :=
 BAZEL_OPTIONS   :=
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
-TEST_OPTIONS := $(BASE_OPTIONS) \
+TEST_OPTIONS += $(BASE_OPTIONS) \
   --test_output=errors \
   --keep_going \
   --verbose_failures=true \
@@ -199,12 +199,13 @@ build_paths = \
   | xargs -r -n 1 -I {} readlink -f "{}" \
   | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
 
-clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
-run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
-sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
-test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
+clean    = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
+build    = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
+copy     = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
+run      = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
+sudo     = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
+test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
+sudocopy = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),sudo cp -fa {} $(2))
 
 clean: ## Cleans the bazel cache.
 	@$(call clean)

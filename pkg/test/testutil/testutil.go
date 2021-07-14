@@ -53,6 +53,7 @@ var (
 	partition            = flag.Int("partition", 1, "partition number, this is 1-indexed")
 	totalPartitions      = flag.Int("total_partitions", 1, "total number of partitions")
 	isRunningWithHostNet = flag.Bool("hostnet", false, "whether test is running with hostnet")
+	runscPath            = flag.String("runsc", "", "path to runsc binary")
 )
 
 // IsCheckpointSupported returns the relevant command line flag.
@@ -73,11 +74,14 @@ func ImageByName(name string) string {
 
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
-	path, err := FindFile("runsc/runsc")
-	if err != nil {
-		return err
+	if *runscPath == "" {
+		path, err := FindFile("runsc/runsc")
+		if err != nil {
+			return err
+		}
+		*runscPath = path
 	}
-	specutils.ExePath = path
+	specutils.ExePath = *runscPath
 	return nil
 }
 
