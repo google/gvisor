@@ -51,6 +51,7 @@ func newUptime(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (u *uptime) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
 	return fs.NewFile(ctx, dirent, flags, &uptimeFile{startTime: u.startTime}), nil
 }
 

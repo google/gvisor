@@ -78,6 +78,8 @@ func newIDMap(ctx context.Context, t *kernel.Task, msrc *fs.MountSource, gids bo
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (imio *idMapInodeOperations) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
 	return fs.NewFile(ctx, dirent, flags, &idMapFileOperations{
 		iops: imio,
 	}), nil
