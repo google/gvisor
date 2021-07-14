@@ -16,21 +16,21 @@
 
 #include "textflag.h"
 
-TEXT ·AndUint32(SB),$0-12
+TEXT ·AndUint32(SB),$8-12
   MOVQ  addr+0(FP), BP
   MOVL  val+8(FP), AX
   LOCK
   ANDL   AX, 0(BP)
   RET
 
-TEXT ·OrUint32(SB),$0-12
+TEXT ·OrUint32(SB),$8-12
   MOVQ  addr+0(FP), BP
   MOVL  val+8(FP), AX
   LOCK
   ORL   AX, 0(BP)
   RET
 
-TEXT ·XorUint32(SB),$0-12
+TEXT ·XorUint32(SB),$8-12
   MOVQ  addr+0(FP), BP
   MOVL  val+8(FP), AX
   LOCK
@@ -46,21 +46,21 @@ TEXT ·CompareAndSwapUint32(SB),$0-20
   MOVL  AX, ret+16(FP)
   RET
 
-TEXT ·AndUint64(SB),$0-16
+TEXT ·AndUint64(SB),$8-16
   MOVQ  addr+0(FP), BP
   MOVQ  val+8(FP), AX
   LOCK
   ANDQ   AX, 0(BP)
   RET
 
-TEXT ·OrUint64(SB),$0-16
+TEXT ·OrUint64(SB),$8-16
   MOVQ  addr+0(FP), BP
   MOVQ  val+8(FP), AX
   LOCK
   ORQ   AX, 0(BP)
   RET
 
-TEXT ·XorUint64(SB),$0-16
+TEXT ·XorUint64(SB),$8-16
   MOVQ  addr+0(FP), BP
   MOVQ  val+8(FP), AX
   LOCK
