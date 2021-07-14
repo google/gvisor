@@ -754,7 +754,7 @@ func (e *endpoint) ResumeWork() {
 //
 // Precondition: e.mu must be held to call this method.
 func (e *endpoint) setEndpointState(state EndpointState) {
-	oldstate := EndpointState(atomic.LoadUint32(&e.state))
+	oldstate := EndpointState(atomic.SwapUint32(&e.state, uint32(state)))
 	switch state {
 	case StateEstablished:
 		e.stack.Stats().TCP.CurrentEstablished.Increment()
@@ -771,7 +771,6 @@ func (e *endpoint) setEndpointState(state EndpointState) {
 			e.stack.Stats().TCP.CurrentEstablished.Decrement()
 		}
 	}
-	atomic.StoreUint32(&e.state, uint32(state))
 }
 
 // EndpointState returns the current state of the endpoint.
