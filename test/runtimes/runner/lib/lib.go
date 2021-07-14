@@ -152,7 +152,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	return itests, nil
 }
 
-// getBlacklist reads the exclude file and returns a set of test names to
+// getExcludes reads the exclude file and returns a set of test names to
 // exclude.
 func getExcludes(excludeFile string) (map[string]struct{}, error) {
 	excludes := make(map[string]struct{})

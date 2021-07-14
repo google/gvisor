@@ -258,7 +258,7 @@ const pprofFixedPrefix = "https://storage.googleapis.com/"
 // allowedBuckets enforces constraints on the pprof target.
 //
 // If the continuous integration system is changed in the future to use
-// additional buckets, they may be whitelisted here. See registerProfile.
+// additional buckets, they may be allowed here. See registerProfile.
 var allowedBuckets = map[string]bool{
 	"gvisor-buildkite": true,
 }

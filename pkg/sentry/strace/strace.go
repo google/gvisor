@@ -819,10 +819,10 @@ func convertToSyscallFlag(sinks SinkType) uint32 {
 	return ret
 }
 
-// Enable enables the syscalls in whitelist in all syscall tables.
+// Enable enables the syscalls in allowlist in all syscall tables.
 //
 // Preconditions: Initialize has been called.
-func Enable(whitelist []string, sinks SinkType) error {
+func Enable(allowlist []string, sinks SinkType) error {
 	flags := convertToSyscallFlag(sinks)
 	for _, table := range kernel.SyscallTables() {
 		// Is this known?
@@ -832,7 +832,7 @@ func Enable(whitelist []string, sinks SinkType) error {
 		}
 
 		// Convert to a set of system calls numbers.
-		wl, err := sys.ConvertToSysnoMap(whitelist)
+		wl, err := sys.ConvertToSysnoMap(allowlist)
 		if err != nil {
 			return err
 		}
