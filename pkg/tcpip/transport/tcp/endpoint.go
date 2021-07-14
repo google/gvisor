@@ -1720,6 +1720,12 @@ func (e *endpoint) OnSetReceiveBufferSize(rcvBufSz, oldSz int64) (newSz int64) {
 	return rcvBufSz
 }
 
+// OnSetSendBufferSize implements tcpip.SocketOptionsHandler.OnSetSendBufferSize.
+func (e *endpoint) OnSetSendBufferSize(oldSz int64) (newSz int64) {
+	atomic.StoreUint32(&e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled, 1)
+	return oldSz
+}
+
 // SetSockOptInt sets a socket option.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	// Lower 2 bits represents ECN bits. RFC 3168, section 23.1
@@ -2332,6 +2338,8 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		e.segmentQueue.mu.Unlock()
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.setEndpointState(StateEstablished)
+		// Auto tune send buffer after entering established state.
+		e.adjustTCPSendBufferSize(true /* shouldAutoTune */)
 	}
 
 	if run {
@@ -2766,13 +2774,20 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 	e.sndQueueInfo.sndQueueMu.Lock()
 	notify := e.sndQueueInfo.SndBufUsed >= sendBufferSize>>1
 	e.sndQueueInfo.SndBufUsed -= v
+
+	// Get the new send buffer size with auto tuning, but do not set it
+	// unless we decide to notify the writers.
+	newSndBufSz := e.adjustTCPSendBufferSize(false /* shouldAutoTune */)
+
 	// We only notify when there is half the sendBufferSize available after
 	// a full buffer event occurs. This ensures that we don't wake up
 	// writers to queue just 1-2 segments and go back to sleep.
-	notify = notify && e.sndQueueInfo.SndBufUsed < sendBufferSize>>1
+	notify = notify && e.sndQueueInfo.SndBufUsed < int(newSndBufSz)>>1
 	e.sndQueueInfo.sndQueueMu.Unlock()
 
 	if notify {
+		// Set the new send buffer size calculated from auto tuning.
+		e.ops.SetSendBufferSize(newSndBufSz, false /* notify */)
 		e.waiterQueue.Notify(waiter.WritableEvents)
 	}
 }
@@ -3092,4 +3107,30 @@ func GetTCPReceiveBufferLimits(s tcpip.StackHandler) tcpip.ReceiveBufferSizeOpti
 		Default: ss.Default,
 		Max:     ss.Max,
 	}
+}
+
+// adjustTCPSendBufferSize implements auto tuning of send buffer size.
+func (e *endpoint) adjustTCPSendBufferSize(shouldAutoTune bool) int64 {
+	// Auto tuning is disabled when the user explicitly sets the send
+	// buffer size with SO_SNDBUF option.
+	disabled := atomic.LoadUint32(&e.sndQueueInfo.TCPSndBufState.AutoTuneSndBufDisabled)
+	if disabled == 1 || e.snd == nil {
+		return int64(e.getSendBufferSize())
+	}
+
+	curMSS := e.snd.MaxPayloadSize
+	numSeg := InitialCwnd
+	if numSeg < e.snd.SndCwnd {
+		numSeg = e.snd.SndCwnd
+	}
+
+	sndmem := int64(numSeg * curMSS * tcpip.PacketOverheadFactor)
+	if ss := GetTCPSendBufferLimits(e.stack); int64(ss.Max) < sndmem {
+		sndmem = int64(ss.Max)
+	}
+
+	if sndbuf := e.ops.GetSendBufferSize(); sndbuf < sndmem && shouldAutoTune {
+		e.ops.SetSendBufferSize(sndmem, false /* notify */)
+	}
+	return sndmem
 }

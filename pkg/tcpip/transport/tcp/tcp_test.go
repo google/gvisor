@@ -7964,3 +7964,83 @@ func generateRandomPayload(t *testing.T, n int) []byte {
 	}
 	return buf
 }
+
+func TestSendBufferTuning(t *testing.T) {
+	const maxPayload = 536
+	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+
+	testCases := []struct {
+		name               string
+		autoTuningDisabled bool
+	}{
+		{"autoTuningDisabled", true},
+		{"autoTuningEnabled", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			// Set the stack option for send buffer size.
+			const defaultSndBufSz = maxPayload * tcp.InitialCwnd
+			const maxSndBufSz = defaultSndBufSz * 10
+			{
+				opt := tcpip.TCPSendBufferSizeRangeOption{Min: 1, Default: defaultSndBufSz, Max: maxSndBufSz}
+				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+					t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+				}
+			}
+
+			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+			oldSz := c.EP.SocketOptions().GetSendBufferSize()
+			if oldSz != defaultSndBufSz {
+				t.Fatalf("Wrong send buffer size got %d want %d", oldSz, defaultSndBufSz)
+			}
+
+			if tc.autoTuningDisabled {
+				c.EP.SocketOptions().SetSendBufferSize(defaultSndBufSz, true /* notify */)
+			}
+
+			// Fill the buffer greater than send buffer size.
+			data := make([]byte, defaultSndBufSz*4)
+			for i := range data {
+				data[i] = byte(i)
+			}
+
+			var r bytes.Reader
+			r.Reset(data)
+			if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write failed: %s", err)
+			}
+
+			bytesRead := 0
+			var info tcpip.TCPInfoOption
+			for i := 0; i < tcp.InitialCwnd; i++ {
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+				bytesRead += maxPayload
+			}
+			c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytesRead)
+
+			var outSz int64
+			if tc.autoTuningDisabled {
+				outSz = defaultSndBufSz * 2
+			} else {
+				// Calculate the expected send buffer after
+				// processing ACK. Delay is added to finish
+				// processiong the ACK to get the updated value
+				// for send congestion window.
+				time.Sleep(10 * time.Millisecond)
+				if err := c.EP.GetSockOpt(&info); err != nil {
+					t.Fatalf("GetSockOpt failed: %v", err)
+				}
+				outSz = (int64(info.SndCwnd) * tcpip.PacketOverheadFactor * (maxPayload))
+			}
+
+			if newSz := c.EP.SocketOptions().GetSendBufferSize(); newSz != outSz {
+				t.Fatalf("Wrong send buffer size, got %d want %d", newSz, outSz)
+			}
+		})
+	}
+}
