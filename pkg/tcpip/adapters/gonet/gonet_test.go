@@ -660,13 +660,10 @@ func TestTCPDialError(t *testing.T) {
 	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
 	addr := tcpip.FullAddress{NICID, ip, 11211}
 
-	switch _, err := DialTCP(s, addr, ipv4.ProtocolNumber); err := err.(type) {
-	case *net.OpError:
-		if err.Err.Error() != (&tcpip.ErrNoRoute{}).String() {
-			t.Errorf("got DialTCP() = %s, want = %s", err, &tcpip.ErrNoRoute{})
-		}
-	default:
-		t.Errorf("got DialTCP(...) = %v, want %s", err, &tcpip.ErrNoRoute{})
+	want := &tcpip.ErrNetworkUnreachable{}
+	_, gotErr := DialTCP(s, addr, ipv4.ProtocolNumber)
+	if err, ok := gotErr.(*net.OpError); !ok || err.Err.Error() != want.String() {
+		t.Errorf("got DialTCP() = %v, want = %s", gotErr, want)
 	}
 }
 

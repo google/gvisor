@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"net"
 	"sort"
 	"testing"
 	"time"
@@ -3966,6 +3965,14 @@ func TestFindRouteWithForwarding(t *testing.T) {
 		nic1Addr   = tcpip.Address("\x01")
 		nic2Addr   = tcpip.Address("\x02")
 		remoteAddr = tcpip.Address("\x03")
+
+		globalIPv6Addr1 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+		globalIPv6Addr2 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+
+		globalIPv4Addr1 = tcpip.Address("\x0a\x00\x00\x01")
+		globalIPv4Addr2 = tcpip.Address("\x0a\x00\x00\x02")
+		llIPv4Addr1     = tcpip.Address("\xa9\xfe\x00\x01")
+		llIPv4Addr2     = tcpip.Address("\xa9\xfe\x00\x02")
 	)
 
 	type netCfg struct {
@@ -3983,9 +3990,6 @@ func TestFindRouteWithForwarding(t *testing.T) {
 		nic2Addr:   nic2Addr,
 		remoteAddr: remoteAddr,
 	}
-
-	globalIPv6Addr1 := tcpip.Address(net.ParseIP("a::1").To16())
-	globalIPv6Addr2 := tcpip.Address(net.ParseIP("a::2").To16())
 
 	ipv6LinkLocalNIC1WithGlobalRemote := netCfg{
 		proto:      ipv6.ProtocolNumber,
@@ -4006,7 +4010,29 @@ func TestFindRouteWithForwarding(t *testing.T) {
 		factory:    ipv6.NewProtocol,
 		nic1Addr:   globalIPv6Addr1,
 		nic2Addr:   globalIPv6Addr2,
-		remoteAddr: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+		remoteAddr: header.IPv6AllNodesMulticastAddress,
+	}
+
+	ipv4LinkLocalNIC1WithGlobalRemote := netCfg{
+		proto:      ipv4.ProtocolNumber,
+		factory:    ipv4.NewProtocol,
+		nic1Addr:   llIPv4Addr1,
+		nic2Addr:   globalIPv4Addr2,
+		remoteAddr: globalIPv4Addr1,
+	}
+	ipv4GlobalNIC1WithLinkLocalRemote := netCfg{
+		proto:      ipv4.ProtocolNumber,
+		factory:    ipv4.NewProtocol,
+		nic1Addr:   globalIPv4Addr1,
+		nic2Addr:   llIPv4Addr1,
+		remoteAddr: llIPv4Addr2,
+	}
+	ipv4GlobalNIC1WithLinkLocalMulticastRemote := netCfg{
+		proto:      ipv4.ProtocolNumber,
+		factory:    ipv4.NewProtocol,
+		nic1Addr:   globalIPv4Addr1,
+		nic2Addr:   globalIPv4Addr2,
+		remoteAddr: header.IPv4AllSystems,
 	}
 
 	tests := []struct {
@@ -4022,7 +4048,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 		dependentOnForwarding bool
 	}{
 		{
-			name:                  "forwarding disabled and localAddr not on specified NIC but route from different NIC",
+			name:                  "fakeNet forwarding disabled and localAddr not on specified NIC but route from different NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
@@ -4031,7 +4057,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr not on specified NIC but route from different NIC",
+			name:                  "fakeNet forwarding enabled and localAddr not on specified NIC but route from different NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
@@ -4040,7 +4066,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and localAddr on specified NIC but route from different NIC",
+			name:                  "fakeNet forwarding disabled and localAddr on specified NIC but route from different NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
@@ -4049,7 +4075,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr on specified NIC but route from different NIC",
+			name:                  "fakeNet forwarding enabled and localAddr on specified NIC but route from different NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
@@ -4058,7 +4084,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: true,
 		},
 		{
-			name:                  "forwarding disabled and localAddr on specified NIC and route from same NIC",
+			name:                  "fakeNet forwarding disabled and localAddr on specified NIC and route from same NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			addrNIC:               nicID2,
@@ -4067,7 +4093,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr on specified NIC and route from same NIC",
+			name:                  "fakeNet forwarding enabled and localAddr on specified NIC and route from same NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     true,
 			addrNIC:               nicID2,
@@ -4076,7 +4102,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and localAddr not on specified NIC but route from same NIC",
+			name:                  "fakeNet forwarding disabled and localAddr not on specified NIC but route from same NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			addrNIC:               nicID2,
@@ -4085,7 +4111,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr not on specified NIC but route from same NIC",
+			name:                  "fakeNet forwarding enabled and localAddr not on specified NIC but route from same NIC",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     true,
 			addrNIC:               nicID2,
@@ -4094,7 +4120,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and localAddr on same NIC as route",
+			name:                  "fakeNet forwarding disabled and localAddr on same NIC as route",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			localAddr:             fakeNetCfg.nic2Addr,
@@ -4102,7 +4128,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr on same NIC as route",
+			name:                  "fakeNet forwarding enabled and localAddr on same NIC as route",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			localAddr:             fakeNetCfg.nic2Addr,
@@ -4110,7 +4136,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and localAddr on different NIC as route",
+			name:                  "fakeNet forwarding disabled and localAddr on different NIC as route",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     false,
 			localAddr:             fakeNetCfg.nic1Addr,
@@ -4118,15 +4144,16 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and localAddr on different NIC as route",
+			name:                  "fakeNet forwarding enabled and localAddr on different NIC as route",
 			netCfg:                fakeNetCfg,
 			forwardingEnabled:     true,
 			localAddr:             fakeNetCfg.nic1Addr,
 			findRouteErr:          nil,
 			dependentOnForwarding: true,
 		},
+
 		{
-			name:                  "forwarding disabled and specified NIC only has link-local addr with route on different NIC",
+			name:                  "IPv6 forwarding disabled and specified NIC only has link-local addr with route on different NIC",
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			addrNIC:               nicID1,
@@ -4134,7 +4161,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and specified NIC only has link-local addr with route on different NIC",
+			name:                  "IPv6 forwarding enabled and specified NIC only has link-local addr with route on different NIC",
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			addrNIC:               nicID1,
@@ -4142,7 +4169,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and link-local local addr with route on different NIC",
+			name:                  "IPv6 forwarding disabled and link-local local addr with route on different NIC",
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     false,
 			localAddr:             ipv6LinkLocalNIC1WithGlobalRemote.nic1Addr,
@@ -4150,7 +4177,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and link-local local addr with route on same NIC",
+			name:                  "IPv6 forwarding enabled and link-local local addr with route on same NIC",
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6LinkLocalNIC1WithGlobalRemote.nic1Addr,
@@ -4158,7 +4185,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and global local addr with route on same NIC",
+			name:                  "IPv6 forwarding disabled and global local addr with route on same NIC",
 			netCfg:                ipv6LinkLocalNIC1WithGlobalRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6LinkLocalNIC1WithGlobalRemote.nic2Addr,
@@ -4166,7 +4193,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and link-local local addr with route on same NIC",
+			name:                  "IPv6 forwarding disabled and link-local local addr with route on same NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     false,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalRemote.nic2Addr,
@@ -4174,7 +4201,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and link-local local addr with route on same NIC",
+			name:                  "IPv6 forwarding enabled and link-local local addr with route on same NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalRemote.nic2Addr,
@@ -4182,7 +4209,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and global local addr with link-local remote on different NIC",
+			name:                  "IPv6 forwarding disabled and global local addr with link-local remote on different NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     false,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalRemote.nic1Addr,
@@ -4190,7 +4217,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and global local addr with link-local remote on different NIC",
+			name:                  "IPv6 forwarding enabled and global local addr with link-local remote on different NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalRemote.nic1Addr,
@@ -4198,7 +4225,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and global local addr with link-local multicast remote on different NIC",
+			name:                  "IPv6 forwarding disabled and global local addr with link-local multicast remote on different NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     false,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic1Addr,
@@ -4206,7 +4233,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and global local addr with link-local multicast remote on different NIC",
+			name:                  "IPv6 forwarding enabled and global local addr with link-local multicast remote on different NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic1Addr,
@@ -4214,7 +4241,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding disabled and global local addr with link-local multicast remote on same NIC",
+			name:                  "IPv6 forwarding disabled and global local addr with link-local multicast remote on same NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     false,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic2Addr,
@@ -4222,10 +4249,115 @@ func TestFindRouteWithForwarding(t *testing.T) {
 			dependentOnForwarding: false,
 		},
 		{
-			name:                  "forwarding enabled and global local addr with link-local multicast remote on same NIC",
+			name:                  "IPv6 forwarding enabled and global local addr with link-local multicast remote on same NIC",
 			netCfg:                ipv6GlobalNIC1WithLinkLocalMulticastRemote,
 			forwardingEnabled:     true,
 			localAddr:             ipv6GlobalNIC1WithLinkLocalMulticastRemote.nic2Addr,
+			findRouteErr:          nil,
+			dependentOnForwarding: false,
+		},
+
+		{
+			name:                  "IPv4 forwarding disabled and specified NIC only has link-local addr with route on different NIC",
+			netCfg:                ipv4LinkLocalNIC1WithGlobalRemote,
+			forwardingEnabled:     false,
+			addrNIC:               nicID1,
+			findRouteErr:          &tcpip.ErrNoRoute{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and specified NIC only has link-local addr with route on different NIC",
+			netCfg:                ipv4LinkLocalNIC1WithGlobalRemote,
+			forwardingEnabled:     true,
+			addrNIC:               nicID1,
+			findRouteErr:          &tcpip.ErrNoRoute{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and link-local local addr with route on different NIC",
+			netCfg:                ipv4LinkLocalNIC1WithGlobalRemote,
+			forwardingEnabled:     false,
+			localAddr:             ipv4LinkLocalNIC1WithGlobalRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNoRoute{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and link-local local addr with route on same NIC",
+			netCfg:                ipv4LinkLocalNIC1WithGlobalRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4LinkLocalNIC1WithGlobalRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNoRoute{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and global local addr with route on same NIC",
+			netCfg:                ipv4LinkLocalNIC1WithGlobalRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4LinkLocalNIC1WithGlobalRemote.nic2Addr,
+			findRouteErr:          nil,
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and link-local local addr with route on same NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalRemote,
+			forwardingEnabled:     false,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalRemote.nic2Addr,
+			findRouteErr:          nil,
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and link-local local addr with route on same NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalRemote.nic2Addr,
+			findRouteErr:          nil,
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and global local addr with link-local remote on different NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalRemote,
+			forwardingEnabled:     false,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and global local addr with link-local remote on different NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and global local addr with link-local multicast remote on different NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalMulticastRemote,
+			forwardingEnabled:     false,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalMulticastRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and global local addr with link-local multicast remote on different NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalMulticastRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalMulticastRemote.nic1Addr,
+			findRouteErr:          &tcpip.ErrNetworkUnreachable{},
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding disabled and global local addr with link-local multicast remote on same NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalMulticastRemote,
+			forwardingEnabled:     false,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalMulticastRemote.nic2Addr,
+			findRouteErr:          nil,
+			dependentOnForwarding: false,
+		},
+		{
+			name:                  "IPv4 forwarding enabled and global local addr with link-local multicast remote on same NIC",
+			netCfg:                ipv4GlobalNIC1WithLinkLocalMulticastRemote,
+			forwardingEnabled:     true,
+			localAddr:             ipv4GlobalNIC1WithLinkLocalMulticastRemote.nic2Addr,
 			findRouteErr:          nil,
 			dependentOnForwarding: false,
 		},
