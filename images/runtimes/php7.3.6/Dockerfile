@@ -15,5 +15,5 @@ RUN curl -o php-${VERSION}.tar.gz https://www.php.net/distributions/php-${VERSIO
 RUN tar -zxf php-${VERSION}.tar.gz
 
 WORKDIR /root/php-${VERSION}
-RUN ./configure
+RUN ./configure --enable-sockets
 RUN make
