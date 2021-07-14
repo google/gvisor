@@ -331,6 +331,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:msgqueue_test",
+)
+
+syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:msync_test",
 )

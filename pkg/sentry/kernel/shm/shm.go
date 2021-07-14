@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -50,12 +51,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-// Key represents a shm segment key. Analogous to a file name.
-type Key int32
-
-// ID represents the opaque handle for a shm segment. Analogous to an fd.
-type ID int32
 
 // Registry tracks all shared memory segments in an IPC namespace. The registry
 // provides the mechanisms for creating and finding segments, and reporting
@@ -69,50 +64,51 @@ type Registry struct {
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// shms maps segment ids to segments.
+	// reg defines basic fields and operations needed for all SysV registries.
 	//
-	// shms holds all referenced segments, which are removed on the last
+	// Withing reg, there are two maps, Objects and KeysToIDs.
+	//
+	// reg.objects holds all referenced segments, which are removed on the last
 	// DecRef. Thus, it cannot itself hold a reference on the Shm.
 	//
 	// Since removal only occurs after the last (unlocked) DecRef, there
 	// exists a short window during which a Shm still exists in Shm, but is
 	// unreferenced. Users must use TryIncRef to determine if the Shm is
 	// still valid.
-	shms map[ID]*Shm
-
-	// keysToShms maps segment keys to segments.
 	//
-	// Shms in keysToShms are guaranteed to be referenced, as they are
+	// keysToIDs maps segment keys to IDs.
+	//
+	// Shms in keysToIDs are guaranteed to be referenced, as they are
 	// removed by disassociateKey before the last DecRef.
-	keysToShms map[Key]*Shm
+	reg *ipc.Registry
 
 	// Sum of the sizes of all existing segments rounded up to page size, in
 	// units of page size.
 	totalPages uint64
-
-	// ID assigned to the last created segment. Used to quickly find the next
-	// unused ID.
-	lastIDUsed ID
 }
 
 // NewRegistry creates a new shm registry.
 func NewRegistry(userNS *auth.UserNamespace) *Registry {
 	return &Registry{
-		userNS:     userNS,
-		shms:       make(map[ID]*Shm),
-		keysToShms: make(map[Key]*Shm),
+		userNS: userNS,
+		reg:    ipc.NewRegistry(userNS),
 	}
 }
 
 // FindByID looks up a segment given an ID.
 //
 // FindByID returns a reference on Shm.
-func (r *Registry) FindByID(id ID) *Shm {
+func (r *Registry) FindByID(id ipc.ID) *Shm {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := r.shms[id]
+	mech := r.reg.FindByID(id)
+	if mech == nil {
+		return nil
+	}
+	s := mech.(*Shm)
+
 	// Take a reference on s. If TryIncRef fails, s has reached the last
-	// DecRef, but hasn't quite been removed from r.shms yet.
+	// DecRef, but hasn't quite been removed from r.reg.objects yet.
 	if s != nil && s.TryIncRef() {
 		return s
 	}
@@ -129,9 +125,9 @@ func (r *Registry) dissociateKey(s *Shm) {
 	defer r.mu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.key != linux.IPC_PRIVATE {
-		delete(r.keysToShms, s.key)
-		s.key = linux.IPC_PRIVATE
+	if s.obj.Key != linux.IPC_PRIVATE {
+		r.reg.DissociateKey(s.obj.Key)
+		s.obj.Key = linux.IPC_PRIVATE
 	}
 }
 
@@ -139,7 +135,7 @@ func (r *Registry) dissociateKey(s *Shm) {
 // analogous to open(2).
 //
 // FindOrCreate returns a reference on Shm.
-func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
+func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
 	if (create || private) && (size < linux.SHMMIN || size > linux.SHMMAX) {
 		// "A new segment was to be created and size is less than SHMMIN or
 		// greater than SHMMAX." - man shmget(2)
@@ -152,48 +148,28 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.shms) >= linux.SHMMNI {
+	if r.reg.ObjectCount() >= linux.SHMMNI {
 		// "All possible shared memory IDs have been taken (SHMMNI) ..."
 		//   - man shmget(2)
 		return nil, syserror.ENOSPC
 	}
 
 	if !private {
-		// Look up an existing segment.
-		if shm := r.keysToShms[key]; shm != nil {
-			shm.mu.Lock()
-			defer shm.mu.Unlock()
+		shm, err := r.reg.Find(ctx, key, mode, create, exclusive)
+		if err != nil {
+			return nil, err
+		}
 
-			// Check that caller can access the segment.
-			if !shm.checkPermissions(ctx, fs.PermsFromMode(mode)) {
-				// "The user does not have permission to access the shared
-				// memory segment, and does not have the CAP_IPC_OWNER
-				// capability in the user namespace that governs its IPC
-				// namespace." - man shmget(2)
-				return nil, linuxerr.EACCES
-			}
-
+		// Validate shm-specific parameters.
+		if shm != nil {
+			shm := shm.(*Shm)
 			if size > shm.size {
 				// "A segment for the given key exists, but size is greater than
 				// the size of that segment." - man shmget(2)
 				return nil, linuxerr.EINVAL
 			}
-
-			if create && exclusive {
-				// "IPC_CREAT and IPC_EXCL were specified in shmflg, but a
-				// shared memory segment already exists for key."
-				//  - man shmget(2)
-				return nil, linuxerr.EEXIST
-			}
-
 			shm.IncRef()
 			return shm, nil
-		}
-
-		if !create {
-			// "No segment exists for the given key, and IPC_CREAT was not
-			// specified." - man shmget(2)
-			return nil, syserror.ENOENT
 		}
 	}
 
@@ -212,9 +188,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	}
 
 	// Need to create a new segment.
-	creator := fs.FileOwnerFromContext(ctx)
-	perms := fs.FilePermsFromMode(mode)
-	s, err := r.newShm(ctx, pid, key, creator, perms, size)
+	s, err := r.newShmLocked(ctx, pid, key, fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(mode), size)
 	if err != nil {
 		return nil, err
 	}
@@ -224,10 +198,10 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 	return s, nil
 }
 
-// newShm creates a new segment in the registry.
+// newShmLocked creates a new segment in the registry.
 //
 // Precondition: Caller must hold r.mu.
-func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
+func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
@@ -242,40 +216,21 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 	shm := &Shm{
 		mfp:           mfp,
 		registry:      r,
-		creator:       creator,
 		size:          size,
 		effectiveSize: effectiveSize,
+		obj:           ipc.NewObject(r.reg.UserNS, ipc.Key(key), creator, creator, perms),
 		fr:            fr,
-		key:           key,
-		perms:         perms,
-		owner:         creator,
 		creatorPID:    pid,
 		changeTime:    ktime.NowFromContext(ctx),
 	}
 	shm.InitRefs()
 
-	// Find the next available ID.
-	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {
-		// Handle wrap around.
-		if id < 0 {
-			id = 0
-			continue
-		}
-		if r.shms[id] == nil {
-			r.lastIDUsed = id
-
-			shm.ID = id
-			r.shms[id] = shm
-			r.keysToShms[key] = shm
-
-			r.totalPages += effectiveSize / hostarch.PageSize
-
-			return shm, nil
-		}
+	if err := r.reg.Register(shm); err != nil {
+		return nil, err
 	}
+	r.totalPages += effectiveSize / hostarch.PageSize
 
-	log.Warningf("Shm ids exhuasted, they may be leaking")
-	return nil, syserror.ENOSPC
+	return shm, nil
 }
 
 // IPCInfo reports global parameters for sysv shared memory segments on this
@@ -297,7 +252,7 @@ func (r *Registry) ShmInfo() *linux.ShmInfo {
 	defer r.mu.Unlock()
 
 	return &linux.ShmInfo{
-		UsedIDs: int32(r.lastIDUsed),
+		UsedIDs: int32(r.reg.LastIDUsed()),
 		ShmTot:  r.totalPages,
 		ShmRss:  r.totalPages, // We could probably get a better estimate from memory accounting.
 		ShmSwp:  0,            // No reclaim at the moment.
@@ -314,11 +269,11 @@ func (r *Registry) remove(s *Shm) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.key != linux.IPC_PRIVATE {
+	if s.obj.Key != linux.IPC_PRIVATE {
 		panic(fmt.Sprintf("Attempted to remove %s from the registry whose key is still associated", s.debugLocked()))
 	}
 
-	delete(r.shms, s.ID)
+	r.reg.DissociateID(s.obj.ID)
 	r.totalPages -= s.effectiveSize / hostarch.PageSize
 }
 
@@ -330,13 +285,16 @@ func (r *Registry) Release(ctx context.Context) {
 	// the IPC namespace containing it has no more references.
 	toRelease := make([]*Shm, 0)
 	r.mu.Lock()
-	for _, s := range r.keysToShms {
-		s.mu.Lock()
-		if !s.pendingDestruction {
-			toRelease = append(toRelease, s)
-		}
-		s.mu.Unlock()
-	}
+	r.reg.ForAllObjects(
+		func(o ipc.Mechanism) {
+			s := o.(*Shm)
+			s.mu.Lock()
+			if !s.pendingDestruction {
+				toRelease = append(toRelease, s)
+			}
+			s.mu.Unlock()
+		},
+	)
 	r.mu.Unlock()
 
 	for _, s := range toRelease {
@@ -374,12 +332,6 @@ type Shm struct {
 	// registry points to the shm registry containing this segment. Immutable.
 	registry *Registry
 
-	// ID is the kernel identifier for this segment. Immutable.
-	ID ID
-
-	// creator is the user that created the segment. Immutable.
-	creator fs.FileOwner
-
 	// size is the requested size of the segment at creation, in
 	// bytes. Immutable.
 	size uint64
@@ -397,14 +349,8 @@ type Shm struct {
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// key is the public identifier for this segment.
-	key Key
+	obj *ipc.Object
 
-	// perms is the access permissions for the segment.
-	perms fs.FilePermissions
-
-	// owner of this segment.
-	owner fs.FileOwner
 	// attachTime is updated on every successful shmat.
 	attachTime ktime.Time
 	// detachTime is updated on every successful shmdt.
@@ -426,17 +372,44 @@ type Shm struct {
 	pendingDestruction bool
 }
 
+// ID returns object's ID.
+func (s *Shm) ID() ipc.ID {
+	return s.obj.ID
+}
+
+// Object implements ipc.Mechanism.Object.
+func (s *Shm) Object() *ipc.Object {
+	return s.obj
+}
+
+// Destroy implements ipc.Mechanism.Destroy. No work is performed on shm.Destroy
+// because a different removal mechanism is used in shm. See Shm.MarkDestroyed.
+func (s *Shm) Destroy() {
+}
+
+// Lock implements ipc.Mechanism.Lock.
+func (s *Shm) Lock() {
+	s.mu.Lock()
+}
+
+// Unlock implements ipc.mechanism.Unlock.
+//
+// +checklocksignore
+func (s *Shm) Unlock() {
+	s.mu.Unlock()
+}
+
 // Precondition: Caller must hold s.mu.
 func (s *Shm) debugLocked() string {
 	return fmt.Sprintf("Shm{id: %d, key: %d, size: %d bytes, refs: %d, destroyed: %v}",
-		s.ID, s.key, s.size, s.ReadRefs(), s.pendingDestruction)
+		s.obj.ID, s.obj.Key, s.size, s.ReadRefs(), s.pendingDestruction)
 }
 
 // MappedName implements memmap.MappingIdentity.MappedName.
 func (s *Shm) MappedName(ctx context.Context) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return fmt.Sprintf("SYSV%08d", s.key)
+	return fmt.Sprintf("SYSV%08d", s.obj.Key)
 }
 
 // DeviceID implements memmap.MappingIdentity.DeviceID.
@@ -448,7 +421,7 @@ func (s *Shm) DeviceID() uint64 {
 func (s *Shm) InodeID() uint64 {
 	// "shmid gets reported as "inode#" in /proc/pid/maps. proc-ps tools use
 	// this. Changing this will break them." -- Linux, ipc/shm.c:newseg()
-	return uint64(s.ID)
+	return uint64(s.obj.ID)
 }
 
 // DecRef drops a reference on s.
@@ -551,7 +524,8 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 		return memmap.MMapOpts{}, syserror.EIDRM
 	}
 
-	if !s.checkPermissions(ctx, fs.PermMask{
+	creds := auth.CredentialsFromContext(ctx)
+	if !s.obj.CheckPermissions(creds, fs.PermMask{
 		Read:    true,
 		Write:   !opts.Readonly,
 		Execute: opts.Execute,
@@ -591,7 +565,8 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 
 	// "The caller must have read permission on the shared memory segment."
 	//   - man shmctl(2)
-	if !s.checkPermissions(ctx, fs.PermMask{Read: true}) {
+	creds := auth.CredentialsFromContext(ctx)
+	if !s.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
 		// "IPC_STAT or SHM_STAT is requested and shm_perm.mode does not allow
 		// read access for shmid, and the calling process does not have the
 		// CAP_IPC_OWNER capability in the user namespace that governs its IPC
@@ -603,7 +578,6 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 	if s.pendingDestruction {
 		mode |= linux.SHM_DEST
 	}
-	creds := auth.CredentialsFromContext(ctx)
 
 	// Use the reference count as a rudimentary count of the number of
 	// attaches. We exclude:
@@ -620,12 +594,12 @@ func (s *Shm) IPCStat(ctx context.Context) (*linux.ShmidDS, error) {
 
 	ds := &linux.ShmidDS{
 		ShmPerm: linux.IPCPerm{
-			Key:  uint32(s.key),
-			UID:  uint32(creds.UserNamespace.MapFromKUID(s.owner.UID)),
-			GID:  uint32(creds.UserNamespace.MapFromKGID(s.owner.GID)),
-			CUID: uint32(creds.UserNamespace.MapFromKUID(s.creator.UID)),
-			CGID: uint32(creds.UserNamespace.MapFromKGID(s.creator.GID)),
-			Mode: mode | uint16(s.perms.LinuxMode()),
+			Key:  uint32(s.obj.Key),
+			UID:  uint32(creds.UserNamespace.MapFromKUID(s.obj.Owner.UID)),
+			GID:  uint32(creds.UserNamespace.MapFromKGID(s.obj.Owner.GID)),
+			CUID: uint32(creds.UserNamespace.MapFromKUID(s.obj.Creator.UID)),
+			CGID: uint32(creds.UserNamespace.MapFromKGID(s.obj.Creator.GID)),
+			Mode: mode | uint16(s.obj.Perms.LinuxMode()),
 			Seq:  0, // IPC sequences not supported.
 		},
 		ShmSegsz:   s.size,
@@ -645,11 +619,11 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.checkOwnership(ctx) {
+	creds := auth.CredentialsFromContext(ctx)
+	if !s.obj.CheckOwnership(creds) {
 		return linuxerr.EPERM
 	}
 
-	creds := auth.CredentialsFromContext(ctx)
 	uid := creds.UserNamespace.MapToKUID(auth.UID(ds.ShmPerm.UID))
 	gid := creds.UserNamespace.MapToKGID(auth.GID(ds.ShmPerm.GID))
 	if !uid.Ok() || !gid.Ok() {
@@ -659,10 +633,10 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 	// User may only modify the lower 9 bits of the mode. All the other bits are
 	// always 0 for the underlying inode.
 	mode := linux.FileMode(ds.ShmPerm.Mode & 0x1ff)
-	s.perms = fs.FilePermsFromMode(mode)
+	s.obj.Perms = fs.FilePermsFromMode(mode)
 
-	s.owner.UID = uid
-	s.owner.GID = gid
+	s.obj.Owner.UID = uid
+	s.obj.Owner.GID = gid
 
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
@@ -690,41 +664,4 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	// holds a reference.
 	s.DecRef(ctx)
 	return
-}
-
-// checkOwnership verifies whether a segment may be accessed by ctx as an
-// owner. See ipc/util.c:ipcctl_pre_down_nolock() in Linux.
-//
-// Precondition: Caller must hold s.mu.
-func (s *Shm) checkOwnership(ctx context.Context) bool {
-	creds := auth.CredentialsFromContext(ctx)
-	if s.owner.UID == creds.EffectiveKUID || s.creator.UID == creds.EffectiveKUID {
-		return true
-	}
-
-	// Tasks with CAP_SYS_ADMIN may bypass ownership checks. Strangely, Linux
-	// doesn't use CAP_IPC_OWNER for this despite CAP_IPC_OWNER being documented
-	// for use to "override IPC ownership checks".
-	return creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, s.registry.userNS)
-}
-
-// checkPermissions verifies whether a segment is accessible by ctx for access
-// described by req. See ipc/util.c:ipcperms() in Linux.
-//
-// Precondition: Caller must hold s.mu.
-func (s *Shm) checkPermissions(ctx context.Context, req fs.PermMask) bool {
-	creds := auth.CredentialsFromContext(ctx)
-
-	p := s.perms.Other
-	if s.owner.UID == creds.EffectiveKUID {
-		p = s.perms.User
-	} else if creds.InGroup(s.owner.GID) {
-		p = s.perms.Group
-	}
-	if p.SupersetOf(req) {
-		return true
-	}
-
-	// Tasks with CAP_IPC_OWNER may bypass permission checks.
-	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, s.registry.userNS)
 }

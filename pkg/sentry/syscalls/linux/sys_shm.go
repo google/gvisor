@@ -19,12 +19,13 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
 )
 
 // Shmget implements shmget(2).
 func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	key := shm.Key(args[0].Int())
+	key := ipc.Key(args[0].Int())
 	size := uint64(args[1].SizeT())
 	flag := args[2].Int()
 
@@ -40,13 +41,13 @@ func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 	defer segment.DecRef(t)
-	return uintptr(segment.ID), nil, nil
+	return uintptr(segment.ID()), nil, nil
 }
 
 // findSegment retrives a shm segment by the given id.
 //
 // findSegment returns a reference on Shm.
-func findSegment(t *kernel.Task, id shm.ID) (*shm.Shm, error) {
+func findSegment(t *kernel.Task, id ipc.ID) (*shm.Shm, error) {
 	r := t.IPCNamespace().ShmRegistry()
 	segment := r.FindByID(id)
 	if segment == nil {
@@ -58,7 +59,7 @@ func findSegment(t *kernel.Task, id shm.ID) (*shm.Shm, error) {
 
 // Shmat implements shmat(2).
 func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	id := shm.ID(args[0].Int())
+	id := ipc.ID(args[0].Int())
 	addr := args[1].Pointer()
 	flag := args[2].Int()
 
@@ -89,7 +90,7 @@ func Shmdt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Shmctl implements shmctl(2).
 func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	id := shm.ID(args[0].Int())
+	id := ipc.ID(args[0].Int())
 	cmd := args[1].Int()
 	buf := args[2].Pointer()
 
