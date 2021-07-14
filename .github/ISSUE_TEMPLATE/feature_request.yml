@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an idea or improvement
+labels:
+  - 'type: enhancement'
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: A clear description of the feature or enhancement.
+    validations:
+      required: true
+  - type: textarea
+    id: related
+    attributes:
+      label: Is this feature related to a specific bug?
+      description: Please include a bug references if yes.
+  - type: textarea
+    id: solution
+    attributes:
+      label: Do you have a specific solution in mind?
+      description: >
+        Please include any details about a solution that you have in mind,
+        including any alternatives considered.
