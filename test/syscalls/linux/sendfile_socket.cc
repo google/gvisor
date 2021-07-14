@@ -123,22 +123,23 @@ TEST_P(SendFileTest, SendMultiple) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
   int cnt = 0;
+  off_t offset = 0;
   for (size_t sent = 0; sent < data.size(); cnt++) {
     const size_t remain = data.size() - sent;
     std::cout << "sendfile, size=" << data.size() << ", sent=" << sent
               << ", remain=" << remain << std::endl;
 
     // Send data and verify that sendfile returns the correct value.
-    int res = sendfile(socks->second_fd(), inf.get(), nullptr, remain);
+    int res = sendfile(socks->second_fd(), inf.get(), &offset, remain);
     // We cannot afford to save on every sendfile() call.
     if (cnt % 120 == 0) {
       MaybeSave();
     }
-    if (res == 0) {
+    if (offset == data.size()) {
       // EOF
       break;
     }
-    if (res > 0) {
+    if (res >= 0) {
       sent += res;
     } else {
       ASSERT_TRUE(errno == EINTR || errno == EAGAIN) << "errno=" << errno;
