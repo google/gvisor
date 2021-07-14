@@ -14,7 +14,6 @@ go_test(
     srcs = ["benchmark_test.go"],
     deps = [
         ":test",
-        "//pkg/binary",
         "//pkg/hostarch",
         "//tools/go_marshal/analysis",
     ],

@@ -198,3 +198,12 @@ type Type11 struct {
 	ex.External
 	y int64
 }
+
+// Type12 is a test data type which contains a field that is an array of
+// marshallables.
+//
+// +marshal
+type Type12 struct {
+	x  int64
+	ys [6]InetAddr
+}
