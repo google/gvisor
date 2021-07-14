@@ -165,6 +165,12 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
+
+	// Check for xsave and provide a friendly error message if not supported.
+	if needXSave() {
+		return nil, errors.New(specutils.FaqErrorMsg("xsave", "CPU does not support 'xsave' extensions"))
+	}
+
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -217,7 +223,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	//      container is obviously the root. Both container and sandbox share the
 	//      ID.
 	//   2. Container type == sandbox: it means this is the root container
-	//  		starting the sandbox. Both container and sandbox share the same ID.
+	//			starting the sandbox. Both container and sandbox share the same ID.
 	//   3. Container type == container: it means this is a subcontainer of an
 	//      already started sandbox. In this case, container ID is different than
 	//      the sandbox ID.

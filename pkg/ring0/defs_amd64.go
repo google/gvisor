@@ -98,6 +98,9 @@ type kernelEntry struct {
 
 	// tss is the CPU's task state.
 	tss TaskState64
+
+	// xcr0 is the host CPU's xcr0 value.
+	xcr0 uintptr
 }
 
 // CPUArchState contains CPU-specific arch state.

@@ -143,6 +143,13 @@ This error may happen when using `gvisor-containerd-shim` with a `containerd`
 that does not contain the fix for [CVE-2020-15257]. The resolve the issue,
 update containerd to 1.3.9 or 1.4.3 (or newer versions respectively).
 
+### I'm getting an error like `SIGILL: illegal instruction` or `CPU does not support 'xsave' extensions` {#xsave}
+
+gVisor requires support for the 'xsave' set of
+[CPU extensions](https://en.wikipedia.org/wiki/CPUID#EAX=1:_Processor_Info_and_Feature_Bits)
+(XSAVE, XRESTOR, XSETBV, XGETBV). Please check the CPU you are using to ensure
+it supports this instruction set.
+
 [security-model]: /docs/architecture_guide/security/
 [host-net]: /docs/user_guide/networking/#network-passthrough
 [debugging]: /docs/user_guide/debugging/

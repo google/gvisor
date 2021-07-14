@@ -6,6 +6,8 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "cpu_amd64.go",
+        "cpu_arm64.go",
         "hook.go",
         "state_file.go",
         "status.go",
@@ -17,6 +19,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/cpuid",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/sighandling",

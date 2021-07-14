@@ -139,6 +139,9 @@ func (c *CPU) init(cpuID int) {
 
 	// Set mandatory flags.
 	c.registers.Eflags = KernelFlagsSet
+
+	// Store xcr0 so it can be synced from the host.
+	c.xcr0 = xgetbv(0)
 }
 
 // StackTop returns the kernel's stack address.
@@ -257,8 +260,6 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	return
 }
 
-var sentryXCR0 = xgetbv(0)
-
 // startGo is the CPU entrypoint.
 //
 // This is called from the start asm stub (see entry_amd64.go); on return the
@@ -285,7 +286,7 @@ func startGo(c *CPU) {
 	fninit()
 	// Need to sync XCR0 with the host, because xsave and xrstor can be
 	// called from different contexts.
-	xsetbv(0, sentryXCR0)
+	xsetbv(0, c.xcr0)
 
 	// Set the syscall target.
 	wrmsr(_MSR_LSTAR, kernelFunc(addrOfSysenter()))
