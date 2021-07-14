@@ -182,6 +182,23 @@ TEST(NetdeviceTest, InterfaceMTU) {
   // Check that SIOCGIFMTU returns a nonzero MTU.
   ASSERT_THAT(ioctl(sock.get(), SIOCGIFMTU, &ifr), SyscallSucceeds());
   EXPECT_GT(ifr.ifr_mtu, 0);
+
+  // Check that SIOCSIFMTU succeeds setting with same MTU as retrieved by
+  // SIOCGIFMTU.
+  // TODO(gvisor.dev/issue/6033): Support setting MTU value.
+  ASSERT_THAT(ioctl(sock.get(), SIOCSIFMTU, &ifr), SyscallSucceeds());
+
+  if (IsRunningOnGVisor()) {
+    ifr.MTU += 1;
+    ASSERT_THAT(ioctl(sock.get(), SIOCSIFMTU, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    ifr.MTU -= 2;
+    ASSERT_THAT(ioctl(sock.get(), SIOCSIFMTU, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    ifr.MTU = 0;
+    ASSERT_THAT(ioctl(sock.get(), SIOCSIFMTU, &ifr),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+  }
 }
 
 TEST(NetdeviceTest, EthtoolGetTSInfo) {
