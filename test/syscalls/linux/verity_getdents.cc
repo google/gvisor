@@ -58,16 +58,16 @@ class GetDentsTest : public ::testing::Test {
 };
 
 TEST_F(GetDentsTest, GetDents) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   std::vector<std::string> expect = {".", "..", filename_};
   EXPECT_NO_ERRNO(DirContains(verity_dir, expect, /*exclude=*/{}));
 }
 
 TEST_F(GetDentsTest, Deleted) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   EXPECT_THAT(unlink(JoinPath(tmpfs_dir_.path(), filename_).c_str()),
               SyscallSucceeds());
@@ -77,8 +77,8 @@ TEST_F(GetDentsTest, Deleted) {
 }
 
 TEST_F(GetDentsTest, Renamed) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   std::string new_file_name = "renamed-" + filename_;
   EXPECT_THAT(rename(JoinPath(tmpfs_dir_.path(), filename_).c_str(),

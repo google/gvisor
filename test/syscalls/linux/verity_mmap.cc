@@ -57,8 +57,8 @@ class MmapTest : public ::testing::Test {
 };
 
 TEST_F(MmapTest, MmapRead) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   // Make sure the file can be open and mmapped in the mounted verity fs.
   auto const verity_fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -71,8 +71,8 @@ TEST_F(MmapTest, MmapRead) {
 }
 
 TEST_F(MmapTest, ModifiedBeforeMmap) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   // Modify the file and check verification failure upon mmapping.
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -90,8 +90,8 @@ TEST_F(MmapTest, ModifiedBeforeMmap) {
 }
 
 TEST_F(MmapTest, ModifiedAfterMmap) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   auto const verity_fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(verity_dir, filename_), O_RDONLY, 0777));
@@ -126,8 +126,8 @@ INSTANTIATE_TEST_SUITE_P(
                        ::testing::ValuesIn({MAP_SHARED, MAP_PRIVATE})));
 
 TEST_P(MmapParamTest, Mmap) {
-  std::string verity_dir =
-      ASSERT_NO_ERRNO_AND_VALUE(MountVerity(tmpfs_dir_.path(), filename_));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
+      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
 
   // Make sure the file can be open and mmapped in the mounted verity fs.
   auto const verity_fd = ASSERT_NO_ERRNO_AND_VALUE(

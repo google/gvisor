@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include "test/util/posix_error.h"
 
 namespace gvisor {
@@ -44,6 +46,13 @@ struct fsverity_digest {
   unsigned char digest[];
 };
 
+struct EnableTarget {
+  std::string path;
+  int flags;
+
+  EnableTarget(std::string path, int flags) : path(path), flags(flags) {}
+};
+
 constexpr int kMaxDigestSize = 64;
 constexpr int kDefaultDigestSize = 32;
 constexpr char kContents[] = "foobarbaz";
@@ -67,7 +76,8 @@ PosixError FlipRandomBit(int fd, int size);
 // Mount a verity on the tmpfs and enable both the file and the direcotry. Then
 // mount a new verity with measured root hash.
 PosixErrorOr<std::string> MountVerity(std::string tmpfs_dir,
-                                      std::string filename);
+                                      std::string filename,
+                                      std::vector<EnableTarget> targets);
 
 }  // namespace testing
 }  // namespace gvisor

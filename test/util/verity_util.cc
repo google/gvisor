@@ -55,17 +55,26 @@ PosixError FlipRandomBit(int fd, int size) {
 }
 
 PosixErrorOr<std::string> MountVerity(std::string tmpfs_dir,
-                                      std::string filename) {
+                                      std::string filename,
+                                      std::vector<EnableTarget> targets) {
   // Mount a verity fs on the existing tmpfs mount.
   std::string mount_opts = "lower_path=" + tmpfs_dir;
   ASSIGN_OR_RETURN_ERRNO(TempPath verity_dir, TempPath::CreateDir());
   RETURN_ERROR_IF_SYSCALL_FAIL(
       mount("", verity_dir.path().c_str(), "verity", 0, mount_opts.c_str()));
 
-  // Enable both the file and the directory.
+  // Enable the file, symlink(if provided) and the directory.
   ASSIGN_OR_RETURN_ERRNO(
       auto fd, Open(JoinPath(verity_dir.path(), filename), O_RDONLY, 0777));
   RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(fd.get(), FS_IOC_ENABLE_VERITY));
+
+  for (const EnableTarget& target : targets) {
+    ASSIGN_OR_RETURN_ERRNO(
+        auto target_fd,
+        Open(JoinPath(verity_dir.path(), target.path), target.flags, 0777));
+    RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(target_fd.get(), FS_IOC_ENABLE_VERITY));
+  }
+
   ASSIGN_OR_RETURN_ERRNO(auto dir_fd, Open(verity_dir.path(), O_RDONLY, 0777));
   RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(dir_fd.get(), FS_IOC_ENABLE_VERITY));
 
