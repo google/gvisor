@@ -4171,6 +4171,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "mq_test",
+    testonly = 1,
+    srcs = ["mq.cc"],
+    linkstatic = 1,
+    linkopts = [
+        "-lrt",
+    ],
+    deps = [
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:temp_path",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "semaphore_test",
     testonly = 1,
     # Android does not support XSI semaphores in r22.
