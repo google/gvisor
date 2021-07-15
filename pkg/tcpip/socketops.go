@@ -54,7 +54,7 @@ type SocketOptionsHandler interface {
 	// buffer size. It also returns the newly set value.
 	OnSetSendBufferSize(v int64) (newSz int64)
 
-	// OnSetReceiveBufferSize is invoked to set the SO_RCVBUFSIZE.
+	// OnSetReceiveBufferSize is invoked by SO_RCVBUF and SO_RCVBUFFORCE.
 	OnSetReceiveBufferSize(v, oldSz int64) (newSz int64)
 }
 

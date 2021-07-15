@@ -14,6 +14,9 @@
 
 #include "test/syscalls/linux/socket_generic.h"
 
+#ifdef __linux__
+#include <linux/capability.h>
+#endif  // __linux__
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -24,6 +27,7 @@
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/test_util.h"
 
 // This file is a generic socket test file. It must be built with another file
@@ -399,6 +403,46 @@ TEST_P(AllSocketPairTest, RcvBufSucceeds) {
       SyscallSucceeds());
   EXPECT_GT(size, 0);
 }
+
+#ifdef __linux__
+
+// Check that setting SO_RCVBUFFORCE above max is not clamped to the maximum
+// receive buffer size.
+TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
+  std::unique_ptr<SocketPair> sockets =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+      SyscallSucceeds());
+
+  int above_max = max + 1;
+  int sso = setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUFFORCE,
+                       &above_max, sizeof(above_max));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+    ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
+    return;
+  }
+  ASSERT_THAT(sso, SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+      SyscallSucceeds());
+  // The system doubles the passed-in maximum.
+  ASSERT_EQ(above_max * 2, val);
+}
+
+#endif  // __linux__
 
 TEST_P(AllSocketPairTest, GetSndBufSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

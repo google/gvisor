@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
@@ -1682,12 +1683,12 @@ func SetSockOpt(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, level int
 	return nil
 }
 
-func clampBufSize(newSz, min, max int64) int64 {
+func clampBufSize(newSz, min, max int64, ignoreMax bool) int64 {
 	// packetOverheadFactor is used to multiply the value provided by the user on
 	// a setsockopt(2) for setting the send/receive buffer sizes sockets.
 	const packetOverheadFactor = 2
 
-	if newSz > max {
+	if !ignoreMax && newSz > max {
 		newSz = max
 	}
 
@@ -1712,7 +1713,7 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 
 		v := hostarch.ByteOrder.Uint32(optVal)
 		min, max := ep.SocketOptions().SendBufferLimits()
-		clamped := clampBufSize(int64(v), min, max)
+		clamped := clampBufSize(int64(v), min, max, false /* ignoreMax */)
 		ep.SocketOptions().SetSendBufferSize(clamped, true /* notify */)
 		return nil
 
@@ -1723,7 +1724,22 @@ func setSockOptSocket(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, nam
 
 		v := hostarch.ByteOrder.Uint32(optVal)
 		min, max := ep.SocketOptions().ReceiveBufferLimits()
-		clamped := clampBufSize(int64(v), min, max)
+		clamped := clampBufSize(int64(v), min, max, false /* ignoreMax */)
+		ep.SocketOptions().SetReceiveBufferSize(clamped, true /* notify */)
+		return nil
+
+	case linux.SO_RCVBUFFORCE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		if creds := auth.CredentialsFromContext(t); !creds.HasCapability(linux.CAP_NET_ADMIN) {
+			return syserr.ErrNotPermitted
+		}
+
+		v := hostarch.ByteOrder.Uint32(optVal)
+		min, max := ep.SocketOptions().ReceiveBufferLimits()
+		clamped := clampBufSize(int64(v), min, max, true /* ignoreMax */)
 		ep.SocketOptions().SetReceiveBufferSize(clamped, true /* notify */)
 		return nil
 

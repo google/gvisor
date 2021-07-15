@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifdef __linux__
+
 #include "test/util/capability_util.h"
 
 #include <linux/capability.h>
@@ -79,3 +81,5 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // __linux__
