@@ -8,8 +8,15 @@ function install_pkgs() {
   done
 }
 install_pkgs make "linux-headers-$(uname -r)" linux-libc-dev \
-  graphviz jq curl binutils gnupg gnupg-agent golang-go \
+  graphviz jq curl binutils gnupg gnupg-agent gcc \
   apt-transport-https ca-certificates software-properties-common
+
+# Install Go 1.16, as only 1.13 is available via apt.
+declare -r go_archive=go1.16.6.linux-amd64.tar.gz
+wget "https://golang.org/dl/${go_archive}"
+sudo tar -xzf "${go_archive}" -C /usr/local
+sudo ln -s /usr/local/go/bin/go /usr/bin/go
+rm "${go_archive}"
 
 # Setup for parallelization with PARTITION and TOTAL_PARTITIONS.
 export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
