@@ -3723,6 +3723,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "verity_symlink_test",
+    testonly = 1,
+    srcs = ["verity_symlink.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:mount_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:verity_util",
+    ],
+)
+
+cc_binary(
     name = "sync_test",
     testonly = 1,
     # Android does not support syncfs in r22.
