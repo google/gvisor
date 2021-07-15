@@ -21,9 +21,24 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserror"
-
-	"unsafe"
 )
+
+const IORING_MAX_ENTRIES uint32 = 32768
+
+const SQ_OFF_HEAD_OFFSET uint32 = 0
+const SQ_OFF_TAIL_OFFSET uint32 = 64
+const CQ_OFF_HEAD_OFFSET uint32 = 128
+const CQ_OFF_TAIL_OFFSET uint32 = 192
+const SQ_OFF_RING_MASK_OFFSET uint32 = 256
+const CQ_OFF_RING_MASK_OFFSET uint32 = 260
+const SQ_OFF_RING_ENTRIES_OFFSET uint32 = 264
+const CQ_OFF_RING_ENTRIES_OFFSET uint32 = 268
+const SQ_OFF_DROPPED_OFFSET uint32 = 272
+const SQ_OFF_FLAGS_OFFSET uint32 = 276
+const CQ_OFF_FLAGS_OFFSET uint32 = 280
+const CQ_OFF_OVERFLOW_OFFSET uint32 = 284
+const SQ_OFF_ARRAY_OFFSET uint32 = 384
+const CQ_OFF_CQES_OFFSET uint32 = 320
 
 // Represent `struct io_uring` as defined in
 // https://elixir.bootlin.com/linux/v5.10.44/source/fs/io_uring.c#L107
@@ -86,32 +101,33 @@ func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) (*linux.IoUr
 		entries = linux.IORING_MAX_ENTRIES
 	}
 
-	params.SqEntries = entries
+	if params.SqEntries > IORING_MAX_ENTRIES {
+		return nil, syserror.EINVAL
+	}
+	params.SqEntries = nextPowOf2(entries)
 	params.CqEntries = 2 * params.SqEntries
 
-	rings := IoRings{}
+	params.SqOff.Head = SQ_OFF_HEAD_OFFSET
+	params.SqOff.Tail = SQ_OFF_TAIL_OFFSET
+	params.SqOff.RingMask = SQ_OFF_RING_MASK_OFFSET
+	params.SqOff.RingEntries = SQ_OFF_RING_ENTRIES_OFFSET
+	params.SqOff.Dropped = SQ_OFF_DROPPED_OFFSET
+	params.SqOff.Flags = SQ_OFF_FLAGS_OFFSET
+	params.SqOff.Array = SQ_OFF_ARRAY_OFFSET
 
-	params.SqOff.Head = uint32(unsafe.Offsetof(rings.Sq.Head))
-	params.SqOff.Tail = uint32(unsafe.Offsetof(rings.Sq.Tail))
-	params.SqOff.RingMask = uint32(unsafe.Offsetof(rings.SqRingMask))
-	params.SqOff.RingEntries = uint32(unsafe.Offsetof(rings.SqRingEntries))
-	params.SqOff.Flags = uint32(unsafe.Offsetof(rings.SqFlags))
-	params.SqOff.Dropped = uint32(unsafe.Offsetof(rings.SqDropped))
-	params.SqOff.Array = 384 // TODO: Unconstify this
-
-	params.CqOff.Head = uint32(unsafe.Offsetof(rings.Cq) + unsafe.Offsetof(rings.Cq.Head)) // For some reason, directly using Offsetof(rigs.Cq.Head) does not work as excepted (or as in C)
-	params.CqOff.Tail = uint32(unsafe.Offsetof(rings.Cq) + unsafe.Offsetof(rings.Cq.Tail)) // For some reason, directly using Offsetof(rigs.Cq.Head) does not work as excepted (or as in C)
-	params.CqOff.RingMask = uint32(unsafe.Offsetof(rings.CqRingMask))
-	params.CqOff.RingEntries = uint32(unsafe.Offsetof(rings.CqRingEntries))
-	params.CqOff.Overflow = uint32(unsafe.Offsetof(rings.CqOverflow))
-	params.CqOff.Cqes = 320 // TODO: Unconstify this
-	params.CqOff.Flags = uint32(unsafe.Offsetof(rings.CqFlags))
+	params.CqOff.Head = CQ_OFF_HEAD_OFFSET
+	params.CqOff.Tail = CQ_OFF_TAIL_OFFSET
+	params.CqOff.RingMask = CQ_OFF_RING_MASK_OFFSET
+	params.CqOff.RingEntries = CQ_OFF_RING_ENTRIES_OFFSET
+	params.CqOff.Flags = CQ_OFF_FLAGS_OFFSET
+	params.CqOff.Overflow = CQ_OFF_OVERFLOW_OFFSET
+	params.CqOff.Cqes = CQ_OFF_CQES_OFFSET
 
 	_, err = params.CopyOut(t, p)
 	return &params, err
 }
 
-func NextPowOf2(n uint32) uint32 {
+func nextPowOf2(n uint32) uint32 {
 	var k uint32 = 1
 
 	for k < n {

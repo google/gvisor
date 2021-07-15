@@ -1043,6 +1043,7 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:time_util",
+        "//test/util:memory_util",
     ],
 )
 

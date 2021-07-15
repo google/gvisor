@@ -20,6 +20,9 @@
 #include <linux/io_uring.h>
 
 #include "gtest/gtest.h"
+#include "test/util/memory_util.h"
+#include "test/util/test_util.h"
+#include "test/util/file_descriptor.h"
 
 namespace gvisor {
 namespace testing {
@@ -32,42 +35,34 @@ int io_uring_setup(unsigned entries, struct io_uring_params *p)
 }
 
 TEST(IoUringSetupTest, Exist) {
-  struct io_uring_params params;
-  const int nb_entries = 2;
-  io_uring_setup(nb_entries, &params);
-
-  ASSERT_NE(errno, ENOSYS);
-}
-
-TEST(IoUringSetupTest, ReturnsFd) {
   struct io_uring_params params = { 0 };
   const int nb_entries = 2;
-  int fd = io_uring_setup(nb_entries, &params);
+  FileDescriptor fd = FileDescriptor(io_uring_setup(nb_entries, &params));
 
-  ASSERT_NE(fd , -1);
+  EXPECT_THAT(fd.get(), SyscallSucceeds());
 }
 
 TEST(IoUringSetupTest, IsMappable) {
   struct io_uring_params params = { 0 };
   const int nb_entries = 2;
-  int fd = io_uring_setup(nb_entries, &params);
+  FileDescriptor fd = FileDescriptor(io_uring_setup(nb_entries, &params));
 
   int sring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned);
   int cring_sz =
       params.cq_off.cqes + params.cq_entries * sizeof(struct io_uring_cqe);
   int sqring_sz = params.sq_entries * sizeof(struct io_uring_sqe);
 
-  void *addr = mmap(0, sring_sz, PROT_READ | PROT_WRITE,
-                    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
-  ASSERT_NE(addr , MAP_FAILED);
+  Mapping map_sring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd.get(), IORING_OFF_SQ_RING));
+  EXPECT_THAT(map_sring.addr(), SyscallSucceeds());
+  // ASSERT_NE(addr , MAP_FAILED);
 
-  addr = mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-              fd, IORING_OFF_CQ_RING);
-  ASSERT_NE(addr , MAP_FAILED);
+  Mapping map_cring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd.get(), IORING_OFF_CQ_RING));
+  EXPECT_THAT(map_cring.addr(), SyscallSucceeds());
 
-  addr = mmap(0, sqring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-              fd, IORING_OFF_SQES);
-  ASSERT_NE(addr , MAP_FAILED);
+  Mapping map_sqring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sqring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd.get(), IORING_OFF_SQES));
+  EXPECT_THAT(map_sqring.addr(), SyscallSucceeds());
 }
 
 }  // namespace

@@ -38,6 +38,7 @@ var (
 	ENOSYS   = error(unix.ENOSYS)
 	EPERM    = error(unix.EPERM)
 	EFAULT   = error(unix.EFAULT)
+	EINVAL   = error(unix.EINVAL)
 )
 
 var (

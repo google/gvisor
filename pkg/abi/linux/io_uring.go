@@ -67,7 +67,6 @@ type IoUringParams struct {
 	Resv         [3]uint32
 	SqOff        IoSqringOffsets
 	CqOff        IoCqringOffsets
-	//TODO: Fix missing sq_off and cq_off
 }
 
 // IoUringCqe represents struct io_uring_cqe.
@@ -84,5 +83,14 @@ type IoUringCqe struct {
 //
 // +marshal
 type IoUringSqe struct {
-	Resv [64]uint8
+	opcode    uint8
+	flags     uint8
+	ioprio    uint16
+	fd        int32
+	union1    uint64
+	union2    uint64
+	len       uint32
+	uinon3    uint32
+	user_data uint64
+	union4    [3]uint64
 }

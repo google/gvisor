@@ -19,7 +19,6 @@ package iouringfs
 import (
 	"fmt"
 	"io"
-	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -48,10 +47,6 @@ func (iouringFSType) GetFilesystem(_ context.Context, vfsObj *vfs.VirtualFilesys
 }
 
 // Name implements vfs.FilesystemType.Name.
-//
-// Note that registering sockfs is unnecessary, except for the fact that it
-// will not show up under /proc/filesystems as a result. This is a very minor
-// discrepancy from Linux.
 func (iouringFSType) Name() string {
 	return "iouring"
 }
@@ -126,7 +121,7 @@ func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, e
 // NewDentry constructs and returns a iouringfs dentry.
 //
 // Preconditions: mnt.Filesystem() must have been returned by NewFilesystem().
-func NewDentry(ctx context.Context, mnt *vfs.Mount) *vfs.Dentry {
+func newDentry(ctx context.Context, mnt *vfs.Mount) *vfs.Dentry {
 	fs := mnt.Filesystem().Impl().(*iouringFS)
 
 	filemode := linux.FileMode(linux.S_IFREG | 0600)
@@ -151,10 +146,6 @@ type fileDescription struct {
 
 	// memFile is a platform.File used to allocate pages to this regularFile.
 	memFile *pgalloc.MemoryFile `state:"nosave"`
-
-	// memoryUsageKind is the memory accounting category under which pages backing
-	// this regularFile's contents are accounted.
-	memoryUsageKind usage.MemoryKind
 
 	mappings memmap.MappingSet
 
@@ -210,20 +201,16 @@ func (*fileDescription) InvalidateUnsavable(context.Context) error {
 }
 
 func (fd *fileDescription) sqEndOffset() uint64 {
-	// Sizeof need an instance of the type...
-	var forSizeof uint
-	SQEndOff := uint64(fd.sqEntries) * uint64(unsafe.Sizeof(forSizeof))
+	SQEndOff := uint64(fd.sqEntries) * uint64(4) // 4 = sizeof(unsigned int)
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_SQ_RING + SQEndOff))
 }
 
 func (fd *fileDescription) cqEndOffset() uint64 {
-	// Sizeof need an instance of the type...
 	CQEndOff := uint64(fd.cqEntries) * uint64((*linux.IoUringCqe)(nil).SizeBytes())
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_CQ_RING + CQEndOff))
 }
 
 func (fd *fileDescription) sqeEndOffset() uint64 {
-	// Sizeof need an instance of the type...
 	SQESEndOff := uint64(fd.sqEntries) * uint64((*linux.IoUringSqe)(nil).SizeBytes())
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_SQES + SQESEndOff))
 }
@@ -247,40 +234,40 @@ func (fd *fileDescription) isInRing(maprange memmap.MappableRange) bool {
 
 // Translate implements memmap.Mappable.Translate.
 func (fd *fileDescription) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
-	// Sq ring, Cq ring or Sqe ring ?
-	if fd.isInRing(required) {
-		cerr := fd.data.Fill(ctx, required, optional, fd.sqeEndOffset(), fd.memFile, fd.memoryUsageKind, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
-			// Newly-allocated pages are zeroed, so we don't need to do anything.
-			return dsts.NumBytes(), nil
-		})
-
-		var ts []memmap.Translation
-		var translatedEnd uint64
-		for seg := fd.data.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
-			segMR := seg.Range().Intersect(optional)
-			ts = append(ts, memmap.Translation{
-				Source: segMR,
-				File:   fd.memFile,
-				Offset: seg.FileRangeOf(segMR).Start,
-				Perms:  hostarch.AnyAccess,
-			})
-			translatedEnd = segMR.End
-		}
-
-		// Don't return the error returned by f.data.Fill if it occurred outside of
-		// required.
-		if translatedEnd < required.End && cerr != nil {
-			return ts, &memmap.BusError{cerr}
-		}
-
-		return ts, nil
+	// Not in Sq ring, Cq ring or Sqe ring ?
+	if !fd.isInRing(required) {
+		return nil, &memmap.BusError{io.EOF}
 	}
 
-	return nil, &memmap.BusError{io.EOF}
+	cerr := fd.data.Fill(ctx, required, optional, fd.sqeEndOffset(), fd.memFile, usage.Anonymous, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+		// Newly-allocated pages are zeroed, so we don't need to do anything.
+		return dsts.NumBytes(), nil
+	})
+
+	var ts []memmap.Translation
+	var translatedEnd uint64
+	for seg := fd.data.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
+		segMR := seg.Range().Intersect(optional)
+		ts = append(ts, memmap.Translation{
+			Source: segMR,
+			File:   fd.memFile,
+			Offset: seg.FileRangeOf(segMR).Start,
+			Perms:  hostarch.AnyAccess,
+		})
+		translatedEnd = segMR.End
+	}
+
+	// Don't return the error returned by f.data.Fill if it occurred outside of
+	// required.
+	if translatedEnd < required.End && cerr != nil {
+		return ts, &memmap.BusError{cerr}
+	}
+
+	return ts, nil
 }
 
 func NewIouringfsFile(ctx context.Context, mnt *vfs.Mount, SqEntries, CqEntries uint32) (*vfs.FileDescription, error) {
-	d := NewDentry(ctx, mnt)
+	d := newDentry(ctx, mnt)
 	defer d.DecRef(ctx)
 
 	fd, err := newfileDescription(ctx)

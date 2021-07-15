@@ -274,7 +274,8 @@ type Kernel struct {
 	// 3. Socket files created by binding Unix sockets to a file path
 	socketMount *vfs.Mount
 
-	// FIXME:doc
+	// iouringMount is the Mount used for `io_uring`s created by the
+	// `io_uring_setup` syscall.
 	iouringMount *vfs.Mount
 
 	// If set to true, report address space activation waits as if the task is in
@@ -437,6 +438,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to create sockfs mount: %v", err)
 		}
 		k.socketMount = socketMount
+		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
 
 		iouringFilesystem, err := iouringfs.NewFilesystem(&k.vfs)
 		if err != nil {
@@ -448,8 +450,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to create iouringfs mount: %v", err)
 		}
 		k.iouringMount = iouringMount
-
-		k.socketsVFS2 = make(map[*vfs.FileDescription]*SocketRecord)
 
 		k.cgroupRegistry = newCgroupRegistry()
 	}
