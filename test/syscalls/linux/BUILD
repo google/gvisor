@@ -2395,6 +2395,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         gtest,
+        "//test/util:capability_util",
         "//test/util:test_util",
     ],
     alwayslink = 1,

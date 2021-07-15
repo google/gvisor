@@ -509,7 +509,6 @@ func SetSockOptEmitUnimplementedEvent(t *kernel.Task, name int) {
 		linux.SO_ATTACH_REUSEPORT_EBPF,
 		linux.SO_CNX_ADVICE,
 		linux.SO_DETACH_FILTER,
-		linux.SO_RCVBUFFORCE,
 		linux.SO_SNDBUFFORCE:
 
 		t.Kernel().EmitUnimplementedEvent(t)
