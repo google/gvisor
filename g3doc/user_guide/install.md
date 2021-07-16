@@ -55,7 +55,10 @@ sudo apt-get install -y \
     software-properties-common
 ```
 
-Next, the configure the key used to sign archives and the repository:
+Next, configure the key used to sign archives and the repository.
+
+NOTE: The key was updated on 2021-07-13 to replace the expired key. If you get
+errors about the key being expired, run the `apt-key add` command below again.
 
 ```bash
 curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
