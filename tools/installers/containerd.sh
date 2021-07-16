@@ -36,10 +36,9 @@ install_helper() {
   mkdir -p "${GOPATH}"/src/$(dirname "${PACKAGE}") && \
      git clone https://"${PACKAGE}" "${GOPATH}"/src/"${PACKAGE}"
 
-  # Checkout and build the repository. We use a pre-GO111MODULE containerd.
+  # Checkout and build the repository.
   (cd "${GOPATH}"/src/"${PACKAGE}" && \
       git checkout "${TAG}" && \
-      export GO111MODULE=off && \
       make && \
       make install)
 }
