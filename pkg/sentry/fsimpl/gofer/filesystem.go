@@ -39,26 +39,14 @@ import (
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
 	// Snapshot current syncable dentries and special file FDs.
-	fs.renameMu.RLock()
 	fs.syncMu.Lock()
 	ds := make([]*dentry, 0, len(fs.syncableDentries))
 	for d := range fs.syncableDentries {
-		// It's safe to use IncRef here even though fs.syncableDentries doesn't
-		// hold references since we hold fs.renameMu. Note that we can't use
-		// TryIncRef since cached dentries at zero references should still be
-		// synced.
-		d.IncRef()
 		ds = append(ds, d)
 	}
-	fs.renameMu.RUnlock()
 	sffds := make([]*specialFileFD, 0, len(fs.specialFileFDs))
 	for sffd := range fs.specialFileFDs {
-		// As above, fs.specialFileFDs doesn't hold references. However, unlike
-		// dentries, an FD that has reached zero references can't be
-		// resurrected, so we can use TryIncRef.
-		if sffd.vfsfd.TryIncRef() {
-			sffds = append(sffds, sffd)
-		}
+		sffds = append(sffds, sffd)
 	}
 	fs.syncMu.Unlock()
 
@@ -68,9 +56,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 
 	// Sync syncable dentries.
 	for _, d := range ds {
-		err := d.syncCachedFile(ctx, true /* forFilesystemSync */)
-		d.DecRef(ctx)
-		if err != nil {
+		if err := d.syncCachedFile(ctx, true /* forFilesystemSync */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: dentry.syncCachedFile failed: %v", err)
 			if retErr == nil {
 				retErr = err
@@ -81,9 +67,7 @@ func (fs *filesystem) Sync(ctx context.Context) error {
 	// Sync special files, which may be writable but do not use dentry shared
 	// handles (so they won't be synced by the above).
 	for _, sffd := range sffds {
-		err := sffd.sync(ctx, true /* forFilesystemSync */)
-		sffd.vfsfd.DecRef(ctx)
-		if err != nil {
+		if err := sffd.sync(ctx, true /* forFilesystemSync */); err != nil {
 			ctx.Infof("gofer.filesystem.Sync: specialFileFD.sync failed: %v", err)
 			if retErr == nil {
 				retErr = err

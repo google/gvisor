@@ -582,10 +582,10 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.dataMu.Unlock()
 		// Close host FDs if they exist.
 		if d.readFD >= 0 {
-			unix.Close(int(d.readFD))
+			_ = unix.Close(int(d.readFD))
 		}
 		if d.writeFD >= 0 && d.readFD != d.writeFD {
-			unix.Close(int(d.writeFD))
+			_ = unix.Close(int(d.writeFD))
 		}
 		d.readFD = -1
 		d.writeFD = -1
@@ -1637,18 +1637,18 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.dataMu.Unlock()
 	// Clunk open fids and close open host FDs.
 	if !d.readFile.isNil() {
-		d.readFile.close(ctx)
+		_ = d.readFile.close(ctx)
 	}
 	if !d.writeFile.isNil() && d.readFile != d.writeFile {
-		d.writeFile.close(ctx)
+		_ = d.writeFile.close(ctx)
 	}
 	d.readFile = p9file{}
 	d.writeFile = p9file{}
 	if d.readFD >= 0 {
-		unix.Close(int(d.readFD))
+		_ = unix.Close(int(d.readFD))
 	}
 	if d.writeFD >= 0 && d.readFD != d.writeFD {
-		unix.Close(int(d.writeFD))
+		_ = unix.Close(int(d.writeFD))
 	}
 	d.readFD = -1
 	d.writeFD = -1

@@ -42,6 +42,11 @@ import (
 type specialFileFD struct {
 	fileDescription
 
+	// releaseMu synchronizes the closing of fd.handle with fd.sync(). It's safe
+	// to access fd.handle without locking for operations that require a ref to
+	// be held by the caller, e.g. vfs.FileDescriptionImpl implementations.
+	releaseMu sync.RWMutex `state:"nosave"`
+
 	// handle is used for file I/O. handle is immutable.
 	handle handle `state:"nosave"`
 
@@ -117,7 +122,10 @@ func (fd *specialFileFD) Release(ctx context.Context) {
 	if fd.haveQueue {
 		fdnotifier.RemoveFD(fd.handle.fd)
 	}
+	fd.releaseMu.Lock()
 	fd.handle.close(ctx)
+	fd.releaseMu.Unlock()
+
 	fs := fd.vfsfd.Mount().Filesystem().Impl().(*filesystem)
 	fs.syncMu.Lock()
 	delete(fs.specialFileFDs, fd)
@@ -373,6 +381,13 @@ func (fd *specialFileFD) Sync(ctx context.Context) error {
 }
 
 func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error {
+	// Locks to ensure it didn't race with fd.Release().
+	fd.releaseMu.RLock()
+	defer fd.releaseMu.RUnlock()
+
+	if !fd.handle.isOpen() {
+		return nil
+	}
 	err := func() error {
 		// If we have a host FD, fsyncing it is likely to be faster than an fsync
 		// RPC.
