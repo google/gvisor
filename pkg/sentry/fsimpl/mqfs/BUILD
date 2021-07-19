@@ -17,6 +17,7 @@ go_template_instance(
 go_library(
     name = "mqfs",
     srcs = [
+        "mqfs.go",
         "inodes.go",
         "root_inode_refs.go",
     ],
