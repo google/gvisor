@@ -15,6 +15,7 @@
 // Test binary used to test that seccomp filters are properly constructed and
 // indeed kill the process on violation.
 
+//go:build amd64
 // +build amd64
 
 package main

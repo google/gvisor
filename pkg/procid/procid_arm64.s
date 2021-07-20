@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build arm64
-// +build go1.8
-// +build !go1.18
+//go:build arm64 && go1.8 && !go1.18 && go1.1
+// +build arm64,go1.8,!go1.18,go1.1
 
 #include "textflag.h"
 

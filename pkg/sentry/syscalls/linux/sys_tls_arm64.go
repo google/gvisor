@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//+build arm64
+//go:build arm64
+// +build arm64
 
 package linux
 
