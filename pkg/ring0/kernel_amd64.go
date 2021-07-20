@@ -19,6 +19,7 @@ package ring0
 import (
 	"encoding/binary"
 	"reflect"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -30,6 +31,8 @@ func HaltAndWriteFSBase(regs *arch.Registers)
 
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
+	initSentryXCR0()
+
 	entrySize := reflect.TypeOf(kernelEntry{}).Size()
 	var (
 		entries []kernelEntry
@@ -257,7 +260,16 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	return
 }
 
-var sentryXCR0 = xgetbv(0)
+var (
+	sentryXCR0     uintptr
+	sentryXCR0Once sync.Once
+)
+
+// initSentryXCR0 saves a value of XCR0 in the host mode. It is used to
+// initialize XCR0 of guest vCPU-s.
+func initSentryXCR0() {
+	sentryXCR0Once.Do(func() { sentryXCR0 = xgetbv(0) })
+}
 
 // startGo is the CPU entrypoint.
 //
