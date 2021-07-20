@@ -74,6 +74,11 @@ func (*DynamicBytesFile) SetStat(context.Context, *vfs.Filesystem, *auth.Credent
 	return linuxerr.EPERM
 }
 
+// Locks returns the file locks for this file.
+func (f *DynamicBytesFile) Locks() *vfs.FileLocks {
+	return &f.locks
+}
+
 // DynamicBytesFD implements vfs.FileDescriptionImpl for an FD backed by a
 // DynamicBytesFile.
 //
