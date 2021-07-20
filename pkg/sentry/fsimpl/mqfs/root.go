@@ -15,8 +15,6 @@
 package mqfs
 
 import (
-	"bytes"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
