@@ -7,6 +7,7 @@
 // tools/defs.bzl:calculate_sets().
 
 // +build amd64 386
+// +build go1.1
 
 package arch
 

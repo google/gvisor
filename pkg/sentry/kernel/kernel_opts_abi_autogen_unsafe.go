@@ -6,6 +6,8 @@
 // is filtered based on pre-defined file suffixes related to build tags, see 
 // tools/defs.bzl:calculate_sets().
 
+// +build go1.1
+
 package kernel
 
 import (

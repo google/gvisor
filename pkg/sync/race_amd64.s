@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build race
-// +build amd64
+//go:build race && amd64
+// +build race,amd64
 
 #include "textflag.h"
 
