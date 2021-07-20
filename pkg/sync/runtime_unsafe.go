@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.13
-// +build !go1.18
+//go:build go1.13 && !go1.18
+// +build go1.13,!go1.18
 
 // Check go:linkname function signatures, type definitions, and constants when
 // updating Go version.

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64 || 386
 // +build amd64 386
 
 package hostarch

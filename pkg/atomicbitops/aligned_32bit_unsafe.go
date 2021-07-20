@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm || mips || 386
 // +build arm mips 386
 
 package atomicbitops

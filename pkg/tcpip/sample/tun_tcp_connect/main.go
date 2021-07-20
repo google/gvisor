@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 // This sample creates a stack with TCP and IPv4 protocols on top of a TUN

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build go1.13
-// +build !go1.18
+//go:build go1.13 && !go1.18
+// +build go1.13,!go1.18
 
 // Check type signatures when updating Go version.
 
