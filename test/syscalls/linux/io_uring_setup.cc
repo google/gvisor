@@ -54,7 +54,6 @@ TEST(IoUringSetupTest, IsMappable) {
 
   Mapping map_sring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd.get(), IORING_OFF_SQ_RING));
   EXPECT_THAT(map_sring.addr(), SyscallSucceeds());
-  // ASSERT_NE(addr , MAP_FAILED);
 
   Mapping map_cring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
               fd.get(), IORING_OFF_CQ_RING));
@@ -63,6 +62,46 @@ TEST(IoUringSetupTest, IsMappable) {
   Mapping map_sqring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sqring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
               fd.get(), IORING_OFF_SQES));
   EXPECT_THAT(map_sqring.addr(), SyscallSucceeds());
+}
+
+TEST(IoUringSetupTest, IsReadyForIoUringEnter) {
+
+  struct io_uring_params params = { 0 };
+  const int nb_entries = 2;
+  FileDescriptor fd = FileDescriptor(io_uring_setup(nb_entries, &params));
+
+  int sring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned);
+  int cring_sz =
+      params.cq_off.cqes + params.cq_entries * sizeof(struct io_uring_cqe);
+  int sqring_sz = params.sq_entries * sizeof(struct io_uring_sqe);
+
+  Mapping map_sring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd.get(), IORING_OFF_SQ_RING));
+  Mapping map_cring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, cring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd.get(), IORING_OFF_CQ_RING));
+  Mapping map_sqring = ASSERT_NO_ERRNO_AND_VALUE(Mmap(0, sqring_sz, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
+              fd.get(), IORING_OFF_SQES));
+
+    unsigned int *sring_head = (unsigned int *)(map_sring.addr() + params.sq_off.head);
+    unsigned int *sring_tail = (unsigned int *)(map_sring.addr() + params.sq_off.tail);
+    unsigned int *sring_mask = (unsigned int *)(map_sring.addr() + params.sq_off.ring_mask);
+    unsigned int *sring_array = (unsigned int *)(map_sring.addr() + params.sq_off.array);
+    struct io_uring_sqe *sqes = (struct io_uring_sqe *)map_sqring.addr();
+
+    unsigned int tail = *sring_tail;
+    unsigned int index = tail & *sring_mask;
+    struct io_uring_sqe *sqe = &sqes[index];
+
+    /* Dummy value */
+    sqe->fd = -1;
+    sqe->flags = 0;
+    sqe->opcode = IORING_OP_READV;
+    sqe->addr = 0;
+    sqe->len = 0;
+    sqe->off = 0;
+    sqe->user_data = 0;
+    sring_array[index] = index;
+
+    /* At this stage, io_uring_enter syscall is ready to be called */
 }
 
 }  // namespace
