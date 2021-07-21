@@ -455,8 +455,21 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 }
 
 // GetLocalAddress implements tcpip.Endpoint.GetLocalAddress.
-func (*endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
-	return tcpip.FullAddress{}, &tcpip.ErrNotSupported{}
+func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, tcpip.Error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	addr := e.BindAddr
+	if e.connected {
+		addr = e.route.LocalAddress()
+	}
+
+	return tcpip.FullAddress{
+		NIC:  e.RegisterNICID,
+		Addr: addr,
+		// Linux returns the protocol in the port field.
+		Port: uint16(e.TransProto),
+	}, nil
 }
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.

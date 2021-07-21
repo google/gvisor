@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <linux/capability.h>
 #include <linux/filter.h>
 #include <netinet/in.h>
@@ -74,6 +75,20 @@ class RawSocketTest : public ::testing::TestWithParam<std::tuple<int, int>> {
     }
     // IPv6 raw sockets don't include the header.
     return 0;
+  }
+
+  uint16_t Port(struct sockaddr* s) {
+    if (Family() == AF_INET) {
+      return ntohs(reinterpret_cast<struct sockaddr_in*>(s)->sin_port);
+    }
+    return ntohs(reinterpret_cast<struct sockaddr_in6*>(s)->sin6_port);
+  }
+
+  void* Addr(struct sockaddr* s) {
+    if (Family() == AF_INET) {
+      return &(reinterpret_cast<struct sockaddr_in*>(s)->sin_addr);
+    }
+    return &(reinterpret_cast<struct sockaddr_in6*>(s)->sin6_addr);
   }
 
   // The socket used for both reading and writing.
@@ -179,6 +194,54 @@ TEST_P(RawSocketTest, FailAccept) {
   struct sockaddr saddr;
   socklen_t addrlen;
   ASSERT_THAT(accept(s_, &saddr, &addrlen), SyscallFailsWithErrno(ENOTSUP));
+}
+
+TEST_P(RawSocketTest, BindThenGetSockName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_);
+  ASSERT_THAT(bind(s_, addr, AddrLen()), SyscallSucceeds());
+  struct sockaddr_storage saddr_storage;
+  struct sockaddr* saddr = reinterpret_cast<struct sockaddr*>(&saddr_storage);
+  socklen_t saddrlen = AddrLen();
+  ASSERT_THAT(getsockname(s_, saddr, &saddrlen), SyscallSucceeds());
+  ASSERT_EQ(saddrlen, AddrLen());
+
+  // The port is expected to hold the protocol number.
+  EXPECT_EQ(Port(saddr), Protocol());
+
+  char addrbuf[INET6_ADDRSTRLEN], saddrbuf[INET6_ADDRSTRLEN];
+  const char* addrstr =
+      inet_ntop(addr->sa_family, Addr(addr), addrbuf, sizeof(addrbuf));
+  ASSERT_NE(addrstr, nullptr);
+  const char* saddrstr =
+      inet_ntop(saddr->sa_family, Addr(saddr), saddrbuf, sizeof(saddrbuf));
+  ASSERT_NE(saddrstr, nullptr);
+  EXPECT_STREQ(saddrstr, addrstr);
+}
+
+TEST_P(RawSocketTest, ConnectThenGetSockName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_);
+  ASSERT_THAT(connect(s_, addr, AddrLen()), SyscallSucceeds());
+  struct sockaddr_storage saddr_storage;
+  struct sockaddr* saddr = reinterpret_cast<struct sockaddr*>(&saddr_storage);
+  socklen_t saddrlen = AddrLen();
+  ASSERT_THAT(getsockname(s_, saddr, &saddrlen), SyscallSucceeds());
+  ASSERT_EQ(saddrlen, AddrLen());
+
+  // The port is expected to hold the protocol number.
+  EXPECT_EQ(Port(saddr), Protocol());
+
+  char addrbuf[INET6_ADDRSTRLEN], saddrbuf[INET6_ADDRSTRLEN];
+  const char* addrstr =
+      inet_ntop(addr->sa_family, Addr(addr), addrbuf, sizeof(addrbuf));
+  ASSERT_NE(addrstr, nullptr);
+  const char* saddrstr =
+      inet_ntop(saddr->sa_family, Addr(saddr), saddrbuf, sizeof(saddrbuf));
+  ASSERT_NE(saddrstr, nullptr);
+  EXPECT_STREQ(saddrstr, addrstr);
 }
 
 // Test that getpeername() returns nothing before connect().
