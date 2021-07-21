@@ -141,11 +141,14 @@ type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
+	inode inode
 
 	sqEntries, cqEntries uint32
 
 	// memFile is a platform.File used to allocate pages to this regularFile.
 	memFile *pgalloc.MemoryFile `state:"nosave"`
+
+	mount *vfs.Mount
 
 	mappings memmap.MappingSet
 
@@ -160,8 +163,7 @@ type fileDescription struct {
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
 func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
-	var stat linux.Statx
-	return stat, syserror.EPERM
+	return fd.inode.InodeAttrs.Stat(ctx, fd.mount.Filesystem(), opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
@@ -277,6 +279,7 @@ func NewIouringfsFile(ctx context.Context, mnt *vfs.Mount, SqEntries, CqEntries 
 
 	fd.sqEntries = SqEntries
 	fd.cqEntries = CqEntries
+	fd.mount = mnt
 
 	vfsfd := &fd.vfsfd
 	if err := vfsfd.Init(fd, uint32(linux.O_RDWR), mnt, d, &vfs.FileDescriptionOptions{
