@@ -107,7 +107,15 @@ TEXT ·bluepill(SB),NOSPLIT,$0
 begin:
 	MOVQ vcpu+0(FP), AX
 	LEAQ VCPU_CPU(AX), BX
+
+	// The gorountine stack will be changed in guest which renders
+	// the frame pointer outdated and misleads perf tools.
+	// Disconnect the frame-chain with the zeroed frame pointer
+	// when it is saved in the frame in bluepillHandler().
+	MOVQ BP, CX
+	MOVQ $0, BP
 	BYTE CLI;
+	MOVQ CX, BP
 check_vcpu:
 	MOVQ ENTRY_CPU_SELF(GS), CX
 	CMPQ BX, CX
