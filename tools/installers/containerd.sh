@@ -20,6 +20,9 @@ declare -r CONTAINERD_VERSION=${1:-1.3.0}
 declare -r CONTAINERD_MAJOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $1; }')"
 declare -r CONTAINERD_MINOR="$(echo ${CONTAINERD_VERSION} | awk -F '.' '{ print $2; }')"
 
+# We're running Go 1.16, but using pre-module containerd and cri-tools.
+export GO111MODULE=off
+
 # Default to an older version for crictl for containerd <= 1.2.
 if [[ "${CONTAINERD_MAJOR}" -eq 1 ]] && [[ "${CONTAINERD_MINOR}" -le 2 ]]; then
   declare -r CRITOOLS_VERSION=${CRITOOLS_VERSION:-1.13.0}
@@ -29,8 +32,8 @@ fi
 
 # Helper for Go packages below.
 install_helper() {
-  PACKAGE="${1}"
-  TAG="${2}"
+  declare -r PACKAGE="${1}"
+  declare -r TAG="${2}"
 
   # Clone the repository.
   mkdir -p "${GOPATH}"/src/$(dirname "${PACKAGE}") && \
@@ -71,8 +74,8 @@ done
 
 # Install containerd & cri-tools.
 declare -rx GOPATH=$(mktemp -d --tmpdir gopathXXXXX)
-install_helper github.com/containerd/containerd "v${CONTAINERD_VERSION}" "${GOPATH}"
-install_helper github.com/kubernetes-sigs/cri-tools "v${CRITOOLS_VERSION}" "${GOPATH}"
+install_helper github.com/containerd/containerd "v${CONTAINERD_VERSION}"
+install_helper github.com/kubernetes-sigs/cri-tools "v${CRITOOLS_VERSION}"
 
 # Configure containerd-shim.
 declare -r shim_config_path=/etc/containerd/runsc/config.toml
