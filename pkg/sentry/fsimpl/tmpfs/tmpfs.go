@@ -397,10 +397,13 @@ func (i *inode) init(impl interface{}, fs *filesystem, kuid auth.KUID, kgid auth
 	}
 
 	// Inherit the group and setgid bit as in fs/inode.c:inode_init_owner().
-	if parentDir != nil && parentDir.inode.mode&linux.S_ISGID == linux.S_ISGID {
-		kgid = auth.KGID(parentDir.inode.gid)
-		if mode&linux.S_IFDIR == linux.S_IFDIR {
-			mode |= linux.S_ISGID
+	if parentDir != nil {
+		parentMode := atomic.LoadUint32(&parentDir.inode.mode)
+		if parentMode&linux.S_ISGID == linux.S_ISGID {
+			kgid = auth.KGID(parentDir.inode.gid)
+			if mode&linux.S_IFDIR == linux.S_IFDIR {
+				mode |= linux.S_ISGID
+			}
 		}
 	}
 
