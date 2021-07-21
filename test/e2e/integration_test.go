@@ -44,6 +44,12 @@ import (
 // defaultWait is the default wait time used for tests.
 const defaultWait = time.Minute
 
+func TestMain(m *testing.M) {
+	dockerutil.EnsureSupportedDockerVersion()
+	flag.Parse()
+	os.Exit(m.Run())
+}
+
 // httpRequestSucceeds sends a request to a given url and checks that the status is OK.
 func httpRequestSucceeds(client http.Client, server string, port int) error {
 	url := fmt.Sprintf("http://%s:%d", server, port)
@@ -712,8 +718,27 @@ func TestStdiosChown(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
-	flag.Parse()
-	os.Exit(m.Run())
+func TestUnmount(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "sub-mount")
+	if err != nil {
+		t.Fatalf("TempDir(): %v", err)
+	}
+	opts := dockerutil.RunOpts{
+		Image:      "basic/alpine",
+		Privileged: true, // Required for umount
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/foo",
+			},
+		},
+	}
+	if _, err := d.Run(ctx, opts, "umount", "/foo"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
 }

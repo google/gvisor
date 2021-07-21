@@ -742,8 +742,11 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	// ours either way.
 	info.procArgs.FDTable = fdTable
 
-	// Setup the child container file system.
-	l.startGoferMonitor(cid, info.goferFDs)
+	// Gofer FDs must be ordered and the first FD is always the rootfs.
+	if len(info.goferFDs) < 1 {
+		return nil, nil, nil, fmt.Errorf("rootfs gofer FD not found")
+	}
+	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
 	mntr := newContainerMounter(info, l.k, l.mountHints, kernel.VFS2Enabled)
 	if root {
@@ -816,17 +819,21 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 }
 
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
-// the gofer FDs looking for disconnects, and kills the container processes if a
-// disconnect occurs in any of the gofer FDs.
-func (l *Loader) startGoferMonitor(cid string, goferFDs []*fd.FD) {
+// the gofer FD looking for disconnects, and kills the container processes if
+// the rootfs FD disconnects.
+//
+// Note that other gofer mounts are allowed to be unmounted and disconnected.
+func (l *Loader) startGoferMonitor(cid string, rootfsGoferFD int32) {
+	if rootfsGoferFD < 0 {
+		panic(fmt.Sprintf("invalid FD: %d", rootfsGoferFD))
+	}
 	go func() {
 		log.Debugf("Monitoring gofer health for container %q", cid)
-		var events []unix.PollFd
-		for _, goferFD := range goferFDs {
-			events = append(events, unix.PollFd{
-				Fd:     int32(goferFD.FD()),
+		events := []unix.PollFd{
+			{
+				Fd:     rootfsGoferFD,
 				Events: unix.POLLHUP | unix.POLLRDHUP,
-			})
+			},
 		}
 		_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 			// Use ppoll instead of poll because it's already whilelisted in seccomp.
