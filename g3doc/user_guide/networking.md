@@ -61,7 +61,7 @@ Add the following `runtimeArgs` to your Docker configuration
 
 ### Disable GSO {#gso}
 
-If your Linux is older than 4.14.17, you can disable Generic Segmentation
+If your Linux is older than 4.14.77, you can disable Generic Segmentation
 Offload (GSO) to run with a kernel that is newer than 3.17. Add the
 `--gso=false` flag to your Docker runtime configuration
 (`/etc/docker/daemon.json`) and restart the Docker daemon:
