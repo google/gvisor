@@ -42,6 +42,7 @@ go_binary(
     ],
     x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = ["//runsc/cli"],
+    gotags = ["lockdep"],
 )
 
 sh_test(
