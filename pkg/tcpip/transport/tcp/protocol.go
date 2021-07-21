@@ -478,8 +478,7 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		minRTO:                     MinRTO,
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
-		// TODO(gvisor.dev/issue/5243): Set recovery to tcpip.TCPRACKLossDetection.
-		recovery: 0,
+		recovery:                   tcpip.TCPRACKLossDetection,
 	}
 	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
 	return &p
