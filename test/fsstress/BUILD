@@ -14,7 +14,11 @@ go_test(
         "manual",
         "local",
     ],
-    deps = ["//pkg/test/dockerutil"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
 )
 
 go_library(
