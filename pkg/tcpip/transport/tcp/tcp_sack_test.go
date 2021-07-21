@@ -61,6 +61,7 @@ func TestSackPermittedConnect(t *testing.T) {
 			defer c.Cleanup()
 
 			setStackSACKPermitted(t, c, sackEnabled)
+			setStackTCPRecovery(t, c, 0)
 			rep := createConnectedWithSACKPermittedOption(c)
 			data := []byte{1, 2, 3}
 
@@ -105,6 +106,7 @@ func TestSackDisabledConnect(t *testing.T) {
 			defer c.Cleanup()
 
 			setStackSACKPermitted(t, c, sackEnabled)
+			setStackTCPRecovery(t, c, 0)
 
 			rep := c.CreateConnectedWithOptions(header.TCPSynOptions{})
 
@@ -166,6 +168,7 @@ func TestSackPermittedAccept(t *testing.T) {
 						}
 					}
 					setStackSACKPermitted(t, c, sackEnabled)
+					setStackTCPRecovery(t, c, 0)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
 					//  Now verify no SACK blocks are
@@ -239,6 +242,7 @@ func TestSackDisabledAccept(t *testing.T) {
 					}
 
 					setStackSACKPermitted(t, c, sackEnabled)
+					setStackTCPRecovery(t, c, 0)
 
 					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
 
@@ -386,6 +390,7 @@ func TestSACKRecovery(t *testing.T) {
 		log.Printf("state: %+v\n", s)
 	})
 	setStackSACKPermitted(t, c, true)
+	setStackTCPRecovery(t, c, 0)
 	createConnectedWithSACKAndTS(c)
 
 	const iterations = 3
