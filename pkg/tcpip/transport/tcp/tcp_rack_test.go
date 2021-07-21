@@ -36,9 +36,9 @@ const (
 	latency          = 5 * time.Millisecond
 )
 
-func setStackRACKPermitted(t *testing.T, c *context.Context) {
+func setStackTCPRecovery(t *testing.T, c *context.Context, recovery int) {
 	t.Helper()
-	opt := tcpip.TCPRACKLossDetection
+	opt := tcpip.TCPRecovery(recovery)
 	if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &opt); err != nil {
 		t.Fatalf("c.s.SetTransportProtocolOption(%d, &%v(%v)): %s", header.TCPProtocolNumber, opt, opt, err)
 	}
@@ -70,7 +70,6 @@ func TestRACKUpdate(t *testing.T) {
 		close(probeDone)
 	})
 	setStackSACKPermitted(t, c, true)
-	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 
 	data := make([]byte, maxPayload)
@@ -129,7 +128,6 @@ func TestRACKDetectReorder(t *testing.T) {
 		close(probeDone)
 	})
 	setStackSACKPermitted(t, c, true)
-	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 	data := make([]byte, ackNumToVerify*maxPayload)
 	for i := range data {
@@ -162,8 +160,8 @@ func TestRACKDetectReorder(t *testing.T) {
 
 func sendAndReceiveWithSACK(t *testing.T, c *context.Context, numPackets int, enableRACK bool) []byte {
 	setStackSACKPermitted(t, c, true)
-	if enableRACK {
-		setStackRACKPermitted(t, c)
+	if !enableRACK {
+		setStackTCPRecovery(t, c, 0)
 	}
 	createConnectedWithSACKAndTS(c)
 
@@ -998,7 +996,6 @@ func TestRACKWithWindowFull(t *testing.T) {
 	defer c.Cleanup()
 
 	setStackSACKPermitted(t, c, true)
-	setStackRACKPermitted(t, c)
 	createConnectedWithSACKAndTS(c)
 
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
