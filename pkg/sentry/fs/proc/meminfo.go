@@ -87,11 +87,11 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	fmt.Fprintf(&buf, "AnonPages:      %8d kB\n", anon/1024)
 	fmt.Fprintf(&buf, "Mapped:         %8d kB\n", file/1024) // doesn't count mapped tmpfs, which we don't know
 	fmt.Fprintf(&buf, "Shmem:          %8d kB\n", snapshot.Tmpfs/1024)
-	fmt.Fprintf(&buf, "HugePages_Total:     100\n")
-	fmt.Fprintf(&buf, "HugePages_Free:      100\n")
+	fmt.Fprintf(&buf, "HugePages_Total:     0\n")
+	fmt.Fprintf(&buf, "HugePages_Free:      0\n")
 	fmt.Fprintf(&buf, "HugePages_Rsvd:      0\n")
 	fmt.Fprintf(&buf, "HugePages_Surp:      0\n")
-	fmt.Fprintf(&buf, "Hugepagesize:        2048 kB\n")
+	fmt.Fprintf(&buf, "Hugepagesize:        %8d kB\n", hostarch.HugePageSize)
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*meminfoData)(nil)}}, 0
 }
 
