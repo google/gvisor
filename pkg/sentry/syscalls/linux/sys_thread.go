@@ -31,11 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-const (
-	// exitSignalMask is the signal mask to be sent at exit. Same as CSIGNAL in linux.
-	exitSignalMask = 0xff
-)
-
 var (
 	// ExecMaxTotalSize is the maximum length of all argv and envv entries.
 	//
@@ -201,33 +196,16 @@ func ExitGroup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // clone is used by Clone, Fork, and VFork.
 func clone(t *kernel.Task, flags int, stack hostarch.Addr, parentTID hostarch.Addr, childTID hostarch.Addr, tls hostarch.Addr) (uintptr, *kernel.SyscallControl, error) {
-	opts := kernel.CloneOptions{
-		SharingOptions: kernel.SharingOptions{
-			NewAddressSpace:     flags&linux.CLONE_VM == 0,
-			NewSignalHandlers:   flags&linux.CLONE_SIGHAND == 0,
-			NewThreadGroup:      flags&linux.CLONE_THREAD == 0,
-			TerminationSignal:   linux.Signal(flags & exitSignalMask),
-			NewPIDNamespace:     flags&linux.CLONE_NEWPID == linux.CLONE_NEWPID,
-			NewUserNamespace:    flags&linux.CLONE_NEWUSER == linux.CLONE_NEWUSER,
-			NewNetworkNamespace: flags&linux.CLONE_NEWNET == linux.CLONE_NEWNET,
-			NewFiles:            flags&linux.CLONE_FILES == 0,
-			NewFSContext:        flags&linux.CLONE_FS == 0,
-			NewUTSNamespace:     flags&linux.CLONE_NEWUTS == linux.CLONE_NEWUTS,
-			NewIPCNamespace:     flags&linux.CLONE_NEWIPC == linux.CLONE_NEWIPC,
-		},
-		Stack:         stack,
-		SetTLS:        flags&linux.CLONE_SETTLS == linux.CLONE_SETTLS,
-		TLS:           tls,
-		ChildClearTID: flags&linux.CLONE_CHILD_CLEARTID == linux.CLONE_CHILD_CLEARTID,
-		ChildSetTID:   flags&linux.CLONE_CHILD_SETTID == linux.CLONE_CHILD_SETTID,
-		ChildTID:      childTID,
-		ParentSetTID:  flags&linux.CLONE_PARENT_SETTID == linux.CLONE_PARENT_SETTID,
-		ParentTID:     parentTID,
-		Vfork:         flags&linux.CLONE_VFORK == linux.CLONE_VFORK,
-		Untraced:      flags&linux.CLONE_UNTRACED == linux.CLONE_UNTRACED,
-		InheritTracer: flags&linux.CLONE_PTRACE == linux.CLONE_PTRACE,
+	args := linux.CloneArgs{
+		Flags:      uint64(uint32(flags) &^ linux.CSIGNAL),
+		Pidfd:      uint64(parentTID),
+		ChildTID:   uint64(childTID),
+		ParentTID:  uint64(parentTID),
+		ExitSignal: uint64(flags & linux.CSIGNAL),
+		Stack:      uint64(stack),
+		TLS:        uint64(tls),
 	}
-	ntid, ctrl, err := t.Clone(&opts)
+	ntid, ctrl, err := t.Clone(&args)
 	return uintptr(ntid), ctrl, err
 }
 
@@ -460,29 +438,16 @@ func SetTidAddress(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 // Unshare implements linux syscall unshare(2).
 func Unshare(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
-	opts := kernel.SharingOptions{
-		NewAddressSpace:     flags&linux.CLONE_VM == linux.CLONE_VM,
-		NewSignalHandlers:   flags&linux.CLONE_SIGHAND == linux.CLONE_SIGHAND,
-		NewThreadGroup:      flags&linux.CLONE_THREAD == linux.CLONE_THREAD,
-		NewPIDNamespace:     flags&linux.CLONE_NEWPID == linux.CLONE_NEWPID,
-		NewUserNamespace:    flags&linux.CLONE_NEWUSER == linux.CLONE_NEWUSER,
-		NewNetworkNamespace: flags&linux.CLONE_NEWNET == linux.CLONE_NEWNET,
-		NewFiles:            flags&linux.CLONE_FILES == linux.CLONE_FILES,
-		NewFSContext:        flags&linux.CLONE_FS == linux.CLONE_FS,
-		NewUTSNamespace:     flags&linux.CLONE_NEWUTS == linux.CLONE_NEWUTS,
-		NewIPCNamespace:     flags&linux.CLONE_NEWIPC == linux.CLONE_NEWIPC,
-	}
 	// "CLONE_NEWPID automatically implies CLONE_THREAD as well." - unshare(2)
-	if opts.NewPIDNamespace {
-		opts.NewThreadGroup = true
+	if flags&linux.CLONE_NEWPID != 0 {
+		flags |= linux.CLONE_THREAD
 	}
 	// "... specifying CLONE_NEWUSER automatically implies CLONE_THREAD. Since
 	// Linux 3.9, CLONE_NEWUSER also automatically implies CLONE_FS."
-	if opts.NewUserNamespace {
-		opts.NewThreadGroup = true
-		opts.NewFSContext = true
+	if flags&linux.CLONE_NEWUSER != 0 {
+		flags |= linux.CLONE_THREAD | linux.CLONE_FS
 	}
-	return 0, nil, t.Unshare(&opts)
+	return 0, nil, t.Unshare(flags)
 }
 
 // SchedYield implements linux syscall sched_yield(2).
