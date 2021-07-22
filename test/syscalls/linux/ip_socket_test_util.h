@@ -21,7 +21,7 @@
 
 #include <string>
 
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {

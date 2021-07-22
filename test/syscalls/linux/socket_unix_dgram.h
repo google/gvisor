@@ -15,7 +15,7 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_UNIX_DGRAM_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_UNIX_DGRAM_H_
 
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {

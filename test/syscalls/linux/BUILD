@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "cc_library", "default_net_util", "gbenchmark", "gtest", "select_arch", "select_system")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_arch", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -128,9 +128,9 @@ cc_library(
     srcs = ["socket_netlink_util.cc"],
     hdrs = ["socket_netlink_util.h"],
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -146,36 +146,12 @@ cc_library(
 )
 
 cc_library(
-    name = "socket_test_util",
-    testonly = 1,
-    srcs = [
-        "socket_test_util.cc",
-        "socket_test_util_impl.cc",
-    ],
-    hdrs = ["socket_test_util.h"],
-    defines = select_system(),
-    deps = default_net_util() + [
-        gtest,
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:optional",
-        "//test/util:file_descriptor",
-        "//test/util:posix_error",
-        "//test/util:temp_path",
-        "//test/util:test_util",
-        "//test/util:thread_util",
-    ],
-)
-
-cc_library(
     name = "unix_domain_socket_test_util",
     testonly = 1,
     srcs = ["unix_domain_socket_test_util.cc"],
     hdrs = ["unix_domain_socket_test_util.h"],
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:test_util",
@@ -188,7 +164,7 @@ cc_library(
     srcs = ["ip_socket_test_util.cc"],
     hdrs = ["ip_socket_test_util.h"],
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -233,9 +209,9 @@ cc_binary(
     srcs = ["accept_bind.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -248,9 +224,9 @@ cc_binary(
     srcs = ["accept_bind_stream.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -349,8 +325,8 @@ cc_binary(
     srcs = ["bind.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -363,7 +339,7 @@ cc_binary(
     srcs = ["socket.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:file_descriptor",
         "//test/util:temp_umask",
@@ -378,9 +354,9 @@ cc_binary(
     srcs = ["socket_capability.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -540,9 +516,9 @@ cc_binary(
     srcs = ["connect_external.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -755,10 +731,10 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":file_base",
-        ":socket_test_util",
         "//test/util:cleanup",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
@@ -801,12 +777,12 @@ cc_binary(
     srcs = ["fcntl.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/memory",
@@ -834,8 +810,8 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
@@ -1021,9 +997,9 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:signal_util",
         "//test/util:test_main",
@@ -1065,9 +1041,9 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":iptables_types",
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -1083,9 +1059,9 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":iptables_types",
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -1464,10 +1440,10 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:endian",
         gtest,
@@ -1482,10 +1458,10 @@ cc_binary(
     srcs = ["packet_socket.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:endian",
         gtest,
@@ -1541,9 +1517,9 @@ cc_binary(
     srcs = select_system(linux = ["partial_bad_buffer.cc"]),
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:posix_error",
@@ -1576,8 +1552,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
@@ -1795,10 +1771,10 @@ cc_binary(
     srcs = ["proc_net.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
@@ -1942,10 +1918,10 @@ cc_binary(
     srcs = ["raw_socket_hdrincl.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:endian",
         gtest,
@@ -1961,10 +1937,10 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         gtest,
         "//test/util:test_main",
@@ -1978,10 +1954,10 @@ cc_binary(
     srcs = ["raw_socket_icmp.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         gtest,
         "//test/util:test_main",
@@ -2011,8 +1987,8 @@ cc_binary(
     srcs = ["readahead.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -2211,8 +2187,8 @@ cc_binary(
     srcs = ["sendfile_socket.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
         ":ip_socket_test_util",
@@ -2390,8 +2366,8 @@ cc_library(
         "socket_generic.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         gtest,
@@ -2411,8 +2387,8 @@ cc_binary(
     deps = [
         gtest,
         ":ip_socket_test_util",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -2427,8 +2403,8 @@ cc_library(
     srcs = ["socket_unix_dgram.cc"],
     hdrs = ["socket_unix_dgram.h"],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -2442,8 +2418,8 @@ cc_library(
     srcs = ["socket_unix_seqpacket.cc"],
     hdrs = ["socket_unix_seqpacket.h"],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -2461,7 +2437,7 @@ cc_library(
         "socket_ip_tcp_generic.h",
     ],
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/time",
         gtest,
@@ -2482,8 +2458,8 @@ cc_library(
         "socket_non_blocking.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_util",
     ],
@@ -2500,8 +2476,8 @@ cc_library(
         "socket_unix_non_stream.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:memory_util",
         "//test/util:test_util",
@@ -2520,8 +2496,8 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_util",
     ],
@@ -2539,7 +2515,7 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_util",
     ],
@@ -2557,7 +2533,7 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/memory",
         gtest,
         "//test/util:posix_error",
@@ -2578,7 +2554,7 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/memory",
         gtest,
         "//test/util:posix_error",
@@ -2599,9 +2575,9 @@ cc_library(
     ],
     deps = [
         ":socket_netlink_route_util",
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:socket_util",
         gtest,
     ],
     alwayslink = 1,
@@ -2618,8 +2594,8 @@ cc_library(
     ],
     deps = [
         ":socket_netlink_route_util",
-        ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:socket_util",
         gtest,
     ],
     alwayslink = 1,
@@ -2636,7 +2612,7 @@ cc_library(
     ],
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_util",
     ],
     alwayslink = 1,
@@ -2683,10 +2659,10 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_generic_test_cases",
-        ":socket_test_util",
         ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2701,8 +2677,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2715,10 +2691,10 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_stream_test_cases",
-        ":socket_test_util",
         ":socket_unix_dgram_test_cases",
         ":socket_unix_non_stream_test_cases",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2730,8 +2706,8 @@ cc_binary(
     srcs = ["socket_unix_dgram_non_blocking.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2747,10 +2723,10 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_stream_test_cases",
-        ":socket_test_util",
         ":socket_unix_non_stream_test_cases",
         ":socket_unix_seqpacket_test_cases",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2762,8 +2738,8 @@ cc_binary(
     srcs = ["socket_unix_stream.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_main",
@@ -2781,7 +2757,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ip_tcp_generic_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2796,7 +2772,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2813,7 +2789,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_generic_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2829,7 +2805,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_non_blocking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2847,7 +2823,7 @@ cc_binary(
         ":socket_generic_test_cases",
         ":socket_ip_udp_test_cases",
         ":socket_non_stream_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2863,7 +2839,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_external_networking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2879,7 +2855,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_external_networking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2895,8 +2871,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
-        ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2914,8 +2890,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
-        ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/container:node_hash_map",
         gtest,
         "//test/util:test_main",
@@ -2934,8 +2910,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
-        ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2953,7 +2929,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_non_blocking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2969,7 +2945,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -2985,7 +2961,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3000,7 +2976,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3018,7 +2994,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_netlink_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3034,7 +3010,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_netlink_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3049,7 +3025,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3066,8 +3042,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_netlink_route_util",
-        ":socket_test_util",
         "//test/util:capability_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3083,8 +3059,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_generic_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3099,8 +3075,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3115,10 +3091,10 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_generic_test_cases",
-        ":socket_test_util",
         ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3133,8 +3109,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3145,7 +3121,7 @@ cc_library(
     testonly = 1,
     hdrs = ["socket_inet_loopback_test_params.h"],
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
     ],
 )
@@ -3158,8 +3134,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_inet_loopback_test_params",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
@@ -3180,8 +3156,8 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_inet_loopback_test_params",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:posix_error",
@@ -3199,7 +3175,7 @@ cc_binary(
     deps = [
         ":socket_inet_loopback_test_params",
         ":socket_netlink_util",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3213,8 +3189,8 @@ cc_binary(
     srcs = ["socket_netlink.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3229,10 +3205,10 @@ cc_binary(
     deps = [
         ":socket_netlink_route_util",
         ":socket_netlink_util",
-        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings:str_format",
         gtest,
         "//test/util:test_main",
@@ -3247,8 +3223,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_netlink_util",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3267,8 +3243,8 @@ cc_library(
         "socket_stream.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -3286,8 +3262,8 @@ cc_library(
         "socket_blocking.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -3307,8 +3283,8 @@ cc_library(
         "socket_unix.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:test_util",
@@ -3327,8 +3303,8 @@ cc_library(
         "socket_unix_cmsg.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
         "//test/util:test_util",
@@ -3347,8 +3323,8 @@ cc_library(
         "socket_stream_blocking.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -3368,8 +3344,8 @@ cc_library(
         "socket_stream_nonblock.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_util",
     ],
@@ -3386,8 +3362,8 @@ cc_library(
         "socket_non_stream_blocking.h",
     ],
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:test_util",
@@ -3422,8 +3398,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_stream_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3438,8 +3414,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_stream_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3455,7 +3431,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_stream_blocking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3470,8 +3446,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_stream_nonblocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -3483,8 +3459,8 @@ cc_binary(
     srcs = ["socket_unix_unbound_dgram.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3497,8 +3473,8 @@ cc_binary(
     srcs = ["socket_unix_unbound_abstract.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3511,8 +3487,8 @@ cc_binary(
     srcs = ["socket_unix_unbound_filesystem.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:file_descriptor",
         "//test/util:test_main",
@@ -3529,8 +3505,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3547,7 +3523,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_blocking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3563,8 +3539,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_non_stream_blocking_test_cases",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3581,7 +3557,7 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_non_stream_blocking_test_cases",
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3596,10 +3572,10 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3612,8 +3588,8 @@ cc_binary(
     srcs = ["socket_unix_unbound_seqpacket.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3626,8 +3602,8 @@ cc_binary(
     srcs = ["socket_unix_unbound_stream.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3641,8 +3617,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_netlink_util",
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:endian",
         gtest,
         "//test/util:test_main",
@@ -3799,8 +3775,8 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:posix_error",
@@ -3910,7 +3886,7 @@ cc_binary(
     srcs = ["tuntap.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         ":socket_netlink_route_util",
         "//test/util:capability_util",
@@ -3943,8 +3919,8 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
-        ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
@@ -3963,8 +3939,8 @@ cc_binary(
     srcs = ["udp_bind.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
         "//test/util:file_descriptor",
+        "//test/util:socket_util",
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
@@ -4144,7 +4120,7 @@ cc_binary(
     srcs = ["network_namespace.cc"],
     linkstatic = 1,
     deps = [
-        ":socket_test_util",
+        "//test/util:socket_util",
         gtest,
         "//test/util:capability_util",
         "//test/util:posix_error",

@@ -27,10 +27,10 @@
 #include <algorithm>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // Note: in order to run these tests, /proc/sys/net/ipv4/ping_group_range will

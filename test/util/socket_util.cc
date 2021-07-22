@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

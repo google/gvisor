@@ -29,10 +29,10 @@
 #include "absl/strings/str_format.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // Tests for NETLINK_ROUTE sockets.

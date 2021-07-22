@@ -26,10 +26,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/signal_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

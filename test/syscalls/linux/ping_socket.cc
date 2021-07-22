@@ -29,8 +29,8 @@
 #include "absl/strings/str_join.h"
 #include "absl/types/optional.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // Note: These tests require /proc/sys/net/ipv4/ping_group_range to be

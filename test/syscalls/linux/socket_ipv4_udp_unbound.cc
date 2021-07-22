@@ -26,9 +26,9 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

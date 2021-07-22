@@ -22,9 +22,9 @@
 #include <tuple>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // This file contains tests specific to connecting to host UDS managed outside

@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {
