@@ -4189,6 +4189,18 @@ cc_binary(
 )
 
 cc_binary(
+    name = "msgqueue_test",
+    testonly = 1,
+    srcs = ["msgqueue.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "fadvise64_test",
     testonly = 1,
     srcs = ["fadvise64.cc"],
