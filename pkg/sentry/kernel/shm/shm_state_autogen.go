@@ -13,10 +13,8 @@ func (r *Registry) StateTypeName() string {
 func (r *Registry) StateFields() []string {
 	return []string{
 		"userNS",
-		"shms",
-		"keysToShms",
+		"reg",
 		"totalPages",
-		"lastIDUsed",
 	}
 }
 
@@ -26,10 +24,8 @@ func (r *Registry) beforeSave() {}
 func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.userNS)
-	stateSinkObject.Save(1, &r.shms)
-	stateSinkObject.Save(2, &r.keysToShms)
-	stateSinkObject.Save(3, &r.totalPages)
-	stateSinkObject.Save(4, &r.lastIDUsed)
+	stateSinkObject.Save(1, &r.reg)
+	stateSinkObject.Save(2, &r.totalPages)
 }
 
 func (r *Registry) afterLoad() {}
@@ -37,10 +33,8 @@ func (r *Registry) afterLoad() {}
 // +checklocksignore
 func (r *Registry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.userNS)
-	stateSourceObject.Load(1, &r.shms)
-	stateSourceObject.Load(2, &r.keysToShms)
-	stateSourceObject.Load(3, &r.totalPages)
-	stateSourceObject.Load(4, &r.lastIDUsed)
+	stateSourceObject.Load(1, &r.reg)
+	stateSourceObject.Load(2, &r.totalPages)
 }
 
 func (s *Shm) StateTypeName() string {
@@ -52,14 +46,10 @@ func (s *Shm) StateFields() []string {
 		"ShmRefs",
 		"mfp",
 		"registry",
-		"ID",
-		"creator",
 		"size",
 		"effectiveSize",
 		"fr",
-		"key",
-		"perms",
-		"owner",
+		"obj",
 		"attachTime",
 		"detachTime",
 		"changeTime",
@@ -77,20 +67,16 @@ func (s *Shm) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &s.ShmRefs)
 	stateSinkObject.Save(1, &s.mfp)
 	stateSinkObject.Save(2, &s.registry)
-	stateSinkObject.Save(3, &s.ID)
-	stateSinkObject.Save(4, &s.creator)
-	stateSinkObject.Save(5, &s.size)
-	stateSinkObject.Save(6, &s.effectiveSize)
-	stateSinkObject.Save(7, &s.fr)
-	stateSinkObject.Save(8, &s.key)
-	stateSinkObject.Save(9, &s.perms)
-	stateSinkObject.Save(10, &s.owner)
-	stateSinkObject.Save(11, &s.attachTime)
-	stateSinkObject.Save(12, &s.detachTime)
-	stateSinkObject.Save(13, &s.changeTime)
-	stateSinkObject.Save(14, &s.creatorPID)
-	stateSinkObject.Save(15, &s.lastAttachDetachPID)
-	stateSinkObject.Save(16, &s.pendingDestruction)
+	stateSinkObject.Save(3, &s.size)
+	stateSinkObject.Save(4, &s.effectiveSize)
+	stateSinkObject.Save(5, &s.fr)
+	stateSinkObject.Save(6, &s.obj)
+	stateSinkObject.Save(7, &s.attachTime)
+	stateSinkObject.Save(8, &s.detachTime)
+	stateSinkObject.Save(9, &s.changeTime)
+	stateSinkObject.Save(10, &s.creatorPID)
+	stateSinkObject.Save(11, &s.lastAttachDetachPID)
+	stateSinkObject.Save(12, &s.pendingDestruction)
 }
 
 func (s *Shm) afterLoad() {}
@@ -100,20 +86,16 @@ func (s *Shm) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.ShmRefs)
 	stateSourceObject.Load(1, &s.mfp)
 	stateSourceObject.Load(2, &s.registry)
-	stateSourceObject.Load(3, &s.ID)
-	stateSourceObject.Load(4, &s.creator)
-	stateSourceObject.Load(5, &s.size)
-	stateSourceObject.Load(6, &s.effectiveSize)
-	stateSourceObject.Load(7, &s.fr)
-	stateSourceObject.Load(8, &s.key)
-	stateSourceObject.Load(9, &s.perms)
-	stateSourceObject.Load(10, &s.owner)
-	stateSourceObject.Load(11, &s.attachTime)
-	stateSourceObject.Load(12, &s.detachTime)
-	stateSourceObject.Load(13, &s.changeTime)
-	stateSourceObject.Load(14, &s.creatorPID)
-	stateSourceObject.Load(15, &s.lastAttachDetachPID)
-	stateSourceObject.Load(16, &s.pendingDestruction)
+	stateSourceObject.Load(3, &s.size)
+	stateSourceObject.Load(4, &s.effectiveSize)
+	stateSourceObject.Load(5, &s.fr)
+	stateSourceObject.Load(6, &s.obj)
+	stateSourceObject.Load(7, &s.attachTime)
+	stateSourceObject.Load(8, &s.detachTime)
+	stateSourceObject.Load(9, &s.changeTime)
+	stateSourceObject.Load(10, &s.creatorPID)
+	stateSourceObject.Load(11, &s.lastAttachDetachPID)
+	stateSourceObject.Load(12, &s.pendingDestruction)
 }
 
 func (r *ShmRefs) StateTypeName() string {

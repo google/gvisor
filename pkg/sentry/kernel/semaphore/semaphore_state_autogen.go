@@ -12,9 +12,7 @@ func (r *Registry) StateTypeName() string {
 
 func (r *Registry) StateFields() []string {
 	return []string{
-		"userNS",
-		"semaphores",
-		"lastIDUsed",
+		"reg",
 		"indexes",
 	}
 }
@@ -24,20 +22,16 @@ func (r *Registry) beforeSave() {}
 // +checklocksignore
 func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
-	stateSinkObject.Save(0, &r.userNS)
-	stateSinkObject.Save(1, &r.semaphores)
-	stateSinkObject.Save(2, &r.lastIDUsed)
-	stateSinkObject.Save(3, &r.indexes)
+	stateSinkObject.Save(0, &r.reg)
+	stateSinkObject.Save(1, &r.indexes)
 }
 
 func (r *Registry) afterLoad() {}
 
 // +checklocksignore
 func (r *Registry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.userNS)
-	stateSourceObject.Load(1, &r.semaphores)
-	stateSourceObject.Load(2, &r.lastIDUsed)
-	stateSourceObject.Load(3, &r.indexes)
+	stateSourceObject.Load(0, &r.reg)
+	stateSourceObject.Load(1, &r.indexes)
 }
 
 func (s *Set) StateTypeName() string {
@@ -47,11 +41,7 @@ func (s *Set) StateTypeName() string {
 func (s *Set) StateFields() []string {
 	return []string{
 		"registry",
-		"ID",
-		"key",
-		"creator",
-		"owner",
-		"perms",
+		"obj",
 		"opTime",
 		"changeTime",
 		"sems",
@@ -65,15 +55,11 @@ func (s *Set) beforeSave() {}
 func (s *Set) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.registry)
-	stateSinkObject.Save(1, &s.ID)
-	stateSinkObject.Save(2, &s.key)
-	stateSinkObject.Save(3, &s.creator)
-	stateSinkObject.Save(4, &s.owner)
-	stateSinkObject.Save(5, &s.perms)
-	stateSinkObject.Save(6, &s.opTime)
-	stateSinkObject.Save(7, &s.changeTime)
-	stateSinkObject.Save(8, &s.sems)
-	stateSinkObject.Save(9, &s.dead)
+	stateSinkObject.Save(1, &s.obj)
+	stateSinkObject.Save(2, &s.opTime)
+	stateSinkObject.Save(3, &s.changeTime)
+	stateSinkObject.Save(4, &s.sems)
+	stateSinkObject.Save(5, &s.dead)
 }
 
 func (s *Set) afterLoad() {}
@@ -81,15 +67,11 @@ func (s *Set) afterLoad() {}
 // +checklocksignore
 func (s *Set) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.registry)
-	stateSourceObject.Load(1, &s.ID)
-	stateSourceObject.Load(2, &s.key)
-	stateSourceObject.Load(3, &s.creator)
-	stateSourceObject.Load(4, &s.owner)
-	stateSourceObject.Load(5, &s.perms)
-	stateSourceObject.Load(6, &s.opTime)
-	stateSourceObject.Load(7, &s.changeTime)
-	stateSourceObject.Load(8, &s.sems)
-	stateSourceObject.Load(9, &s.dead)
+	stateSourceObject.Load(1, &s.obj)
+	stateSourceObject.Load(2, &s.opTime)
+	stateSourceObject.Load(3, &s.changeTime)
+	stateSourceObject.Load(4, &s.sems)
+	stateSourceObject.Load(5, &s.dead)
 }
 
 func (s *sem) StateTypeName() string {

@@ -348,6 +348,7 @@ func (i *IPCNamespace) StateFields() []string {
 	return []string{
 		"IPCNamespaceRefs",
 		"userNS",
+		"queues",
 		"semaphores",
 		"shms",
 	}
@@ -360,8 +361,9 @@ func (i *IPCNamespace) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.IPCNamespaceRefs)
 	stateSinkObject.Save(1, &i.userNS)
-	stateSinkObject.Save(2, &i.semaphores)
-	stateSinkObject.Save(3, &i.shms)
+	stateSinkObject.Save(2, &i.queues)
+	stateSinkObject.Save(3, &i.semaphores)
+	stateSinkObject.Save(4, &i.shms)
 }
 
 func (i *IPCNamespace) afterLoad() {}
@@ -370,8 +372,9 @@ func (i *IPCNamespace) afterLoad() {}
 func (i *IPCNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.IPCNamespaceRefs)
 	stateSourceObject.Load(1, &i.userNS)
-	stateSourceObject.Load(2, &i.semaphores)
-	stateSourceObject.Load(3, &i.shms)
+	stateSourceObject.Load(2, &i.queues)
+	stateSourceObject.Load(3, &i.semaphores)
+	stateSourceObject.Load(4, &i.shms)
 }
 
 func (r *IPCNamespaceRefs) StateTypeName() string {

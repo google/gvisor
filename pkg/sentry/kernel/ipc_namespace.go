@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/msgqueue"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/semaphore"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
 )
@@ -30,6 +31,7 @@ type IPCNamespace struct {
 	// User namespace which owns this IPC namespace. Immutable.
 	userNS *auth.UserNamespace
 
+	queues     *msgqueue.Registry
 	semaphores *semaphore.Registry
 	shms       *shm.Registry
 }
@@ -38,11 +40,17 @@ type IPCNamespace struct {
 func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 	ns := &IPCNamespace{
 		userNS:     userNS,
+		queues:     msgqueue.NewRegistry(userNS),
 		semaphores: semaphore.NewRegistry(userNS),
 		shms:       shm.NewRegistry(userNS),
 	}
 	ns.InitRefs()
 	return ns
+}
+
+// MsgqueueRegistry returns the message queue registry for this namespace.
+func (i *IPCNamespace) MsgqueueRegistry() *msgqueue.Registry {
+	return i.queues
 }
 
 // SemaphoreRegistry returns the semaphore set registry for this namespace.
