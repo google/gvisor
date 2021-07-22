@@ -1154,6 +1154,13 @@ func (s *sender) walkSACK(rcvdSeg *segment) {
 	idx := 0
 	n := len(rcvdSeg.parsedOptions.SACKBlocks)
 	if checkDSACK(rcvdSeg) {
+		dsackBlock := rcvdSeg.parsedOptions.SACKBlocks[0]
+		numDSACK := uint64(dsackBlock.End-dsackBlock.Start) / uint64(s.MaxPayloadSize)
+		// numDSACK can be zero when DSACK is sent for subsegments.
+		if numDSACK < 1 {
+			numDSACK = 1
+		}
+		s.ep.stack.Stats().TCP.SegmentsAckedWithDSACK.IncrementBy(numDSACK)
 		s.rc.setDSACKSeen(true)
 		idx = 1
 		n--
