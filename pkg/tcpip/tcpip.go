@@ -1845,6 +1845,10 @@ type TCPStats struct {
 	// FailedPortReservations is the number of times TCP failed to reserve
 	// a port.
 	FailedPortReservations *StatCounter
+
+	// SegmentsAckedWithDSACK is the number of segments acknowledged with
+	// DSACK.
+	SegmentsAckedWithDSACK *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
