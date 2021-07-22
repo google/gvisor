@@ -25,6 +25,7 @@ import (
 const (
 	_CR0_PE = 1 << 0
 	_CR0_ET = 1 << 4
+	_CR0_NE = 1 << 5
 	_CR0_AM = 1 << 18
 	_CR0_PG = 1 << 31
 
