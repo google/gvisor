@@ -540,6 +540,28 @@ func TestRACKDetectDSACK(t *testing.T) {
 	case invalidDSACKDetected:
 		t.Fatalf("RACK DSACK detected when there is no duplicate SACK")
 	}
+
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			// Check DSACK was received for one segment.
+			{tcpStats.SegmentsAckedWithDSACK, "stats.TCP.SegmentsAckedWithDSACK", 1},
+		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestRACKDetectDSACKWithOutOfOrder tests that RACK detects DSACK with out of
@@ -679,6 +701,28 @@ func TestRACKDetectDSACKSingleDup(t *testing.T) {
 		t.Fatalf("RACK DSACK detection failed")
 	case invalidDSACKDetected:
 		t.Fatalf("RACK DSACK detected when there is no duplicate SACK")
+	}
+
+	metricPollFn := func() error {
+		tcpStats := c.Stack().Stats().TCP
+		stats := []struct {
+			stat *tcpip.StatCounter
+			name string
+			want uint64
+		}{
+			// Check DSACK was received for a subsegment.
+			{tcpStats.SegmentsAckedWithDSACK, "stats.TCP.SegmentsAckedWithDSACK", 1},
+		}
+		for _, s := range stats {
+			if got, want := s.stat.Value(), s.want; got != want {
+				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			}
+		}
+		return nil
+	}
+
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
 	}
 }
 
