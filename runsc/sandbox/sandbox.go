@@ -1157,27 +1157,26 @@ func (s *Sandbox) destroyContainer(cid string) error {
 }
 
 func (s *Sandbox) waitForStopped() error {
+	if s.child {
+		s.statusMu.Lock()
+		defer s.statusMu.Unlock()
+		if s.Pid == 0 {
+			return nil
+		}
+		// The sandbox process is a child of the current process,
+		// so we can wait it and collect its zombie.
+		if _, err := unix.Wait4(int(s.Pid), &s.status, 0, nil); err != nil {
+			return fmt.Errorf("error waiting the sandbox process: %v", err)
+		}
+		s.Pid = 0
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if s.child {
-			s.statusMu.Lock()
-			defer s.statusMu.Unlock()
-			if s.Pid == 0 {
-				return nil
-			}
-			// The sandbox process is a child of the current process,
-			// so we can wait it and collect its zombie.
-			wpid, err := unix.Wait4(int(s.Pid), &s.status, unix.WNOHANG, nil)
-			if err != nil {
-				return fmt.Errorf("error waiting the sandbox process: %v", err)
-			}
-			if wpid == 0 {
-				return fmt.Errorf("sandbox is still running")
-			}
-			s.Pid = 0
-		} else if s.IsRunning() {
+		if s.IsRunning() {
 			return fmt.Errorf("sandbox is still running")
 		}
 		return nil
