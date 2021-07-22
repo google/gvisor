@@ -26,140 +26,39 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// SharingOptions controls what resources are shared by a new task created by
-// Task.Clone, or an existing task affected by Task.Unshare.
-type SharingOptions struct {
-	// If NewAddressSpace is true, the task should have an independent virtual
-	// address space.
-	NewAddressSpace bool
-
-	// If NewSignalHandlers is true, the task should use an independent set of
-	// signal handlers.
-	NewSignalHandlers bool
-
-	// If NewThreadGroup is true, the task should be the leader of its own
-	// thread group. TerminationSignal is the signal that the thread group
-	// will send to its parent when it exits. If NewThreadGroup is false,
-	// TerminationSignal is ignored.
-	NewThreadGroup    bool
-	TerminationSignal linux.Signal
-
-	// If NewPIDNamespace is true:
-	//
-	// - In the context of Task.Clone, the new task should be the init task
-	// (TID 1) in a new PID namespace.
-	//
-	// - In the context of Task.Unshare, the task should create a new PID
-	// namespace, and all subsequent clones of the task should be members of
-	// the new PID namespace.
-	NewPIDNamespace bool
-
-	// If NewUserNamespace is true, the task should have an independent user
-	// namespace.
-	NewUserNamespace bool
-
-	// If NewNetworkNamespace is true, the task should have an independent
-	// network namespace.
-	NewNetworkNamespace bool
-
-	// If NewFiles is true, the task should use an independent file descriptor
-	// table.
-	NewFiles bool
-
-	// If NewFSContext is true, the task should have an independent FSContext.
-	NewFSContext bool
-
-	// If NewUTSNamespace is true, the task should have an independent UTS
-	// namespace.
-	NewUTSNamespace bool
-
-	// If NewIPCNamespace is true, the task should have an independent IPC
-	// namespace.
-	NewIPCNamespace bool
-}
-
-// CloneOptions controls the behavior of Task.Clone.
-type CloneOptions struct {
-	// SharingOptions defines the set of resources that the new task will share
-	// with its parent.
-	SharingOptions
-
-	// Stack is the initial stack pointer of the new task. If Stack is 0, the
-	// new task will start with the same stack pointer as its parent.
-	Stack hostarch.Addr
-
-	// If SetTLS is true, set the new task's TLS (thread-local storage)
-	// descriptor to TLS. If SetTLS is false, TLS is ignored.
-	SetTLS bool
-	TLS    hostarch.Addr
-
-	// If ChildClearTID is true, when the child exits, 0 is written to the
-	// address ChildTID in the child's memory, and if the write is successful a
-	// futex wake on the same address is performed.
-	//
-	// If ChildSetTID is true, the child's thread ID (in the child's PID
-	// namespace) is written to address ChildTID in the child's memory. (As in
-	// Linux, failed writes are silently ignored.)
-	ChildClearTID bool
-	ChildSetTID   bool
-	ChildTID      hostarch.Addr
-
-	// If ParentSetTID is true, the child's thread ID (in the parent's PID
-	// namespace) is written to address ParentTID in the parent's memory. (As
-	// in Linux, failed writes are silently ignored.)
-	//
-	// Older versions of the clone(2) man page state that CLONE_PARENT_SETTID
-	// causes the child's thread ID to be written to ptid in both the parent
-	// and child's memory, but this is a documentation error fixed by
-	// 87ab04792ced ("clone.2: Fix description of CLONE_PARENT_SETTID").
-	ParentSetTID bool
-	ParentTID    hostarch.Addr
-
-	// If Vfork is true, place the parent in vforkStop until the cloned task
-	// releases its TaskImage.
-	Vfork bool
-
-	// If Untraced is true, do not report PTRACE_EVENT_CLONE/FORK/VFORK for
-	// this clone(), and do not ptrace-attach the caller's tracer to the new
-	// task. (PTRACE_EVENT_VFORK_DONE will still be reported if appropriate).
-	Untraced bool
-
-	// If InheritTracer is true, ptrace-attach the caller's tracer to the new
-	// task, even if no PTRACE_EVENT_CLONE/FORK/VFORK event would be reported
-	// for it. If both Untraced and InheritTracer are true, no event will be
-	// reported, but tracer inheritance will still occur.
-	InheritTracer bool
-}
-
 // Clone implements the clone(2) syscall and returns the thread ID of the new
 // task in t's PID namespace. Clone may return both a non-zero thread ID and a
 // non-nil error.
 //
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
-func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
+func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// Since signal actions may refer to application signal handlers by virtual
 	// address, any set of signal handlers must refer to the same address
 	// space.
-	if !opts.NewSignalHandlers && opts.NewAddressSpace {
+	if args.Flags&(linux.CLONE_SIGHAND|linux.CLONE_VM) == linux.CLONE_SIGHAND {
 		return 0, nil, linuxerr.EINVAL
 	}
 	// In order for the behavior of thread-group-directed signals to be sane,
 	// all tasks in a thread group must share signal handlers.
-	if !opts.NewThreadGroup && opts.NewSignalHandlers {
+	if args.Flags&(linux.CLONE_THREAD|linux.CLONE_SIGHAND) == linux.CLONE_THREAD {
 		return 0, nil, linuxerr.EINVAL
 	}
 	// All tasks in a thread group must be in the same PID namespace.
-	if !opts.NewThreadGroup && (opts.NewPIDNamespace || t.childPIDNamespace != nil) {
+	if (args.Flags&linux.CLONE_THREAD != 0) && (args.Flags&linux.CLONE_NEWPID != 0 || t.childPIDNamespace != nil) {
 		return 0, nil, linuxerr.EINVAL
 	}
 	// The two different ways of specifying a new PID namespace are
 	// incompatible.
-	if opts.NewPIDNamespace && t.childPIDNamespace != nil {
+	if args.Flags&linux.CLONE_NEWPID != 0 && t.childPIDNamespace != nil {
 		return 0, nil, linuxerr.EINVAL
 	}
 	// Thread groups and FS contexts cannot span user namespaces.
-	if opts.NewUserNamespace && (!opts.NewThreadGroup || !opts.NewFSContext) {
+	if args.Flags&linux.CLONE_NEWUSER != 0 && args.Flags&(linux.CLONE_THREAD|linux.CLONE_FS) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	// args.ExitSignal must be a valid signal.
+	if args.ExitSignal != 0 && !linux.Signal(args.ExitSignal).IsValid() {
 		return 0, nil, linuxerr.EINVAL
 	}
 
@@ -174,7 +73,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// user_namespaces(7)
 	creds := t.Credentials()
 	userns := creds.UserNamespace
-	if opts.NewUserNamespace {
+	if args.Flags&linux.CLONE_NEWUSER != 0 {
 		var err error
 		// "EPERM (since Linux 3.9): CLONE_NEWUSER was specified in flags and
 		// the caller is in a chroot environment (i.e., the caller's root
@@ -189,21 +88,19 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 			return 0, nil, err
 		}
 	}
-	if (opts.NewPIDNamespace || opts.NewNetworkNamespace || opts.NewUTSNamespace) && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, userns) {
+	if args.Flags&(linux.CLONE_NEWPID|linux.CLONE_NEWNET|linux.CLONE_NEWUTS|linux.CLONE_NEWIPC) != 0 && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, userns) {
 		return 0, nil, linuxerr.EPERM
 	}
 
 	utsns := t.UTSNamespace()
-	if opts.NewUTSNamespace {
+	if args.Flags&linux.CLONE_NEWUTS != 0 {
 		// Note that this must happen after NewUserNamespace so we get
 		// the new userns if there is one.
 		utsns = t.UTSNamespace().Clone(userns)
 	}
 
 	ipcns := t.IPCNamespace()
-	if opts.NewIPCNamespace {
-		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
-		// namespace"
+	if args.Flags&linux.CLONE_NEWIPC != 0 {
 		ipcns = NewIPCNamespace(userns)
 	} else {
 		ipcns.IncRef()
@@ -214,7 +111,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	defer cu.Clean()
 
 	netns := t.NetworkNamespace()
-	if opts.NewNetworkNamespace {
+	if args.Flags&linux.CLONE_NEWNET != 0 {
 		netns = inet.NewNamespace(netns)
 	}
 
@@ -227,7 +124,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		})
 	}
 
-	image, err := t.image.Fork(t, t.k, !opts.NewAddressSpace)
+	image, err := t.image.Fork(t, t.k, args.Flags&linux.CLONE_VM != 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -236,17 +133,17 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	})
 	// clone() returns 0 in the child.
 	image.Arch.SetReturn(0)
-	if opts.Stack != 0 {
-		image.Arch.SetStack(uintptr(opts.Stack))
+	if args.Stack != 0 {
+		image.Arch.SetStack(uintptr(args.Stack))
 	}
-	if opts.SetTLS {
-		if !image.Arch.SetTLS(uintptr(opts.TLS)) {
+	if args.Flags&linux.CLONE_SETTLS != 0 {
+		if !image.Arch.SetTLS(uintptr(args.TLS)) {
 			return 0, nil, linuxerr.EPERM
 		}
 	}
 
 	var fsContext *FSContext
-	if opts.NewFSContext {
+	if args.Flags&linux.CLONE_FS == 0 {
 		fsContext = t.fsContext.Fork()
 	} else {
 		fsContext = t.fsContext
@@ -254,7 +151,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 
 	var fdTable *FDTable
-	if opts.NewFiles {
+	if args.Flags&linux.CLONE_FILES == 0 {
 		fdTable = t.fdTable.Fork(t)
 	} else {
 		fdTable = t.fdTable
@@ -264,22 +161,22 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	pidns := t.tg.pidns
 	if t.childPIDNamespace != nil {
 		pidns = t.childPIDNamespace
-	} else if opts.NewPIDNamespace {
+	} else if args.Flags&linux.CLONE_NEWPID != 0 {
 		pidns = pidns.NewChild(userns)
 	}
 
 	tg := t.tg
 	rseqAddr := hostarch.Addr(0)
 	rseqSignature := uint32(0)
-	if opts.NewThreadGroup {
+	if args.Flags&linux.CLONE_THREAD == 0 {
 		if tg.mounts != nil {
 			tg.mounts.IncRef()
 		}
 		sh := t.tg.signalHandlers
-		if opts.NewSignalHandlers {
+		if args.Flags&linux.CLONE_SIGHAND == 0 {
 			sh = sh.Fork()
 		}
-		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy())
+		tg = t.k.NewThreadGroup(tg.mounts, pidns, sh, linux.Signal(args.ExitSignal), tg.limits.GetCopy())
 		tg.oomScoreAdj = atomic.LoadInt32(&t.tg.oomScoreAdj)
 		rseqAddr = t.rseqAddr
 		rseqSignature = t.rseqSignature
@@ -304,7 +201,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		RSeqSignature:           rseqSignature,
 		ContainerID:             t.ContainerID(),
 	}
-	if opts.NewThreadGroup {
+	if args.Flags&linux.CLONE_THREAD == 0 {
 		cfg.Parent = t
 	} else {
 		cfg.InheritParent = t
@@ -322,7 +219,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	//
 	// However kernel/fork.c:copy_process() adds a limitation to this:
 	// "sigaltstack should be cleared when sharing the same VM".
-	if opts.NewAddressSpace || opts.Vfork {
+	if args.Flags&linux.CLONE_VM == 0 || args.Flags&linux.CLONE_VFORK != 0 {
 		nt.SetSignalStack(t.SignalStack())
 	}
 
@@ -347,35 +244,35 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		copiedFilters := append([]bpf.Program(nil), f.([]bpf.Program)...)
 		nt.syscallFilters.Store(copiedFilters)
 	}
-	if opts.Vfork {
+	if args.Flags&linux.CLONE_VFORK != 0 {
 		nt.vforkParent = t
 	}
 
-	if opts.ChildClearTID {
-		nt.SetClearTID(opts.ChildTID)
+	if args.Flags&linux.CLONE_CHILD_CLEARTID != 0 {
+		nt.SetClearTID(hostarch.Addr(args.ChildTID))
 	}
-	if opts.ChildSetTID {
+	if args.Flags&linux.CLONE_CHILD_SETTID != 0 {
 		ctid := nt.ThreadID()
-		ctid.CopyOut(nt.CopyContext(t, usermem.IOOpts{AddressSpaceActive: false}), opts.ChildTID)
+		ctid.CopyOut(nt.CopyContext(t, usermem.IOOpts{AddressSpaceActive: false}), hostarch.Addr(args.ChildTID))
 	}
 	ntid := t.tg.pidns.IDOfTask(nt)
-	if opts.ParentSetTID {
-		ntid.CopyOut(t, opts.ParentTID)
+	if args.Flags&linux.CLONE_PARENT_SETTID != 0 {
+		ntid.CopyOut(t, hostarch.Addr(args.ParentTID))
 	}
 
 	kind := ptraceCloneKindClone
-	if opts.Vfork {
+	if args.Flags&linux.CLONE_VFORK != 0 {
 		kind = ptraceCloneKindVfork
-	} else if opts.TerminationSignal == linux.SIGCHLD {
+	} else if linux.Signal(args.ExitSignal) == linux.SIGCHLD {
 		kind = ptraceCloneKindFork
 	}
-	if t.ptraceClone(kind, nt, opts) {
-		if opts.Vfork {
+	if t.ptraceClone(kind, nt, args) {
+		if args.Flags&linux.CLONE_VFORK != 0 {
 			return ntid, &SyscallControl{next: &runSyscallAfterPtraceEventClone{vforkChild: nt, vforkChildTID: ntid}}, nil
 		}
 		return ntid, &SyscallControl{next: &runSyscallAfterPtraceEventClone{}}, nil
 	}
-	if opts.Vfork {
+	if args.Flags&linux.CLONE_VFORK != 0 {
 		t.maybeBeginVforkStop(nt)
 		return ntid, &SyscallControl{next: &runSyscallAfterVforkStop{childTID: ntid}}, nil
 	}
@@ -446,27 +343,35 @@ func (r *runSyscallAfterVforkStop) execute(t *Task) taskRunState {
 }
 
 // Unshare changes the set of resources t shares with other tasks, as specified
-// by opts.
+// by flags.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) Unshare(opts *SharingOptions) error {
-	// In Linux unshare(2), NewThreadGroup implies NewSignalHandlers and
-	// NewSignalHandlers implies NewAddressSpace. All three flags are no-ops if
-	// t is the only task using its MM, which due to clone(2)'s rules imply
-	// that it is also the only task using its signal handlers / in its thread
-	// group, and cause EINVAL to be returned otherwise.
+func (t *Task) Unshare(flags int32) error {
+	// "CLONE_THREAD, CLONE_SIGHAND, and CLONE_VM can be specified in flags if
+	// the caller is single threaded (i.e., it is not sharing its address space
+	// with another process or thread). In this case, these flags have no
+	// effect. (Note also that specifying CLONE_THREAD automatically implies
+	// CLONE_VM, and specifying CLONE_VM automatically implies CLONE_SIGHAND.)
+	// If the process is multithreaded, then the use of these flags results in
+	// an error." - unshare(2). This is incorrect (cf.
+	// kernel/fork.c:ksys_unshare()):
+	//
+	// - CLONE_THREAD does not imply CLONE_VM.
+	//
+	// - CLONE_SIGHAND implies CLONE_THREAD.
+	//
+	// - Only CLONE_VM requires that the caller is not sharing its address
+	// space with another thread. CLONE_SIGHAND requires that the caller is not
+	// sharing its signal handlers, and CLONE_THREAD requires that the caller
+	// is the only thread in its thread group.
 	//
 	// Since we don't count the number of tasks using each address space or set
-	// of signal handlers, we reject NewSignalHandlers and NewAddressSpace
-	// altogether, and interpret NewThreadGroup as requiring that t be the only
-	// member of its thread group. This seems to be logically coherent, in the
-	// sense that clone(2) allows a task to share signal handlers and address
-	// spaces with tasks in other thread groups.
-	if opts.NewAddressSpace || opts.NewSignalHandlers {
+	// of signal handlers, we reject CLONE_VM and CLONE_SIGHAND altogether.
+	if flags&(linux.CLONE_VM|linux.CLONE_SIGHAND) != 0 {
 		return linuxerr.EINVAL
 	}
 	creds := t.Credentials()
-	if opts.NewThreadGroup {
+	if flags&linux.CLONE_THREAD != 0 {
 		t.tg.signalHandlers.mu.Lock()
 		if t.tg.tasksCount != 1 {
 			t.tg.signalHandlers.mu.Unlock()
@@ -476,7 +381,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		// This isn't racy because we're the only living task, and therefore
 		// the only task capable of creating new ones, in our thread group.
 	}
-	if opts.NewUserNamespace {
+	if flags&linux.CLONE_NEWUSER != 0 {
 		if t.IsChrooted() {
 			return linuxerr.EPERM
 		}
@@ -492,7 +397,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		creds = t.Credentials()
 	}
 	haveCapSysAdmin := t.HasCapability(linux.CAP_SYS_ADMIN)
-	if opts.NewPIDNamespace {
+	if flags&linux.CLONE_NEWPID != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
@@ -500,14 +405,14 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	}
 	t.mu.Lock()
 	// Can't defer unlock: DecRefs must occur without holding t.mu.
-	if opts.NewNetworkNamespace {
+	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
 		t.netns = inet.NewNamespace(t.netns)
 	}
-	if opts.NewUTSNamespace {
+	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
 			return linuxerr.EPERM
@@ -516,7 +421,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		// new user namespace is used if there is one.
 		t.utsns = t.utsns.Clone(creds.UserNamespace)
 	}
-	if opts.NewIPCNamespace {
+	if flags&linux.CLONE_NEWIPC != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
 			return linuxerr.EPERM
@@ -527,12 +432,12 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
 	}
 	var oldFDTable *FDTable
-	if opts.NewFiles {
+	if flags&linux.CLONE_FILES != 0 {
 		oldFDTable = t.fdTable
 		t.fdTable = oldFDTable.Fork(t)
 	}
 	var oldFSContext *FSContext
-	if opts.NewFSContext {
+	if flags&linux.CLONE_FS != 0 {
 		oldFSContext = t.fsContext
 		t.fsContext = oldFSContext.Fork()
 	}
