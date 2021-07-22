@@ -23,10 +23,10 @@
 #include "gtest/gtest.h"
 #include "absl/synchronization/notification.h"
 #include "benchmark/benchmark.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

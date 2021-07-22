@@ -25,8 +25,8 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

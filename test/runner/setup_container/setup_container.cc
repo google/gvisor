@@ -17,9 +17,9 @@
 #include <unistd.h>
 
 #include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {

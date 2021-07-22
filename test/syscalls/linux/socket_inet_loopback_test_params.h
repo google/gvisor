@@ -16,7 +16,7 @@
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_INET_LOOPBACK_TEST_PARAMS_H_
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {

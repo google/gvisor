@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "gbenchmark", "gtest", "select_system")
+load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "default_net_util", "gbenchmark", "gtest", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -412,5 +412,29 @@ cc_library(
         ":mount_util",
         ":posix_error",
         ":temp_path",
+    ],
+)
+
+cc_library(
+    name = "socket_util",
+    testonly = 1,
+    srcs = [
+        "socket_util.cc",
+        "socket_util_impl.cc",
+    ],
+    hdrs = ["socket_util.h"],
+    defines = select_system(),
+    deps = default_net_util() + [
+        gtest,
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_util",
+        "//test/util:thread_util",
     ],
 )

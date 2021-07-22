@@ -25,9 +25,9 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // This file is a generic socket test file. It must be built with another file

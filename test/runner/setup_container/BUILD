@@ -12,8 +12,8 @@ cc_binary(
     visibility = ["//test/runner:__subpackages__"],
     deps = [
         "//test/syscalls/linux:socket_netlink_util",
-        "//test/syscalls/linux:socket_test_util",
         "//test/util:capability_util",
         "//test/util:posix_error",
+        "//test/util:socket_util",
     ],
 )
