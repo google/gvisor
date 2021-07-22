@@ -177,7 +177,7 @@ func (c *CPU) TSS() (uint64, uint16, *SegmentDescriptor) {
 //
 //go:nosplit
 func (c *CPU) CR0() uint64 {
-	return _CR0_PE | _CR0_PG | _CR0_AM | _CR0_ET
+	return _CR0_PE | _CR0_PG | _CR0_AM | _CR0_ET | _CR0_NE
 }
 
 // CR4 returns the CPU's CR4 value.
