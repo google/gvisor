@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package gvisor;
+
+// ControlConfig configures the sentry's control server.
+message ControlConfig {
+  // Names for individual control URPC service objects in the control server.
+  // Any new service object in control.go that should be given conditional
+  // access should be named here and conditionally added based on presence in
+  // allowed_controls.
+  enum Endpoint {
+    UNKNOWN = 0;
+    EVENTS = 1;
+    FS = 2;
+    LIFECYCLE = 3;
+    LOGGING = 4;
+    PROFILE = 5;
+    USAGE = 6;
+    PROC = 7;
+    STATE = 8;
+  }
+
+  // allowed_controls represents which endpoints may be registered to the
+  // server.
+  repeated Endpoint allowed_controls = 1;
+}
