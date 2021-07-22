@@ -789,30 +789,31 @@ func (c *Container) stop() error {
 }
 
 func (c *Container) waitForStopped() error {
+	if c.GoferPid == 0 {
+		return nil
+	}
+
+	if c.IsSandboxRunning() {
+		if err := c.SignalContainer(unix.Signal(0), false); err == nil {
+			return fmt.Errorf("container is still running")
+		}
+	}
+
+	if c.goferIsChild {
+		// The gofer process is a child of the current process,
+		// so we can wait it and collect its zombie.
+		if _, err := unix.Wait4(int(c.GoferPid), nil, 0, nil); err != nil {
+			return fmt.Errorf("error waiting the gofer process: %v", err)
+		}
+		c.GoferPid = 0
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if c.IsSandboxRunning() {
-			if err := c.SignalContainer(unix.Signal(0), false); err == nil {
-				return fmt.Errorf("container is still running")
-			}
-		}
-		if c.GoferPid == 0 {
-			return nil
-		}
-		if c.goferIsChild {
-			// The gofer process is a child of the current process,
-			// so we can wait it and collect its zombie.
-			wpid, err := unix.Wait4(int(c.GoferPid), nil, unix.WNOHANG, nil)
-			if err != nil {
-				return fmt.Errorf("error waiting the gofer process: %v", err)
-			}
-			if wpid == 0 {
-				return fmt.Errorf("gofer is still running")
-			}
-
-		} else if err := unix.Kill(c.GoferPid, 0); err == nil {
+		if err := unix.Kill(c.GoferPid, 0); err == nil {
 			return fmt.Errorf("gofer is still running")
 		}
 		c.GoferPid = 0
