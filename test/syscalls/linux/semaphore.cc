@@ -1019,6 +1019,17 @@ TEST(SemaphoreTest, SemInfo) {
   EXPECT_EQ(info.semvmx, kSemVmx);
 }
 
+TEST(SempahoreTest, RemoveNonExistentSemaphore) {
+  EXPECT_THAT(semctl(-1, 0, IPC_RMID), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SempahoreTest, RemoveDeletedSemaphore) {
+  int id;
+  EXPECT_THAT(id = semget(IPC_PRIVATE, 1, 0), SyscallSucceeds());
+  EXPECT_THAT(semctl(id, 0, IPC_RMID), SyscallSucceeds());
+  EXPECT_THAT(semctl(id, 0, IPC_RMID), SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
