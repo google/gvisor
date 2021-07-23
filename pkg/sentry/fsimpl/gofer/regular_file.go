@@ -82,7 +82,7 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	// Skip flushing if there are client-buffered writes, since (as with the
 	// VFS1 client) we don't flush buffered writes on close anyway.
 	d := fd.dentry()
-	if d.fs.opts.interop != InteropModeExclusive {
+	if d.fs.opts.interop == InteropModeExclusive {
 		return nil
 	}
 	d.dataMu.RLock()
