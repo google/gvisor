@@ -80,6 +80,9 @@ void BM_Recvmsg(benchmark::State& state) {
   int64_t bytes_received = 0;
   for (auto ignored : state) {
     int n = recvmsg(recv_socket.get(), recv_msg.header(), 0);
+    if (n == -1 && errno == EINTR) {
+      continue;
+    }
     TEST_CHECK(n > 0);
     bytes_received += n;
   }
@@ -108,6 +111,9 @@ void BM_Sendmsg(benchmark::State& state) {
   int64_t bytes_sent = 0;
   for (auto ignored : state) {
     int n = sendmsg(send_socket.get(), send_msg.header(), 0);
+    if (n == -1 && errno == EINTR) {
+      continue;
+    }
     TEST_CHECK(n > 0);
     bytes_sent += n;
   }
@@ -137,6 +143,9 @@ void BM_Recvfrom(benchmark::State& state) {
   for (auto ignored : state) {
     int n = recvfrom(recv_socket.get(), recv_buffer, kMessageSize, 0, nullptr,
                      nullptr);
+    if (n == -1 && errno == EINTR) {
+      continue;
+    }
     TEST_CHECK(n > 0);
     bytes_received += n;
   }
@@ -166,6 +175,9 @@ void BM_Sendto(benchmark::State& state) {
   int64_t bytes_sent = 0;
   for (auto ignored : state) {
     int n = sendto(send_socket.get(), send_buffer, kMessageSize, 0, nullptr, 0);
+    if (n == -1 && errno == EINTR) {
+      continue;
+    }
     TEST_CHECK(n > 0);
     bytes_sent += n;
   }
@@ -247,6 +259,9 @@ void BM_RecvmsgWithControlBuf(benchmark::State& state) {
   int64_t bytes_received = 0;
   for (auto ignored : state) {
     int n = recvmsg(recv_socket.get(), recv_msg.header(), 0);
+    if (n == -1 && errno == EINTR) {
+      continue;
+    }
     TEST_CHECK(n > 0);
     bytes_received += n;
   }
@@ -316,7 +331,11 @@ void BM_SendmsgTCP(benchmark::State& state) {
 
   ScopedThread t([&recv_msg, &recv_socket, &notification] {
     while (!notification.HasBeenNotified()) {
-      TEST_CHECK(recvmsg(recv_socket.get(), recv_msg.header(), 0) >= 0);
+      int rc = recvmsg(recv_socket.get(), recv_msg.header(), 0);
+      if (rc == -1 && errno == EINTR) {
+        continue;
+      }
+      TEST_CHECK(rc >= 0);
     }
   });
 
