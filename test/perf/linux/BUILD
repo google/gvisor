@@ -370,3 +370,22 @@ cc_binary(
         "//test/util:test_main",
     ],
 )
+
+cc_binary(
+    name = "verity_open_benchmark",
+    testonly = 1,
+    srcs = [
+        "verity_open_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:verity_util",
+    ],
+)

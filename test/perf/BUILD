@@ -139,3 +139,10 @@ syscall_test(
     debug = False,
     test = "//test/perf/linux:write_benchmark",
 )
+
+syscall_test(
+    size = "large",
+    debug = False,
+    test = "//test/perf/linux:verity_open_benchmark",
+    vfs1 = False,
+)

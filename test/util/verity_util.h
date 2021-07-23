@@ -76,7 +76,6 @@ PosixError FlipRandomBit(int fd, int size);
 // Mount a verity on the tmpfs and enable both the file and the direcotry. Then
 // mount a new verity with measured root hash.
 PosixErrorOr<std::string> MountVerity(std::string tmpfs_dir,
-                                      std::string filename,
                                       std::vector<EnableTarget> targets);
 
 }  // namespace testing

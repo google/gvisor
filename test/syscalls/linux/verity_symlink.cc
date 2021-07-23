@@ -62,9 +62,9 @@ class SymlinkTest : public ::testing::Test {
 };
 
 TEST_F(SymlinkTest, Success) {
-  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_,
-                  {EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(MountVerity(
+      tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY),
+                          EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
 
   char buf[256];
   EXPECT_THAT(
@@ -77,9 +77,9 @@ TEST_F(SymlinkTest, Success) {
 }
 
 TEST_F(SymlinkTest, DeleteLink) {
-  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_,
-                  {EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(MountVerity(
+      tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY),
+                          EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
 
   ASSERT_THAT(unlink(JoinPath(tmpfs_dir_.path(), kSymlink).c_str()),
               SyscallSucceeds());
@@ -92,9 +92,9 @@ TEST_F(SymlinkTest, DeleteLink) {
 }
 
 TEST_F(SymlinkTest, ModifyLink) {
-  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_,
-                  {EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
+  std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(MountVerity(
+      tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY),
+                          EnableTarget(kSymlink, O_RDONLY | O_NOFOLLOW)}));
 
   ASSERT_THAT(unlink(JoinPath(tmpfs_dir_.path(), kSymlink).c_str()),
               SyscallSucceeds());

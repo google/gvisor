@@ -135,6 +135,7 @@ def syscall_test(
         add_overlay = False,
         add_uds_tree = False,
         add_hostinet = False,
+        vfs1 = True,
         vfs2 = True,
         fuse = False,
         debug = True,
@@ -148,6 +149,7 @@ def syscall_test(
       add_overlay: add an overlay test.
       add_uds_tree: add a UDS test.
       add_hostinet: add a hostinet test.
+      vfs1: enable VFS1 tests. Could be false only if vfs2 is true.
       vfs2: enable VFS2 support.
       fuse: enable FUSE support.
       debug: enable debug output.
@@ -157,7 +159,7 @@ def syscall_test(
     if not tags:
         tags = []
 
-    if vfs2 and not fuse:
+    if vfs2 and vfs1 and not fuse:
         # Generate a vfs1 plain test. Most testing will now be
         # biased towards vfs2, with only a single vfs1 case.
         _syscall_test(
@@ -171,7 +173,7 @@ def syscall_test(
             **kwargs
         )
 
-    if not fuse:
+    if vfs1 and not fuse:
         # Generate a native test if fuse is not required.
         _syscall_test(
             test = test,

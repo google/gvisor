@@ -106,7 +106,7 @@ TEST_F(IoctlTest, Measure) {
 
 TEST_F(IoctlTest, Mount) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   // Make sure the file can be open and read in the mounted verity fs.
   auto const verity_fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -118,7 +118,7 @@ TEST_F(IoctlTest, Mount) {
 
 TEST_F(IoctlTest, NonExistingFile) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   // Confirm that opening a non-existing file in the verity-enabled directory
   // triggers the expected error instead of verification failure.
@@ -129,7 +129,7 @@ TEST_F(IoctlTest, NonExistingFile) {
 
 TEST_F(IoctlTest, ModifiedFile) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   // Modify the file and check verification failure upon reading from it.
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -144,7 +144,7 @@ TEST_F(IoctlTest, ModifiedFile) {
 
 TEST_F(IoctlTest, ModifiedMerkle) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   // Modify the Merkle file and check verification failure upon opening the
   // corresponding file.
@@ -159,7 +159,7 @@ TEST_F(IoctlTest, ModifiedMerkle) {
 
 TEST_F(IoctlTest, ModifiedDirMerkle) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   // Modify the Merkle file for the parent directory and check verification
   // failure upon opening the corresponding file.
@@ -174,7 +174,7 @@ TEST_F(IoctlTest, ModifiedDirMerkle) {
 
 TEST_F(IoctlTest, Stat) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   struct stat st;
   EXPECT_THAT(stat(JoinPath(verity_dir, filename_).c_str(), &st),
@@ -183,7 +183,7 @@ TEST_F(IoctlTest, Stat) {
 
 TEST_F(IoctlTest, ModifiedStat) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   EXPECT_THAT(chmod(JoinPath(tmpfs_dir_.path(), filename_).c_str(), 0644),
               SyscallSucceeds());
@@ -194,7 +194,7 @@ TEST_F(IoctlTest, ModifiedStat) {
 
 TEST_F(IoctlTest, DeleteFile) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   EXPECT_THAT(unlink(JoinPath(tmpfs_dir_.path(), filename_).c_str()),
               SyscallSucceeds());
@@ -204,7 +204,7 @@ TEST_F(IoctlTest, DeleteFile) {
 
 TEST_F(IoctlTest, DeleteMerkle) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   EXPECT_THAT(
       unlink(MerklePath(JoinPath(tmpfs_dir_.path(), filename_)).c_str()),
@@ -215,7 +215,7 @@ TEST_F(IoctlTest, DeleteMerkle) {
 
 TEST_F(IoctlTest, RenameFile) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   std::string new_file_name = "renamed-" + filename_;
   EXPECT_THAT(rename(JoinPath(tmpfs_dir_.path(), filename_).c_str(),
@@ -227,7 +227,7 @@ TEST_F(IoctlTest, RenameFile) {
 
 TEST_F(IoctlTest, RenameMerkle) {
   std::string verity_dir = ASSERT_NO_ERRNO_AND_VALUE(
-      MountVerity(tmpfs_dir_.path(), filename_, /*targets=*/{}));
+      MountVerity(tmpfs_dir_.path(), {EnableTarget(filename_, O_RDONLY)}));
 
   std::string new_file_name = "renamed-" + filename_;
   EXPECT_THAT(
