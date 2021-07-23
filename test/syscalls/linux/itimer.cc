@@ -197,9 +197,9 @@ int TestSIGALRMToMainThread() {
   // (but don't guarantee it), so we expect to see most samples on the main
   // thread.
   //
-  // The number of SIGALRMs delivered to a worker should not exceed 20%
+  // The number of SIGALRMs delivered to a worker should not exceed 40%
   // of the number of total signals expected (this is somewhat arbitrary).
-  const int worker_threshold = result.expected_total / 5;
+  const int worker_threshold = result.expected_total / 5 * 2;
 
   //
   // Linux only guarantees timers will never expire before the requested time.
@@ -230,7 +230,8 @@ TEST(ItimerTest, DeliversSIGALRMToMainThread) {
   // Not required anymore.
   kill.Release();
 
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+  EXPECT_EQ(WIFEXITED(status) && WEXITSTATUS(status), 0)
+      << WIFEXITED(status) << " " << WEXITSTATUS(status);
 }
 
 // Signals are delivered to threads fairly.
