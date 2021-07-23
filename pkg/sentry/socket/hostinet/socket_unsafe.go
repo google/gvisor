@@ -67,7 +67,7 @@ func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArgument
 			AddressSpaceActive: true,
 		})
 		return 0, err
-	case unix.SIOCGIFFLAGS:
+	case unix.SIOCGIFFLAGS, unix.SIOCGIFCONF:
 		cc := &usermem.IOCopyContext{
 			Ctx: ctx,
 			IO:  io,
