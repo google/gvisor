@@ -54,19 +54,13 @@ PosixError FlipRandomBit(int fd, int size) {
   return NoError();
 }
 
-PosixErrorOr<std::string> MountVerity(std::string tmpfs_dir,
-                                      std::string filename,
+PosixErrorOr<std::string> MountVerity(std::string lower_dir,
                                       std::vector<EnableTarget> targets) {
-  // Mount a verity fs on the existing tmpfs mount.
-  std::string mount_opts = "lower_path=" + tmpfs_dir;
+  // Mount a verity fs on the existing mount.
+  std::string mount_opts = "lower_path=" + lower_dir;
   ASSIGN_OR_RETURN_ERRNO(TempPath verity_dir, TempPath::CreateDir());
   RETURN_ERROR_IF_SYSCALL_FAIL(
       mount("", verity_dir.path().c_str(), "verity", 0, mount_opts.c_str()));
-
-  // Enable the file, symlink(if provided) and the directory.
-  ASSIGN_OR_RETURN_ERRNO(
-      auto fd, Open(JoinPath(verity_dir.path(), filename), O_RDONLY, 0777));
-  RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(fd.get(), FS_IOC_ENABLE_VERITY));
 
   for (const EnableTarget& target : targets) {
     ASSIGN_OR_RETURN_ERRNO(
@@ -92,6 +86,7 @@ PosixErrorOr<std::string> MountVerity(std::string tmpfs_dir,
   ASSIGN_OR_RETURN_ERRNO(TempPath verity_with_hash_dir, TempPath::CreateDir());
   RETURN_ERROR_IF_SYSCALL_FAIL(mount("", verity_with_hash_dir.path().c_str(),
                                      "verity", 0, mount_opts.c_str()));
+
   // Verity directories should not be deleted. Release the TempPath objects to
   // prevent those directories from being deleted by the destructor.
   verity_dir.release();
