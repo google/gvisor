@@ -214,14 +214,13 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.reg.Remove(id, creds)
-
 	index, found := r.findIndexByID(id)
 	if !found {
-		// Inconsistent state.
-		panic(fmt.Sprintf("unable to find an index for ID: %d", id))
+		return linuxerr.EINVAL
 	}
 	delete(r.indexes, index)
+
+	r.reg.Remove(id, creds)
 
 	return nil
 }
@@ -245,7 +244,8 @@ func (r *Registry) newSetLocked(ctx context.Context, key ipc.Key, creator fs.Fil
 
 	index, found := r.findFirstAvailableIndex()
 	if !found {
-		panic("unable to find an available index")
+		// See linux, ipc/sem.c:newary().
+		return nil, linuxerr.ENOSPC
 	}
 	r.indexes[index] = set.obj.ID
 
