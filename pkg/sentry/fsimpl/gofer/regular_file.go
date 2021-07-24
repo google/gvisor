@@ -79,17 +79,22 @@ func (fd *regularFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
-	// Skip flushing if there are client-buffered writes, since (as with the
-	// VFS1 client) we don't flush buffered writes on close anyway.
 	d := fd.dentry()
-	if d.fs.opts.interop != InteropModeExclusive {
-		return nil
-	}
-	d.dataMu.RLock()
-	haveDirtyPages := !d.dirty.IsEmpty()
-	d.dataMu.RUnlock()
-	if haveDirtyPages {
-		return nil
+	if d.fs.opts.interop == InteropModeExclusive {
+		// d may have dirty pages that we won't write back now (and wouldn't
+		// have in VFS1), making a flushf RPC ineffective. If this is the case,
+		// skip the flushf.
+		//
+		// Note that it's also possible to have dirty pages under other interop
+		// modes if forcePageCache is in effect; we conservatively assume that
+		// applications have some way of tolerating this and still want the
+		// flushf.
+		d.dataMu.RLock()
+		haveDirtyPages := !d.dirty.IsEmpty()
+		d.dataMu.RUnlock()
+		if haveDirtyPages {
+			return nil
+		}
 	}
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
@@ -707,14 +712,8 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 	return vfs.GenericConfigureMMap(&fd.vfsfd, d, opts)
 }
 
-func (d *dentry) mayCachePages() bool {
-	if d.fs.opts.forcePageCache {
-		return true
-	}
-	if d.fs.opts.interop == InteropModeShared {
-		return false
-	}
-	return atomic.LoadInt32(&d.mmapFD) >= 0
+func (fs *filesystem) mayCachePagesInMemoryFile() bool {
+	return fs.opts.forcePageCache || fs.opts.interop != InteropModeShared
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -726,7 +725,7 @@ func (d *dentry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar host
 	for _, r := range mapped {
 		d.pf.hostFileMapper.IncRefOn(r)
 	}
-	if d.mayCachePages() {
+	if d.fs.mayCachePagesInMemoryFile() {
 		// d.Evict() will refuse to evict memory-mapped pages, so tell the
 		// MemoryFile to not bother trying.
 		mf := d.fs.mfp.MemoryFile()
@@ -745,7 +744,7 @@ func (d *dentry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar h
 	for _, r := range unmapped {
 		d.pf.hostFileMapper.DecRefOn(r)
 	}
-	if d.mayCachePages() {
+	if d.fs.mayCachePagesInMemoryFile() {
 		// Pages that are no longer referenced by any application memory
 		// mappings are now considered unused; allow MemoryFile to evict them
 		// when necessary.
