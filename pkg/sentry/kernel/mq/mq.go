@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -29,6 +30,54 @@ import (
 const (
 	maxPriority = linux.MQ_PRIO_MAX - 1 // Highest possible message priority.
 )
+
+// Registry is a POSIX message queue registry.
+//
+// Unlike SysV utilities, Registry is not map-based. It uses a provided
+// RegistryImpl backed by a virtual filesystem to implement registry operations.
+//
+// +stateify savable
+type Registry struct {
+	// impl is an implementation of several message queue utilities needed by
+	// the registry. impl should be provided by mqfs.
+	impl RegistryImpl
+}
+
+// RegistryImpl defines utilities needed by a Registry to provide actual
+// registry implementation. It works mainly as an abstraction layer used by
+// Registry to avoid dealing directly with the filesystem. RegistryImpl should
+// be implemented by mqfs and provided to Registry at initialization.
+type RegistryImpl interface {
+	// Lookup returns the queue with the given name, nil if non exists.
+	Lookup(context.Context, string) *Queue
+
+	// New creates a new inode and file description using the given queue,
+	// inserts the inode into the filesystem tree with the given name, and
+	// returns the file description. An error is returned if creation fails, or
+	// if the name already exists.
+	New(context.Context, string, *Queue, linux.FileMode) (*vfs.FileDescription, error)
+
+	// Unlink removes the queue with given name from the registry, and returns
+	// an error if the name doesn't exist.
+	Unlink(context.Context, string) error
+
+	// Destroy destroys the registry.
+	Destroy(context.Context)
+}
+
+// NewRegistry returns a new, initialized message queue registry. NewRegistry
+// should be called when a new message queue filesystem is created, once per
+// IPCNamespace.
+func NewRegistry(impl RegistryImpl) *Registry {
+	return &Registry{
+		impl: impl,
+	}
+}
+
+// Destroy destroys the registry and releases all held references.
+func (r *Registry) Destroy(ctx context.Context) {
+	r.impl.Destroy(ctx)
+}
 
 // Queue represents a POSIX message queue.
 //
@@ -103,7 +152,7 @@ type Subscriber struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
-// dynamic bytes source for mqfs's queueInode.
+// DynamicBytesSource for mqfs's queueInode.
 func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
