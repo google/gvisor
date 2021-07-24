@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	fsName                   = "mqueue"
+	Name                     = "mqueue"
 	defaultMaxCachedDentries = uint64(1000)
 )
 
@@ -39,7 +39,7 @@ type FilesystemType struct{}
 
 // Name implements vfs.FilesystemType.Name.
 func (FilesystemType) Name() string {
-	return fsName
+	return Name
 }
 
 // Release implements vfs.FilesystemType.Release.

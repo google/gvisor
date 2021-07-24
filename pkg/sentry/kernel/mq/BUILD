@@ -26,6 +26,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/sentry/fs",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/waiter",
     ],
