@@ -25,7 +25,7 @@ import (
 // +stateify savable
 type Bitmap struct {
 	// numOnes is the number of ones in the bitmap.
-	numOnes  uint32
+	numOnes uint32
 
 	// bitBlock holds the bits. The type of bitBlock is uint64 which means
 	// each number in bitBlock contains 64 entries.
@@ -52,6 +52,28 @@ func (b *Bitmap) Minimum() uint32 {
 			r := bits.TrailingZeros64(w)
 			return uint32(r + i*64)
 		}
+	}
+	return math.MaxInt32
+}
+
+// FirstZero returns the first unset bit from the range [start, ).
+func (b *Bitmap) FirstZero(start uint32) uint32 {
+	i, nbit := int(start/64), start%64
+	n := len(b.bitBlock)
+	if i >= n {
+		return math.MaxInt32
+	}
+	w := b.bitBlock[i] | ((1 << nbit) - 1)
+	for {
+		if w != ^uint64(0) {
+			r := bits.TrailingZeros64(^w)
+			return uint32(r + i*64)
+		}
+		i++
+		if i == n {
+			break
+		}
+		w = b.bitBlock[i]
 	}
 	return math.MaxInt32
 }
@@ -127,13 +149,13 @@ func (b *Bitmap) flipRange(begin, end uint32) {
 	beginBlock := begin / 64
 	endBlock := end / 64
 	if beginBlock == endBlock {
-		b.bitBlock[endBlock] ^= ((^uint64(0) << uint(begin%64)) & ((uint64(1) << (uint(end) % 64 + 1))-1))
+		b.bitBlock[endBlock] ^= ((^uint64(0) << uint(begin%64)) & ((uint64(1) << (uint(end)%64 + 1)) - 1))
 	} else {
 		b.bitBlock[beginBlock] ^= ^(^uint64(0) << uint(begin%64))
 		for i := beginBlock; i < endBlock; i++ {
 			b.bitBlock[i] = ^b.bitBlock[i]
 		}
-		b.bitBlock[endBlock] ^= ((uint64(1) << (uint(end) % 64 + 1))-1)
+		b.bitBlock[endBlock] ^= ((uint64(1) << (uint(end)%64 + 1)) - 1)
 	}
 }
 
@@ -143,13 +165,13 @@ func (b *Bitmap) clearRange(begin, end uint32) {
 	beginBlock := begin / 64
 	endBlock := end / 64
 	if beginBlock == endBlock {
-		b.bitBlock[beginBlock] &= (((uint64(1) << uint(begin%64)) - 1) | ^((uint64(1) << (uint(end) % 64 + 1)) - 1))
+		b.bitBlock[beginBlock] &= (((uint64(1) << uint(begin%64)) - 1) | ^((uint64(1) << (uint(end)%64 + 1)) - 1))
 	} else {
 		b.bitBlock[beginBlock] &= ((uint64(1) << uint(begin%64)) - 1)
 		for i := beginBlock + 1; i < endBlock; i++ {
 			b.bitBlock[i] &= ^b.bitBlock[i]
 		}
-		b.bitBlock[endBlock] &= ^((uint64(1) << (uint(end) % 64 + 1)) - 1)
+		b.bitBlock[endBlock] &= ^((uint64(1) << (uint(end)%64 + 1)) - 1)
 	}
 }
 
@@ -198,7 +220,7 @@ func (b *Bitmap) ToSlice() []uint32 {
 			// Extract the lowest set 1 bit.
 			j := bitBlock & -bitBlock
 			// Interpret the bit as the in32 number it represents and add it to result.
-			bitmapSlice = append(bitmapSlice, uint32((base + int(bits.OnesCount64(j - 1)))))
+			bitmapSlice = append(bitmapSlice, uint32((base + int(bits.OnesCount64(j-1)))))
 			bitBlock ^= j
 		}
 		base += 64

@@ -15,6 +15,7 @@
 package bitmap
 
 import (
+	"math"
 	"reflect"
 	"testing"
 )
@@ -29,9 +30,9 @@ func generateFilledSlice(min, max, length int) []uint32 {
 	}
 	randSlice := make([]uint32, length)
 	if length != 0 {
-		rangeNum := uint32((max - min)/length)
+		rangeNum := uint32((max - min) / length)
 		randSlice[0], randSlice[length-1] = uint32(min), uint32(max)
-		for i := 1 ; i < length - 1; i++ {
+		for i := 1; i < length-1; i++ {
 			randSlice[i] = randSlice[i-1] + rangeNum
 		}
 	}
@@ -50,9 +51,9 @@ func generateFilledBitmap(min, max, fillNum int) ([]uint32, Bitmap) {
 }
 
 func TestNewBitmap(t *testing.T) {
-	tests :=  []struct {
-		name string
-		size int
+	tests := []struct {
+		name       string
+		size       int
 		expectSize int
 	}{
 		{"length 1", 1, 1},
@@ -62,7 +63,7 @@ func TestNewBitmap(t *testing.T) {
 
 	for _, tt := range tests {
 		tt := tt
-		t.Run(tt.name, func(t *testing.T){
+		t.Run(tt.name, func(t *testing.T) {
 			if bitmap := BitmapWithSize(uint32(tt.size)); len(bitmap.bitBlock) != tt.expectSize {
 				t.Errorf("BitmapWithSize created bitmap with %v, bitBlock size: %d, wanted: %d", tt.name, len(bitmap.bitBlock), tt.expectSize)
 			}
@@ -72,14 +73,14 @@ func TestNewBitmap(t *testing.T) {
 
 func TestAdd(t *testing.T) {
 	tests := []struct {
-		name string
+		name       string
 		bitmapSize int
-		addNum int
+		addNum     int
 	}{
 		{"Add with null bitmap.bitBlock", 0, 10},
-		{"Add without extending bitBlock",64, 10},
+		{"Add without extending bitBlock", 64, 10},
 		{"Add without extending bitblock with margin number", 63, 64},
-		{"Add with extended one block",1024, 1025},
+		{"Add with extended one block", 1024, 1025},
 		{"Add with extended more then one block", 1024, 2048},
 	}
 
@@ -110,14 +111,14 @@ func TestRemove(t *testing.T) {
 	}
 	bitmapSlice := bitmap.ToSlice()
 	if !reflect.DeepEqual(bitmapSlice, secondSlice) {
-		 t.Errorf("After Remove() firstSlice, remained slice: %v, wanted: %v", bitmapSlice, secondSlice)
+		t.Errorf("After Remove() firstSlice, remained slice: %v, wanted: %v", bitmapSlice, secondSlice)
 	}
 
 	for i := 0; i < 50; i++ {
 		bitmap.Remove(secondSlice[i])
 	}
 	bitmapSlice = bitmap.ToSlice()
-	emptySlice := make([]uint32,0)
+	emptySlice := make([]uint32, 0)
 	if !reflect.DeepEqual(bitmapSlice, emptySlice) {
 		t.Errorf("After Remove secondSlice, remained slice: %v, wanted: %v", bitmapSlice, emptySlice)
 	}
@@ -127,9 +128,9 @@ func TestRemove(t *testing.T) {
 // Verify flip bits within one bitBlock, one bit and bits cross multi bitBlocks.
 func TestFlipRange(t *testing.T) {
 	tests := []struct {
-		name string
-		flipRangeMin int
-		flipRangeMax int
+		name           string
+		flipRangeMin   int
+		flipRangeMax   int
 		filledSliceLen int
 	}{
 		{"Flip one number in bitmap", 77, 77, 1},
@@ -141,7 +142,7 @@ func TestFlipRange(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			fillSlice, bitmap := generateFilledBitmap(tt.flipRangeMin, tt.flipRangeMax, tt.filledSliceLen)
-			flipFillSlice := make([]uint32,0)
+			flipFillSlice := make([]uint32, 0)
 			for i, j := tt.flipRangeMin, 0; i <= tt.flipRangeMax; i++ {
 				if uint32(i) != fillSlice[j] {
 					flipFillSlice = append(flipFillSlice, uint32(i))
@@ -150,7 +151,7 @@ func TestFlipRange(t *testing.T) {
 				}
 			}
 
-			bitmap.FlipRange(uint32(tt.flipRangeMin), uint32(tt.flipRangeMax + 1))
+			bitmap.FlipRange(uint32(tt.flipRangeMin), uint32(tt.flipRangeMax+1))
 			flipBitmapSlice := bitmap.ToSlice()
 			if !reflect.DeepEqual(flipFillSlice, flipBitmapSlice) {
 				t.Errorf("%v, flipped slice: %v, wanted: %v", tt.name, flipBitmapSlice, flipFillSlice)
@@ -162,10 +163,10 @@ func TestFlipRange(t *testing.T) {
 // Verify clear bits within one bitBlock, one bit and bits cross multi bitBlocks.
 func TestClearRange(t *testing.T) {
 	tests := []struct {
-		name string
+		name          string
 		clearRangeMin int
 		clearRangeMax int
-		bitmapSize int
+		bitmapSize    int
 	}{
 		{"ClearRange clear one number", 5, 5, 64},
 		{"ClearRange clear numbers within one bitBlock", 4, 61, 64},
@@ -177,9 +178,9 @@ func TestClearRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			bitmap := BitmapWithSize(uint32(tt.bitmapSize))
 			bitmap.FlipRange(uint32(0), uint32(tt.bitmapSize))
-			bitmap.ClearRange(uint32(tt.clearRangeMin), uint32(tt.clearRangeMax + 1))
+			bitmap.ClearRange(uint32(tt.clearRangeMin), uint32(tt.clearRangeMax+1))
 			clearedBitmapSlice := bitmap.ToSlice()
-			clearedSlice := make([]uint32,0)
+			clearedSlice := make([]uint32, 0)
 			for i := 0; i < tt.bitmapSize; i++ {
 				if i < tt.clearRangeMin || i > tt.clearRangeMax {
 					clearedSlice = append(clearedSlice, uint32(i))
@@ -218,22 +219,22 @@ func TestMinimum(t *testing.T) {
 func TestMaximum(t *testing.T) {
 	randSlice, bitmap := generateFilledBitmap(0, 1024, 200)
 	max := bitmap.Maximum()
-	if max != randSlice[len(randSlice) - 1] {
-		t.Errorf("Maximum() returns: %v, wanted: %v", max, randSlice[len(randSlice) - 1])
+	if max != randSlice[len(randSlice)-1] {
+		t.Errorf("Maximum() returns: %v, wanted: %v", max, randSlice[len(randSlice)-1])
 	}
 
 	bitmap.ClearRange(uint32(1000), uint32(1025))
 	max = bitmap.Maximum()
 	bitmapSlice := bitmap.ToSlice()
-	if max != bitmapSlice[len(bitmapSlice) - 1] {
-		t.Errorf("After ClearRange, Maximum() returns: %v, wanted: %v", max, bitmapSlice[len(bitmapSlice) - 1])
+	if max != bitmapSlice[len(bitmapSlice)-1] {
+		t.Errorf("After ClearRange, Maximum() returns: %v, wanted: %v", max, bitmapSlice[len(bitmapSlice)-1])
 	}
 
 	bitmap.FlipRange(uint32(1001), uint32(1021))
 	max = bitmap.Maximum()
 	bitmapSlice = bitmap.ToSlice()
-	if max != bitmapSlice[len(bitmapSlice) - 1] {
-		t.Errorf("After Flip, Maximum() returns: %v, wanted: %v", max, bitmapSlice[len(bitmapSlice) - 1])
+	if max != bitmapSlice[len(bitmapSlice)-1] {
+		t.Errorf("After Flip, Maximum() returns: %v, wanted: %v", max, bitmapSlice[len(bitmapSlice)-1])
 	}
 }
 
@@ -261,7 +262,7 @@ func TestBitmapNumOnes(t *testing.T) {
 	}
 
 	// Add 10 number.
-	for i := 1080; i < 1090; i++{
+	for i := 1080; i < 1090; i++ {
 		bitmap.Add(uint32(i))
 	}
 	bitmapOnes = bitmap.GetNumOnes()
@@ -270,7 +271,7 @@ func TestBitmapNumOnes(t *testing.T) {
 	}
 
 	// Add the 10 number again, the length supposed not change.
-	for i := 1080; i < 1090; i++{
+	for i := 1080; i < 1090; i++ {
 		bitmap.Add(uint32(i))
 	}
 	bitmapOnes = bitmap.GetNumOnes()
@@ -290,5 +291,16 @@ func TestBitmapNumOnes(t *testing.T) {
 	bitmapOnes = bitmap.GetNumOnes()
 	if bitmapOnes != uint32(20) {
 		t.Errorf("After ClearRange, GetNumOnes() returns: %v, wanted: %v", bitmapOnes, 20)
+	}
+}
+
+func TestFirstZero(t *testing.T) {
+	bitmap := BitmapWithSize(uint32(1000))
+	bitmap.FlipRange(200, 400)
+	for i, j := range map[uint32]uint32{0: 0, 201: 400, 200: 400, 199: 199, 400: 400, 10000: math.MaxInt32} {
+		v := bitmap.FirstZero(i)
+		if v != j {
+			t.Errorf("Minimum() returns: %v, wanted: %v", v, j)
+		}
 	}
 }
