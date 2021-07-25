@@ -271,7 +271,7 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*fs.File, fla
 		if lim.Cur != limits.Infinity {
 			end = int32(lim.Cur)
 		}
-		if minFD >= end {
+		if minFD+int32(len(files)) > end {
 			return nil, unix.EMFILE
 		}
 	}
@@ -280,17 +280,10 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*fs.File, fla
 
 	// max is used as the largest number in fdBitmap + 1.
 	max := int32(0)
-	// flipFdBitmap is flip of fdBitmap which is used to find free fd in fdBitmap.
-	flipFdBitmap := f.fdBitmap.Clone()
 
 	if !f.fdBitmap.IsEmpty() {
 		max = int32(f.fdBitmap.Maximum())
 		max++
-		flipFdBitmap.FlipRange(uint32(0), uint32(max))
-		// Clear 0 to (minFD-1) bit in flipFdBitmap, thus it will not use fd that is less than minFD.
-		if minFD > 0 {
-			flipFdBitmap.ClearRange(uint32(0), uint32(minFD))
-		}
 	}
 
 	// Adjust max in case it is less than minFD.
@@ -301,20 +294,18 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*fs.File, fla
 	for len(fds) < len(files) {
 		// Try to use free bit in fdBitmap.
 		// If all bits in fdBitmap are used, expand fd to the max.
-		if !flipFdBitmap.IsEmpty() {
-			fd := flipFdBitmap.Minimum()
-			f.fdBitmap.Add(fd)
-			flipFdBitmap.Remove(fd)
-			f.set(ctx, int32(fd), files[len(fds)], flags)
-			fds = append(fds, int32(fd))
-		} else if max < end {
-			f.fdBitmap.Add(uint32(max))
-			f.set(ctx, max, files[len(fds)], flags)
-			fds = append(fds, max)
+		fd := f.fdBitmap.FirstZero(uint32(minFD))
+		if fd == math.MaxInt32 {
+			fd = uint32(max)
 			max++
-		} else {
+		}
+		if fd >= uint32(end) {
 			break
 		}
+		f.fdBitmap.Add(fd)
+		f.set(ctx, int32(fd), files[len(fds)], flags)
+		fds = append(fds, int32(fd))
+		minFD = int32(fd)
 	}
 
 	// Failure? Unwind existing FDs.
@@ -366,17 +357,10 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, minFD int32, files []*vfs.File
 
 	// max is used as the largest number in fdBitmap + 1.
 	max := int32(0)
-	// flipFdBitmap is flip of fdBitmap which is used to find free fd in fdBitmap.
-	flipFdBitmap := f.fdBitmap.Clone()
 
 	if !f.fdBitmap.IsEmpty() {
 		max = int32(f.fdBitmap.Maximum())
 		max++
-		flipFdBitmap.FlipRange(uint32(0), uint32(max))
-		// Clear 0 to (minFD-1) bit in flipFdBitmap, thus it will not use fd that is less than minFD.
-		if minFD > 0 {
-			flipFdBitmap.ClearRange(uint32(0), uint32(minFD))
-		}
 	}
 
 	// Adjust max in case it is less than minFD.
@@ -387,20 +371,18 @@ func (f *FDTable) NewFDsVFS2(ctx context.Context, minFD int32, files []*vfs.File
 	for len(fds) < len(files) {
 		// Try to use free bit in fdBitmap.
 		// If all bits in fdBitmap are used, expand fd to the max.
-		if !flipFdBitmap.IsEmpty() {
-			fd := flipFdBitmap.Minimum()
-			f.fdBitmap.Add(fd)
-			flipFdBitmap.Remove(fd)
-			f.setVFS2(ctx, int32(fd), files[len(fds)], flags)
-			fds = append(fds, int32(fd))
-		} else if max < end {
-			f.fdBitmap.Add(uint32(max))
-			f.setVFS2(ctx, max, files[len(fds)], flags)
-			fds = append(fds, max)
+		fd := f.fdBitmap.FirstZero(uint32(minFD))
+		if fd == math.MaxInt32 {
+			fd = uint32(max)
 			max++
-		} else {
+		}
+		if fd >= uint32(end) {
 			break
 		}
+		f.fdBitmap.Add(fd)
+		f.setVFS2(ctx, int32(fd), files[len(fds)], flags)
+		fds = append(fds, int32(fd))
+		minFD = int32(fd)
 	}
 	// Failure? Unwind existing FDs.
 	if len(fds) < len(files) {

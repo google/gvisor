@@ -13,9 +13,11 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -96,6 +98,42 @@ TEST(DupTest, Dup2) {
   FileDescriptor nfd2 = ASSERT_NO_ERRNO_AND_VALUE(Dup2(fd, target_fd));
   EXPECT_EQ(target_fd, nfd2.get());
   ASSERT_NO_ERRNO(CheckSameFile(fd, nfd2));
+}
+
+TEST(DupTest, Rlimit) {
+  constexpr int kFDLimit = 101;
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
+
+  struct rlimit rl = {};
+  EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  // Lower the rlimit first, as it may be equal to /proc/sys/fs/nr_open, in
+  // which case even users with CAP_SYS_RESOURCE can't raise it.
+  rl.rlim_cur = kFDLimit * 2;
+  ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  FileDescriptor aboveLimitFD =
+      ASSERT_NO_ERRNO_AND_VALUE(Dup2(fd, kFDLimit * 2 - 1));
+
+  rl.rlim_cur = kFDLimit;
+  ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+  ASSERT_THAT(dup3(fd.get(), kFDLimit, 0), SyscallFails());
+
+  std::vector<std::unique_ptr<FileDescriptor>> fds;
+  int prev = fd.get();
+  for (int i = 0; i < kFDLimit; i++) {
+    int d = dup(fd.get());
+    if (d == -1) {
+      break;
+    }
+    std::unique_ptr<FileDescriptor> f = absl::make_unique<FileDescriptor>(d);
+    EXPECT_LT(d, kFDLimit);
+    EXPECT_GT(d, prev);
+    prev = d;
+    fds.push_back(std::move(f));
+  }
+  EXPECT_EQ(fds.size(), kFDLimit - fd.get() - 1);
 }
 
 TEST(DupTest, Dup2SameFD) {

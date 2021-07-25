@@ -70,6 +70,13 @@ syscall_test(
 )
 
 syscall_test(
+    size = "large",
+    add_overlay = True,
+    debug = False,
+    test = "//test/perf/linux:dup_benchmark",
+)
+
+syscall_test(
     debug = False,
     test = "//test/perf/linux:pipe_benchmark",
 )
