@@ -33,6 +33,7 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/network",
         "//pkg/tcpip/transport/packet",
         "//pkg/waiter",
     ],

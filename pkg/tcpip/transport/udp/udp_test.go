@@ -1174,21 +1174,25 @@ func TestV4WriteOnConnected(t *testing.T) {
 }
 
 func TestWriteOnConnectedInvalidPort(t *testing.T) {
-	protocols := map[string]tcpip.NetworkProtocolNumber{
-		"ipv4": ipv4.ProtocolNumber,
-		"ipv6": ipv6.ProtocolNumber,
+	protocols := map[string]struct {
+		netProto tcpip.NetworkProtocolNumber
+		addr     tcpip.Address
+	}{
+		"ipv4": {netProto: ipv4.ProtocolNumber, addr: stackAddr},
+		"ipv6": {netProto: ipv6.ProtocolNumber, addr: stackV6Addr},
 	}
-	for name, pn := range protocols {
+	for name, test := range protocols {
+		pn := test.netProto
 		t.Run(name, func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
 			defer c.cleanup()
 
 			c.createEndpoint(pn)
-			if err := c.ep.Connect(tcpip.FullAddress{Addr: stackAddr, Port: invalidPort}); err != nil {
+			if err := c.ep.Connect(tcpip.FullAddress{Addr: test.addr, Port: invalidPort}); err != nil {
 				c.t.Fatalf("Connect failed: %s", err)
 			}
 			writeOpts := tcpip.WriteOptions{
-				To: &tcpip.FullAddress{Addr: stackAddr, Port: invalidPort},
+				To: &tcpip.FullAddress{Addr: test.addr, Port: invalidPort},
 			}
 			var r bytes.Reader
 			payload := newPayload()
