@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "bzl_library", "go_library", "select_goarch", "select_goos")
+load("//tools:defs.bzl", "bzl_library", "go_library", "go_test", "select_goarch", "select_goos")
 load("//tools/nogo:defs.bzl", "nogo_objdump_tool", "nogo_stdlib", "nogo_target")
 
 package(licenses = ["notice"])
@@ -71,6 +71,12 @@ go_library(
         "@org_golang_x_tools//go/gcexportdata:go_default_library",
         "@org_golang_x_tools//go/types/objectpath:go_default_library",
     ],
+)
+
+go_test(
+    name = "nogo_test",
+    srcs = ["config_test.go"],
+    library = ":nogo",
 )
 
 bzl_library(

@@ -109,7 +109,7 @@ func ExtractFindingsFromFile(filename string, asJSON bool) (FindingSet, error) {
 	return ExtractFindingsFrom(r, asJSON)
 }
 
-// ExtractFindingsFromBytes loads findings from bytes.
+// ExtractFindingsFrom loads findings from an io.Reader.
 func ExtractFindingsFrom(r io.Reader, asJSON bool) (findings FindingSet, err error) {
 	if asJSON {
 		dec := json.NewDecoder(r)

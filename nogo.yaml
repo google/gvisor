@@ -130,6 +130,8 @@ analyzers:
     external: # Enabled.
   unreachable:
     external: # Enabled.
+      exclude:
+        - ".*protobuf/.*.go"
   unsafeptr:
     internal:
       exclude:
