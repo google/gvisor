@@ -186,16 +186,19 @@ func (a AnalyzerConfig) merge(other AnalyzerConfig) {
 	}
 }
 
-func (a AnalyzerConfig) shouldReport(groupConfig *Group, fullPos, msg string) bool {
+// shouldReport returns whether the finding should be reported or suppressed.
+// It returns !ok if there is no configuration sufficient to decide one way or
+// another.
+func (a AnalyzerConfig) shouldReport(groupConfig *Group, fullPos, msg string) (report, ok bool) {
 	gc, ok := a[groupConfig.Name]
 	if !ok {
-		return groupConfig.Default
+		return false, false
 	}
 
 	// Note that if a section appears for a particular group
 	// for a particular analyzer, then it will now be enabled,
 	// and the group default no longer applies.
-	return gc.shouldReport(fullPos, msg)
+	return gc.shouldReport(fullPos, msg), true
 }
 
 // Config is a nogo configuration.
@@ -298,7 +301,8 @@ func (c *Config) ShouldReport(finding Finding) bool {
 	}
 
 	// Suppress via global rule?
-	if !c.Global.shouldReport(groupConfig, fullPos, finding.Message) {
+	report, ok := c.Global.shouldReport(groupConfig, fullPos, finding.Message)
+	if ok && !report {
 		return false
 	}
 
@@ -307,5 +311,9 @@ func (c *Config) ShouldReport(finding Finding) bool {
 	if !ok {
 		return groupConfig.Default
 	}
-	return ac.shouldReport(groupConfig, fullPos, finding.Message)
+	report, ok = ac.shouldReport(groupConfig, fullPos, finding.Message)
+	if !ok {
+		return groupConfig.Default
+	}
+	return report
 }
