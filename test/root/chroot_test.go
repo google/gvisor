@@ -68,13 +68,15 @@ func TestChroot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listing %q: %v", chroot, err)
 	}
-	if want, got := 1, len(fi); want != got {
+	if want, got := 2, len(fi); want != got {
 		t.Fatalf("chroot dir got %d entries, want %d", got, want)
 	}
 
-	// chroot dir is prepared by runsc and should contains only /proc.
-	if fi[0].Name() != "proc" {
-		t.Errorf("chroot got children %v, want %v", fi[0].Name(), "proc")
+	// chroot dir is prepared by runsc and should contains only /etc and /proc.
+	for i, want := range []string{"etc", "proc"} {
+		if got := fi[i].Name(); got != want {
+			t.Errorf("chroot got child %v, want %v", got, want)
+		}
 	}
 
 	d.CleanUp(ctx)
