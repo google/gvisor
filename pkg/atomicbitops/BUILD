@@ -18,7 +18,10 @@ go_library(
 go_test(
     name = "atomicbitops_test",
     size = "small",
-    srcs = ["atomicbitops_test.go"],
+    srcs = [
+        "aligned_test.go",
+        "atomicbitops_test.go",
+    ],
     library = ":atomicbitops",
     deps = ["//pkg/sync"],
 )
