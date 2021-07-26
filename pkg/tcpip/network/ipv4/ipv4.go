@@ -856,6 +856,8 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 }
 
 func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer, inNICName string) {
+	pkt.NICID = e.nic.ID()
+
 	// Raw socket packets are delivered based solely on the transport protocol
 	// number. We only require that the packet be valid IPv4, and that they not
 	// be fragmented.
@@ -863,7 +865,6 @@ func (e *endpoint) handleValidatedPacket(h header.IPv4, pkt *stack.PacketBuffer,
 		e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
 	}
 
-	pkt.NICID = e.nic.ID()
 	stats := e.stats
 	stats.ip.ValidPacketsReceived.Increment()
 
