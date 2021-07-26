@@ -285,15 +285,21 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 
 		// Prepare tree structure for pivot_root(2).
 		if err := os.Mkdir("/proc/proc", 0755); err != nil {
-			Fatalf("%v", err)
+			Fatalf("error creating /proc/proc: %v", err)
 		}
 		if err := os.Mkdir("/proc/root", 0755); err != nil {
-			Fatalf("%v", err)
+			Fatalf("error creating /proc/root: %v", err)
+		}
+		if err := os.Mkdir("/proc/etc", 0755); err != nil {
+			Fatalf("error creating /proc/etc: %v", err)
 		}
 		// This cannot use SafeMount because there's no available procfs. But we
 		// know that /proc is an empty tmpfs mount, so this is safe.
 		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
 			Fatalf("error mounting proc: %v", err)
+		}
+		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {
+			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
 		root = "/proc/root"
 		procPath = "/proc/proc"
@@ -409,7 +415,7 @@ func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]sp
 			panic(fmt.Sprintf("%q could not be made relative to %q: %v", dst, root, err))
 		}
 
-		opts, err := adjustMountOptions(filepath.Join(root, relDst), m.Options)
+		opts, err := adjustMountOptions(conf, filepath.Join(root, relDst), m.Options)
 		if err != nil {
 			return nil, err
 		}
@@ -475,7 +481,7 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 }
 
 // adjustMountOptions adds 'overlayfs_stale_read' if mounting over overlayfs.
-func adjustMountOptions(path string, opts []string) ([]string, error) {
+func adjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
 	rv := make([]string, len(opts))
 	copy(rv, opts)
 
