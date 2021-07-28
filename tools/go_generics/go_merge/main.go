@@ -25,9 +25,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
-	"gvisor.dev/gvisor/tools/tags"
+	"gvisor.dev/gvisor/tools/constraintutil"
 )
 
 var (
@@ -131,6 +130,12 @@ func main() {
 	}
 	f.Decls = newDecls
 
+	// Infer build constraints for the output file.
+	bcexpr, err := constraintutil.CombineFromFiles(flag.Args())
+	if err != nil {
+		fatalf("Failed to read build constraints: %v\n", err)
+	}
+
 	// Write the output file.
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, f); err != nil {
@@ -141,9 +146,7 @@ func main() {
 		fatalf("opening output: %v\n", err)
 	}
 	defer outf.Close()
-	if t := tags.Aggregate(flag.Args()); len(t) > 0 {
-		fmt.Fprintf(outf, "%s\n\n", strings.Join(t.Lines(), "\n"))
-	}
+	outf.WriteString(constraintutil.Lines(bcexpr))
 	if _, err := outf.Write(buf.Bytes()); err != nil {
 		fatalf("write: %v\n", err)
 	}

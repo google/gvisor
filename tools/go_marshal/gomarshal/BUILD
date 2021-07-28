@@ -18,5 +18,5 @@ go_library(
     visibility = [
         "//:sandbox",
     ],
-    deps = ["//tools/tags"],
+    deps = ["//tools/constraintutil"],
 )
