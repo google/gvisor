@@ -35,35 +35,33 @@ namespace testing {
 
 namespace {
 
-void BM_Open(benchmark::State& state) {
+void BM_VerityRead(benchmark::State& state) {
   const int size = state.range(0);
-  std::vector<TempPath> cache;
-  std::vector<EnableTarget> targets;
+  const std::string contents(size, 0);
 
   // Mount a tmpfs file system to be wrapped by a verity fs.
   TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TEST_CHECK(mount("", dir.path().c_str(), "tmpfs", 0, "") == 0);
 
-  for (int i = 0; i < size; i++) {
-    auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
-    targets.emplace_back(
-        EnableTarget(std::string(Basename(path.path())), O_RDONLY));
-    cache.emplace_back(std::move(path));
-  }
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      dir.path(), contents, TempPath::kDefaultFileMode));
+  std::string filename = std::string(Basename(path.path()));
 
-  std::string verity_dir =
-      TEST_CHECK_NO_ERRNO_AND_VALUE(MountVerity(dir.path(), targets));
+  std::string verity_dir = TEST_CHECK_NO_ERRNO_AND_VALUE(
+      MountVerity(dir.path(), {EnableTarget(filename, O_RDONLY)}));
 
-  unsigned int seed = 1;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(JoinPath(verity_dir, filename), O_RDONLY));
+  std::vector<char> buf(size);
   for (auto _ : state) {
-    const int chosen = rand_r(&seed) % size;
-    int fd = open(JoinPath(verity_dir, targets[chosen].path).c_str(), O_RDONLY);
-    TEST_CHECK(fd != -1);
-    close(fd);
+    TEST_CHECK(PreadFd(fd.get(), buf.data(), buf.size(), 0) == size);
   }
+
+  state.SetBytesProcessed(static_cast<int64_t>(size) *
+                          static_cast<int64_t>(state.iterations()));
 }
 
-BENCHMARK(BM_Open)->Range(1, 128)->UseRealTime();
+BENCHMARK(BM_VerityRead)->Range(1, 1 << 26)->UseRealTime();
 
 }  // namespace
 
