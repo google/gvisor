@@ -920,35 +920,121 @@ func (s *statmData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.task)
 }
 
-func (s *statusData) StateTypeName() string {
-	return "pkg/sentry/fsimpl/proc.statusData"
+func (s *statusInode) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.statusInode"
 }
 
-func (s *statusData) StateFields() []string {
+func (s *statusInode) StateFields() []string {
 	return []string{
-		"DynamicBytesFile",
+		"InodeAttrs",
+		"InodeNoStatFS",
+		"InodeNoopRefCount",
+		"InodeNotDirectory",
+		"InodeNotSymlink",
 		"task",
 		"pidns",
+		"locks",
 	}
 }
 
-func (s *statusData) beforeSave() {}
+func (s *statusInode) beforeSave() {}
 
 // +checklocksignore
-func (s *statusData) StateSave(stateSinkObject state.Sink) {
+func (s *statusInode) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.DynamicBytesFile)
-	stateSinkObject.Save(1, &s.task)
-	stateSinkObject.Save(2, &s.pidns)
+	stateSinkObject.Save(0, &s.InodeAttrs)
+	stateSinkObject.Save(1, &s.InodeNoStatFS)
+	stateSinkObject.Save(2, &s.InodeNoopRefCount)
+	stateSinkObject.Save(3, &s.InodeNotDirectory)
+	stateSinkObject.Save(4, &s.InodeNotSymlink)
+	stateSinkObject.Save(5, &s.task)
+	stateSinkObject.Save(6, &s.pidns)
+	stateSinkObject.Save(7, &s.locks)
 }
 
-func (s *statusData) afterLoad() {}
+func (s *statusInode) afterLoad() {}
 
 // +checklocksignore
-func (s *statusData) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.DynamicBytesFile)
-	stateSourceObject.Load(1, &s.task)
-	stateSourceObject.Load(2, &s.pidns)
+func (s *statusInode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.InodeAttrs)
+	stateSourceObject.Load(1, &s.InodeNoStatFS)
+	stateSourceObject.Load(2, &s.InodeNoopRefCount)
+	stateSourceObject.Load(3, &s.InodeNotDirectory)
+	stateSourceObject.Load(4, &s.InodeNotSymlink)
+	stateSourceObject.Load(5, &s.task)
+	stateSourceObject.Load(6, &s.pidns)
+	stateSourceObject.Load(7, &s.locks)
+}
+
+func (s *statusFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.statusFD"
+}
+
+func (s *statusFD) StateFields() []string {
+	return []string{
+		"statusFDLowerBase",
+		"DynamicBytesFileDescriptionImpl",
+		"LockFD",
+		"vfsfd",
+		"inode",
+		"task",
+		"pidns",
+		"userns",
+	}
+}
+
+func (s *statusFD) beforeSave() {}
+
+// +checklocksignore
+func (s *statusFD) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.statusFDLowerBase)
+	stateSinkObject.Save(1, &s.DynamicBytesFileDescriptionImpl)
+	stateSinkObject.Save(2, &s.LockFD)
+	stateSinkObject.Save(3, &s.vfsfd)
+	stateSinkObject.Save(4, &s.inode)
+	stateSinkObject.Save(5, &s.task)
+	stateSinkObject.Save(6, &s.pidns)
+	stateSinkObject.Save(7, &s.userns)
+}
+
+func (s *statusFD) afterLoad() {}
+
+// +checklocksignore
+func (s *statusFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.statusFDLowerBase)
+	stateSourceObject.Load(1, &s.DynamicBytesFileDescriptionImpl)
+	stateSourceObject.Load(2, &s.LockFD)
+	stateSourceObject.Load(3, &s.vfsfd)
+	stateSourceObject.Load(4, &s.inode)
+	stateSourceObject.Load(5, &s.task)
+	stateSourceObject.Load(6, &s.pidns)
+	stateSourceObject.Load(7, &s.userns)
+}
+
+func (s *statusFDLowerBase) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.statusFDLowerBase"
+}
+
+func (s *statusFDLowerBase) StateFields() []string {
+	return []string{
+		"FileDescriptionDefaultImpl",
+	}
+}
+
+func (s *statusFDLowerBase) beforeSave() {}
+
+// +checklocksignore
+func (s *statusFDLowerBase) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.FileDescriptionDefaultImpl)
+}
+
+func (s *statusFDLowerBase) afterLoad() {}
+
+// +checklocksignore
+func (s *statusFDLowerBase) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.FileDescriptionDefaultImpl)
 }
 
 func (i *ioData) StateTypeName() string {
@@ -2317,7 +2403,9 @@ func init() {
 	state.Register((*smapsData)(nil))
 	state.Register((*taskStatData)(nil))
 	state.Register((*statmData)(nil))
-	state.Register((*statusData)(nil))
+	state.Register((*statusInode)(nil))
+	state.Register((*statusFD)(nil))
+	state.Register((*statusFDLowerBase)(nil))
 	state.Register((*ioData)(nil))
 	state.Register((*oomScoreAdj)(nil))
 	state.Register((*exeSymlink)(nil))
