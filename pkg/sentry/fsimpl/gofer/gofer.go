@@ -1161,6 +1161,13 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
+			if stat.Mask&linux.STATX_SIZE != 0 {
+				// d.dataMu must be held around the update to both the remote
+				// file's size and d.size to serialize with writeback (which
+				// might otherwise write data back up to the old d.size after
+				// the remote file has been truncated).
+				d.dataMu.Lock()
+			}
 			if err := d.file.setAttr(ctx, p9.SetAttrMask{
 				Permissions:        stat.Mask&linux.STATX_MODE != 0,
 				UID:                stat.Mask&linux.STATX_UID != 0,
@@ -1180,13 +1187,16 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 				MTimeSeconds:     uint64(stat.Mtime.Sec),
 				MTimeNanoSeconds: uint64(stat.Mtime.Nsec),
 			}); err != nil {
+				if stat.Mask&linux.STATX_SIZE != 0 {
+					d.dataMu.Unlock() // +checklocksforce: locked conditionally above
+				}
 				return err
 			}
 			if stat.Mask&linux.STATX_SIZE != 0 {
 				// d.size should be kept up to date, and privatized
 				// copy-on-write mappings of truncated pages need to be
 				// invalidated, even if InteropModeShared is in effect.
-				d.updateSizeLocked(stat.Size)
+				d.updateSizeAndUnlockDataMuLocked(stat.Size) // +checklocksforce: locked conditionally above
 			}
 		}
 		if d.fs.opts.interop == InteropModeShared {
@@ -1249,6 +1259,14 @@ func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate
 // Preconditions: d.metadataMu must be locked.
 func (d *dentry) updateSizeLocked(newSize uint64) {
 	d.dataMu.Lock()
+	d.updateSizeAndUnlockDataMuLocked(newSize)
+}
+
+// Preconditions: d.metadataMu and d.dataMu must be locked.
+//
+// Postconditions: d.dataMu is unlocked.
+// +checklocksrelease:d.dataMu
+func (d *dentry) updateSizeAndUnlockDataMuLocked(newSize uint64) {
 	oldSize := d.size
 	atomic.StoreUint64(&d.size, newSize)
 	// d.dataMu must be unlocked to lock d.mapsMu and invalidate mappings
@@ -1257,9 +1275,9 @@ func (d *dentry) updateSizeLocked(newSize uint64) {
 	// contents beyond the new d.size. (We are still holding d.metadataMu,
 	// so we can't race with Write or another truncate.)
 	d.dataMu.Unlock()
-	if d.size < oldSize {
+	if newSize < oldSize {
 		oldpgend, _ := hostarch.PageRoundUp(oldSize)
-		newpgend, _ := hostarch.PageRoundUp(d.size)
+		newpgend, _ := hostarch.PageRoundUp(newSize)
 		if oldpgend != newpgend {
 			d.mapsMu.Lock()
 			d.mappings.Invalidate(memmap.MappableRange{newpgend, oldpgend}, memmap.InvalidateOpts{
@@ -1275,8 +1293,8 @@ func (d *dentry) updateSizeLocked(newSize uint64) {
 		// truncated pages have been removed from the remote file, they
 		// should be dropped without being written back.
 		d.dataMu.Lock()
-		d.cache.Truncate(d.size, d.fs.mfp.MemoryFile())
-		d.dirty.KeepClean(memmap.MappableRange{d.size, oldpgend})
+		d.cache.Truncate(newSize, d.fs.mfp.MemoryFile())
+		d.dirty.KeepClean(memmap.MappableRange{newSize, oldpgend})
 		d.dataMu.Unlock()
 	}
 }
