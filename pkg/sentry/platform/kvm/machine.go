@@ -70,7 +70,7 @@ type machine struct {
 	// tscControl checks whether cpu supports TSC scaling
 	tscControl bool
 
-	// usedSlots is the set of used physical addresses (sorted).
+	// usedSlots is the set of used physical addresses (not sorted).
 	usedSlots []uintptr
 
 	// nextID is the next vCPU ID.
@@ -296,13 +296,20 @@ func newMachine(vm int) (*machine, error) {
 	return m, nil
 }
 
-// hasSlot returns true iff the given address is mapped.
+// hasSlot returns true if the given address is mapped.
 //
 // This must be done via a linear scan.
 //
 //go:nosplit
 func (m *machine) hasSlot(physical uintptr) bool {
-	for i := 0; i < len(m.usedSlots); i++ {
+	slotLen := int(atomic.LoadUint32(&m.nextSlot))
+	// When slots are being updated, nextSlot is ^uint32(0). As this situation
+	// is less likely happen, we just set the slotLen to m.maxSlots, and scan
+	// the whole usedSlots array.
+	if slotLen == int(^uint32(0)) {
+		slotLen = m.maxSlots
+	}
+	for i := 0; i < slotLen; i++ {
 		if p := atomic.LoadUintptr(&m.usedSlots[i]); p == physical {
 			return true
 		}
