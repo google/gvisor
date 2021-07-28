@@ -1,6 +1,5 @@
-// +build arm64
-// +build arm64
-// +build arm64
+//go:build arm64 && arm64 && arm64
+// +build arm64,arm64,arm64
 
 package ring0
 
