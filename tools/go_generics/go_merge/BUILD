@@ -7,6 +7,6 @@ go_binary(
     srcs = ["main.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//tools/tags",
+        "//tools/constraintutil",
     ],
 )

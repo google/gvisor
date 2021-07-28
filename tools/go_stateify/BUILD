@@ -6,7 +6,7 @@ go_binary(
     name = "stateify",
     srcs = ["main.go"],
     visibility = ["//:sandbox"],
-    deps = ["//tools/tags"],
+    deps = ["//tools/constraintutil"],
 )
 
 bzl_library(

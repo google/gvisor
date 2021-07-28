@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"gvisor.dev/gvisor/tools/tags"
+	"gvisor.dev/gvisor/tools/constraintutil"
 )
 
 // List of identifiers we use in generated code that may conflict with a
@@ -123,16 +123,18 @@ func (g *Generator) writeHeader() error {
 	var b sourceBuffer
 	b.emit("// Automatically generated marshal implementation. See tools/go_marshal.\n\n")
 
-	// Emit build tags.
-	b.emit("// If there are issues with build tag aggregation, see\n")
-	b.emit("// tools/go_marshal/gomarshal/generator.go:writeHeader(). The build tags here\n")
-	b.emit("// come from the input set of files used to generate this file. This input set\n")
-	b.emit("// is filtered based on pre-defined file suffixes related to build tags, see \n")
-	b.emit("// tools/defs.bzl:calculate_sets().\n\n")
-
-	if t := tags.Aggregate(g.inputs); len(t) > 0 {
-		b.emit(strings.Join(t.Lines(), "\n"))
-		b.emit("\n\n")
+	bcexpr, err := constraintutil.CombineFromFiles(g.inputs)
+	if err != nil {
+		return err
+	}
+	if bcexpr != nil {
+		// Emit build constraints.
+		b.emit("// If there are issues with build constraint aggregation, see\n")
+		b.emit("// tools/go_marshal/gomarshal/generator.go:writeHeader(). The constraints here\n")
+		b.emit("// come from the input set of files used to generate this file. This input set\n")
+		b.emit("// is filtered based on pre-defined file suffixes related to build constraints,\n")
+		b.emit("// see tools/defs.bzl:calculate_sets().\n\n")
+		b.emit(constraintutil.Lines(bcexpr))
 	}
 
 	// Package header.
@@ -553,11 +555,12 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	b.reset()
 	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
 
-	// Emit build tags.
-	if t := tags.Aggregate(g.inputs); len(t) > 0 {
-		b.emit(strings.Join(t.Lines(), "\n"))
-		b.emit("\n\n")
+	// Emit build constraints.
+	bcexpr, err := constraintutil.CombineFromFiles(g.inputs)
+	if err != nil {
+		return err
 	}
+	b.emit(constraintutil.Lines(bcexpr))
 
 	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.outputTest); err != nil {
