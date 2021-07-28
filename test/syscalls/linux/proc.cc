@@ -54,6 +54,8 @@
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
@@ -88,6 +90,7 @@ using ::testing::Gt;
 using ::testing::HasSubstr;
 using ::testing::IsSupersetOf;
 using ::testing::Pair;
+using ::testing::StartsWith;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
 
@@ -1622,10 +1625,41 @@ TEST(ProcPidStatusTest, HasBasicFields) {
 
     ASSERT_FALSE(status_str.empty());
     const auto status = ASSERT_NO_ERRNO_AND_VALUE(ParseProcStatus(status_str));
-    EXPECT_THAT(status, IsSupersetOf({Pair("Name", thread_name),
-                                      Pair("Tgid", absl::StrCat(tgid)),
-                                      Pair("Pid", absl::StrCat(tid)),
-                                      Pair("PPid", absl::StrCat(getppid()))}));
+    EXPECT_THAT(status, IsSupersetOf({
+                            Pair("Name", thread_name),
+                            Pair("Tgid", absl::StrCat(tgid)),
+                            Pair("Pid", absl::StrCat(tid)),
+                            Pair("PPid", absl::StrCat(getppid())),
+                        }));
+
+    if (!IsRunningWithVFS1()) {
+      uid_t ruid, euid, suid;
+      ASSERT_THAT(getresuid(&ruid, &euid, &suid), SyscallSucceeds());
+      gid_t rgid, egid, sgid;
+      ASSERT_THAT(getresgid(&rgid, &egid, &sgid), SyscallSucceeds());
+      std::vector<gid_t> supplementary_gids;
+      int ngids = getgroups(0, nullptr);
+      supplementary_gids.resize(ngids);
+      ASSERT_THAT(getgroups(ngids, supplementary_gids.data()),
+                  SyscallSucceeds());
+
+      EXPECT_THAT(
+          status,
+          IsSupersetOf(std::vector<
+                       ::testing::Matcher<std::pair<std::string, std::string>>>{
+              // gVisor doesn't support fsuid/gid, and even if it did there is
+              // no getfsuid/getfsgid().
+              Pair("Uid", StartsWith(absl::StrFormat("%d\t%d\t%d\t", ruid, euid,
+                                                     suid))),
+              Pair("Gid", StartsWith(absl::StrFormat("%d\t%d\t%d\t", rgid, egid,
+                                                     sgid))),
+              // ParseProcStatus strips leading whitespace for each value,
+              // so if the Groups line is empty then the trailing space is
+              // stripped.
+              Pair("Groups",
+                   StartsWith(absl::StrJoin(supplementary_gids, " "))),
+          }));
+    }
   });
 }
 

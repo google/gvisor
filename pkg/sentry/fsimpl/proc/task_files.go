@@ -661,34 +661,119 @@ func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// statusData implements vfs.DynamicBytesSource for /proc/[pid]/status.
+// statusInode implements kernfs.Inode for /proc/[pid]/status.
 //
 // +stateify savable
-type statusData struct {
-	kernfs.DynamicBytesFile
+type statusInode struct {
+	kernfs.InodeAttrs
+	kernfs.InodeNoStatFS
+	kernfs.InodeNoopRefCount
+	kernfs.InodeNotDirectory
+	kernfs.InodeNotSymlink
 
 	task  *kernel.Task
 	pidns *kernel.PIDNamespace
+	locks vfs.FileLocks
 }
 
-var _ dynamicInode = (*statusData)(nil)
+// statusFD implements vfs.FileDescriptionImpl and vfs.DynamicByteSource for
+// /proc/[pid]/status.
+//
+// +stateify savable
+type statusFD struct {
+	statusFDLowerBase
+	vfs.DynamicBytesFileDescriptionImpl
+	vfs.LockFD
+
+	vfsfd vfs.FileDescription
+
+	inode  *statusInode
+	task   *kernel.Task
+	pidns  *kernel.PIDNamespace
+	userns *auth.UserNamespace // equivalent to struct file::f_cred::user_ns
+}
+
+// statusFDLowerBase is a dumb hack to ensure that statusFD prefers
+// vfs.DynamicBytesFileDescriptionImpl methods to vfs.FileDescriptinDefaultImpl
+// methods.
+//
+// +stateify savable
+type statusFDLowerBase struct {
+	vfs.FileDescriptionDefaultImpl
+}
+
+func (fs *filesystem) newStatusInode(ctx context.Context, task *kernel.Task, pidns *kernel.PIDNamespace, ino uint64, perm linux.FileMode) kernfs.Inode {
+	// Note: credentials are overridden by taskOwnedInode.
+	inode := &statusInode{
+		task:  task,
+		pidns: pidns,
+	}
+	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeRegular|perm)
+	return &taskOwnedInode{Inode: inode, owner: task}
+}
+
+// Open implements kernfs.Inode.Open.
+func (s *statusInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fd := &statusFD{
+		inode:  s,
+		task:   s.task,
+		pidns:  s.pidns,
+		userns: rp.Credentials().UserNamespace,
+	}
+	fd.LockFD.Init(&s.locks)
+	if err := fd.vfsfd.Init(fd, opts.Flags, rp.Mount(), d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+		return nil, err
+	}
+	fd.SetDataSource(fd)
+	return &fd.vfsfd, nil
+}
+
+// SetStat implements kernfs.Inode.SetStat.
+func (*statusInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	return linuxerr.EPERM
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (s *statusFD) Release(ctx context.Context) {
+}
+
+// Stat implements vfs.FileDescriptionImpl.Stat.
+func (s *statusFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+	fs := s.vfsfd.VirtualDentry().Mount().Filesystem()
+	return s.inode.Stat(ctx, fs, opts)
+}
+
+// SetStat implements vfs.FileDescriptionImpl.SetStat.
+func (s *statusFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	return linuxerr.EPERM
+}
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (s *statusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "Name:\t%s\n", s.task.Name())
 	fmt.Fprintf(buf, "State:\t%s\n", s.task.StateStatus())
 	fmt.Fprintf(buf, "Tgid:\t%d\n", s.pidns.IDOfThreadGroup(s.task.ThreadGroup()))
 	fmt.Fprintf(buf, "Pid:\t%d\n", s.pidns.IDOfTask(s.task))
+
 	ppid := kernel.ThreadID(0)
 	if parent := s.task.Parent(); parent != nil {
 		ppid = s.pidns.IDOfThreadGroup(parent.ThreadGroup())
 	}
 	fmt.Fprintf(buf, "PPid:\t%d\n", ppid)
+
 	tpid := kernel.ThreadID(0)
 	if tracer := s.task.Tracer(); tracer != nil {
 		tpid = s.pidns.IDOfTask(tracer)
 	}
 	fmt.Fprintf(buf, "TracerPid:\t%d\n", tpid)
+
+	creds := s.task.Credentials()
+	ruid := creds.RealKUID.In(s.userns).OrOverflow()
+	euid := creds.EffectiveKUID.In(s.userns).OrOverflow()
+	suid := creds.SavedKUID.In(s.userns).OrOverflow()
+	rgid := creds.RealKGID.In(s.userns).OrOverflow()
+	egid := creds.EffectiveKGID.In(s.userns).OrOverflow()
+	sgid := creds.SavedKGID.In(s.userns).OrOverflow()
 	var fds int
 	var vss, rss, data uint64
 	s.task.WithMuLocked(func(t *kernel.Task) {
@@ -701,12 +786,26 @@ func (s *statusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			data = mm.VirtualDataSize()
 		}
 	})
+	// Filesystem user/group IDs aren't implemented; effective UID/GID are used
+	// instead.
+	fmt.Fprintf(buf, "Uid:\t%d\t%d\t%d\t%d\n", ruid, euid, suid, euid)
+	fmt.Fprintf(buf, "Gid:\t%d\t%d\t%d\t%d\n", rgid, egid, sgid, egid)
 	fmt.Fprintf(buf, "FDSize:\t%d\n", fds)
+	buf.WriteString("Groups:\t ")
+	// There is a space between each pair of supplemental GIDs, as well as an
+	// unconditional trailing space that some applications actually depend on.
+	var sep string
+	for _, kgid := range creds.ExtraKGIDs {
+		fmt.Fprintf(buf, "%s%d", sep, kgid.In(s.userns).OrOverflow())
+		sep = " "
+	}
+	buf.WriteString(" \n")
+
 	fmt.Fprintf(buf, "VmSize:\t%d kB\n", vss>>10)
 	fmt.Fprintf(buf, "VmRSS:\t%d kB\n", rss>>10)
 	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
+
 	fmt.Fprintf(buf, "Threads:\t%d\n", s.task.ThreadGroup().Count())
-	creds := s.task.Credentials()
 	fmt.Fprintf(buf, "CapInh:\t%016x\n", creds.InheritableCaps)
 	fmt.Fprintf(buf, "CapPrm:\t%016x\n", creds.PermittedCaps)
 	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
