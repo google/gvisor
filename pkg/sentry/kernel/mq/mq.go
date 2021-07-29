@@ -79,6 +79,11 @@ func (r *Registry) Destroy(ctx context.Context) {
 	r.impl.Destroy(ctx)
 }
 
+// Impl returns RegistryImpl inside r.
+func (r *Registry) Impl() RegistryImpl {
+	return r.impl
+}
+
 // Queue represents a POSIX message queue.
 //
 // +stateify savable

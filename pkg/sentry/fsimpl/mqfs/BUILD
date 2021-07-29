@@ -31,6 +31,7 @@ go_library(
         "//pkg/refsvfs2",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/ipc",
         "//pkg/sentry/kernel/mq",
         "//pkg/sentry/vfs",
         "//pkg/sync",

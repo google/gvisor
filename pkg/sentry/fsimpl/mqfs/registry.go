@@ -50,12 +50,32 @@ type RegistryImpl struct {
 
 // NewRegistryImpl returns a new, initialized RegistryImpl, and takes a
 // reference on root.
-func NewRegistryImpl(root *kernfs.Dentry, fs *filesystem) *RegistryImpl {
-	root.IncRef()
-	return &RegistryImpl{
-		root: root,
-		fs:   fs,
+func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*RegistryImpl, error) {
+	devMinor, err := vfsObj.GetAnonBlockDevMinor()
+	if err != nil {
+		return nil, err
 	}
+
+	var dentry kernfs.Dentry
+	fs := &filesystem{
+		devMinor: devMinor,
+		root:     &dentry,
+	}
+	fs.VFSFilesystem().Init(vfsObj, &FilesystemType{}, fs)
+
+	dentry.InitRoot(&fs.Filesystem, fs.newRootInode(ctx, creds))
+	dentry.IncRef()
+
+	mount, err := vfsObj.NewDisconnectedMount(fs.VFSFilesystem(), dentry.VFSDentry(), &vfs.MountOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &RegistryImpl{
+		root:  &dentry,
+		fs:    fs,
+		mount: mount,
+	}, nil
 }
 
 // Lookup implements mq.RegistryImpl.Lookup.
@@ -83,11 +103,11 @@ func (r *RegistryImpl) New(ctx context.Context, name string, q *mq.Queue, perm l
 	}
 
 	fd := &queueFD{queue: q}
-	err = fd.Init(r.mount, r.root, qInode.data, &qInode.locks, 0 /* flags */)
+	err = fd.Init(r.mount, r.root, q, qInode.Locks(), 0 /* flags */)
 	if err != nil {
 		return nil, err
 	}
-	return fd.VFSFileDescription(), nil
+	return &fd.vfsfd, nil
 }
 
 // Unlink implements mq.RegistryImpl.Unlink.
