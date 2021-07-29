@@ -92,6 +92,8 @@ func (i *IPCNamespace) InitPosixQueues(ctx context.Context, vfsObj *vfs.VirtualF
 }
 
 // PosixQueues returns the posix message queue registry for this namespace.
+//
+// Precondition: i.InitPosixQueues must have been called.
 func (i *IPCNamespace) PosixQueues() *mq.Registry {
 	return i.posixQueues
 }
