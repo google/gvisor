@@ -129,6 +129,21 @@ type Queue struct {
 	byteCount uint64
 }
 
+// View is a view into a message queue. Views should only be used in file
+// descriptions, but not inodes, because we use inodes to retreive the actual
+// queue, and only FDs are responsible for providing user functionality.
+type View interface {
+	// TODO: Add Send and Receive when mq_timedsend(2) and mq_timedreceive(2)
+	// are implemented.
+
+	// Flush checks if the calling process has attached a notification request
+	// to this queue, if yes, then the request is removed, and another process
+	// can attach a request.
+	Flush(ctx context.Context)
+
+	waiter.Waitable
+}
+
 // Message holds a message exchanged through a Queue via mq_timedsend(2) and
 // mq_timedreceive(2), and additional info relating to the message.
 //
@@ -179,9 +194,7 @@ func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
-// Flush checks if the calling process has attached a notification request to
-// this queue, if yes, then the request is removed, and another process can
-// attach a request.
+// Flush implements View.Flush.
 func (q *Queue) Flush(ctx context.Context) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
