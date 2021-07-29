@@ -65,8 +65,8 @@ type queueFD struct {
 	vfsfd vfs.FileDescription
 	inode kernfs.Inode
 
-	// queue is the queue backing this fd.
-	queue *mq.Queue
+	// queue is a view into the queue backing this fd.
+	queue mq.View
 }
 
 // Init initializes a queueFD. Mostly copied from DynamicBytesFD.Init, but uses
