@@ -151,33 +151,16 @@ func (e *endpoint) dumpPacket(dir direction, protocol tcpip.NetworkProtocolNumbe
 		logPacket(e.logPrefix, dir, protocol, pkt)
 	}
 	if writer != nil && atomic.LoadUint32(&LogPacketsToPCAP) == 1 {
-		totalLength := pkt.Size()
-		length := totalLength
-		if max := int(e.maxPCAPLen); length > max {
-			length = max
+		packet := pcapPacket{
+			timestamp:     time.Now(),
+			packet:        pkt,
+			maxCaptureLen: int(e.maxPCAPLen),
 		}
-		packetHeader := newPCAPPacketHeader(time.Now(), uint32(length), uint32(totalLength))
-		packet := make([]byte, binary.Size(packetHeader)+length)
-		{
-			writer := tcpip.SliceWriter(packet)
-			if err := binary.Write(&writer, binary.BigEndian, packetHeader); err != nil {
-				panic(err)
-			}
-			for _, b := range pkt.Views() {
-				if length == 0 {
-					break
-				}
-				if len(b) > length {
-					b = b[:length]
-				}
-				n, err := writer.Write(b)
-				if err != nil {
-					panic(err)
-				}
-				length -= n
-			}
+		b, err := packet.MarshalBinary()
+		if err != nil {
+			panic(err)
 		}
-		if _, err := writer.Write(packet); err != nil {
+		if _, err := writer.Write(b); err != nil {
 			panic(err)
 		}
 	}
