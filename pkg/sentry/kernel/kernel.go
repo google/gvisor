@@ -401,6 +401,11 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			return fmt.Errorf("failed to initialize VFS: %v", err)
 		}
 
+		err := k.rootIPCNamespace.InitPosixQueues(ctx, &k.vfs, auth.CredentialsFromContext(ctx))
+		if err != nil {
+			return fmt.Errorf("failed to create mqfs filesystem: %v", err)
+		}
+
 		pipeFilesystem, err := pipefs.NewFilesystem(&k.vfs)
 		if err != nil {
 			return fmt.Errorf("failed to create pipefs filesystem: %v", err)
