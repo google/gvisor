@@ -15,12 +15,16 @@
 package kernel
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/mqfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/msgqueue"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/semaphore"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // IPCNamespace represents an IPC namespace.
@@ -72,12 +76,19 @@ func (i *IPCNamespace) ShmRegistry() *shm.Registry {
 	return i.shms
 }
 
-// SetPosixQueues sets value of posixQueues if the value is currently nil,
-// otherwise returns without doing anything.
-func (i *IPCNamespace) SetPosixQueues(r *mq.Registry) {
-	if i.posixQueues == nil {
-		i.posixQueues = r
+// InitPosixQueues creates a new POSIX queue registry, and returns an error if
+// the registry was previously initialized.
+func (i *IPCNamespace) InitPosixQueues(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) error {
+	if i.posixQueues != nil {
+		return fmt.Errorf("IPCNamespace.InitPosixQueues: already initialized")
 	}
+
+	impl, err := mqfs.NewRegistryImpl(ctx, vfsObj, creds)
+	if err != nil {
+		return err
+	}
+	i.posixQueues = mq.NewRegistry(impl)
+	return nil
 }
 
 // PosixQueues returns the posix message queue registry for this namespace.

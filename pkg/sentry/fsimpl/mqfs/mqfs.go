@@ -24,6 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -47,28 +49,32 @@ func (FilesystemType) Release(ctx context.Context) {}
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	devMinor, err := vfsObj.GetAnonBlockDevMinor()
-	if err != nil {
-		return nil, nil, err
+	// mqfs is initialized only once per ipc namespace. Each ipc namespace has
+	// a POSIX message registry with a root dentry, filesystem, and a
+	// disconnected mount. We want the fs to be consistent for all processes in
+	// the same ipc namespace, so instead of creating a new fs and root dentry,
+	// we retreive them using IPCNamespace.PosixQueues and use them.
+
+	i := ipcNamespaceFromContext(ctx)
+	if i == nil {
+		return nil, nil, fmt.Errorf("mqfs.FilesystemType.GetFilesystem: ipc namespace doesn't exist")
 	}
+	defer i.DecRef(ctx)
+
+	registry := i.PosixQueues()
+	if registry == nil {
+		return nil, nil, fmt.Errorf("mqfs.FilesystemType.GetFilesystem: ipc namespace doesn't have a POSIX registry")
+	}
+	impl := registry.Impl().(*RegistryImpl)
 
 	maxCachedDentries, err := maxCachedDentries(ctx, vfs.GenericParseMountOptions(opts.Data))
 	if err != nil {
 		return nil, nil, err
 	}
+	impl.fs.MaxCachedDentries = maxCachedDentries
 
-	fs := &filesystem{
-		devMinor: devMinor,
-		Filesystem: kernfs.Filesystem{
-			MaxCachedDentries: maxCachedDentries,
-		},
-	}
-	fs.VFSFilesystem().Init(vfsObj, &ft, fs)
-
-	var dentry kernfs.Dentry
-	dentry.InitRoot(&fs.Filesystem, fs.newRootInode(ctx, creds))
-
-	return fs.VFSFilesystem(), dentry.VFSDentry(), nil
+	impl.root.IncRef()
+	return impl.fs.VFSFilesystem(), impl.root.VFSDentry(), nil
 }
 
 // maxCachedDentries checks mopts for dentry_cache_limit. If a value is
@@ -93,15 +99,40 @@ func maxCachedDentries(ctx context.Context, mopts map[string]string) (_ uint64, 
 type filesystem struct {
 	kernfs.Filesystem
 	devMinor uint32
+
+	// root is the filesystem's root dentry. Since we take a reference on it in
+	// GetFilesystem, we should release it when the fs is released.
+	root *kernfs.Dentry
 }
 
 // Release implements vfs.FilesystemImpl.Release.
 func (fs *filesystem) Release(ctx context.Context) {
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
+	fs.root.DecRef(ctx)
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
 	return fmt.Sprintf("dentry_cache_limit=%d", fs.MaxCachedDentries)
+}
+
+// ipcNamespace defines functions we need from kernel.IPCNamespace. We redefine
+// ipcNamespace along with ipcNamespaceFromContext to avoid circular dependency
+// with package sentry/kernel.
+type ipcNamespace interface {
+	// PosixQueues returns a POSIX message queue registry.
+	PosixQueues() *mq.Registry
+
+	// DecRef decrements ipcNamespace's number of references.
+	DecRef(ctx context.Context)
+}
+
+// ipcNamespaceFromContext returns the IPC namespace in which ctx is executing.
+// Copied from package sentry/kernel.
+func ipcNamespaceFromContext(ctx context.Context) ipcNamespace {
+	if v := ctx.Value(ipc.CtxIPCNamespace); v != nil {
+		return v.(ipcNamespace)
+	}
+	return nil
 }
