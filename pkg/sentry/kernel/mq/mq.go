@@ -224,8 +224,22 @@ func (r *Registry) newQueueLocked(creds *auth.Credentials, owner fs.FileOwner, p
 	}, nil
 }
 
+// Remove removes the queue with the given name from the registry. See
+// mq_unlink(2).
+func (r *Registry) Remove(ctx context.Context, name string) error {
+	if len(name) > MaxName {
+		return linuxerr.ENAMETOOLONG
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.impl.Unlink(ctx, name)
+}
+
 // Destroy destroys the registry and releases all held references.
 func (r *Registry) Destroy(ctx context.Context) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.impl.Destroy(ctx)
 }
 
