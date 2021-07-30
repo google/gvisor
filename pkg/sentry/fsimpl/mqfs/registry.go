@@ -81,7 +81,7 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 }
 
 // Get implements mq.RegistryImpl.Get.
-func (r *RegistryImpl) Get(ctx context.Context, name string, rOnly, wOnly, readWrite, block bool, flags uint32) (*vfs.FileDescription, bool, error) {
+func (r *RegistryImpl) Get(ctx context.Context, name string, access mq.AccessType, block bool, flags uint32) (*vfs.FileDescription, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -91,13 +91,13 @@ func (r *RegistryImpl) Get(ctx context.Context, name string, rOnly, wOnly, readW
 	}
 
 	qInode := inode.(*queueInode)
-	if !qInode.queue.HasPermissions(auth.CredentialsFromContext(ctx), perm(rOnly, wOnly, readWrite)) {
+	if !qInode.queue.HasPermissions(auth.CredentialsFromContext(ctx), perm(access)) {
 		// "The queue exists, but the caller does not have permission to
 		//  open it in the specified mode."
 		return nil, false, linuxerr.EACCES
 	}
 
-	fd, err := r.newFD(qInode.queue, qInode, rOnly, wOnly, readWrite, block, flags)
+	fd, err := r.newFD(qInode.queue, qInode, access, block, flags)
 	if err != nil {
 		return nil, false, err
 	}
@@ -105,7 +105,7 @@ func (r *RegistryImpl) Get(ctx context.Context, name string, rOnly, wOnly, readW
 }
 
 // New implements mq.RegistryImpl.New.
-func (r *RegistryImpl) New(ctx context.Context, name string, q *mq.Queue, rOnly, wOnly, readWrite, block bool, perm linux.FileMode, flags uint32) (*vfs.FileDescription, error) {
+func (r *RegistryImpl) New(ctx context.Context, name string, q *mq.Queue, access mq.AccessType, block bool, perm linux.FileMode, flags uint32) (*vfs.FileDescription, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -115,7 +115,7 @@ func (r *RegistryImpl) New(ctx context.Context, name string, q *mq.Queue, rOnly,
 	if err != nil {
 		return nil, err
 	}
-	return r.newFD(q, qInode, rOnly, wOnly, readWrite, block, flags)
+	return r.newFD(q, qInode, access, block, flags)
 }
 
 // Unlink implements mq.RegistryImpl.Unlink.
@@ -154,8 +154,8 @@ func (r *RegistryImpl) lookup(ctx context.Context, name string) (kernfs.Inode, e
 }
 
 // newFD returns a new file description created using the given queue and inode.
-func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, rOnly, wOnly, readWrite, block bool, flags uint32) (*vfs.FileDescription, error) {
-	view, err := mq.NewView(q, rOnly, wOnly, readWrite, block)
+func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, access mq.AccessType, block bool, flags uint32) (*vfs.FileDescription, error) {
+	view, err := mq.NewView(q, access, block)
 	if err != nil {
 		return nil, err
 	}
@@ -172,13 +172,13 @@ func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, rOnly, wOnly, readW
 }
 
 // perm returns a permission mask created using given flags.
-func perm(rOnly, wOnly, readWrite bool) fs.PermMask {
-	switch {
-	case readWrite:
+func perm(access mq.AccessType) fs.PermMask {
+	switch access {
+	case mq.ReadWrite:
 		return fs.PermMask{Read: true, Write: true}
-	case wOnly:
+	case mq.WriteOnly:
 		return fs.PermMask{Write: true}
-	case rOnly:
+	case mq.ReadOnly:
 		return fs.PermMask{Read: true}
 	default:
 		return fs.PermMask{} // Can't happen, see NewView.
