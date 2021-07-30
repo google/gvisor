@@ -6,8 +6,13 @@
 //go:build go1.13 && !go1.18
 // +build go1.13,!go1.18
 
-// Check go:linkname function signatures, type definitions, and constants when
-// updating Go version.
+// //go:linkname directives type-checked by checklinkname. Any other
+// non-linkname assumptions outside the Go 1 compatibility guarantee should
+// have an accompanied vet check or version guard build tag.
+
+// Check type definitions and constants when updating Go version.
+//
+// TODO(b/165820485): add these checks to checklinkname.
 
 package sync
 
@@ -109,10 +114,10 @@ type maptype struct {
 // These functions are only used within the sync package.
 
 //go:linkname semacquire sync.runtime_Semacquire
-func semacquire(s *uint32)
+func semacquire(addr *uint32)
 
 //go:linkname semrelease sync.runtime_Semrelease
-func semrelease(s *uint32, handoff bool, skipframes int)
+func semrelease(addr *uint32, handoff bool, skipframes int)
 
 //go:linkname canSpin sync.runtime_canSpin
 func canSpin(i int) bool
