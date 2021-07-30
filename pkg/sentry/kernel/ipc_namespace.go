@@ -87,7 +87,7 @@ func (i *IPCNamespace) InitPosixQueues(ctx context.Context, vfsObj *vfs.VirtualF
 	if err != nil {
 		return err
 	}
-	i.posixQueues = mq.NewRegistry(impl)
+	i.posixQueues = mq.NewRegistry(i.userNS, impl)
 	return nil
 }
 

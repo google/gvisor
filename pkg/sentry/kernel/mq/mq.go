@@ -18,6 +18,7 @@ package mq
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -29,9 +30,31 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// AccessType is the access type passed to mq_open.
+type AccessType int
+
+// Possible access types.
+const (
+	ReadOnly AccessType = iota
+	WriteOnly
+	ReadWrite
+)
+
 const (
 	MaxName     = 255                   // Maximum size for a queue name.
 	maxPriority = linux.MQ_PRIO_MAX - 1 // Highest possible message priority.
+
+	maxQueuesDefault = linux.DFLT_QUEUESMAX // Default max number of queues.
+
+	maxMsgDefault   = linux.DFLT_MSG    // Default max number of messages per queue.
+	maxMsgMin       = linux.MIN_MSGMAX  // Min value for max number of messages per queue.
+	maxMsgLimit     = linux.DFLT_MSGMAX // Limit for max number of messages per queue.
+	maxMsgHardLimit = linux.HARD_MSGMAX // Hard limit for max number of messages per queue.
+
+	msgSizeDefault   = linux.DFLT_MSGSIZE    // Default max message size.
+	msgSizeMin       = linux.MIN_MSGSIZEMAX  // Min value for max message size.
+	msgSizeLimit     = linux.DFLT_MSGSIZEMAX // Limit for max message size.
+	msgSizeHardLimit = linux.HARD_MSGSIZEMAX // Hard limit for max message size.
 )
 
 // Registry is a POSIX message queue registry.
@@ -41,6 +64,12 @@ const (
 //
 // +stateify savable
 type Registry struct {
+	// userNS is the user namespace containing this registry. Immutable.
+	userNS *auth.UserNamespace
+
+	// mu protects all fields below.
+	mu sync.Mutex `state:"nosave"`
+
 	// impl is an implementation of several message queue utilities needed by
 	// the registry. impl should be provided by mqfs.
 	impl RegistryImpl
@@ -54,13 +83,13 @@ type RegistryImpl interface {
 	// Get searchs for a queue with the given name, if it exists, the queue is
 	// used to create a new FD, return it and return true. If the queue  doesn't
 	// exist, return false and no error. An error is returned if creation fails.
-	Get(ctx context.Context, name string, rOnly, wOnly, readWrite, block bool, flags uint32) (*vfs.FileDescription, bool, error)
+	Get(ctx context.Context, name string, access AccessType, block bool, flags uint32) (*vfs.FileDescription, bool, error)
 
 	// New creates a new inode and file description using the given queue,
 	// inserts the inode into the filesystem tree using the given name, and
 	// returns the file description. An error is returned if creation fails, or
 	// if the name already exists.
-	New(ctx context.Context, name string, q *Queue, rOnly, wOnly, readWrite, block bool, perm linux.FileMode, flags uint32) (*vfs.FileDescription, error)
+	New(ctx context.Context, name string, q *Queue, access AccessType, block bool, perm linux.FileMode, flags uint32) (*vfs.FileDescription, error)
 
 	// Unlink removes the queue with given name from the registry, and returns
 	// an error if the name doesn't exist.
@@ -73,10 +102,126 @@ type RegistryImpl interface {
 // NewRegistry returns a new, initialized message queue registry. NewRegistry
 // should be called when a new message queue filesystem is created, once per
 // IPCNamespace.
-func NewRegistry(impl RegistryImpl) *Registry {
+func NewRegistry(userNS *auth.UserNamespace, impl RegistryImpl) *Registry {
 	return &Registry{
-		impl: impl,
+		userNS: userNS,
+		impl:   impl,
 	}
+}
+
+// OpenOpts holds the options passed to FindOrCreate.
+type OpenOpts struct {
+	Name      string
+	Access    AccessType
+	Create    bool
+	Exclusive bool
+	Block     bool
+}
+
+// FindOrCreate creates a new POSIX message queue or opens an existing queue.
+// See mq_open(2).
+func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, perm linux.FileMode, attr *linux.MqAttr) (*vfs.FileDescription, error) {
+	// mq_overview(7) mentions that: "Each message queue is identified by a name
+	// of the form '/somename'", but the mq_open(3) man pages mention:
+	//   "The mq_open() library function is implemented on top of a system call
+	//    of the same name.  The library function performs the check that the
+	//    name starts with a slash (/), giving the EINVAL error if it does not.
+	//    The kernel system call expects name to contain no preceding slash, so
+	//    the C library function passes name without the preceding slash (i.e.,
+	//    name+1) to the system call."
+	// So we don't need to check it.
+
+	if len(opts.Name) == 0 {
+		return nil, linuxerr.ENOENT
+	}
+	if len(opts.Name) > MaxName {
+		return nil, linuxerr.ENAMETOOLONG
+	}
+	if strings.ContainsRune(opts.Name, '/') {
+		return nil, linuxerr.EACCES
+	}
+	if opts.Name == "." || opts.Name == ".." {
+		return nil, linuxerr.EINVAL
+	}
+
+	// Construct status flags.
+	var flags uint32
+	if opts.Block {
+		flags = linux.O_NONBLOCK
+	}
+	switch opts.Access {
+	case ReadOnly:
+		flags = flags | linux.O_RDONLY
+	case WriteOnly:
+		flags = flags | linux.O_WRONLY
+	case ReadWrite:
+		flags = flags | linux.O_RDWR
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fd, ok, err := r.impl.Get(ctx, opts.Name, opts.Access, opts.Block, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if ok {
+		if opts.Create && opts.Exclusive {
+			// "Both O_CREAT and O_EXCL were specified in oflag, but a queue
+			//  with this name already exists."
+			return nil, linuxerr.EEXIST
+		}
+		return fd, nil
+	}
+
+	if !opts.Create {
+		// "The O_CREAT flag was not specified in oflag, and no queue with this name
+		//  exists."
+		return nil, linuxerr.ENOENT
+	}
+
+	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), fs.FileOwnerFromContext(ctx), fs.FilePermsFromMode(perm), attr)
+	if err != nil {
+		return nil, err
+	}
+	return r.impl.New(ctx, opts.Name, q, opts.Access, opts.Block, perm, flags)
+}
+
+// newQueueLocked creates a new queue using the given attributes. If attr is nil
+// return a queue with default values, otherwise use attr to create a new queue,
+// and return an error if attributes are invalid.
+func (r *Registry) newQueueLocked(creds *auth.Credentials, owner fs.FileOwner, perms fs.FilePermissions, attr *linux.MqAttr) (*Queue, error) {
+	if attr == nil {
+		return &Queue{
+			owner:           owner,
+			perms:           perms,
+			maxMessageCount: int64(maxMsgDefault),
+			maxMessageSize:  uint64(msgSizeDefault),
+		}, nil
+	}
+
+	// "O_CREAT was specified in oflag, and attr was not NULL, but
+	//  attr->mq_maxmsg or attr->mq_msqsize was invalid.  Both of these fields
+	//  these fields must be greater than zero.  In a process that is
+	//  unprivileged (does not have the CAP_SYS_RESOURCE capability),
+	//  attr->mq_maxmsg must be less than or equal to the msg_max limit, and
+	//  attr->mq_msgsize must be less than or equal to the msgsize_max limit.
+	//  In addition, even in a privileged process, attr->mq_maxmsg cannot
+	//  exceed the HARD_MAX limit." - man mq_open(3).
+	if attr.MqMaxmsg <= 0 || attr.MqMsgsize <= 0 {
+		return nil, linuxerr.EINVAL
+	}
+
+	if attr.MqMaxmsg > maxMsgHardLimit || (!creds.HasCapabilityIn(linux.CAP_SYS_RESOURCE, r.userNS) && (attr.MqMaxmsg > maxMsgLimit || attr.MqMsgsize > msgSizeLimit)) {
+		return nil, linuxerr.EINVAL
+	}
+
+	return &Queue{
+		owner:           owner,
+		perms:           perms,
+		maxMessageCount: attr.MqMaxmsg,
+		maxMessageSize:  uint64(attr.MqMsgsize),
+	}, nil
 }
 
 // Destroy destroys the registry and releases all held references.
@@ -116,9 +261,6 @@ type Queue struct {
 	// subscriber represents a task registered to receive async notification
 	// from this queue.
 	subscriber *Subscriber
-
-	// nonBlock is true if this queue is non-blocking.
-	nonBlock bool
 
 	// messageCount is the number of messages currently in the queue.
 	messageCount int64
@@ -171,13 +313,13 @@ type Writer struct {
 }
 
 // NewView creates a new view into a queue and returns it.
-func NewView(q *Queue, rOnly, wOnly, readWrite, block bool) (View, error) {
-	switch {
-	case readWrite:
+func NewView(q *Queue, access AccessType, block bool) (View, error) {
+	switch access {
+	case ReadWrite:
 		return ReaderWriter{Queue: q, block: block}, nil
-	case wOnly:
+	case WriteOnly:
 		return Writer{Queue: q, block: block}, nil
-	case rOnly:
+	case ReadOnly:
 		return Reader{Queue: q, block: block}, nil
 	default:
 		// This case can't happen, due to O_RDONLY flag being 0 and O_WRONLY
