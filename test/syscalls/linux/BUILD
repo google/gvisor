@@ -560,6 +560,7 @@ cc_binary(
     deps = [
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
+        "@com_google_absl//absl/memory",
         gtest,
         "//test/util:fs_util",
         "//test/util:posix_error",
