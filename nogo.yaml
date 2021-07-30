@@ -150,6 +150,17 @@ analyzers:
     external: # Enabled.
   checkescape:
     external: # Enabled.
+  checklinkname:
+    external: # Enabled.
+      suppress:
+        # We don't care to check every single linkname in the Go standard
+        # library. Suppress findings about stdlib linkname targets we haven't
+        # described in checklinkname.
+        #
+        # Note that we _do_ want to check the signature of the known linkname
+        # targets in the standard library, so we still need to run
+        # checklinkname on stdlib generally.
+        - "linkname to unknown symbol"
   SA4016:
     internal:
       exclude:

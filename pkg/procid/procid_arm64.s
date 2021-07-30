@@ -15,6 +15,10 @@
 //go:build arm64 && go1.8 && !go1.18 && go1.1
 // +build arm64,go1.8,!go1.18,go1.1
 
+// //go:linkname directives type-checked by checklinkname. Any other
+// non-linkname assumptions outside the Go 1 compatibility guarantee should
+// have an accompanied vet check or version guard build tag.
+
 #include "textflag.h"
 
 TEXT ·Current(SB),NOSPLIT,$0-8

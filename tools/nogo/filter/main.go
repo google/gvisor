@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary check is the nogo entrypoint.
+// Binary filter is the filters and reports nogo findings.
 package main
 
 import (
