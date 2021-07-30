@@ -161,6 +161,47 @@ func (p *Protocol) getLink(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
+// delLink handles RTM_DELLINK requests.
+func (p *Protocol) delLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	var ifinfomsg linux.InterfaceInfoMessage
+	attrs, ok := msg.GetData(&ifinfomsg)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+	if ifinfomsg.Index == 0 {
+		// The index is unspecified, search by the interface name.
+		ahdr, value, _, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		switch ahdr.Type {
+		case linux.IFLA_IFNAME:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			ifname := string(value[:len(value)-1])
+			for idx, ifa := range stack.Interfaces() {
+				if ifname == ifa.Name {
+					ifinfomsg.Index = idx
+					break
+				}
+			}
+		default:
+			return syserr.ErrInvalidArgument
+		}
+		if ifinfomsg.Index == 0 {
+			return syserr.ErrNoDevice
+		}
+	}
+	return syserr.FromError(stack.RemoveInterface(ifinfomsg.Index))
+}
+
 // addNewLinkMessage appends RTM_NEWLINK message for the given interface into
 // the message set.
 func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
@@ -537,6 +578,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 		switch hdr.Type {
 		case linux.RTM_GETLINK:
 			return p.getLink(ctx, msg, ms)
+		case linux.RTM_DELLINK:
+			return p.delLink(ctx, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, msg, ms)
 		case linux.RTM_NEWADDR:

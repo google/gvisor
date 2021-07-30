@@ -742,3 +742,49 @@ func TestUnmount(t *testing.T) {
 		t.Fatalf("docker run failed: %v", err)
 	}
 }
+
+func TestDeleteInterface(t *testing.T) {
+	if testutil.IsRunningWithHostNet() {
+		t.Skip("not able to remove interfaces on hostnet")
+	}
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image:  "basic/alpine",
+		CapAdd: []string{"NET_ADMIN"},
+	}
+	if err := d.Spawn(ctx, opts, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// We should be able to remove eth0.
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "ip link del dev eth0")
+	if err != nil {
+		t.Fatalf("failed to remove eth0: %s, output: %s", err, output)
+	}
+	// Verify that eth0 is no longer there.
+	output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "ip link show")
+	if err != nil {
+		t.Fatalf("docker exec ip link show failed: %s, output: %s", err, output)
+	}
+	if strings.Contains(output, "eth0") {
+		t.Fatalf("failed to remove eth0")
+	}
+
+	// Loopback device can't be removed.
+	output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "ip link del dev lo")
+	if err == nil {
+		t.Fatalf("should not remove the loopback device: %v", output)
+	}
+	// Verify that lo is still there.
+	output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "ip link show")
+	if err != nil {
+		t.Fatalf("docker exec ip link show failed: %s, output: %s", err, output)
+	}
+	if !strings.Contains(output, "lo") {
+		t.Fatalf("loopback interface is removed")
+	}
+}

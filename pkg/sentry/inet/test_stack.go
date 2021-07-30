@@ -45,23 +45,29 @@ func NewTestStack() *TestStack {
 	}
 }
 
-// Interfaces implements Stack.Interfaces.
+// Interfaces implements Stack.
 func (s *TestStack) Interfaces() map[int32]Interface {
 	return s.InterfacesMap
 }
 
-// InterfaceAddrs implements Stack.InterfaceAddrs.
+// RemoveInterface implements Stack.
+func (s *TestStack) RemoveInterface(idx int32) error {
+	delete(s.InterfacesMap, idx)
+	return nil
+}
+
+// InterfaceAddrs implements Stack.
 func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 	return s.InterfaceAddrsMap
 }
 
-// AddInterfaceAddr implements Stack.AddInterfaceAddr.
+// AddInterfaceAddr implements Stack.
 func (s *TestStack) AddInterfaceAddr(idx int32, addr InterfaceAddr) error {
 	s.InterfaceAddrsMap[idx] = append(s.InterfaceAddrsMap[idx], addr)
 	return nil
 }
 
-// RemoveInterfaceAddr implements Stack.RemoveInterfaceAddr.
+// RemoveInterfaceAddr implements Stack.
 func (s *TestStack) RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error {
 	interfaceAddrs, ok := s.InterfaceAddrsMap[idx]
 	if !ok {
@@ -79,94 +85,94 @@ func (s *TestStack) RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error {
 	return nil
 }
 
-// SupportsIPv6 implements Stack.SupportsIPv6.
+// SupportsIPv6 implements Stack.
 func (s *TestStack) SupportsIPv6() bool {
 	return s.SupportsIPv6Flag
 }
 
-// TCPReceiveBufferSize implements Stack.TCPReceiveBufferSize.
+// TCPReceiveBufferSize implements Stack.
 func (s *TestStack) TCPReceiveBufferSize() (TCPBufferSize, error) {
 	return s.TCPRecvBufSize, nil
 }
 
-// SetTCPReceiveBufferSize implements Stack.SetTCPReceiveBufferSize.
+// SetTCPReceiveBufferSize implements Stack.
 func (s *TestStack) SetTCPReceiveBufferSize(size TCPBufferSize) error {
 	s.TCPRecvBufSize = size
 	return nil
 }
 
-// TCPSendBufferSize implements Stack.TCPSendBufferSize.
+// TCPSendBufferSize implements Stack.
 func (s *TestStack) TCPSendBufferSize() (TCPBufferSize, error) {
 	return s.TCPSendBufSize, nil
 }
 
-// SetTCPSendBufferSize implements Stack.SetTCPSendBufferSize.
+// SetTCPSendBufferSize implements Stack.
 func (s *TestStack) SetTCPSendBufferSize(size TCPBufferSize) error {
 	s.TCPSendBufSize = size
 	return nil
 }
 
-// TCPSACKEnabled implements Stack.TCPSACKEnabled.
+// TCPSACKEnabled implements Stack.
 func (s *TestStack) TCPSACKEnabled() (bool, error) {
 	return s.TCPSACKFlag, nil
 }
 
-// SetTCPSACKEnabled implements Stack.SetTCPSACKEnabled.
+// SetTCPSACKEnabled implements Stack.
 func (s *TestStack) SetTCPSACKEnabled(enabled bool) error {
 	s.TCPSACKFlag = enabled
 	return nil
 }
 
-// TCPRecovery implements Stack.TCPRecovery.
+// TCPRecovery implements Stack.
 func (s *TestStack) TCPRecovery() (TCPLossRecovery, error) {
 	return s.Recovery, nil
 }
 
-// SetTCPRecovery implements Stack.SetTCPRecovery.
+// SetTCPRecovery implements Stack.
 func (s *TestStack) SetTCPRecovery(recovery TCPLossRecovery) error {
 	s.Recovery = recovery
 	return nil
 }
 
-// Statistics implements inet.Stack.Statistics.
+// Statistics implements Stack.
 func (s *TestStack) Statistics(stat interface{}, arg string) error {
 	return nil
 }
 
-// RouteTable implements Stack.RouteTable.
+// RouteTable implements Stack.
 func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
 
-// Resume implements Stack.Resume.
+// Resume implements Stack.
 func (s *TestStack) Resume() {}
 
-// RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
+// RegisteredEndpoints implements Stack.
 func (s *TestStack) RegisteredEndpoints() []stack.TransportEndpoint {
 	return nil
 }
 
-// CleanupEndpoints implements inet.Stack.CleanupEndpoints.
+// CleanupEndpoints implements Stack.
 func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
 	return nil
 }
 
-// RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
+// RestoreCleanupEndpoints implements Stack.
 func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
-// SetForwarding implements inet.Stack.SetForwarding.
+// SetForwarding implements Stack.
 func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
 	s.IPForwarding = enable
 	return nil
 }
 
-// PortRange implements inet.Stack.PortRange.
+// PortRange implements Stack.
 func (*TestStack) PortRange() (uint16, uint16) {
 	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
 	return 32768, 28232
 }
 
-// SetPortRange implements inet.Stack.SetPortRange.
+// SetPortRange implements Stack.
 func (*TestStack) SetPortRange(start uint16, end uint16) error {
 	// No-op.
 	return nil

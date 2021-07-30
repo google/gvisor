@@ -115,6 +115,13 @@ func (e *endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protoc
 
 // Attach implements stack.LinkEndpoint.Attach.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	// nil means the NIC is being removed.
+	if dispatcher == nil {
+		e.lower.Attach(nil)
+		e.Wait()
+		e.dispatcher = nil
+		return
+	}
 	e.dispatcher = dispatcher
 	e.lower.Attach(e)
 }

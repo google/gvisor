@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
-	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
@@ -3339,7 +3338,7 @@ func TestCloseLocking(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < iterations; i++ {
-			if err := s.CreateNIC(nicID2, loopback.New()); err != nil {
+			if err := s.CreateNIC(nicID2, stack.LinkEndpoint(channel.New(0, defaultMTU, ""))); err != nil {
 				t.Errorf("CreateNIC(%d, _): %s", nicID2, err)
 				return
 			}
