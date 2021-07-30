@@ -780,6 +780,9 @@ func (s *Stack) removeNICLocked(id tcpip.NICID) tcpip.Error {
 	if !ok {
 		return &tcpip.ErrUnknownNICID{}
 	}
+	if nic.IsLoopback() {
+		return &tcpip.ErrNotSupported{}
+	}
 	delete(s.nics, id)
 
 	// Remove routes in-place. n tracks the number of routes written.

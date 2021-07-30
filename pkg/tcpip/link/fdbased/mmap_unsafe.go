@@ -47,9 +47,14 @@ func (t tPacketHdr) setTPStatus(status uint32) {
 }
 
 func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
+	stopFd, err := newStopFd()
+	if err != nil {
+		return nil, err
+	}
 	d := &packetMMapDispatcher{
-		fd: fd,
-		e:  e,
+		stopFd: stopFd,
+		fd:     fd,
+		e:      e,
 	}
 	pageSize := unix.Getpagesize()
 	if tpBlockSize%pageSize != 0 {

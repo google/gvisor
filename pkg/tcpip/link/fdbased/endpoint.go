@@ -56,6 +56,7 @@ import (
 // linkDispatcher reads packets from the link FD and dispatches them to the
 // NetworkDispatcher.
 type linkDispatcher interface {
+	stop()
 	dispatch() (bool, tcpip.Error)
 }
 
@@ -381,16 +382,27 @@ func isSocketFD(fd int) (bool, error) {
 // Attach launches the goroutine that reads packets from the file descriptor and
 // dispatches them via the provided dispatcher.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
-	e.dispatcher = dispatcher
-	// Link endpoints are not savable. When transportation endpoints are
-	// saved, they stop sending outgoing packets and all incoming packets
-	// are rejected.
-	for i := range e.inboundDispatchers {
-		e.wg.Add(1)
-		go func(i int) { // S/R-SAFE: See above.
-			e.dispatchLoop(e.inboundDispatchers[i])
-			e.wg.Done()
-		}(i)
+	// nil means the NIC is being removed.
+	if dispatcher == nil && e.dispatcher != nil {
+		for _, dispatcher := range e.inboundDispatchers {
+			dispatcher.stop()
+		}
+		e.Wait()
+		e.dispatcher = nil
+		return
+	}
+	if dispatcher != nil && e.dispatcher == nil {
+		e.dispatcher = dispatcher
+		// Link endpoints are not savable. When transportation endpoints are
+		// saved, they stop sending outgoing packets and all incoming packets
+		// are rejected.
+		for i := range e.inboundDispatchers {
+			e.wg.Add(1)
+			go func(i int) { // S/R-SAFE: See above.
+				e.dispatchLoop(e.inboundDispatchers[i])
+				e.wg.Done()
+			}(i)
+		}
 	}
 }
 

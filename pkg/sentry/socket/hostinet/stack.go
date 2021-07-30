@@ -309,6 +309,11 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 	return interfaces
 }
 
+// RemoveInterface implements inet.Stack.RemoveInterface.
+func (*Stack) RemoveInterface(int32) error {
+	return linuxerr.EACCES
+}
+
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 	addrs := make(map[int32][]inet.InterfaceAddr)
@@ -319,12 +324,12 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
-func (s *Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
+func (*Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
 	return linuxerr.EACCES
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
-func (s *Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
+func (*Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
 	return linuxerr.EACCES
 }
 
@@ -339,7 +344,7 @@ func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
 }
 
 // SetTCPReceiveBufferSize implements inet.Stack.SetTCPReceiveBufferSize.
-func (s *Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
+func (*Stack) SetTCPReceiveBufferSize(inet.TCPBufferSize) error {
 	return linuxerr.EACCES
 }
 
@@ -349,7 +354,7 @@ func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
 }
 
 // SetTCPSendBufferSize implements inet.Stack.SetTCPSendBufferSize.
-func (s *Stack) SetTCPSendBufferSize(size inet.TCPBufferSize) error {
+func (*Stack) SetTCPSendBufferSize(inet.TCPBufferSize) error {
 	return linuxerr.EACCES
 }
 
@@ -359,7 +364,7 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 }
 
 // SetTCPSACKEnabled implements inet.Stack.SetTCPSACKEnabled.
-func (s *Stack) SetTCPSACKEnabled(bool) error {
+func (*Stack) SetTCPSACKEnabled(bool) error {
 	return linuxerr.EACCES
 }
 
@@ -369,7 +374,7 @@ func (s *Stack) TCPRecovery() (inet.TCPLossRecovery, error) {
 }
 
 // SetTCPRecovery implements inet.Stack.SetTCPRecovery.
-func (s *Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
+func (*Stack) SetTCPRecovery(inet.TCPLossRecovery) error {
 	return linuxerr.EACCES
 }
 
@@ -470,19 +475,19 @@ func (s *Stack) RouteTable() []inet.Route {
 }
 
 // Resume implements inet.Stack.Resume.
-func (s *Stack) Resume() {}
+func (*Stack) Resume() {}
 
 // RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
-func (s *Stack) RegisteredEndpoints() []stack.TransportEndpoint { return nil }
+func (*Stack) RegisteredEndpoints() []stack.TransportEndpoint { return nil }
 
 // CleanupEndpoints implements inet.Stack.CleanupEndpoints.
-func (s *Stack) CleanupEndpoints() []stack.TransportEndpoint { return nil }
+func (*Stack) CleanupEndpoints() []stack.TransportEndpoint { return nil }
 
 // RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
-func (s *Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
+func (*Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
 // SetForwarding implements inet.Stack.SetForwarding.
-func (s *Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
+func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 	return linuxerr.EACCES
 }
 
@@ -493,6 +498,6 @@ func (*Stack) PortRange() (uint16, uint16) {
 }
 
 // SetPortRange implements inet.Stack.SetPortRange.
-func (*Stack) SetPortRange(start uint16, end uint16) error {
+func (*Stack) SetPortRange(uint16, uint16) error {
 	return linuxerr.EACCES
 }

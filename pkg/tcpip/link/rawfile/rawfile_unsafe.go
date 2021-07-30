@@ -170,46 +170,63 @@ func BlockingRead(fd int, b []byte) (int, tcpip.Error) {
 	}
 }
 
-// BlockingReadv reads from a file descriptor that is set up as non-blocking and
-// stores the data in a list of iovecs buffers. If no data is available, it will
-// block in a poll() syscall until the file descriptor becomes readable.
-func BlockingReadv(fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
+// BlockingReadvUntilStopped reads from a file descriptor that is set up as
+// non-blocking and stores the data in a list of iovecs buffers. If no data is
+// available, it will block in a poll() syscall until the file descriptor
+// becomes readable or stop is signalled (efd becomes readable). Returns -1 in
+// the latter case.
+func BlockingReadvUntilStopped(efd int, fd int, iovecs []unix.Iovec) (int, tcpip.Error) {
 	for {
 		n, _, e := unix.RawSyscall(unix.SYS_READV, uintptr(fd), uintptr(unsafe.Pointer(&iovecs[0])), uintptr(len(iovecs)))
 		if e == 0 {
 			return int(n), nil
 		}
 
-		event := PollEvent{
-			FD:     int32(fd),
-			Events: 1, // POLLIN
+		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
+		if stopped {
+			return -1, nil
 		}
-
-		_, e = BlockingPoll(&event, 1, nil)
 		if e != 0 && e != unix.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}
 }
 
-// BlockingRecvMMsg reads from a file descriptor that is set up as non-blocking
-// and stores the received messages in a slice of MMsgHdr structures. If no data
-// is available, it will block in a poll() syscall until the file descriptor
-// becomes readable.
-func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
+// BlockingRecvMMsgUntilStopped reads from a file descriptor that is set up as
+// non-blocking and stores the received messages in a slice of MMsgHdr
+// structures. If no data is available, it will block in a poll() syscall until
+// the file descriptor becomes readable or stop is signalled (efd becomes
+// readable). Returns -1 in the latter case.
+func BlockingRecvMMsgUntilStopped(efd int, fd int, msgHdrs []MMsgHdr) (int, tcpip.Error) {
 	for {
 		n, _, e := unix.RawSyscall6(unix.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
 		if e == 0 {
 			return int(n), nil
 		}
 
-		event := PollEvent{
-			FD:     int32(fd),
-			Events: 1, // POLLIN
+		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
+		if stopped {
+			return -1, nil
 		}
-
-		if _, e := BlockingPoll(&event, 1, nil); e != 0 && e != unix.EINTR {
+		if e != 0 && e != unix.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}
+}
+
+// BlockingPollUntilStopped polls for events on fd or until a stop is signalled
+// on the event fd efd. Returns true if stopped, i.e., efd has event POLLIN.
+func BlockingPollUntilStopped(efd int, fd int, events int16) (bool, unix.Errno) {
+	pevents := [...]PollEvent{
+		{
+			FD:     int32(efd),
+			Events: unix.POLLIN,
+		},
+		{
+			FD:     int32(fd),
+			Events: events,
+		},
+	}
+	_, errno := BlockingPoll(&pevents[0], len(pevents), nil)
+	return pevents[0].Revents&unix.POLLIN != 0, errno
 }
