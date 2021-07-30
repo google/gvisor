@@ -222,8 +222,6 @@ func (f *FDTable) StateFields() []string {
 	return []string{
 		"FDTableRefs",
 		"k",
-		"next",
-		"used",
 		"descriptorTable",
 	}
 }
@@ -234,11 +232,9 @@ func (f *FDTable) beforeSave() {}
 func (f *FDTable) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	var descriptorTableValue map[int32]descriptor = f.saveDescriptorTable()
-	stateSinkObject.SaveValue(4, descriptorTableValue)
+	stateSinkObject.SaveValue(2, descriptorTableValue)
 	stateSinkObject.Save(0, &f.FDTableRefs)
 	stateSinkObject.Save(1, &f.k)
-	stateSinkObject.Save(2, &f.next)
-	stateSinkObject.Save(3, &f.used)
 }
 
 func (f *FDTable) afterLoad() {}
@@ -247,9 +243,7 @@ func (f *FDTable) afterLoad() {}
 func (f *FDTable) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.FDTableRefs)
 	stateSourceObject.Load(1, &f.k)
-	stateSourceObject.Load(2, &f.next)
-	stateSourceObject.Load(3, &f.used)
-	stateSourceObject.LoadValue(4, new(map[int32]descriptor), func(y interface{}) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
+	stateSourceObject.LoadValue(2, new(map[int32]descriptor), func(y interface{}) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
 }
 
 func (r *FDTableRefs) StateTypeName() string {
