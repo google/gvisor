@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ((linux && amd64) || (linux && arm64)) && go1.12 && !go1.18
+//go:build ((linux && amd64) || (linux && arm64)) && go1.12
 // +build linux,amd64 linux,arm64
 // +build go1.12
-// +build !go1.18
 
-// Check go:linkname function signatures when updating Go version.
+// //go:linkname directives type-checked by checklinkname. Any other
+// non-linkname assumptions outside the Go 1 compatibility guarantee should
+// have an accompanied vet check or version guard build tag.
 
 package rawfile
 
