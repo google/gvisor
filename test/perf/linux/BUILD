@@ -109,6 +109,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "dup_benchmark",
+    testonly = 1,
+    srcs = [
+        "dup_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+    ],
+)
+
+cc_binary(
     name = "read_benchmark",
     testonly = 1,
     srcs = [
