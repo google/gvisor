@@ -27,6 +27,9 @@ type Stack interface {
 	// integers.
 	Interfaces() map[int32]Interface
 
+	// RemoveInterface removes the specified network interface.
+	RemoveInterface(idx int32) error
+
 	// InterfaceAddrs returns all network interface addresses as a mapping from
 	// interface indexes to a slice of associated interface address properties.
 	InterfaceAddrs() map[int32][]InterfaceAddr

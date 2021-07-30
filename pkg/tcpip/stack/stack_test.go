@@ -719,38 +719,59 @@ func TestRemoveUnknownNIC(t *testing.T) {
 }
 
 func TestRemoveNIC(t *testing.T) {
-	const nicID = 1
+	for _, tt := range []struct {
+		name      string
+		linkep    stack.LinkEndpoint
+		expectErr tcpip.Error
+	}{
+		{
+			name:      "loopback",
+			linkep:    loopback.New(),
+			expectErr: &tcpip.ErrNotSupported{},
+		},
+		{
+			name:      "channel",
+			linkep:    channel.New(0, defaultMTU, ""),
+			expectErr: nil,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const nicID = 1
 
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
-	})
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+			})
 
-	e := linkEPWithMockedAttach{
-		LinkEndpoint: loopback.New(),
-	}
-	if err := s.CreateNIC(nicID, &e); err != nil {
-		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
-	}
+			e := linkEPWithMockedAttach{
+				LinkEndpoint: tt.linkep,
+			}
+			if err := s.CreateNIC(nicID, &e); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
 
-	// NIC should be present in NICInfo and attached to a NetworkDispatcher.
-	allNICInfo := s.NICInfo()
-	if _, ok := allNICInfo[nicID]; !ok {
-		t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
-	}
-	if !e.isAttached() {
-		t.Fatal("link endpoint not attached to a network dispatcher")
-	}
+			// NIC should be present in NICInfo and attached to a NetworkDispatcher.
+			allNICInfo := s.NICInfo()
+			if _, ok := allNICInfo[nicID]; !ok {
+				t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
+			}
+			if !e.isAttached() {
+				t.Fatal("link endpoint not attached to a network dispatcher")
+			}
 
-	// Removing a NIC should remove it from NICInfo and e should be detached from
-	// the NetworkDispatcher.
-	if err := s.RemoveNIC(nicID); err != nil {
-		t.Fatalf("s.RemoveNIC(%d): %s", nicID, err)
-	}
-	if nicInfo, ok := s.NICInfo()[nicID]; ok {
-		t.Errorf("got unexpected NICInfo entry for deleted NIC %d = %+v", nicID, nicInfo)
-	}
-	if e.isAttached() {
-		t.Error("link endpoint for removed NIC still attached to a network dispatcher")
+			// Removing a NIC should remove it from NICInfo and e should be detached from
+			// the NetworkDispatcher.
+			if got, want := s.RemoveNIC(nicID), tt.expectErr; got != want {
+				t.Fatalf("got s.RemoveNIC(%d) = %s, want %s", nicID, got, want)
+			}
+			if tt.expectErr == nil {
+				if nicInfo, ok := s.NICInfo()[nicID]; ok {
+					t.Errorf("got unexpected NICInfo entry for deleted NIC %d = %+v", nicID, nicInfo)
+				}
+				if e.isAttached() {
+					t.Error("link endpoint for removed NIC still attached to a network dispatcher")
+				}
+			}
+		})
 	}
 }
 

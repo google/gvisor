@@ -114,6 +114,7 @@ func (t tPacketHdr) Payload() []byte {
 // packetMMapDispatcher uses PACKET_RX_RING's to read/dispatch inbound packets.
 // See: mmap_amd64_unsafe.go for implementation details.
 type packetMMapDispatcher struct {
+	stopFd
 	// fd is the file descriptor used to send and receive packets.
 	fd int
 
@@ -129,18 +130,18 @@ type packetMMapDispatcher struct {
 	ringOffset int
 }
 
-func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
+func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
-		event := rawfile.PollEvent{
-			FD:     int32(d.fd),
-			Events: unix.POLLIN | unix.POLLERR,
-		}
-		if _, errno := rawfile.BlockingPoll(&event, 1, nil); errno != 0 {
+		stopped, errno := rawfile.BlockingPollUntilStopped(d.efd, d.fd, unix.POLLIN|unix.POLLERR)
+		if errno != 0 {
 			if errno == unix.EINTR {
 				continue
 			}
-			return nil, rawfile.TranslateErrno(errno)
+			return nil, stopped, rawfile.TranslateErrno(errno)
+		}
+		if stopped {
+			return nil, true, nil
 		}
 		if hdr.tpStatus()&tpStatusCopy != 0 {
 			// This frame is truncated so skip it after flipping the
@@ -158,14 +159,14 @@ func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
 	// Release packet to kernel.
 	hdr.setTPStatus(tpStatusKernel)
 	d.ringOffset = (d.ringOffset + 1) % tpFrameNR
-	return pkt, nil
+	return pkt, false, nil
 }
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
 func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
-	pkt, err := d.readMMappedPacket()
-	if err != nil {
+	pkt, stopped, err := d.readMMappedPacket()
+	if err != nil || stopped {
 		return false, err
 	}
 	var (

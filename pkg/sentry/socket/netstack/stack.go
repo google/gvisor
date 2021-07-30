@@ -71,6 +71,12 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 	return is
 }
 
+// RemoveInterface implements inet.Stack.RemoveInterface.
+func (s *Stack) RemoveInterface(idx int32) error {
+	nic := tcpip.NICID(idx)
+	return syserr.TranslateNetstackError(s.Stack.RemoveNIC(nic)).ToError()
+}
+
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 	nicAddrs := make(map[int32][]inet.InterfaceAddr)

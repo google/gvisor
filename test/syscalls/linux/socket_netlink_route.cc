@@ -44,6 +44,7 @@ namespace {
 
 constexpr uint32_t kSeq = 12345;
 
+using ::testing::_;
 using ::testing::AnyOf;
 using ::testing::Eq;
 
@@ -244,7 +245,7 @@ TEST(NetlinkRouteTest, GetLinkByIndexNotFound) {
   req.ifm.ifi_index = 1234590;
 
   EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
-              PosixErrorIs(ENODEV, ::testing::_));
+              PosixErrorIs(ENODEV, _));
 }
 
 TEST(NetlinkRouteTest, GetLinkByNameNotFound) {
@@ -273,7 +274,112 @@ TEST(NetlinkRouteTest, GetLinkByNameNotFound) {
       NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
 
   EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
-              PosixErrorIs(ENODEV, ::testing::_));
+              PosixErrorIs(ENODEV, _));
+}
+
+TEST(NetlinkRouteTest, RemoveLoopbackByName) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char ifname[IFNAMSIZ];
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_DELLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.rtattr.rta_type = IFLA_IFNAME;
+  req.rtattr.rta_len = RTA_LENGTH(loopback_link.name.size() + 1);
+  strncpy(req.ifname, loopback_link.name.c_str(), sizeof(req.ifname));
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkRouteTest, RemoveLoopbackByIndex) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_DELLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link.index;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENOTSUP, _));
+}
+
+TEST(NetlinkRouteTest, RemoveLinkByIndexNotFound) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = 1234590;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENODEV, _));
+}
+
+TEST(NetlinkRouteTest, RemoveLinkByNameNotFound) {
+  const std::string name = "nodevice?!";
+
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr rtattr;
+    char ifname[IFNAMSIZ];
+    char pad[NLMSG_ALIGNTO + RTA_ALIGNTO];
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_DELLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.rtattr.rta_type = IFLA_IFNAME;
+  req.rtattr.rta_len = RTA_LENGTH(name.size() + 1);
+  strncpy(req.ifname, name.c_str(), sizeof(req.ifname));
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.ifm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(ENODEV, _));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
@@ -295,7 +401,7 @@ TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
   req.ifm.ifi_family = AF_UNSPEC;
 
   EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
-              PosixErrorIs(EOPNOTSUPP, ::testing::_));
+              PosixErrorIs(EOPNOTSUPP, _));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
@@ -536,7 +642,7 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
         // Second delete should fail, as address no longer exists.
         EXPECT_THAT(LinkDelLocalAddr(loopback_link.index, AF_INET,
                                      /*prefixlen=*/24, &addr, sizeof(addr)),
-                    PosixErrorIs(EADDRNOTAVAIL, ::testing::_));
+                    PosixErrorIs(EADDRNOTAVAIL, _));
       });
 
   // Replace an existing address should succeed.
@@ -546,7 +652,7 @@ TEST(NetlinkRouteTest, AddAndRemoveAddr) {
   // Create exclusive should fail, as we created the address above.
   EXPECT_THAT(LinkAddExclusiveLocalAddr(loopback_link.index, AF_INET,
                                         /*prefixlen=*/24, &addr, sizeof(addr)),
-              PosixErrorIs(EEXIST, ::testing::_));
+              PosixErrorIs(EEXIST, _));
 }
 
 // GetRouteDump tests a RTM_GETROUTE + NLM_F_DUMP request.
