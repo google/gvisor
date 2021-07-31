@@ -133,11 +133,11 @@ func newDentry(ctx context.Context, mnt *vfs.Mount) *vfs.Dentry {
 	return d.VFSDentry()
 }
 
-// fileDescription is embedded by iouringfs implementations of
+// FileDescription is embedded by iouringfs implementations of
 // vfs.FileDescriptionImpl.
 //
 // +stateify savable
-type fileDescription struct {
+type FileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.LockFD
@@ -162,62 +162,62 @@ type fileDescription struct {
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
-func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+func (fd *FileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	return fd.inode.InodeAttrs.Stat(ctx, fd.mount.Filesystem(), opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
-func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+func (fd *FileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 	return syserror.EPERM
 }
 
 // Release implements vfs.FileDescriptionImpl.Release
-func (f *fileDescription) Release(ctx context.Context) {
+func (f *FileDescription) Release(ctx context.Context) {
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *fileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *FileDescription) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *fileDescription) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *FileDescription) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	fd.mappings.AddMapping(ms, ar, offset, writable)
 
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *fileDescription) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *FileDescription) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	fd.mappings.RemoveMapping(ms, ar, offset, writable)
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *fileDescription) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *FileDescription) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return fd.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (*fileDescription) InvalidateUnsavable(context.Context) error {
+func (*FileDescription) InvalidateUnsavable(context.Context) error {
 	return nil
 }
 
-func (fd *fileDescription) sqEndOffset() uint64 {
+func (fd *FileDescription) sqEndOffset() uint64 {
 	SQEndOff := uint64(fd.sqEntries) * uint64(4) // 4 = sizeof(unsigned int)
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_SQ_RING + SQEndOff))
 }
 
-func (fd *fileDescription) cqEndOffset() uint64 {
+func (fd *FileDescription) cqEndOffset() uint64 {
 	CQEndOff := uint64(fd.cqEntries) * uint64((*linux.IoUringCqe)(nil).SizeBytes())
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_CQ_RING + CQEndOff))
 }
 
-func (fd *fileDescription) sqeEndOffset() uint64 {
+func (fd *FileDescription) sqeEndOffset() uint64 {
 	SQESEndOff := uint64(fd.sqEntries) * uint64((*linux.IoUringSqe)(nil).SizeBytes())
 	return fs.OffsetPageEnd(int64(linux.IORING_OFF_SQES + SQESEndOff))
 }
 
-func (fd *fileDescription) isInRing(maprange memmap.MappableRange) bool {
+func (fd *FileDescription) isInRing(maprange memmap.MappableRange) bool {
 	if maprange.IsSupersetOf(memmap.MappableRange{Start: linux.IORING_OFF_SQ_RING, End: fd.sqEndOffset()}) {
 		return true
 	}
@@ -235,7 +235,7 @@ func (fd *fileDescription) isInRing(maprange memmap.MappableRange) bool {
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *fileDescription) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *FileDescription) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	// Not in Sq ring, Cq ring or Sqe ring ?
 	if !fd.isInRing(required) {
 		return nil, &memmap.BusError{io.EOF}
@@ -268,11 +268,15 @@ func (fd *fileDescription) Translate(ctx context.Context, required, optional mem
 	return ts, nil
 }
 
+func (fd *FileDescription) ReadFile(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	return fd.memFile.MapInternal(fr, at)
+}
+
 func NewIouringfsFile(ctx context.Context, mnt *vfs.Mount, SqEntries, CqEntries uint32) (*vfs.FileDescription, error) {
 	d := newDentry(ctx, mnt)
 	defer d.DecRef(ctx)
 
-	fd, err := newfileDescription(ctx)
+	fd, err := newFileDescription(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +297,8 @@ func NewIouringfsFile(ctx context.Context, mnt *vfs.Mount, SqEntries, CqEntries 
 	return vfsfd, nil
 }
 
-func newfileDescription(ctx context.Context) (*fileDescription, error) {
-	fd := &fileDescription{}
+func newFileDescription(ctx context.Context) (*FileDescription, error) {
+	fd := &FileDescription{}
 	fd.LockFD.Init(&fd.locks)
 
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)

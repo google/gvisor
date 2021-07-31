@@ -160,6 +160,7 @@ func Override() {
 	s.Table[328] = syscalls.Supported("pwritev2", Pwritev2)
 	s.Table[332] = syscalls.Supported("statx", Statx)
 	s.Table[425] = syscalls.PartiallySupported("io_uring_setup", IoUringSetup, "This is a just a place holder for the time being", nil)
+	s.Table[426] = syscalls.PartiallySupported("io_uring_enter", IoUringEnter, "This is a just a place holder for the time being", nil)
 	s.Table[441] = syscalls.Supported("epoll_pwait2", EpollPwait2)
 	s.Init()
 
@@ -272,6 +273,7 @@ func Override() {
 	s.Table[287] = syscalls.Supported("pwritev2", Pwritev2)
 	s.Table[291] = syscalls.Supported("statx", Statx)
 	s.Table[425] = syscalls.PartiallySupported("io_uring_setup", IoUringSetup, "This is a just a place holder for the time being", nil)
+	s.Table[426] = syscalls.PartiallySupported("io_uring_enter", IoUringEnter, "This is a just a place holder for the time being", nil)
 	s.Table[441] = syscalls.Supported("epoll_pwait2", EpollPwait2)
 
 	s.Init()

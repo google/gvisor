@@ -49,6 +49,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
+        "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsbridge",

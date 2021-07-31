@@ -16,10 +16,13 @@ package vfs2
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -85,7 +88,57 @@ func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	return uintptr(fd_io), nil, nil
 }
 
+// IoUringEnter implements Linux syscall io_uring_enter(2)
+func IoUringEnter(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	// to_submit := args[1].Uint()
+	// min_complete := args[2].Uint()
+	// flags := args[3].Uint()
+	// sig := args[3].Uint()
+
+	file := t.GetFileVFS2(fd)
+	// TODO: Maybe check if this is a real io_uring fd
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	FileDescription := file.Impl().(*iouringfs.FileDescription)
+
+	_, err := IoGetSqe(t, FileDescription)
+	if err != nil {
+		return 0, nil, err // TODO: maybe not the best error code
+	}
+
 	return uintptr(fd), nil, nil
+}
+
+func IoGetSqe(t *kernel.Task, fd *iouringfs.FileDescription) (*linux.IoUringSqe, error) {
+	var sqe linux.IoUringSqe
+
+	frange := memmap.FileRange{linux.IORING_OFF_SQ_RING, linux.IORING_MAX_ENTRIES + 128}
+	blockseq, err := fd.ReadFile(frange, hostarch.AccessType{true, true, false})
+
+	addr := blockseq.Head().Addr()
+
+	_, err = sqe.CopyIn(t, hostarch.Addr(addr))
+	if err != nil {
+		return nil, err
+	}
+
+	// var sqe linux.IoUringSqe
+	// b := make([]byte, sqe.SizeBytes(), sqe.SizeBytes())
+	// ioSeq := usermem.BytesIOSequence(b)
+	//
+	// read, err := fd.PRead(t, ioSeq, linux.IORING_OFF_SQ_RING, vfs.ReadOptions{0})
+	// if read == -1 || err != nil {
+	// 	return nil, err
+	// }
+	//
+	// sqe.UnmarshalBytes(b)
+
+	return &sqe, err
+}
+
 func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) (*linux.IoUringParams, error) {
 	if entries == 0 {
 		return nil, syserror.EFAULT
