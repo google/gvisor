@@ -279,30 +279,30 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// We need a directory to construct a new root and we know that
 		// runsc can't start without /proc, so we can use it for this.
 		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
-		if err := specutils.SafeMount("runsc-root", "/proc", "tmpfs", flags, "", procPath); err != nil {
+		if err := specutils.SafeMount("runsc-root", "/mnt", "tmpfs", flags, "", procPath); err != nil {
 			Fatalf("error mounting tmpfs: %v", err)
 		}
 
 		// Prepare tree structure for pivot_root(2).
-		if err := os.Mkdir("/proc/proc", 0755); err != nil {
-			Fatalf("error creating /proc/proc: %v", err)
+		if err := os.Mkdir("/mnt/proc", 0755); err != nil {
+			Fatalf("error creating /mnt/proc: %v", err)
 		}
-		if err := os.Mkdir("/proc/root", 0755); err != nil {
-			Fatalf("error creating /proc/root: %v", err)
+		if err := os.Mkdir("/mnt/root", 0755); err != nil {
+			Fatalf("error creating /mnt/root: %v", err)
 		}
-		if err := os.Mkdir("/proc/etc", 0755); err != nil {
-			Fatalf("error creating /proc/etc: %v", err)
+		if err := os.Mkdir("/mnt/etc", 0755); err != nil {
+			Fatalf("error creating /mnt/etc: %v", err)
 		}
 		// This cannot use SafeMount because there's no available procfs. But we
 		// know that /proc is an empty tmpfs mount, so this is safe.
-		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
+		if err := unix.Mount("runsc-proc", "/mnt/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
 			Fatalf("error mounting proc: %v", err)
 		}
-		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {
+		if err := copyFile("/mnt/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
-		root = "/proc/root"
-		procPath = "/proc/proc"
+		root = "/mnt/root"
+		procPath = "/mnt/proc"
 	}
 
 	// Mount root path followed by submounts.
@@ -347,7 +347,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		if err := pivotRoot("/proc"); err != nil {
+		if err := pivotRoot("/mnt"); err != nil {
 			Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
