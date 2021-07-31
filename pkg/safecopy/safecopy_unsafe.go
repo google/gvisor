@@ -102,6 +102,10 @@ func addrOfSwapUint64() uintptr
 func addrOfCompareAndSwapUint32() uintptr
 func addrOfLoadUint32() uintptr
 
+// PlatformUnsafeRegionHook signals the current platform that faults on a
+// specified region will be handled from a signal handler.
+var PlatformUnsafeRegionHook func(virtual uintptr, length uintptr) = func(v, l uintptr) {}
+
 // CopyIn copies len(dst) bytes from src to dst. It returns the number of bytes
 // copied and an error if SIGSEGV or SIGBUS is received while reading from src.
 func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
@@ -112,6 +116,8 @@ func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
 
 // copyIn is the underlying definition for CopyIn.
 func copyIn(dst []byte, src uintptr) (int, error) {
+	PlatformUnsafeRegionHook(src, uintptr(len(dst)))
+
 	toCopy := uintptr(len(dst))
 	if len(dst) == 0 {
 		return 0, nil
@@ -152,6 +158,8 @@ func CopyOut(dst unsafe.Pointer, src []byte) (int, error) {
 
 // copyOut is the underlying definition for CopyOut.
 func copyOut(dst uintptr, src []byte) (int, error) {
+	PlatformUnsafeRegionHook(dst, uintptr(len(src)))
+
 	toCopy := uintptr(len(src))
 	if toCopy == 0 {
 		return 0, nil
@@ -199,6 +207,8 @@ func copyN(dst, src uintptr, toCopy uintptr) (uintptr, error) {
 	if toCopy == 0 {
 		return 0, nil
 	}
+	PlatformUnsafeRegionHook(dst, toCopy)
+	PlatformUnsafeRegionHook(src, toCopy)
 
 	fault, sig := memcpy(dst, src, toCopy)
 	if sig == 0 {
@@ -250,6 +260,7 @@ func zeroOut(dst uintptr, toZero uintptr) (uintptr, error) {
 	if toZero == 0 {
 		return 0, nil
 	}
+	PlatformUnsafeRegionHook(dst, toZero)
 
 	fault, sig := memclr(dst, toZero)
 	if sig == 0 {
@@ -282,6 +293,7 @@ func SwapUint32(ptr unsafe.Pointer, new uint32) (uint32, error) {
 	if addr := uintptr(ptr); addr&3 != 0 {
 		return 0, AlignmentError{addr, 4}
 	}
+	PlatformUnsafeRegionHook(uintptr(ptr), 4)
 	old, sig := swapUint32(ptr, new)
 	return old, errorFromFaultSignal(uintptr(ptr), sig)
 }
@@ -293,6 +305,7 @@ func SwapUint64(ptr unsafe.Pointer, new uint64) (uint64, error) {
 	if addr := uintptr(ptr); addr&7 != 0 {
 		return 0, AlignmentError{addr, 8}
 	}
+	PlatformUnsafeRegionHook(uintptr(ptr), 8)
 	old, sig := swapUint64(ptr, new)
 	return old, errorFromFaultSignal(uintptr(ptr), sig)
 }
@@ -304,6 +317,7 @@ func CompareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (uint32, error) {
 	if addr := uintptr(ptr); addr&3 != 0 {
 		return 0, AlignmentError{addr, 4}
 	}
+	PlatformUnsafeRegionHook(uintptr(ptr), 4)
 	prev, sig := compareAndSwapUint32(ptr, old, new)
 	return prev, errorFromFaultSignal(uintptr(ptr), sig)
 }
@@ -316,6 +330,7 @@ func LoadUint32(ptr unsafe.Pointer) (uint32, error) {
 	if addr := uintptr(ptr); addr&3 != 0 {
 		return 0, AlignmentError{addr, 4}
 	}
+	PlatformUnsafeRegionHook(uintptr(ptr), 4)
 	val, sig := loadUint32(ptr)
 	return val, errorFromFaultSignal(uintptr(ptr), sig)
 }

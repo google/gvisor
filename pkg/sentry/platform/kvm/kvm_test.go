@@ -20,12 +20,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -459,6 +461,34 @@ func TestRdtsc(t *testing.T) {
 		}
 		i++
 		return i < 100
+	})
+}
+
+func TestSafeCopy(t *testing.T) {
+	kvmTest(t, nil, func(c *vCPU) bool {
+		dst := make([]byte, 1<<14)
+		src := make([]byte, 1<<14)
+		// First, we need to be sure that dst and src are mapped in the guest.
+		origGuestExits := atomic.LoadUint64(&c.guestExits)
+		for {
+			bluepill(c)
+			copy(dst, src)
+			guestExits := atomic.LoadUint64(&c.guestExits)
+			if guestExits == origGuestExits {
+				break
+			}
+			origGuestExits = guestExits
+		}
+		// Check that safecopyPointerHook doesn't trigger VM-exit.
+		for i := 0; i < 100; i++ {
+			bluepill(c)
+			safecopy.CopyIn(dst, unsafe.Pointer(&src[0]))
+		}
+		guestExits := atomic.LoadUint64(&c.guestExits)
+		if guestExits-origGuestExits > 50 {
+			t.Errorf("safecopy triggers VM-exit-s")
+		}
+		return false
 	})
 }
 

@@ -83,6 +83,7 @@ go_test(
         "//pkg/hostarch",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
+        "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/platform",

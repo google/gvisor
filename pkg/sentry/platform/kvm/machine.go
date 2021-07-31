@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -293,7 +294,39 @@ func newMachine(vm int) (*machine, error) {
 
 	// Ensure the machine is cleaned up properly.
 	runtime.SetFinalizer(m, (*machine).Destroy)
+	safecopy.PlatformUnsafeRegionHook = m.safecopyRegionHook
 	return m, nil
+}
+
+// safecopyRegionHook exits to the host if physical pages are not mapped for a specified region.
+func (m *machine) safecopyRegionHook(virtual, length uintptr) {
+	for length > 0 {
+		physical, physicalLen, ok := translateToPhysical(virtual)
+		if !ok {
+			redpill()
+			return
+		}
+		if physicalLen > length {
+			physicalLen = length
+		}
+		for physicalEnd := physical + physicalLen; physical < physicalEnd; {
+			_, slotStart, slotLen, ok := calculateBluepillFault(physical, physicalRegions)
+			if !ok {
+				redpill()
+				return
+			}
+
+			// Is this already mapped? Check the usedSlots.
+			if !m.hasSlot(slotStart) {
+				redpill()
+				return
+			}
+			physical = slotStart + slotLen
+
+		}
+		virtual += physicalLen
+		length -= physicalLen
+	}
 }
 
 // hasSlot returns true if the given address is mapped.
