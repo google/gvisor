@@ -85,6 +85,7 @@ func IoUringSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	return uintptr(fd_io), nil, nil
 }
 
+	return uintptr(fd), nil, nil
 func ioUringCreate(t *kernel.Task, entries uint32, p hostarch.Addr) (*linux.IoUringParams, error) {
 	if entries == 0 {
 		return nil, syserror.EFAULT
