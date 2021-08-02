@@ -383,11 +383,6 @@ func (d *dir) DecRef(ctx context.Context) {
 	d.dirRefs.DecRef(func() { d.Destroy(ctx) })
 }
 
-// StatFS implements kernfs.Inode.StatFS.
-func (d *dir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
-	return vfs.GenericStatFS(linux.CGROUP_SUPER_MAGIC), nil
-}
-
 // controllerFile represents a generic control file that appears within a cgroup
 // directory.
 //
