@@ -15,7 +15,7 @@ RUN add-apt-repository \
    "deb https://download.docker.com/linux/ubuntu \
    $(lsb_release -cs) \
    stable"
-RUN apt-get install docker-ce-cli
+RUN apt-get -y install docker-ce-cli
 
 # Install gcloud.
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-289.0.0-linux-x86_64.tar.gz | \
