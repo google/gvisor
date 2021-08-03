@@ -981,7 +981,7 @@ func (s *Sandbox) Pause(cid string) error {
 	}
 	defer conn.Close()
 
-	if err := conn.Call(boot.ContMgrPause, nil, nil); err != nil {
+	if err := conn.Call(boot.LifecyclePause, nil, nil); err != nil {
 		return fmt.Errorf("pausing container %q: %v", cid, err)
 	}
 	return nil
@@ -996,7 +996,7 @@ func (s *Sandbox) Resume(cid string) error {
 	}
 	defer conn.Close()
 
-	if err := conn.Call(boot.ContMgrResume, nil, nil); err != nil {
+	if err := conn.Call(boot.LifecycleResume, nil, nil); err != nil {
 		return fmt.Errorf("resuming container %q: %v", cid, err)
 	}
 	return nil
