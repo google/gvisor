@@ -112,6 +112,8 @@ func Override() {
 	s.Table[232] = syscalls.Supported("epoll_wait", EpollWait)
 	s.Table[233] = syscalls.Supported("epoll_ctl", EpollCtl)
 	s.Table[235] = syscalls.Supported("utimes", Utimes)
+	s.Table[240] = syscalls.Supported("mq_open", MqOpen)
+	s.Table[241] = syscalls.Supported("mq_unlink", MqUnlink)
 	s.Table[253] = syscalls.PartiallySupported("inotify_init", InotifyInit, "inotify events are only available inside the sandbox.", nil)
 	s.Table[254] = syscalls.PartiallySupported("inotify_add_watch", InotifyAddWatch, "inotify events are only available inside the sandbox.", nil)
 	s.Table[255] = syscalls.PartiallySupported("inotify_rm_watch", InotifyRmWatch, "inotify events are only available inside the sandbox.", nil)
@@ -241,6 +243,8 @@ func Override() {
 	s.Table[86] = syscalls.Supported("timerfd_settime", TimerfdSettime)
 	s.Table[87] = syscalls.Supported("timerfd_gettime", TimerfdGettime)
 	s.Table[88] = syscalls.Supported("utimensat", Utimensat)
+	s.Table[180] = syscalls.Supported("mq_open", MqOpen)
+	s.Table[181] = syscalls.Supported("mq_unlink", MqUnlink)
 	s.Table[198] = syscalls.Supported("socket", Socket)
 	s.Table[199] = syscalls.Supported("socketpair", SocketPair)
 	s.Table[200] = syscalls.Supported("bind", Bind)
@@ -271,6 +275,5 @@ func Override() {
 	s.Table[287] = syscalls.Supported("pwritev2", Pwritev2)
 	s.Table[291] = syscalls.Supported("statx", Statx)
 	s.Table[441] = syscalls.Supported("epoll_pwait2", EpollPwait2)
-
 	s.Init()
 }
