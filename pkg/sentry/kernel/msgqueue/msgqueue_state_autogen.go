@@ -158,9 +158,9 @@ func (m *Message) StateTypeName() string {
 func (m *Message) StateFields() []string {
 	return []string{
 		"msgEntry",
-		"mType",
-		"mText",
-		"mSize",
+		"Type",
+		"Text",
+		"Size",
 	}
 }
 
@@ -170,9 +170,9 @@ func (m *Message) beforeSave() {}
 func (m *Message) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.msgEntry)
-	stateSinkObject.Save(1, &m.mType)
-	stateSinkObject.Save(2, &m.mText)
-	stateSinkObject.Save(3, &m.mSize)
+	stateSinkObject.Save(1, &m.Type)
+	stateSinkObject.Save(2, &m.Text)
+	stateSinkObject.Save(3, &m.Size)
 }
 
 func (m *Message) afterLoad() {}
@@ -180,9 +180,9 @@ func (m *Message) afterLoad() {}
 // +checklocksignore
 func (m *Message) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.msgEntry)
-	stateSourceObject.Load(1, &m.mType)
-	stateSourceObject.Load(2, &m.mText)
-	stateSourceObject.Load(3, &m.mSize)
+	stateSourceObject.Load(1, &m.Type)
+	stateSourceObject.Load(2, &m.Text)
+	stateSourceObject.Load(3, &m.Size)
 }
 
 func init() {
