@@ -49,7 +49,13 @@ func TestTCPInfo(t *testing.T) {
 	if _, err := conn.ExpectData(t, &testbench.TCP{}, samplePayload, time.Second); err != nil {
 		t.Fatalf("expected a packet with payload %s: %s", samplePayload, err)
 	}
-	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)})
+	// One more round of data transmission, so that we ask for TCP_INFO after we got the
+	// ACK from DUT, this will make sure that the RTT fields are populated in gVisor and
+	// make the test non-flaky.
+	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, samplePayload)
+	if _, err := conn.ExpectFrame(t, testbench.Layers{&testbench.Ether{}, &testbench.IPv4{}, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}}, time.Second); err != nil {
+		t.Fatalf("expected an ACK from DUT: %s", err)
+	}
 
 	info := dut.GetSockOptTCPInfo(t, acceptFD)
 	if got, want := uint32(info.State), linux.TCP_ESTABLISHED; got != want {
