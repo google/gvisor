@@ -6,6 +6,7 @@ go_library(
     name = "control",
     srcs = [
         "control.go",
+        "lifecycle.go",
         "logging.go",
         "pprof.go",
         "proc.go",
