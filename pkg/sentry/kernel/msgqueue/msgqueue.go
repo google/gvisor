@@ -119,14 +119,21 @@ type Queue struct {
 type Message struct {
 	msgEntry
 
-	// mType is an integer representing the type of the sent message.
-	mType int64
+	// Type is an integer representing the type of the sent message.
+	Type int64
 
-	// mText is an untyped block of memory.
-	mText []byte
+	// Text is an untyped block of memory.
+	Text []byte
 
-	// mSize is the size of mText.
-	mSize uint64
+	// Size is the size of Text.
+	Size uint64
+}
+
+// Blocker is used for blocking Queue.Send, and Queue.Receive calls that serves
+// as an abstracted version of kernel.Task. kernel.Task is not directly used to
+// prevent circular dependencies.
+type Blocker interface {
+	Block(C <-chan struct{}) error
 }
 
 // FindOrCreate creates a new message queue or returns an existing one. See
@@ -184,6 +191,265 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 
 	r.reg.Remove(id, creds)
 	return nil
+}
+
+// FindByID returns the queue with the specified ID and an error if the ID
+// doesn't exist.
+func (r *Registry) FindByID(id ipc.ID) (*Queue, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	mech := r.reg.FindByID(id)
+	if mech == nil {
+		return nil, linuxerr.EINVAL
+	}
+	return mech.(*Queue), nil
+}
+
+// Send appends a message to the message queue, and returns an error if sending
+// fails. See msgsnd(2).
+func (q *Queue) Send(ctx context.Context, m Message, b Blocker, wait bool, pid int32) (err error) {
+	// Try to perform a non-blocking send using queue.append. If EWOULDBLOCK
+	// is returned, start the blocking procedure. Otherwise, return normally.
+	creds := auth.CredentialsFromContext(ctx)
+	if err := q.append(ctx, m, creds, pid); err != linuxerr.EWOULDBLOCK {
+		return err
+	}
+
+	if !wait {
+		return linuxerr.EAGAIN
+	}
+
+	e, ch := waiter.NewChannelEntry(nil)
+	q.senders.EventRegister(&e, waiter.EventOut)
+
+	for {
+		if err = q.append(ctx, m, creds, pid); err != linuxerr.EWOULDBLOCK {
+			break
+		}
+		b.Block(ch)
+	}
+
+	q.senders.EventUnregister(&e)
+	return err
+}
+
+// append appends a message to the queue's message list and notifies waiting
+// receivers that a message has been inserted. It returns an error if adding
+// the message would cause the queue to exceed its maximum capacity, which can
+// be used as a signal to block the task. Other errors should be returned as is.
+func (q *Queue) append(ctx context.Context, m Message, creds *auth.Credentials, pid int32) error {
+	if m.Type <= 0 {
+		return linuxerr.EINVAL
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if !q.obj.CheckPermissions(creds, fs.PermMask{Write: true}) {
+		// The calling process does not have write permission on the message
+		// queue, and does not have the CAP_IPC_OWNER capability in the user
+		// namespace that governs its IPC namespace.
+		return linuxerr.EACCES
+	}
+
+	// Queue was removed while the process was waiting.
+	if q.dead {
+		return linuxerr.EIDRM
+	}
+
+	// Check if sufficient space is available (the queue isn't full.) From
+	// the man pages:
+	//
+	// "A message queue is considered to be full if either of the following
+	// conditions is true:
+	//
+	//  • Adding a new message to the queue would cause the total number
+	//    of bytes in the queue to exceed the queue's maximum size (the
+	//    msg_qbytes field).
+	//
+	//  • Adding another message to the queue would cause the total
+	//    number of messages in the queue to exceed the queue's maximum
+	//    size (the msg_qbytes field).  This check is necessary to
+	//    prevent an unlimited number of zero-length messages being
+	//    placed on the queue.  Although such messages contain no data,
+	//    they nevertheless consume (locked) kernel memory."
+	//
+	// The msg_qbytes field in our implementation is q.maxBytes.
+	if m.Size+q.byteCount > q.maxBytes || q.messageCount+1 > q.maxBytes {
+		return linuxerr.EWOULDBLOCK
+	}
+
+	// Copy the message into the queue.
+	q.messages.PushBack(&m)
+
+	q.byteCount += m.Size
+	q.messageCount++
+	q.sendPID = pid
+	q.sendTime = ktime.NowFromContext(ctx)
+
+	// Notify receivers about the new message.
+	q.receivers.Notify(waiter.EventIn)
+
+	return nil
+}
+
+// Receive removes a message from the queue and returns it. See msgrcv(2).
+func (q *Queue) Receive(ctx context.Context, b Blocker, mType int64, maxSize int64, wait, truncate, except bool, pid int32) (msg *Message, err error) {
+	if maxSize < 0 || maxSize > maxMessageBytes {
+		return nil, linuxerr.EINVAL
+	}
+	max := uint64(maxSize)
+
+	// Try to perform a non-blocking receive using queue.pop. If EWOULDBLOCK
+	// is returned, start the blocking procedure. Otherwise, return normally.
+	creds := auth.CredentialsFromContext(ctx)
+	if msg, err := q.pop(ctx, creds, mType, max, truncate, except, pid); err != linuxerr.EWOULDBLOCK {
+		return msg, err
+	}
+
+	if !wait {
+		return nil, linuxerr.ENOMSG
+	}
+
+	e, ch := waiter.NewChannelEntry(nil)
+	q.receivers.EventRegister(&e, waiter.EventIn)
+
+	for {
+		if msg, err = q.pop(ctx, creds, mType, max, truncate, except, pid); err != linuxerr.EWOULDBLOCK {
+			break
+		}
+		b.Block(ch)
+	}
+	q.receivers.EventUnregister(&e)
+	return msg, err
+}
+
+// pop pops the first message from the queue that matches the given type. It
+// returns an error for all the cases specified in msgrcv(2). If the queue is
+// empty or no message of the specified type is available, a EWOULDBLOCK error
+// is returned, which can then be used as a signal to block the process or fail.
+func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, maxSize uint64, truncate, except bool, pid int32) (msg *Message, _ error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if !q.obj.CheckPermissions(creds, fs.PermMask{Read: true}) {
+		// The calling process does not have read permission on the message
+		// queue, and does not have the CAP_IPC_OWNER capability in the user
+		// namespace that governs its IPC namespace.
+		return nil, linuxerr.EACCES
+	}
+
+	// Queue was removed while the process was waiting.
+	if q.dead {
+		return nil, linuxerr.EIDRM
+	}
+
+	if q.messages.Empty() {
+		return nil, linuxerr.EWOULDBLOCK
+	}
+
+	// Get a message from the queue.
+	switch {
+	case mType == 0:
+		msg = q.messages.Front()
+	case mType > 0:
+		msg = q.msgOfType(mType, except)
+	case mType < 0:
+		msg = q.msgOfTypeLessThan(-1 * mType)
+	}
+
+	// If no message exists, return a blocking singal.
+	if msg == nil {
+		return nil, linuxerr.EWOULDBLOCK
+	}
+
+	// Check message's size is acceptable.
+	if maxSize < msg.Size {
+		if !truncate {
+			return nil, linuxerr.E2BIG
+		}
+		msg.Size = maxSize
+		msg.Text = msg.Text[:maxSize+1]
+	}
+
+	q.messages.Remove(msg)
+
+	q.byteCount -= msg.Size
+	q.messageCount--
+	q.receivePID = pid
+	q.receiveTime = ktime.NowFromContext(ctx)
+
+	// Notify senders about available space.
+	q.senders.Notify(waiter.EventOut)
+
+	return msg, nil
+}
+
+// Copy copies a message from the queue without deleting it. If no message
+// exists, an error is returned. See msgrcv(MSG_COPY).
+func (q *Queue) Copy(mType int64) (*Message, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if mType < 0 || q.messages.Empty() {
+		return nil, linuxerr.ENOMSG
+	}
+
+	msg := q.msgAtIndex(mType)
+	if msg == nil {
+		return nil, linuxerr.ENOMSG
+	}
+	return msg, nil
+}
+
+// msgOfType returns the first message with the specified type, nil if no
+// message is found. If except is true, the first message of a type not equal
+// to mType will be returned.
+//
+// Precondition: caller must hold q.mu.
+func (q *Queue) msgOfType(mType int64, except bool) *Message {
+	if except {
+		for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
+			if msg.Type != mType {
+				return msg
+			}
+		}
+		return nil
+	}
+
+	for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
+		if msg.Type == mType {
+			return msg
+		}
+	}
+	return nil
+}
+
+// msgOfTypeLessThan return the the first message with the lowest type less
+// than or equal to mType, nil if no such message exists.
+//
+// Precondition: caller must hold q.mu.
+func (q *Queue) msgOfTypeLessThan(mType int64) (m *Message) {
+	min := mType
+	for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
+		if msg.Type <= mType && msg.Type < min {
+			m = msg
+			min = msg.Type
+		}
+	}
+	return m
+}
+
+// msgAtIndex returns a pointer to a message at given index, nil if non exits.
+//
+// Precondition: caller must hold q.mu.
+func (q *Queue) msgAtIndex(mType int64) *Message {
+	msg := q.messages.Front()
+	for ; mType != 0 && msg != nil; mType-- {
+		msg = msg.Next()
+	}
+	return msg
 }
 
 // Lock implements ipc.Mechanism.Lock.
