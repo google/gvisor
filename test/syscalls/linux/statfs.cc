@@ -28,7 +28,7 @@ namespace testing {
 namespace {
 
 TEST(StatfsTest, CannotStatBadPath) {
-  auto temp_file = NewTempAbsPathInDir("/tmp");
+  auto temp_file = NewTempAbsPath();
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.c_str(), &st), SyscallFailsWithErrno(ENOENT));
