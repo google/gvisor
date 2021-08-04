@@ -646,6 +646,12 @@ func (c *Container) Resume() error {
 	return c.saveLocked()
 }
 
+// Cat prints out the content of the files.
+func (c *Container) Cat(files []string, out *os.File) error {
+	log.Debugf("Cat in container, cid: %s, files: %+v", c.ID, files)
+	return c.Sandbox.Cat(c.ID, files, out)
+}
+
 // State returns the metadata of the container.
 func (c *Container) State() specs.State {
 	return specs.State{

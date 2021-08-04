@@ -1002,6 +1002,24 @@ func (s *Sandbox) Resume(cid string) error {
 	return nil
 }
 
+// Cat sends the cat call for a container in the sandbox.
+func (s *Sandbox) Cat(cid string, files []string, out *os.File) error {
+	log.Debugf("Cat sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.FsCat, &control.CatOpts{
+		Files:       files,
+		FilePayload: urpc.FilePayload{Files: []*os.File{out}},
+	}, nil); err != nil {
+		return fmt.Errorf("Cat container %q: %v", cid, err)
+	}
+	return nil
+}
+
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {
