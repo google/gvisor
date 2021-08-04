@@ -442,6 +442,11 @@ func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
 	return all
 }
 
+// sleepSpec generates a spec with sleep 1000 and a conf.
+func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
+	return testutil.NewSpecWithArgs("sleep", "1000"), testutil.TestConfig(t)
+}
+
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
@@ -455,7 +460,7 @@ func TestLifecycle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// The container will just sleep for a long time.  We will kill it before
 			// it finishes sleeping.
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
@@ -903,7 +908,7 @@ func TestExecProcList(t *testing.T) {
 	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
@@ -1422,8 +1427,7 @@ func TestPauseResume(t *testing.T) {
 // with calls to pause and resume and that pausing and resuming only
 // occurs given the correct state.
 func TestPauseResumeStatus(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("sleep", "20")
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1490,7 +1494,7 @@ func TestCapabilities(t *testing.T) {
 
 	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
@@ -1640,7 +1644,7 @@ func TestMountNewDir(t *testing.T) {
 func TestReadonlyRoot(t *testing.T) {
 	for name, conf := range configs(t, all...) {
 		t.Run(name, func(t *testing.T) {
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			spec.Root.Readonly = true
 
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -1692,7 +1696,7 @@ func TestReadonlyMount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ioutil.TempDir() failed: %v", err)
 			}
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: dir,
 				Source:      dir,
@@ -1852,7 +1856,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		"baz-" + testutil.RandomContainerID(),
 	}
 	for _, cid := range cids {
-		spec := testutil.NewSpecWithArgs("sleep", "100")
+		spec, _ := sleepSpecConf(t)
 		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -2229,7 +2233,7 @@ func TestMountPropagation(t *testing.T) {
 		t.Fatalf("mount(%q, MS_SHARED): %v", srcMnt, err)
 	}
 
-	spec := testutil.NewSpecWithArgs("sleep", "1000")
+	spec, conf := sleepSpecConf(t)
 
 	priv := filepath.Join(tmpDir, "priv")
 	slave := filepath.Join(tmpDir, "slave")
@@ -2248,7 +2252,6 @@ func TestMountPropagation(t *testing.T) {
 		},
 	}
 
-	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -2563,12 +2566,11 @@ func TestRlimits(t *testing.T) {
 // TestRlimitsExec sets limit to number of open files and checks that the limit
 // is propagated to exec'd processes.
 func TestRlimitsExec(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("sleep", "100")
+	spec, conf := sleepSpecConf(t)
 	spec.Process.Rlimits = []specs.POSIXRlimit{
 		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
 	}
 
-	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -2595,5 +2597,61 @@ func TestRlimitsExec(t *testing.T) {
 	}
 	if want := "100\n"; string(got) != want {
 		t.Errorf("ulimit result, got: %q, want: %q", got, want)
+	}
+}
+
+// TestCat creates a file and checks that cat generates the expected output.
+func TestCat(t *testing.T) {
+	f, err := ioutil.TempFile(testutil.TmpDir(), "test-case")
+	if err != nil {
+		t.Fatalf("ioutil.TempFile failed: %v", err)
+	}
+	defer os.RemoveAll(f.Name())
+
+	content := "test-cat"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("f.WriteString(): %v", err)
+	}
+	f.Close()
+
+	spec, conf := sleepSpecConf(t)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Create(): %v", err)
+	}
+
+	if err := cont.Cat([]string{f.Name()}, w); err != nil {
+		t.Fatalf("error cat from container: %v", err)
+	}
+
+	buf := make([]byte, 1024)
+	if _, err := r.Read(buf); err != nil {
+		t.Fatalf("Read out: %v", err)
+	}
+	if got, want := string(buf), content; !strings.Contains(got, want) {
+		t.Errorf("out got %s, want include %s", buf, want)
 	}
 }
