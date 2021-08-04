@@ -115,6 +115,13 @@ func TestZeroOutSuccess(t *testing.T) {
 	}
 }
 
+func BenchmarkSwapUint64(b *testing.B) {
+	val := uint64(0)
+	for i := uint64(0); i < uint64(b.N); i++ {
+		SwapUint64(unsafe.Pointer(&val), i)
+	}
+}
+
 func TestSwapUint32Success(t *testing.T) {
 	// Test that SwapUint32 does not return an error when the page is
 	// accessible.
