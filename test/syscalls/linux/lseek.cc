@@ -121,7 +121,8 @@ TEST(LseekTest, InvalidFD) {
 }
 
 TEST(LseekTest, DirCurEnd) {
-  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/tmp", O_RDONLY));
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(GetAbsoluteTestTmpdir().c_str(), O_RDONLY));
   ASSERT_THAT(lseek(fd.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(0));
 }
 

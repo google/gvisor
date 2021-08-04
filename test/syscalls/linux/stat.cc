@@ -765,7 +765,7 @@ TEST_F(StatTest, StatxSymlink) {
   SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
-  std::string parent_dir = "/tmp";
+  std::string parent_dir = GetAbsoluteTestTmpdir();
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo(parent_dir, test_file_name_));
   std::string p = link.path();

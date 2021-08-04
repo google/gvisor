@@ -445,9 +445,10 @@ TEST(MemfdTest, SealsAreInodeLevelProperties) {
 
 // Tmpfs files also support seals, but are created with F_SEAL_SEAL.
 TEST(MemfdTest, TmpfsFilesHaveSealSeal) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs("/tmp")));
+  std::string tmpdir = GetAbsoluteTestTmpdir();
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(tmpdir.c_str())));
   const TempPath tmpfs_file =
-      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn("/tmp"));
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(tmpdir.c_str()));
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tmpfs_file.path(), O_RDWR, 0644));
   EXPECT_THAT(fcntl(fd.get(), F_GET_SEALS),
