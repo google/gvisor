@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 && go1.8 && !go1.18 && go1.1
-// +build amd64,go1.8,!go1.18,go1.1
+//go:build amd64 && go1.8 && !go1.19 && go1.1
+// +build amd64,go1.8,!go1.19,go1.1
 
 // //go:linkname directives type-checked by checklinkname. Any other
 // non-linkname assumptions outside the Go 1 compatibility guarantee should
