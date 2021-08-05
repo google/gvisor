@@ -17,6 +17,7 @@ package tcpip
 import (
 	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -207,24 +208,16 @@ type SocketOptions struct {
 	// will not change.
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
-	// sendBufSizeMu protects sendBufferSize and calls to
-	// handler.OnSetSendBufferSize.
-	sendBufSizeMu sync.Mutex `state:"nosave"`
-
 	// sendBufferSize determines the send buffer size for this socket.
-	sendBufferSize int64
+	sendBufferSize atomicbitops.AlignedAtomicInt64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
 	// max size for receive buffer. It is initialized at the creation time and
 	// will not change.
 	getReceiveBufferLimits GetReceiveBufferLimits `state:"manual"`
 
-	// receiveBufSizeMu protects receiveBufferSize and calls to
-	// handler.OnSetReceiveBufferSize.
-	receiveBufSizeMu sync.Mutex `state:"nosave"`
-
 	// receiveBufferSize determines the receive buffer size for this socket.
-	receiveBufferSize int64
+	receiveBufferSize atomicbitops.AlignedAtomicInt64
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -614,6 +607,11 @@ func (so *SocketOptions) SetBindToDevice(bindToDevice int32) Error {
 	return nil
 }
 
+// GetSendBufferSize gets value for SO_SNDBUF option.
+func (so *SocketOptions) GetSendBufferSize() int64 {
+	return so.sendBufferSize.Load()
+}
+
 // SendBufferLimits returns the [min, max) range of allowable send buffer
 // sizes.
 func (so *SocketOptions) SendBufferLimits() (min, max int64) {
@@ -621,22 +619,18 @@ func (so *SocketOptions) SendBufferLimits() (min, max int64) {
 	return int64(limits.Min), int64(limits.Max)
 }
 
-// GetSendBufferSize gets value for SO_SNDBUF option.
-func (so *SocketOptions) GetSendBufferSize() int64 {
-	so.sendBufSizeMu.Lock()
-	defer so.sendBufSizeMu.Unlock()
-	return so.sendBufferSize
-}
-
 // SetSendBufferSize sets value for SO_SNDBUF option. notify indicates if the
 // stack handler should be invoked to set the send buffer size.
 func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
-	so.sendBufSizeMu.Lock()
-	defer so.sendBufSizeMu.Unlock()
 	if notify {
 		sendBufferSize = so.handler.OnSetSendBufferSize(sendBufferSize)
 	}
-	so.sendBufferSize = sendBufferSize
+	so.sendBufferSize.Store(sendBufferSize)
+}
+
+// GetReceiveBufferSize gets value for SO_RCVBUF option.
+func (so *SocketOptions) GetReceiveBufferSize() int64 {
+	return so.receiveBufferSize.Load()
 }
 
 // ReceiveBufferLimits returns the [min, max) range of allowable receive buffer
@@ -646,20 +640,12 @@ func (so *SocketOptions) ReceiveBufferLimits() (min, max int64) {
 	return int64(limits.Min), int64(limits.Max)
 }
 
-// GetReceiveBufferSize gets value for SO_RCVBUF option.
-func (so *SocketOptions) GetReceiveBufferSize() int64 {
-	so.receiveBufSizeMu.Lock()
-	defer so.receiveBufSizeMu.Unlock()
-	return so.receiveBufferSize
-}
-
 // SetReceiveBufferSize sets the value of the SO_RCVBUF option, optionally
 // notifying the owning endpoint.
 func (so *SocketOptions) SetReceiveBufferSize(receiveBufferSize int64, notify bool) {
-	so.receiveBufSizeMu.Lock()
-	defer so.receiveBufSizeMu.Unlock()
 	if notify {
-		receiveBufferSize = so.handler.OnSetReceiveBufferSize(receiveBufferSize, so.receiveBufferSize)
+		oldSz := so.receiveBufferSize.Load()
+		receiveBufferSize = so.handler.OnSetReceiveBufferSize(receiveBufferSize, oldSz)
 	}
-	so.receiveBufferSize = receiveBufferSize
+	so.receiveBufferSize.Store(receiveBufferSize)
 }
