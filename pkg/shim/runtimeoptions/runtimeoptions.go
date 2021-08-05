@@ -15,3 +15,10 @@
 
 // Package runtimeoptions contains the runtimeoptions proto.
 package runtimeoptions
+
+import proto "github.com/gogo/protobuf/proto"
+
+func init() {
+	// TODO(gvisor.dev/issue/6449): Upgrade runtimeoptions.proto after upgrading to containerd 1.5
+	proto.RegisterType((*Options)(nil), "runtimeoptions.v1.Options")
+}
