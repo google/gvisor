@@ -14,11 +14,16 @@
 
 #include <fcntl.h>
 #include <mqueue.h>
+#include <sched.h>
+#include <sys/poll.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <string>
 
+#include "test/util/capability_util.h"
+#include "test/util/fs_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -227,6 +232,153 @@ TEST(MqTest, OpenWriteAccess) {
   EXPECT_THAT(MqOpen(queue.name(), O_RDONLY), PosixErrorIs(EACCES));
   EXPECT_NO_ERRNO(MqOpen(queue.name(), O_WRONLY));
   queue.release();
+}
+
+// Test changing IPC namespace.
+TEST(MqTest, ChangeIpcNamespace) {
+  GTEST_SKIP();
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // When changing IPC namespaces, Linux doesn't invalidate or close the
+  // previously opened file descriptions and allows operations to be performed
+  // on them normally, until they're closed.
+  //
+  // To test this we create a new queue, use unshare(CLONE_NEWIPC) to change
+  // into a new IPC namespace, and trying performing a read(2) on the queue.
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  // As mq_unlink(2) uses queue's name, it should fail after changing IPC
+  // namespace. To clean the queue, we should unlink it now, this should not
+  // cause a problem, as the queue presists until the last mq_close(2).
+  ASSERT_NO_ERRNO(MqUnlink(queue.name()));
+
+  ASSERT_THAT(unshare(CLONE_NEWIPC), SyscallSucceeds());
+
+  const size_t msgSize = 60;
+  char queueRead[msgSize];
+  ASSERT_THAT(read(queue.fd(), &queueRead[0], msgSize - 1), SyscallSucceeds());
+
+  ASSERT_NO_ERRNO(MqClose(queue.release()));
+
+  // Unlinking should fail now after changing IPC namespace.
+  EXPECT_THAT(MqUnlink(queue.name()), PosixErrorIs(ENOENT));
+}
+
+// Test mounting the mqueue filesystem.
+TEST(MqTest, Mount) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1() ||
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_NO_ERRNO(Mount("none", dir.path(), "mqueue", 0, "", 0));
+}
+
+// Test mounting the mqueue filesystem to several places.
+TEST(MqTest, MountSeveral) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1() ||
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Assign the pointer so it doesn't get destroyed before the second mount is
+  // created.
+  auto mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("none", dir1.path(), "mqueue", 0, "", 0));
+
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_NO_ERRNO(Mount("none", dir2.path(), "mqueue", 0, "", 0));
+}
+
+// Test mounting mqueue and opening a queue as normal file.
+TEST(MqTest, OpenAsFile) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1() ||
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("none", dir.path(), "mqueue", 0, "", 0));
+
+  // Open queue using open(2).
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), queue.name()), O_RDONLY));
+
+  const size_t msgSize = 60;
+  char queueRead[msgSize];
+  queueRead[msgSize - 1] = '\0';
+
+  ASSERT_THAT(read(fd.get(), &queueRead[0], msgSize - 1), SyscallSucceeds());
+
+  std::string want(
+      "QSIZE:0          NOTIFY:0     SIGNO:0     NOTIFY_PID:0     ");
+  std::string got(queueRead);
+  EXPECT_EQ(got, want);
+}
+
+// Test removing a queue using unlink(2).
+TEST(MqTest, UnlinkAsFile) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1() ||
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("none", dir.path(), "mqueue", 0, "", 0));
+
+  ASSERT_NO_ERRNO(
+      UnlinkAt(FileDescriptor(), JoinPath(dir.path(), queue.name()), 0));
+
+  // Trying to unlink again should fail.
+  EXPECT_THAT(MqUnlink(queue.name()), PosixErrorIs(ENOENT));
+  queue.release();
+}
+
+// Test read(2) from an empty queue.
+TEST(MqTest, ReadEmpty) {
+  GTEST_SKIP();
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  const size_t msgSize = 60;
+  char queueRead[msgSize];
+  queueRead[msgSize - 1] = '\0';
+
+  ASSERT_THAT(read(queue.fd(), &queueRead[0], msgSize - 1), SyscallSucceeds());
+
+  std::string want(
+      "QSIZE:0          NOTIFY:0     SIGNO:0     NOTIFY_PID:0     ");
+  std::string got(queueRead);
+  EXPECT_EQ(got, want);
+}
+
+// Test poll(2) on an empty queue.
+TEST(MqTest, PollEmpty) {
+  GTEST_SKIP();
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct pollfd pfd;
+  pfd.fd = queue.fd();
+  pfd.events = POLLOUT | POLLIN | POLLRDNORM | POLLWRNORM;
+
+  ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceeds());
+  ASSERT_EQ(pfd.revents, POLLOUT | POLLWRNORM);
 }
 
 }  // namespace
