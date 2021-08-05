@@ -4179,13 +4179,17 @@ cc_binary(
         "-lrt",
     ],
     deps = [
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
         "//test/util:capability_util",
         "//test/util:fs_util",
         "//test/util:mount_util",
         "//test/util:posix_error",
+        "//test/util:signal_util",
         "//test/util:test_main",
-        "//test/util:temp_path",
         "//test/util:test_util",
+        "//test/util:temp_path",
+        "//test/util:thread_util",
     ],
 )
 
