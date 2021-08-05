@@ -426,6 +426,25 @@ cc_binary(
 )
 
 cc_binary(
+    name = "verity_randread_benchmark",
+    testonly = 1,
+    srcs = [
+        "verity_randread_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:capability_util",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:verity_util",
+    ],
+)
+
+cc_binary(
     name = "verity_open_read_close_benchmark",
     testonly = 1,
     srcs = [
