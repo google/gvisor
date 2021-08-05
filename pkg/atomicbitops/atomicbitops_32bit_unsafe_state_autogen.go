@@ -16,6 +16,7 @@ func (aa *AlignedAtomicInt64) StateTypeName() string {
 func (aa *AlignedAtomicInt64) StateFields() []string {
 	return []string{
 		"value",
+		"value32",
 	}
 }
 
@@ -25,6 +26,7 @@ func (aa *AlignedAtomicInt64) beforeSave() {}
 func (aa *AlignedAtomicInt64) StateSave(stateSinkObject state.Sink) {
 	aa.beforeSave()
 	stateSinkObject.Save(0, &aa.value)
+	stateSinkObject.Save(1, &aa.value32)
 }
 
 func (aa *AlignedAtomicInt64) afterLoad() {}
@@ -32,6 +34,7 @@ func (aa *AlignedAtomicInt64) afterLoad() {}
 // +checklocksignore
 func (aa *AlignedAtomicInt64) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &aa.value)
+	stateSourceObject.Load(1, &aa.value32)
 }
 
 func (aa *AlignedAtomicUint64) StateTypeName() string {
@@ -41,6 +44,7 @@ func (aa *AlignedAtomicUint64) StateTypeName() string {
 func (aa *AlignedAtomicUint64) StateFields() []string {
 	return []string{
 		"value",
+		"value32",
 	}
 }
 
@@ -50,6 +54,7 @@ func (aa *AlignedAtomicUint64) beforeSave() {}
 func (aa *AlignedAtomicUint64) StateSave(stateSinkObject state.Sink) {
 	aa.beforeSave()
 	stateSinkObject.Save(0, &aa.value)
+	stateSinkObject.Save(1, &aa.value32)
 }
 
 func (aa *AlignedAtomicUint64) afterLoad() {}
@@ -57,6 +62,7 @@ func (aa *AlignedAtomicUint64) afterLoad() {}
 // +checklocksignore
 func (aa *AlignedAtomicUint64) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &aa.value)
+	stateSourceObject.Load(1, &aa.value32)
 }
 
 func init() {
