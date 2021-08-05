@@ -793,6 +793,19 @@ class MMapFileTest : public MMapTest {
     ASSERT_THAT(unlink(filename_.c_str()), SyscallSucceeds());
   }
 
+  bool FSSupportsMap() const {
+    bool supported = true;
+    void* ret = mmap(nullptr, 1, PROT_NONE, 0, fd_.get(), 0);
+    if (ret == MAP_FAILED && errno != ENODEV) {
+      supported = false;
+    }
+    if (ret != MAP_FAILED) {
+      munmap(ret, 1);
+    }
+
+    return supported;
+  }
+
   ssize_t Read(char* buf, size_t count) {
     ssize_t len = 0;
     do {
@@ -840,12 +853,14 @@ class MMapFileParamTest
 // MAP_POPULATE allowed.
 // There isn't a good way to verify it actually did anything.
 TEST_P(MMapFileParamTest, MapPopulate) {
+  SKIP_IF(!FSSupportsMap());
   ASSERT_THAT(Map(0, kPageSize, prot(), flags() | MAP_POPULATE, fd_.get(), 0),
               SyscallSucceeds());
 }
 
 // MAP_POPULATE on a short file.
 TEST_P(MMapFileParamTest, MapPopulateShort) {
+  SKIP_IF(!FSSupportsMap());
   ASSERT_THAT(
       Map(0, 2 * kPageSize, prot(), flags() | MAP_POPULATE, fd_.get(), 0),
       SyscallSucceeds());
@@ -853,6 +868,7 @@ TEST_P(MMapFileParamTest, MapPopulateShort) {
 
 // Read contents from mapped file.
 TEST_F(MMapFileTest, Read) {
+  SKIP_IF(!FSSupportsMap());
   size_t len = strlen(kFileContents);
   ASSERT_EQ(len, Write(kFileContents, len));
 
@@ -866,6 +882,7 @@ TEST_F(MMapFileTest, Read) {
 
 // Map at an offset.
 TEST_F(MMapFileTest, MapOffset) {
+  SKIP_IF(!FSSupportsMap());
   ASSERT_THAT(lseek(fd_.get(), kPageSize, SEEK_SET), SyscallSucceeds());
 
   size_t len = strlen(kFileContents);
@@ -881,6 +898,7 @@ TEST_F(MMapFileTest, MapOffset) {
 }
 
 TEST_F(MMapFileTest, MapOffsetBeyondEnd) {
+  SKIP_IF(!FSSupportsMap());
   SetupGvisorDeathTest();
 
   uintptr_t addr;
@@ -897,6 +915,7 @@ TEST_F(MMapFileTest, MapOffsetBeyondEnd) {
 
 // Verify mmap fails when sum of length and offset overflows.
 TEST_F(MMapFileTest, MapLengthPlusOffsetOverflows) {
+  SKIP_IF(!FSSupportsMap());
   const size_t length = static_cast<size_t>(-kPageSize);
   const off_t offset = kPageSize;
   ASSERT_THAT(Map(0, length, PROT_READ, MAP_PRIVATE, fd_.get(), offset),
@@ -905,6 +924,7 @@ TEST_F(MMapFileTest, MapLengthPlusOffsetOverflows) {
 
 // MAP_PRIVATE PROT_WRITE is allowed on read-only FDs.
 TEST_F(MMapFileTest, WritePrivateOnReadOnlyFd) {
+  SKIP_IF(!FSSupportsMap());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_RDONLY));
 
@@ -921,6 +941,7 @@ TEST_F(MMapFileTest, WritePrivateOnReadOnlyFd) {
 
 // MAP_SHARED PROT_WRITE not allowed on read-only FDs.
 TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
+  SKIP_IF(!FSSupportsMap());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_RDONLY));
 
@@ -932,6 +953,7 @@ TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
 
 // Mmap not allowed on O_PATH FDs.
 TEST_F(MMapFileTest, MmapFileWithOpath) {
+  SKIP_IF(!FSSupportsMap());
   SKIP_IF(IsRunningWithVFS1());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
@@ -944,6 +966,7 @@ TEST_F(MMapFileTest, MmapFileWithOpath) {
 
 // The FD must be readable.
 TEST_P(MMapFileParamTest, WriteOnlyFd) {
+  SKIP_IF(!FSSupportsMap());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
 
@@ -955,6 +978,7 @@ TEST_P(MMapFileParamTest, WriteOnlyFd) {
 // Overwriting the contents of a file mapped MAP_SHARED PROT_READ
 // should cause the new data to be reflected in the mapping.
 TEST_F(MMapFileTest, ReadSharedConsistentWithOverwrite) {
+  SKIP_IF(!FSSupportsMap());
   // Start from scratch.
   EXPECT_THAT(ftruncate(fd_.get(), 0), SyscallSucceeds());
 
@@ -994,6 +1018,7 @@ TEST_F(MMapFileTest, ReadSharedConsistentWithOverwrite) {
 // Partially overwriting a file mapped MAP_SHARED PROT_READ should be reflected
 // in the mapping.
 TEST_F(MMapFileTest, ReadSharedConsistentWithPartialOverwrite) {
+  SKIP_IF(!FSSupportsMap());
   // Start from scratch.
   EXPECT_THAT(ftruncate(fd_.get(), 0), SyscallSucceeds());
 
@@ -1034,6 +1059,7 @@ TEST_F(MMapFileTest, ReadSharedConsistentWithPartialOverwrite) {
 // Overwriting a file mapped MAP_SHARED PROT_READ should be reflected in the
 // mapping and the file.
 TEST_F(MMapFileTest, ReadSharedConsistentWithWriteAndFile) {
+  SKIP_IF(!FSSupportsMap());
   // Start from scratch.
   EXPECT_THAT(ftruncate(fd_.get(), 0), SyscallSucceeds());
 
@@ -1077,6 +1103,7 @@ TEST_F(MMapFileTest, ReadSharedConsistentWithWriteAndFile) {
 
 // Write data to mapped file.
 TEST_F(MMapFileTest, WriteShared) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
                          fd_.get(), 0),
@@ -1101,6 +1128,7 @@ TEST_F(MMapFileTest, WriteShared) {
 // Write data to portion of mapped page beyond the end of the file.
 // These writes are not reflected in the file.
 TEST_F(MMapFileTest, WriteSharedBeyondEnd) {
+  SKIP_IF(!FSSupportsMap());
   // The file is only half of a page. We map an entire page. Writes to the
   // end of the mapping must not be reflected in the file.
   uintptr_t addr;
@@ -1137,6 +1165,7 @@ TEST_F(MMapFileTest, WriteSharedBeyondEnd) {
 // The portion of a mapped page that becomes part of the file after a truncate
 // is reflected in the file.
 TEST_F(MMapFileTest, WriteSharedTruncateUp) {
+  SKIP_IF(!FSSupportsMap());
   // The file is only half of a page. We map an entire page. Writes to the
   // end of the mapping must not be reflected in the file.
   uintptr_t addr;
@@ -1174,6 +1203,7 @@ TEST_F(MMapFileTest, WriteSharedTruncateUp) {
 }
 
 TEST_F(MMapFileTest, ReadSharedTruncateDownThenUp) {
+  SKIP_IF(!FSSupportsMap());
   // Start from scratch.
   EXPECT_THAT(ftruncate(fd_.get(), 0), SyscallSucceeds());
 
@@ -1213,6 +1243,7 @@ TEST_F(MMapFileTest, ReadSharedTruncateDownThenUp) {
 }
 
 TEST_F(MMapFileTest, WriteSharedTruncateDownThenUp) {
+  SKIP_IF(!FSSupportsMap());
   // The file is only half of a page. We map an entire page. Writes to the
   // end of the mapping must not be reflected in the file.
   uintptr_t addr;
@@ -1247,6 +1278,7 @@ TEST_F(MMapFileTest, WriteSharedTruncateDownThenUp) {
 }
 
 TEST_F(MMapFileTest, ReadSharedTruncateSIGBUS) {
+  SKIP_IF(!FSSupportsMap());
   SetupGvisorDeathTest();
 
   // Start from scratch.
@@ -1277,6 +1309,7 @@ TEST_F(MMapFileTest, ReadSharedTruncateSIGBUS) {
 }
 
 TEST_F(MMapFileTest, WriteSharedTruncateSIGBUS) {
+  SKIP_IF(!FSSupportsMap());
   SetupGvisorDeathTest();
 
   uintptr_t addr;
@@ -1298,6 +1331,7 @@ TEST_F(MMapFileTest, WriteSharedTruncateSIGBUS) {
 }
 
 TEST_F(MMapFileTest, ReadSharedTruncatePartialPage) {
+  SKIP_IF(!FSSupportsMap());
   // Start from scratch.
   EXPECT_THAT(ftruncate(fd_.get(), 0), SyscallSucceeds());
 
@@ -1327,6 +1361,7 @@ TEST_F(MMapFileTest, ReadSharedTruncatePartialPage) {
 // Page can still be accessed and contents are intact after truncating a partial
 // page.
 TEST_F(MMapFileTest, WriteSharedTruncatePartialPage) {
+  SKIP_IF(!FSSupportsMap());
   // Expand the file to a full page.
   EXPECT_THAT(ftruncate(fd_.get(), kPageSize), SyscallSucceeds());
 
@@ -1354,6 +1389,7 @@ TEST_F(MMapFileTest, WriteSharedTruncatePartialPage) {
 
 // MAP_PRIVATE writes are not carried through to the underlying file.
 TEST_F(MMapFileTest, WritePrivate) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
                          fd_.get(), 0),
@@ -1378,6 +1414,7 @@ TEST_F(MMapFileTest, WritePrivate) {
 
 // SIGBUS raised when reading or writing past end of a mapped file.
 TEST_P(MMapFileParamTest, SigBusDeath) {
+  SKIP_IF(!FSSupportsMap());
   SetupGvisorDeathTest();
 
   uintptr_t addr;
@@ -1406,6 +1443,7 @@ TEST_P(MMapFileParamTest, SigBusDeath) {
 //
 // See b/27877699.
 TEST_P(MMapFileParamTest, NoSigBusOnPagesBeforeEOF) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, prot(), flags(), fd_.get(), 0),
               SyscallSucceeds());
@@ -1424,6 +1462,7 @@ TEST_P(MMapFileParamTest, NoSigBusOnPagesBeforeEOF) {
 // Tests that SIGBUS is not raised when reading or writing from a file-mapped
 // page containing EOF, *after* the EOF.
 TEST_P(MMapFileParamTest, NoSigBusOnPageContainingEOF) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, prot(), flags(), fd_.get(), 0),
               SyscallSucceeds());
@@ -1446,6 +1485,7 @@ TEST_P(MMapFileParamTest, NoSigBusOnPageContainingEOF) {
 // page cache (which does not yet support writing to shared mappings), a bug
 // caused reads to fail unnecessarily on such mappings. See b/28913513.
 TEST_F(MMapFileTest, ReadingWritableSharedFilePageSucceeds) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   size_t len = strlen(kFileContents);
 
@@ -1463,6 +1503,7 @@ TEST_F(MMapFileTest, ReadingWritableSharedFilePageSucceeds) {
 // read past end of file (resulting in a fault in sentry context in the gVisor
 // case). See b/28913513.
 TEST_F(MMapFileTest, InternalSigBus) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE,
                          fd_.get(), 0),
@@ -1483,6 +1524,7 @@ TEST_F(MMapFileTest, InternalSigBus) {
 // /dev/zero to a shared mapping (so that the SIGBUS isn't caught during
 // copy-on-write breaking).
 TEST_F(MMapFileTest, InternalSigBusZeroing) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
                          fd_.get(), 0),
@@ -1578,6 +1620,7 @@ TEST_F(MMapTest, NoReserve) {
 // Map more than the gVisor page-cache map unit (64k) and ensure that
 // it is consistent with reading from the file.
 TEST_F(MMapFileTest, Bug38498194) {
+  SKIP_IF(!FSSupportsMap());
   // Choose a sufficiently large map unit.
   constexpr int kSize = 4 * 1024 * 1024;
   EXPECT_THAT(ftruncate(fd_.get(), kSize), SyscallSucceeds());
@@ -1606,6 +1649,7 @@ TEST_F(MMapFileTest, Bug38498194) {
 // Tests that reading from a file to a memory mapping of the same file does not
 // deadlock. See b/34813270.
 TEST_F(MMapFileTest, SelfRead) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
                          fd_.get(), 0),
@@ -1618,6 +1662,7 @@ TEST_F(MMapFileTest, SelfRead) {
 // Tests that writing to a file from a memory mapping of the same file does not
 // deadlock. Regression test for b/34813270.
 TEST_F(MMapFileTest, SelfWrite) {
+  SKIP_IF(!FSSupportsMap());
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),
               SyscallSucceeds());
@@ -1633,8 +1678,12 @@ TEST(MMapDeathTest, TruncateAfterCOWBreak) {
   auto const temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDWR));
   ASSERT_THAT(ftruncate(fd.get(), kPageSize), SyscallSucceeds());
-  auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(Mmap(
-      nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(), 0));
+
+  auto maybe_mapping = Mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE, fd.get(), 0);
+  // Does FS support mmap?
+  SKIP_IF(maybe_mapping.error().errno_value() == ENODEV);
+  auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(std::move(maybe_mapping));
 
   // Write to this mapping, causing the page to be copied for write.
   memset(mapping.ptr(), 'a', mapping.len());
@@ -1661,8 +1710,12 @@ TEST(MMapNoFixtureTest, MapReadOnlyAfterCreateWriteOnly) {
   auto const wo_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_WRONLY));
   ASSERT_THAT(ftruncate(wo_fd.get(), kPageSize), SyscallSucceeds());
 
-  auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
-      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, ro_fd.get(), 0));
+  auto maybe_mapping =
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, ro_fd.get(), 0);
+  // Does FS support mmap?
+  SKIP_IF(maybe_mapping.error().errno_value() == ENODEV);
+  auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(std::move(maybe_mapping));
+
   std::vector<char> buf(kPageSize);
   // The test passes if this survives.
   std::copy(static_cast<char*>(mapping.ptr()),
