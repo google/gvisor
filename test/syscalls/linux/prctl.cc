@@ -214,6 +214,12 @@ TEST(PrctlTest, RootDumpability) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(PrctlTest, SetGetSubreaper) {
+  // Setting subreaper on PID 1 works vacuously because PID 1 is always a
+  // subreaper.
+  EXPECT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
