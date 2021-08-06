@@ -467,6 +467,7 @@ func TestRdtsc(t *testing.T) {
 	})
 }
 
+// testSafecopy creates big file mappings to trigger KVM_EXIT_MMIO.`
 func testSafecopy(t *testing.T, mapSize uintptr, fileSize uintptr, testFunc func(t *testing.T, c *vCPU, addr uintptr)) {
 	memfd, err := memutil.CreateMemFD(fmt.Sprintf("kvm_test_%d", os.Getpid()), 0)
 	if err != nil {
@@ -504,6 +505,9 @@ func testSafecopy(t *testing.T, mapSize uintptr, fileSize uintptr, testFunc func
 	})
 }
 
+// TestSafecopySigbus creates a file mapping and call safecopy.CopyIn to an
+// address that is beyond the file size. In this case, CopyIn has to return the
+// BusError.
 func TestSafecopySigbus(t *testing.T) {
 	mapSize := uintptr(faultBlockSize)
 	fileSize := mapSize - hostarch.PageSize
@@ -518,6 +522,8 @@ func TestSafecopySigbus(t *testing.T) {
 	})
 }
 
+// TestSafecopy checks that safecopy calls work properly for memory regions
+// that are not mapped to the guest yet.
 func TestSafecopy(t *testing.T) {
 	mapSize := uintptr(faultBlockSize)
 	fileSize := mapSize

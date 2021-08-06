@@ -476,6 +476,8 @@ func (s *SignalInfo) Addr() uint64 {
 }
 
 // SetAddr sets the si_addr field.
+//
+//go:nosplit
 func (s *SignalInfo) SetAddr(val uint64) {
 	hostarch.ByteOrder.PutUint64(s.Fields[0:8], val)
 }
