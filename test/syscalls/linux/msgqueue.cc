@@ -21,6 +21,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -419,25 +420,19 @@ TEST(MsgqueueTest, MsgRcvBlocking) {
 
   msgbuf buf{1, "A message."};
 
-  const pid_t child_pid = fork();
-  if (child_pid == 0) {
+  ScopedThread t([&] {
     msgbuf rcv;
-    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0,
-                                   0) == sizeof(buf.mtext) &&
-                buf == rcv);
-    _exit(0);
-  }
+    ASSERT_THAT(
+        RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 0, 0),
+        SyscallSucceedsWithValue(sizeof(buf.mtext)));
+    EXPECT_TRUE(rcv == buf);
+  });
 
   // Sleep to try and make msgrcv block before sending a message.
   absl::SleepFor(absl::Milliseconds(150));
 
   EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
               SyscallSucceeds());
-
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
-              SyscallSucceedsWithValue(child_pid));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 // Test msgrcv (most probably) waiting for a specific-type message.
@@ -451,15 +446,14 @@ TEST(MsgqueueTest, MsgRcvTypeBlocking) {
                     {1, "A message."},
                     {2, "A different message."}};
 
-  const pid_t child_pid = fork();
-  if (child_pid == 0) {
+  ScopedThread t([&] {
     msgbuf buf = bufs[4];  // Buffer that should be received.
     msgbuf rcv;
-    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 2,
-                                   0) == sizeof(buf.mtext) &&
-                buf == rcv);
-    _exit(0);
-  }
+    ASSERT_THAT(
+        RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1, 2, 0),
+        SyscallSucceedsWithValue(sizeof(buf.mtext)));
+    EXPECT_TRUE(rcv == buf);
+  });
 
   // Sleep to try and make msgrcv block before sending messages.
   absl::SleepFor(absl::Milliseconds(150));
@@ -469,11 +463,6 @@ TEST(MsgqueueTest, MsgRcvTypeBlocking) {
     EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
                 SyscallSucceeds());
   }
-
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
-              SyscallSucceedsWithValue(child_pid));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 // Test msgsnd (most probably) blocking on a full queue.
@@ -493,18 +482,17 @@ TEST(MsgqueueTest, MsgSndBlocking) {
   const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
                                             // sent without blocking.
 
-  const pid_t child_pid = fork();
-  if (child_pid == 0) {
+  ScopedThread t([&] {
     // Fill the queue.
     for (size_t i = 0; i < msgCount; i++) {
-      TEST_PCHECK(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0) == 0);
+      ASSERT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                  SyscallSucceeds());
     }
 
     // Next msgsnd should block.
-    TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
-                0);
-    _exit(0);
-  }
+    ASSERT_THAT(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0),
+                SyscallSucceeds());
+  });
 
   // To increase the chance of the last msgsnd blocking before doing a msgrcv,
   // we use MSG_COPY option to copy the last index in the queue. As long as
@@ -521,11 +509,6 @@ TEST(MsgqueueTest, MsgSndBlocking) {
 
   EXPECT_THAT(msgrcv(queue.get(), &rcv, sizeof(buf.mtext), 0, 0),
               SyscallSucceedsWithValue(sizeof(buf.mtext)));
-
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
-              SyscallSucceedsWithValue(child_pid));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 // Test removing a queue while a blocking msgsnd is executing.
@@ -542,8 +525,7 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
 
   const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
                                             // sent without blocking.
-  const pid_t child_pid = fork();
-  if (child_pid == 0) {
+  ScopedThread t([&] {
     // Fill the queue.
     msgmax buf{1, ""};
     for (size_t i = 0; i < msgCount; i++) {
@@ -553,11 +535,10 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
 
     // Next msgsnd should block. Because we're repeating on EINTR, msgsnd may
     // race with msgctl(IPC_RMID) and return EINVAL.
-    TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
-                    -1 &&
-                (errno == EIDRM || errno == EINVAL));
-    _exit(0);
-  }
+    EXPECT_THAT(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0),
+                SyscallFails());
+    EXPECT_TRUE((errno == EIDRM || errno == EINVAL));
+  });
 
   // Similar to MsgSndBlocking, we do this to increase the chance of msgsnd
   // blocking before removing the queue.
@@ -569,11 +550,6 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
   absl::SleepFor(absl::Milliseconds(100));
 
   EXPECT_THAT(msgctl(queue.release(), IPC_RMID, nullptr), SyscallSucceeds());
-
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
-              SyscallSucceedsWithValue(child_pid));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 // Test removing a queue while a blocking msgrcv is executing.
@@ -581,25 +557,18 @@ TEST(MsgqueueTest, MsgRcvRmWhileBlocking) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  const pid_t child_pid = fork();
-  if (child_pid == 0) {
+  ScopedThread t([&] {
     // Because we're repeating on EINTR, msgsnd may race with msgctl(IPC_RMID)
     // and return EINVAL.
     msgbuf rcv;
-    TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, 1, 2, 0) == -1 &&
-                (errno == EIDRM || errno == EINVAL));
-    _exit(0);
-  }
+    EXPECT_THAT(RetryEINTR(msgrcv)(queue.get(), &rcv, 1, 2, 0), SyscallFails());
+    EXPECT_TRUE(errno == EIDRM || errno == EINVAL);
+  });
 
   // Sleep to try and make msgrcv block before sending messages.
   absl::SleepFor(absl::Milliseconds(150));
 
   EXPECT_THAT(msgctl(queue.release(), IPC_RMID, nullptr), SyscallSucceeds());
-
-  int status;
-  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
-              SyscallSucceedsWithValue(child_pid));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 // Test a collection of msgsnd/msgrcv operations in different processes.
@@ -607,51 +576,55 @@ TEST(MsgqueueTest, MsgOpGeneral) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  // Create 50 sending, and 50 receiving processes. There are only 5 messages to
-  // be sent and received, each with a different type. All messages will be sent
-  // and received equally (10 of each.) By the end of the test all processes
-  // should unblock and return normally.
-  const size_t msgCount = 5;
-  std::map<int64_t, msgbuf> typeToBuf = {{1, msgbuf{1, "Message 1."}},
-                                         {2, msgbuf{2, "Message 2."}},
-                                         {3, msgbuf{3, "Message 3."}},
-                                         {4, msgbuf{4, "Message 4."}},
-                                         {5, msgbuf{5, "Message 5."}}};
+  // Create multiple sending/receiving threads that send messages back and
+  // forth. There's a matching recv for each send, so by the end of the test,
+  // all threads should succeed and return.
+  const std::vector<msgbuf> msgs = {
+      msgbuf{1, "Message 1."}, msgbuf{2, "Message 2."}, msgbuf{3, "Message 3."},
+      msgbuf{4, "Message 4."}, msgbuf{5, "Message 5."}};
 
-  std::vector<pid_t> children;
-
-  const size_t pCount = 50;
-  for (size_t i = 1; i <= pCount; i++) {
-    const pid_t child_pid = fork();
-    if (child_pid == 0) {
-      msgbuf buf = typeToBuf[(i % msgCount) + 1];
+  auto receiver = [&](int i) {
+    return [i, &msgs, &queue]() {
+      const msgbuf& target = msgs[i];
       msgbuf rcv;
-      TEST_PCHECK(RetryEINTR(msgrcv)(queue.get(), &rcv, sizeof(buf.mtext) + 1,
-                                     (i % msgCount) + 1,
-                                     0) == sizeof(buf.mtext) &&
-                  buf == rcv);
-      _exit(0);
-    }
-    children.push_back(child_pid);
-  }
+      EXPECT_THAT(RetryEINTR(msgrcv)(queue.get(), &rcv,
+                                     sizeof(target.mtext) + 1, target.mtype, 0),
+                  SyscallSucceedsWithValue(sizeof(target.mtext)));
+      EXPECT_EQ(rcv.mtype, target.mtype);
+      EXPECT_EQ(0, memcmp(rcv.mtext, target.mtext, sizeof(target.mtext)));
+    };
+  };
 
-  for (size_t i = 1; i <= pCount; i++) {
-    const pid_t child_pid = fork();
-    if (child_pid == 0) {
-      msgbuf buf = typeToBuf[(i % msgCount) + 1];
-      TEST_PCHECK(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0) ==
-                  0);
-      _exit(0);
-    }
-    children.push_back(child_pid);
-  }
+  ScopedThread r1(receiver(0));
+  ScopedThread r2(receiver(1));
+  ScopedThread r3(receiver(2));
+  ScopedThread r4(receiver(3));
+  ScopedThread r5(receiver(4));
+  ScopedThread r6(receiver(0));
+  ScopedThread r7(receiver(1));
+  ScopedThread r8(receiver(2));
+  ScopedThread r9(receiver(3));
+  ScopedThread r10(receiver(4));
 
-  for (auto const& pid : children) {
-    int status;
-    ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
-                SyscallSucceedsWithValue(pid));
-    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-  }
+  auto sender = [&](int i) {
+    return [i, &msgs, &queue]() {
+      const msgbuf& target = msgs[i];
+      EXPECT_THAT(
+          RetryEINTR(msgsnd)(queue.get(), &target, sizeof(target.mtext), 0),
+          SyscallSucceeds());
+    };
+  };
+
+  ScopedThread s1(sender(0));
+  ScopedThread s2(sender(1));
+  ScopedThread s3(sender(2));
+  ScopedThread s4(sender(3));
+  ScopedThread s5(sender(4));
+  ScopedThread s6(sender(0));
+  ScopedThread s7(sender(1));
+  ScopedThread s8(sender(2));
+  ScopedThread s9(sender(3));
+  ScopedThread s10(sender(4));
 }
 
 }  // namespace
