@@ -19,10 +19,7 @@ package mitigate
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -39,128 +36,20 @@ const (
 	physicalIDKey = "physical id"
 	coreIDKey     = "core id"
 	bugsKey       = "bugs"
-
-	// Path to shutdown a CPU.
-	cpuOnlineTemplate = "/sys/devices/system/cpu/cpu%d/online"
 )
 
 // CPUSet contains a map of all CPUs on the system, mapped
 // by Physical ID and CoreIDs. threads with the same
 // Core and Physical ID are Hyperthread pairs.
-type CPUSet map[threadID]*ThreadGroup
+type CPUSet []*CPU
 
 // NewCPUSet creates a CPUSet from data read from /proc/cpuinfo.
-func NewCPUSet(data []byte) (CPUSet, error) {
-	processors, err := getThreads(string(data))
-	if err != nil {
-		return nil, err
-	}
-
-	set := make(CPUSet)
-	for _, p := range processors {
-		// Each ID is of the form physicalID:coreID. Hyperthread pairs
-		// have identical physical and core IDs. We need to match
-		// Hyperthread pairs so that we can shutdown all but one per
-		// pair.
-		core, ok := set[p.id]
-		if !ok {
-			core = &ThreadGroup{}
-			set[p.id] = core
-		}
-		core.isVulnerable = core.isVulnerable || p.IsVulnerable()
-		core.threads = append(core.threads, p)
-	}
-
-	// We need to make sure we shutdown the lowest number processor per
-	// thread group.
-	for _, tg := range set {
-		sort.Slice(tg.threads, func(i, j int) bool {
-			return tg.threads[i].processorNumber < tg.threads[j].processorNumber
-		})
-	}
-	return set, nil
-}
-
-// NewCPUSetFromPossible makes a cpuSet data read from
-// /sys/devices/system/cpu/possible. This is used in enable operations
-// where the caller simply wants to enable all CPUS.
-func NewCPUSetFromPossible(data []byte) (CPUSet, error) {
-	threads, err := GetThreadsFromPossible(data)
-	if err != nil {
-		return nil, err
-	}
-
-	// We don't care if a CPU is vulnerable or not, we just
-	// want to return a list of all CPUs on the host.
-	set := CPUSet{
-		threads[0].id: &ThreadGroup{
-			threads:      threads,
-			isVulnerable: false,
-		},
-	}
-	return set, nil
-}
-
-// String implements the String method for CPUSet.
-func (c CPUSet) String() string {
-	ret := ""
-	for _, tg := range c {
-		ret += fmt.Sprintf("%s\n", tg)
-	}
-	return ret
-}
-
-// GetRemainingList returns the list of threads that will remain active
-// after mitigation.
-func (c CPUSet) GetRemainingList() []Thread {
-	threads := make([]Thread, 0, len(c))
-	for _, core := range c {
-		// If we're vulnerable, take only one thread from the pair.
-		if core.isVulnerable {
-			threads = append(threads, core.threads[0])
-			continue
-		}
-		// Otherwise don't shutdown anything.
-		threads = append(threads, core.threads...)
-	}
-	return threads
-}
-
-// GetShutdownList returns the list of threads that will be shutdown on
-// mitigation.
-func (c CPUSet) GetShutdownList() []Thread {
-	threads := make([]Thread, 0)
-	for _, core := range c {
-		// Only if we're vulnerable do shutdown anything. In this case,
-		// shutdown all but the first entry.
-		if core.isVulnerable && len(core.threads) > 1 {
-			threads = append(threads, core.threads[1:]...)
-		}
-	}
-	return threads
-}
-
-// ThreadGroup represents Hyperthread pairs on the same physical/core ID.
-type ThreadGroup struct {
-	threads      []Thread
-	isVulnerable bool
-}
-
-// String implements the String method for threadGroup.
-func (c ThreadGroup) String() string {
-	ret := fmt.Sprintf("ThreadGroup:\nIsVulnerable: %t\n", c.isVulnerable)
-	for _, processor := range c.threads {
-		ret += fmt.Sprintf("%s\n", processor)
-	}
-	return ret
-}
-
-// getThreads returns threads structs from reading /proc/cpuinfo.
-func getThreads(data string) ([]Thread, error) {
+func NewCPUSet(data string) (CPUSet, error) {
 	// Each processor entry should start with the
 	// processor key. Find the beginings of each.
 	r := buildRegex(processorKey)
 	indices := r.FindAllStringIndex(data, -1)
+
 	if len(indices) < 1 {
 		return nil, fmt.Errorf("no cpus found for: %q", data)
 	}
@@ -172,193 +61,132 @@ func getThreads(data string) ([]Thread, error) {
 	// indexes (e.g. data[index[i], index[i+1]]).
 	// There should be len(indicies) - 1 CPUs
 	// since the last index is the end of the string.
-	cpus := make([]Thread, 0, len(indices))
+	var set CPUSet
 	// Find each string that represents a CPU. These begin "processor".
 	for i := 1; i < len(indices); i++ {
 		start := indices[i-1][0]
 		end := indices[i][0]
 		// Parse the CPU entry, which should be between start/end.
-		c, err := newThread(data[start:end])
+		c, err := newCPU(data[start:end])
 		if err != nil {
 			return nil, err
 		}
-		cpus = append(cpus, c)
+		set = append(set, c)
 	}
-	return cpus, nil
+	return set, nil
 }
 
-// GetThreadsFromPossible makes threads from data read from /sys/devices/system/cpu/possible.
-func GetThreadsFromPossible(data []byte) ([]Thread, error) {
-	possibleRegex := regexp.MustCompile(`(?m)^(\d+)(-(\d+))?$`)
-	matches := possibleRegex.FindStringSubmatch(string(data))
-	if len(matches) != 4 {
-		return nil, fmt.Errorf("mismatch regex from possible: %q", string(data))
+// IsVulnerable checks if this CPUSet is vulnerable to MDS.
+func (c CPUSet) IsVulnerable() bool {
+	for _, cpu := range c {
+		if cpu.IsVulnerable() {
+			return true
+		}
 	}
-
-	// If matches[3] is empty, we only have one cpu entry.
-	if matches[3] == "" {
-		matches[3] = matches[1]
-	}
-
-	begin, err := strconv.ParseInt(matches[1], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse begin: %v", err)
-	}
-	end, err := strconv.ParseInt(matches[3], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse end: %v", err)
-	}
-	if begin > end || begin < 0 || end < 0 {
-		return nil, fmt.Errorf("invalid cpu bounds from possible: begin: %d end: %d", begin, end)
-	}
-
-	ret := make([]Thread, 0, end-begin)
-	for i := begin; i <= end; i++ {
-		ret = append(ret, Thread{
-			processorNumber: i,
-			id: threadID{
-				physicalID: 0, // we don't care about id for enable ops.
-				coreID:     0,
-			},
-		})
-	}
-
-	return ret, nil
+	return false
 }
 
-// threadID for each thread is defined by the physical and
-// core IDs. If equal, two threads are Hyperthread pairs.
-type threadID struct {
-	physicalID int64
-	coreID     int64
+// String implements the String method for CPUSet.
+func (c CPUSet) String() string {
+	parts := make([]string, len(c))
+	for i, cpu := range c {
+		parts[i] = cpu.String()
+	}
+	return strings.Join(parts, "\n")
 }
 
-// Thread represents pertinent info about a single hyperthread in a pair.
-type Thread struct {
+// CPU represents pertinent info about a single hyperthread in a pair.
+type CPU struct {
 	processorNumber int64               // the processor number of this CPU.
 	vendorID        string              // the vendorID of CPU (e.g. AuthenticAMD).
 	cpuFamily       int64               // CPU family number (e.g. 6 for CascadeLake/Skylake).
 	model           int64               // CPU model number (e.g. 85 for CascadeLake/Skylake).
-	id              threadID            // id for this thread
+	physicalID      int64               // Physical ID of this CPU.
+	coreID          int64               // Core ID of this CPU.
 	bugs            map[string]struct{} // map of vulnerabilities parsed from the 'bugs' field.
 }
 
-// newThread parses a CPU from a single cpu entry from /proc/cpuinfo.
-func newThread(data string) (Thread, error) {
-	empty := Thread{}
+func newCPU(data string) (*CPU, error) {
 	processor, err := parseProcessor(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	vendorID, err := parseVendorID(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	cpuFamily, err := parseCPUFamily(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	model, err := parseModel(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	physicalID, err := parsePhysicalID(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	coreID, err := parseCoreID(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
 	bugs, err := parseBugs(data)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 
-	return Thread{
+	return &CPU{
 		processorNumber: processor,
 		vendorID:        vendorID,
 		cpuFamily:       cpuFamily,
 		model:           model,
-		id: threadID{
-			physicalID: physicalID,
-			coreID:     coreID,
-		},
-		bugs: bugs,
+		physicalID:      physicalID,
+		coreID:          coreID,
+		bugs:            bugs,
 	}, nil
 }
 
-// String implements the String method for thread.
-func (t Thread) String() string {
-	template := `CPU: %d
-CPU ID: %+v
-Vendor: %s
-Family/Model: %d/%d
-Bugs: %s
+// String implements the String method for CPU.
+func (t *CPU) String() string {
+	template := `%s: %d
+%s: %s
+%s: %d
+%s: %d
+%s: %d
+%s: %d
+%s: %s
 `
-	bugs := make([]string, 0)
+	var bugs []string
 	for bug := range t.bugs {
 		bugs = append(bugs, bug)
 	}
 
-	return fmt.Sprintf(template, t.processorNumber, t.id, t.vendorID, t.cpuFamily, t.model, strings.Join(bugs, ","))
-}
-
-// Enable turns on the CPU by writing 1 to /sys/devices/cpu/cpu{N}/online.
-func (t Thread) Enable() error {
-	// Linux ensures that "cpu0" is always online.
-	if t.processorNumber == 0 {
-		return nil
-	}
-	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
-	f, err := os.OpenFile(cpuPath, os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open file %s: %v", cpuPath, err)
-	}
-	if _, err = f.Write([]byte{'1'}); err != nil {
-		return fmt.Errorf("failed to write '1' to %s: %v", cpuPath, err)
-	}
-	return nil
-}
-
-// Disable turns off the CPU by writing 0 to /sys/devices/cpu/cpu{N}/online.
-func (t Thread) Disable() error {
-	// The core labeled "cpu0" can never be taken offline via this method.
-	// Linux will return EPERM if the user even creates a file at the /sys
-	// path above.
-	if t.processorNumber == 0 {
-		return fmt.Errorf("invalid shutdown operation: cpu0 cannot be disabled")
-	}
-	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
-	return ioutil.WriteFile(cpuPath, []byte{'0'}, 0644)
+	return fmt.Sprintf(template,
+		processorKey, t.processorNumber,
+		vendorIDKey, t.vendorID,
+		cpuFamilyKey, t.cpuFamily,
+		modelKey, t.model,
+		physicalIDKey, t.physicalID,
+		coreIDKey, t.coreID,
+		bugsKey, strings.Join(bugs, " "))
 }
 
 // IsVulnerable checks if a CPU is vulnerable to mds.
-func (t Thread) IsVulnerable() bool {
+func (t *CPU) IsVulnerable() bool {
 	_, ok := t.bugs[mds]
 	return ok
 }
 
-// isActive checks if a CPU is active from /sys/devices/system/cpu/cpu{N}/online
-// If the file does not exist (ioutil returns in error), we assume the CPU is on.
-func (t Thread) isActive() bool {
-	cpuPath := fmt.Sprintf(cpuOnlineTemplate, t.processorNumber)
-	data, err := ioutil.ReadFile(cpuPath)
-	if err != nil {
-		return true
-	}
-	return len(data) > 0 && data[0] != '0'
-}
-
 // SimilarTo checks family/model/bugs fields for equality of two
 // processors.
-func (t Thread) SimilarTo(other Thread) bool {
+func (t *CPU) SimilarTo(other *CPU) bool {
 	if t.vendorID != other.vendorID {
 		return false
 	}
