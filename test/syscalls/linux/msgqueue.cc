@@ -13,12 +13,15 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <signal.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/types.h>
 
+#include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "test/util/capability_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -30,6 +33,8 @@ namespace {
 constexpr int msgMax = 8192;   // Max size for message in bytes.
 constexpr int msgMni = 32000;  // Max number of identifiers.
 constexpr int msgMnb = 16384;  // Default max size of message queue in bytes.
+
+constexpr int kInterruptSignal = SIGALRM;
 
 // Queue is a RAII class used to automatically clean message queues.
 class Queue {
@@ -72,6 +77,12 @@ bool operator==(msgbuf& a, msgbuf& b) {
   }
   return a.mtype == b.mtype;
 }
+
+// msgmax represents a buffer for the largest possible single message.
+struct msgmax {
+  int64_t mtype;
+  char mtext[msgMax];
+};
 
 // Test simple creation and retrieval for msgget(2).
 TEST(MsgqueueTest, MsgGet) {
@@ -310,13 +321,6 @@ TEST(MsgqueueTest, MsgOpLimits) {
               SyscallFailsWithErrno(EINVAL));
 
   // Limit for queue.
-  // Use a buffer with the maximum mount of bytes that can be transformed to
-  // make it easier to exhaust the queue limit.
-  struct msgmax {
-    int64_t mtype;
-    char mtext[msgMax];
-  };
-
   msgmax limit{1, ""};
   for (size_t i = 0, msgCount = msgMnb / msgMax; i < msgCount; i++) {
     EXPECT_THAT(msgsnd(queue.get(), &limit, sizeof(limit.mtext), 0),
@@ -470,13 +474,6 @@ TEST(MsgqueueTest, MsgSndBlocking) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  // Use a buffer with the maximum mount of bytes that can be transformed to
-  // make it easier to exhaust the queue limit.
-  struct msgmax {
-    int64_t mtype;
-    char mtext[msgMax];
-  };
-
   msgmax buf{1, ""};  // Has max amount of bytes.
 
   const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
@@ -493,6 +490,8 @@ TEST(MsgqueueTest, MsgSndBlocking) {
     ASSERT_THAT(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0),
                 SyscallSucceeds());
   });
+
+  const DisableSave ds;  // Too many syscalls.
 
   // To increase the chance of the last msgsnd blocking before doing a msgrcv,
   // we use MSG_COPY option to copy the last index in the queue. As long as
@@ -516,15 +515,9 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  // Use a buffer with the maximum mount of bytes that can be transformed to
-  // make it easier to exhaust the queue limit.
-  struct msgmax {
-    int64_t mtype;
-    char mtext[msgMax];
-  };
+  // Number of messages that can be sent without blocking.
+  const size_t msgCount = msgMnb / msgMax;
 
-  const size_t msgCount = msgMnb / msgMax;  // Number of messages that can be
-                                            // sent without blocking.
   ScopedThread t([&] {
     // Fill the queue.
     msgmax buf{1, ""};
@@ -539,6 +532,8 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
                 SyscallFails());
     EXPECT_TRUE((errno == EIDRM || errno == EINVAL));
   });
+
+  const DisableSave ds;  // Too many syscalls.
 
   // Similar to MsgSndBlocking, we do this to increase the chance of msgsnd
   // blocking before removing the queue.
@@ -627,6 +622,105 @@ TEST(MsgqueueTest, MsgOpGeneral) {
   ScopedThread s10(sender(4));
 }
 
+void empty_sighandler(int sig, siginfo_t* info, void* context) {}
+
+TEST(MsgqueueTest, InterruptRecv) {
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  char buf[64];
+
+  absl::Notification done, exit;
+
+  // Thread calling msgrcv with no corresponding send. It would block forever,
+  // but we'll interrupt with a signal below.
+  ScopedThread t([&] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = empty_sighandler;
+    sigfillset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    auto cleanup_sigaction =
+        ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(kInterruptSignal, sa));
+    auto sa_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSignalMask(SIG_UNBLOCK, kInterruptSignal));
+
+    EXPECT_THAT(msgrcv(queue.get(), &buf, sizeof(buf), 0, 0),
+                SyscallFailsWithErrno(EINTR));
+
+    done.Notify();
+    exit.WaitForNotification();
+  });
+
+  const DisableSave ds;  // Too many syscalls.
+
+  // We want the signal to arrive while msgrcv is blocking, but not after the
+  // thread has exited. Signals that arrive before msgrcv are no-ops.
+  do {
+    EXPECT_THAT(kill(getpid(), kInterruptSignal), SyscallSucceeds());
+    absl::SleepFor(absl::Milliseconds(100));  // Rate limit.
+  } while (!done.HasBeenNotified());
+
+  exit.Notify();
+  t.Join();
+}
+
+TEST(MsgqueueTest, InterruptSend) {
+  Queue queue(msgget(IPC_PRIVATE, 0600));
+  msgmax buf{1, ""};
+  // Number of messages that can be sent without blocking.
+  const size_t msgCount = msgMnb / msgMax;
+
+  // Fill the queue.
+  for (size_t i = 0; i < msgCount; i++) {
+    ASSERT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                SyscallSucceeds());
+  }
+
+  absl::Notification done, exit;
+
+  // Thread calling msgsnd on a full queue. It would block forever, but we'll
+  // interrupt with a signal below.
+  ScopedThread t([&] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = empty_sighandler;
+    sigfillset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    auto cleanup_sigaction =
+        ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(kInterruptSignal, sa));
+    auto sa_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSignalMask(SIG_UNBLOCK, kInterruptSignal));
+
+    EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+                SyscallFailsWithErrno(EINTR));
+
+    done.Notify();
+    exit.WaitForNotification();
+  });
+
+  const DisableSave ds;  // Too many syscalls.
+
+  // We want the signal to arrive while msgsnd is blocking, but not after the
+  // thread has exited. Signals that arrive before msgsnd are no-ops.
+  do {
+    EXPECT_THAT(kill(getpid(), kInterruptSignal), SyscallSucceeds());
+    absl::SleepFor(absl::Milliseconds(100));  // Rate limit.
+  } while (!done.HasBeenNotified());
+
+  exit.Notify();
+  t.Join();
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
+
+int main(int argc, char** argv) {
+  // Some tests depend on delivering a signal to the main thread. Block the
+  // target signal so that any other threads created by TestInit will also have
+  // the signal blocked.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, gvisor::testing::kInterruptSignal);
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
+
+  gvisor::testing::TestInit(&argc, &argv);
+  return gvisor::testing::RunAllTests();
+}
