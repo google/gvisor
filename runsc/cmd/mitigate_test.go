@@ -18,144 +18,133 @@
 package cmd
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/mitigate/mock"
+	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/mitigate"
 )
 
+type mockMachineControl struct {
+	enabled bool
+	cpus    mitigate.CPUSet
+}
+
+func (m *mockMachineControl) enable() error {
+	m.enabled = true
+	return nil
+}
+
+func (m *mockMachineControl) disable() error {
+	if m.cpus.IsVulnerable() {
+		m.enabled = false
+	}
+	return nil
+}
+
+func (m *mockMachineControl) isEnabled() (bool, error) {
+	return m.enabled, nil
+}
+
+func (m *mockMachineControl) getCPUs() (mitigate.CPUSet, error) {
+	set := m.cpus
+	if !m.enabled {
+		set = m.cpus[:len(m.cpus)/2]
+	}
+
+	// Instead of just returning the created CPU set stored in this struct, call
+	// NewCPUSet to exercise that code path as the machineControlImpl would.
+	return mitigate.NewCPUSet(set.String())
+}
+
 type executeTestCase struct {
-	name          string
-	mitigateData  string
-	mitigateError error
-	mitigateCPU   int
-	reverseData   string
-	reverseError  error
-	reverseCPU    int
+	name                string
+	cpu                 mitigate.MockCPU
+	mitigateWantCPUs    int
+	mitigateError       subcommands.ExitStatus
+	mitigateWantEnabled bool
+	reverseWantCPUs     int
+	reverseError        subcommands.ExitStatus
+	reverseWantEnabled  bool
+	dryrun              bool
 }
 
 func TestExecute(t *testing.T) {
-
-	partial := `processor       : 1
-vendor_id       : AuthenticAMD
-cpu family      : 23
-model           : 49
-model name      : AMD EPYC 7B12
-physical id     : 0
-bugs         : sysret_ss_attrs spectre_v1 spectre_v2 spec_store_bypass
-power management:
-`
-
 	for _, tc := range []executeTestCase{
 		{
-			name:         "CascadeLake4",
-			mitigateData: mock.CascadeLake4.MakeCPUString(),
-			mitigateCPU:  2,
-			reverseData:  mock.CascadeLake4.MakeSysPossibleString(),
-			reverseCPU:   4,
+			name:                "CascadeLake4",
+			cpu:                 mitigate.CascadeLake4,
+			mitigateWantCPUs:    2,
+			mitigateWantEnabled: false,
+			reverseWantCPUs:     4,
+			reverseWantEnabled:  true,
+		},
+		{
+			name:                "CascadeLake4DryRun",
+			cpu:                 mitigate.CascadeLake4,
+			mitigateWantCPUs:    4,
+			mitigateWantEnabled: true,
+			reverseWantCPUs:     4,
+			reverseWantEnabled:  true,
+			dryrun:              true,
+		},
+		{
+			name:                "AMD8",
+			cpu:                 mitigate.AMD8,
+			mitigateWantCPUs:    8,
+			mitigateWantEnabled: true,
+			reverseWantCPUs:     8,
+			reverseWantEnabled:  true,
 		},
 		{
 			name:          "Empty",
-			mitigateData:  "",
-			mitigateError: fmt.Errorf(`mitigate operation failed: no cpus found for: ""`),
-			reverseData:   "",
-			reverseError:  fmt.Errorf(`reverse operation failed: mismatch regex from possible: ""`),
-		},
-		{
-			name: "Partial",
-			mitigateData: `processor       : 0
-vendor_id       : AuthenticAMD
-cpu family      : 23
-model           : 49
-model name      : AMD EPYC 7B12
-physical id     : 0
-core id         : 0
-cpu cores       : 1
-bugs            : sysret_ss_attrs spectre_v1 spectre_v2 spec_store_bypass
-power management::84
-
-` + partial,
-			mitigateError: fmt.Errorf(`mitigate operation failed: failed to match key "core id": %q`, partial),
-			reverseData:   "1-",
-			reverseError:  fmt.Errorf(`reverse operation failed: mismatch regex from possible: %q`, "1-"),
+			cpu:           mitigate.Empty,
+			mitigateError: Errorf(`mitigate operation failed: no cpus found for: ""`),
+			reverseError:  Errorf(`mitigate operation failed: no cpus found for: ""`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			set := tc.cpu.MakeCPUSet()
 			m := &Mitigate{
-				dryRun: true,
+				control: &mockMachineControl{
+					enabled: true,
+					cpus:    set,
+				},
+				dryRun: tc.dryrun,
 			}
-			m.doExecuteTest(t, "Mitigate", tc.mitigateData, tc.mitigateCPU, tc.mitigateError)
+			t.Run("Mitigate", func(t *testing.T) {
+				m.doExecuteTest(t, tc.mitigateWantEnabled, tc.mitigateWantCPUs, tc.mitigateError)
+			})
 
 			m.reverse = true
-			m.doExecuteTest(t, "Reverse", tc.reverseData, tc.reverseCPU, tc.reverseError)
+			t.Run("Reverse", func(t *testing.T) {
+				m.doExecuteTest(t, tc.reverseWantEnabled, tc.reverseWantCPUs, tc.reverseError)
+			})
 		})
 	}
 }
 
-func TestExecuteSmoke(t *testing.T) {
-	smokeMitigate, err := ioutil.ReadFile(cpuInfo)
-	if err != nil {
-		t.Fatalf("Failed to read %s: %v", cpuInfo, err)
-	}
-
-	m := &Mitigate{
-		dryRun: true,
-	}
-
-	m.doExecuteTest(t, "Mitigate", string(smokeMitigate), 0, nil)
-
-	smokeReverse, err := ioutil.ReadFile(allPossibleCPUs)
-	if err != nil {
-		t.Fatalf("Failed to read %s: %v", allPossibleCPUs, err)
-	}
-
-	m.reverse = true
-	m.doExecuteTest(t, "Reverse", string(smokeReverse), 0, nil)
-}
-
 // doExecuteTest runs Execute with the mitigate operation and reverse operation.
-func (m *Mitigate) doExecuteTest(t *testing.T, name, data string, want int, wantErr error) {
-	t.Run(name, func(t *testing.T) {
-		file, err := ioutil.TempFile("", "outfile.txt")
-		if err != nil {
-			t.Fatalf("Failed to create tmpfile: %v", err)
-		}
-		defer os.Remove(file.Name())
-
-		if _, err := file.WriteString(data); err != nil {
-			t.Fatalf("Failed to write to file: %v", err)
-		}
-
-		// Set fields for mitigate and dryrun to keep test hermetic.
-		m.path = file.Name()
-
-		set, err := m.doExecute()
-		if err = checkErr(wantErr, err); err != nil {
-			t.Fatalf("Mitigate error mismatch: %v", err)
-		}
-
-		// case where test should end in error or we don't care
-		// about how many cpus are returned.
-		if wantErr != nil || want < 1 {
-			return
-		}
-		got := len(set.GetRemainingList())
-		if want != got {
-			t.Fatalf("Failed wrong number of remaining CPUs: want %d, got %d", want, got)
-		}
-
-	})
-}
-
-// checkErr checks error for equality.
-func checkErr(want, got error) error {
-	switch {
-	case want == nil && got == nil:
-	case want == nil || got == nil || want.Error() != strings.Trim(got.Error(), " "):
-		return fmt.Errorf("got: %v want: %v", got, want)
+func (m *Mitigate) doExecuteTest(t *testing.T, wantEnabled bool, wantCPUs int, wantErr subcommands.ExitStatus) {
+	subError := m.execute()
+	if subError != wantErr {
+		t.Fatalf("Mitigate error mismatch: want: %v got: %v", wantErr, subError)
 	}
-	return nil
+
+	// case where test should end in error or we don't care
+	// about how many cpus are returned.
+	if wantErr != subcommands.ExitSuccess {
+		log.Infof("return")
+		return
+	}
+
+	gotEnabled, _ := m.control.isEnabled()
+	if wantEnabled != gotEnabled {
+		t.Fatalf("Incorrect enabled state: want: %t got: %t", wantEnabled, gotEnabled)
+	}
+
+	gotCPUs, _ := m.control.getCPUs()
+	if len(gotCPUs) != wantCPUs {
+		t.Fatalf("Incorrect number of CPUs: want: %d got: %d", wantCPUs, len(gotCPUs))
+	}
 }

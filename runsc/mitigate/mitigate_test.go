@@ -18,90 +18,53 @@
 package mitigate
 
 import (
-	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
-
-	"gvisor.dev/gvisor/runsc/mitigate/mock"
 )
 
 // TestMockCPUSet tests mock cpu test cases against the cpuSet functions.
 func TestMockCPUSet(t *testing.T) {
 	for _, tc := range []struct {
-		testCase     mock.CPU
+		testCase     MockCPU
 		isVulnerable bool
 	}{
 		{
-			testCase:     mock.AMD8,
+			testCase:     AMD8,
 			isVulnerable: false,
 		},
 		{
-			testCase:     mock.Haswell2,
+			testCase:     Haswell2,
 			isVulnerable: true,
 		},
 		{
-			testCase:     mock.Haswell2core,
+			testCase:     Haswell2core,
 			isVulnerable: true,
 		},
 		{
-			testCase:     mock.CascadeLake2,
+			testCase:     CascadeLake2,
 			isVulnerable: true,
 		},
 		{
-			testCase:     mock.CascadeLake4,
+			testCase:     CascadeLake4,
 			isVulnerable: true,
 		},
 	} {
 		t.Run(tc.testCase.Name, func(t *testing.T) {
-			data := tc.testCase.MakeCPUString()
-			set, err := NewCPUSet([]byte(data))
+			data := tc.testCase.MakeCPUSet().String()
+			set, err := NewCPUSet(data)
 			if err != nil {
 				t.Fatalf("Failed to create cpuSet: %v", err)
 			}
 
+			if tc.testCase.NumCPUs() != len(set) {
+				t.Fatalf("Got wrong number of CPUs: want: %d got: %d", tc.testCase.NumCPUs(), len(set))
+			}
+
+			if set.IsVulnerable() != tc.isVulnerable {
+				t.Fatalf("incorrect vulnerable value: got: %t want: %t", set.IsVulnerable(), tc.isVulnerable)
+			}
 			t.Logf("data: %s", data)
-
-			for _, tg := range set {
-				if err := checkSorted(tg.threads); err != nil {
-					t.Fatalf("Failed to sort cpuSet: %v", err)
-				}
-			}
-
-			remaining := set.GetRemainingList()
-			// In the non-vulnerable case, no cores should be shutdown so all should remain.
-			want := tc.testCase.PhysicalCores * tc.testCase.Cores * tc.testCase.ThreadsPerCore
-			if tc.isVulnerable {
-				want = tc.testCase.PhysicalCores * tc.testCase.Cores
-			}
-
-			if want != len(remaining) {
-				t.Fatalf("Failed to shutdown the correct number of cores: want: %d got: %d", want, len(remaining))
-			}
-
-			if !tc.isVulnerable {
-				return
-			}
-
-			// If the set is vulnerable, we expect only 1 thread per hyperthread pair.
-			for _, r := range remaining {
-				if _, ok := set[r.id]; !ok {
-					t.Fatalf("Entry %+v not in map, there must be two entries in the same thread group.", r)
-				}
-				delete(set, r.id)
-			}
-
-			possible := tc.testCase.MakeSysPossibleString()
-			set, err = NewCPUSetFromPossible([]byte(possible))
-			if err != nil {
-				t.Fatalf("Failed to make cpuSet: %v", err)
-			}
-
-			want = tc.testCase.PhysicalCores * tc.testCase.Cores * tc.testCase.ThreadsPerCore
-			got := len(set.GetRemainingList())
-			if got != want {
-				t.Fatalf("Returned the wrong number of CPUs want: %d got: %d", want, got)
-			}
 		})
 	}
 }
@@ -117,15 +80,13 @@ physical id: 0
 core id		: 0
 bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa itlb_multihit
 `
-	want := Thread{
+	want := CPU{
 		processorNumber: 0,
 		vendorID:        "GenuineIntel",
 		cpuFamily:       6,
 		model:           85,
-		id: threadID{
-			physicalID: 0,
-			coreID:     0,
-		},
+		physicalID:      0,
+		coreID:          0,
 		bugs: map[string]struct{}{
 			"cpu_meltdown":      {},
 			"spectre_v1":        {},
@@ -139,7 +100,7 @@ bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa
 		},
 	}
 
-	got, err := newThread(data)
+	got, err := newCPU(data)
 	if err != nil {
 		t.Fatalf("getCpu failed with error: %v", err)
 	}
@@ -154,12 +115,12 @@ bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs taa
 }
 
 func TestInvalid(t *testing.T) {
-	result, err := getThreads(`something not a processor`)
+	result, err := newCPU(`something not a processor`)
 	if err == nil {
 		t.Fatalf("getCPU set didn't return an error: %+v", result)
 	}
 
-	if !strings.Contains(err.Error(), "no cpus") {
+	if !strings.Contains(err.Error(), "failed to match key \"processor\"") {
 		t.Fatalf("Incorrect error returned: %v", err)
 	}
 }
@@ -221,7 +182,7 @@ cache_alignment	: 64
 address sizes	: 46 bits physical, 48 bits virtual
 power management:
 `
-	cpuSet, err := getThreads(data)
+	cpuSet, err := NewCPUSet(data)
 	if err != nil {
 		t.Fatalf("getCPUSet failed: %v", err)
 	}
@@ -231,7 +192,7 @@ power management:
 		t.Fatalf("Num CPU mismatch: want: %d, got: %d", wantCPULen, len(cpuSet))
 	}
 
-	wantCPU := Thread{
+	wantCPU := CPU{
 		vendorID:  "GenuineIntel",
 		cpuFamily: 6,
 		model:     63,
@@ -260,15 +221,9 @@ func TestReadFile(t *testing.T) {
 		t.Fatalf("Failed to read cpuinfo: %v", err)
 	}
 
-	set, err := NewCPUSet(data)
+	set, err := NewCPUSet(string(data))
 	if err != nil {
 		t.Fatalf("Failed to parse CPU data %v\n%s", err, data)
-	}
-
-	for _, tg := range set {
-		if err := checkSorted(tg.threads); err != nil {
-			t.Fatalf("Failed to sort cpuSet: %v", err)
-		}
 	}
 
 	if len(set) < 1 {
@@ -383,7 +338,7 @@ power management:`
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			set, err := getThreads(tc.cpuString)
+			set, err := NewCPUSet(tc.cpuString)
 			if err != nil {
 				t.Fatalf("Failed to getCPUSet:%v\n %s", err, tc.cpuString)
 			}
@@ -403,99 +358,4 @@ power management:`
 			}
 		})
 	}
-}
-
-func TestReverse(t *testing.T) {
-	const noParse = "-1-"
-	for _, tc := range []struct {
-		name      string
-		output    string
-		wantErr   error
-		wantCount int
-	}{
-		{
-			name:      "base",
-			output:    "0-7",
-			wantErr:   nil,
-			wantCount: 8,
-		},
-		{
-			name:      "huge",
-			output:    "0-111",
-			wantErr:   nil,
-			wantCount: 112,
-		},
-		{
-			name:      "not zero",
-			output:    "50-53",
-			wantErr:   nil,
-			wantCount: 4,
-		},
-		{
-			name:      "small",
-			output:    "0",
-			wantErr:   nil,
-			wantCount: 1,
-		},
-		{
-			name:    "invalid order",
-			output:  "10-6",
-			wantErr: fmt.Errorf("invalid cpu bounds from possible: begin: %d end: %d", 10, 6),
-		},
-		{
-			name:    "no parse",
-			output:  noParse,
-			wantErr: fmt.Errorf(`mismatch regex from possible: %q`, noParse),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			threads, err := GetThreadsFromPossible([]byte(tc.output))
-
-			switch {
-			case tc.wantErr == nil:
-				if err != nil {
-					t.Fatalf("Wanted nil err, got: %v", err)
-				}
-			case err == nil:
-				t.Fatalf("Want error: %v got: %v", tc.wantErr, err)
-			default:
-				if tc.wantErr.Error() != err.Error() {
-					t.Fatalf("Want error: %v got error: %v", tc.wantErr, err)
-				}
-			}
-
-			if len(threads) != tc.wantCount {
-				t.Fatalf("Want count: %d got: %d", tc.wantCount, len(threads))
-			}
-		})
-	}
-}
-
-func TestReverseSmoke(t *testing.T) {
-	data, err := ioutil.ReadFile("/sys/devices/system/cpu/possible")
-	if err != nil {
-		t.Fatalf("Failed to read from possible: %v", err)
-	}
-	threads, err := GetThreadsFromPossible(data)
-	if err != nil {
-		t.Fatalf("Could not parse possible output: %v", err)
-	}
-
-	if len(threads) <= 0 {
-		t.Fatalf("Didn't get any CPU cores: %d", len(threads))
-	}
-}
-
-func checkSorted(threads []Thread) error {
-	if len(threads) < 2 {
-		return nil
-	}
-	last := threads[0].processorNumber
-	for _, t := range threads[1:] {
-		if last >= t.processorNumber {
-			return fmt.Errorf("threads out of order: thread %d before %d", t.processorNumber, last)
-		}
-		last = t.processorNumber
-	}
-	return nil
 }

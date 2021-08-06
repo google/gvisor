@@ -12,26 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package mock contains mock CPUs for mitigate tests.
-package mock
+package mitigate
 
-import "fmt"
+import "strings"
 
-// CPU represents data from CPUs that will be mitigated.
-type CPU struct {
+// MockCPU represents data from CPUs that will be mitigated.
+type MockCPU struct {
 	Name           string
 	VendorID       string
-	Family         int
-	Model          int
+	Family         int64
+	Model          int64
 	ModelName      string
 	Bugs           string
-	PhysicalCores  int
-	Cores          int
-	ThreadsPerCore int
+	PhysicalCores  int64
+	Cores          int64
+	ThreadsPerCore int64
 }
 
 // CascadeLake2 is a two core Intel CascadeLake machine.
-var CascadeLake2 = CPU{
+var CascadeLake2 = MockCPU{
 	Name:           "CascadeLake",
 	VendorID:       "GenuineIntel",
 	Family:         6,
@@ -44,7 +43,7 @@ var CascadeLake2 = CPU{
 }
 
 // CascadeLake4 is a four core Intel CascadeLake machine.
-var CascadeLake4 = CPU{
+var CascadeLake4 = MockCPU{
 	Name:           "CascadeLake",
 	VendorID:       "GenuineIntel",
 	Family:         6,
@@ -57,7 +56,7 @@ var CascadeLake4 = CPU{
 }
 
 // Haswell2 is a two core Intel Haswell machine.
-var Haswell2 = CPU{
+var Haswell2 = MockCPU{
 	Name:           "Haswell",
 	VendorID:       "GenuineIntel",
 	Family:         6,
@@ -70,7 +69,7 @@ var Haswell2 = CPU{
 }
 
 // Haswell2core is a 2 core Intel Haswell machine with no hyperthread pairs.
-var Haswell2core = CPU{
+var Haswell2core = MockCPU{
 	Name:           "Haswell2Physical",
 	VendorID:       "GenuineIntel",
 	Family:         6,
@@ -83,7 +82,7 @@ var Haswell2core = CPU{
 }
 
 // AMD2 is an two core AMD machine.
-var AMD2 = CPU{
+var AMD2 = MockCPU{
 	Name:           "AMD",
 	VendorID:       "AuthenticAMD",
 	Family:         23,
@@ -96,7 +95,7 @@ var AMD2 = CPU{
 }
 
 // AMD8 is an eight core AMD machine.
-var AMD8 = CPU{
+var AMD8 = MockCPU{
 	Name:           "AMD",
 	VendorID:       "AuthenticAMD",
 	Family:         23,
@@ -108,47 +107,39 @@ var AMD8 = CPU{
 	ThreadsPerCore: 2,
 }
 
-// MakeCPUString makes a string formated like /proc/cpuinfo for each cpuTestCase
-func (tc CPU) MakeCPUString() string {
-	template := `processor	: %d
-vendor_id	: %s
-cpu family	: %d
-model		: %d
-model name	: %s
-physical id  : %d
-core id		: %d
-cpu cores	: %d
-bugs		: %s
+// Empty is an empty CPU set.
+var Empty = MockCPU{
+	Name: "Empty",
+}
 
-`
-
-	ret := ``
-	for i := 0; i < tc.PhysicalCores; i++ {
-		for j := 0; j < tc.Cores; j++ {
-			for k := 0; k < tc.ThreadsPerCore; k++ {
+// MakeCPUSet makes a cpuSet from a MockCPU.
+func (tc MockCPU) MakeCPUSet() CPUSet {
+	bugs := make(map[string]struct{})
+	for _, bug := range strings.Split(tc.Bugs, " ") {
+		bugs[bug] = struct{}{}
+	}
+	var cpus CPUSet = []*CPU{}
+	for i := int64(0); i < tc.PhysicalCores; i++ {
+		for j := int64(0); j < tc.Cores; j++ {
+			for k := int64(0); k < tc.ThreadsPerCore; k++ {
 				processorNum := (i*tc.Cores+j)*tc.ThreadsPerCore + k
-				ret += fmt.Sprintf(template,
-					processorNum, /*processor*/
-					tc.VendorID,  /*vendor_id*/
-					tc.Family,    /*cpu family*/
-					tc.Model,     /*model*/
-					tc.ModelName, /*model name*/
-					i,            /*physical id*/
-					j,            /*core id*/
-					k,            /*cpu cores*/
-					tc.Bugs,      /*bugs*/
-				)
+				cpu := &CPU{
+					processorNumber: processorNum,
+					vendorID:        tc.VendorID,
+					cpuFamily:       tc.Family,
+					model:           tc.Model,
+					physicalID:      i,
+					coreID:          j,
+					bugs:            bugs,
+				}
+				cpus = append(cpus, cpu)
 			}
 		}
 	}
-	return ret
+	return cpus
 }
 
-// MakeSysPossibleString makes a string representing a the contents of /sys/devices/system/cpu/possible.
-func (tc CPU) MakeSysPossibleString() string {
-	max := tc.PhysicalCores * tc.Cores * tc.ThreadsPerCore
-	if max == 1 {
-		return "0"
-	}
-	return fmt.Sprintf("0-%d", max-1)
+// NumCPUs returns the number of CPUs for this CPU.
+func (tc MockCPU) NumCPUs() int {
+	return int(tc.PhysicalCores * tc.Cores * tc.ThreadsPerCore)
 }
