@@ -39,7 +39,28 @@ std::string RunfilePath(std::string path) {
     return JoinPath("__main__", path);
   }
 
-  return runfiles->Rlocation(JoinPath("__main__", path));
+  // Try to resolve the path as it was passed to us, and check that it exists
+  // before returning.
+  std::string runfile_path = runfiles->Rlocation(JoinPath("__main__", path));
+  struct stat st = {};
+  if (!runfile_path.empty() && stat(runfile_path.c_str(), &st) == 0) {
+    // Found it.
+    return runfile_path;
+  }
+
+  // You are not gonna like this, but go_binary data dependencies have an extra
+  // directory name with a "_" suffix, so we must check for that path too.
+  //
+  // For example, a go_binary with name"//foo/bar:baz" will be placed in
+  // "<runfiles_dir>/foo/bar/baz_/baz".
+  //
+  // See
+  // https://github.com/bazelbuild/rules_go/blob/d2a3cf2d6b18f5be19adccc6a6806e0c3b8c410b/go/private/context.bzl#L137.
+  absl::string_view dirname = Dirname(path);
+  absl::string_view basename = Basename(path);
+  std::string go_binary_path =
+      JoinPath(dirname, absl::StrCat(basename, "_"), basename);
+  return runfiles->Rlocation(JoinPath("__main__", go_binary_path));
 }
 
 }  // namespace testing

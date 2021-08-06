@@ -110,7 +110,8 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			if tg == t.ThreadGroup() {
 				continue
 			}
-			if t.PIDNamespace().IDOfThreadGroup(tg) == kernel.InitTID {
+			// Don't send the signal to the init process in t's PID namespace.
+			if tg.IsInitIn(t.PIDNamespace()) {
 				continue
 			}
 

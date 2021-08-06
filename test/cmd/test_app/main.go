@@ -46,12 +46,13 @@ func main() {
 	subcommands.Register(new(fdReceiver), "")
 	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
+	subcommands.Register(new(fsTreeCreator), "")
 	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")
 	subcommands.Register(new(taskTree), "")
 	subcommands.Register(new(uds), "")
-	subcommands.Register(new(fsTreeCreator), "")
+	subcommands.Register(new(zombieTest), "")
 
 	flag.Parse()
 
