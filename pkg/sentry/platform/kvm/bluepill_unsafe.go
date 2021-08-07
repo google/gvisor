@@ -26,6 +26,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -64,6 +66,17 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 //
 //go:nosplit
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {
+	if c.safecopySiginfo.Signo != 0 {
+		// This exit was triggered by one of safecopy calls that triggered a signal.
+		_, _, errno := unix.RawSyscall6(unix.SYS_RT_TGSIGQUEUEINFO,
+			uintptr(pid), uintptr(c.tid), uintptr(c.safecopySiginfo.Signo),
+			uintptr(unsafe.Pointer(&c.safecopySiginfo)), 0, 0)
+		if errno != 0 {
+			throw("failed to send a signal")
+		}
+		c.safecopySiginfo.Signo = 0
+	}
+
 	// Increment our counter.
 	atomic.AddUint64(&c.guestExits, 1)
 
@@ -187,8 +200,8 @@ func bluepillHandler(context unsafe.Pointer) {
 			bluepillGuestExit(c, context)
 			return
 		case _KVM_EXIT_MMIO:
-			physical := uintptr(c.runData.data[0])
-			if getHypercallID(physical) == _KVM_HYPERCALL_VMEXIT {
+			mmio := (*mmioData)(unsafe.Pointer(&c.runData.data[0]))
+			if getHypercallID(uintptr(mmio.physical)) == _KVM_HYPERCALL_VMEXIT {
 				bluepillGuestExit(c, context)
 				return
 			}
@@ -197,8 +210,7 @@ func bluepillHandler(context unsafe.Pointer) {
 			atomic.AddUint32(&c.faults, 1)
 
 			// For MMIO, the physical address is the first data item.
-			physical = uintptr(c.runData.data[0])
-			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
+			virtual, ok := handleBluepillFault(c.machine, uintptr(mmio.physical), physicalRegions, _KVM_MEM_FLAGS_NONE)
 			if !ok {
 				c.die(bluepillArchContext(context), "invalid physical address")
 				return
@@ -210,18 +222,40 @@ func bluepillHandler(context unsafe.Pointer) {
 			// because, if a fault occurs here, the same fault
 			// would have occurred in guest mode. The kernel should
 			// not create invalid page table mappings.
-			data := (*[8]byte)(unsafe.Pointer(&c.runData.data[1]))
-			length := (uintptr)((uint32)(c.runData.data[2]))
-			write := (uint8)(((c.runData.data[2] >> 32) & 0xff)) != 0
-			for i := uintptr(0); i < length; i++ {
-				b := bytePtr(uintptr(virtual) + i)
-				if write {
-					// Write to the given address.
-					*b = data[i]
-				} else {
-					// Read from the given address.
-					data[i] = *b
-				}
+			// Here is one exception when the Sentry reads a user
+			// mapping with safecopy. In this case, the SIGBUS
+			// signal can be triggered, and we need to catch it and
+			// trigger the signal after returning back to the guest.
+			set := linux.SignalSet(1 << linux.SIGBUS.Index())
+			oldset := linux.SignalSet(0)
+			if _, _, errno := unix.RawSyscall6(
+				unix.SYS_RT_SIGPROCMASK, linux.SIG_UNBLOCK,
+				uintptr(unsafe.Pointer(&set)), uintptr(unsafe.Pointer(&oldset)),
+				linux.SignalSetSize, 0, 0); errno != 0 {
+				throw("failed to unblock SIGBUS")
+			}
+
+			sig := int32(0)
+			fault := uintptr(0)
+			if mmio.isWrite != 0 {
+				// Write to the given address.
+				fault, sig = safecopy.Memcpy(virtual, uintptr(unsafe.Pointer(&mmio.data[0])), uintptr(mmio.length))
+			} else {
+				fault, sig = safecopy.Memcpy(uintptr(unsafe.Pointer(&mmio.data[0])), virtual, uintptr(mmio.length))
+			}
+			if _, _, errno := unix.RawSyscall6(
+				unix.SYS_RT_SIGPROCMASK, linux.SIG_SETMASK,
+				uintptr(unsafe.Pointer(&oldset)), 0,
+				linux.SignalSetSize, 0, 0); errno != 0 {
+				throw("failed to restore the signal mask")
+			}
+			if linux.Signal(sig) == linux.SIGBUS {
+				c.safecopySiginfo.Signo = sig
+				c.safecopySiginfo.Code = linux.SI_KERNEL
+				c.safecopySiginfo.SetAddr(uint64(fault))
+				bluepillSigBus(c)
+			} else if sig != 0 {
+				throw("unexpected signal")
 			}
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
 			bluepillStopGuest(c)

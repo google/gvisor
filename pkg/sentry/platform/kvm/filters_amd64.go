@@ -35,6 +35,14 @@ func (*KVM) SyscallFilters() seccomp.SyscallRules {
 		unix.SYS_MMAP:            {},
 		unix.SYS_RT_SIGSUSPEND:   {},
 		unix.SYS_RT_SIGTIMEDWAIT: {},
-		0xffffffffffffffff:       {}, // KVM uses syscall -1 to transition to host.
+		unix.SYS_RT_TGSIGQUEUEINFO: {
+			{
+				seccomp.EqualTo(pid),
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		0xffffffffffffffff: {}, // KVM uses syscall -1 to transition to host.
 	}
 }

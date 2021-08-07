@@ -15,7 +15,7 @@ TEXT handleMemcpyFault(SB), NOSPLIT, $0-36
 	MOVW R1, sig+32(FP)
 	RET
 
-// memcpy copies data from src to dst. If a SIGSEGV or SIGBUS signal is received
+// Memcpy copies data from src to dst. If a SIGSEGV or SIGBUS signal is received
 // during the copy, it returns the address that caused the fault and the number
 // of the signal that was received. Otherwise, it returns an unspecified address
 // and a signal number of 0.
@@ -26,8 +26,8 @@ TEXT handleMemcpyFault(SB), NOSPLIT, $0-36
 //
 // The code is derived from the Go source runtime.memmove.
 //
-// func memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
-TEXT ·memcpy(SB), NOSPLIT, $-8-36
+// func Memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
+TEXT ·Memcpy(SB), NOSPLIT, $-8-36
 	// Store 0 as the returned signal number. If we run to completion,
 	// this is the value the caller will see; if a signal is received,
 	// handleMemcpyFault will store a different value in this address.
@@ -79,6 +79,6 @@ forwardtailloop:
 
 // func addrOfMemcpy() uintptr
 TEXT ·addrOfMemcpy(SB), $0-8
-	MOVD	$·memcpy(SB), R0
+	MOVD	$·Memcpy(SB), R0
 	MOVD	R0, ret+0(FP)
 	RET

@@ -28,7 +28,7 @@ import (
 // (for memclr) before proceeding.
 const maxRegisterSize = 16
 
-// memcpy copies data from src to dst. If a SIGSEGV or SIGBUS signal is received
+// Memcpy copies data from src to dst. If a SIGSEGV or SIGBUS signal is received
 // during the copy, it returns the address that caused the fault and the number
 // of the signal that was received. Otherwise, it returns an unspecified address
 // and a signal number of 0.
@@ -38,7 +38,7 @@ const maxRegisterSize = 16
 // successfully copied.
 //
 //go:noescape
-func memcpy(dst, src uintptr, n uintptr) (fault uintptr, sig int32)
+func Memcpy(dst, src uintptr, n uintptr) (fault uintptr, sig int32)
 
 // memclr sets the n bytes following ptr to zeroes. If a SIGSEGV or SIGBUS
 // signal is received during the write, it returns the address that caused the
@@ -117,7 +117,7 @@ func copyIn(dst []byte, src uintptr) (int, error) {
 		return 0, nil
 	}
 
-	fault, sig := memcpy(uintptr(unsafe.Pointer(&dst[0])), src, toCopy)
+	fault, sig := Memcpy(uintptr(unsafe.Pointer(&dst[0])), src, toCopy)
 	if sig == 0 {
 		return len(dst), nil
 	}
@@ -157,7 +157,7 @@ func copyOut(dst uintptr, src []byte) (int, error) {
 		return 0, nil
 	}
 
-	fault, sig := memcpy(dst, uintptr(unsafe.Pointer(&src[0])), toCopy)
+	fault, sig := Memcpy(dst, uintptr(unsafe.Pointer(&src[0])), toCopy)
 	if sig == 0 {
 		return len(src), nil
 	}
@@ -200,7 +200,7 @@ func copyN(dst, src uintptr, toCopy uintptr) (uintptr, error) {
 		return 0, nil
 	}
 
-	fault, sig := memcpy(dst, src, toCopy)
+	fault, sig := Memcpy(dst, src, toCopy)
 	if sig == 0 {
 		return toCopy, nil
 	}

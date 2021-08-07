@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
@@ -142,6 +143,10 @@ type vCPU struct {
 
 	// dieState holds state related to vCPU death.
 	dieState dieState
+
+	// safecopySiginfo is an information about a signal that has been
+	// trigered by one of safecopy calls in the guest mode.
+	safecopySiginfo linux.SignalInfo
 }
 
 type dieState struct {

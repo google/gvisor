@@ -59,6 +59,14 @@ type runData struct {
 	data [32]uint64
 }
 
+// mmioData mirrors kvm_run.mmio (linux/kvm.h).
+type mmioData struct {
+	physical uint64
+	data     [8]uint8
+	length   uint32
+	isWrite  uint8
+}
+
 // KVM represents a lightweight VM context.
 type KVM struct {
 	platform.NoCPUPreemptionDetection

@@ -15,17 +15,22 @@
 package kvm
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -459,6 +464,84 @@ func TestRdtsc(t *testing.T) {
 		}
 		i++
 		return i < 100
+	})
+}
+
+// testSafecopy creates big file mappings to trigger KVM_EXIT_MMIO.`
+func testSafecopy(t *testing.T, mapSize uintptr, fileSize uintptr, testFunc func(t *testing.T, c *vCPU, addr uintptr)) {
+	memfd, err := memutil.CreateMemFD(fmt.Sprintf("kvm_test_%d", os.Getpid()), 0)
+	if err != nil {
+		t.Errorf("error creating memfd: %v", err)
+	}
+
+	memfile := os.NewFile(uintptr(memfd), "kvm_test")
+	memfile.Truncate(int64(fileSize))
+	kvmTest(t, nil, func(c *vCPU) bool {
+		const n = 10
+		mappings := make([]uintptr, n)
+		defer func() {
+			for i := 0; i < n && mappings[i] != 0; i++ {
+				unix.RawSyscall(
+					unix.SYS_MUNMAP,
+					mappings[i], mapSize, 0)
+			}
+		}()
+		for i := 0; i < n; i++ {
+			addr, _, errno := unix.RawSyscall6(
+				unix.SYS_MMAP,
+				0,
+				mapSize,
+				unix.PROT_READ|unix.PROT_WRITE,
+				unix.MAP_SHARED|unix.MAP_FILE,
+				uintptr(memfile.Fd()),
+				0)
+			if errno != 0 {
+				t.Errorf("error mapping file: %v", errno)
+			}
+			mappings[i] = addr
+			testFunc(t, c, addr)
+		}
+		return false
+	})
+}
+
+// TestSafecopySigbus creates a file mapping and call safecopy.CopyIn to an
+// address that is beyond the file size. In this case, CopyIn has to return the
+// BusError.
+func TestSafecopySigbus(t *testing.T) {
+	mapSize := uintptr(faultBlockSize)
+	fileSize := mapSize - hostarch.PageSize
+	buf := make([]byte, hostarch.PageSize)
+	testSafecopy(t, mapSize, fileSize, func(t *testing.T, c *vCPU, addr uintptr) {
+		want := safecopy.BusError{addr + fileSize}
+		bluepill(c)
+		_, err := safecopy.CopyIn(buf, unsafe.Pointer(addr+fileSize))
+		if err != want {
+			t.Errorf("expected error: got %v, want %v", err, want)
+		}
+	})
+}
+
+// TestSafecopy checks that safecopy calls work properly for memory regions
+// that are not mapped to the guest yet.
+func TestSafecopy(t *testing.T) {
+	mapSize := uintptr(faultBlockSize)
+	fileSize := mapSize
+	testSafecopy(t, mapSize, fileSize, func(t *testing.T, c *vCPU, addr uintptr) {
+		want := uint32(0x12345678)
+		bluepill(c)
+		_, err := safecopy.SwapUint32(unsafe.Pointer(addr+fileSize-8), want)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		bluepill(c)
+		val, err := safecopy.LoadUint32(unsafe.Pointer(addr + fileSize - 8))
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if val != want {
+			t.Errorf("incorrect value: got %x, want %x", val, want)
+		}
 	})
 }
 

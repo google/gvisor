@@ -44,8 +44,8 @@ TEXT handleMemcpyFault(SB), NOSPLIT, $0-36
 //
 // The code is derived from the forward copying part of runtime.memmove.
 //
-// func memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
-TEXT ·memcpy(SB), NOSPLIT, $0-36
+// func Memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
+TEXT ·Memcpy(SB), NOSPLIT, $0-36
 	// Store 0 as the returned signal number. If we run to completion,
 	// this is the value the caller will see; if a signal is received,
 	// handleMemcpyFault will store a different value in this address.
@@ -220,6 +220,6 @@ move_129through256:
 
 // func addrOfMemcpy() uintptr
 TEXT ·addrOfMemcpy(SB), $0-8
-	MOVQ	$·memcpy(SB), AX
+	MOVQ	$·Memcpy(SB), AX
 	MOVQ	AX, ret+0(FP)
 	RET
