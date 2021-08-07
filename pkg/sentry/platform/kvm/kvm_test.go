@@ -15,7 +15,9 @@
 package kvm
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/safecopy"
@@ -487,6 +490,47 @@ func TestSafeCopy(t *testing.T) {
 		guestExits := atomic.LoadUint64(&c.guestExits)
 		if guestExits-origGuestExits > 50 {
 			t.Errorf("safecopy triggers VM-exit-s")
+		}
+		return false
+	})
+}
+
+func TestSafecopySigbus(t *testing.T) {
+	memfd, err := memutil.CreateMemFD(fmt.Sprintf("kvm_test_%d", os.Getpid()), 0)
+	if err != nil {
+		t.Errorf("error creating memfd: %v", err)
+	}
+	memfile := os.NewFile(uintptr(memfd), "kvm_test")
+	kvmTest(t, nil, func(c *vCPU) bool {
+		const n = 10
+		size := uintptr(faultBlockSize)
+		mappings := make([]uintptr, n)
+		defer func() {
+			for i := 0; i < n && mappings[i] != 0; i++ {
+				unix.RawSyscall(
+					unix.SYS_MUNMAP,
+					mappings[i], size, 0)
+			}
+		}()
+		for i := 0; i < n; i++ {
+			addr, _, errno := unix.RawSyscall6(
+				unix.SYS_MMAP,
+				0,
+				size,
+				unix.PROT_READ|unix.PROT_WRITE,
+				unix.MAP_SHARED|unix.MAP_FILE,
+				uintptr(memfile.Fd()),
+				0)
+			if errno != 0 {
+				t.Errorf("error mapping runData: %v", errno)
+			}
+			mappings[i] = addr
+			want := safecopy.BusError{addr + size - 4}
+			bluepill(c)
+			_, err := safecopy.LoadUint32(unsafe.Pointer(addr + size - 4))
+			if err != want {
+				t.Errorf("nexpected error: got %v, want %v", err, want)
+			}
 		}
 		return false
 	})
