@@ -8,13 +8,21 @@ package(
 cc_library(
     name = "capability_util",
     testonly = 1,
-    srcs = ["capability_util.cc"],
-    hdrs = ["capability_util.h"],
+    srcs = [
+        "fuchsia_capability_util.cc",
+        "linux_capability_util.cc",
+    ],
+    hdrs = [
+        "capability_util.h",
+        "fuchsia_capability_util.h",
+        "linux_capability_util.h",
+    ],
     deps = [
         ":cleanup",
         ":memory_util",
         ":posix_error",
         ":save_util",
+        ":socket_util",
         ":test_util",
         "@com_google_absl//absl/strings",
     ],

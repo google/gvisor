@@ -7,6 +7,9 @@ package(
 
 exports_files(
     [
+        "raw_socket.cc",
+        "raw_socket_hdrincl.cc",
+        "raw_socket_icmp.cc",
         "socket.cc",
         "socket_inet_loopback.cc",
         "socket_inet_loopback_isolated.cc",
