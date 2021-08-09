@@ -496,6 +496,50 @@ TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
   EXPECT_EQ(result[0].data.u64, kMagicConstant);
 }
 
+TEST(EpollTest, DoubleLayerEpoll) {
+  int listen_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  struct sockaddr_in sa;
+  sa.sin_family = AF_INET;
+  inet_aton("127.0.0.1", &sa.sin_addr);
+  sa.sin_port = htons(8888);
+  bind(listen_fd, (struct sockaddr *)&sa, sizeof(sa));
+  listen(listen_fd, 1);
+
+  auto epfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd1.get(), listen_fd, EPOLLIN|EPOLLHUP, listen_fd));
+
+  auto epfd2 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epfd2.get(), epfd1.get(), EPOLLIN|EPOLLHUP, epfd1.get()));
+
+  struct epoll_event ret_events[2];
+
+  // first time
+  ScopedThread thread1([&sa]() {
+    sleep(1);
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_THAT(connect(sock, (struct sockaddr *)&sa, sizeof(sa)), SyscallSucceeds());
+  });
+  ASSERT_THAT(epoll_wait(epfd2.get(), ret_events, 2, 2000), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(ret_events[0].data.fd, epfd1.get());
+  ASSERT_THAT(epoll_wait(epfd1.get(), ret_events, 2, 2000), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(ret_events[0].data.fd, listen_fd);
+  int server_fd = accept(listen_fd, NULL, NULL);
+  ASSERT_THAT(close(server_fd), SyscallSucceeds());
+
+  // second time to check if event in epfd1 is cleaned correctly
+  ScopedThread thread2([&sa]() {
+    sleep(1);
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_THAT(connect(sock, (struct sockaddr *)&sa, sizeof(sa)), SyscallSucceeds());
+  });
+  ASSERT_THAT(epoll_wait(epfd2.get(), ret_events, 2, 2000), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(ret_events[0].data.fd, epfd1.get());
+  ASSERT_THAT(epoll_wait(epfd1.get(), ret_events, 2, 2000), SyscallSucceedsWithValue(1));
+  ASSERT_EQ(ret_events[0].data.fd, listen_fd);
+  server_fd = accept(listen_fd, NULL, NULL);
+  ASSERT_THAT(close(server_fd), SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing
