@@ -519,15 +519,21 @@ func (c *vCPU) lock() {
 //
 //go:nosplit
 func (c *vCPU) unlock() {
-	if atomic.CompareAndSwapUint32(&c.state, vCPUUser|vCPUGuest, vCPUGuest) {
+	origState := atomicbitops.CompareAndSwapUint32(&c.state, vCPUUser|vCPUGuest, vCPUGuest)
+	if origState == vCPUUser|vCPUGuest {
 		// Happy path: no exits are forced, and we can continue
 		// executing on our merry way with a single atomic access.
 		return
 	}
 
 	// Clear the lock.
-	origState := atomic.LoadUint32(&c.state)
-	atomicbitops.AndUint32(&c.state, ^vCPUUser)
+	for {
+		state := atomicbitops.CompareAndSwapUint32(&c.state, origState, origState&^vCPUUser)
+		if state == origState {
+			break
+		}
+		origState = state
+	}
 	switch origState {
 	case vCPUUser:
 		// Normal state.
