@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
-#include <linux/capability.h>
-#include <linux/filter.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>

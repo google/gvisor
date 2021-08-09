@@ -14,7 +14,7 @@
 
 #ifdef __linux__
 
-#include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 
 #include <linux/capability.h>
 #include <sched.h>
