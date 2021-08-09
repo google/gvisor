@@ -583,6 +583,7 @@ cc_binary(
         "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:thread_util",
     ],
 )
 
