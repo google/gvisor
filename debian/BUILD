@@ -28,12 +28,12 @@ pkg_deb(
         amd64 = "amd64",
         arm64 = "arm64",
     ),
-    changes = "runsc.changes",
+    changes = "ignored - it will be runsc.changes",
     conffiles = [
         "/etc/containerd/runsc.toml",
     ],
     data = ":debian-data",
-    deb = "runsc.deb",
+    deb = "ignored - it will match out",
     # Note that the description_file will be flatten (all newlines removed),
     # and therefore it is kept to a simple one-line description. The expected
     # format for debian packages is "short summary\nLonger explanation of
