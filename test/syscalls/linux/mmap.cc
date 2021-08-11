@@ -795,7 +795,7 @@ class MMapFileTest : public MMapTest {
 
   bool FSSupportsMap() const {
     bool supported = true;
-    void* ret = mmap(nullptr, 1, PROT_NONE, 0, fd_.get(), 0);
+    void* ret = mmap(nullptr, 1, PROT_NONE, MAP_PRIVATE, fd_.get(), 0);
     if (ret == MAP_FAILED && errno != ENODEV) {
       supported = false;
     }
