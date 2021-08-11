@@ -28,12 +28,10 @@ pkg_deb(
         amd64 = "amd64",
         arm64 = "arm64",
     ),
-    changes = "runsc.changes",
     conffiles = [
         "/etc/containerd/runsc.toml",
     ],
     data = ":debian-data",
-    deb = "runsc.deb",
     # Note that the description_file will be flatten (all newlines removed),
     # and therefore it is kept to a simple one-line description. The expected
     # format for debian packages is "short summary\nLonger explanation of
@@ -42,6 +40,7 @@ pkg_deb(
     homepage = "https://gvisor.dev/",
     maintainer = "The gVisor Authors <gvisor-dev@googlegroups.com>",
     package = "runsc",
+    package_file_name = "runsc.deb",
     postinst = "postinst.sh",
     version_file = version,
     visibility = [
