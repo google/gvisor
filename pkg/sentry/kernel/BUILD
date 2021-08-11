@@ -216,6 +216,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         ":uncaught_signal_go_proto",
+        "//pkg/sentry/kernel/ipc",
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
