@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "object.go",
         "registry.go",
+        "ns.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
