@@ -84,7 +84,7 @@ DOCKER_RUN_OPTIONS += -v "$(shell readlink -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 DOCKER_EXEC_OPTIONS += --interactive
-ifeq (true,$(shell test -t 0 && echo true))
+ifeq (true,$(shell test -t 1 && echo true))
 DOCKER_EXEC_OPTIONS += --tty
 endif
 
@@ -199,9 +199,17 @@ build_paths = \
   | xargs -r -n 1 -I {} readlink -f "{}" \
   | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
 
+debian_paths = \
+  (set -euo pipefail; \
+  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=debian/show_paths.bzl) \
+  | xargs -r -n 1 -I {} readlink -f "{}" \
+  | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
+
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
 copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
+deb_copy = $(call header,COPY $(1) $(2)) && $(call debian_paths,$(1),cp -fa {} $(2))
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
