@@ -142,7 +142,8 @@ TEST(LinkTest, OldnameIsEmpty) {
 TEST(LinkTest, OldnameDoesNotExist) {
   const std::string oldname = NewTempAbsPath();
   const std::string newname = NewTempAbsPath();
-  EXPECT_THAT(link("", newname.c_str()), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(link(oldname.c_str(), newname.c_str()),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(LinkTest, NewnameCannotExist) {
