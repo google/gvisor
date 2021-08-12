@@ -81,8 +81,10 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
+        "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/platform",
