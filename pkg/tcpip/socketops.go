@@ -57,6 +57,11 @@ type SocketOptionsHandler interface {
 
 	// OnSetReceiveBufferSize is invoked by SO_RCVBUF and SO_RCVBUFFORCE.
 	OnSetReceiveBufferSize(v, oldSz int64) (newSz int64)
+
+	// WakeupWriters is invoked when the send buffer size for an endpoint is
+	// changed. The handler notifies the writers if the send buffer size is
+	// increased with setsockopt(2) for TCP endpoints.
+	WakeupWriters()
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -97,6 +102,9 @@ func (*DefaultSocketOptionsHandler) HasNIC(int32) bool {
 func (*DefaultSocketOptionsHandler) OnSetSendBufferSize(v int64) (newSz int64) {
 	return v
 }
+
+// WakeupWriters implements SocketOptionsHandler.WakeupWriters.
+func (*DefaultSocketOptionsHandler) WakeupWriters() {}
 
 // OnSetReceiveBufferSize implements SocketOptionsHandler.OnSetReceiveBufferSize.
 func (*DefaultSocketOptionsHandler) OnSetReceiveBufferSize(v, oldSz int64) (newSz int64) {
@@ -626,6 +634,9 @@ func (so *SocketOptions) SetSendBufferSize(sendBufferSize int64, notify bool) {
 		sendBufferSize = so.handler.OnSetSendBufferSize(sendBufferSize)
 	}
 	so.sendBufferSize.Store(sendBufferSize)
+	if notify {
+		so.handler.WakeupWriters()
+	}
 }
 
 // GetReceiveBufferSize gets value for SO_RCVBUF option.

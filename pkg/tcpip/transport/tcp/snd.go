@@ -1415,9 +1415,6 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			ackLeft -= datalen
 		}
 
-		// Update the send buffer usage and notify potential waiters.
-		s.ep.updateSndBufferUsage(int(acked))
-
 		// Clear SACK information for all acked data.
 		s.ep.scoreboard.Delete(s.SndUna)
 
@@ -1436,6 +1433,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				s.reorderTimer.disable()
 			}
 		}
+
+		// Update the send buffer usage and notify potential waiters.
+		s.ep.updateSndBufferUsage(int(acked))
 
 		// It is possible for s.outstanding to drop below zero if we get
 		// a retransmit timeout, reset outstanding to zero but later
