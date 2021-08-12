@@ -25,9 +25,11 @@ func (p *rawPacket) beforeSave() {}
 // +checklocksignore
 func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var dataValue buffer.VectorisedView = p.saveData()
+	var dataValue buffer.VectorisedView
+	dataValue = p.saveData()
 	stateSinkObject.SaveValue(1, dataValue)
-	var receivedAtValue int64 = p.saveReceivedAt()
+	var receivedAtValue int64
+	receivedAtValue = p.saveReceivedAt()
 	stateSinkObject.SaveValue(2, receivedAtValue)
 	stateSinkObject.Save(0, &p.rawPacketEntry)
 	stateSinkObject.Save(3, &p.senderAddr)

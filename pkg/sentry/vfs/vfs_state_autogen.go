@@ -654,7 +654,8 @@ func (fd *DynamicBytesFileDescriptionImpl) beforeSave() {}
 // +checklocksignore
 func (fd *DynamicBytesFileDescriptionImpl) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	var bufValue []byte = fd.saveBuf()
+	var bufValue []byte
+	bufValue = fd.saveBuf()
 	stateSinkObject.SaveValue(1, bufValue)
 	stateSinkObject.Save(0, &fd.data)
 	stateSinkObject.Save(2, &fd.off)
@@ -1157,7 +1158,8 @@ func (mnt *Mount) beforeSave() {}
 // +checklocksignore
 func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	mnt.beforeSave()
-	var keyValue VirtualDentry = mnt.saveKey()
+	var keyValue VirtualDentry
+	keyValue = mnt.saveKey()
 	stateSinkObject.SaveValue(5, keyValue)
 	stateSinkObject.Save(0, &mnt.vfs)
 	stateSinkObject.Save(1, &mnt.fs)
@@ -1891,7 +1893,8 @@ func (vfs *VirtualFilesystem) beforeSave() {}
 // +checklocksignore
 func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	vfs.beforeSave()
-	var mountsValue []*Mount = vfs.saveMounts()
+	var mountsValue []*Mount
+	mountsValue = vfs.saveMounts()
 	stateSinkObject.SaveValue(0, mountsValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)

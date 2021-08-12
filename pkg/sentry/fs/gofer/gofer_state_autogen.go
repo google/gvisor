@@ -130,7 +130,8 @@ func (i *inodeFileState) StateFields() []string {
 // +checklocksignore
 func (i *inodeFileState) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	var loadingValue struct{} = i.saveLoading()
+	var loadingValue struct{}
+	loadingValue = i.saveLoading()
 	stateSinkObject.SaveValue(2, loadingValue)
 	stateSinkObject.Save(0, &i.s)
 	stateSinkObject.Save(1, &i.sattr)

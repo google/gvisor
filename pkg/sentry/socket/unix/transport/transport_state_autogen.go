@@ -25,7 +25,8 @@ func (e *connectionedEndpoint) beforeSave() {}
 // +checklocksignore
 func (e *connectionedEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var acceptedChanValue []*connectionedEndpoint = e.saveAcceptedChan()
+	var acceptedChanValue []*connectionedEndpoint
+	acceptedChanValue = e.saveAcceptedChan()
 	stateSinkObject.SaveValue(4, acceptedChanValue)
 	stateSinkObject.Save(0, &e.baseEndpoint)
 	stateSinkObject.Save(1, &e.id)

@@ -22,7 +22,8 @@ func (p *pipeOperations) StateFields() []string {
 // +checklocksignore
 func (p *pipeOperations) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var flagsValue fs.FileFlags = p.saveFlags()
+	var flagsValue fs.FileFlags
+	flagsValue = p.saveFlags()
 	stateSinkObject.SaveValue(0, flagsValue)
 	stateSinkObject.Save(1, &p.opener)
 	stateSinkObject.Save(2, &p.readAheadBuffer)

@@ -42,7 +42,8 @@ func (conn *connection) beforeSave() {}
 // +checklocksignore
 func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	conn.beforeSave()
-	var initializedChanValue bool = conn.saveInitializedChan()
+	var initializedChanValue bool
+	initializedChanValue = conn.saveInitializedChan()
 	stateSinkObject.SaveValue(3, initializedChanValue)
 	stateSinkObject.Save(0, &conn.fd)
 	stateSinkObject.Save(1, &conn.attributeVersion)
@@ -144,7 +145,8 @@ func (fd *DeviceFD) beforeSave() {}
 // +checklocksignore
 func (fd *DeviceFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	var fullQueueChValue int = fd.saveFullQueueCh()
+	var fullQueueChValue int
+	fullQueueChValue = fd.saveFullQueueCh()
 	stateSinkObject.SaveValue(12, fullQueueChValue)
 	stateSinkObject.Save(0, &fd.vfsfd)
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)

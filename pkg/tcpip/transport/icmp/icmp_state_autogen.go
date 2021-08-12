@@ -25,9 +25,11 @@ func (p *icmpPacket) beforeSave() {}
 // +checklocksignore
 func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var dataValue buffer.VectorisedView = p.saveData()
+	var dataValue buffer.VectorisedView
+	dataValue = p.saveData()
 	stateSinkObject.SaveValue(2, dataValue)
-	var receivedAtValue int64 = p.saveReceivedAt()
+	var receivedAtValue int64
+	receivedAtValue = p.saveReceivedAt()
 	stateSinkObject.SaveValue(3, receivedAtValue)
 	stateSinkObject.Save(0, &p.icmpPacketEntry)
 	stateSinkObject.Save(1, &p.senderAddress)

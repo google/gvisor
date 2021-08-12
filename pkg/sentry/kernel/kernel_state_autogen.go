@@ -231,7 +231,8 @@ func (f *FDTable) beforeSave() {}
 // +checklocksignore
 func (f *FDTable) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
-	var descriptorTableValue map[int32]descriptor = f.saveDescriptorTable()
+	var descriptorTableValue map[int32]descriptor
+	descriptorTableValue = f.saveDescriptorTable()
 	stateSinkObject.SaveValue(2, descriptorTableValue)
 	stateSinkObject.Save(0, &f.FDTableRefs)
 	stateSinkObject.Save(1, &f.k)
@@ -447,9 +448,11 @@ func (k *Kernel) beforeSave() {}
 // +checklocksignore
 func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
-	var danglingEndpointsValue []tcpip.Endpoint = k.saveDanglingEndpoints()
+	var danglingEndpointsValue []tcpip.Endpoint
+	danglingEndpointsValue = k.saveDanglingEndpoints()
 	stateSinkObject.SaveValue(22, danglingEndpointsValue)
-	var deviceRegistryValue *device.Registry = k.saveDeviceRegistry()
+	var deviceRegistryValue *device.Registry
+	deviceRegistryValue = k.saveDeviceRegistry()
 	stateSinkObject.SaveValue(26, deviceRegistryValue)
 	stateSinkObject.Save(0, &k.featureSet)
 	stateSinkObject.Save(1, &k.timekeeper)
@@ -610,7 +613,8 @@ func (p *pendingSignals) beforeSave() {}
 // +checklocksignore
 func (p *pendingSignals) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var signalsValue []savedPendingSignal = p.saveSignals()
+	var signalsValue []savedPendingSignal
+	signalsValue = p.saveSignals()
 	stateSinkObject.SaveValue(0, signalsValue)
 }
 
@@ -1376,9 +1380,11 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	if !state.IsZeroValue(&t.signalQueue) {
 		state.Failf("signalQueue is %#v, expected zero", &t.signalQueue)
 	}
-	var ptraceTracerValue *Task = t.savePtraceTracer()
+	var ptraceTracerValue *Task
+	ptraceTracerValue = t.savePtraceTracer()
 	stateSinkObject.SaveValue(31, ptraceTracerValue)
-	var syscallFiltersValue []bpf.Program = t.saveSyscallFilters()
+	var syscallFiltersValue []bpf.Program
+	syscallFiltersValue = t.saveSyscallFilters()
 	stateSinkObject.SaveValue(48, syscallFiltersValue)
 	stateSinkObject.Save(0, &t.taskNode)
 	stateSinkObject.Save(1, &t.runState)
@@ -1715,7 +1721,8 @@ func (image *TaskImage) beforeSave() {}
 // +checklocksignore
 func (image *TaskImage) StateSave(stateSinkObject state.Sink) {
 	image.beforeSave()
-	var stValue syscallTableInfo = image.saveSt()
+	var stValue syscallTableInfo
+	stValue = image.saveSt()
 	stateSinkObject.SaveValue(4, stValue)
 	stateSinkObject.Save(0, &image.Name)
 	stateSinkObject.Save(1, &image.Arch)
@@ -2095,7 +2102,8 @@ func (tg *ThreadGroup) beforeSave() {}
 // +checklocksignore
 func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	tg.beforeSave()
-	var oldRSeqCriticalValue *OldRSeqCriticalRegion = tg.saveOldRSeqCritical()
+	var oldRSeqCriticalValue *OldRSeqCriticalRegion
+	oldRSeqCriticalValue = tg.saveOldRSeqCritical()
 	stateSinkObject.SaveValue(29, oldRSeqCriticalValue)
 	stateSinkObject.Save(0, &tg.threadGroupNode)
 	stateSinkObject.Save(1, &tg.signalHandlers)

@@ -141,7 +141,8 @@ func (s *idMapSet) beforeSave() {}
 // +checklocksignore
 func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *idMapSegmentDataSlices = s.saveRoot()
+	var rootValue *idMapSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

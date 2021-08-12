@@ -100,7 +100,8 @@ func (cn *conn) beforeSave() {}
 // +checklocksignore
 func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	cn.beforeSave()
-	var lastUsedValue unixTime = cn.saveLastUsed()
+	var lastUsedValue unixTime
+	lastUsedValue = cn.saveLastUsed()
 	stateSinkObject.SaveValue(5, lastUsedValue)
 	stateSinkObject.Save(0, &cn.original)
 	stateSinkObject.Save(1, &cn.reply)

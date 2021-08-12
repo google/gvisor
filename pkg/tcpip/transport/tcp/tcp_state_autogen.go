@@ -135,7 +135,8 @@ func (a *accepted) beforeSave() {}
 // +checklocksignore
 func (a *accepted) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
-	var endpointsValue []*endpoint = a.saveEndpoints()
+	var endpointsValue []*endpoint
+	endpointsValue = a.saveEndpoints()
 	stateSinkObject.SaveValue(0, endpointsValue)
 	stateSinkObject.Save(1, &a.cap)
 }
@@ -210,7 +211,8 @@ func (e *endpoint) StateFields() []string {
 // +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	var stateValue EndpointState = e.saveState()
+	var stateValue EndpointState
+	stateValue = e.saveState()
 	stateSinkObject.SaveValue(10, stateValue)
 	stateSinkObject.Save(0, &e.TCPEndpointStateInner)
 	stateSinkObject.Save(1, &e.TransportEndpointInfo)
@@ -580,9 +582,11 @@ func (s *segment) beforeSave() {}
 // +checklocksignore
 func (s *segment) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var dataValue buffer.VectorisedView = s.saveData()
+	var dataValue buffer.VectorisedView
+	dataValue = s.saveData()
 	stateSinkObject.SaveValue(8, dataValue)
-	var optionsValue []byte = s.saveOptions()
+	var optionsValue []byte
+	optionsValue = s.saveOptions()
 	stateSinkObject.SaveValue(17, optionsValue)
 	stateSinkObject.Save(0, &s.segmentEntry)
 	stateSinkObject.Save(1, &s.refCnt)

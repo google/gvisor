@@ -328,7 +328,8 @@ func (d *Dirent) StateFields() []string {
 // +checklocksignore
 func (d *Dirent) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	var childrenValue map[string]*Dirent = d.saveChildren()
+	var childrenValue map[string]*Dirent
+	childrenValue = d.saveChildren()
 	stateSinkObject.SaveValue(7, childrenValue)
 	stateSinkObject.Save(0, &d.AtomicRefCount)
 	stateSinkObject.Save(1, &d.userVisible)

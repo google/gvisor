@@ -162,7 +162,8 @@ func (s *fileRefcountSet) beforeSave() {}
 // +checklocksignore
 func (s *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *fileRefcountSegmentDataSlices = s.saveRoot()
+	var rootValue *fileRefcountSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -426,7 +427,8 @@ func (vma *vma) beforeSave() {}
 // +checklocksignore
 func (vma *vma) StateSave(stateSinkObject state.Sink) {
 	vma.beforeSave()
-	var realPermsValue int = vma.saveRealPerms()
+	var realPermsValue int
+	realPermsValue = vma.saveRealPerms()
 	stateSinkObject.SaveValue(2, realPermsValue)
 	stateSinkObject.Save(0, &vma.mappable)
 	stateSinkObject.Save(1, &vma.off)
@@ -533,7 +535,8 @@ func (s *pmaSet) beforeSave() {}
 // +checklocksignore
 func (s *pmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *pmaSegmentDataSlices = s.saveRoot()
+	var rootValue *pmaSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -694,7 +697,8 @@ func (s *vmaSet) beforeSave() {}
 // +checklocksignore
 func (s *vmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *vmaSegmentDataSlices = s.saveRoot()
+	var rootValue *vmaSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

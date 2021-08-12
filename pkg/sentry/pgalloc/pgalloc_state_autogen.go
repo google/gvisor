@@ -49,7 +49,8 @@ func (s *evictableRangeSet) beforeSave() {}
 // +checklocksignore
 func (s *evictableRangeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *evictableRangeSegmentDataSlices = s.saveRoot()
+	var rootValue *evictableRangeSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -183,7 +184,8 @@ func (s *reclaimSet) beforeSave() {}
 // +checklocksignore
 func (s *reclaimSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *reclaimSegmentDataSlices = s.saveRoot()
+	var rootValue *reclaimSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -286,7 +288,8 @@ func (s *usageSet) beforeSave() {}
 // +checklocksignore
 func (s *usageSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *usageSegmentDataSlices = s.saveRoot()
+	var rootValue *usageSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 

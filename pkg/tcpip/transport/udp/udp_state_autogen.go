@@ -28,9 +28,11 @@ func (p *udpPacket) beforeSave() {}
 // +checklocksignore
 func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var dataValue buffer.VectorisedView = p.saveData()
+	var dataValue buffer.VectorisedView
+	dataValue = p.saveData()
 	stateSinkObject.SaveValue(4, dataValue)
-	var receivedAtValue int64 = p.saveReceivedAt()
+	var receivedAtValue int64
+	receivedAtValue = p.saveReceivedAt()
 	stateSinkObject.SaveValue(5, receivedAtValue)
 	stateSinkObject.Save(0, &p.udpPacketEntry)
 	stateSinkObject.Save(1, &p.senderAddress)

@@ -22,7 +22,8 @@ func (w *WeakRef) beforeSave() {}
 // +checklocksignore
 func (w *WeakRef) StateSave(stateSinkObject state.Sink) {
 	w.beforeSave()
-	var objValue savedReference = w.saveObj()
+	var objValue savedReference
+	objValue = w.saveObj()
 	stateSinkObject.SaveValue(0, objValue)
 	stateSinkObject.Save(1, &w.user)
 }

@@ -21,7 +21,8 @@ func (p *AtomicPtrCredentials) beforeSave() {}
 // +checklocksignore
 func (p *AtomicPtrCredentials) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	var ptrValue *Credentials = p.savePtr()
+	var ptrValue *Credentials
+	ptrValue = p.savePtr()
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 

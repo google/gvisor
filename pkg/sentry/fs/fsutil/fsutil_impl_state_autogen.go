@@ -21,7 +21,8 @@ func (s *DirtySet) beforeSave() {}
 // +checklocksignore
 func (s *DirtySet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *DirtySegmentDataSlices = s.saveRoot()
+	var rootValue *DirtySegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -124,7 +125,8 @@ func (s *FileRangeSet) beforeSave() {}
 // +checklocksignore
 func (s *FileRangeSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *FileRangeSegmentDataSlices = s.saveRoot()
+	var rootValue *FileRangeSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
@@ -227,7 +229,8 @@ func (s *FrameRefSet) beforeSave() {}
 // +checklocksignore
 func (s *FrameRefSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *FrameRefSegmentDataSlices = s.saveRoot()
+	var rootValue *FrameRefSegmentDataSlices
+	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
