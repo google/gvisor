@@ -88,7 +88,6 @@ type controller interface {
 // +stateify savable
 type cgroupInode struct {
 	dir
-	fs *filesystem
 
 	// ts is the list of tasks in this cgroup. The kernel is responsible for
 	// removing tasks from this list before they're destroyed, so any tasks on
@@ -102,9 +101,10 @@ var _ kernel.CgroupImpl = (*cgroupInode)(nil)
 
 func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
 	c := &cgroupInode{
-		fs: fs,
-		ts: make(map[*kernel.Task]struct{}),
+		dir: dir{fs: fs},
+		ts:  make(map[*kernel.Task]struct{}),
 	}
+	c.dir.cgi = c
 
 	contents := make(map[string]kernfs.Inode)
 	contents["cgroup.procs"] = fs.newControllerFile(ctx, creds, &cgroupProcsData{c})
@@ -115,8 +115,7 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 	}
 
 	c.dir.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|linux.FileMode(0555))
-	c.dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
-	c.dir.InitRefs()
+	c.dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	c.dir.IncLinks(c.dir.OrderedChildren.Populate(contents))
 
 	atomic.AddUint64(&fs.numCgroups, 1)

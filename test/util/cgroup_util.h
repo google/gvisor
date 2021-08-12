@@ -34,7 +34,19 @@ class Cgroup {
 
   uint64_t id() const { return id_; }
 
+  // RecursivelyCreate creates cgroup specified by path, including all
+  // components leading up to path. Path should end inside a cgroupfs mount. If
+  // path already exists, RecursivelyCreate does nothing and silently succeeds.
+  static PosixErrorOr<Cgroup> RecursivelyCreate(std::string_view path);
+
+  // Creates a new cgroup at path. The parent directory must exist and be a
+  // cgroupfs directory.
+  static PosixErrorOr<Cgroup> Create(std::string_view path);
+
   const std::string& Path() const { return cgroup_path_; }
+
+  // Creates a child cgroup under this cgroup with the given name.
+  PosixErrorOr<Cgroup> CreateChild(std::string_view name) const;
 
   std::string Relpath(absl::string_view leaf) const {
     return JoinPath(cgroup_path_, leaf);

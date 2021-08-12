@@ -201,7 +201,8 @@ PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
 PosixError Mkdir(absl::string_view path, int mode) {
   int res = mkdir(std::string(path).c_str(), mode);
   if (res < 0) {
-    return PosixError(errno, absl::StrCat("mkdir ", path, " mode ", mode));
+    return PosixError(errno,
+                      absl::StrFormat("mkdir \"%s\" mode %#o", path, mode));
   }
 
   return NoError();
