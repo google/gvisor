@@ -5,8 +5,6 @@ package(
     licenses = ["notice"],
 )
 
-exports_files(["LICENSE"])
-
 go_library(
     name = "sync",
     srcs = [
