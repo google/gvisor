@@ -39,9 +39,9 @@ type AlignedAtomicInt64 struct {
 }
 
 func (aa *AlignedAtomicInt64) ptr() *int64 {
-	// On 32-bit systems, aa.value is is guaranteed to be 32-bit aligned.
-	// It means that in the 12-byte aa.value, there are guaranteed to be 8
-	// contiguous bytes with 64-bit alignment.
+	// On 32-bit systems, aa.value is guaranteed to be 32-bit aligned. It means
+	// that in the 12-byte aa.value, there are guaranteed to be 8 contiguous bytes
+	// with 64-bit alignment.
 	return (*int64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 4) &^ 7))
 }
 
@@ -77,9 +77,9 @@ type AlignedAtomicUint64 struct {
 }
 
 func (aa *AlignedAtomicUint64) ptr() *uint64 {
-	// On 32-bit systems, aa.value is is guaranteed to be 32-bit aligned.
-	// It means that in the 12-byte aa.value, there are guaranteed to be 8
-	// contiguous bytes with 64-bit alignment.
+	// On 32-bit systems, aa.value is guaranteed to be 32-bit aligned. It means
+	// that in the 12-byte aa.value, there are guaranteed to be 8 contiguous bytes
+	// with 64-bit alignment.
 	return (*uint64)(unsafe.Pointer((uintptr(unsafe.Pointer(&aa.value)) + 4) &^ 7))
 }
 
