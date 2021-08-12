@@ -7964,3 +7964,95 @@ func generateRandomPayload(t *testing.T, n int) []byte {
 	}
 	return buf
 }
+
+func TestSendBufferTuning(t *testing.T) {
+	const maxPayload = 536
+	const mtu = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
+	const packetOverheadFactor = 2
+
+	testCases := []struct {
+		name               string
+		autoTuningDisabled bool
+	}{
+		{"autoTuningDisabled", true},
+		{"autoTuningEnabled", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			// Set the stack option for send buffer size.
+			const defaultSndBufSz = maxPayload * tcp.InitialCwnd
+			const maxSndBufSz = defaultSndBufSz * 10
+			{
+				opt := tcpip.TCPSendBufferSizeRangeOption{Min: 1, Default: defaultSndBufSz, Max: maxSndBufSz}
+				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+					t.Fatalf("SetTransportProtocolOption(%d, &%#v): %s", tcp.ProtocolNumber, opt, err)
+				}
+			}
+
+			c.CreateConnected(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+			oldSz := c.EP.SocketOptions().GetSendBufferSize()
+			if oldSz != defaultSndBufSz {
+				t.Fatalf("Wrong send buffer size got %d want %d", oldSz, defaultSndBufSz)
+			}
+
+			if tc.autoTuningDisabled {
+				c.EP.SocketOptions().SetSendBufferSize(defaultSndBufSz, true /* notify */)
+			}
+
+			data := make([]byte, maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+
+			w, ch := waiter.NewChannelEntry(nil)
+			c.WQ.EventRegister(&w, waiter.WritableEvents)
+			defer c.WQ.EventUnregister(&w)
+
+			bytesRead := 0
+			for {
+				// Packets will be sent till the send buffer
+				// size is reached.
+				var r bytes.Reader
+				r.Reset(data[bytesRead : bytesRead+maxPayload])
+				_, err := c.EP.Write(&r, tcpip.WriteOptions{})
+				if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+					break
+				}
+
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, 0)
+				bytesRead += maxPayload
+				data = append(data, data...)
+			}
+
+			// Send an ACK and wait for connection to become writable again.
+			c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), bytesRead)
+			select {
+			case <-ch:
+				if err := c.EP.LastError(); err != nil {
+					t.Fatalf("Write failed: %s", err)
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatalf("Timed out waiting for connection")
+			}
+
+			outSz := int64(defaultSndBufSz)
+			if !tc.autoTuningDisabled {
+				// Calculate the new auto tuned send buffer.
+				var info tcpip.TCPInfoOption
+				if err := c.EP.GetSockOpt(&info); err != nil {
+					t.Fatalf("GetSockOpt failed: %v", err)
+				}
+				outSz = (int64(info.SndCwnd) * packetOverheadFactor * (maxPayload))
+			}
+
+			if newSz := c.EP.SocketOptions().GetSendBufferSize(); newSz != outSz {
+				t.Fatalf("Wrong send buffer size, got %d want %d", newSz, outSz)
+			}
+		})
+	}
+}

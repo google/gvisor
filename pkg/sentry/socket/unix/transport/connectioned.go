@@ -129,9 +129,9 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProv
 		stype:        stype,
 	}
 
+	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ep.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
-	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 	return ep
 }
 
@@ -517,3 +517,6 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 	}
 	return v
 }
+
+// WakeupWriters implements tcpip.SocketOptionsHandler.WakeupWriters.
+func (e *connectionedEndpoint) WakeupWriters() {}
