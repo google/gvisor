@@ -13,11 +13,13 @@
 // limitations under the License.
 
 #include <fcntl.h> /* Obtain O_* constant definitions */
+#include <linux/futex.h>
 #include <linux/magic.h>
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/statfs.h>
 #include <sys/uio.h>
+#include <syscall.h>
 #include <unistd.h>
 
 #include <vector>
@@ -50,6 +52,9 @@ std::atomic<int> global_num_signals_received = 0;
 void SigRecordingHandler(int signum, siginfo_t* siginfo,
                          void* unused_ucontext) {
   global_num_signals_received++;
+  ASSERT_THAT(syscall(SYS_futex, &global_num_signals_received,
+                      FUTEX_WAKE | FUTEX_PRIVATE_FLAG, INT_MAX, 0, 0, 0),
+              SyscallSucceeds());
 }
 
 PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
@@ -61,11 +66,14 @@ PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
   return ScopedSigaction(signum, handler);
 }
 
-void WaitForSignalDelivery(absl::Duration timeout, int max_expected) {
-  absl::Time wait_start = absl::Now();
-  while (global_num_signals_received < max_expected &&
-         absl::Now() - wait_start < timeout) {
-    absl::SleepFor(absl::Milliseconds(10));
+void WaitForSignalDelivery(int expected) {
+  while (1) {
+    int v = global_num_signals_received;
+    if (v >= expected) {
+      break;
+    }
+    RetryEINTR(syscall)(SYS_futex, &global_num_signals_received,
+                        FUTEX_WAIT | FUTEX_PRIVATE_FLAG, v, 0, 0, 0);
   }
 }
 
@@ -371,7 +379,7 @@ TEST_P(PipeTest, ReaderSideCloses) {
   EXPECT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
               SyscallFailsWithErrno(EPIPE));
 
-  WaitForSignalDelivery(absl::Seconds(1), 1);
+  WaitForSignalDelivery(1);
   ASSERT_EQ(global_num_signals_received, 1);
 }
 
@@ -411,7 +419,7 @@ TEST_P(PipeTest, BlockWriteClosed) {
   notify.WaitForNotification();
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
 
-  WaitForSignalDelivery(absl::Seconds(1), 1);
+  WaitForSignalDelivery(1);
   ASSERT_EQ(global_num_signals_received, 1);
 
   t.Join();
@@ -443,7 +451,7 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
   // Unblock the above.
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
 
-  WaitForSignalDelivery(absl::Seconds(1), 2);
+  WaitForSignalDelivery(2);
   ASSERT_EQ(global_num_signals_received, 2);
 
   t.Join();
