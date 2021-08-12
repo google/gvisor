@@ -14,7 +14,6 @@ cc_library(
     ],
     hdrs = [
         "capability_util.h",
-        "fuchsia_capability_util.h",
         "linux_capability_util.h",
     ],
     deps = [

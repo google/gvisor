@@ -62,7 +62,7 @@ class RawHDRINCL : public ::testing::Test {
 };
 
 void RawHDRINCL::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -80,7 +80,7 @@ void RawHDRINCL::SetUp() {
 
 void RawHDRINCL::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
   }
 }

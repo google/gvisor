@@ -18,11 +18,29 @@
 #define GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 
 #if defined(__Fuchsia__)
-#include "test/util/fuchsia_capability_util.h"
+// Nothing to include.
 #elif defined(__linux__)
 #include "test/util/linux_capability_util.h"
 #else
 #error "Unhandled platform"
 #endif
+
+namespace gvisor {
+namespace testing {
+
+// HaveRawIPSocketCapability returns whether or not the process has access to
+// raw IP sockets.
+//
+// Returns an error when raw IP socket access cannot be determined.
+PosixErrorOr<bool> HaveRawIPSocketCapability();
+
+// HavePacketSocketCapability returns whether or not the process has access to
+// packet sockets.
+//
+// Returns an error when packet socket access cannot be determined.
+PosixErrorOr<bool> HavePacketSocketCapability();
+
+}  // namespace testing
+}  // namespace gvisor
 
 #endif  // GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
