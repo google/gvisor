@@ -82,7 +82,7 @@ func (c *VerityPrepare) Execute(_ context.Context, f *flag.FlagSet, args ...inte
 		},
 		Process: &specs.Process{
 			Cwd:          absRoot,
-			Args:         []string{c.tool, "--path", "/verityroot"},
+			Args:         []string{c.tool, "--path", "/verityroot", "--rawpath", "/rawroot"},
 			Env:          os.Environ(),
 			Capabilities: specutils.AllCapabilities(),
 		},
@@ -93,6 +93,11 @@ func (c *VerityPrepare) Execute(_ context.Context, f *flag.FlagSet, args ...inte
 				Destination: "/verityroot",
 				Type:        "bind",
 				Options:     []string{"verity.roothash="},
+			},
+			{
+				Source:      c.dir,
+				Destination: "/rawroot",
+				Type:        "bind",
 			},
 		},
 	}
