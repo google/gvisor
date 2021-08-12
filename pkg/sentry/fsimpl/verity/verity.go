@@ -1091,6 +1091,21 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 		return 0, fd.d.fs.alertIntegrityViolation("Unexpected verity fd: missing expected underlying fds")
 	}
 
+	// Populate children names here. We cannot rely on the children
+	// dentries to populate parent dentry's children names, because the
+	// parent dentry may be destroyed before users enable verity if its ref
+	// count drops to zero.
+	if fd.d.isDir() {
+		if err := fd.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
+			if dirent.Name != "." && dirent.Name != ".." {
+				fd.d.childrenNames[dirent.Name] = struct{}{}
+			}
+			return nil
+		})); err != nil {
+			return 0, err
+		}
+	}
+
 	hash, dataSize, err := fd.generateMerkleLocked(ctx)
 	if err != nil {
 		return 0, err
@@ -1118,9 +1133,6 @@ func (fd *fileDescription) enableVerity(ctx context.Context) (uintptr, error) {
 		}); err != nil {
 			return 0, err
 		}
-
-		// Add the current child's name to parent's childrenNames.
-		fd.d.parent.childrenNames[fd.d.name] = struct{}{}
 	}
 
 	// Record the size of the data being hashed for fd.
