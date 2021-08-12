@@ -279,6 +279,23 @@ TEST(Cgroup, UnmountRepeated) {
   EXPECT_THAT(umount(c.Path().c_str()), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(Cgroup, Create) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  ASSERT_NO_ERRNO(c.CreateChild("child1"));
+  EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(Exists(c.Path())));
+}
+
+TEST(Cgroup, SubcontainerInitiallyEmpty) {
+  SKIP_IF(!CgroupsAvailable());
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
+  auto procs = ASSERT_NO_ERRNO_AND_VALUE(child.Procs());
+  EXPECT_TRUE(procs.empty());
+}
+
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 

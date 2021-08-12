@@ -137,6 +137,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",

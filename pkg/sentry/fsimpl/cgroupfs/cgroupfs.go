@@ -32,7 +32,8 @@
 // controllers associated with them.
 //
 // Since cgroupfs doesn't allow hardlinks, there is a unique mapping between
-// cgroupfs dentries and inodes.
+// cgroupfs dentries and inodes. Thus, cgroupfs inodes don't need to be ref
+// counted and exist until they're unlinked once or the FS is destroyed.
 //
 // # Synchronization
 //
@@ -48,10 +49,11 @@
 // Lock order:
 //
 // kernel.CgroupRegistry.mu
-//   cgroupfs.filesystem.mu
-//     kernel.TaskSet.mu
-//       kernel.Task.mu
-//         cgroupfs.filesystem.tasksMu.
+//   kernfs.filesystem.mu
+//   kernel.TaskSet.mu
+//     kernel.Task.mu
+//       cgroupfs.filesystem.tasksMu.
+//         cgroupfs.dir.OrderedChildren.mu
 package cgroupfs
 
 import (
@@ -63,6 +65,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -108,6 +111,7 @@ type FilesystemType struct{}
 // +stateify savable
 type InternalData struct {
 	DefaultControlValues map[string]int64
+	InitialCgroupPath    string
 }
 
 // filesystem implements vfs.FilesystemImpl and kernel.cgroupFS.
@@ -134,6 +138,11 @@ type filesystem struct {
 	numCgroups uint64 // Protected by atomic ops.
 
 	root *kernfs.Dentry
+	// effectiveRoot is the initial cgroup new tasks are created in. Unless
+	// overwritten by internal mount options, root == effectiveRoot. If
+	// effectiveRoot != root, an extra reference is held on effectiveRoot for
+	// the lifetime of the filesystem.
+	effectiveRoot *kernfs.Dentry
 
 	// tasksMu serializes task membership changes across all cgroups within a
 	// filesystem.
@@ -229,6 +238,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs := vfsfs.Impl().(*filesystem)
 		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: mounting new view to hierarchy %v", fs.hierarchyID)
 		fs.root.IncRef()
+		if fs.effectiveRoot != fs.root {
+			fs.effectiveRoot.IncRef()
+		}
 		return vfsfs, fs.root.VFSDentry(), nil
 	}
 
@@ -245,8 +257,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	var defaults map[string]int64
 	if opts.InternalData != nil {
-		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: default control values: %v", defaults)
 		defaults = opts.InternalData.(*InternalData).DefaultControlValues
+		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: default control values: %v", defaults)
 	}
 
 	for _, ty := range wantControllers {
@@ -286,6 +298,14 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	fs.root = &rootD
+	fs.effectiveRoot = fs.root
+
+	if err := fs.prepareInitialCgroup(ctx, vfsObj, opts); err != nil {
+		ctx.Warningf("cgroupfs.FilesystemType.GetFilesystem: failed to prepare initial cgroup: %v", err)
+		rootD.DecRef(ctx)
+		fs.VFSFilesystem().DecRef(ctx)
+		return nil, nil, err
+	}
 
 	// Register controllers. The registry may be modified concurrently, so if we
 	// get an error, we raced with someone else who registered the same
@@ -303,10 +323,47 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	return fs.VFSFilesystem(), rootD.VFSDentry(), nil
 }
 
+// prepareInitialCgroup creates the initial cgroup according to opts. An initial
+// cgroup is optional, and if not specified, this function is a no-op.
+func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.VirtualFilesystem, opts vfs.GetFilesystemOptions) error {
+	if opts.InternalData == nil {
+		return nil
+	}
+	initPathStr := opts.InternalData.(*InternalData).InitialCgroupPath
+	if initPathStr == "" {
+		return nil
+	}
+	ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: initial cgroup path: %v", initPathStr)
+	initPath := fspath.Parse(initPathStr)
+	if !initPath.Absolute || !initPath.HasComponents() {
+		ctx.Warningf("cgroupfs.FilesystemType.GetFilesystem: initial cgroup path invalid: %+v", initPath)
+		return linuxerr.EINVAL
+	}
+
+	// Have initial cgroup target, create the tree.
+	cgDir := fs.root.Inode().(*cgroupInode)
+	for pit := initPath.Begin; pit.Ok(); pit = pit.Next() {
+		cgDirI, err := cgDir.NewDir(ctx, pit.String(), vfs.MkdirOptions{})
+		if err != nil {
+			return err
+		}
+		cgDir = cgDirI.(*cgroupInode)
+	}
+
+	// Walk to target dentry.
+	initDentry, err := fs.root.WalkDentryTree(ctx, vfsObj, initPath)
+	if err != nil {
+		ctx.Warningf("cgroupfs.FilesystemType.GetFilesystem: initial cgroup dentry not found: %v", err)
+		return linuxerr.ENOENT
+	}
+	fs.effectiveRoot = initDentry // Reference from WalkDentryTree transferred here.
+	return nil
+}
+
 func (fs *filesystem) rootCgroup() kernel.Cgroup {
 	return kernel.Cgroup{
-		Dentry:     fs.root,
-		CgroupImpl: fs.root.Inode().(kernel.CgroupImpl),
+		Dentry:     fs.effectiveRoot,
+		CgroupImpl: fs.effectiveRoot.Inode().(kernel.CgroupImpl),
 	}
 }
 
@@ -318,6 +375,10 @@ func (fs *filesystem) Release(ctx context.Context) {
 	if fs.hierarchyID != kernel.InvalidCgroupHierarchyID {
 		k.ReleaseCgroupHierarchy(fs.hierarchyID)
 		r.Unregister(fs.hierarchyID)
+	}
+
+	if fs.root != fs.effectiveRoot {
+		fs.effectiveRoot.DecRef(ctx)
 	}
 
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
@@ -346,15 +407,18 @@ func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error
 //
 // +stateify savable
 type dir struct {
-	dirRefs
+	kernfs.InodeNoopRefCount
 	kernfs.InodeAlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeNotSymlink
-	kernfs.InodeDirectoryNoNewChildren // TODO(b/183137098): Implement mkdir.
+	kernfs.InodeDirectoryNoNewChildren
 	kernfs.OrderedChildren
 	implStatFS
 
 	locks vfs.FileLocks
+
+	fs  *filesystem  // Immutable.
+	cgi *cgroupInode // Immutable.
 }
 
 // Keep implements kernfs.Inode.Keep.
@@ -378,9 +442,100 @@ func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, kd *kernfs.Dentry
 	return fd.VFSFileDescription(), nil
 }
 
-// DecRef implements kernfs.Inode.DecRef.
-func (d *dir) DecRef(ctx context.Context) {
-	d.dirRefs.DecRef(func() { d.Destroy(ctx) })
+// NewDir implements kernfs.Inode.NewDir.
+func (d *dir) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) (kernfs.Inode, error) {
+	// "Do not accept '\n' to prevent making /proc/<pid>/cgroup unparsable."
+	//   -- Linux, kernel/cgroup.c:cgroup_mkdir().
+	if strings.Contains(name, "\n") {
+		return nil, linuxerr.EINVAL
+	}
+	return d.OrderedChildren.Inserter(name, func() kernfs.Inode {
+		d.IncLinks(1)
+		return d.fs.newCgroupInode(ctx, auth.CredentialsFromContext(ctx))
+	})
+}
+
+// Rename implements kernfs.Inode.Rename. Cgroupfs only allows renaming of
+// cgroup directories, and the rename may only change the name within the same
+// parent. See linux, kernel/cgroup.c:cgroup_rename().
+func (d *dir) Rename(ctx context.Context, oldname, newname string, child, dst kernfs.Inode) error {
+	if _, ok := child.(*cgroupInode); !ok {
+		// Not a cgroup directory. Control files are backed by different types.
+		return linuxerr.ENOTDIR
+	}
+
+	dstCGInode, ok := dst.(*cgroupInode)
+	if !ok {
+		// Not a cgroup inode, so definitely can't be *this* inode.
+		return linuxerr.EIO
+	}
+	// Note: We're intentionally comparing addresses, since two different dirs
+	// could plausibly be identical in memory, but would occupy different
+	// locations in memory.
+	if d != &dstCGInode.dir {
+		// Destination dir is a different cgroup inode. Cross directory renames
+		// aren't allowed.
+		return linuxerr.EIO
+	}
+
+	// Rename moves oldname to newname within d. Proceed.
+	return d.OrderedChildren.Rename(ctx, oldname, newname, child, dst)
+}
+
+// Unlink implements kernfs.Inode.Unlink. Cgroupfs disallows unlink, as the only
+// files in the filesystem are control files, which can't be deleted.
+func (d *dir) Unlink(ctx context.Context, name string, child kernfs.Inode) error {
+	return linuxerr.EPERM
+}
+
+// hasChildrenLocked returns whether the cgroup dir contains any objects that
+// prevent it from being deleted.
+func (d *dir) hasChildrenLocked() bool {
+	// Subdirs take a link on the parent, so checks if there are any direct
+	// children cgroups. Exclude the dir's self link and the link from ".".
+	if d.InodeAttrs.Links()-2 > 0 {
+		return true
+	}
+	return len(d.cgi.ts) > 0
+}
+
+// HasChildren implements kernfs.Inode.HasChildren.
+//
+// The empty check for a cgroupfs directory is unlike a regular directory since
+// a cgroupfs directory will always have control files. A cgroupfs directory can
+// be deleted if cgroup contains no tasks and has no sub-cgroups.
+func (d *dir) HasChildren() bool {
+	d.fs.tasksMu.RLock()
+	defer d.fs.tasksMu.RUnlock()
+	return d.hasChildrenLocked()
+}
+
+// RmDir implements kernfs.Inode.RmDir.
+func (d *dir) RmDir(ctx context.Context, name string, child kernfs.Inode) error {
+	// Unlike a normal directory, we need to recheck if d is empty again, since
+	// vfs/kernfs can't stop tasks from entering or leaving the cgroup.
+	d.fs.tasksMu.RLock()
+	defer d.fs.tasksMu.RUnlock()
+
+	cgi, ok := child.(*cgroupInode)
+	if !ok {
+		return linuxerr.ENOTDIR
+	}
+	if cgi.dir.hasChildrenLocked() {
+		return linuxerr.ENOTEMPTY
+	}
+
+	// Disallow deletion of the effective root cgroup.
+	if cgi == d.fs.effectiveRoot.Inode().(*cgroupInode) {
+		ctx.Warningf("Cannot delete initial cgroup for new tasks %q", d.fs.effectiveRoot.FSLocalPath())
+		return linuxerr.EBUSY
+	}
+
+	err := d.OrderedChildren.RmDir(ctx, name, child)
+	if err == nil {
+		d.InodeAttrs.DecLinks()
+	}
+	return err
 }
 
 // controllerFile represents a generic control file that appears within a cgroup

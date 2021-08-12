@@ -32,6 +32,7 @@ go_library(
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/refsvfs2",
@@ -43,7 +44,6 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

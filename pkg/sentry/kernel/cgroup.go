@@ -196,6 +196,7 @@ func (r *CgroupRegistry) FindHierarchy(ctypes []CgroupControllerType) *vfs.Files
 				// uniqueness of controllers enforced by Register, drop the
 				// dying hierarchy now. The eventual unregister by the FS
 				// teardown will become a no-op.
+				r.unregisterLocked(h.id)
 				return nil
 			}
 			return h.fs

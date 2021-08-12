@@ -25,10 +25,24 @@
 namespace gvisor {
 namespace testing {
 
-Cgroup::Cgroup(std::string_view path) : cgroup_path_(path) {
+Cgroup::Cgroup(absl::string_view path) : cgroup_path_(path) {
   id_ = ++Cgroup::next_id_;
   std::cerr << absl::StreamFormat("[cg#%d] <= %s", id_, cgroup_path_)
             << std::endl;
+}
+
+PosixErrorOr<Cgroup> Cgroup::RecursivelyCreate(absl::string_view path) {
+  RETURN_IF_ERRNO(RecursivelyCreateDir(path));
+  return Cgroup(path);
+}
+
+PosixErrorOr<Cgroup> Cgroup::Create(absl::string_view path) {
+  RETURN_IF_ERRNO(Mkdir(path));
+  return Cgroup(path);
+}
+
+PosixErrorOr<Cgroup> Cgroup::CreateChild(absl::string_view name) const {
+  return Cgroup::Create(JoinPath(Path(), name));
 }
 
 PosixErrorOr<std::string> Cgroup::ReadControlFile(
@@ -93,7 +107,7 @@ PosixErrorOr<absl::flat_hash_set<pid_t>> Cgroup::ParsePIDList(
     absl::string_view data) const {
   absl::flat_hash_set<pid_t> res;
   std::vector<absl::string_view> lines = absl::StrSplit(data, '\n');
-  for (const std::string_view& line : lines) {
+  for (const absl::string_view& line : lines) {
     if (line.empty()) {
       continue;
     }
