@@ -76,7 +76,7 @@ class RawSocketICMPTest : public ::testing::Test {
 };
 
 void RawSocketICMPTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_ICMP),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -94,7 +94,7 @@ void RawSocketICMPTest::SetUp() {
 
 void RawSocketICMPTest::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     EXPECT_THAT(close(s_), SyscallSucceeds());
   }
 }
@@ -102,7 +102,7 @@ void RawSocketICMPTest::TearDown() {
 // We'll only read an echo in this case, as the kernel won't respond to the
 // malformed ICMP checksum.
 TEST_F(RawSocketICMPTest, SendAndReceiveBadChecksum) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   // Prepare and send an ICMP packet. Use arbitrary junk for checksum, sequence,
   // and ID. None of that should matter for raw sockets - the kernel should
@@ -131,7 +131,7 @@ TEST_F(RawSocketICMPTest, SendAndReceiveBadChecksum) {
 
 // Send and receive an ICMP packet.
 TEST_F(RawSocketICMPTest, SendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   // Prepare and send an ICMP packet. Use arbitrary junk for sequence and ID.
   // None of that should matter for raw sockets - the kernel should still give
@@ -151,7 +151,7 @@ TEST_F(RawSocketICMPTest, SendAndReceive) {
 // We should be able to create multiple raw sockets for the same protocol and
 // receive the same packet on both.
 TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor s2 =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_ICMP));
@@ -214,7 +214,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
 // A raw ICMP socket and ping socket should both receive the ICMP packets
 // intended for the ping socket.
 TEST_F(RawSocketICMPTest, RawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
@@ -264,7 +264,7 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
 // while a ping socket should not. Neither should be able to receieve a short
 // malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
@@ -305,7 +305,7 @@ TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
 // while ping socket should not.
 // Neither should be able to receieve a short malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
@@ -344,7 +344,7 @@ TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
 
 // Test that connect() sends packets to the right place.
 TEST_F(RawSocketICMPTest, SendAndReceiveViaConnect) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   ASSERT_THAT(
       connect(s_, reinterpret_cast<struct sockaddr*>(&addr_), sizeof(addr_)),
@@ -368,7 +368,7 @@ TEST_F(RawSocketICMPTest, SendAndReceiveViaConnect) {
 
 // Bind to localhost, then send and receive packets.
 TEST_F(RawSocketICMPTest, BindSendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   ASSERT_THAT(
       bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), sizeof(addr_)),
@@ -391,7 +391,7 @@ TEST_F(RawSocketICMPTest, BindSendAndReceive) {
 
 // Bind and connect to localhost and send/receive packets.
 TEST_F(RawSocketICMPTest, BindConnectSendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   ASSERT_THAT(
       bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), sizeof(addr_)),
@@ -417,7 +417,7 @@ TEST_F(RawSocketICMPTest, BindConnectSendAndReceive) {
 
 // Set and get SO_LINGER.
 TEST_F(RawSocketICMPTest, SetAndGetSocketLinger) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   int level = SOL_SOCKET;
   int type = SO_LINGER;
@@ -439,7 +439,7 @@ TEST_F(RawSocketICMPTest, SetAndGetSocketLinger) {
 
 // Test getsockopt for SO_ACCEPTCONN.
 TEST_F(RawSocketICMPTest, GetSocketAcceptConn) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   int got = -1;
   socklen_t length = sizeof(got);

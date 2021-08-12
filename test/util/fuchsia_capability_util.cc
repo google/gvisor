@@ -14,8 +14,7 @@
 
 #ifdef __Fuchsia__
 
-#include "test/util/fuchsia_capability_util.h"
-
+#include <netinet/if_ether.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
@@ -24,19 +23,48 @@
 namespace gvisor {
 namespace testing {
 
-PosixErrorOr<bool> HaveCapability(int cap) {
-  if (cap == CAP_NET_RAW) {
-    auto s = Socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
-    if (s.ok()) {
-      return true;
-    }
-    if (s.error().errno_value() == EPERM) {
-      return false;
-    }
-    return s.error();
-  }
+// On Linux, access to raw IP and packet socket is controlled by a single
+// capability (CAP_NET_RAW). However on Fuchsia, access to raw IP and packet
+// sockets are controlled by separate capabilities/protocols.
 
-  return false;
+namespace {
+
+PosixErrorOr<bool> HaveSocketCapability(int domain, int type, int protocol) {
+  // Fuchsia does not have a platform supported way to check the protocols made
+  // available to a sandbox. As a workaround, simply try to create the specified
+  // socket and assume no access if we get a no permissions error.
+  auto s = Socket(domain, type, protocol);
+  if (s.ok()) {
+    return true;
+  }
+  if (s.error().errno_value() == EPERM) {
+    return false;
+  }
+  return s.error();
+}
+
+}  // namespace
+
+PosixErrorOr<bool> HaveRawIPSocketCapability() {
+  static PosixErrorOr<bool> result(false);
+  static std::once_flag once;
+
+  std::call_once(once, [&]() {
+    result = HaveSocketCapability(AF_INET, SOCK_RAW, IPPROTO_UDP);
+  });
+
+  return result;
+}
+
+PosixErrorOr<bool> HavePacketSocketCapability() {
+  static PosixErrorOr<bool> result(false);
+  static std::once_flag once;
+
+  std::call_once(once, [&]() {
+    result = HaveSocketCapability(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+  });
+
+  return result;
 }
 
 }  // namespace testing

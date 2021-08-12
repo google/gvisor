@@ -32,6 +32,14 @@
 namespace gvisor {
 namespace testing {
 
+PosixErrorOr<bool> HaveRawIPSocketCapability() {
+  return HaveCapability(CAP_NET_RAW);
+}
+
+PosixErrorOr<bool> HavePacketSocketCapability() {
+  return HaveCapability(CAP_NET_RAW);
+}
+
 PosixErrorOr<bool> CanCreateUserNamespace() {
   // The most reliable way to determine if userns creation is possible is by
   // trying to create one; see below.

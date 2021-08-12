@@ -13,14 +13,13 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
-#include <linux/capability.h>
-#include <linux/filter.h>
-#include <linux/if_arp.h>
-#include <linux/if_packet.h>
 #include <net/ethernet.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netpacket/packet.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -32,6 +31,7 @@
 #include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -100,7 +100,7 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void RawPacketTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -150,7 +150,7 @@ void RawPacketTest::SetUp() {
 
 void RawPacketTest::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     EXPECT_THAT(close(s_), SyscallSucceeds());
   }
 }
@@ -340,7 +340,7 @@ TEST_P(RawPacketTest, Send) {
 // Check that setting SO_RCVBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketRecvBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   // Discover minimum receive buf size by trying to set it to zero.
   // See:
@@ -373,7 +373,7 @@ TEST_P(RawPacketTest, SetSocketRecvBufBelowMin) {
 // Check that setting SO_RCVBUF above max is clamped to the maximum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketRecvBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   // Discover max buf size by trying to set the largest possible buffer size.
   constexpr int kRcvBufSz = 0xffffffff;
@@ -400,7 +400,7 @@ TEST_P(RawPacketTest, SetSocketRecvBufAboveMax) {
 
 // Check that setting SO_RCVBUF min <= kRcvBufSz <= max is honored.
 TEST_P(RawPacketTest, SetSocketRecvBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int max = 0;
   int min = 0;
@@ -449,7 +449,7 @@ TEST_P(RawPacketTest, SetSocketRecvBuf) {
 // Check that setting SO_SNDBUF below min is clamped to the minimum
 // receive buffer size.
 TEST_P(RawPacketTest, SetSocketSendBufBelowMin) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   // Discover minimum buffer size by trying to set it to zero.
   constexpr int kSndBufSz = 0;
@@ -480,7 +480,7 @@ TEST_P(RawPacketTest, SetSocketSendBufBelowMin) {
 // Check that setting SO_SNDBUF above max is clamped to the maximum
 // send buffer size.
 TEST_P(RawPacketTest, SetSocketSendBufAboveMax) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   // Discover maximum buffer size by trying to set it to a large value.
   constexpr int kSndBufSz = 0xffffffff;
@@ -507,7 +507,7 @@ TEST_P(RawPacketTest, SetSocketSendBufAboveMax) {
 
 // Check that setting SO_SNDBUF min <= kSndBufSz <= max is honored.
 TEST_P(RawPacketTest, SetSocketSendBuf) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int max = 0;
   int min = 0;
@@ -551,7 +551,7 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
 }
 
 TEST_P(RawPacketTest, GetSocketError) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int val = 0;
   socklen_t val_len = sizeof(val);
@@ -561,7 +561,7 @@ TEST_P(RawPacketTest, GetSocketError) {
 }
 
 TEST_P(RawPacketTest, GetSocketErrorBind) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   {
     // Bind to the loopback device.
@@ -627,7 +627,7 @@ TEST_P(RawPacketTest, SetSocketDetachFilterNoInstalledFilter) {
 }
 
 TEST_P(RawPacketTest, GetSocketDetachFilter) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int val = 0;
   socklen_t val_len = sizeof(val);
@@ -636,7 +636,7 @@ TEST_P(RawPacketTest, GetSocketDetachFilter) {
 }
 
 TEST_P(RawPacketTest, SetAndGetSocketLinger) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int level = SOL_SOCKET;
   int type = SO_LINGER;
@@ -657,7 +657,7 @@ TEST_P(RawPacketTest, SetAndGetSocketLinger) {
 }
 
 TEST_P(RawPacketTest, GetSocketAcceptConn) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   int got = -1;
   socklen_t length = sizeof(got);
@@ -673,7 +673,7 @@ INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
 class RawPacketMsgSizeTest : public ::testing::TestWithParam<TestAddress> {};
 
 TEST_P(RawPacketMsgSizeTest, SendTooLong) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   TestAddress addr = GetParam().WithPort(kPort);
 
@@ -690,8 +690,11 @@ TEST_P(RawPacketMsgSizeTest, SendTooLong) {
               SyscallFailsWithErrno(EMSGSIZE));
 }
 
+// TODO(https://fxbug.dev/76957): Run this test on Fuchsia once splice is
+// available.
+#ifndef __Fuchsia__
 TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
 
   const char buf[65536] = {};
   int fds[2];
@@ -718,6 +721,7 @@ TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
     EXPECT_THAT(n, SyscallSucceedsWithValue(sizeof(buf)));
   }
 }
+#endif  // __Fuchsia__
 
 INSTANTIATE_TEST_SUITE_P(AllRawPacketMsgSizeTest, RawPacketMsgSizeTest,
                          ::testing::Values(V4Loopback(), V6Loopback()));

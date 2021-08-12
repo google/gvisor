@@ -14,13 +14,13 @@
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
-#include <linux/capability.h>
-#include <linux/if_arp.h>
-#include <linux/if_packet.h>
 #include <net/ethernet.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netpacket/packet.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -31,6 +31,7 @@
 #include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -85,7 +86,7 @@ void SendUDPMessage(int sock) {
 
 // Send an IP packet and make sure ETH_P_<something else> doesn't pick it up.
 TEST(BasicCookedPacketTest, WrongType) {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, ETH_P_PUP),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -123,7 +124,7 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void CookedPacketTest::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -149,7 +150,7 @@ void CookedPacketTest::SetUp() {
 
 void CookedPacketTest::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
   }
 }

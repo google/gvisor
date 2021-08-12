@@ -7,6 +7,8 @@ package(
 
 exports_files(
     [
+        "packet_socket.cc",
+        "packet_socket_raw.cc",
         "raw_socket.cc",
         "raw_socket_hdrincl.cc",
         "raw_socket_icmp.cc",
@@ -1446,6 +1448,7 @@ cc_binary(
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
@@ -1464,6 +1467,7 @@ cc_binary(
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:socket_util",
         "@com_google_absl//absl/base:core_headers",
