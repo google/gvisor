@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/p9/p9test"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -97,7 +97,7 @@ func TestLookup(t *testing.T) {
 		},
 		{
 			name: "mock Walk fails (function fails)",
-			want: unix.ENOENT,
+			want: linuxerr.ENOENT,
 		},
 	}
 
@@ -123,7 +123,7 @@ func TestLookup(t *testing.T) {
 			var newInodeOperations fs.InodeOperations
 			if dirent != nil {
 				if dirent.IsNegative() {
-					err = unix.ENOENT
+					err = linuxerr.ENOENT
 				} else {
 					newInodeOperations = dirent.Inode.InodeOperations
 				}
@@ -131,9 +131,11 @@ func TestLookup(t *testing.T) {
 
 			// Check return values.
 			if err != test.want {
+				t.Logf("err: %v %T", err, err)
 				t.Errorf("Lookup got err %v, want %v", err, test.want)
 			}
 			if err == nil && newInodeOperations == nil {
+				t.Logf("err: %v %T", err, err)
 				t.Errorf("Lookup got non-nil err and non-nil node, wanted at least one non-nil")
 			}
 		})

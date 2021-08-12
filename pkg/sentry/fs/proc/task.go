@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -182,7 +181,7 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 
 	tasks := f.t.ThreadGroup().MemberIDs(f.pidns)
 	if len(tasks) == 0 {
-		return offset, syserror.ENOENT
+		return offset, linuxerr.ENOENT
 	}
 
 	if offset == 0 {
@@ -234,15 +233,15 @@ var _ fs.FileOperations = (*subtasksFile)(nil)
 func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent, error) {
 	tid, err := strconv.ParseUint(p, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	task := s.p.pidns.TaskWithID(kernel.ThreadID(tid))
 	if task == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	if task.ThreadGroup() != s.t.ThreadGroup() {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	td := s.p.newTaskDir(ctx, task, dir.MountSource, false)
@@ -479,7 +478,7 @@ func (m *memDataFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 		return int64(n), nil
 	}
 	if readErr != nil {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 	return 0, nil
 }

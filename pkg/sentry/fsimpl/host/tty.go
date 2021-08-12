@@ -346,7 +346,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 		// If the signal is SIGTTIN, then we are attempting to read
 		// from the TTY. Don't send the signal and return EIO.
 		if sig == linux.SIGTTIN {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 
 		// Otherwise, we are writing or changing terminal state. This is allowed.
@@ -355,7 +355,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 
 	// If the process group is an orphan, return EIO.
 	if pg.IsOrphan() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Otherwise, send the signal to the process group and return ERESTARTSYS.

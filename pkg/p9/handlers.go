@@ -45,6 +45,8 @@ func ExtractErrno(err error) unix.Errno {
 
 	// Attempt to unwrap.
 	switch e := err.(type) {
+	case *errors.Error:
+		return unix.Errno(e.Errno())
 	case unix.Errno:
 		return e
 	case *os.PathError:

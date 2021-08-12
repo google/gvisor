@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Execve implements linux syscall execve(2).
@@ -83,7 +82,7 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		// do_open_execat(fd=AT_FDCWD)), and the loader package is currently
 		// incapable of handling this correctly.
 		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
-			return 0, nil, syserror.ENOENT
+			return 0, nil, linuxerr.ENOENT
 		}
 		dirfile, dirfileFlags := t.FDTable().GetVFS2(dirfd)
 		if dirfile == nil {

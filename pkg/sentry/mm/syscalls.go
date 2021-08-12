@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // HandleUserFault handles an application page fault. sp is the faulting
@@ -79,7 +78,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	}
 	length, ok := hostarch.Addr(opts.Length).RoundUp()
 	if !ok {
-		return 0, syserror.ENOMEM
+		return 0, linuxerr.ENOMEM
 	}
 	opts.Length = uint64(length)
 
@@ -90,7 +89,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		}
 		// Offset + length must not overflow.
 		if end := opts.Offset + opts.Length; end < opts.Offset {
-			return 0, syserror.ENOMEM
+			return 0, linuxerr.ENOMEM
 		}
 	} else {
 		opts.Offset = 0
@@ -253,7 +252,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 		ctx.Warningf("Capping stack size from RLIMIT_STACK of %v down to %v.", sz, maxStackSize)
 		sz = maxStackSize
 	} else if sz == 0 {
-		return hostarch.AddrRange{}, syserror.ENOMEM
+		return hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
 	szaddr := hostarch.Addr(sz)
 	ctx.Debugf("Allocating stack with size of %v bytes", sz)
@@ -262,7 +261,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (hostarch.AddrRange, erro
 	// randomization can't be disabled.
 	stackEnd := mm.layout.MaxAddr - hostarch.Addr(mrand.Int63n(int64(mm.layout.MaxStackRand))).RoundDown()
 	if stackEnd < szaddr {
-		return hostarch.AddrRange{}, syserror.ENOMEM
+		return hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
 	stackStart := stackEnd - szaddr
 	mm.mappingMu.Lock()
@@ -500,7 +499,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	// Check against RLIMIT_AS.
 	newUsageAS := mm.usageAS - uint64(oldAR.Length()) + uint64(newAR.Length())
 	if limitAS := limits.FromContext(ctx).Get(limits.AS).Cur; newUsageAS > limitAS {
-		return 0, syserror.ENOMEM
+		return 0, linuxerr.ENOMEM
 	}
 
 	if vma := vseg.ValuePtr(); vma.mappable != nil {
@@ -599,11 +598,11 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 	}
 	rlength, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	ar, ok := addr.ToRange(uint64(rlength))
 	if !ok {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	effectivePerms := realPerms.Effective()
 
@@ -616,19 +615,19 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 	// the non-growsDown case.
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
 	if !vseg.Ok() {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	if growsDown {
 		if !vseg.ValuePtr().growsDown {
 			return linuxerr.EINVAL
 		}
 		if ar.End <= vseg.Start() {
-			return syserror.ENOMEM
+			return linuxerr.ENOMEM
 		}
 		ar.Start = vseg.Start()
 	} else {
 		if ar.Start < vseg.Start() {
-			return syserror.ENOMEM
+			return linuxerr.ENOMEM
 		}
 	}
 
@@ -688,7 +687,7 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 		}
 		vseg, _ = vseg.NextNonEmpty()
 		if !vseg.Ok() {
-			return syserror.ENOMEM
+			return linuxerr.ENOMEM
 		}
 	}
 }
@@ -724,7 +723,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 	if uint64(addr-mm.brk.Start) > limits.FromContext(ctx).Get(limits.Data).Cur {
 		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return addr, syserror.ENOMEM
+		return addr, linuxerr.ENOMEM
 	}
 
 	oldbrkpg, _ := mm.brk.End.RoundUp()
@@ -798,7 +797,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 			}
 			if newLockedAS := mm.lockedAS + uint64(ar.Length()) - mm.mlockedBytesRangeLocked(ar); newLockedAS > mlockLimit {
 				mm.mappingMu.Unlock()
-				return syserror.ENOMEM
+				return linuxerr.ENOMEM
 			}
 		}
 	}
@@ -835,7 +834,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 	mm.vmas.MergeAdjacent(ar)
 	if unmapped {
 		mm.mappingMu.Unlock()
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 
 	if mode == memmap.MLockEager {
@@ -850,7 +849,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 				// case, which is converted to ENOMEM by mlock.
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
-				return syserror.ENOMEM
+				return linuxerr.ENOMEM
 			}
 			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), hostarch.NoAccess)
 			if err != nil {
@@ -858,7 +857,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 				mm.mappingMu.RUnlock()
 				// Linux: mm/mlock.c:__mlock_posix_error_return()
 				if linuxerr.Equals(linuxerr.EFAULT, err) {
-					return syserror.ENOMEM
+					return linuxerr.ENOMEM
 				}
 				if linuxerr.Equals(linuxerr.ENOMEM, err) {
 					return linuxerr.EAGAIN
@@ -917,7 +916,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 				}
 				if uint64(mm.vmas.Span()) > mlockLimit {
 					mm.mappingMu.Unlock()
-					return syserror.ENOMEM
+					return linuxerr.ENOMEM
 				}
 			}
 		}
@@ -1040,7 +1039,7 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 	}
 
 	if mm.vmas.SpanRange(ar) != ar.Length() {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	return nil
 }
@@ -1099,7 +1098,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	// to the rest (but returns ENOMEM from the system call, as it should)." -
 	// madvise(2)
 	if mm.vmas.SpanRange(ar) != ar.Length() {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	return nil
 }
@@ -1123,11 +1122,11 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 	}
 	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 
 	mm.mappingMu.RLock()
@@ -1135,7 +1134,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
 	if !vseg.Ok() {
 		mm.mappingMu.RUnlock()
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	var unmapped bool
 	lastEnd := ar.Start
@@ -1184,7 +1183,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr hostarch.Addr, length u
 	}
 
 	if unmapped {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 	return nil
 }

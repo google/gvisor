@@ -38,7 +38,7 @@ type fuseDevice struct{}
 // Open implements vfs.Device.Open.
 func (fuseDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	if !kernel.FUSEEnabled {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	var fd DeviceFD
@@ -126,7 +126,7 @@ func (fd *DeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset in
 		return 0, linuxerr.EPERM
 	}
 
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -205,7 +205,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		return 0, err
 	}
 	if n != len(req.data) {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 
 	if req.hdr.Opcode == linux.FUSE_WRITE {
@@ -214,7 +214,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 			return 0, err
 		}
 		if written != len(req.payload) {
-			return 0, syserror.EIO
+			return 0, linuxerr.EIO
 		}
 		n += int(written)
 	}
@@ -238,7 +238,7 @@ func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset i
 		return 0, linuxerr.EPERM
 	}
 
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
@@ -395,7 +395,7 @@ func (fd *DeviceFD) Seek(ctx context.Context, offset int64, whence int32) (int64
 		return 0, linuxerr.EPERM
 	}
 
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // sendResponse sends a response to the waiting task (if any).

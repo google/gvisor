@@ -111,7 +111,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr host
 	}
 	atEmptyPath := flags&linux.AT_EMPTY_PATH != 0
 	if !atEmptyPath && len(pathname) == 0 {
-		return 0, nil, syserror.ENOENT
+		return 0, nil, linuxerr.ENOENT
 	}
 	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
 

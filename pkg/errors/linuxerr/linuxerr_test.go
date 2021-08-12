@@ -115,7 +115,7 @@ func BenchmarkSwitchSyserror(b *testing.B) {
 		switch globalError {
 		case linuxerr.EACCES:
 			j++
-		case syserror.EINTR:
+		case linuxerr.EINTR:
 			j += 2
 		case linuxerr.EAGAIN:
 			j += 3

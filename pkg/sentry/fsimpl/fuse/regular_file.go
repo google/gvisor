@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -108,7 +107,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 			return 0, err
 		}
 		if int64(cp) != toCopy {
-			return 0, syserror.EIO
+			return 0, linuxerr.EIO
 		}
 		copied += toCopy
 	}
@@ -205,7 +204,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, err
 	}
 	if int64(cp) != srclen {
-		return 0, offset, syserror.EIO
+		return 0, offset, linuxerr.EIO
 	}
 
 	n, err := fd.inode().fs.Write(ctx, fd, uint64(offset), uint32(srclen), data)
@@ -216,7 +215,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	if n == 0 {
 		// We have checked srclen != 0 previously.
 		// If err == nil, then it's a short write and we return EIO.
-		return 0, offset, syserror.EIO
+		return 0, offset, linuxerr.EIO
 	}
 
 	written = int64(n)

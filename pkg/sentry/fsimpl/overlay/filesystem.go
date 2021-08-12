@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // _OVL_XATTR_PREFIX is an extended attribute key prefix to identify overlayfs
@@ -314,7 +313,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	}
 	if !topLookupLayer.existsInOverlay() {
 		child.destroyLocked(ctx)
-		return nil, topLookupLayer, syserror.ENOENT
+		return nil, topLookupLayer, linuxerr.ENOENT
 	}
 
 	// Device and inode numbers were copied from the topmost layer above. Remap
@@ -483,7 +482,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return linuxerr.EEXIST
 	}
 	if parent.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	if err := parent.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
@@ -506,7 +505,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 
 	if !dir && rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	mnt := rp.Mount()
@@ -780,7 +779,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	start := rp.Start().Impl().(*dentry)
 	if rp.Done() {
 		if mayCreate && rp.MustBeDir() {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		if mustCreate {
 			return nil, linuxerr.EEXIST
@@ -807,7 +806,7 @@ afterTrailingSymlink:
 	}
 	// Reject attempts to open directories with O_CREAT.
 	if mayCreate && rp.MustBeDir() {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
@@ -865,11 +864,11 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	if ftype == linux.S_IFDIR {
 		// Can't open directories with O_CREAT.
 		if opts.Flags&linux.O_CREAT != 0 {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		// Can't open directories writably.
 		if ats.MayWrite() {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		if opts.Flags&linux.O_DIRECT != 0 {
 			return nil, linuxerr.EINVAL
@@ -919,7 +918,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		return nil, err
 	}
 	if parent.vfsd.IsDead() {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -1086,7 +1085,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		defer newParent.dirMu.Unlock()
 	}
 	if newParent.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	var (
 		replaced      *dentry
@@ -1105,7 +1104,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replacedVFSD = &replaced.vfsd
 		if replaced.isDir() {
 			if !renamed.isDir() {
-				return syserror.EISDIR
+				return linuxerr.EISDIR
 			}
 			if genericIsAncestorDentry(replaced, renamed) {
 				return linuxerr.ENOTEMPTY
@@ -1533,7 +1532,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	defer rp.Mount().EndWrite()
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if rp.MustBeDir() {
 		return linuxerr.ENOTDIR
@@ -1557,7 +1556,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 	if child.isDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 		return err

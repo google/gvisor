@@ -432,7 +432,7 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 	start := root
 	if !path.Absolute {
 		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
-			return syserror.ENOENT
+			return linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectoryVFS2()

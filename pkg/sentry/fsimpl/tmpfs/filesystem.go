@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Sync implements vfs.FilesystemImpl.Sync.
@@ -75,7 +74,7 @@ afterSymlink:
 	}
 	child, ok := dir.childMap[name]
 	if !ok {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
 		return nil, err
@@ -171,12 +170,12 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return linuxerr.EEXIST
 	}
 	if !dir && rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	// tmpfs never calls VFS.InvalidateDentry(), so parentDir.dentry can only
 	// be dead if it was deleted.
 	if parentDir.dentry.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -258,7 +257,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			return err
 		}
 		if i.nlink == 0 {
-			return syserror.ENOENT
+			return linuxerr.ENOENT
 		}
 		if i.nlink == maxLinks {
 			return linuxerr.EMLINK
@@ -345,7 +344,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if rp.Done() {
 		// Reject attempts to open mount root directory with O_CREAT.
 		if rp.MustBeDir() {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		if mustCreate {
 			return nil, linuxerr.EEXIST
@@ -366,11 +365,11 @@ afterTrailingSymlink:
 	}
 	// Reject attempts to open directories with O_CREAT.
 	if rp.MustBeDir() {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	if len(name) > linux.NAME_MAX {
 		return nil, linuxerr.ENAMETOOLONG
@@ -457,7 +456,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	case *directory:
 		// Can't open directories writably.
 		if ats&vfs.MayWrite != 0 {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		var fd directoryFD
 		fd.LockFD.Init(&d.inode.locks)
@@ -532,7 +531,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	renamed, ok := oldParentDir.childMap[oldName]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := oldParentDir.mayDelete(rp.Credentials(), renamed); err != nil {
 		return err
@@ -567,7 +566,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replacedDir, ok := replaced.inode.impl.(*directory)
 		if ok {
 			if !renamed.inode.isDir() {
-				return syserror.EISDIR
+				return linuxerr.EISDIR
 			}
 			if len(replacedDir.childMap) != 0 {
 				return linuxerr.ENOTEMPTY
@@ -588,7 +587,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// tmpfs never calls VFS.InvalidateDentry(), so newParentDir.dentry can
 	// only be dead if it was deleted.
 	if newParentDir.dentry.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Linux places this check before some of those above; we do it here for
@@ -654,7 +653,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	}
 	child, ok := parentDir.childMap[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
 		return err
@@ -754,17 +753,17 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	name := rp.Component()
 	if name == "." || name == ".." {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	child, ok := parentDir.childMap[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parentDir.mayDelete(rp.Credentials(), child); err != nil {
 		return err
 	}
 	if child.inode.isDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if rp.MustBeDir() {
 		return linuxerr.ENOTDIR

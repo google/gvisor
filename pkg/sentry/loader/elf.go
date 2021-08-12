@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -116,7 +115,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		log.Infof("Error reading ELF ident: %v", err)
 		// The entire ident array always exists.
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			err = syserror.ENOEXEC
+			err = linuxerr.ENOEXEC
 		}
 		return elfInfo{}, err
 	}
@@ -124,22 +123,22 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 	// Only some callers pre-check the ELF magic.
 	if !bytes.Equal(ident[:len(elfMagic)], []byte(elfMagic)) {
 		log.Infof("File is not an ELF")
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
 	// We only support 64-bit, little endian binaries
 	if class := elf.Class(ident[elf.EI_CLASS]); class != elf.ELFCLASS64 {
 		log.Infof("Unsupported ELF class: %v", class)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 	if endian := elf.Data(ident[elf.EI_DATA]); endian != elf.ELFDATA2LSB {
 		log.Infof("Unsupported ELF endianness: %v", endian)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
 	if version := elf.Version(ident[elf.EI_VERSION]); version != elf.EV_CURRENT {
 		log.Infof("Unsupported ELF version: %v", version)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 	// EI_OSABI is ignored by Linux, which is the only OS supported.
 	os := abi.Linux
@@ -151,7 +150,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		log.Infof("Error reading ELF header: %v", err)
 		// The entire header always exists.
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			err = syserror.ENOEXEC
+			err = linuxerr.ENOEXEC
 		}
 		return elfInfo{}, err
 	}
@@ -166,7 +165,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		a = arch.ARM64
 	default:
 		log.Infof("Unsupported ELF machine %d", machine)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
 	var sharedObject bool
@@ -178,25 +177,25 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		sharedObject = true
 	default:
 		log.Infof("Unsupported ELF type %v", elfType)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
 	if int(hdr.Phentsize) != prog64Size {
 		log.Infof("Unsupported phdr size %d", hdr.Phentsize)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 	totalPhdrSize := prog64Size * int(hdr.Phnum)
 	if totalPhdrSize < prog64Size {
 		log.Warningf("No phdrs or total phdr size overflows: prog64Size: %d phnum: %d", prog64Size, int(hdr.Phnum))
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 	if totalPhdrSize > maxTotalPhdrSize {
 		log.Infof("Too many phdrs (%d): total size %d > %d", hdr.Phnum, totalPhdrSize, maxTotalPhdrSize)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 	if int64(hdr.Phoff) < 0 || int64(hdr.Phoff+uint64(totalPhdrSize)) < 0 {
 		ctx.Infof("Unsupported phdr offset %d", hdr.Phoff)
-		return elfInfo{}, syserror.ENOEXEC
+		return elfInfo{}, linuxerr.ENOEXEC
 	}
 
 	phdrBuf := make([]byte, totalPhdrSize)
@@ -205,7 +204,7 @@ func parseHeader(ctx context.Context, f fullReader) (elfInfo, error) {
 		log.Infof("Error reading ELF phdrs: %v", err)
 		// If phdrs were specified, they should all exist.
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			err = syserror.ENOEXEC
+			err = linuxerr.ENOEXEC
 		}
 		return elfInfo{}, err
 	}
@@ -248,19 +247,19 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 	if !ok {
 		// If offset != 0 we should have ensured this would fit.
 		ctx.Warningf("Computed segment load address overflows: %#x + %#x", phdr.Vaddr, offset)
-		return syserror.ENOEXEC
+		return linuxerr.ENOEXEC
 	}
 	addr -= hostarch.Addr(adjust)
 
 	fileSize := phdr.Filesz + adjust
 	if fileSize < phdr.Filesz {
 		ctx.Infof("Computed segment file size overflows: %#x + %#x", phdr.Filesz, adjust)
-		return syserror.ENOEXEC
+		return linuxerr.ENOEXEC
 	}
 	ms, ok := hostarch.Addr(fileSize).RoundUp()
 	if !ok {
 		ctx.Infof("fileSize %#x too large", fileSize)
-		return syserror.ENOEXEC
+		return linuxerr.ENOEXEC
 	}
 	mapSize := uint64(ms)
 
@@ -321,7 +320,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 	memSize := phdr.Memsz + adjust
 	if memSize < phdr.Memsz {
 		ctx.Infof("Computed segment mem size overflows: %#x + %#x", phdr.Memsz, adjust)
-		return syserror.ENOEXEC
+		return linuxerr.ENOEXEC
 	}
 
 	// Allocate more anonymous pages if necessary.
@@ -333,7 +332,7 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, phdr 
 		anonSize, ok := hostarch.Addr(memSize - mapSize).RoundUp()
 		if !ok {
 			ctx.Infof("extra anon pages too large: %#x", memSize-mapSize)
-			return syserror.ENOEXEC
+			return linuxerr.ENOEXEC
 		}
 
 		// N.B. Linux uses vm_brk_flags to map these pages, which only
@@ -423,27 +422,27 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 				// NOTE(b/37474556): Linux allows out-of-order
 				// segments, in violation of the spec.
 				ctx.Infof("PT_LOAD headers out-of-order. %#x < %#x", vaddr, end)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 			var ok bool
 			end, ok = vaddr.AddLength(phdr.Memsz)
 			if !ok {
 				ctx.Infof("PT_LOAD header size overflows. %#x + %#x", vaddr, phdr.Memsz)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 
 		case elf.PT_INTERP:
 			if phdr.Filesz < 2 {
 				ctx.Infof("PT_INTERP path too small: %v", phdr.Filesz)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 			if phdr.Filesz > linux.PATH_MAX {
 				ctx.Infof("PT_INTERP path too big: %v", phdr.Filesz)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 			if int64(phdr.Off) < 0 || int64(phdr.Off+phdr.Filesz) < 0 {
 				ctx.Infof("Unsupported PT_INTERP offset %d", phdr.Off)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 
 			path := make([]byte, phdr.Filesz)
@@ -451,12 +450,12 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 			if err != nil {
 				// If an interpreter was specified, it should exist.
 				ctx.Infof("Error reading PT_INTERP path: %v", err)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 
 			if path[len(path)-1] != 0 {
 				ctx.Infof("PT_INTERP path not NUL-terminated: %v", path)
-				return loadedELF{}, syserror.ENOEXEC
+				return loadedELF{}, linuxerr.ENOEXEC
 			}
 
 			// Strip NUL-terminator and everything beyond from
@@ -498,7 +497,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f fsbridge.File, in
 		totalSize, ok := totalSize.RoundUp()
 		if !ok {
 			ctx.Infof("ELF PT_LOAD segments too big")
-			return loadedELF{}, syserror.ENOEXEC
+			return loadedELF{}, linuxerr.ENOEXEC
 		}
 
 		var err error
@@ -592,7 +591,7 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 	// Check Image Compatibility.
 	if arch.Host != info.arch {
 		ctx.Warningf("Found mismatch for platform %s with ELF type %s", arch.Host.String(), info.arch.String())
-		return loadedELF{}, nil, syserror.ENOEXEC
+		return loadedELF{}, nil, linuxerr.ENOEXEC
 	}
 
 	// Create the arch.Context now so we can prepare the mmap layout before
@@ -681,7 +680,7 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 		if interp.interpreter != "" {
 			// No recursive interpreters!
 			ctx.Infof("Interpreter requires an interpreter")
-			return loadedELF{}, nil, syserror.ENOEXEC
+			return loadedELF{}, nil, linuxerr.ENOEXEC
 		}
 	}
 

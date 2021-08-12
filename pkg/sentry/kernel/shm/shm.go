@@ -49,7 +49,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Registry tracks all shared memory segments in an IPC namespace. The registry
@@ -151,7 +150,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 	if r.reg.ObjectCount() >= linux.SHMMNI {
 		// "All possible shared memory IDs have been taken (SHMMNI) ..."
 		//   - man shmget(2)
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 
 	if !private {
@@ -184,7 +183,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 		// "... allocating a segment of the requested size would cause the
 		// system to exceed the system-wide limit on shared memory (SHMALL)."
 		//   - man shmget(2)
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 
 	// Need to create a new segment.
@@ -521,7 +520,7 @@ func (s *Shm) ConfigureAttach(ctx context.Context, addr hostarch.Addr, opts Atta
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pendingDestruction && s.ReadRefs() == 0 {
-		return memmap.MMapOpts{}, syserror.EIDRM
+		return memmap.MMapOpts{}, linuxerr.EIDRM
 	}
 
 	creds := auth.CredentialsFromContext(ctx)

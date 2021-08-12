@@ -18,12 +18,12 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ArchPrctl is not defined for ARM64.
 func ArchPrctl(*kernel.Task, arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ENOSYS
+	return 0, nil, linuxerr.ENOSYS
 }

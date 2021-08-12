@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ArchPrctl implements linux syscall arch_prctl(2).
@@ -39,7 +38,7 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 				return 0, nil, err
 			}
 		default:
-			return 0, nil, syserror.ENOSYS
+			return 0, nil, linuxerr.ENOSYS
 		}
 	case linux.ARCH_SET_FS:
 		fsbase := args[1].Uint64()

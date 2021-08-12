@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -259,7 +258,7 @@ func (ep *EpollInstance) ModifyInterest(file *FileDescription, num int32, event 
 		num:  num,
 	}]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Update epi for the next call to ep.ReadEvents().
@@ -295,7 +294,7 @@ func (ep *EpollInstance) DeleteInterest(file *FileDescription, num int32) error 
 		num:  num,
 	}]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Unregister from the file so that epi will no longer be readied.

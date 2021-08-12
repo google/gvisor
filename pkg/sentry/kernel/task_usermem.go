@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -105,7 +104,7 @@ func (t *Task) CopyInVector(addr hostarch.Addr, maxElemSize, maxTotalSize int) (
 		// Each string has a zero terminating byte counted, so copying out a string
 		// requires at least one byte of space. Also, see the calculation below.
 		if maxTotalSize <= 0 {
-			return nil, syserror.ENOMEM
+			return nil, linuxerr.ENOMEM
 		}
 		thisMax := maxElemSize
 		if maxTotalSize < thisMax {
@@ -148,7 +147,7 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 		}
 
 	default:
-		return syserror.ENOSYS
+		return linuxerr.ENOSYS
 	}
 
 	return nil
@@ -220,7 +219,7 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 		}
 
 	default:
-		return hostarch.AddrRangeSeq{}, syserror.ENOSYS
+		return hostarch.AddrRangeSeq{}, linuxerr.ENOSYS
 	}
 
 	// Truncate to MAX_RW_COUNT.

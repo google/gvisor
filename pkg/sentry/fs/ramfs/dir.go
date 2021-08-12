@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // CreateOps represents operations to create different file types.
@@ -284,9 +283,9 @@ func (d *Dir) walkLocked(ctx context.Context, p string) (*fs.Inode, error) {
 		return inode, nil
 	}
 
-	// fs.InodeOperations.Lookup returns syserror.ENOENT if p
+	// fs.InodeOperations.Lookup returns linuxerr.ENOENT if p
 	// does not exist.
-	return nil, syserror.ENOENT
+	return nil, linuxerr.ENOENT
 }
 
 // createInodeOperationsCommon creates a new child node at this dir by calling

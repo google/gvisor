@@ -16,9 +16,9 @@ package gofer
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // p9file is a wrapper around p9.File that provides methods that are
@@ -59,7 +59,7 @@ func (f p9file) walkGetAttrOne(ctx context.Context, name string) (p9.QID, p9file
 		if newfile != nil {
 			p9file{newfile}.close(ctx)
 		}
-		return p9.QID{}, p9file{}, p9.AttrMask{}, p9.Attr{}, syserror.EIO
+		return p9.QID{}, p9file{}, p9.AttrMask{}, p9.Attr{}, linuxerr.EIO
 	}
 	return qids[0], p9file{newfile}, attrMask, attr, nil
 }

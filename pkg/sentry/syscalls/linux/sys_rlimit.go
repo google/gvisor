@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // rlimit describes an implementation of 'struct rlimit', which may vary from
@@ -44,7 +43,7 @@ func newRlimit(t *kernel.Task) (rlimit, error) {
 		// On 64-bit system, struct rlimit and struct rlimit64 are identical.
 		return &rlimit64{}, nil
 	default:
-		return nil, syserror.ENOSYS
+		return nil, linuxerr.ENOSYS
 	}
 }
 
