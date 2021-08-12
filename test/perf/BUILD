@@ -174,3 +174,10 @@ syscall_test(
     test = "//test/perf/linux:verity_open_read_close_benchmark",
     vfs1 = False,
 )
+
+syscall_test(
+    size = "large",
+    debug = False,
+    test = "//test/perf/linux:verity_stat_benchmark",
+    vfs1 = False,
+)
