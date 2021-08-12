@@ -295,8 +295,6 @@ type Queue struct {
 // descriptions, but not inodes, because we use inodes to retreive the actual
 // queue, and only FDs are responsible for providing user functionality.
 type View interface {
-	// TODO: Add receive when mq_timedreceive(2) is implemented.
-
 	// Flush checks if the calling process has attached a notification request
 	// to this queue, if yes, then the request is removed, and another process
 	// can attach a request.
@@ -453,6 +451,66 @@ func (q *Queue) push(ctx context.Context, msg Message) error {
 	q.receivers.Notify(waiter.EventIn)
 
 	return nil
+}
+
+// receive returns the message with the highest priority from the queue. See
+// mq_timedreceive(2).
+func (q *Queue) receive(ctx context.Context, b Blocker, timeout time.Duration, block bool) (*Message, error) {
+	// Fast path: attempt a non-blocking pop.
+	if msg, err := q.pop(ctx); err != linuxerr.EWOULDBLOCK {
+		return msg, err
+	}
+
+	if !block {
+		return nil, linuxerr.EAGAIN
+	}
+	if timeout == 0 {
+		return nil, linuxerr.ETIMEDOUT
+	}
+
+	// Slow path: the queue was found to be empty, and we were asked to block.
+
+	e, ch := waiter.NewChannelEntry(nil)
+	q.receivers.EventRegister(&e, waiter.EventIn)
+	defer q.receivers.EventUnregister(&e)
+
+	// We need to check again before blocking since space may have become
+	// available.
+	for {
+		if msg, err := q.pop(ctx); err != linuxerr.EWOULDBLOCK {
+			return msg, err
+		}
+
+		remaining, err := b.BlockWithTimeout(ch, timeout >= 0, timeout)
+		if err != nil {
+			return nil, err
+		}
+		timeout = remaining
+	}
+}
+
+// pop removes the highest priority message from the queue and returns it. An
+// error EWOULDBLOCK is returned if the queue is empty.
+func (q *Queue) pop(ctx context.Context) (*Message, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.messages.Empty() {
+		return nil, linuxerr.EWOULDBLOCK
+	}
+
+	// Messages are ordered on insertion, so the head of the linked list always
+	// has the highest priority.
+	msg := q.messages.Front()
+
+	q.messages.Remove(msg)
+	q.messageCount--
+	q.byteCount -= msg.Size
+
+	// Notify waiting senders.
+	q.senders.Notify(waiter.EventOut)
+
+	return msg, nil
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
