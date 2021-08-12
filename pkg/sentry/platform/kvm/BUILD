@@ -82,6 +82,7 @@ go_test(
         "kvm_amd64_test.go",
         "kvm_amd64_test.s",
         "kvm_arm64_test.go",
+        "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
     ],
@@ -94,8 +95,10 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
+        "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/platform",
