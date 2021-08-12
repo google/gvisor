@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -547,7 +546,7 @@ func (fs *filesystem) lookupAndVerifyLocked(ctx context.Context, parent *dentry,
 
 	if parent.verityEnabled() {
 		if _, ok := parent.childrenNames[name]; !ok {
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 	}
 

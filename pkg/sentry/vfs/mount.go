@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A Mount is a replacement of a Dentry (Mount.key.point) from one Filesystem
@@ -225,7 +224,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 			vdDentry.mu.Unlock()
 			vfs.mountMu.Unlock()
 			vd.DecRef(ctx)
-			return syserror.ENOENT
+			return linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
 		// vfs.mountMu.Lock().

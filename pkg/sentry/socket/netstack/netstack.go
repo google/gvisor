@@ -2951,7 +2951,7 @@ func (s *socketOpsCommon) ioctl(ctx context.Context, io usermem.IO, args arch.Sy
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
 		if !s.timestampValid {
-			return 0, syserror.ENOENT
+			return 0, linuxerr.ENOENT
 		}
 
 		tv := linux.NsecToTimeval(s.timestampNS)

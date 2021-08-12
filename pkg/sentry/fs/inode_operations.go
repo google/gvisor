@@ -66,7 +66,7 @@ type InodeOperations interface {
 	//
 	// * A nil Dirent and a non-nil error. If the reason that Lookup failed
 	//   was because the name does not exist under Inode, then must return
-	//   syserror.ENOENT.
+	//   linuxerr.ENOENT.
 	//
 	// * If name does not exist under dir and the file system wishes this
 	//   fact to be cached, a non-nil Dirent containing a nil Inode and a

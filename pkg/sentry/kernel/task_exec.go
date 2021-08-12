@@ -66,10 +66,10 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // execStop is a TaskStop that a task sets on itself when it wants to execve
@@ -97,7 +97,7 @@ func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
 		// We lost to a racing group-exit, kill, or exec from another thread
 		// and should just exit.
 		newImage.release()
-		return nil, syserror.EINTR
+		return nil, linuxerr.EINTR
 	}
 
 	// Cancel any racing group stops.

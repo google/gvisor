@@ -179,7 +179,7 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 
 // WriteTo implements FileOperations.WriteTo.
 func (*Inotify) WriteTo(context.Context, *File, io.Writer, int64, bool) (int64, error) {
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // Fsync implements FileOperations.Fsync.
@@ -189,7 +189,7 @@ func (*Inotify) Fsync(context.Context, *File, int64, int64, SyncType) error {
 
 // ReadFrom implements FileOperations.ReadFrom.
 func (*Inotify) ReadFrom(context.Context, *File, io.Reader, int64) (int64, error) {
-	return 0, syserror.ENOSYS
+	return 0, linuxerr.ENOSYS
 }
 
 // Flush implements FileOperations.Flush.

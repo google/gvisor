@@ -18,9 +18,9 @@ package ttydev
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -36,7 +36,7 @@ type ttyDevice struct{}
 
 // Open implements vfs.Device.Open.
 func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	return nil, syserror.EIO
+	return nil, linuxerr.EIO
 }
 
 // Register registers all devices implemented by this package in vfsObj.

@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type globalDirentMap struct {
@@ -963,7 +962,7 @@ func (d *Dirent) isMountPointLocked() bool {
 func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err error) {
 	// Did we race with deletion?
 	if atomic.LoadInt32(&d.deleted) != 0 {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	// Refuse to mount a symlink.
@@ -998,7 +997,7 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 func (d *Dirent) unmount(ctx context.Context, replacement *Dirent) error {
 	// Did we race with deletion?
 	if atomic.LoadInt32(&d.deleted) != 0 {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Remount our former child in its place.

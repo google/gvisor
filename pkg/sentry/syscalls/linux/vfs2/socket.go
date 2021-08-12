@@ -264,7 +264,7 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Capture address and call syscall implementation.
@@ -295,7 +295,7 @@ func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr,
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
 	// Call the syscall implementation for this socket, then copy the
@@ -354,7 +354,7 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Capture address and call syscall implementation.
@@ -381,7 +381,7 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	if backlog > maxListenBacklog {
@@ -419,7 +419,7 @@ func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Validate how, then call syscall implementation.
@@ -450,7 +450,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Read the length. Reject negative values.
@@ -531,7 +531,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	if optLen < 0 {
@@ -569,7 +569,7 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Get the socket name and copy it to the caller.
@@ -597,7 +597,7 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Get the socket peer name and copy it to the caller.
@@ -630,7 +630,7 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
@@ -687,7 +687,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
@@ -852,7 +852,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
 	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
@@ -925,7 +925,7 @@ func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
@@ -967,7 +967,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
@@ -1091,7 +1091,7 @@ func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags
 	// Extract the socket.
 	s, ok := file.Impl().(socket.SocketVFS2)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
 	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {

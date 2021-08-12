@@ -62,7 +62,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -865,11 +864,11 @@ func dentryAttrMask() p9.AttrMask {
 func (fs *filesystem) newDentry(ctx context.Context, file p9file, qid p9.QID, mask p9.AttrMask, attr *p9.Attr) (*dentry, error) {
 	if !mask.Mode {
 		ctx.Warningf("can't create gofer.dentry without file type")
-		return nil, syserror.EIO
+		return nil, linuxerr.EIO
 	}
 	if attr.Mode.FileType() == p9.ModeRegular && !mask.Size {
 		ctx.Warningf("can't create regular file gofer.dentry without file size")
-		return nil, syserror.EIO
+		return nil, linuxerr.EIO
 	}
 
 	d := &dentry{
@@ -1112,7 +1111,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		case linux.S_IFREG:
 			// ok
 		case linux.S_IFDIR:
-			return syserror.EISDIR
+			return linuxerr.EISDIR
 		default:
 			return linuxerr.EINVAL
 		}

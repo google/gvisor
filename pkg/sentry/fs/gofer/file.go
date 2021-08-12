@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -226,7 +226,7 @@ func (f *fileOperations) maybeSync(ctx context.Context, file *fs.File, offset, n
 func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		// Not all remote file systems enforce this so this client does.
-		return 0, syserror.EISDIR
+		return 0, linuxerr.EISDIR
 	}
 
 	var (
@@ -294,7 +294,7 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		// Not all remote file systems enforce this so this client does.
 		f.incrementReadCounters(start)
-		return 0, syserror.EISDIR
+		return 0, linuxerr.EISDIR
 	}
 
 	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {

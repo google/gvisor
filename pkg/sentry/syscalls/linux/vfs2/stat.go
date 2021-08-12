@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Stat implements Linux syscall stat(2).
@@ -70,7 +69,7 @@ func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flag
 	start := root
 	if !path.Absolute {
 		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
-			return syserror.ENOENT
+			return linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectoryVFS2()
@@ -182,7 +181,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	start := root
 	if !path.Absolute {
 		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
-			return 0, nil, syserror.ENOENT
+			return 0, nil, linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectoryVFS2()

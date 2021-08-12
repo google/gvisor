@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/rand",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/devtmpfs",
@@ -23,7 +24,6 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

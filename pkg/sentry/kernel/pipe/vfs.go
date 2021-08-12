@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -121,7 +120,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		// writer, we have to wait for a writer to open the other end.
 		if vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() && !waitFor(&vp.mu, &vp.wWakeup, ctx) {
 			fd.DecRef(ctx)
-			return nil, syserror.EINTR
+			return nil, linuxerr.EINTR
 		}
 
 	case writable:
@@ -137,7 +136,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 			// Wait for a reader to open the other end.
 			if !waitFor(&vp.mu, &vp.rWakeup, ctx) {
 				fd.DecRef(ctx)
-				return nil, syserror.EINTR
+				return nil, linuxerr.EINTR
 			}
 		}
 

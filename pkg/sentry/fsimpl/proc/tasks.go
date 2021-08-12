@@ -21,11 +21,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -116,12 +116,12 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 		case threadSelfName:
 			return i.newThreadSelfSymlink(ctx, root), nil
 		}
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	task := i.pidns.TaskWithID(kernel.ThreadID(tid))
 	if task == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	return i.fs.newTaskInode(ctx, task, i.pidns, true, i.fakeCgroupControllers)

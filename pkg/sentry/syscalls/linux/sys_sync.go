@@ -112,7 +112,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	if uflags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
 		uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 
 	// SYNC_FILE_RANGE_WRITE initiates write-out of all dirty pages in the

@@ -27,6 +27,12 @@ import (
 
 const maxErrno uint32 = errno.EHWPOISON + 1
 
+// The following errors are semantically identical to Errno of type unix.Errno
+// or sycall.Errno. However, since the type are distinct ( these are
+// *errors.Error), they are not directly comperable. However, the Errno method
+// returns an Errno number such that the error can be compared to unix/syscall.Errno
+// (e.g. unix.Errno(EPERM.Errno()) == unix.EPERM is true). Converting unix/syscall.Errno
+// to the errors should be done via the lookup methods provided.
 var (
 	NOERROR = errors.New(errno.NOERRNO, "not an error")
 	EPERM   = errors.New(errno.EPERM, "operation not permitted")
@@ -177,7 +183,7 @@ var (
 var errNotValidError = errors.New(errno.Errno(maxErrno), "not a valid error")
 
 // The following errorSlice holds errors by errno for fast translation between
-// errnos (especially uint32(sycall.Errno)) and *Error.
+// errnos (especially uint32(sycall.Errno)) and *errors.Error.
 var errorSlice = []*errors.Error{
 	// Errno values from include/uapi/asm-generic/errno-base.h.
 	errno.NOERRNO: NOERROR,

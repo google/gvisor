@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const nsecPerSec = int64(time.Second)
@@ -29,7 +29,7 @@ const nsecPerSec = int64(time.Second)
 func Getitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	if t.Arch().Width() != 8 {
 		// Definition of linux.ItimerVal assumes 64-bit architecture.
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 
 	timerID := args[0].Int()
@@ -51,7 +51,7 @@ func Getitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 func Setitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	if t.Arch().Width() != 8 {
 		// Definition of linux.ItimerVal assumes 64-bit architecture.
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 
 	timerID := args[0].Int()

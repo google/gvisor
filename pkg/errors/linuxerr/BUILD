@@ -4,7 +4,9 @@ package(licenses = ["notice"])
 
 go_library(
     name = "linuxerr",
-    srcs = ["linuxerr.go"],
+    srcs = [
+        "linuxerr.go",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux/errno",

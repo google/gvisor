@@ -151,10 +151,10 @@ func (r *Registry) FindOrCreate(ctx context.Context, key ipc.Key, nsems int32, m
 	// Map reg.objects and map indexes in a registry are of the same size,
 	// check map reg.objects only here for the system limit.
 	if r.reg.ObjectCount() >= setsMax {
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 	if r.totalSems() > int(semsTotalMax-nsems) {
-		return nil, syserror.ENOSPC
+		return nil, linuxerr.ENOSPC
 	}
 
 	// Finally create a new set.
@@ -549,7 +549,7 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 
 	// Did it race with a removal operation?
 	if s.dead {
-		return nil, 0, syserror.EIDRM
+		return nil, 0, linuxerr.EIDRM
 	}
 
 	// Validate the operations.

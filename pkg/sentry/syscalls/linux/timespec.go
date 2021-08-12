@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // copyTimespecIn copies a Timespec from the untrusted app range to the kernel.
@@ -38,7 +37,7 @@ func copyTimespecIn(t *kernel.Task, addr hostarch.Addr) (linux.Timespec, error) 
 		ts.Nsec = int64(hostarch.ByteOrder.Uint64(in[8:]))
 		return ts, nil
 	default:
-		return linux.Timespec{}, syserror.ENOSYS
+		return linux.Timespec{}, linuxerr.ENOSYS
 	}
 }
 
@@ -52,7 +51,7 @@ func copyTimespecOut(t *kernel.Task, addr hostarch.Addr, ts *linux.Timespec) err
 		_, err := t.CopyOutBytes(addr, out)
 		return err
 	default:
-		return syserror.ENOSYS
+		return linuxerr.ENOSYS
 	}
 }
 
@@ -70,7 +69,7 @@ func copyTimevalIn(t *kernel.Task, addr hostarch.Addr) (linux.Timeval, error) {
 		tv.Usec = int64(hostarch.ByteOrder.Uint64(in[8:]))
 		return tv, nil
 	default:
-		return linux.Timeval{}, syserror.ENOSYS
+		return linux.Timeval{}, linuxerr.ENOSYS
 	}
 }
 
@@ -84,7 +83,7 @@ func copyTimevalOut(t *kernel.Task, addr hostarch.Addr, tv *linux.Timeval) error
 		_, err := t.CopyOutBytes(addr, out)
 		return err
 	default:
-		return syserror.ENOSYS
+		return linuxerr.ENOSYS
 	}
 }
 

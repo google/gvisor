@@ -61,12 +61,12 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/refsvfs2"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
@@ -568,7 +568,7 @@ func (d *Dentry) WalkDentryTree(ctx context.Context, vfsObj *vfs.VirtualFilesyst
 
 		switch {
 		case target == nil:
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		case pc == ".":
 			// No-op, consume component and continue.
 		case pc == "..":
@@ -593,7 +593,7 @@ func (d *Dentry) WalkDentryTree(ctx context.Context, vfsObj *vfs.VirtualFilesyst
 	}
 
 	if target == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	target.IncRef()

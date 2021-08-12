@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -167,7 +166,7 @@ func (i *InodeSimpleAttributes) DropLink() {
 // StatFS implements fs.InodeOperations.StatFS.
 func (i *InodeSimpleAttributes) StatFS(context.Context) (fs.Info, error) {
 	if i.fsType == 0 {
-		return fs.Info{}, syserror.ENOSYS
+		return fs.Info{}, linuxerr.ENOSYS
 	}
 	return fs.Info{Type: i.fsType}, nil
 }
@@ -294,7 +293,7 @@ type InodeNoStatFS struct{}
 
 // StatFS implements fs.InodeOperations.StatFS.
 func (InodeNoStatFS) StatFS(context.Context) (fs.Info, error) {
-	return fs.Info{}, syserror.ENOSYS
+	return fs.Info{}, linuxerr.ENOSYS
 }
 
 // InodeStaticFileGetter implements GetFile for a file with static contents.
@@ -401,7 +400,7 @@ type InodeIsDirTruncate struct{}
 
 // Truncate implements fs.InodeOperations.Truncate.
 func (InodeIsDirTruncate) Truncate(context.Context, *fs.Inode, int64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }
 
 // InodeNoopTruncate implements fs.InodeOperations.Truncate as a noop.
@@ -425,7 +424,7 @@ type InodeNotOpenable struct{}
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (InodeNotOpenable) GetFile(context.Context, *fs.Dirent, fs.FileFlags) (*fs.File, error) {
-	return nil, syserror.EIO
+	return nil, linuxerr.EIO
 }
 
 // InodeNotVirtual can be used by Inodes that are not virtual.
@@ -529,5 +528,5 @@ type InodeIsDirAllocate struct{}
 
 // Allocate implements fs.InodeOperations.Allocate.
 func (InodeIsDirAllocate) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }

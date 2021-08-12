@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func copyInPath(t *kernel.Task, addr hostarch.Addr) (fspath.Path, error) {
@@ -44,7 +43,7 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, shouldA
 	if !path.Absolute {
 		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
 			root.DecRef(t)
-			return taskPathOperation{}, syserror.ENOENT
+			return taskPathOperation{}, linuxerr.ENOENT
 		}
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectoryVFS2()

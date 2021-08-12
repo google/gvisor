@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // maxFilenameLen is the maximum length of a filename. This is dictated by 9P's
@@ -60,7 +59,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 			if cp.cacheNegativeDirents() {
 				return fs.NewNegativeDirent(name), nil
 			}
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 		i.readdirMu.Unlock()
 	}
@@ -74,7 +73,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 				// is created over it.
 				return fs.NewNegativeDirent(name), nil
 			}
-			return nil, syserror.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 		return nil, err
 	}
@@ -169,7 +168,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 			hostFile.Close()
 		}
 		unopened.close(ctx)
-		return nil, syserror.EIO
+		return nil, linuxerr.EIO
 	}
 	qid := qids[0]
 

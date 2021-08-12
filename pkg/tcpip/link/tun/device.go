@@ -174,7 +174,7 @@ func (d *Device) Write(data []byte) (int64, error) {
 		return 0, linuxerr.EBADFD
 	}
 	if !endpoint.IsAttached() {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 
 	dataLen := int64(len(data))

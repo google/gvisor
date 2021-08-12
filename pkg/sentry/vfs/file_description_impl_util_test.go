@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -157,10 +156,10 @@ func TestGenCountFD(t *testing.T) {
 
 	// Write and PWrite fails.
 	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
+		t.Errorf("Write: got err %v, wanted %v", err, linuxerr.EIO)
 	}
 	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
+		t.Errorf("Write: got err %v, wanted %v", err, linuxerr.EIO)
 	}
 }
 

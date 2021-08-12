@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Preconditions:
@@ -59,7 +58,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		newUsageAS -= uint64(mm.vmas.SpanRange(ar))
 	}
 	if limitAS := limits.FromContext(ctx).Get(limits.AS).Cur; newUsageAS > limitAS {
-		return vmaIterator{}, hostarch.AddrRange{}, syserror.ENOMEM
+		return vmaIterator{}, hostarch.AddrRange{}, linuxerr.ENOMEM
 	}
 
 	if opts.MLockMode != memmap.MLockNone {
@@ -178,7 +177,7 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 
 	// Fixed mappings accept only the requested address.
 	if opts.Fixed {
-		return 0, syserror.ENOMEM
+		return 0, linuxerr.ENOMEM
 	}
 
 	// Prefer hugepage alignment if a hugepage or more is requested.
@@ -216,7 +215,7 @@ func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bou
 			return gr.Start, nil
 		}
 	}
-	return 0, syserror.ENOMEM
+	return 0, linuxerr.ENOMEM
 }
 
 // Preconditions: mm.mappingMu must be locked.
@@ -236,7 +235,7 @@ func (mm *MemoryManager) findHighestAvailableLocked(length, alignment uint64, bo
 			return start, nil
 		}
 	}
-	return 0, syserror.ENOMEM
+	return 0, linuxerr.ENOMEM
 }
 
 // Preconditions: mm.mappingMu must be locked.
