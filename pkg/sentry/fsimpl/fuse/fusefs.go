@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -612,7 +611,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 		return nil, err
 	}
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
-		return nil, syserror.EIO
+		return nil, linuxerr.EIO
 	}
 	child := i.fs.newInode(ctx, out.NodeID, out.Attr)
 	return child, nil

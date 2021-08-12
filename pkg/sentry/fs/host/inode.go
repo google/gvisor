@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -220,7 +219,7 @@ func (i *inodeOperations) Release(context.Context) {
 
 // Lookup implements fs.InodeOperations.Lookup.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	return nil, syserror.ENOENT
+	return nil, linuxerr.ENOENT
 }
 
 // Create implements fs.InodeOperations.Create.
@@ -400,7 +399,7 @@ func (i *inodeOperations) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error
 
 // StatFS implements fs.InodeOperations.StatFS.
 func (i *inodeOperations) StatFS(context.Context) (fs.Info, error) {
-	return fs.Info{}, syserror.ENOSYS
+	return fs.Info{}, linuxerr.ENOSYS
 }
 
 // AddLink implements fs.InodeOperations.AddLink.

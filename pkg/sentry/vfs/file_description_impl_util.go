@@ -25,7 +25,6 @@ import (
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -56,7 +55,7 @@ func (FileDescriptionDefaultImpl) OnClose(ctx context.Context) error {
 // StatFS implements FileDescriptionImpl.StatFS analogously to
 // super_operations::statfs == NULL in Linux.
 func (FileDescriptionDefaultImpl) StatFS(ctx context.Context) (linux.Statfs, error) {
-	return linux.Statfs{}, syserror.ENOSYS
+	return linux.Statfs{}, linuxerr.ENOSYS
 }
 
 // Allocate implements FileDescriptionImpl.Allocate analogously to
@@ -175,27 +174,27 @@ type DirectoryFileDescriptionDefaultImpl struct{}
 
 // Allocate implements DirectoryFileDescriptionDefaultImpl.Allocate.
 func (DirectoryFileDescriptionDefaultImpl) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }
 
 // PRead implements FileDescriptionImpl.PRead.
 func (DirectoryFileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Read implements FileDescriptionImpl.Read.
 func (DirectoryFileDescriptionDefaultImpl) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // PWrite implements FileDescriptionImpl.PWrite.
 func (DirectoryFileDescriptionDefaultImpl) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts WriteOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Write implements FileDescriptionImpl.Write.
 func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // DentryMetadataFileDescriptionImpl may be embedded by implementations of
@@ -368,7 +367,7 @@ func (fd *DynamicBytesFileDescriptionImpl) pwriteLocked(ctx context.Context, src
 
 	writable, ok := fd.data.(WritableDynamicBytesSource)
 	if !ok {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 	n, err := writable.Write(ctx, src, offset)
 	if err != nil {

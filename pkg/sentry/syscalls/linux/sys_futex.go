@@ -280,11 +280,11 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.FUTEX_WAIT_REQUEUE_PI, linux.FUTEX_CMP_REQUEUE_PI:
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 
 	default:
 		// We don't even know about this command.
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 }
 

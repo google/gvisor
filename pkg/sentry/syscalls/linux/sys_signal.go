@@ -512,7 +512,7 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// function is never null by (re)initializing it with one that translates
 	// the restart into EINTR. We'll emulate that behaviour.
 	t.Debugf("Restart block missing in restart_syscall(2). Did ptrace inject a return value of ERESTART_RESTARTBLOCK?")
-	return 0, nil, syserror.EINTR
+	return 0, nil, linuxerr.EINTR
 }
 
 // sharedSignalfd is shared between the two calls.

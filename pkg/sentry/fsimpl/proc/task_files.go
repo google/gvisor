@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -491,7 +490,7 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 		return int64(n), nil
 	}
 	if readErr != nil {
-		return 0, syserror.EIO
+		return 0, linuxerr.EIO
 	}
 	return 0, nil
 }

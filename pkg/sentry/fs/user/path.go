@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ResolveExecutablePath resolves the given executable name given the working
@@ -81,7 +80,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 	root := fs.RootFromContext(ctx)
 	if root == nil {
 		// Caller has no root. Don't bother traversing anything.
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	defer root.DecRef(ctx)
 	for _, p := range paths {
@@ -117,7 +116,7 @@ func resolve(ctx context.Context, mns *fs.MountNamespace, paths []string, name s
 	}
 
 	// Couldn't find it.
-	return "", syserror.ENOENT
+	return "", linuxerr.ENOENT
 }
 
 func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
@@ -156,7 +155,7 @@ func resolveVFS2(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNam
 	}
 
 	// Couldn't find it.
-	return "", syserror.ENOENT
+	return "", linuxerr.ENOENT
 }
 
 // getPath returns the PATH as a slice of strings given the environment

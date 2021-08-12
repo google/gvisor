@@ -18,11 +18,11 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ptraceArch implements arch-specific ptrace commands.
 func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) error {
-	return syserror.EIO
+	return linuxerr.EIO
 }

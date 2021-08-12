@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func (d *dentry) isCopiedUp() bool {
@@ -72,7 +71,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 	}
 	if d.vfsd.IsDead() {
 		// Raced with deletion of d.
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 
 	// Obtain settable timestamps from the lower layer.

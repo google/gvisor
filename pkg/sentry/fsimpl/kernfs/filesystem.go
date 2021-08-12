@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // stepExistingLocked resolves rp.Component() in parent directory vfsd.
@@ -224,7 +223,7 @@ func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string
 		return linuxerr.EEXIST
 	}
 	if parent.VFSDentry().IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parent.inode.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
 		return err
@@ -241,7 +240,7 @@ func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) er
 		return linuxerr.EBUSY
 	}
 	if parent.vfsd.IsDead() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
@@ -362,7 +361,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return err
 	}
 	if rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if rp.Mount() != vd.Mount() {
 		return linuxerr.EXDEV
@@ -443,7 +442,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	if rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
@@ -509,7 +508,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	defer unlock()
 	if rp.Done() {
 		if rp.MustBeDir() {
-			return nil, syserror.EISDIR
+			return nil, linuxerr.EISDIR
 		}
 		if mustCreate {
 			return nil, linuxerr.EEXIST
@@ -536,11 +535,11 @@ afterTrailingSymlink:
 	}
 	// Reject attempts to open directories with O_CREAT.
 	if rp.MustBeDir() {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	pc := rp.Component()
 	if pc == "." || pc == ".." {
-		return nil, syserror.EISDIR
+		return nil, linuxerr.EISDIR
 	}
 	if len(pc) > linux.NAME_MAX {
 		return nil, linuxerr.ENAMETOOLONG
@@ -861,7 +860,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return err
 	}
 	if rp.MustBeDir() {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
@@ -895,7 +894,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return err
 	}
 	if d.isDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	virtfs := rp.VirtualFilesystem()
 	parentDentry := d.parent

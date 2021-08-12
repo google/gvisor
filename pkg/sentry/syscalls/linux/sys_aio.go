@@ -138,7 +138,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 				if count > 0 || linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
 					return uintptr(count), nil, nil
 				}
-				return 0, nil, syserror.ConvertIntr(err, syserror.EINTR)
+				return 0, nil, syserror.ConvertIntr(err, linuxerr.EINTR)
 			}
 		}
 
@@ -216,7 +216,7 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 // It is not presently supported (ENOSYS indicates no support on this
 // architecture).
 func IoCancel(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ENOSYS
+	return 0, nil, linuxerr.ENOSYS
 }
 
 // LINT.IfChange
@@ -355,7 +355,7 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			}
 			cbAddr = hostarch.Addr(cbAddrP)
 		default:
-			return 0, nil, syserror.ENOSYS
+			return 0, nil, linuxerr.ENOSYS
 		}
 
 		// Copy in this callback.

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -246,7 +245,7 @@ func (f *overlayFileOperations) onTop(ctx context.Context, file *File, fn func(*
 			// Something very wrong; return a generic filesystem
 			// error to avoid propagating internals.
 			f.upperMu.Unlock()
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 
 		// Save upper file.

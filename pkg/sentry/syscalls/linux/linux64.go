@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -175,8 +174,8 @@ var AMD64 = &kernel.SyscallTable{
 		119: syscalls.Supported("setresgid", Setresgid),
 		120: syscalls.Supported("getresgid", Getresgid),
 		121: syscalls.Supported("getpgid", Getpgid),
-		122: syscalls.ErrorWithEvent("setfsuid", syserror.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
-		123: syscalls.ErrorWithEvent("setfsgid", syserror.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		122: syscalls.ErrorWithEvent("setfsuid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		123: syscalls.ErrorWithEvent("setfsgid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
 		124: syscalls.Supported("getsid", Getsid),
 		125: syscalls.Supported("capget", Capget),
 		126: syscalls.Supported("capset", Capset),
@@ -187,12 +186,12 @@ var AMD64 = &kernel.SyscallTable{
 		131: syscalls.Supported("sigaltstack", Sigaltstack),
 		132: syscalls.Supported("utime", Utime),
 		133: syscalls.PartiallySupported("mknod", Mknod, "Device creation is not generally supported. Only regular file and FIFO creation are supported.", nil),
-		134: syscalls.Error("uselib", syserror.ENOSYS, "Obsolete", nil),
+		134: syscalls.Error("uselib", linuxerr.ENOSYS, "Obsolete", nil),
 		135: syscalls.ErrorWithEvent("personality", linuxerr.EINVAL, "Unable to change personality.", nil),
-		136: syscalls.ErrorWithEvent("ustat", syserror.ENOSYS, "Needs filesystem support.", nil),
+		136: syscalls.ErrorWithEvent("ustat", linuxerr.ENOSYS, "Needs filesystem support.", nil),
 		137: syscalls.PartiallySupported("statfs", Statfs, "Depends on the backing file system implementation.", nil),
 		138: syscalls.PartiallySupported("fstatfs", Fstatfs, "Depends on the backing file system implementation.", nil),
-		139: syscalls.ErrorWithEvent("sysfs", syserror.ENOSYS, "", []string{"gvisor.dev/issue/165"}),
+		139: syscalls.ErrorWithEvent("sysfs", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/165"}),
 		140: syscalls.PartiallySupported("getpriority", Getpriority, "Stub implementation.", nil),
 		141: syscalls.PartiallySupported("setpriority", Setpriority, "Stub implementation.", nil),
 		142: syscalls.CapError("sched_setparam", linux.CAP_SYS_NICE, "", nil),
@@ -230,15 +229,15 @@ var AMD64 = &kernel.SyscallTable{
 		174: syscalls.CapError("create_module", linux.CAP_SYS_MODULE, "", nil),
 		175: syscalls.CapError("init_module", linux.CAP_SYS_MODULE, "", nil),
 		176: syscalls.CapError("delete_module", linux.CAP_SYS_MODULE, "", nil),
-		177: syscalls.Error("get_kernel_syms", syserror.ENOSYS, "Not supported in Linux > 2.6.", nil),
-		178: syscalls.Error("query_module", syserror.ENOSYS, "Not supported in Linux > 2.6.", nil),
+		177: syscalls.Error("get_kernel_syms", linuxerr.ENOSYS, "Not supported in Linux > 2.6.", nil),
+		178: syscalls.Error("query_module", linuxerr.ENOSYS, "Not supported in Linux > 2.6.", nil),
 		179: syscalls.CapError("quotactl", linux.CAP_SYS_ADMIN, "", nil), // requires cap_sys_admin for most operations
-		180: syscalls.Error("nfsservctl", syserror.ENOSYS, "Removed after Linux 3.1.", nil),
-		181: syscalls.Error("getpmsg", syserror.ENOSYS, "Not implemented in Linux.", nil),
-		182: syscalls.Error("putpmsg", syserror.ENOSYS, "Not implemented in Linux.", nil),
-		183: syscalls.Error("afs_syscall", syserror.ENOSYS, "Not implemented in Linux.", nil),
-		184: syscalls.Error("tuxcall", syserror.ENOSYS, "Not implemented in Linux.", nil),
-		185: syscalls.Error("security", syserror.ENOSYS, "Not implemented in Linux.", nil),
+		180: syscalls.Error("nfsservctl", linuxerr.ENOSYS, "Removed after Linux 3.1.", nil),
+		181: syscalls.Error("getpmsg", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
+		182: syscalls.Error("putpmsg", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
+		183: syscalls.Error("afs_syscall", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
+		184: syscalls.Error("tuxcall", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
+		185: syscalls.Error("security", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
 		186: syscalls.Supported("gettid", Gettid),
 		187: syscalls.Supported("readahead", Readahead),
 		188: syscalls.PartiallySupported("setxattr", SetXattr, "Only supported for tmpfs.", nil),
@@ -258,18 +257,18 @@ var AMD64 = &kernel.SyscallTable{
 		202: syscalls.PartiallySupported("futex", Futex, "Robust futexes not supported.", nil),
 		203: syscalls.PartiallySupported("sched_setaffinity", SchedSetaffinity, "Stub implementation.", nil),
 		204: syscalls.PartiallySupported("sched_getaffinity", SchedGetaffinity, "Stub implementation.", nil),
-		205: syscalls.Error("set_thread_area", syserror.ENOSYS, "Expected to return ENOSYS on 64-bit", nil),
+		205: syscalls.Error("set_thread_area", linuxerr.ENOSYS, "Expected to return ENOSYS on 64-bit", nil),
 		206: syscalls.PartiallySupported("io_setup", IoSetup, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		207: syscalls.PartiallySupported("io_destroy", IoDestroy, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		208: syscalls.PartiallySupported("io_getevents", IoGetevents, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		209: syscalls.PartiallySupported("io_submit", IoSubmit, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
 		210: syscalls.PartiallySupported("io_cancel", IoCancel, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
-		211: syscalls.Error("get_thread_area", syserror.ENOSYS, "Expected to return ENOSYS on 64-bit", nil),
+		211: syscalls.Error("get_thread_area", linuxerr.ENOSYS, "Expected to return ENOSYS on 64-bit", nil),
 		212: syscalls.CapError("lookup_dcookie", linux.CAP_SYS_ADMIN, "", nil),
 		213: syscalls.Supported("epoll_create", EpollCreate),
-		214: syscalls.ErrorWithEvent("epoll_ctl_old", syserror.ENOSYS, "Deprecated.", nil),
-		215: syscalls.ErrorWithEvent("epoll_wait_old", syserror.ENOSYS, "Deprecated.", nil),
-		216: syscalls.ErrorWithEvent("remap_file_pages", syserror.ENOSYS, "Deprecated since Linux 3.16.", nil),
+		214: syscalls.ErrorWithEvent("epoll_ctl_old", linuxerr.ENOSYS, "Deprecated.", nil),
+		215: syscalls.ErrorWithEvent("epoll_wait_old", linuxerr.ENOSYS, "Deprecated.", nil),
+		216: syscalls.ErrorWithEvent("remap_file_pages", linuxerr.ENOSYS, "Deprecated since Linux 3.16.", nil),
 		217: syscalls.Supported("getdents64", Getdents64),
 		218: syscalls.Supported("set_tid_address", SetTidAddress),
 		219: syscalls.Supported("restart_syscall", RestartSyscall),
@@ -289,16 +288,16 @@ var AMD64 = &kernel.SyscallTable{
 		233: syscalls.Supported("epoll_ctl", EpollCtl),
 		234: syscalls.Supported("tgkill", Tgkill),
 		235: syscalls.Supported("utimes", Utimes),
-		236: syscalls.Error("vserver", syserror.ENOSYS, "Not implemented by Linux", nil),
+		236: syscalls.Error("vserver", linuxerr.ENOSYS, "Not implemented by Linux", nil),
 		237: syscalls.PartiallySupported("mbind", Mbind, "Stub implementation. Only a single NUMA node is advertised, and mempolicy is ignored accordingly, but mbind() will succeed and has effects reflected by get_mempolicy.", []string{"gvisor.dev/issue/262"}),
 		238: syscalls.PartiallySupported("set_mempolicy", SetMempolicy, "Stub implementation.", nil),
 		239: syscalls.PartiallySupported("get_mempolicy", GetMempolicy, "Stub implementation.", nil),
-		240: syscalls.ErrorWithEvent("mq_open", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),         // TODO(b/29354921)
-		241: syscalls.ErrorWithEvent("mq_unlink", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
-		242: syscalls.ErrorWithEvent("mq_timedsend", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),    // TODO(b/29354921)
-		243: syscalls.ErrorWithEvent("mq_timedreceive", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}), // TODO(b/29354921)
-		244: syscalls.ErrorWithEvent("mq_notify", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
-		245: syscalls.ErrorWithEvent("mq_getsetattr", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
+		240: syscalls.ErrorWithEvent("mq_open", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),         // TODO(b/29354921)
+		241: syscalls.ErrorWithEvent("mq_unlink", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
+		242: syscalls.ErrorWithEvent("mq_timedsend", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),    // TODO(b/29354921)
+		243: syscalls.ErrorWithEvent("mq_timedreceive", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}), // TODO(b/29354921)
+		244: syscalls.ErrorWithEvent("mq_notify", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
+		245: syscalls.ErrorWithEvent("mq_getsetattr", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
 		246: syscalls.CapError("kexec_load", linux.CAP_SYS_BOOT, "", nil),
 		247: syscalls.Supported("waitid", Waitid),
 		248: syscalls.Error("add_key", linuxerr.EACCES, "Not available to user.", nil),
@@ -331,7 +330,7 @@ var AMD64 = &kernel.SyscallTable{
 		275: syscalls.Supported("splice", Splice),
 		276: syscalls.Supported("tee", Tee),
 		277: syscalls.PartiallySupported("sync_file_range", SyncFileRange, "Full data flush is not guaranteed at this time.", nil),
-		278: syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
+		278: syscalls.ErrorWithEvent("vmsplice", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
 		279: syscalls.CapError("move_pages", linux.CAP_SYS_NICE, "", nil),                               // requires cap_sys_nice (mostly)
 		280: syscalls.Supported("utimensat", Utimensat),
 		281: syscalls.Supported("epoll_pwait", EpollPwait),
@@ -353,8 +352,8 @@ var AMD64 = &kernel.SyscallTable{
 		297: syscalls.Supported("rt_tgsigqueueinfo", RtTgsigqueueinfo),
 		298: syscalls.ErrorWithEvent("perf_event_open", linuxerr.ENODEV, "No support for perf counters", nil),
 		299: syscalls.PartiallySupported("recvmmsg", RecvMMsg, "Not all flags and control messages are supported.", nil),
-		300: syscalls.ErrorWithEvent("fanotify_init", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
-		301: syscalls.ErrorWithEvent("fanotify_mark", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
+		300: syscalls.ErrorWithEvent("fanotify_init", linuxerr.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
+		301: syscalls.ErrorWithEvent("fanotify_mark", linuxerr.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		302: syscalls.Supported("prlimit64", Prlimit64),
 		303: syscalls.Error("name_to_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		304: syscalls.Error("open_by_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
@@ -363,48 +362,48 @@ var AMD64 = &kernel.SyscallTable{
 		307: syscalls.PartiallySupported("sendmmsg", SendMMsg, "Not all flags and control messages are supported.", nil),
 		308: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
 		309: syscalls.Supported("getcpu", Getcpu),
-		310: syscalls.ErrorWithEvent("process_vm_readv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
-		311: syscalls.ErrorWithEvent("process_vm_writev", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
+		310: syscalls.ErrorWithEvent("process_vm_readv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
+		311: syscalls.ErrorWithEvent("process_vm_writev", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
 		312: syscalls.CapError("kcmp", linux.CAP_SYS_PTRACE, "", nil),
 		313: syscalls.CapError("finit_module", linux.CAP_SYS_MODULE, "", nil),
-		314: syscalls.ErrorWithEvent("sched_setattr", syserror.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		315: syscalls.ErrorWithEvent("sched_getattr", syserror.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		316: syscalls.ErrorWithEvent("renameat2", syserror.ENOSYS, "", []string{"gvisor.dev/issue/263"}),                                           // TODO(b/118902772)
+		314: syscalls.ErrorWithEvent("sched_setattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		315: syscalls.ErrorWithEvent("sched_getattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		316: syscalls.ErrorWithEvent("renameat2", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/263"}),                                           // TODO(b/118902772)
 		317: syscalls.Supported("seccomp", Seccomp),
 		318: syscalls.Supported("getrandom", GetRandom),
 		319: syscalls.Supported("memfd_create", MemfdCreate),
 		320: syscalls.CapError("kexec_file_load", linux.CAP_SYS_BOOT, "", nil),
 		321: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
 		322: syscalls.Supported("execveat", Execveat),
-		323: syscalls.ErrorWithEvent("userfaultfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
+		323: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		324: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
 		325: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
 		// Syscalls implemented after 325 are "backports" from versions
 		// of Linux after 4.4.
-		326: syscalls.ErrorWithEvent("copy_file_range", syserror.ENOSYS, "", nil),
+		326: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
 		327: syscalls.Supported("preadv2", Preadv2),
 		328: syscalls.PartiallySupported("pwritev2", Pwritev2, "Flag RWF_HIPRI is not supported.", nil),
-		329: syscalls.ErrorWithEvent("pkey_mprotect", syserror.ENOSYS, "", nil),
-		330: syscalls.ErrorWithEvent("pkey_alloc", syserror.ENOSYS, "", nil),
-		331: syscalls.ErrorWithEvent("pkey_free", syserror.ENOSYS, "", nil),
+		329: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
+		330: syscalls.ErrorWithEvent("pkey_alloc", linuxerr.ENOSYS, "", nil),
+		331: syscalls.ErrorWithEvent("pkey_free", linuxerr.ENOSYS, "", nil),
 		332: syscalls.Supported("statx", Statx),
-		333: syscalls.ErrorWithEvent("io_pgetevents", syserror.ENOSYS, "", nil),
+		333: syscalls.ErrorWithEvent("io_pgetevents", linuxerr.ENOSYS, "", nil),
 		334: syscalls.PartiallySupported("rseq", RSeq, "Not supported on all platforms.", nil),
 
 		// Linux skips ahead to syscall 424 to sync numbers between arches.
-		424: syscalls.ErrorWithEvent("pidfd_send_signal", syserror.ENOSYS, "", nil),
-		425: syscalls.ErrorWithEvent("io_uring_setup", syserror.ENOSYS, "", nil),
-		426: syscalls.ErrorWithEvent("io_uring_enter", syserror.ENOSYS, "", nil),
-		427: syscalls.ErrorWithEvent("io_uring_register", syserror.ENOSYS, "", nil),
-		428: syscalls.ErrorWithEvent("open_tree", syserror.ENOSYS, "", nil),
-		429: syscalls.ErrorWithEvent("move_mount", syserror.ENOSYS, "", nil),
-		430: syscalls.ErrorWithEvent("fsopen", syserror.ENOSYS, "", nil),
-		431: syscalls.ErrorWithEvent("fsconfig", syserror.ENOSYS, "", nil),
-		432: syscalls.ErrorWithEvent("fsmount", syserror.ENOSYS, "", nil),
-		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
-		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
-		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
+		424: syscalls.ErrorWithEvent("pidfd_send_signal", linuxerr.ENOSYS, "", nil),
+		425: syscalls.ErrorWithEvent("io_uring_setup", linuxerr.ENOSYS, "", nil),
+		426: syscalls.ErrorWithEvent("io_uring_enter", linuxerr.ENOSYS, "", nil),
+		427: syscalls.ErrorWithEvent("io_uring_register", linuxerr.ENOSYS, "", nil),
+		428: syscalls.ErrorWithEvent("open_tree", linuxerr.ENOSYS, "", nil),
+		429: syscalls.ErrorWithEvent("move_mount", linuxerr.ENOSYS, "", nil),
+		430: syscalls.ErrorWithEvent("fsopen", linuxerr.ENOSYS, "", nil),
+		431: syscalls.ErrorWithEvent("fsconfig", linuxerr.ENOSYS, "", nil),
+		432: syscalls.ErrorWithEvent("fsmount", linuxerr.ENOSYS, "", nil),
+		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
+		434: syscalls.ErrorWithEvent("pidfd_open", linuxerr.ENOSYS, "", nil),
+		435: syscalls.ErrorWithEvent("clone3", linuxerr.ENOSYS, "", nil),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{
@@ -414,7 +413,7 @@ var AMD64 = &kernel.SyscallTable{
 	},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, syserror.ENOSYS
+		return 0, linuxerr.ENOSYS
 	},
 }
 
@@ -472,7 +471,7 @@ var ARM64 = &kernel.SyscallTable{
 		39:  syscalls.PartiallySupported("umount2", Umount2, "Not all options or file systems are supported.", nil),
 		40:  syscalls.PartiallySupported("mount", Mount, "Not all options or file systems are supported.", nil),
 		41:  syscalls.Error("pivot_root", linuxerr.EPERM, "", nil),
-		42:  syscalls.Error("nfsservctl", syserror.ENOSYS, "Removed after Linux 3.1.", nil),
+		42:  syscalls.Error("nfsservctl", linuxerr.ENOSYS, "Removed after Linux 3.1.", nil),
 		43:  syscalls.PartiallySupported("statfs", Statfs, "Depends on the backing file system implementation.", nil),
 		44:  syscalls.PartiallySupported("fstatfs", Fstatfs, "Depends on the backing file system implementation.", nil),
 		45:  syscalls.Supported("truncate", Truncate),
@@ -505,7 +504,7 @@ var ARM64 = &kernel.SyscallTable{
 		72:  syscalls.Supported("pselect", Pselect),
 		73:  syscalls.Supported("ppoll", Ppoll),
 		74:  syscalls.PartiallySupported("signalfd4", Signalfd4, "Semantics are slightly different.", []string{"gvisor.dev/issue/139"}),
-		75:  syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
+		75:  syscalls.ErrorWithEvent("vmsplice", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
 		76:  syscalls.Supported("splice", Splice),
 		77:  syscalls.Supported("tee", Tee),
 		78:  syscalls.Supported("readlinkat", Readlinkat),
@@ -581,8 +580,8 @@ var ARM64 = &kernel.SyscallTable{
 		148: syscalls.Supported("getresuid", Getresuid),
 		149: syscalls.Supported("setresgid", Setresgid),
 		150: syscalls.Supported("getresgid", Getresgid),
-		151: syscalls.ErrorWithEvent("setfsuid", syserror.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
-		152: syscalls.ErrorWithEvent("setfsgid", syserror.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		151: syscalls.ErrorWithEvent("setfsuid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		152: syscalls.ErrorWithEvent("setfsgid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
 		153: syscalls.Supported("times", Times),
 		154: syscalls.Supported("setpgid", Setpgid),
 		155: syscalls.Supported("getpgid", Getpgid),
@@ -610,12 +609,12 @@ var ARM64 = &kernel.SyscallTable{
 		177: syscalls.Supported("getegid", Getegid),
 		178: syscalls.Supported("gettid", Gettid),
 		179: syscalls.PartiallySupported("sysinfo", Sysinfo, "Fields loads, sharedram, bufferram, totalswap, freeswap, totalhigh, freehigh not supported.", nil),
-		180: syscalls.ErrorWithEvent("mq_open", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),         // TODO(b/29354921)
-		181: syscalls.ErrorWithEvent("mq_unlink", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
-		182: syscalls.ErrorWithEvent("mq_timedsend", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),    // TODO(b/29354921)
-		183: syscalls.ErrorWithEvent("mq_timedreceive", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}), // TODO(b/29354921)
-		184: syscalls.ErrorWithEvent("mq_notify", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
-		185: syscalls.ErrorWithEvent("mq_getsetattr", syserror.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
+		180: syscalls.ErrorWithEvent("mq_open", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),         // TODO(b/29354921)
+		181: syscalls.ErrorWithEvent("mq_unlink", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
+		182: syscalls.ErrorWithEvent("mq_timedsend", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),    // TODO(b/29354921)
+		183: syscalls.ErrorWithEvent("mq_timedreceive", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}), // TODO(b/29354921)
+		184: syscalls.ErrorWithEvent("mq_notify", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),       // TODO(b/29354921)
+		185: syscalls.ErrorWithEvent("mq_getsetattr", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/136"}),   // TODO(b/29354921)
 		186: syscalls.Supported("msgget", Msgget),
 		187: syscalls.PartiallySupported("msgctl", Msgctl, "Only supports IPC_RMID option.", []string{"gvisor.dev/issue/135"}),
 		188: syscalls.Supported("msgrcv", Msgrcv),
@@ -664,7 +663,7 @@ var ARM64 = &kernel.SyscallTable{
 		231: syscalls.PartiallySupported("munlockall", Munlockall, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 		232: syscalls.PartiallySupported("mincore", Mincore, "Stub implementation. The sandbox does not have access to this information. Reports all mapped pages are resident.", nil),
 		233: syscalls.PartiallySupported("madvise", Madvise, "Options MADV_DONTNEED, MADV_DONTFORK are supported. Other advice is ignored.", nil),
-		234: syscalls.ErrorWithEvent("remap_file_pages", syserror.ENOSYS, "Deprecated since Linux 3.16.", nil),
+		234: syscalls.ErrorWithEvent("remap_file_pages", linuxerr.ENOSYS, "Deprecated since Linux 3.16.", nil),
 		235: syscalls.PartiallySupported("mbind", Mbind, "Stub implementation. Only a single NUMA node is advertised, and mempolicy is ignored accordingly, but mbind() will succeed and has effects reflected by get_mempolicy.", []string{"gvisor.dev/issue/262"}),
 		236: syscalls.PartiallySupported("get_mempolicy", GetMempolicy, "Stub implementation.", nil),
 		237: syscalls.PartiallySupported("set_mempolicy", SetMempolicy, "Stub implementation.", nil),
@@ -676,60 +675,60 @@ var ARM64 = &kernel.SyscallTable{
 		243: syscalls.PartiallySupported("recvmmsg", RecvMMsg, "Not all flags and control messages are supported.", nil),
 		260: syscalls.Supported("wait4", Wait4),
 		261: syscalls.Supported("prlimit64", Prlimit64),
-		262: syscalls.ErrorWithEvent("fanotify_init", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
-		263: syscalls.ErrorWithEvent("fanotify_mark", syserror.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
+		262: syscalls.ErrorWithEvent("fanotify_init", linuxerr.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
+		263: syscalls.ErrorWithEvent("fanotify_mark", linuxerr.ENOSYS, "Needs CONFIG_FANOTIFY", nil),
 		264: syscalls.Error("name_to_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		265: syscalls.Error("open_by_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		266: syscalls.CapError("clock_adjtime", linux.CAP_SYS_TIME, "", nil),
 		267: syscalls.PartiallySupported("syncfs", Syncfs, "Depends on backing file system.", nil),
 		268: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
 		269: syscalls.PartiallySupported("sendmmsg", SendMMsg, "Not all flags and control messages are supported.", nil),
-		270: syscalls.ErrorWithEvent("process_vm_readv", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
-		271: syscalls.ErrorWithEvent("process_vm_writev", syserror.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
+		270: syscalls.ErrorWithEvent("process_vm_readv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
+		271: syscalls.ErrorWithEvent("process_vm_writev", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),
 		272: syscalls.CapError("kcmp", linux.CAP_SYS_PTRACE, "", nil),
 		273: syscalls.CapError("finit_module", linux.CAP_SYS_MODULE, "", nil),
-		274: syscalls.ErrorWithEvent("sched_setattr", syserror.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		275: syscalls.ErrorWithEvent("sched_getattr", syserror.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
-		276: syscalls.ErrorWithEvent("renameat2", syserror.ENOSYS, "", []string{"gvisor.dev/issue/263"}),                                           // TODO(b/118902772)
+		274: syscalls.ErrorWithEvent("sched_setattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		275: syscalls.ErrorWithEvent("sched_getattr", linuxerr.ENOSYS, "gVisor does not implement a scheduler.", []string{"gvisor.dev/issue/264"}), // TODO(b/118902272)
+		276: syscalls.ErrorWithEvent("renameat2", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/263"}),                                           // TODO(b/118902772)
 		277: syscalls.Supported("seccomp", Seccomp),
 		278: syscalls.Supported("getrandom", GetRandom),
 		279: syscalls.Supported("memfd_create", MemfdCreate),
 		280: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
 		281: syscalls.Supported("execveat", Execveat),
-		282: syscalls.ErrorWithEvent("userfaultfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
+		282: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		283: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
 		284: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
 		// Syscalls after 284 are "backports" from versions of Linux after 4.4.
-		285: syscalls.ErrorWithEvent("copy_file_range", syserror.ENOSYS, "", nil),
+		285: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
 		286: syscalls.Supported("preadv2", Preadv2),
 		287: syscalls.PartiallySupported("pwritev2", Pwritev2, "Flag RWF_HIPRI is not supported.", nil),
-		288: syscalls.ErrorWithEvent("pkey_mprotect", syserror.ENOSYS, "", nil),
-		289: syscalls.ErrorWithEvent("pkey_alloc", syserror.ENOSYS, "", nil),
-		290: syscalls.ErrorWithEvent("pkey_free", syserror.ENOSYS, "", nil),
+		288: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
+		289: syscalls.ErrorWithEvent("pkey_alloc", linuxerr.ENOSYS, "", nil),
+		290: syscalls.ErrorWithEvent("pkey_free", linuxerr.ENOSYS, "", nil),
 		291: syscalls.Supported("statx", Statx),
-		292: syscalls.ErrorWithEvent("io_pgetevents", syserror.ENOSYS, "", nil),
+		292: syscalls.ErrorWithEvent("io_pgetevents", linuxerr.ENOSYS, "", nil),
 		293: syscalls.PartiallySupported("rseq", RSeq, "Not supported on all platforms.", nil),
 
 		// Linux skips ahead to syscall 424 to sync numbers between arches.
-		424: syscalls.ErrorWithEvent("pidfd_send_signal", syserror.ENOSYS, "", nil),
-		425: syscalls.ErrorWithEvent("io_uring_setup", syserror.ENOSYS, "", nil),
-		426: syscalls.ErrorWithEvent("io_uring_enter", syserror.ENOSYS, "", nil),
-		427: syscalls.ErrorWithEvent("io_uring_register", syserror.ENOSYS, "", nil),
-		428: syscalls.ErrorWithEvent("open_tree", syserror.ENOSYS, "", nil),
-		429: syscalls.ErrorWithEvent("move_mount", syserror.ENOSYS, "", nil),
-		430: syscalls.ErrorWithEvent("fsopen", syserror.ENOSYS, "", nil),
-		431: syscalls.ErrorWithEvent("fsconfig", syserror.ENOSYS, "", nil),
-		432: syscalls.ErrorWithEvent("fsmount", syserror.ENOSYS, "", nil),
-		433: syscalls.ErrorWithEvent("fspick", syserror.ENOSYS, "", nil),
-		434: syscalls.ErrorWithEvent("pidfd_open", syserror.ENOSYS, "", nil),
-		435: syscalls.ErrorWithEvent("clone3", syserror.ENOSYS, "", nil),
+		424: syscalls.ErrorWithEvent("pidfd_send_signal", linuxerr.ENOSYS, "", nil),
+		425: syscalls.ErrorWithEvent("io_uring_setup", linuxerr.ENOSYS, "", nil),
+		426: syscalls.ErrorWithEvent("io_uring_enter", linuxerr.ENOSYS, "", nil),
+		427: syscalls.ErrorWithEvent("io_uring_register", linuxerr.ENOSYS, "", nil),
+		428: syscalls.ErrorWithEvent("open_tree", linuxerr.ENOSYS, "", nil),
+		429: syscalls.ErrorWithEvent("move_mount", linuxerr.ENOSYS, "", nil),
+		430: syscalls.ErrorWithEvent("fsopen", linuxerr.ENOSYS, "", nil),
+		431: syscalls.ErrorWithEvent("fsconfig", linuxerr.ENOSYS, "", nil),
+		432: syscalls.ErrorWithEvent("fsmount", linuxerr.ENOSYS, "", nil),
+		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
+		434: syscalls.ErrorWithEvent("pidfd_open", linuxerr.ENOSYS, "", nil),
+		435: syscalls.ErrorWithEvent("clone3", linuxerr.ENOSYS, "", nil),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
 	},
 	Emulate: map[hostarch.Addr]uintptr{},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, syserror.ENOSYS
+		return 0, linuxerr.ENOSYS
 	},
 }
 

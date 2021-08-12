@@ -48,7 +48,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A VirtualFilesystem (VFS for short) combines Filesystems in trees of Mounts.
@@ -281,7 +280,7 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 		if newpop.Path.Absolute {
 			return linuxerr.EEXIST
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if newpop.FollowFinalSymlink {
 		oldVD.DecRef(ctx)
@@ -318,7 +317,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 		if pop.Path.Absolute {
 			return linuxerr.EEXIST
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.MkdirAt: file creation paths can't follow final symlink")
@@ -356,7 +355,7 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 		if pop.Path.Absolute {
 			return linuxerr.EEXIST
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.MknodAt: file creation paths can't follow final symlink")
@@ -494,7 +493,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 		if oldpop.Path.Absolute {
 			return linuxerr.EBUSY
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if oldpop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.RenameAt: source path can't follow final symlink")
@@ -515,7 +514,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 		if newpop.Path.Absolute {
 			return linuxerr.EBUSY
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if newpop.FollowFinalSymlink {
 		oldParentVD.DecRef(ctx)
@@ -556,7 +555,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 		if pop.Path.Absolute {
 			return linuxerr.EBUSY
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.RmdirAt: file deletion paths can't follow final symlink")
@@ -639,7 +638,7 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 		if pop.Path.Absolute {
 			return linuxerr.EEXIST
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.SymlinkAt: file creation paths can't follow final symlink")
@@ -673,7 +672,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 		if pop.Path.Absolute {
 			return linuxerr.EBUSY
 		}
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if pop.FollowFinalSymlink {
 		ctx.Warningf("VirtualFilesystem.UnlinkAt: file deletion paths can't follow final symlink")

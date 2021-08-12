@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -125,7 +124,7 @@ func (s *self) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if t := kernel.TaskFromContext(ctx); t != nil {
 		tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 		if tgid == 0 {
-			return "", syserror.ENOENT
+			return "", linuxerr.ENOENT
 		}
 		return strconv.FormatUint(uint64(tgid), 10), nil
 	}
@@ -149,7 +148,7 @@ func (s *threadSelf) Readlink(ctx context.Context, inode *fs.Inode) (string, err
 		tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 		tid := s.pidns.IDOfTask(t)
 		if tid == 0 || tgid == 0 {
-			return "", syserror.ENOENT
+			return "", linuxerr.ENOENT
 		}
 		return fmt.Sprintf("%d/task/%d", tgid, tid), nil
 	}

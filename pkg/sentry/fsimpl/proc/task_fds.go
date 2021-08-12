@@ -22,11 +22,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) {
@@ -142,11 +142,11 @@ func (i *fdDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	fd := int32(fdInt)
 	if !taskFDExists(ctx, i.fs, i.task, fd) {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	return i.fs.newFDSymlink(ctx, i.task, fd, i.fs.NextIno()), nil
 }
@@ -218,7 +218,7 @@ func (fs *filesystem) newFDSymlink(ctx context.Context, task *kernel.Task, fd in
 func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	file, _ := getTaskFD(s.task, s.fd)
 	if file == nil {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	defer s.fs.SafeDecRefFD(ctx, file)
 	root := vfs.RootFromContext(ctx)
@@ -231,7 +231,7 @@ func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) 
 func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	file, _ := getTaskFD(s.task, s.fd)
 	if file == nil {
-		return vfs.VirtualDentry{}, "", syserror.ENOENT
+		return vfs.VirtualDentry{}, "", linuxerr.ENOENT
 	}
 	defer s.fs.SafeDecRefFD(ctx, file)
 	vd := file.VirtualDentry()
@@ -278,11 +278,11 @@ func (fs *filesystem) newFDInfoDirInode(ctx context.Context, task *kernel.Task) 
 func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
 	fdInt, err := strconv.ParseInt(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	fd := int32(fdInt)
 	if !taskFDExists(ctx, i.fs, i.task, fd) {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	data := &fdInfoData{
 		fs:   i.fs,
@@ -330,7 +330,7 @@ var _ dynamicInode = (*fdInfoData)(nil)
 func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	file, descriptorFlags := getTaskFD(d.task, d.fd)
 	if file == nil {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	defer d.fs.SafeDecRefFD(ctx, file)
 	// TODO(b/121266871): Include pos, locks, and other data. For now we only

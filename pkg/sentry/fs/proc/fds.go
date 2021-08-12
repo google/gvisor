@@ -20,12 +20,12 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // LINT.IfChange
@@ -37,7 +37,7 @@ func walkDescriptors(t *kernel.Task, p string, toInode func(*fs.File, kernel.FDF
 	n, err := strconv.ParseUint(p, 10, 64)
 	if err != nil {
 		// Not found.
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	var file *fs.File
@@ -48,7 +48,7 @@ func walkDescriptors(t *kernel.Task, p string, toInode func(*fs.File, kernel.FDF
 		}
 	})
 	if file == nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	return toInode(file, fdFlags), nil
 }
