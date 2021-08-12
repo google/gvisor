@@ -9,7 +9,6 @@ cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
 gtest = "@com_google_googletest//:gtest"
 gbenchmark = "@com_google_benchmark//:benchmark"
-gbenchmark_internal = "@com_google_benchmark//:benchmark"
 grpcpp = "@com_github_grpc_grpc//:grpc++"
 vdso_linker_option = "-fuse-ld=gold "
 
