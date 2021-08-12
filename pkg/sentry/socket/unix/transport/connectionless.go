@@ -44,9 +44,9 @@ func NewConnectionless(ctx context.Context) Endpoint {
 	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: defaultBufferSize}
 	q.InitRefs()
 	ep.receiver = &queueReceiver{readQueue: &q}
+	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ep.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
-	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 	return ep
 }
 
@@ -227,3 +227,6 @@ func (e *connectionlessEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 	}
 	return v
 }
+
+// WakeupWriters implements tcpip.SocketOptionsHandler.WakeupWriters.
+func (e *connectionlessEndpoint) WakeupWriters() {}
