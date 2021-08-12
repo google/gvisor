@@ -21,12 +21,14 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 var path = flag.String("path", "", "path to the verity file system.")
+var rawpath = flag.String("rawpath", "", "path to the raw file system.")
 
 const maxDigestSize = 64
 
@@ -40,6 +42,14 @@ func main() {
 	if *path == "" {
 		log.Fatalf("no path provided")
 	}
+	if *rawpath == "" {
+		log.Fatalf("no rawpath provided")
+	}
+	// TODO(b/182315468): Optimize the Merkle tree generate process to
+	// allow only updating certain files/directories.
+	if err := clearMerkle(*rawpath); err != nil {
+		log.Fatalf("Failed to clear merkle files in %s: %v", *rawpath, err)
+	}
 	if err := enableDir(*path); err != nil {
 		log.Fatalf("Failed to enable file system %s: %v", *path, err)
 	}
@@ -47,6 +57,26 @@ func main() {
 	if err := measure(*path); err != nil {
 		log.Fatalf("Failed to measure file system %s: %v", *path, err)
 	}
+}
+
+func clearMerkle(path string) error {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			if err := clearMerkle(path + "/" + file.Name()); err != nil {
+				return err
+			}
+		} else if strings.HasPrefix(file.Name(), ".merkle.verity") {
+			if err := os.Remove(path + "/" + file.Name()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // enableDir enables verity features on all the files and sub-directories within
