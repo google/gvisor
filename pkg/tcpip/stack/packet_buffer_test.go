@@ -123,6 +123,32 @@ func TestPacketHeaderPush(t *testing.T) {
 	}
 }
 
+func TestPacketBufferClone(t *testing.T) {
+	data := concatViews(makeView(20), makeView(30), makeView(40))
+	pk := NewPacketBuffer(PacketBufferOptions{
+		// Make a copy of data to make sure our truth data won't be taint by
+		// PacketBuffer.
+		Data: buffer.NewViewFromBytes(data).ToVectorisedView(),
+	})
+
+	bytesToDelete := 30
+	originalSize := data.Size()
+
+	clonedPks := []*PacketBuffer{
+		pk.Clone(),
+		pk.CloneToInbound(),
+	}
+	pk.Data().DeleteFront(bytesToDelete)
+	if got, want := pk.Data().Size(), originalSize-bytesToDelete; got != want {
+		t.Errorf("original packet was not changed: size expected = %d, got = %d", want, got)
+	}
+	for _, clonedPk := range clonedPks {
+		if got := clonedPk.Data().Size(); got != originalSize {
+			t.Errorf("cloned packet should not be modified: expected size = %d, got = %d", originalSize, got)
+		}
+	}
+}
+
 func TestPacketHeaderConsume(t *testing.T) {
 	for _, test := range []struct {
 		name      string

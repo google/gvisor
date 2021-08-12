@@ -282,14 +282,12 @@ func (pk *PacketBuffer) headerView(typ headerType) tcpipbuffer.View {
 	return v
 }
 
-// Clone makes a shallow copy of pk.
-//
-// Clone should be called in such cases so that no modifications is done to
-// underlying packet payload.
+// Clone makes a semi-deep copy of pk. The underlying packet payload is
+// shared. Hence, no modifications is done to underlying packet payload.
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	return &PacketBuffer{
 		PacketBufferEntry:            pk.PacketBufferEntry,
-		buf:                          pk.buf,
+		buf:                          pk.buf.Clone(),
 		reserved:                     pk.reserved,
 		pushed:                       pk.pushed,
 		consumed:                     pk.consumed,
@@ -321,14 +319,14 @@ func (pk *PacketBuffer) Network() header.Network {
 	}
 }
 
-// CloneToInbound makes a shallow copy of the packet buffer to be used as an
-// inbound packet.
+// CloneToInbound makes a semi-deep copy of the packet buffer (similar to
+// Clone) to be used as an inbound packet.
 //
 // See PacketBuffer.Data for details about how a packet buffer holds an inbound
 // packet.
 func (pk *PacketBuffer) CloneToInbound() *PacketBuffer {
 	newPk := &PacketBuffer{
-		buf: pk.buf,
+		buf: pk.buf.Clone(),
 		// Treat unfilled header portion as reserved.
 		reserved: pk.AvailableHeaderBytes(),
 	}
