@@ -362,7 +362,12 @@ func main() {
 						fmt.Fprintf(outputFile, "	stateSourceObject.LoadWait(%d, &%s.%s)\n", fields[name], recv, name)
 					}
 					emitSaveValue := func(name, typName string) {
-						fmt.Fprintf(outputFile, "	var %sValue %s = %s.save%s()\n", name, typName, recv, camelCased(name))
+						// Emit typName to be more robust against code generation bugs,
+						// but instead of one line make two lines to silence ST1023
+						// finding (i.e. avoid nogo finding: "should omit type $typName
+						// from declaration; it will be inferred from the right-hand side")
+						fmt.Fprintf(outputFile, "	var %sValue %s\n", name, typName)
+						fmt.Fprintf(outputFile, "	%sValue = %s.save%s()\n", name, recv, camelCased(name))
 						fmt.Fprintf(outputFile, "	stateSinkObject.SaveValue(%d, %sValue)\n", fields[name], name)
 					}
 					emitSave := func(name string) {
