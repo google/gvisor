@@ -26,7 +26,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // InodeNoopRefCount partially implements the Inode interface, specifically the
@@ -234,6 +233,11 @@ func (a *InodeAttrs) Mode() linux.FileMode {
 	return linux.FileMode(atomic.LoadUint32(&a.mode))
 }
 
+// Links returns the link count.
+func (a *InodeAttrs) Links() uint32 {
+	return atomic.LoadUint32(&a.nlink)
+}
+
 // TouchAtime updates a.atime to the current time.
 func (a *InodeAttrs) TouchAtime(ctx context.Context, mnt *vfs.Mount) {
 	if mnt.Flags.NoATime || mnt.ReadOnly() {
@@ -289,7 +293,7 @@ func (a *InodeAttrs) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *aut
 		return linuxerr.EPERM
 	}
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 && a.Mode().IsDir() {
-		return syserror.EISDIR
+		return linuxerr.EISDIR
 	}
 	if err := vfs.CheckSetStat(ctx, creds, &opts, a.Mode(), auth.KUID(atomic.LoadUint32(&a.uid)), auth.KGID(atomic.LoadUint32(&a.gid))); err != nil {
 		return err
@@ -475,7 +479,7 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 
 	s, ok := o.set[name]
 	if !ok {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 
 	s.inode.IncRef() // This ref is passed to the dentry upon creation via Init.
@@ -500,6 +504,30 @@ func (o *OrderedChildren) HasChildren() bool {
 // this is not part of the vfs.FilesystemImpl interface, and is a lower-level operation.
 func (o *OrderedChildren) Insert(name string, child Inode) error {
 	return o.insert(name, child, false)
+}
+
+// Inserter is like Insert, but obtains the child to insert by calling
+// makeChild. makeChild is only called if the insert will succeed. This allows
+// the caller to atomically check and insert a child without having to
+// clean up the child on failure.
+func (o *OrderedChildren) Inserter(name string, makeChild func() Inode) (Inode, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if _, ok := o.set[name]; ok {
+		return nil, linuxerr.EEXIST
+	}
+
+	// Note: We must not fail after we call makeChild().
+
+	child := makeChild()
+	s := &slot{
+		name:   name,
+		inode:  child,
+		static: false,
+	}
+	o.order.PushBack(s)
+	o.set[name] = s
+	return child, nil
 }
 
 // insert inserts child into o.
@@ -559,7 +587,7 @@ func (o *OrderedChildren) replaceChildLocked(ctx context.Context, name string, n
 func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]
 	if !ok {
-		return syserror.ENOENT
+		return linuxerr.ENOENT
 	}
 	if s.inode != child {
 		panic(fmt.Sprintf("Inode doesn't match what kernfs thinks! OrderedChild: %+v, kernfs: %+v", s.inode, child))
@@ -746,5 +774,5 @@ type InodeNoStatFS struct{}
 
 // StatFS implements Inode.StatFS.
 func (*InodeNoStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
-	return linux.Statfs{}, syserror.ENOSYS
+	return linux.Statfs{}, linuxerr.ENOSYS
 }

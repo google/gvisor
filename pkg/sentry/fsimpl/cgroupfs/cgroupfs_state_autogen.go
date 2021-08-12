@@ -41,7 +41,6 @@ func (c *cgroupInode) StateTypeName() string {
 func (c *cgroupInode) StateFields() []string {
 	return []string{
 		"dir",
-		"fs",
 		"ts",
 	}
 }
@@ -52,8 +51,7 @@ func (c *cgroupInode) beforeSave() {}
 func (c *cgroupInode) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.dir)
-	stateSinkObject.Save(1, &c.fs)
-	stateSinkObject.Save(2, &c.ts)
+	stateSinkObject.Save(1, &c.ts)
 }
 
 func (c *cgroupInode) afterLoad() {}
@@ -61,8 +59,7 @@ func (c *cgroupInode) afterLoad() {}
 // +checklocksignore
 func (c *cgroupInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.dir)
-	stateSourceObject.Load(1, &c.fs)
-	stateSourceObject.Load(2, &c.ts)
+	stateSourceObject.Load(1, &c.ts)
 }
 
 func (d *cgroupProcsData) StateTypeName() string {
@@ -143,6 +140,7 @@ func (i *InternalData) StateTypeName() string {
 func (i *InternalData) StateFields() []string {
 	return []string{
 		"DefaultControlValues",
+		"InitialCgroupPath",
 	}
 }
 
@@ -152,6 +150,7 @@ func (i *InternalData) beforeSave() {}
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.DefaultControlValues)
+	stateSinkObject.Save(1, &i.InitialCgroupPath)
 }
 
 func (i *InternalData) afterLoad() {}
@@ -159,6 +158,7 @@ func (i *InternalData) afterLoad() {}
 // +checklocksignore
 func (i *InternalData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.DefaultControlValues)
+	stateSourceObject.Load(1, &i.InitialCgroupPath)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -174,6 +174,7 @@ func (fs *filesystem) StateFields() []string {
 		"kcontrollers",
 		"numCgroups",
 		"root",
+		"effectiveRoot",
 	}
 }
 
@@ -189,6 +190,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fs.kcontrollers)
 	stateSinkObject.Save(5, &fs.numCgroups)
 	stateSinkObject.Save(6, &fs.root)
+	stateSinkObject.Save(7, &fs.effectiveRoot)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -202,6 +204,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fs.kcontrollers)
 	stateSourceObject.Load(5, &fs.numCgroups)
 	stateSourceObject.Load(6, &fs.root)
+	stateSourceObject.Load(7, &fs.effectiveRoot)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -231,7 +234,7 @@ func (d *dir) StateTypeName() string {
 
 func (d *dir) StateFields() []string {
 	return []string{
-		"dirRefs",
+		"InodeNoopRefCount",
 		"InodeAlwaysValid",
 		"InodeAttrs",
 		"InodeNotSymlink",
@@ -239,6 +242,8 @@ func (d *dir) StateFields() []string {
 		"OrderedChildren",
 		"implStatFS",
 		"locks",
+		"fs",
+		"cgi",
 	}
 }
 
@@ -247,7 +252,7 @@ func (d *dir) beforeSave() {}
 // +checklocksignore
 func (d *dir) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.dirRefs)
+	stateSinkObject.Save(0, &d.InodeNoopRefCount)
 	stateSinkObject.Save(1, &d.InodeAlwaysValid)
 	stateSinkObject.Save(2, &d.InodeAttrs)
 	stateSinkObject.Save(3, &d.InodeNotSymlink)
@@ -255,13 +260,15 @@ func (d *dir) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &d.OrderedChildren)
 	stateSinkObject.Save(6, &d.implStatFS)
 	stateSinkObject.Save(7, &d.locks)
+	stateSinkObject.Save(8, &d.fs)
+	stateSinkObject.Save(9, &d.cgi)
 }
 
 func (d *dir) afterLoad() {}
 
 // +checklocksignore
 func (d *dir) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.dirRefs)
+	stateSourceObject.Load(0, &d.InodeNoopRefCount)
 	stateSourceObject.Load(1, &d.InodeAlwaysValid)
 	stateSourceObject.Load(2, &d.InodeAttrs)
 	stateSourceObject.Load(3, &d.InodeNotSymlink)
@@ -269,6 +276,8 @@ func (d *dir) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &d.OrderedChildren)
 	stateSourceObject.Load(6, &d.implStatFS)
 	stateSourceObject.Load(7, &d.locks)
+	stateSourceObject.Load(8, &d.fs)
+	stateSourceObject.Load(9, &d.cgi)
 }
 
 func (c *controllerFile) StateTypeName() string {

@@ -66,6 +66,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
@@ -542,6 +543,63 @@ func (d *Dentry) FSLocalPath() string {
 	return b.String()
 }
 
+// WalkDentryTree traverses p in the dentry tree for this filesystem. Note that
+// this only traverses the dentry tree and is not a general path traversal. No
+// symlinks and dynamic children are resolved, and no permission checks are
+// performed. The caller is responsible for ensuring the returned Dentry exists
+// for an appropriate lifetime.
+//
+// p is interpreted starting at d, and may be absolute or relative (absolute vs
+// relative paths both refer to the same target here, since p is absolute from
+// d). p may contain "." and "..", but will not allow traversal above d (similar
+// to ".." at the root dentry).
+//
+// This is useful for filesystem internals, where the filesystem may not be
+// mounted yet. For a mounted filesystem, use GetDentryAt.
+func (d *Dentry) WalkDentryTree(ctx context.Context, vfsObj *vfs.VirtualFilesystem, p fspath.Path) (*Dentry, error) {
+	d.fs.mu.RLock()
+	defer d.fs.processDeferredDecRefs(ctx)
+	defer d.fs.mu.RUnlock()
+
+	target := d
+
+	for pit := p.Begin; pit.Ok(); pit = pit.Next() {
+		pc := pit.String()
+
+		switch {
+		case target == nil:
+			return nil, syserror.ENOENT
+		case pc == ".":
+			// No-op, consume component and continue.
+		case pc == "..":
+			if target == d {
+				// Don't let .. traverse above the start point of the walk.
+				continue
+			}
+			target = target.parent
+			// Parent doesn't need revalidation since we revalidated it on the
+			// way to the child, and we're still holding fs.mu.
+		default:
+			var err error
+
+			d.dirMu.Lock()
+			target, err = d.fs.revalidateChildLocked(ctx, vfsObj, target, pc, target.children[pc])
+			d.dirMu.Unlock()
+
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if target == nil {
+		return nil, syserror.ENOENT
+	}
+
+	target.IncRef()
+	return target, nil
+}
+
 // The Inode interface maps filesystem-level operations that operate on paths to
 // equivalent operations on specific filesystem nodes.
 //
@@ -667,12 +725,15 @@ type inodeDirectory interface {
 	// RmDir removes an empty child directory from this directory
 	// inode. Implementations must update the parent directory's link count,
 	// if required. Implementations are not responsible for checking that child
-	// is a directory, checking for an empty directory.
+	// is a directory, or checking for an empty directory.
 	RmDir(ctx context.Context, name string, child Inode) error
 
 	// Rename is called on the source directory containing an inode being
-	// renamed. child should point to the resolved child in the source
-	// directory.
+	// renamed. child points to the resolved child in the source directory.
+	// dstDir is guaranteed to be a directory inode.
+	//
+	// On a successful call to Rename, the caller updates the dentry tree to
+	// reflect the name change.
 	//
 	// Precondition: Caller must serialize concurrent calls to Rename.
 	Rename(ctx context.Context, oldname, newname string, child, dstDir Inode) error
