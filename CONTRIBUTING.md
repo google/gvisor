@@ -65,8 +65,8 @@ Rules:
 
     *   Itself.
     *   Go standard library.
-        *   Except (transitively) package "net" (this will result in a non-cgo
-            binary). Use `//pkg/unet` instead.
+        *   Except (transitively) package "net", which would result in a cgo
+            binary. Use `//pkg/unet` instead.
     *   `@org_golang_x_sys//unix:go_default_library` (Go import
         `golang.org/x/sys/unix`).
     *   `@org_golang_x_time//rate:go_default_library` (Go import
