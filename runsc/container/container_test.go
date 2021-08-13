@@ -2655,3 +2655,127 @@ func TestCat(t *testing.T) {
 		t.Errorf("out got %s, want include %s", buf, want)
 	}
 }
+
+// TestUsage checks that usage generates the expected memory usage.
+func TestUsage(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	for _, full := range []bool{false, true} {
+		m, err := cont.Usage(full)
+		if err != nil {
+			t.Fatalf("error usage from container: %v", err)
+		}
+		if m.Mapped == 0 {
+			t.Errorf("Usage mapped got zero")
+		}
+		if m.Total == 0 {
+			t.Errorf("Usage total got zero")
+		}
+		if full {
+			if m.System == 0 {
+				t.Errorf("Usage system got zero")
+			}
+			if m.Anonymous == 0 {
+				t.Errorf("Usage anonymous got zero")
+			}
+		}
+	}
+}
+
+// TestUsageFD checks that usagefd generates the expected memory usage.
+func TestUsageFD(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	m, err := cont.UsageFD()
+	if err != nil {
+		t.Fatalf("error usageFD from container: %v", err)
+	}
+
+	mapped, unknown, total, err := m.Fetch()
+	if err != nil {
+		t.Fatalf("error Fetch memory usage: %v", err)
+	}
+
+	if mapped == 0 {
+		t.Errorf("UsageFD Mapped got zero")
+	}
+	if unknown == 0 {
+		t.Errorf("UsageFD unknown got zero")
+	}
+	if total == 0 {
+		t.Errorf("UsageFD total got zero")
+	}
+}
+
+// TestReduce checks that reduce call succeeds.
+func TestReduce(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	if err := cont.Reduce(false); err != nil {
+		t.Fatalf("error reduce from container: %v", err)
+	}
+}
