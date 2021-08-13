@@ -161,29 +161,35 @@ analyzers:
         # targets in the standard library, so we still need to run
         # checklinkname on stdlib generally.
         - "linkname to unknown symbol"
-  SA4016:
+  SA1019: # Use of deprecated identifier.
+    # disable for now due to misattribution from golang.org/issue/44195.
+    generated:
+      exclude: [".*"]
     internal:
-      exclude:
-        - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
-  SA2001:
+      exclude: [".*"]
+  SA2001: # Empty critical section.
     internal:
       exclude:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
-  ST1019:
-    generated:
-      exclude:
-        # package ".../kubeapi/core/v1/v1" is being imported more than once
-        - generated.gen.pb.go
-  ST1021:
+  SA4016: # Useless bitwise operations.
     internal:
-      suppress:
-        - "comment on exported type Translation" # Intentional.
-        - "comment on exported type PinnedRange" # Intentional.
-  SA5011:
+      exclude:
+        - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
+  SA5011: # Possible nil pointer dereference.
     internal:
       exclude:
         # https://github.com/dominikh/go-tools/issues/924
         - pkg/sentry/fs/fdpipe/pipe_opener_test.go
         - pkg/tcpip/tests/integration/link_resolution_test.go
+  ST1019: # Multiple imports of the same package.
+    generated:
+      exclude:
+        # package ".../kubeapi/core/v1/v1" is being imported more than once
+        - generated.gen.pb.go
+  ST1021: # Doc should start with type name.
+    internal:
+      suppress:
+        - "comment on exported type Translation" # Intentional.
+        - "comment on exported type PinnedRange" # Intentional.
