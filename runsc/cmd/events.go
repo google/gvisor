@@ -33,6 +33,10 @@ type Events struct {
 	intervalSec int
 	// If true, events will print a single group of stats and exit.
 	stats bool
+	// If true, events will dump all filtered events to stdout.
+	stream bool
+	// filters for streamed events.
+	filters stringSlice
 }
 
 // Name implements subcommands.Command.Name.
@@ -62,6 +66,8 @@ OPTIONS:
 func (evs *Events) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&evs.intervalSec, "interval", 5, "set the stats collection interval, in seconds")
 	f.BoolVar(&evs.stats, "stats", false, "display the container's stats then exit")
+	f.BoolVar(&evs.stream, "stream", false, "dump all filtered events to stdout")
+	f.Var(&evs.filters, "filters", "only display matching events")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -77,6 +83,13 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		Fatalf("loading sandbox: %v", err)
+	}
+
+	if evs.stream {
+		if err := c.Stream(evs.filters, os.Stdout); err != nil {
+			Fatalf("Stream failed: %v", err)
+		}
+		return subcommands.ExitSuccess
 	}
 
 	// Repeatedly get stats from the container.
