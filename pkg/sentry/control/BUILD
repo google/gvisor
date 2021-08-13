@@ -6,6 +6,7 @@ go_library(
     name = "control",
     srcs = [
         "control.go",
+        "events.go",
         "fs.go",
         "lifecycle.go",
         "logging.go",
@@ -20,6 +21,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/eventchannel",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/sentry/fdimport",

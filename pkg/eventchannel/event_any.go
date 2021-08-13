@@ -26,3 +26,8 @@ import (
 func newAny(m proto.Message) (*anypb.Any, error) {
 	return anypb.New(m)
 }
+
+func emptyAny() *anypb.Any {
+	var any anypb.Any
+	return &any
+}

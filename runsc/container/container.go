@@ -670,6 +670,12 @@ func (c *Container) Reduce(wait bool) error {
 	return c.Sandbox.Reduce(c.ID, wait)
 }
 
+// Stream dumps all events to out.
+func (c *Container) Stream(filters []string, out *os.File) error {
+	log.Debugf("Stream in container, cid: %s", c.ID)
+	return c.Sandbox.Stream(c.ID, filters, out)
+}
+
 // State returns the metadata of the container.
 func (c *Container) State() specs.State {
 	return specs.State{

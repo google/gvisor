@@ -2779,3 +2779,53 @@ func TestReduce(t *testing.T) {
 		t.Fatalf("error reduce from container: %v", err)
 	}
 }
+
+// TestStream checks that Stream dumps expected events.
+func TestStream(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	conf.Strace = true
+	conf.StraceEvent = true
+	conf.StraceSyscalls = ""
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Create(): %v", err)
+	}
+
+	// Spawn a new thread to Stream events as it blocks indefinitely.
+	go func() {
+		cont.Stream(nil, w)
+	}()
+
+	buf := make([]byte, 1024)
+	if _, err := r.Read(buf); err != nil {
+		t.Fatalf("Read out: %v", err)
+	}
+
+	// A syscall strace event includes "Strace".
+	if got, want := string(buf), "Strace"; !strings.Contains(got, want) {
+		t.Errorf("out got %s, want include %s", buf, want)
+	}
+}

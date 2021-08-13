@@ -56,6 +56,7 @@ func RegisterFlags() {
 		flag.Bool("strace", false, "enable strace.")
 		flag.String("strace-syscalls", "", "comma-separated list of syscalls to trace. If --strace is true and this list is empty, then all syscalls will be traced.")
 		flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs.")
+		flag.Bool("strace-event", false, "send strace to event.")
 
 		// Flags that control sandbox runtime behavior.
 		flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm.")
