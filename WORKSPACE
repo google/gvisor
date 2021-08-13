@@ -670,13 +670,6 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_jonboulle_clockwork",
-    importpath = "github.com/jonboulle/clockwork",
-    sum = "h1:VKV+ZcuP6l3yW9doeqz6ziZGgcynBVQO+obU0+0hcPo=",
-    version = "v0.1.0",
-)
-
-go_repository(
     name = "com_github_jtolds_gls",
     importpath = "github.com/jtolds/gls",
     sum = "h1:xdiiI2gbIgH/gLH7ADydsJ1uDOEzR8yvV7C0MuV77Wo=",
