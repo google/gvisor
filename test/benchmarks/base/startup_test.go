@@ -34,15 +34,19 @@ func BenchmarkStartupEmpty(b *testing.B) {
 	defer machine.CleanUp()
 
 	ctx := context.Background()
+	b.StopTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		harness.DebugLog(b, "Running container: %d", i)
 		container := machine.GetContainer(ctx, b)
-		defer container.CleanUp(ctx)
-		if _, err := container.Run(ctx, dockerutil.RunOpts{
+		b.StartTimer()
+		if err := container.Spawn(ctx, dockerutil.RunOpts{
 			Image: "benchmarks/alpine",
-		}, "true"); err != nil {
-			b.Fatalf("failed to run container: %v", err)
+		}, "sleep", "100"); err != nil {
+			b.Fatalf("failed to start container: %v", err)
 		}
+		b.StopTimer()
+		container.CleanUp(ctx)
 		harness.DebugLog(b, "Ran container: %d", i)
 	}
 }
