@@ -12,6 +12,7 @@ go_library(
         "pprof.go",
         "proc.go",
         "state.go",
+        "usage.go",
     ],
     visibility = [
         "//:sandbox",
@@ -39,6 +40,7 @@ go_library(
         "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

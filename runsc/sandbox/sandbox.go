@@ -1020,6 +1020,59 @@ func (s *Sandbox) Cat(cid string, files []string, out *os.File) error {
 	return nil
 }
 
+// Usage sends the collect call for a container in the sandbox.
+func (s *Sandbox) Usage(cid string, Full bool) (control.MemoryUsage, error) {
+	log.Debugf("Usage sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return control.MemoryUsage{}, err
+	}
+	defer conn.Close()
+
+	var m control.MemoryUsage
+	err = conn.Call(boot.UsageCollect, &control.MemoryUsageOpts{
+		Full: Full,
+	}, &m)
+	return m, err
+}
+
+// UsageFD sends the usagefd call for a container in the sandbox.
+func (s *Sandbox) UsageFD(cid string) (*control.MemoryUsageRecord, error) {
+	log.Debugf("Usage sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	var m control.MemoryUsageFile
+	if err := conn.Call(boot.UsageUsageFD, &control.MemoryUsageFileOpts{
+		Version: 1,
+	}, &m); err != nil {
+		return nil, fmt.Errorf("UsageFD failed: %v", err)
+	}
+
+	if len(m.FilePayload.Files) != 2 {
+		return nil, fmt.Errorf("wants exactly two fds")
+	}
+
+	return control.NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
+}
+
+// Reduce sends the reduce call for a container in the sandbox.
+func (s *Sandbox) Reduce(cid string, wait bool) error {
+	log.Debugf("Reduce sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	return conn.Call(boot.UsageReduce, &control.UsageReduceOpts{
+		Wait: wait,
+	}, nil)
+}
+
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {

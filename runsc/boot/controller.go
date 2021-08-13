@@ -114,6 +114,13 @@ const (
 	FsCat = "Fs.Cat"
 )
 
+// Usage related commands (see usage.go for more details).
+const (
+	UsageCollect = "Usage.Collect"
+	UsageUsageFD = "Usage.UsageFD"
+	UsageReduce  = "Usage.Reduce"
+)
+
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
 func ControlSocketAddr(id string) string {
 	return fmt.Sprintf("\x00runsc-sandbox.%s", id)
@@ -157,6 +164,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 	ctrl.srv.Register(&control.Logging{})
 	ctrl.srv.Register(&control.Lifecycle{l.k})
 	ctrl.srv.Register(&control.Fs{l.k})
+	ctrl.srv.Register(&control.Usage{l.k})
 
 	if l.root.conf.ProfileEnable {
 		ctrl.srv.Register(control.NewProfile(l.k))

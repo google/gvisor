@@ -36,6 +36,7 @@ go_library(
         "statefile.go",
         "symbolize.go",
         "syscalls.go",
+        "usage.go",
         "verity_prepare.go",
         "wait.go",
     ],
