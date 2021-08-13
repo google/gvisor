@@ -69,6 +69,10 @@ Rules:
             binary). Use `//pkg/unet` instead.
     *   `@org_golang_x_sys//unix:go_default_library` (Go import
         `golang.org/x/sys/unix`).
+    *   `@org_golang_x_time//rate:go_default_library` (Go import
+        `golang.org/x/time/rate`).
+    *   `@com_github_google_btree//:go_default_library"` (Go import
+        `github.com/google/btree`).
     *   Generated Go protobuf packages.
     *   `@org_golang_google_protobuf//proto:go_default_library` (Go import
         `google.golang.org/protobuf`).
