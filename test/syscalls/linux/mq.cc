@@ -433,7 +433,6 @@ TEST(MqTest, PollEmpty) {
 
 // Test simple mq_{send,receive}.
 TEST(MqTest, SimpleSendReceive) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -455,7 +454,6 @@ TEST(MqTest, SimpleSendReceive) {
 
 // Test mq_{send,receive} using a bad fd.
 TEST(MqTest, SendReceiveBadFD) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -475,7 +473,6 @@ TEST(MqTest, SendReceiveBadFD) {
 
 // Test mq_timed{send,receive} using an invalid timeout.
 TEST(MqTest, InvalidTime) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -509,7 +506,6 @@ TEST(MqTest, InvalidTime) {
 
 // Test mq_{send,receive} with an invalid msg size.
 TEST(MqTest, SendMsgSize) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -527,7 +523,6 @@ TEST(MqTest, SendMsgSize) {
 
 // Test using send with a different maximum message count.
 TEST(MqTest, SendMaxMsgCount) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   struct mq_attr attr;
@@ -550,7 +545,6 @@ TEST(MqTest, SendMaxMsgCount) {
 
 // Test using send with a different maximum message size.
 TEST(MqTest, SendMaxMsgSize) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   struct mq_attr attr;
@@ -569,7 +563,6 @@ TEST(MqTest, SendMaxMsgSize) {
 
 // Test mq_{send,receive} of several messages in order.
 TEST(MqTest, SendReceiveSeveral) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -603,7 +596,6 @@ TEST(MqTest, SendReceiveSeveral) {
 
 // Test mq_{send,receive} based on priority.
 TEST(MqTest, Priority) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -622,6 +614,7 @@ TEST(MqTest, Priority) {
   // Highest priority should be received first.
   for (size_t j = 0; j < msgCount; j++) {
     size_t i = msgCount - j - 1;
+
     uint priority;
     char receive[msgSize + 1];
     receive[msgSize] = '\0';
@@ -637,7 +630,6 @@ TEST(MqTest, Priority) {
 
 // Test blocking mq_{send,receive} with NON_BLOCK flag enabled.
 TEST(MqTest, NonBlocking) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -658,7 +650,6 @@ TEST(MqTest, NonBlocking) {
 
 // Test mq_{send,receive} on different modes for a queue.
 TEST(MqTest, RdOnlyWrOnlyRdWr) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   // Create two views into the same queue.
@@ -694,7 +685,6 @@ TEST(MqTest, RdOnlyWrOnlyRdWr) {
 
 // Test mq_send blocking with a timeout.
 TEST(MqTest, SendTimeout) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -719,7 +709,6 @@ TEST(MqTest, SendTimeout) {
 
 // Test mq_receive blocking with a timeout.
 TEST(MqTest, ReceiveTimeout) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -737,7 +726,6 @@ TEST(MqTest, ReceiveTimeout) {
 
 // Test mq_receive using a zero timeout.
 TEST(MqTest, ZeroTimeout) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -755,7 +743,6 @@ TEST(MqTest, ZeroTimeout) {
 
 // Test a blocking mq_send.
 TEST(MqTest, SendBlocking) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -788,7 +775,6 @@ TEST(MqTest, SendBlocking) {
 
 // Test a blocking mq_receive.
 TEST(MqTest, ReceiveBlocking) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -818,7 +804,6 @@ TEST(MqTest, ReceiveBlocking) {
 
 // Test sending and receiving several messages.
 TEST(MqTest, General) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -881,7 +866,6 @@ void empty_sighandler(int sig, siginfo_t* info, void* context) {}
 
 // Test interrupting mq_receive.
 TEST(MqTest, InterruptReceive) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -925,7 +909,6 @@ TEST(MqTest, InterruptReceive) {
 
 // Test interrupting mq_receive.
 TEST(MqTest, InterruptSend) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(

@@ -53,11 +53,11 @@ func (q *queueInode) Keep() bool {
 	return true
 }
 
-// queueFD implements vfs.FileDescriptionImpl for FD backed by a POSIX message
+// QueueFD implements vfs.FileDescriptionImpl for FD backed by a POSIX message
 // queue. It's mostly similar to DynamicBytesFD, but implements more operations.
 //
 // +stateify savable
-type queueFD struct {
+type QueueFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DynamicBytesFileDescriptionImpl
 	vfs.LockFD
@@ -69,9 +69,9 @@ type queueFD struct {
 	q mq.View
 }
 
-// Init initializes a queueFD. Mostly copied from DynamicBytesFD.Init, but uses
-// the queueFD as FileDescriptionImpl.
-func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32) error {
+// Init initializes a QueueFD. Mostly copied from DynamicBytesFD.Init, but uses
+// the QueueFD as FileDescriptionImpl.
+func (fd *QueueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32) error {
 	fd.LockFD.Init(locks)
 	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
 		return err
@@ -81,65 +81,70 @@ func (fd *queueFD) Init(m *vfs.Mount, d *kernfs.Dentry, data vfs.DynamicBytesSou
 	return nil
 }
 
+// Queue returns fd's View.
+func (fd *QueueFD) Queue() mq.View {
+	return fd.q
+}
+
 // Seek implements vfs.FileDescriptionImpl.Seek.
-func (fd *queueFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+func (fd *QueueFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.Seek(ctx, offset, whence)
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
-func (fd *queueFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+func (fd *QueueFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.Read(ctx, dst, opts)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
-func (fd *queueFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+func (fd *QueueFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.PRead(ctx, dst, offset, opts)
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
-func (fd *queueFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+func (fd *QueueFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.Write(ctx, src, opts)
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
-func (fd *queueFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+func (fd *QueueFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
 	return fd.DynamicBytesFileDescriptionImpl.PWrite(ctx, src, offset, opts)
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *queueFD) Release(context.Context) {}
+func (fd *QueueFD) Release(context.Context) {}
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
-func (fd *queueFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
+func (fd *QueueFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.Statx, error) {
 	fs := fd.vfsfd.VirtualDentry().Mount().Filesystem()
 	return fd.inode.Stat(ctx, fs, opts)
 }
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
-func (fd *queueFD) SetStat(context.Context, vfs.SetStatOptions) error {
+func (fd *QueueFD) SetStat(context.Context, vfs.SetStatOptions) error {
 	// DynamicBytesFiles are immutable.
 	return linuxerr.EPERM
 }
 
 // OnClose implements FileDescriptionImpl.OnClose similar to
 // ipc/mqueue.c::mqueue_flush_file.
-func (fd *queueFD) OnClose(ctx context.Context) error {
+func (fd *QueueFD) OnClose(ctx context.Context) error {
 	fd.q.Queue().Flush(ctx)
 	return nil
 }
 
 // Readiness implements waiter.Waitable.Readiness similar to
 // ipc/mqueue.c::mqueue_poll_file.
-func (fd *queueFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (fd *QueueFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fd.q.Queue().Readiness(mask)
 }
 
 // EventRegister implements Waitable.EventRegister.
-func (fd *queueFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
+func (fd *QueueFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
 	fd.q.Queue().EventRegister(e, mask)
 }
 
 // EventUnregister implements Waitable.EventUnregister.
-func (fd *queueFD) EventUnregister(e *waiter.Entry) {
+func (fd *QueueFD) EventUnregister(e *waiter.Entry) {
 	fd.q.Queue().EventUnregister(e)
 }

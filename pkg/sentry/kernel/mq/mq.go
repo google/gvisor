@@ -465,7 +465,7 @@ func (q *Queue) pop(ctx context.Context) (*Message, error) {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
-// DynamicBytesSource for mqfs's queueInode.
+// DynamicBytesSource for mqfs's QueueInode.
 func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -547,4 +547,9 @@ func (q *Queue) HasPermissions(creds *auth.Credentials, req fs.PermMask) bool {
 		p = q.perms.Group
 	}
 	return p.SupersetOf(req)
+}
+
+// MaxMsgSize implements View.MaxMsgSize.
+func (q *Queue) MaxMsgSize() uint64 {
+	return q.maxMessageSize
 }
