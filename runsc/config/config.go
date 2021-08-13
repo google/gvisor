@@ -117,6 +117,10 @@ type Config struct {
 	// StraceLogSize is the max size of data blobs to display.
 	StraceLogSize uint `flag:"strace-log-size"`
 
+	// StraceEvent indicates sending strace to events if true. Strace is
+	// sent to log if false.
+	StraceEvent bool `flag:"strace-event"`
+
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool

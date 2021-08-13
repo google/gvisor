@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "event.go",
         "event_any.go",
+        "processor.go",
         "rate.go",
     ],
     visibility = ["//:sandbox"],

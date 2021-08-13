@@ -35,9 +35,14 @@ func enableStrace(conf *config.Config) error {
 	}
 	strace.LogMaximumSize = max
 
+	sink := strace.SinkTypeLog
+	if conf.StraceEvent {
+		sink = strace.SinkTypeEvent
+	}
+
 	if len(conf.StraceSyscalls) == 0 {
-		strace.EnableAll(strace.SinkTypeLog)
+		strace.EnableAll(sink)
 		return nil
 	}
-	return strace.Enable(strings.Split(conf.StraceSyscalls, ","), strace.SinkTypeLog)
+	return strace.Enable(strings.Split(conf.StraceSyscalls, ","), sink)
 }
