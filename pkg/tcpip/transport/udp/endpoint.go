@@ -266,7 +266,7 @@ func (e *endpoint) Close() {
 	for mem := range e.multicastMemberships {
 		e.stack.LeaveGroup(e.NetProto, mem.nicID, mem.multicastAddr)
 	}
-	e.multicastMemberships = make(map[multicastMembership]struct{})
+	e.multicastMemberships = nil
 
 	// Close the receive list and drain it.
 	e.rcvMu.Lock()
