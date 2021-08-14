@@ -151,7 +151,7 @@ func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, access mq.AccessTyp
 	var dentry kernfs.Dentry
 	dentry.Init(&r.fs.Filesystem, inode)
 
-	fd := &queueFD{queue: view}
+	fd := &queueFD{q: view}
 	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags)
 	if err != nil {
 		return nil, err

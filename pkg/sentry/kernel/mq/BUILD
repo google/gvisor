@@ -20,6 +20,7 @@ go_library(
     srcs = [
         "message_list.go",
         "mq.go",
+        "view.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
