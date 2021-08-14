@@ -347,7 +347,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 }
 
 // MknodAt creates a file of the given mode at the given path. It returns an
-// error from the syserror package.
+// error from the linuxerr package.
 func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
 	if !pop.Path.Begin.Ok() {
 		// pop.Path should not be empty in operations that create/delete files.

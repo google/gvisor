@@ -20,10 +20,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -193,7 +193,7 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 		}
 		return n, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
@@ -207,7 +207,7 @@ func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequ
 		l.replicaWaiter.Notify(waiter.ReadableEvents)
 		return n, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 func (l *lineDiscipline) outputQueueReadSize(t *kernel.Task, args arch.SyscallArguments) error {
@@ -228,7 +228,7 @@ func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequ
 		}
 		return n, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
@@ -242,7 +242,7 @@ func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSeq
 		l.masterWaiter.Notify(waiter.ReadableEvents)
 		return n, nil
 	}
-	return 0, syserror.ErrWouldBlock
+	return 0, linuxerr.ErrWouldBlock
 }
 
 // transformer is a helper interface to make it easier to stateify queue.

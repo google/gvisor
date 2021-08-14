@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // Sync implements Linux syscall sync(2).
@@ -113,7 +113,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 	if flags&linux.SYNC_FILE_RANGE_WAIT_AFTER != 0 {
 		if err := file.Sync(t); err != nil {
-			return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+			return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 		}
 	}
 	return 0, nil, nil

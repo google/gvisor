@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -588,7 +587,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 			if tmpVals[op.SemNum] != 0 {
 				// Semaphore isn't 0, must wait.
 				if op.SemFlg&linux.IPC_NOWAIT != 0 {
-					return nil, 0, syserror.ErrWouldBlock
+					return nil, 0, linuxerr.ErrWouldBlock
 				}
 
 				w := newWaiter(op.SemOp)
@@ -604,7 +603,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 				if -op.SemOp > tmpVals[op.SemNum] {
 					// Not enough resources, must wait.
 					if op.SemFlg&linux.IPC_NOWAIT != 0 {
-						return nil, 0, syserror.ErrWouldBlock
+						return nil, 0, linuxerr.ErrWouldBlock
 					}
 
 					w := newWaiter(op.SemOp)

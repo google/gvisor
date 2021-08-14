@@ -25,7 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -185,7 +185,7 @@ func doPoll(t *kernel.Task, addr hostarch.Addr, nfds uint, timeout time.Duration
 		pfd[i].Events |= linux.POLLHUP | linux.POLLERR
 	}
 	remainingTimeout, n, err := pollBlock(t, pfd, timeout)
-	err = syserror.ConvertIntr(err, linuxerr.EINTR)
+	err = syserr.ConvertIntr(err, linuxerr.EINTR)
 
 	// The poll entries are copied out regardless of whether
 	// any are set or not. This aligns with the Linux behavior.
@@ -295,7 +295,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs hostarch.Ad
 
 	// Do the syscall, then count the number of bits set.
 	if _, _, err = pollBlock(t, pfd, timeout); err != nil {
-		return 0, syserror.ConvertIntr(err, linuxerr.EINTR)
+		return 0, syserr.ConvertIntr(err, linuxerr.EINTR)
 	}
 
 	// r, w, and e are currently event mask bitsets; unset bits corresponding
@@ -411,7 +411,7 @@ func poll(t *kernel.Task, pfdAddr hostarch.Addr, nfds uint, timeout time.Duratio
 			nfds:    nfds,
 			timeout: remainingTimeout,
 		})
-		return 0, syserror.ERESTART_RESTARTBLOCK
+		return 0, linuxerr.ERESTART_RESTARTBLOCK
 	}
 	return n, err
 }
@@ -465,7 +465,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Note that this means that if err is nil but copyErr is not, copyErr is
 	// ignored. This is consistent with Linux.
 	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
-		err = syserror.ERESTARTNOHAND
+		err = linuxerr.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -495,7 +495,7 @@ func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	copyErr := copyOutTimevalRemaining(t, startNs, timeout, timevalAddr)
 	// See comment in Ppoll.
 	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
-		err = syserror.ERESTARTNOHAND
+		err = linuxerr.ERESTARTNOHAND
 	}
 	return n, nil, err
 }
@@ -540,7 +540,7 @@ func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	copyErr := copyOutTimespecRemaining(t, startNs, timeout, timespecAddr)
 	// See comment in Ppoll.
 	if linuxerr.Equals(linuxerr.EINTR, err) && copyErr == nil {
-		err = syserror.ERESTARTNOHAND
+		err = linuxerr.ERESTARTNOHAND
 	}
 	return n, nil, err
 }

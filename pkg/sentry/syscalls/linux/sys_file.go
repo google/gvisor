@@ -30,7 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // fileOpAt performs an operation on the second last component in the path.
@@ -177,7 +177,7 @@ func openAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint) (fd uin
 
 		file, err := d.Inode.GetFile(t, d, fileFlags)
 		if err != nil {
-			return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+			return syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 		}
 		defer file.DecRef(t)
 
@@ -416,7 +416,7 @@ func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode 
 			// Create a new fs.File.
 			newFile, err = found.Inode.GetFile(t, found, fileFlags)
 			if err != nil {
-				return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+				return syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 			}
 			defer newFile.DecRef(t)
 		case linuxerr.Equals(linuxerr.ENOENT, err):

@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -113,7 +112,7 @@ func (s *SocketVFS2) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.
 	}
 	n, _, _, _, _, err := s.nonBlockingRead(ctx, dst, false, false, false)
 	if err == syserr.ErrWouldBlock {
-		return int64(n), syserror.ErrWouldBlock
+		return int64(n), linuxerr.ErrWouldBlock
 	}
 	if err != nil {
 		return 0, err.ToError()
@@ -132,14 +131,14 @@ func (s *SocketVFS2) Write(ctx context.Context, src usermem.IOSequence, opts vfs
 	r := src.Reader(ctx)
 	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 	if err != nil {
 		return 0, syserr.TranslateNetstackError(err).ToError()
 	}
 
 	if n < src.NumBytes() {
-		return n, syserror.ErrWouldBlock
+		return n, linuxerr.ErrWouldBlock
 	}
 
 	return n, nil

@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // futexWaitRestartBlock encapsulates the state required to restart futex(2)
@@ -75,7 +75,7 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 	}
 
 	t.Futex().WaitComplete(w, t)
-	return 0, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // futexWaitDuration performs a FUTEX_WAIT, blocking until the wait is
@@ -103,7 +103,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 
 	// The wait was unsuccessful for some reason other than interruption. Simply
 	// forward the error.
-	if err != syserror.ErrInterrupted {
+	if err != linuxerr.ErrInterrupted {
 		return 0, err
 	}
 
@@ -111,7 +111,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 
 	// The wait duration was absolute, restart with the original arguments.
 	if forever {
-		return 0, syserror.ERESTARTSYS
+		return 0, linuxerr.ERESTARTSYS
 	}
 
 	// The wait duration was relative, restart with the remaining duration.
@@ -122,7 +122,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 		val:      val,
 		mask:     mask,
 	})
-	return 0, syserror.ERESTART_RESTARTBLOCK
+	return 0, linuxerr.ERESTART_RESTARTBLOCK
 }
 
 func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr hostarch.Addr, private bool) error {
@@ -150,7 +150,7 @@ func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr hostarch.
 	}
 
 	t.Futex().WaitComplete(w, t)
-	return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 func tryLockPI(t *kernel.Task, addr hostarch.Addr, private bool) error {

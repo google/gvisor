@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -244,7 +243,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 		wopts.Events |= kernel.EventGroupContinue
 	}
 	if options&linux.WNOHANG == 0 {
-		wopts.BlockInterruptErr = syserror.ERESTARTSYS
+		wopts.BlockInterruptErr = linuxerr.ERESTARTSYS
 	}
 	if options&linux.WNOTHREAD == 0 {
 		wopts.SiblingChildren = true

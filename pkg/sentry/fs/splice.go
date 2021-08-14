@@ -20,7 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Splice moves data to this file, directly from another.
@@ -55,26 +54,26 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		case dst.UniqueID < src.UniqueID:
 			// Acquire dst first.
 			if !dst.mu.Lock(ctx) {
-				return 0, syserror.ErrInterrupted
+				return 0, linuxerr.ErrInterrupted
 			}
 			if !src.mu.Lock(ctx) {
 				dst.mu.Unlock()
-				return 0, syserror.ErrInterrupted
+				return 0, linuxerr.ErrInterrupted
 			}
 		case dst.UniqueID > src.UniqueID:
 			// Acquire src first.
 			if !src.mu.Lock(ctx) {
-				return 0, syserror.ErrInterrupted
+				return 0, linuxerr.ErrInterrupted
 			}
 			if !dst.mu.Lock(ctx) {
 				src.mu.Unlock()
-				return 0, syserror.ErrInterrupted
+				return 0, linuxerr.ErrInterrupted
 			}
 		case dst.UniqueID == src.UniqueID:
 			// Acquire only one lock; it's the same file. This is a
 			// bit of a edge case, but presumably it's possible.
 			if !dst.mu.Lock(ctx) {
-				return 0, syserror.ErrInterrupted
+				return 0, linuxerr.ErrInterrupted
 			}
 			srcLock = false // Only need one unlock.
 		}
@@ -84,13 +83,13 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 	case dstLock:
 		// Acquire only dst.
 		if !dst.mu.Lock(ctx) {
-			return 0, syserror.ErrInterrupted
+			return 0, linuxerr.ErrInterrupted
 		}
 		opts.DstStart = dst.offset // Safe: locked.
 	case srcLock:
 		// Acquire only src.
 		if !src.mu.Lock(ctx) {
-			return 0, syserror.ErrInterrupted
+			return 0, linuxerr.ErrInterrupted
 		}
 		opts.SrcStart = src.offset // Safe: locked.
 	}
@@ -108,7 +107,7 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		limit, ok := dst.checkLimit(ctx, opts.DstStart)
 		switch {
 		case ok && limit == 0:
-			err = syserror.ErrExceedsFileSizeLimit
+			err = linuxerr.ErrExceedsFileSizeLimit
 		case ok && limit < opts.Length:
 			opts.Length = limit // Cap the write.
 		}

@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // BlockWithTimeout blocks t until an event is received from C, the application
@@ -33,7 +32,7 @@ import (
 // and is unspecified if haveTimeout is false.
 //
 // - An error which is nil if an event is received from C, ETIMEDOUT if the timeout
-// expired, and syserror.ErrInterrupted if t is interrupted.
+// expired, and linuxerr.ErrInterrupted if t is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.Duration) (time.Duration, error) {
@@ -67,7 +66,7 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 // application monotonic clock indicates a time of deadline (only if
 // haveDeadline is true), or t is interrupted. It returns nil if an event is
 // received from C, ETIMEDOUT if the deadline expired, and
-// syserror.ErrInterrupted if t is interrupted.
+// linuxerr.ErrInterrupted if t is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline ktime.Time) error {
@@ -95,7 +94,7 @@ func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline 
 
 // BlockWithTimer blocks t until an event is received from C or tchan, or t is
 // interrupted. It returns nil if an event is received from C, ETIMEDOUT if an
-// event is received from tchan, and syserror.ErrInterrupted if t is
+// event is received from tchan, and linuxerr.ErrInterrupted if t is
 // interrupted.
 //
 // Most clients should use BlockWithDeadline or BlockWithTimeout instead.
@@ -106,7 +105,7 @@ func (t *Task) BlockWithTimer(C <-chan struct{}, tchan <-chan struct{}) error {
 }
 
 // Block blocks t until an event is received from C or t is interrupted. It
-// returns nil if an event is received from C and syserror.ErrInterrupted if t
+// returns nil if an event is received from C and linuxerr.ErrInterrupted if t
 // is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
@@ -157,7 +156,7 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 		region.End()
 		t.SleepFinish(false)
 		// Return the indicated error on interrupt.
-		return syserror.ErrInterrupted
+		return linuxerr.ErrInterrupted
 
 	case <-timerChan:
 		region.End()

@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -83,7 +82,7 @@ func getdents(t *kernel.Task, fd int32, addr hostarch.Addr, size int, f func(*di
 	ds := newDirentSerializer(f, w, t.Arch(), size)
 	rerr := dir.Readdir(t, ds)
 
-	switch err := handleIOError(t, ds.Written() > 0, rerr, syserror.ERESTARTSYS, "getdents", dir); err {
+	switch err := handleIOError(t, ds.Written() > 0, rerr, linuxerr.ERESTARTSYS, "getdents", dir); err {
 	case nil:
 		dir.Dirent.InotifyEvent(linux.IN_ACCESS, 0)
 		return uintptr(ds.Written()), nil

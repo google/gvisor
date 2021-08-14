@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -368,5 +367,5 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 	//
 	// Linux ignores the result of kill_pgrp().
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
-	return syserror.ERESTARTSYS
+	return linuxerr.ERESTARTSYS
 }

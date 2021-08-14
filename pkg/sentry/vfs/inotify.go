@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -209,7 +208,7 @@ func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOpt
 
 	if i.events.Empty() {
 		// Nothing to read yet, tell caller to block.
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 
 	var writeLen int64
