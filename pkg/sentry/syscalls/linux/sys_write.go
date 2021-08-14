@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -72,7 +71,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := writev(t, file, src)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "write", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "write", file)
 }
 
 // Pwrite64 implements linux syscall pwrite64(2).
@@ -119,7 +118,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwrite64", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "pwrite64", file)
 }
 
 // Writev implements linux syscall writev(2).
@@ -149,7 +148,7 @@ func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := writev(t, file, src)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "writev", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "writev", file)
 }
 
 // Pwritev implements linux syscall pwritev(2).
@@ -190,7 +189,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "pwritev", file)
 }
 
 // Pwritev2 implements linux syscall pwritev2(2).
@@ -251,17 +250,17 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	if offset == -1 {
 		n, err := writev(t, file, src)
 		t.IOUsage().AccountWriteSyscall(n)
-		return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
+		return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "pwritev2", file)
 	}
 
 	n, err := pwritev(t, file, src, offset)
 	t.IOUsage().AccountWriteSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pwritev2", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "pwritev2", file)
 }
 
 func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 	n, err := f.Writev(t, src)
-	if err != syserror.ErrWouldBlock || f.Flags().NonBlocking {
+	if err != linuxerr.ErrWouldBlock || f.Flags().NonBlocking {
 		if n > 0 {
 			// Queue notification if we wrote anything.
 			f.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
@@ -274,7 +273,7 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 	var deadline ktime.Time
 	if s, ok := f.FileOperations.(socket.Socket); ok {
 		dl := s.SendTimeout()
-		if dl < 0 && err == syserror.ErrWouldBlock {
+		if dl < 0 && err == linuxerr.ErrWouldBlock {
 			return n, err
 		}
 		if dl > 0 {
@@ -296,14 +295,14 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 		// anything other than "would block".
 		n, err = f.Writev(t, src)
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 			break
 		}
@@ -321,7 +320,7 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 
 func pwritev(t *kernel.Task, f *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	n, err := f.Pwritev(t, src, offset)
-	if err != syserror.ErrWouldBlock || f.Flags().NonBlocking {
+	if err != linuxerr.ErrWouldBlock || f.Flags().NonBlocking {
 		if n > 0 {
 			// Queue notification if we wrote anything.
 			f.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
@@ -342,7 +341,7 @@ func pwritev(t *kernel.Task, f *fs.File, src usermem.IOSequence, offset int64) (
 		// anything other than "would block".
 		n, err = f.Pwritev(t, src, offset+total)
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 

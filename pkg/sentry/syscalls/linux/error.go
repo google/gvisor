@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var (
@@ -90,9 +89,9 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, errOrig, intr er
 	}
 
 	// Translate error, if possible, to consolidate errors from other packages
-	// into a smaller set of errors from syserror package.
+	// into a smaller set of errors from linuxerr package.
 	translatedErr := errOrig
-	if errno, ok := syserror.TranslateError(errOrig); ok {
+	if errno, ok := linuxerr.TranslateError(errOrig); ok {
 		translatedErr = errno
 	}
 	switch {
@@ -167,10 +166,7 @@ func handleIOErrorImpl(ctx context.Context, partialResult bool, errOrig, intr er
 		// files. Since we have a partial read/write, we consume
 		// ErrWouldBlock, returning the partial result.
 		return true, nil
-	}
-
-	switch errOrig.(type) {
-	case syserror.SyscallRestartErrno:
+	case linuxerr.IsRestartError(translatedErr):
 		// Identical to the EINTR case.
 		return true, nil
 	}

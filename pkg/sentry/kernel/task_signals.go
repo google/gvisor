@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -161,7 +160,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 	sigact := computeAction(sig, act)
 
 	if t.haveSyscallReturn {
-		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
+		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
 			// Signals that are ignored, cause a thread group stop, or
 			// terminate the thread group do not interact with interrupted
 			// syscalls; in Linux terms, they are never returned to the signal
@@ -170,11 +169,11 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 			// signal that is actually handled (by userspace).
 			if sigact == SignalActionHandler {
 				switch {
-				case sre == syserror.ERESTARTNOHAND:
+				case sre == linuxerr.ERESTARTNOHAND:
 					fallthrough
-				case sre == syserror.ERESTART_RESTARTBLOCK:
+				case sre == linuxerr.ERESTART_RESTARTBLOCK:
 					fallthrough
-				case (sre == syserror.ERESTARTSYS && act.Flags&linux.SA_RESTART == 0):
+				case (sre == linuxerr.ERESTARTSYS && act.Flags&linux.SA_RESTART == 0):
 					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().SetReturn(uintptr(-ExtractErrno(linuxerr.EINTR, -1)))
 				default:

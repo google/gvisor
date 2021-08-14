@@ -22,7 +22,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Global pipe used by blockUntilNonblockingPipeHasWriter since we can't create
@@ -109,6 +108,6 @@ func sleepBetweenNamedPipeOpenChecks(ctx context.Context) error {
 		return nil
 	case <-cancel:
 		ctx.SleepFinish(false)
-		return syserror.ErrInterrupted
+		return linuxerr.ErrInterrupted
 	}
 }

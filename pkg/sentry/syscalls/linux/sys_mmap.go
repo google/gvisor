@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // Brk implements linux syscall brk(2).
@@ -277,7 +277,7 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	})
 	// MSync calls fsync, the same interrupt conversion rules apply, see
 	// mm/msync.c, fsync POSIX.1-2008.
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, syserr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // Mlock implements linux syscall mlock(2).

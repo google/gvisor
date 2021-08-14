@@ -82,7 +82,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
@@ -125,7 +124,6 @@ go_test(
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

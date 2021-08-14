@@ -45,7 +45,6 @@ go_library(
         "//pkg/sentry/unimpl",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

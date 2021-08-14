@@ -22,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -109,7 +109,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 func waitEpoll(t *kernel.Task, fd int32, eventsAddr hostarch.Addr, max int, timeoutInNanos int64) (uintptr, *kernel.SyscallControl, error) {
 	r, err := syscalls.WaitEpoll(t, fd, max, timeoutInNanos)
 	if err != nil {
-		return 0, nil, syserror.ConvertIntr(err, linuxerr.EINTR)
+		return 0, nil, syserr.ConvertIntr(err, linuxerr.EINTR)
 	}
 
 	if len(r) != 0 {

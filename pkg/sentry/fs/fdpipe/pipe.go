@@ -29,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -142,7 +141,7 @@ func (p *pipeOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 	n, err := dst.CopyOutFrom(ctx, safemem.FromIOReader{secio.FullReader{p.file}})
 	total := int64(bufN) + n
 	if err != nil && isBlockError(err) {
-		return total, syserror.ErrWouldBlock
+		return total, linuxerr.ErrWouldBlock
 	}
 	return total, err
 }
@@ -151,13 +150,13 @@ func (p *pipeOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 func (p *pipeOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	n, err := src.CopyInTo(ctx, safemem.FromIOWriter{p.file})
 	if err != nil && isBlockError(err) {
-		return n, syserror.ErrWouldBlock
+		return n, linuxerr.ErrWouldBlock
 	}
 	return n, err
 }
 
 // isBlockError unwraps os errors and checks if they are caused by EAGAIN or
-// EWOULDBLOCK. This is so they can be transformed into syserror.ErrWouldBlock.
+// EWOULDBLOCK. This is so they can be transformed into linuxerr.ErrWouldBlock.
 func isBlockError(err error) bool {
 	if linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err) {
 		return true

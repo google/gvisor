@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package syserror_test
+package linuxerr_test
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"syscall"
@@ -25,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	gErrors "gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var globalError error
@@ -39,12 +39,6 @@ func BenchmarkAssignUnix(b *testing.B) {
 func BenchmarkAssignLinuxerr(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		globalError = linuxerr.EINVAL
-	}
-}
-
-func BenchmarkAssignSyserror(b *testing.B) {
-	for i := b.N; i > 0; i-- {
-		globalError = linuxerr.ENOMSG
 	}
 }
 
@@ -63,16 +57,6 @@ func BenchmarkCompareLinuxerr(b *testing.B) {
 	j := 0
 	for i := b.N; i > 0; i-- {
 		if globalError == linuxerr.EINVAL {
-			j++
-		}
-	}
-}
-
-func BenchmarkCompareSyserror(b *testing.B) {
-	globalError = linuxerr.EAGAIN
-	j := 0
-	for i := b.N; i > 0; i-- {
-		if globalError == linuxerr.EACCES {
 			j++
 		}
 	}
@@ -99,21 +83,6 @@ func BenchmarkSwitchLinuxerr(b *testing.B) {
 	for i := b.N; i > 0; i-- {
 		switch globalError {
 		case linuxerr.EINVAL:
-			j++
-		case linuxerr.EINTR:
-			j += 2
-		case linuxerr.EAGAIN:
-			j += 3
-		}
-	}
-}
-
-func BenchmarkSwitchSyserror(b *testing.B) {
-	globalError = linuxerr.EPERM
-	j := 0
-	for i := b.N; i > 0; i-- {
-		switch globalError {
-		case linuxerr.EACCES:
 			j++
 		case linuxerr.EINTR:
 			j += 2
@@ -170,47 +139,40 @@ func BenchmarkConvertUnixLinuxerrZero(b *testing.B) {
 }
 
 type translationTestTable struct {
-	fn                  string
 	errIn               error
-	syscallErrorIn      unix.Errno
 	expectedBool        bool
-	expectedTranslation unix.Errno
+	expectedTranslation *gErrors.Error
 }
 
 func TestErrorTranslation(t *testing.T) {
-	myError := errors.New("My test error")
-	myError2 := errors.New("Another test error")
 	testTable := []translationTestTable{
-		{"TranslateError", myError, 0, false, 0},
-		{"TranslateError", myError2, 0, false, 0},
-		{"AddErrorTranslation", myError, unix.EAGAIN, true, 0},
-		{"AddErrorTranslation", myError, unix.EAGAIN, false, 0},
-		{"AddErrorTranslation", myError, unix.EPERM, false, 0},
-		{"TranslateError", myError, 0, true, unix.EAGAIN},
-		{"TranslateError", myError2, 0, false, 0},
-		{"AddErrorTranslation", myError2, unix.EPERM, true, 0},
-		{"AddErrorTranslation", myError2, unix.EPERM, false, 0},
-		{"AddErrorTranslation", myError2, unix.EAGAIN, false, 0},
-		{"TranslateError", myError, 0, true, unix.EAGAIN},
-		{"TranslateError", myError2, 0, true, unix.EPERM},
+		{
+			errIn: linuxerr.ENOENT,
+		},
+		{
+			errIn: unix.ENOENT,
+		},
+		{
+			errIn:               linuxerr.ErrInterrupted,
+			expectedBool:        true,
+			expectedTranslation: linuxerr.EINTR,
+		},
+		{
+			errIn: linuxerr.ERESTART_RESTARTBLOCK,
+		},
+		{
+			errIn: errors.New("some new error"),
+		},
 	}
 	for _, tt := range testTable {
-		switch tt.fn {
-		case "TranslateError":
-			err, ok := syserror.TranslateError(tt.errIn)
-			if ok != tt.expectedBool {
-				t.Fatalf("%v(%v) => %v expected %v", tt.fn, tt.errIn, ok, tt.expectedBool)
+		t.Run(fmt.Sprintf("err: %v %T", tt.errIn, tt.errIn), func(t *testing.T) {
+			err, ok := linuxerr.TranslateError(tt.errIn)
+			if (!tt.expectedBool && err != nil) || (tt.expectedBool != ok) {
+				t.Fatalf("%v => %v %v expected %v err: nil", tt.errIn, err, ok, tt.expectedBool)
 			} else if err != tt.expectedTranslation {
-				t.Fatalf("%v(%v) (error) => %v expected %v", tt.fn, tt.errIn, err, tt.expectedTranslation)
+				t.Fatalf("%v => %v expected %v", tt.errIn, err, tt.expectedTranslation)
 			}
-		case "AddErrorTranslation":
-			ok := syserror.AddErrorTranslation(tt.errIn, tt.syscallErrorIn)
-			if ok != tt.expectedBool {
-				t.Fatalf("%v(%v) => %v expected %v", tt.fn, tt.errIn, ok, tt.expectedBool)
-			}
-		default:
-			t.Fatalf("Unknown function %v", tt.fn)
-		}
+		})
 	}
 }
 

@@ -17,8 +17,8 @@ package vfs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	fslock "gvisor.dev/gvisor/pkg/sentry/fs/lock"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // FileLocks supports POSIX and BSD style locks, which correspond to fcntl(2)
@@ -47,9 +47,9 @@ func (fl *FileLocks) LockBSD(ctx context.Context, uid fslock.UniqueID, ownerID i
 	// Return an appropriate error for the unsuccessful lock attempt, depending on
 	// whether this is a blocking or non-blocking operation.
 	if block == nil {
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
-	return syserror.ERESTARTSYS
+	return linuxerr.ERESTARTSYS
 }
 
 // UnlockBSD releases a BSD-style lock on the entire file.
@@ -69,9 +69,9 @@ func (fl *FileLocks) LockPOSIX(ctx context.Context, uid fslock.UniqueID, ownerPI
 	// Return an appropriate error for the unsuccessful lock attempt, depending on
 	// whether this is a blocking or non-blocking operation.
 	if block == nil {
-		return syserror.ErrWouldBlock
+		return linuxerr.ErrWouldBlock
 	}
-	return syserror.ERESTARTSYS
+	return linuxerr.ERESTARTSYS
 }
 
 // UnlockPOSIX releases a POSIX-style lock on a file region.

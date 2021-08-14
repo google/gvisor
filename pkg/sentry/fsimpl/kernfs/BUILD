@@ -119,7 +119,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
@@ -145,7 +144,6 @@ go_test(
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

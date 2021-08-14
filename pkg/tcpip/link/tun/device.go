@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -249,7 +248,7 @@ func (d *Device) Read() ([]byte, error) {
 	for {
 		info, ok := endpoint.Read()
 		if !ok {
-			return nil, syserror.ErrWouldBlock
+			return nil, linuxerr.ErrWouldBlock
 		}
 
 		v, ok := d.encodePkt(&info)

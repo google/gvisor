@@ -429,7 +429,7 @@ type IOSequence struct {
 //       return 0, nil
 //     }
 //     if f.availableBytes == 0 {
-//       return 0, syserror.ErrWouldBlock
+//       return 0, linuxerr.ErrWouldBlock
 //     }
 //     return ioseq.CopyOutFrom(..., reader)
 //

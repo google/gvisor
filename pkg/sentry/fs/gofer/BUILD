@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/hostarch",
@@ -48,7 +49,6 @@ go_library(
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/unet",
         "//pkg/usermem",
         "//pkg/waiter",

@@ -120,7 +120,7 @@ type FileOperations interface {
 	// Files with !FileFlags.Pwrite.
 	//
 	// If only part of src could be written, Write must return an error
-	// indicating why (e.g. syserror.ErrWouldBlock).
+	// indicating why (e.g. linuxerr.ErrWouldBlock).
 	//
 	// Write does not check permissions nor flags.
 	//

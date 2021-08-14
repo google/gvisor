@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -146,18 +145,18 @@ func TestTryOpen(t *testing.T) {
 			err:        unix.ENOENT,
 		},
 		{
-			desc:       "Blocking Write only returns with syserror.ErrWouldBlock",
+			desc:       "Blocking Write only returns with linuxerr.ErrWouldBlock",
 			makePipe:   true,
 			flags:      fs.FileFlags{Write: true},
 			expectFile: false,
-			err:        syserror.ErrWouldBlock,
+			err:        linuxerr.ErrWouldBlock,
 		},
 		{
-			desc:       "Blocking Read only returns with syserror.ErrWouldBlock",
+			desc:       "Blocking Read only returns with linuxerr.ErrWouldBlock",
 			makePipe:   true,
 			flags:      fs.FileFlags{Read: true},
 			expectFile: false,
-			err:        syserror.ErrWouldBlock,
+			err:        linuxerr.ErrWouldBlock,
 		},
 	} {
 		name := pipename()
@@ -316,7 +315,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	// another writer comes along.  This means we can open the same pipe write only
 	// with no problems + write to it, given that opener.Open already tried to open
 	// the pipe RDONLY and succeeded, which we know happened if TryOpen returns
-	// syserror.ErrwouldBlock.
+	// linuxerr.ErrwouldBlock.
 	//
 	// This simulates the open(RDONLY) <-> open(WRONLY)+write race we care about, but
 	// does not cause our test to be racy (which would be terrible).
@@ -328,8 +327,8 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 		pipeOps.Release(ctx)
 		t.Fatalf("open(%s, %o) got file, want nil", name, unix.O_RDONLY)
 	}
-	if err != syserror.ErrWouldBlock {
-		t.Fatalf("open(%s, %o) got error %v, want %v", name, unix.O_RDONLY, err, syserror.ErrWouldBlock)
+	if err != linuxerr.ErrWouldBlock {
+		t.Fatalf("open(%s, %o) got error %v, want %v", name, unix.O_RDONLY, err, linuxerr.ErrWouldBlock)
 	}
 
 	// Then open the same pipe write only and write some bytes to it.  The next

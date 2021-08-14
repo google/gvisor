@@ -19,10 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func executeOps(ctx context.Context, t *testing.T, set *Set, ops []linux.Sembuf, block bool) chan struct{} {
@@ -124,14 +124,14 @@ func TestNoWait(t *testing.T) {
 
 	ops[0].SemOp = -2
 	ops[0].SemFlg = linux.IPC_NOWAIT
-	if _, _, err := set.executeOps(ctx, ops, 123); err != syserror.ErrWouldBlock {
-		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, syserror.ErrWouldBlock)
+	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 
 	ops[0].SemOp = 0
 	ops[0].SemFlg = linux.IPC_NOWAIT
-	if _, _, err := set.executeOps(ctx, ops, 123); err != syserror.ErrWouldBlock {
-		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, syserror.ErrWouldBlock)
+	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 }
 

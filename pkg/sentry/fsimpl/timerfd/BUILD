@@ -12,7 +12,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

@@ -42,7 +42,6 @@ go_library(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/usage",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

@@ -8,7 +8,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/context",
-        "//pkg/syserror",
+        "//pkg/errors/linuxerr",
     ],
 )
 

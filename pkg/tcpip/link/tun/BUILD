@@ -31,7 +31,6 @@ go_library(
         "//pkg/refs",
         "//pkg/refsvfs2",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
