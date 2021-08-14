@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -29,7 +30,6 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A taskRunState is a reified state in the task state machine. See README.md
@@ -197,8 +197,8 @@ func (app *runApp) execute(t *Task) taskRunState {
 	// a pending signal, causing another interruption, but that signal should
 	// not interact with the interrupted syscall.)
 	if t.haveSyscallReturn {
-		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
-			if sre == syserror.ERESTART_RESTARTBLOCK {
+		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
+			if sre == linuxerr.ERESTART_RESTARTBLOCK {
 				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {

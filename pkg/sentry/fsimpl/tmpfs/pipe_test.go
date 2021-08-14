@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -202,7 +201,7 @@ func checkEmpty(ctx context.Context, t *testing.T, fd *vfs.FileDescription) {
 	readData := make([]byte, 1)
 	dst := usermem.BytesIOSequence(readData)
 	bytesRead, err := fd.Read(ctx, dst, vfs.ReadOptions{})
-	if err != syserror.ErrWouldBlock {
+	if err != linuxerr.ErrWouldBlock {
 		t.Fatalf("expected ErrWouldBlock reading from empty pipe %q, but got: %v", fileName, err)
 	}
 	if bytesRead != 0 {

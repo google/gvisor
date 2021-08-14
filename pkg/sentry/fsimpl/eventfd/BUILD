@@ -9,11 +9,11 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",

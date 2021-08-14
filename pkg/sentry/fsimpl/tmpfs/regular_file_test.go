@@ -21,10 +21,10 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -146,7 +146,7 @@ func TestLocks(t *testing.T) {
 	if err := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, nil); err != nil {
 		t.Fatalf("fd.Impl().LockBSD failed: err = %v", err)
 	}
-	if got, want := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, nil), syserror.ErrWouldBlock; got != want {
+	if got, want := fd.Impl().LockBSD(ctx, uid2, 0 /* ownerPID */, lock.WriteLock, nil), linuxerr.ErrWouldBlock; got != want {
 		t.Fatalf("fd.Impl().LockBSD failed: got = %v, want = %v", got, want)
 	}
 	if err := fd.Impl().UnlockBSD(ctx, uid1); err != nil {
@@ -165,7 +165,7 @@ func TestLocks(t *testing.T) {
 	if err := fd.Impl().LockPOSIX(ctx, uid1, 0 /* ownerPID */, lock.WriteLock, lock.LockRange{Start: 0, End: 1}, nil); err != nil {
 		t.Fatalf("fd.Impl().LockPOSIX failed: err = %v", err)
 	}
-	if got, want := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil), syserror.ErrWouldBlock; got != want {
+	if got, want := fd.Impl().LockPOSIX(ctx, uid2, 0 /* ownerPID */, lock.ReadLock, lock.LockRange{Start: 0, End: 1}, nil), linuxerr.ErrWouldBlock; got != want {
 		t.Fatalf("fd.Impl().LockPOSIX failed: got = %v, want = %v", got, want)
 	}
 	if err := fd.Impl().UnlockPOSIX(ctx, uid1, lock.LockRange{Start: 0, End: 1}); err != nil {

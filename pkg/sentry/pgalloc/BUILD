@@ -97,7 +97,6 @@ go_library(
         "//pkg/state",
         "//pkg/state/wire",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

@@ -37,7 +37,6 @@ import (
 	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -712,7 +711,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 			if total != 0 {
 				err = nil
 			} else {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 		}
 		return total, err
@@ -766,7 +765,7 @@ func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opt
 	if !i.seekable {
 		n, err := f.writeToHostFD(ctx, src, -1, opts.Flags)
 		if isBlockError(err) {
-			err = syserror.ErrWouldBlock
+			err = linuxerr.ErrWouldBlock
 		}
 		return n, err
 	}

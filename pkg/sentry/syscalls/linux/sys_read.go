@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -72,7 +71,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	n, err := readv(t, file, dst)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "read", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "read", file)
 }
 
 // Readahead implements readahead(2).
@@ -152,7 +151,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "pread64", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "pread64", file)
 }
 
 // Readv implements linux syscall readv(2).
@@ -182,7 +181,7 @@ func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	n, err := readv(t, file, dst)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "readv", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "readv", file)
 }
 
 // Preadv implements linux syscall preadv(2).
@@ -223,7 +222,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "preadv", file)
 }
 
 // Preadv2 implements linux syscall preadv2(2).
@@ -281,17 +280,17 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	if offset == -1 {
 		n, err := readv(t, file, dst)
 		t.IOUsage().AccountReadSyscall(n)
-		return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
+		return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "preadv2", file)
 	}
 
 	n, err := preadv(t, file, dst, offset)
 	t.IOUsage().AccountReadSyscall(n)
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "preadv2", file)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "preadv2", file)
 }
 
 func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 	n, err := f.Readv(t, dst)
-	if err != syserror.ErrWouldBlock || f.Flags().NonBlocking {
+	if err != linuxerr.ErrWouldBlock || f.Flags().NonBlocking {
 		if n > 0 {
 			// Queue notification if we read anything.
 			f.Dirent.InotifyEvent(linux.IN_ACCESS, 0)
@@ -304,7 +303,7 @@ func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 	var deadline ktime.Time
 	if s, ok := f.FileOperations.(socket.Socket); ok {
 		dl := s.RecvTimeout()
-		if dl < 0 && err == syserror.ErrWouldBlock {
+		if dl < 0 && err == linuxerr.ErrWouldBlock {
 			return n, err
 		}
 		if dl > 0 {
@@ -326,14 +325,14 @@ func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 		// other than "would block".
 		n, err = f.Readv(t, dst)
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 
 		// Wait for a notification that we should retry.
 		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
-				err = syserror.ErrWouldBlock
+				err = linuxerr.ErrWouldBlock
 			}
 			break
 		}
@@ -351,7 +350,7 @@ func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 
 func preadv(t *kernel.Task, f *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	n, err := f.Preadv(t, dst, offset)
-	if err != syserror.ErrWouldBlock || f.Flags().NonBlocking {
+	if err != linuxerr.ErrWouldBlock || f.Flags().NonBlocking {
 		if n > 0 {
 			// Queue notification if we read anything.
 			f.Dirent.InotifyEvent(linux.IN_ACCESS, 0)
@@ -372,7 +371,7 @@ func preadv(t *kernel.Task, f *fs.File, dst usermem.IOSequence, offset int64) (i
 		// other than "would block".
 		n, err = f.Preadv(t, dst, offset+total)
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 

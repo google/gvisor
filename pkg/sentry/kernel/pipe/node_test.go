@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type sleeper struct {
@@ -240,7 +239,7 @@ func TestBlockedOpenIsCancellable(t *testing.T) {
 	// If the cancel on the sleeper didn't work, the open for read would never
 	// return.
 	res := <-done
-	if res.error != syserror.ErrInterrupted {
+	if res.error != linuxerr.ErrInterrupted {
 		t.Fatalf("Cancellation didn't cause GetFile to return fs.ErrInterrupted, got %v.",
 			res.error)
 	}

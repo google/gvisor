@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -238,7 +237,7 @@ func TestPipeRequest(t *testing.T) {
 			context:         &Readv{Dst: usermem.BytesIOSequence(make([]byte, 10))},
 			flags:           fs.FileFlags{Read: true},
 			keepOpenPartner: true,
-			err:             syserror.ErrWouldBlock,
+			err:             linuxerr.ErrWouldBlock,
 		},
 		{
 			desc:    "Writev on pipe from empty buffer returns nil",
@@ -410,8 +409,8 @@ func TestPipeReadsAccumulate(t *testing.T) {
 	n, err := p.Read(ctx, file, iov, 0)
 	total := n
 	iov = iov.DropFirst64(n)
-	if err != syserror.ErrWouldBlock {
-		t.Fatalf("Readv got error %v, want %v", err, syserror.ErrWouldBlock)
+	if err != linuxerr.ErrWouldBlock {
+		t.Fatalf("Readv got error %v, want %v", err, linuxerr.ErrWouldBlock)
 	}
 
 	// Write a few more bytes to allow us to read more/accumulate.
@@ -479,8 +478,8 @@ func TestPipeWritesAccumulate(t *testing.T) {
 	}
 	iov := usermem.BytesIOSequence(writeBuffer)
 	n, err := p.Write(ctx, file, iov, 0)
-	if err != syserror.ErrWouldBlock {
-		t.Fatalf("Writev got error %v, want %v", err, syserror.ErrWouldBlock)
+	if err != linuxerr.ErrWouldBlock {
+		t.Fatalf("Writev got error %v, want %v", err, linuxerr.ErrWouldBlock)
 	}
 	if n != int64(pipeSize) {
 		t.Fatalf("Writev partial write, got: %v, want %v", n, pipeSize)

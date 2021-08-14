@@ -163,3 +163,26 @@ const (
 	EDEADLOCK   = EDEADLK
 	ENONET      = ENOENT
 )
+
+// errnos for internal errors.
+const (
+	// ERESTARTSYS is returned by an interrupted syscall to indicate that it
+	// should be converted to EINTR if interrupted by a signal delivered to a
+	// user handler without SA_RESTART set, and restarted otherwise.
+	ERESTARTSYS = 512
+
+	// ERESTARTNOINTR is returned by an interrupted syscall to indicate that it
+	// should always be restarted.
+	ERESTARTNOINTR = 513
+
+	// ERESTARTNOHAND is returned by an interrupted syscall to indicate that it
+	// should be converted to EINTR if interrupted by a signal delivered to a
+	// user handler, and restarted otherwise.
+	ERESTARTNOHAND = 514
+
+	// ERESTART_RESTARTBLOCK is returned by an interrupted syscall to indicate
+	// that it should be restarted using a custom function. The interrupted
+	// syscall must register a custom restart function by calling
+	// Task.SetRestartSyscallFn.
+	ERESTART_RESTARTBLOCK = 516
+)

@@ -32,7 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -859,7 +859,7 @@ func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
 			return wr, err
 		}
 		if err := t.Block(ch); err != nil {
-			return wr, syserror.ConvertIntr(err, opts.BlockInterruptErr)
+			return wr, syserr.ConvertIntr(err, opts.BlockInterruptErr)
 		}
 	}
 }

@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -192,7 +191,7 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 	}
 
 	if req == nil {
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 
 	// We already checked the size: dst must be able to fit the whole request.

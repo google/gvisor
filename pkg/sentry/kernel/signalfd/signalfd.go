@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -99,7 +98,7 @@ func (s *SignalOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 	info, err := s.target.Sigtimedwait(s.Mask(), 0)
 	if err != nil {
 		// There must be no signal available.
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 
 	// Copy out the signal info using the specified format.

@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -201,7 +200,7 @@ func (p *Pipe) peekLocked(count int64, f func(safemem.BlockSeq) (uint64, error))
 			if !p.HasWriters() {
 				return 0, io.EOF
 			}
-			return 0, syserror.ErrWouldBlock
+			return 0, linuxerr.ErrWouldBlock
 		}
 		count = p.size
 	}
@@ -250,7 +249,7 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 
 	avail := p.max - p.size
 	if avail == 0 {
-		return 0, syserror.ErrWouldBlock
+		return 0, linuxerr.ErrWouldBlock
 	}
 	short := false
 	if count > avail {
@@ -258,7 +257,7 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 		// (PIPE_BUF) be atomic, but requires no atomicity for writes
 		// larger than this.
 		if count <= atomicIOBytes {
-			return 0, syserror.ErrWouldBlock
+			return 0, linuxerr.ErrWouldBlock
 		}
 		count = avail
 		short = true
@@ -307,7 +306,7 @@ func (p *Pipe) writeLocked(count int64, f func(safemem.BlockSeq) (uint64, error)
 
 	// If we shortened the write, adjust the returned error appropriately.
 	if short {
-		return done, syserror.ErrWouldBlock
+		return done, linuxerr.ErrWouldBlock
 	}
 
 	return done, nil

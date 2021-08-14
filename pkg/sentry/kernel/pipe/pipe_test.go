@@ -18,8 +18,8 @@ import (
 	"bytes"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -51,8 +51,8 @@ func TestPipeReadBlock(t *testing.T) {
 	defer w.DecRef(ctx)
 
 	n, err := r.Readv(ctx, usermem.BytesIOSequence(make([]byte, 1)))
-	if n != 0 || err != syserror.ErrWouldBlock {
-		t.Fatalf("Readv: got (%d, %v), wanted (0, %v)", n, err, syserror.ErrWouldBlock)
+	if n != 0 || err != linuxerr.ErrWouldBlock {
+		t.Fatalf("Readv: got (%d, %v), wanted (0, %v)", n, err, linuxerr.ErrWouldBlock)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestPipeWriteBlock(t *testing.T) {
 
 	msg := make([]byte, capacity+1)
 	n, err := w.Writev(ctx, usermem.BytesIOSequence(msg))
-	if wantN, wantErr := int64(capacity), syserror.ErrWouldBlock; n != wantN || err != wantErr {
+	if wantN, wantErr := int64(capacity), linuxerr.ErrWouldBlock; n != wantN || err != wantErr {
 		t.Fatalf("Writev: got (%d, %v), wanted (%d, %v)", n, err, wantN, wantErr)
 	}
 }
@@ -102,7 +102,7 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 		for {
 			n, err := r.Readv(ctx, dst)
 			dst = dst.DropFirst64(n)
-			if err == syserror.ErrWouldBlock {
+			if err == linuxerr.ErrWouldBlock {
 				select {
 				case <-ch:
 					continue
@@ -129,7 +129,7 @@ func TestPipeWriteUntilEnd(t *testing.T) {
 	for src.NumBytes() != 0 {
 		n, err := w.Writev(ctx, src)
 		src = src.DropFirst64(n)
-		if err == syserror.ErrWouldBlock {
+		if err == linuxerr.ErrWouldBlock {
 			<-ch
 			continue
 		}

@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 // Sleeper must be implemented by users of the abortable mutex to allow for
@@ -33,7 +33,7 @@ type NoopSleeper = context.Context
 
 // Block blocks until either receiving from ch succeeds (in which case it
 // returns nil) or sleeper is interrupted (in which case it returns
-// syserror.ErrInterrupted).
+// linuxerr.ErrInterrupted).
 func Block(sleeper Sleeper, ch <-chan struct{}) error {
 	cancel := sleeper.SleepStart()
 	select {
@@ -42,7 +42,7 @@ func Block(sleeper Sleeper, ch <-chan struct{}) error {
 		return nil
 	case <-cancel:
 		sleeper.SleepFinish(false)
-		return syserror.ErrInterrupted
+		return linuxerr.ErrInterrupted
 	}
 }
 

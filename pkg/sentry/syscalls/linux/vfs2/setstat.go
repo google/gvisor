@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const chmodMask = 0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX
@@ -465,7 +464,7 @@ func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPa
 }
 
 func handleSetSizeError(t *kernel.Task, err error) error {
-	if err == syserror.ErrExceedsFileSizeLimit {
+	if err == linuxerr.ErrExceedsFileSizeLimit {
 		// Convert error to EFBIG and send a SIGXFSZ per setrlimit(2).
 		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
 		return linuxerr.EFBIG

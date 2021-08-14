@@ -42,7 +42,7 @@ func timespecToStatxTimestamp(ts unix.Timespec) linux.StatxTimestamp {
 }
 
 // isBlockError checks if an error is EAGAIN or EWOULDBLOCK.
-// If so, they can be transformed into syserror.ErrWouldBlock.
+// If so, they can be transformed into linuxerr.ErrWouldBlock.
 func isBlockError(err error) bool {
 	return linuxerr.Equals(linuxerr.EAGAIN, err) || linuxerr.Equals(linuxerr.EWOULDBLOCK, err)
 }

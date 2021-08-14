@@ -42,7 +42,6 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/memmap",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )
