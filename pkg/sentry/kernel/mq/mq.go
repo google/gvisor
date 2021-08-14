@@ -288,55 +288,6 @@ type Queue struct {
 	byteCount uint64
 }
 
-// View is a view into a message queue. Views should only be used in file
-// descriptions, but not inodes, because we use inodes to retreive the actual
-// queue, and only FDs are responsible for providing user functionality.
-type View interface {
-	// Flush checks if the calling process has attached a notification request
-	// to this queue, if yes, then the request is removed, and another process
-	// can attach a request.
-	Flush(ctx context.Context)
-
-	waiter.Waitable
-}
-
-// ReaderWriter provides a send and receive view into a queue.
-type ReaderWriter struct {
-	*Queue
-
-	block bool
-}
-
-// Reader provides a send-only view into a queue.
-type Reader struct {
-	*Queue
-
-	block bool
-}
-
-// Writer provides a receive-only view into a queue.
-type Writer struct {
-	*Queue
-
-	block bool
-}
-
-// NewView creates a new view into a queue and returns it.
-func NewView(q *Queue, access AccessType, block bool) (View, error) {
-	switch access {
-	case ReadWrite:
-		return ReaderWriter{Queue: q, block: block}, nil
-	case WriteOnly:
-		return Writer{Queue: q, block: block}, nil
-	case ReadOnly:
-		return Reader{Queue: q, block: block}, nil
-	default:
-		// This case can't happen, due to O_RDONLY flag being 0 and O_WRONLY
-		// being 1, so one of them must be true.
-		return nil, linuxerr.EINVAL
-	}
-}
-
 // Message holds a message exchanged through a Queue via mq_timedsend(2) and
 // mq_timedreceive(2), and additional info relating to the message.
 //

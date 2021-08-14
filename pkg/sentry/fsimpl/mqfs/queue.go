@@ -65,8 +65,8 @@ type queueFD struct {
 	vfsfd vfs.FileDescription
 	inode kernfs.Inode
 
-	// queue is a view into the queue backing this fd.
-	queue mq.View
+	// q is a view into the queue backing this fd.
+	q mq.View
 }
 
 // Init initializes a queueFD. Mostly copied from DynamicBytesFD.Init, but uses
@@ -124,22 +124,22 @@ func (fd *queueFD) SetStat(context.Context, vfs.SetStatOptions) error {
 // OnClose implements FileDescriptionImpl.OnClose similar to
 // ipc/mqueue.c::mqueue_flush_file.
 func (fd *queueFD) OnClose(ctx context.Context) error {
-	fd.queue.Flush(ctx)
+	fd.q.Queue().Flush(ctx)
 	return nil
 }
 
 // Readiness implements waiter.Waitable.Readiness similar to
 // ipc/mqueue.c::mqueue_poll_file.
 func (fd *queueFD) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return fd.queue.Readiness(mask)
+	return fd.q.Queue().Readiness(mask)
 }
 
 // EventRegister implements Waitable.EventRegister.
 func (fd *queueFD) EventRegister(e *waiter.Entry) {
-	fd.queue.EventRegister(e)
+	fd.q.Queue().EventRegister(e)
 }
 
 // EventUnregister implements Waitable.EventUnregister.
 func (fd *queueFD) EventUnregister(e *waiter.Entry) {
-	fd.queue.EventUnregister(e)
+	fd.q.Queue().EventUnregister(e)
 }
