@@ -17,6 +17,7 @@ package vfs2
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/mqfs"
@@ -44,19 +45,15 @@ func MqOpen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	exclusive := flag&linux.O_EXCL == linux.O_EXCL
 	block := flag&linux.O_NONBLOCK != linux.O_NONBLOCK
 
-	var attr linux.MqAttr
-	var attrPtr *linux.MqAttr
-	if attrAddr != 0 {
-		if _, err := attr.CopyIn(t, attrAddr); err != nil {
-			return 0, nil, err
-		}
-		attrPtr = &attr
+	attr, err := attributes(t, attrAddr)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	opts := openOpts(name, rOnly, wOnly, readWrite, create, exclusive, block)
 
 	r := t.IPCNamespace().PosixQueues()
-	queue, err := r.FindOrCreate(t, opts, linux.FileMode(mode), attrPtr)
+	queue, err := r.FindOrCreate(t, opts, linux.FileMode(mode), attr)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -169,6 +166,47 @@ func MqTimedReceive(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	return uintptr(n), nil, nil
 }
 
+// MqGetSetAttr implements mq_getsetattr(2).
+func MqGetSetAttr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	newAddr := args[1].Pointer()
+	oldAddr := args[2].Pointer()
+
+	newAttr, err := attributes(t, newAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if newAttr != nil {
+		if newAttr.MqFlags&(^linux.O_NONBLOCK) != 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+	}
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	qFD, ok := file.Impl().(*mqfs.QueueFD)
+	if !ok {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	if oldAddr != 0 {
+		oldAttr := qFD.Queue().Attr()
+		if _, err := oldAttr.CopyOut(t, oldAddr); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	if newAttr != nil {
+		qFD.Queue().Set((newAttr.MqFlags & linux.O_NONBLOCK) != linux.O_NONBLOCK)
+	}
+	return 0, nil, nil
+}
+
 func openOpts(name string, rOnly, wOnly, readWrite, create, exclusive, block bool) mq.OpenOpts {
 	var access mq.AccessType
 	switch {
@@ -187,4 +225,17 @@ func openOpts(name string, rOnly, wOnly, readWrite, create, exclusive, block boo
 		Exclusive: exclusive,
 		Block:     block,
 	}
+}
+
+// attributes returns a linux.MqAttr read from attrAddr if the address is not
+// null, otherwise nil is returned. An error is returned if copying fails.
+func attributes(t *kernel.Task, attrAddr hostarch.Addr) (*linux.MqAttr, error) {
+	if attrAddr != 0 {
+		var attr linux.MqAttr
+		if _, err := attr.CopyIn(t, attrAddr); err != nil {
+			return nil, err
+		}
+		return &attr, nil
+	}
+	return nil, nil
 }
