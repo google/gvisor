@@ -17,6 +17,7 @@ package mq
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
@@ -32,6 +33,12 @@ type View interface {
 	// Receive returns the message with the highest priority from the queue. See
 	// mq_timedreceive(2).
 	Receive(ctx context.Context, b Blocker, timeout time.Duration) (*Message, error)
+
+	// Attr returns the view's attributes. See mq_getattr(3).
+	Attr() *linux.MqAttr
+
+	// Set sets the view's block flag. See mq_setattr(3).
+	Set(block bool)
 
 	// Queue returns the queue backing this view, which provides general queue
 	// functions.
@@ -100,6 +107,19 @@ func (i *viewImpl) Send(ctx context.Context, msg Message, b Blocker, timeout tim
 // Receive implements View.Receive.
 func (i *viewImpl) Receive(ctx context.Context, b Blocker, timeout time.Duration) (*Message, error) {
 	return i.q.receive(ctx, b, timeout, i.block)
+}
+
+// Attr implements View.Attr.
+func (i *viewImpl) Attr() *linux.MqAttr {
+	return i.q.Attr(i.block)
+}
+
+// Set implements View.Set.
+func (i *viewImpl) Set(block bool) {
+	i.q.mu.Lock()
+	defer i.q.mu.Unlock()
+
+	i.block = block
 }
 
 // Queue implements View.Queue.

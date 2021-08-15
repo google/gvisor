@@ -464,6 +464,25 @@ func (q *Queue) pop(ctx context.Context) (*Message, error) {
 	return msg, nil
 }
 
+// Attr returns queue's attributes, including view's O_NONBLOCK flag. See
+// mq_getattr(3).
+func (q *Queue) Attr(block bool) *linux.MqAttr {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var nonBlock int64
+	if !block {
+		nonBlock = linux.O_NONBLOCK
+	}
+
+	return &linux.MqAttr{
+		MqFlags:   nonBlock,
+		MqMaxmsg:  int64(q.maxMessageCount),
+		MqMsgsize: int64(q.maxMessageSize),
+		MqCurmsgs: int64(q.messageCount),
+	}
+}
+
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
 // DynamicBytesSource for mqfs's QueueInode.
 func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
