@@ -169,6 +169,25 @@ PosixErrorOr<ssize_t> MqTimedReceive(mqd_t fd, char* msg, size_t len,
   return size;
 }
 
+// MqGetAttr wraps mq_getattr(3).
+PosixError MqGetAttr(mqd_t fd, struct mq_attr* attr) {
+  int err = mq_getattr(fd, attr);
+  if (err == -1) {
+    return PosixError(errno, absl::StrFormat("mq_getattr(%d)", fd));
+  }
+  return NoError();
+}
+
+// MqSetAttr wraps mq_setattr(3).
+PosixError MqSetAttr(mqd_t fd, const struct mq_attr* newattr,
+                     struct mq_attr* oldattr) {
+  int err = mq_setattr(fd, newattr, oldattr);
+  if (err == -1) {
+    return PosixError(errno, absl::StrFormat("mq_setattr(%d)", fd));
+  }
+  return NoError();
+}
+
 // Test simple opening and closing of a message queue.
 TEST(MqTest, Open) {
   SKIP_IF(IsRunningWithVFS1());
@@ -953,6 +972,86 @@ TEST(MqTest, InterruptSend) {
 
   exit.Notify();
   t.Join();
+}
+
+// Test mq_getattr(3) with default attributes.
+TEST(MqTest, GetAttrDefault) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct mq_attr attr;
+  ASSERT_NO_ERRNO(MqGetAttr(queue.fd(), &attr));
+  EXPECT_EQ(attr.mq_flags, 0);
+  EXPECT_EQ(attr.mq_maxmsg, maxMsgCount);
+  EXPECT_EQ(attr.mq_msgsize, maxMsgSize);
+  EXPECT_EQ(attr.mq_curmsgs, 0);
+}
+
+// Test mq_getattr(3) with non-default attributes.
+TEST(MqTest, GetAttrNonDefault) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  struct mq_attr want;
+  want.mq_maxmsg = 5;
+  want.mq_msgsize = 500;
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_NONBLOCK | O_CREAT | O_EXCL, 0777, &want));
+
+  ASSERT_NO_ERRNO(MqSend(queue.fd(), "", 0, 0));
+
+  struct mq_attr got;
+  ASSERT_NO_ERRNO(MqGetAttr(queue.fd(), &got));
+  EXPECT_EQ(got.mq_flags, O_NONBLOCK);
+  EXPECT_EQ(got.mq_maxmsg, want.mq_maxmsg);
+  EXPECT_EQ(got.mq_msgsize, want.mq_msgsize);
+  EXPECT_EQ(got.mq_curmsgs, 1);
+}
+
+// Test mq_setattr(3).
+TEST(MqTest, SetAttr) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  // Values other than flags should be ignored.
+  struct mq_attr attr;
+  attr.mq_flags = O_NONBLOCK;
+  attr.mq_maxmsg = 5;
+  attr.mq_msgsize = 500;
+  attr.mq_curmsgs = 500;
+
+  struct mq_attr old;
+  ASSERT_NO_ERRNO(MqSetAttr(queue.fd(), &attr, &old));
+
+  struct mq_attr got;
+  ASSERT_NO_ERRNO(MqGetAttr(queue.fd(), &got));
+  EXPECT_EQ(got.mq_flags, O_NONBLOCK);
+  EXPECT_EQ(got.mq_maxmsg, old.mq_maxmsg);
+  EXPECT_EQ(got.mq_msgsize, old.mq_msgsize);
+  EXPECT_EQ(got.mq_curmsgs, old.mq_curmsgs);
+}
+
+// Test mq_{get,set}attr(3) with invalid values.
+TEST(MqTest, AttrInvalid) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct mq_attr attr;
+  attr.mq_flags = ~O_NONBLOCK;
+  EXPECT_THAT(MqSetAttr(queue.fd(), &attr, nullptr), PosixErrorIs(EINVAL));
+
+  ASSERT_NO_ERRNO(MqClose(queue.release()));
+  ASSERT_NO_ERRNO(MqUnlink(queue.name()));
+
+  attr.mq_flags = O_NONBLOCK;
+  EXPECT_THAT(MqSetAttr(queue.fd(), &attr, nullptr), PosixErrorIs(EBADF));
+  EXPECT_THAT(MqGetAttr(queue.fd(), &attr), PosixErrorIs(EBADF));
 }
 
 }  // namespace
