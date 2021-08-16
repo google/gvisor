@@ -511,9 +511,11 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 		return -1, linuxerr.EPERM
 	}
 
-	//if the calling process is a member of a background group, a SIGTTOU signal is sent to all members of this background process group.
-	if tg.processGroup.session.foreground.id != tg.processGroup.id {
-		tg.processGroup.SendSignal(&linux.SignalInfo{Signo: int32(linux.SIGTTOU)})
+	sa:= tg.signalHandlers.actions[linux.SIGTTOU]
+	//if the calling process is a member of a background group, a SIGTTOU
+	//signal is sent to all members of this background process group.
+	if tg.processGroup.id != tg.processGroup.session.foreground.id && sa.Handler!=linux.SIG_IGN{
+		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU),true)
 	}
 
 	tg.processGroup.session.foreground.id = pgid
