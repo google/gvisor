@@ -1640,6 +1640,57 @@ TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
   ASSERT_NO_ERRNO(res);
 }
 
+// This test verify if a SIGTTOU signal is sent to the calling process'group
+// when tcsetpgrp is called by a background process
+TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBackground) {
+  auto res = RunInChild([=]() {
+    setsid();
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t grandchild = fork();
+    if (!grandchild) {
+        //assign a different pgid to the child so it will result as
+        //a background process
+        setpgid(grandchild, getpid());
+        tcsetpgrp(replica_.get(), getpgid(0));
+          // We should never reach this.
+          _exit(1);
+        }
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
+    TEST_PCHECK(WSTOPSIG(wstatus)==SIGTTOU);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// This test verify that a SIGTTOU signal is not delivered to
+// a background process which calls tcsetpgrp and is ignoring SIGTTOU
+TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUIgnored) {
+  auto res = RunInChild([=]() {
+    setsid();
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t grandchild = fork();
+    if (!grandchild) {
+        // ignore SIGTTOU so the child in background won't
+        // be stopped when it will call tcsetpgrp
+        struct sigaction sa = {};
+        sa.sa_handler = SIG_IGN;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGTTOU, &sa, NULL);
+        //assign a different pgid to the child so it will result as
+        //a background process
+        setpgid(grandchild, getpid());
+        tcsetpgrp(replica_.get(), getpgid(0));
+        _exit(0);
+        }
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
+    TEST_PCHECK(WSTOPSIG(wstatus)!=SIGTTOU);
+    TEST_PCHECK(WIFEXITED(wstatus));
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
 TEST_F(JobControlTest, SetForegroundProcessGroupWrongTTY) {
   pid_t pid = getpid();
   ASSERT_THAT(ioctl(replica_.get(), TIOCSPGRP, &pid),
