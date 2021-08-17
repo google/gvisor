@@ -48,6 +48,8 @@ global:
       - "duplicate import"
       # These will never be annotated.
       - "unexpected call to atomic function"
+      # Generated proto code creates declarations like 'var start int = iNdEx'
+      - "should omit type .* from declaration; it will be inferred from the right-hand side"
   internal:
     suppress:
       # We use ALL_CAPS for system definitions,
