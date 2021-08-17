@@ -86,7 +86,7 @@ func TestFio(t *testing.T) {
 	fio := Fio{}
 	// WriteBandwidth.
 	got, err := fio.parseBandwidth(sampleData, false)
-	var want float64 = 1753471.0 * 1024
+	want := 1753471.0 * 1024
 	if err != nil {
 		t.Fatalf("parse failed with err: %v", err)
 	} else if got != want {
