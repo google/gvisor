@@ -117,11 +117,11 @@ func register(all []*analysis.Analyzer) {
 func init() {
 	// Add all staticcheck analyzers.
 	for _, a := range staticcheck.Analyzers {
-		AllAnalyzers = append(AllAnalyzers, a)
+		AllAnalyzers = append(AllAnalyzers, a.Analyzer)
 	}
 	// Add all stylecheck analyzers.
 	for _, a := range stylecheck.Analyzers {
-		AllAnalyzers = append(AllAnalyzers, a)
+		AllAnalyzers = append(AllAnalyzers, a.Analyzer)
 	}
 
 	// Register lists.

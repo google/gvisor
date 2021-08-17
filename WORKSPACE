@@ -1633,9 +1633,9 @@ go_repository(
 go_repository(
     name = "co_honnef_go_tools",
     importpath = "honnef.co/go/tools",
-    sum = "h1:EVDuO03OCZwpV2t/tLLxPmPiomagMoBOgfPt0FM+4IY=",
-    version = "v0.1.1",
-)
+    sum = "h1:Tyybiul3hjaq0dkv+kcf5/MPTfo+ZBiEWrkhgxMPH54=",
+    version = "v0.3.0-0.dev.0.20210801021341-453cb28c0b15",
+ )
 
 go_repository(
     name = "com_github_burntsushi_toml",
