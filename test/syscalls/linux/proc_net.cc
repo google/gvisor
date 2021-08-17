@@ -152,6 +152,22 @@ TEST(ProcNetDev, Format) {
   EXPECT_GT(entries.size(), 0);
 }
 
+// GetMibsAllocationSysctl retuns a value of the net.core.mibs_allocation
+// sysctl./proc/sys/net/core/mibs_allocation
+//
+// When mibs_allocation is unset, a netns creation inherits MIB from init
+// network namespace. Otherwise, MIBS is allocated for each namespace.
+int GetMibsAllocationSysctl() {
+  auto ret = GetContents("/proc/sys/net/core/mibs_allocation");
+  if (!ret.ok()) {
+    // The current kernel doesn't support mibs_allocation.
+    return 1;
+  }
+  int32_t val;
+  EXPECT_TRUE(absl::SimpleAtoi(ret.ValueOrDie(), &val));
+  return val;
+}
+
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
                                              const std::string& type,
                                              const std::string& item) {
@@ -226,12 +242,21 @@ TEST(ProcNetSnmp, TcpReset) {
   newAttemptFails = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Tcp", "AttemptFails"));
 
-  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
-  EXPECT_EQ(oldOutRsts, newOutRsts - 1);
-  EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
+    EXPECT_EQ(oldOutRsts, newOutRsts - 1);
+    EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
+  } else {
+    // System-wide statistics can have some noise.
+    EXPECT_LE(oldOutRsts, newOutRsts - 1);
+    EXPECT_LE(oldAttemptFails, newAttemptFails - 1);
+  }
 }
 
 TEST(ProcNetSnmp, TcpEstab) {
+  // System-wide statistics can have some noise.
+  SKIP_IF(GetMibsAllocationSysctl() == 0);
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -355,8 +380,14 @@ TEST(ProcNetSnmp, UdpNoPorts) {
   newNoPorts =
       ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "NoPorts"));
 
-  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-  EXPECT_EQ(oldNoPorts, newNoPorts - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
+    EXPECT_EQ(oldNoPorts, newNoPorts - 1);
+  } else {
+    // System-wide statistics can have some noise.
+    EXPECT_LE(oldOutDatagrams, newOutDatagrams - 1);
+    EXPECT_LE(oldNoPorts, newNoPorts - 1);
+  }
 }
 
 TEST(ProcNetSnmp, UdpIn) {
@@ -405,8 +436,14 @@ TEST(ProcNetSnmp, UdpIn) {
   newInDatagrams = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Udp", "InDatagrams"));
 
-  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-  EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
+    EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+  } else {
+    // System-wide statistics can have some noise.
+    EXPECT_LE(oldOutDatagrams, newOutDatagrams - 1);
+    EXPECT_LE(oldInDatagrams, newInDatagrams - 1);
+  }
 }
 
 TEST(ProcNetSnmp, CheckNetStat) {
