@@ -750,6 +750,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		return tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
 			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+			Port: Ntohs(a.Protocol),
 		}, family, nil
 
 	case linux.AF_UNSPEC:
