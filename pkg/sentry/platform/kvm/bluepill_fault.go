@@ -21,19 +21,14 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-const (
+var (
 	// faultBlockSize is the size used for servicing memory faults.
 	//
-	// This should be large enough to avoid frequent faults and avoid using
-	// all available KVM slots (~512), but small enough that KVM does not
-	// complain about slot sizes (~4GB). See handleBluepillFault for how
-	// this block is used.
-	faultBlockSize = 2 << 30
+	// Its value has to be a power of 2.
+	faultBlockSize uintptr
 
 	// faultBlockMask is the mask for the fault blocks.
-	//
-	// This must be typed to avoid overflow complaints (ugh).
-	faultBlockMask = ^uintptr(faultBlockSize - 1)
+	faultBlockMask uintptr
 )
 
 // yield yields the CPU.
@@ -68,30 +63,20 @@ func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virt
 	return 0, 0, 0, false
 }
 
-// handleBluepillFault handles a physical fault.
+// mapPhysicalSlot maps one physical slot.
 //
-// The corresponding virtual address is returned. This may throw on error.
-//
-//go:nosplit
-func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegion, flags uint32) (uintptr, bool) {
+// The slot physical address and its length is returned. This may throw on error.
+func (m *machine) mapPhysicalSlot(physical uintptr, phyRegions []physicalRegion, flags uint32) (uintptr, uintptr, bool) {
 	// Paging fault: we need to map the underlying physical pages for this
 	// fault. This all has to be done in this function because we're in a
 	// signal handler context. (We can't call any functions that might
 	// split the stack.)
 	virtualStart, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
 	if !ok {
-		return 0, false
+		return 0, 0, false
 	}
 
-	// Set the KVM slot.
-	//
-	// First, we need to acquire the exclusive right to set a slot.  See
-	// machine.nextSlot for information about the protocol.
-	slot := atomic.SwapUint32(&m.nextSlot, ^uint32(0))
-	for slot == ^uint32(0) {
-		yield() // Race with another call.
-		slot = atomic.SwapUint32(&m.nextSlot, ^uint32(0))
-	}
+	slot := m.nextSlot
 	errno := m.setMemoryRegion(int(slot), physicalStart, length, virtualStart, flags)
 	if errno == 0 {
 		// Store the physical address in the slot. This is used to
@@ -100,19 +85,13 @@ func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegi
 		atomic.StoreUintptr(&m.usedSlots[slot], physicalStart)
 		// Successfully added region; we can increment nextSlot and
 		// allow another set to proceed here.
-		atomic.StoreUint32(&m.nextSlot, slot+1)
-		return virtualStart + (physical - physicalStart), true
+		m.nextSlot = slot + 1
+		return physicalStart, length, true
 	}
-
-	// Release our slot (still available).
-	atomic.StoreUint32(&m.nextSlot, slot)
 
 	switch errno {
 	case unix.EEXIST:
-		// The region already exists. It's possible that we raced with
-		// another vCPU here. We just revert nextSlot and return true,
-		// because this must have been satisfied by some other vCPU.
-		return virtualStart + (physical - physicalStart), true
+		throw("set memory region failed; slot already exists")
 	case unix.EINVAL:
 		throw("set memory region failed; out of slots")
 	case unix.ENOMEM:

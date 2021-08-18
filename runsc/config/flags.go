@@ -88,6 +88,7 @@ func RegisterFlags() {
 		flag.Bool("rx-checksum-offload", true, "enable RX checksum offload.")
 		flag.Var(queueingDisciplinePtr(QDiscFIFO), "qdisc", "specifies which queueing discipline to apply by default to the non loopback nics used by the sandbox.")
 		flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
+		flag.Int("kvm-virt-addr-space-size", 64, "size of the Sentry virtual address space in GB. It affects the KVM platform only. A memory overhead is about 2MB for each 1GB of virtual address space.")
 
 		// Test flags, not to be used outside tests, ever.
 		flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")

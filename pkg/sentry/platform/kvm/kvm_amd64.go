@@ -184,7 +184,6 @@ type cpuidEntries struct {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
-	physicalInit()
 	err := updateSystemValues(int(fd))
 	ring0.Init(cpuid.HostFeatureSet())
 	return err

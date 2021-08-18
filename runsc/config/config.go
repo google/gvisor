@@ -185,6 +185,9 @@ type Config struct {
 	// Mounts the cgroup filesystem backed by the sentry's cgroupfs.
 	Cgroupfs bool `flag:"cgroupfs"`
 
+	// KVMVirtAddrSpaceSizeGB is the size of the sentry virtual address space.
+	KVMVirtAddrSpaceSizeGB int `flag:"kvm-virt-addr-space-size"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

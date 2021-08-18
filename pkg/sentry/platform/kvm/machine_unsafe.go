@@ -41,8 +41,6 @@ func exitsyscall()
 //
 // This may be called from bluepillHandler, and therefore returns an errno
 // directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
 func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, flags uint32) unix.Errno {
 	userRegion := userMemoryRegion{
 		slot:          uint32(slot),

@@ -192,6 +192,8 @@ func (m *machine) newVCPU() *vCPU {
 	return c // Done.
 }
 
+var physicalInitOnce sync.Once
+
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
@@ -214,6 +216,8 @@ func newMachine(vm int) (*machine, error) {
 	}
 	log.Debugf("The maximum number of slots is %d.", m.maxSlots)
 	m.usedSlots = make([]uintptr, m.maxSlots)
+
+	physicalInitOnce.Do(func() { physicalInit(m) })
 
 	// Check TSC Scaling
 	hasTSCControl, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
@@ -252,38 +256,10 @@ func newMachine(vm int) (*machine, error) {
 		m.mapPhysical(r.physical, r.length, physicalRegionsReadOnly, _KVM_MEM_READONLY)
 	}
 
-	// Ensure that the currently mapped virtual regions are actually
-	// available in the VM. Note that this doesn't guarantee no future
-	// faults, however it should guarantee that everything is available to
-	// ensure successful vCPU entry.
-	applyVirtualRegions(func(vr virtualRegion) {
-		if excludeVirtualRegion(vr) {
-			return // skip region.
-		}
-
-		for _, r := range physicalRegionsReadOnly {
-			if vr.virtual == r.virtual {
-				return
-			}
-		}
-
-		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
-			physical, length, ok := translateToPhysical(virtual)
-			if !ok {
-				// This must be an invalid region that was
-				// knocked out by creation of the physical map.
-				return
-			}
-			if virtual+length > vr.virtual+vr.length {
-				// Cap the length to the end of the area.
-				length = vr.virtual + vr.length - virtual
-			}
-
-			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegionsAvailable, _KVM_MEM_FLAGS_NONE)
-			virtual += length
-		}
-	})
+	// Map all physical regions.
+	for _, r := range physicalRegionsAvailable {
+		m.mapPhysical(r.physical, r.length, physicalRegionsAvailable, _KVM_MEM_FLAGS_NONE)
+	}
 
 	// Initialize architecture state.
 	if err := m.initArchState(); err != nil {
@@ -296,46 +272,15 @@ func newMachine(vm int) (*machine, error) {
 	return m, nil
 }
 
-// hasSlot returns true if the given address is mapped.
-//
-// This must be done via a linear scan.
-//
-//go:nosplit
-func (m *machine) hasSlot(physical uintptr) bool {
-	slotLen := int(atomic.LoadUint32(&m.nextSlot))
-	// When slots are being updated, nextSlot is ^uint32(0). As this situation
-	// is less likely happen, we just set the slotLen to m.maxSlots, and scan
-	// the whole usedSlots array.
-	if slotLen == int(^uint32(0)) {
-		slotLen = m.maxSlots
-	}
-	for i := 0; i < slotLen; i++ {
-		if p := atomic.LoadUintptr(&m.usedSlots[i]); p == physical {
-			return true
-		}
-	}
-	return false
-}
-
 // mapPhysical checks for the mapping of a physical range, and installs one if
 // not available. This attempts to be efficient for calls in the hot path.
 //
 // This panics on error.
-//
-//go:nosplit
 func (m *machine) mapPhysical(physical, length uintptr, phyRegions []physicalRegion, flags uint32) {
 	for end := physical + length; physical < end; {
-		_, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
+		physicalStart, length, ok := m.mapPhysicalSlot(physical, phyRegions, flags)
 		if !ok {
-			// Should never happen.
-			panic("mapPhysical on unknown physical address")
-		}
-
-		// Is this already mapped? Check the usedSlots.
-		if !m.hasSlot(physicalStart) {
-			if _, ok := handleBluepillFault(m, physical, phyRegions, flags); !ok {
-				panic("handleBluepillFault failed")
-			}
+			panic("mapPhysicalSlot failed")
 		}
 
 		// Move to the next chunk.

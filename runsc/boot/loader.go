@@ -49,6 +49,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux/vfs2"
@@ -501,6 +502,8 @@ func (l *Loader) Destroy() {
 }
 
 func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
+	kvm.VirtualAddressSpaceSize = uintptr(conf.KVMVirtAddrSpaceSizeGB) << 30
+
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
