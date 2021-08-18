@@ -168,6 +168,21 @@ int GetMibsAllocationSysctl() {
   return val;
 }
 
+// GetSNMPMetricFromProc retrieves the metric named `item` of `type` from the
+// `snmp` string which represents the file contents of /proc/net/snmp.
+//
+// Note to test writers: If you are writing tests to check the change in value
+// of SNMP metrics, note that if GetMibsAllocationSysctl() == 0
+// (net.core.mibs_allocation isn't set), MIB is from the init network namespace
+// and hence these metrics can have system-wide noise.
+//
+// A feasible way of testing is the following:
+// * Consult RFC 1213 to learn the "SYNTAX" of the metric.
+// * If net.core.mibs_allocation is set:
+//   - Can test any metric while checking for hard equality.
+// * If net.core.mibs_allocation is NOT set (system-wide noise is present):
+//   - Only test "SYNTAX  Counter" metrics.
+//   - Counter metrics are increasing in nature, so use LE/GE equality checks.
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
                                              const std::string& type,
                                              const std::string& item) {
@@ -243,18 +258,22 @@ TEST(ProcNetSnmp, TcpReset) {
       GetSNMPMetricFromProc(snmp, "Tcp", "AttemptFails"));
 
   if (GetMibsAllocationSysctl()) {
-    EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
-    EXPECT_EQ(oldOutRsts, newOutRsts - 1);
-    EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
+    EXPECT_EQ(oldActiveOpens + 1, newActiveOpens);
+    EXPECT_EQ(oldOutRsts + 1, newOutRsts);
+    EXPECT_EQ(oldAttemptFails + 1, newAttemptFails);
   } else {
-    // System-wide statistics can have some noise.
-    EXPECT_LE(oldOutRsts, newOutRsts - 1);
-    EXPECT_LE(oldAttemptFails, newAttemptFails - 1);
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldActiveOpens + 1, newActiveOpens);
+    EXPECT_LE(oldOutRsts + 1, newOutRsts);
+    EXPECT_LE(oldAttemptFails + 1, newAttemptFails);
   }
 }
 
 TEST(ProcNetSnmp, TcpEstab) {
-  // System-wide statistics can have some noise.
+  // This test aims to test the tcpCurrEstab metric which has "SYNTAX  Gauge" as
+  // per RFC 1213. Hence, it becomes infeasible to test this when system-wide
+  // statistics have noise.
   SKIP_IF(GetMibsAllocationSysctl() == 0);
 
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
@@ -311,9 +330,9 @@ TEST(ProcNetSnmp, TcpEstab) {
   newCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));
 
-  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
-  EXPECT_EQ(oldPassiveOpens, newPassiveOpens - 1);
-  EXPECT_EQ(oldCurrEstab, newCurrEstab - 2);
+  EXPECT_EQ(oldActiveOpens + 1, newActiveOpens);
+  EXPECT_EQ(oldPassiveOpens + 1, newPassiveOpens);
+  EXPECT_EQ(oldCurrEstab + 2, newCurrEstab);
 
   // Send 1 byte from client to server.
   ASSERT_THAT(send(s_connect.get(), "a", 1, 0), SyscallSucceedsWithValue(1));
@@ -381,12 +400,13 @@ TEST(ProcNetSnmp, UdpNoPorts) {
       ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "NoPorts"));
 
   if (GetMibsAllocationSysctl()) {
-    EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-    EXPECT_EQ(oldNoPorts, newNoPorts - 1);
+    EXPECT_EQ(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_EQ(oldNoPorts + 1, newNoPorts);
   } else {
-    // System-wide statistics can have some noise.
-    EXPECT_LE(oldOutDatagrams, newOutDatagrams - 1);
-    EXPECT_LE(oldNoPorts, newNoPorts - 1);
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_LE(oldNoPorts + 1, newNoPorts);
   }
 }
 
@@ -437,12 +457,13 @@ TEST(ProcNetSnmp, UdpIn) {
       GetSNMPMetricFromProc(snmp, "Udp", "InDatagrams"));
 
   if (GetMibsAllocationSysctl()) {
-    EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-    EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+    EXPECT_EQ(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_EQ(oldInDatagrams + 1, newInDatagrams);
   } else {
-    // System-wide statistics can have some noise.
-    EXPECT_LE(oldOutDatagrams, newOutDatagrams - 1);
-    EXPECT_LE(oldInDatagrams, newInDatagrams - 1);
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_LE(oldInDatagrams + 1, newInDatagrams);
   }
 }
 
