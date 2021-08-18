@@ -67,6 +67,7 @@ func RegisterFlags() {
 		flag.Var(leakModePtr(refs.NoLeakChecking), "ref-leak-mode", "sets reference leak check mode: disabled (default), log-names, log-traces.")
 		flag.Bool("cpu-num-from-quota", false, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
 		flag.Bool("oci-seccomp", false, "Enables loading OCI seccomp filters inside the sandbox.")
+		flag.Var(defaultControlConfig(), "controls", "Sentry control endpoints.")
 
 		// Flags that control sandbox runtime behavior: FS related.
 		flag.Var(fileAccessTypePtr(FileAccessExclusive), "file-access", "specifies which filesystem validation to use for the root mount: exclusive (default), shared.")

@@ -19,8 +19,10 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/refs"
+	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
@@ -134,6 +136,9 @@ type Config struct {
 
 	// ProfileEnable is set to prepare the sandbox to be profiled.
 	ProfileEnable bool `flag:"profile"`
+
+	// Controls defines the controls that may be enabled.
+	Controls controlConfig `flag:"controls"`
 
 	// RestoreFile is the path to the saved container image
 	RestoreFile string
@@ -349,6 +354,96 @@ func (q QueueingDiscipline) String() string {
 		return "fifo"
 	}
 	panic(fmt.Sprintf("Invalid qdisc %d", q))
+}
+
+// controlConfig represents control endpoints.
+type controlConfig struct {
+	Controls *controlpb.ControlConfig
+}
+
+// Set implements flag.Value.
+func (c *controlConfig) Set(v string) error {
+	controls := strings.Split(v, ",")
+	var controlList []controlpb.ControlConfig_Endpoint
+	for _, control := range controls {
+		switch control {
+		case "EVENTS":
+			controlList = append(controlList, controlpb.ControlConfig_EVENTS)
+		case "FS":
+			controlList = append(controlList, controlpb.ControlConfig_FS)
+		case "LIFECYCLE":
+			controlList = append(controlList, controlpb.ControlConfig_LIFECYCLE)
+		case "LOGGING":
+			controlList = append(controlList, controlpb.ControlConfig_LOGGING)
+		case "PROFILE":
+			controlList = append(controlList, controlpb.ControlConfig_PROFILE)
+		case "USAGE":
+			controlList = append(controlList, controlpb.ControlConfig_USAGE)
+		case "PROC":
+			controlList = append(controlList, controlpb.ControlConfig_PROC)
+		case "STATE":
+			controlList = append(controlList, controlpb.ControlConfig_STATE)
+		case "DEBUG":
+			controlList = append(controlList, controlpb.ControlConfig_DEBUG)
+		default:
+			return fmt.Errorf("invalid control %q", control)
+		}
+	}
+	c.Controls.AllowedControls = controlList
+	return nil
+}
+
+// Get implements flag.Value.
+func (c *controlConfig) Get() interface{} {
+	return *c
+}
+
+// String implements flag.Value.
+func (c *controlConfig) String() string {
+	v := ""
+	for _, control := range c.Controls.AllowedControls {
+		if len(v) > 0 {
+			v += ","
+		}
+		switch control {
+		case controlpb.ControlConfig_EVENTS:
+			v += "EVENTS"
+		case controlpb.ControlConfig_FS:
+			v += "FS"
+		case controlpb.ControlConfig_LIFECYCLE:
+			v += "LIFECYCLE"
+		case controlpb.ControlConfig_LOGGING:
+			v += "LOGGING"
+		case controlpb.ControlConfig_PROFILE:
+			v += "PROFILE"
+		case controlpb.ControlConfig_USAGE:
+			v += "USAGE"
+		case controlpb.ControlConfig_PROC:
+			v += "PROC"
+		case controlpb.ControlConfig_STATE:
+			v += "STATE"
+		case controlpb.ControlConfig_DEBUG:
+			v += "DEBUG"
+		default:
+			panic(fmt.Sprintf("Invalid control %d", control))
+		}
+	}
+	return v
+}
+
+func defaultControlConfig() *controlConfig {
+	c := controlConfig{}
+	c.Controls = &controlpb.ControlConfig{}
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_EVENTS)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_FS)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_LIFECYCLE)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_LOGGING)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_PROFILE)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_USAGE)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_PROC)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_STATE)
+	c.Controls.AllowedControls = append(c.Controls.AllowedControls, controlpb.ControlConfig_DEBUG)
+	return &c
 }
 
 func leakModePtr(v refs.LeakMode) *refs.LeakMode {
