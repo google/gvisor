@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	controlpb "gvisor.dev/gvisor/pkg/sentry/control/control_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -165,15 +166,31 @@ func newController(fd int, l *Loader) (*controller, error) {
 		ctrl.srv.Register(net)
 	}
 
-	ctrl.srv.Register(&debug{})
-	ctrl.srv.Register(&control.Events{})
-	ctrl.srv.Register(&control.Logging{})
-	ctrl.srv.Register(&control.Lifecycle{l.k})
-	ctrl.srv.Register(&control.Fs{l.k})
-	ctrl.srv.Register(&control.Usage{l.k})
-
-	if l.root.conf.ProfileEnable {
-		ctrl.srv.Register(control.NewProfile(l.k))
+	if l.root.conf.Controls.Controls != nil {
+		for _, c := range l.root.conf.Controls.Controls.AllowedControls {
+			switch c {
+			case controlpb.ControlConfig_EVENTS:
+				ctrl.srv.Register(&control.Events{})
+			case controlpb.ControlConfig_FS:
+				ctrl.srv.Register(&control.Fs{Kernel: l.k})
+			case controlpb.ControlConfig_LIFECYCLE:
+				ctrl.srv.Register(&control.Lifecycle{Kernel: l.k})
+			case controlpb.ControlConfig_LOGGING:
+				ctrl.srv.Register(&control.Logging{})
+			case controlpb.ControlConfig_PROFILE:
+				if l.root.conf.ProfileEnable {
+					ctrl.srv.Register(control.NewProfile(l.k))
+				}
+			case controlpb.ControlConfig_USAGE:
+				ctrl.srv.Register(&control.Usage{Kernel: l.k})
+			case controlpb.ControlConfig_PROC:
+				ctrl.srv.Register(&control.Proc{Kernel: l.k})
+			case controlpb.ControlConfig_STATE:
+				ctrl.srv.Register(&control.State{Kernel: l.k})
+			case controlpb.ControlConfig_DEBUG:
+				ctrl.srv.Register(&debug{})
+			}
+		}
 	}
 
 	return ctrl, nil
