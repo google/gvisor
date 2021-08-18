@@ -206,6 +206,48 @@ func (r *Registry) FindByID(id ipc.ID) (*Queue, error) {
 	return mech.(*Queue), nil
 }
 
+// IPCInfo reports global parameters for message queues. See msgctl(IPC_INFO).
+func (r *Registry) IPCInfo(ctx context.Context) *linux.MsgInfo {
+	return &linux.MsgInfo{
+		MsgPool: linux.MSGPOOL,
+		MsgMap:  linux.MSGMAP,
+		MsgMax:  linux.MSGMAX,
+		MsgMnb:  linux.MSGMNB,
+		MsgMni:  linux.MSGMNI,
+		MsgSsz:  linux.MSGSSZ,
+		MsgTql:  linux.MSGTQL,
+		MsgSeg:  linux.MSGSEG,
+	}
+}
+
+// MsgInfo reports global parameters for message queues. See msgctl(MSG_INFO).
+func (r *Registry) MsgInfo(ctx context.Context) *linux.MsgInfo {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var messages, bytes uint64
+	r.reg.ForAllObjects(
+		func(o ipc.Mechanism) {
+			q := o.(*Queue)
+			q.mu.Lock()
+			messages += q.messageCount
+			bytes += q.byteCount
+			q.mu.Unlock()
+		},
+	)
+
+	return &linux.MsgInfo{
+		MsgPool: int32(r.reg.ObjectCount()),
+		MsgMap:  int32(messages),
+		MsgTql:  int32(bytes),
+		MsgMax:  linux.MSGMAX,
+		MsgMnb:  linux.MSGMNB,
+		MsgMni:  linux.MSGMNI,
+		MsgSsz:  linux.MSGSSZ,
+		MsgSeg:  linux.MSGSEG,
+	}
+}
+
 // Send appends a message to the message queue, and returns an error if sending
 // fails. See msgsnd(2).
 func (q *Queue) Send(ctx context.Context, m Message, b Blocker, wait bool, pid int32) error {
@@ -463,6 +505,73 @@ func (q *Queue) msgAtIndex(mType int64) *Message {
 		msg = msg.Next()
 	}
 	return msg
+}
+
+// Set modifies some values of the queue. See msgctl(IPC_SET).
+func (q *Queue) Set(ctx context.Context, ds *linux.MsqidDS) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	creds := auth.CredentialsFromContext(ctx)
+	if ds.MsgQbytes > maxQueueBytes && !creds.HasCapabilityIn(linux.CAP_SYS_RESOURCE, q.obj.UserNS) {
+		// "An attempt (IPC_SET) was made to increase msg_qbytes beyond the
+		// system parameter MSGMNB, but the caller is not privileged (Linux:
+		// does not have the CAP_SYS_RESOURCE capability)."
+		return linuxerr.EPERM
+	}
+
+	if err := q.obj.Set(ctx, &ds.MsgPerm); err != nil {
+		return err
+	}
+
+	q.maxBytes = ds.MsgQbytes
+	q.changeTime = ktime.NowFromContext(ctx)
+	return nil
+}
+
+// Stat returns a MsqidDS object filled with information about the queue. See
+// msgctl(IPC_STAT) and msgctl(MSG_STAT).
+func (q *Queue) Stat(ctx context.Context) (*linux.MsqidDS, error) {
+	return q.stat(ctx, fs.PermMask{Read: true})
+}
+
+// StatAny is similar to Queue.Stat, but doesn't require read permission. See
+// msgctl(MSG_STAT_ANY).
+func (q *Queue) StatAny(ctx context.Context) (*linux.MsqidDS, error) {
+	return q.stat(ctx, fs.PermMask{})
+}
+
+// stat returns a MsqidDS object filled with information about the queue. An
+// error is returned if the user doesn't have the specified permissions.
+func (q *Queue) stat(ctx context.Context, mask fs.PermMask) (*linux.MsqidDS, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	creds := auth.CredentialsFromContext(ctx)
+	if !q.obj.CheckPermissions(creds, mask) {
+		// "The caller must have read permission on the message queue."
+		return nil, linuxerr.EACCES
+	}
+
+	return &linux.MsqidDS{
+		MsgPerm: linux.IPCPerm{
+			Key:  uint32(q.obj.Key),
+			UID:  uint32(creds.UserNamespace.MapFromKUID(q.obj.Owner.UID)),
+			GID:  uint32(creds.UserNamespace.MapFromKGID(q.obj.Owner.GID)),
+			CUID: uint32(creds.UserNamespace.MapFromKUID(q.obj.Creator.UID)),
+			CGID: uint32(creds.UserNamespace.MapFromKGID(q.obj.Creator.GID)),
+			Mode: uint16(q.obj.Perms.LinuxMode()),
+			Seq:  0, // IPC sequences not supported.
+		},
+		MsgStime:  q.sendTime.TimeT(),
+		MsgRtime:  q.receiveTime.TimeT(),
+		MsgCtime:  q.changeTime.TimeT(),
+		MsgCbytes: q.byteCount,
+		MsgQnum:   q.messageCount,
+		MsgQbytes: q.maxBytes,
+		MsgLspid:  q.sendPID,
+		MsgLrpid:  q.receivePID,
+	}, nil
 }
 
 // Lock implements ipc.Mechanism.Lock.
