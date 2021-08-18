@@ -130,12 +130,63 @@ func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize int64, msgCopy, wai
 func Msgctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := ipc.ID(args[0].Int())
 	cmd := args[1].Int()
+	buf := args[2].Pointer()
 
 	creds := auth.CredentialsFromContext(t)
 
+	r := t.IPCNamespace().MsgqueueRegistry()
+
 	switch cmd {
+	case linux.IPC_INFO:
+		info := r.IPCInfo(t)
+		_, err := info.CopyOut(t, buf)
+		return 0, nil, err
+	case linux.MSG_INFO:
+		msgInfo := r.MsgInfo(t)
+		_, err := msgInfo.CopyOut(t, buf)
+		return 0, nil, err
 	case linux.IPC_RMID:
-		return 0, nil, t.IPCNamespace().MsgqueueRegistry().Remove(id, creds)
+		return 0, nil, r.Remove(id, creds)
+	}
+
+	// Remaining commands use a queue.
+	queue, err := r.FindByID(id)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	switch cmd {
+	case linux.MSG_STAT:
+		// Technically, we should be treating id as "an index into the kernel's
+		// internal array that maintains information about all shared memory
+		// segments on the system". Since we don't track segments in an array,
+		// we'll just pretend the msqid is the index and do the same thing as
+		// IPC_STAT. Linux also uses the index as the msqid.
+		fallthrough
+	case linux.IPC_STAT:
+		stat, err := queue.Stat(t)
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = stat.CopyOut(t, buf)
+		return 0, nil, err
+
+	case linux.MSG_STAT_ANY:
+		stat, err := queue.StatAny(t)
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = stat.CopyOut(t, buf)
+		return 0, nil, err
+
+	case linux.IPC_SET:
+		var ds linux.MsqidDS
+		if _, err := ds.CopyIn(t, buf); err != nil {
+			return 0, nil, linuxerr.EINVAL
+		}
+		err := queue.Set(t, &ds)
+		return 0, nil, err
+
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}

@@ -19,6 +19,8 @@ package ipc
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -112,4 +114,37 @@ func (o *Object) CheckPermissions(creds *auth.Credentials, req fs.PermMask) bool
 		return true
 	}
 	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, o.UserNS)
+}
+
+// Set modifies attributes for an IPC object. See *ctl(IPC_SET).
+//
+// Precondition: Mechanism.mu must be held.
+func (o *Object) Set(ctx context.Context, perm *linux.IPCPerm) error {
+	creds := auth.CredentialsFromContext(ctx)
+	uid := creds.UserNamespace.MapToKUID(auth.UID(perm.UID))
+	gid := creds.UserNamespace.MapToKGID(auth.GID(perm.GID))
+	if !uid.Ok() || !gid.Ok() {
+		// The man pages don't specify an errno for invalid uid/gid, but EINVAL
+		// is generally used for invalid arguments.
+		return linuxerr.EINVAL
+	}
+
+	if !o.CheckOwnership(creds) {
+		// "The argument cmd has the value IPC_SET or IPC_RMID, but the
+		//  effective user ID of the calling process is not the creator (as
+		//  found in msg_perm.cuid) or the owner (as found in msg_perm.uid)
+		//  of the message queue, and the caller is not privileged (Linux:
+		//  does not have the CAP_SYS_ADMIN capability)."
+		return linuxerr.EPERM
+	}
+
+	// User may only modify the lower 9 bits of the mode. All the other bits are
+	// always 0 for the underlying inode.
+	mode := linux.FileMode(perm.Mode & 0x1ff)
+
+	o.Perms = fs.FilePermsFromMode(mode)
+	o.Owner.UID = uid
+	o.Owner.GID = gid
+
+	return nil
 }
