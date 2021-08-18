@@ -160,6 +160,11 @@ def _nogo_stdlib_impl(ctx):
     return [NogoStdlibInfo(
         facts = facts,
         raw_findings = raw_findings,
+    ), DefaultInfo(
+        # Declare the facts and findings as default outputs. This is not
+        # strictly required, but ensures that the target still perform analysis
+        # when built directly rather than just indirectly via a nogo_test.
+        files = depset([facts, raw_findings]),
     )]
 
 nogo_stdlib = go_rule(
