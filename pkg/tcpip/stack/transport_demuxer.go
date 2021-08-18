@@ -479,7 +479,7 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	if !ok {
 		epsByNIC = &endpointsByNIC{
 			endpoints: make(map[tcpip.NICID]*multiPortEndpoint),
-			seed:      d.stack.Seed(),
+			seed:      d.stack.seed,
 		}
 	}
 	if err := epsByNIC.registerEndpoint(d, netProto, protocol, ep, flags, bindToDevice); err != nil {

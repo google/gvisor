@@ -119,8 +119,7 @@ type Stack struct {
 	// by the stack.
 	icmpRateLimiter *ICMPRateLimiter
 
-	// seed is a one-time random value initialized at stack startup
-	// and is used to seed the TCP port picking on active connections
+	// seed is a one-time random value initialized at stack startup.
 	//
 	// TODO(gvisor.dev/issue/940): S/R this field.
 	seed uint32
@@ -1817,14 +1816,6 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocol
 	}
 
 	return nic.setNUDConfigs(proto, c)
-}
-
-// Seed returns a 32 bit value that can be used as a seed value for port
-// picking, ISN generation etc.
-//
-// NOTE: The seed is generated once during stack initialization only.
-func (s *Stack) Seed() uint32 {
-	return s.seed
 }
 
 // Rand returns a reference to a pseudo random generator that can be used

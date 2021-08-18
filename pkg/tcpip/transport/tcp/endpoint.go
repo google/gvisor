@@ -378,6 +378,7 @@ type endpoint struct {
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack  `state:"manual"`
+	protocol    *protocol     `state:"manual"`
 	waiterQueue *waiter.Queue `state:"wait"`
 	uniqueID    uint64
 
@@ -803,9 +804,10 @@ type keepalive struct {
 	waker      sleep.Waker `state:"nosave"`
 }
 
-func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
+func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	e := &endpoint{
-		stack: s,
+		stack:    s,
+		protocol: protocol,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
 			NetProto:   netProto,
 			TransProto: header.TCPProtocolNumber,
@@ -2198,7 +2200,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) tcp
 		portBuf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(portBuf, e.ID.RemotePort)
 
-		h := jenkins.Sum32(e.stack.Seed())
+		h := jenkins.Sum32(e.protocol.portOffsetSecret)
 		for _, s := range [][]byte{
 			[]byte(e.ID.LocalAddress),
 			[]byte(e.ID.RemoteAddress),
