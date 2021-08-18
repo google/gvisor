@@ -1,6 +1,12 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 
 package(licenses = ["notice"])
+
+proto_library(
+    name = "control",
+    srcs = ["control.proto"],
+    visibility = ["//visibility:public"],
+)
 
 go_library(
     name = "control",
