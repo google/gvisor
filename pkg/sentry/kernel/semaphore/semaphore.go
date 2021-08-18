@@ -336,19 +336,15 @@ func (s *Set) Size() int {
 	return len(s.sems)
 }
 
-// Change changes some fields from the set atomically.
-func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.FileOwner, perms fs.FilePermissions) error {
+// Set modifies attributes for a semaphore set. See semctl(IPC_SET).
+func (s *Set) Set(ctx context.Context, ds *linux.SemidDS) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// "The effective UID of the calling process must match the owner or creator
-	// of the semaphore set, or the caller must be privileged."
-	if !s.obj.CheckOwnership(creds) {
-		return linuxerr.EACCES
+	if err := s.obj.Set(ctx, &ds.SemPerm); err != nil {
+		return err
 	}
 
-	s.obj.Owner = owner
-	s.obj.Perms = perms
 	s.changeTime = ktime.NowFromContext(ctx)
 	return nil
 }
