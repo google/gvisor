@@ -78,10 +78,17 @@ func (h *handle) close(ctx context.Context) {
 }
 
 func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error) {
+	return h.readToBlocksAtMaybeSeekable(ctx, dsts, offset, true /* seekable */)
+}
+
+func (h *handle) readToBlocksAtMaybeSeekable(ctx context.Context, dsts safemem.BlockSeq, offset uint64, seekable bool) (uint64, error) {
 	if dsts.IsEmpty() {
 		return 0, nil
 	}
 	if h.fd >= 0 {
+		if !seekable {
+			offset = ^uint64(0) // -1
+		}
 		ctx.UninterruptibleSleepStart(false)
 		n, err := hostfd.Preadv2(h.fd, dsts, int64(offset), 0 /* flags */)
 		ctx.UninterruptibleSleepFinish(false)
@@ -104,10 +111,17 @@ func (h *handle) readToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offs
 }
 
 func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error) {
+	return h.writeFromBlocksAtMaybeSeekable(ctx, srcs, offset, true /* seekable */)
+}
+
+func (h *handle) writeFromBlocksAtMaybeSeekable(ctx context.Context, srcs safemem.BlockSeq, offset uint64, seekable bool) (uint64, error) {
 	if srcs.IsEmpty() {
 		return 0, nil
 	}
 	if h.fd >= 0 {
+		if !seekable {
+			offset = ^uint64(0) // -1
+		}
 		ctx.UninterruptibleSleepStart(false)
 		n, err := hostfd.Pwritev2(h.fd, srcs, int64(offset), 0 /* flags */)
 		ctx.UninterruptibleSleepFinish(false)

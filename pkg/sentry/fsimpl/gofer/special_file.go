@@ -55,8 +55,11 @@ type specialFileFD struct {
 	isRegularFile bool
 
 	// seekable is true if this file description represents a file for which
-	// file offset is significant, i.e. a regular file, character device or
-	// block device. seekable is immutable.
+	// lseek(2) is expected to succeed, i.e. a regular file, character device
+	// or block device. This only affects host syscalls made by the gofer
+	// client; application lseek(2) (and related syscalls such as pread(2),
+	// pwrite(2), etc.) is permitted regardless for backward compatibility.
+	// seekable is immutable.
 	seekable bool
 
 	// haveQueue is true if this file description represents a file for which
@@ -64,7 +67,7 @@ type specialFileFD struct {
 	haveQueue bool `state:"nosave"`
 	queue     waiter.Queue
 
-	// If seekable is true, off is the file offset. off is protected by mu.
+	// off is the file offset. off is protected by mu.
 	mu  sync.Mutex `state:"nosave"`
 	off int64
 
@@ -93,10 +96,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 			return nil, err
 		}
 	}
-	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
-		DenyPRead:  !seekable,
-		DenyPWrite: !seekable,
-	}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
 		if haveQueue {
 			fdnotifier.RemoveFD(h.fd)
 		}
@@ -235,7 +235,7 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	// That doesn't hold here since specialFileFD doesn't client-cache data.
 	// Just buffer the read instead.
 	buf := make([]byte, dst.NumBytes())
-	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
+	n, err := fd.handle.readToBlocksAtMaybeSeekable(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset), fd.seekable)
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock
 	}
@@ -250,10 +250,6 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *specialFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	if !fd.seekable {
-		return fd.PRead(ctx, dst, -1, opts)
-	}
-
 	fd.mu.Lock()
 	n, err := fd.PRead(ctx, dst, fd.off, opts)
 	fd.off += n
@@ -323,7 +319,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// Only return the error if we didn't get any data.
 		return 0, offset, copyErr
 	}
-	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset))
+	n, err := fd.handle.writeFromBlocksAtMaybeSeekable(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset), fd.seekable)
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock
 	}
@@ -348,10 +344,6 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	if !fd.seekable {
-		return fd.PWrite(ctx, src, -1, opts)
-	}
-
 	fd.mu.Lock()
 	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
 	fd.off = off
@@ -361,9 +353,6 @@ func (fd *specialFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
 func (fd *specialFileFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
-	if !fd.seekable {
-		return 0, linuxerr.ESPIPE
-	}
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	newOffset, err := regularFileSeekLocked(ctx, fd.dentry(), fd.off, offset, whence)
