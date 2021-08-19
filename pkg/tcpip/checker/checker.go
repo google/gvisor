@@ -729,7 +729,7 @@ func TCPTimestampChecker(wantTS bool, wantTSVal uint32, wantTSEcr uint32) Transp
 					return
 				}
 				l := int(opts[i+1])
-				if i < 2 || i+l > limit {
+				if l < 2 || i+l > limit {
 					return
 				}
 				i += l

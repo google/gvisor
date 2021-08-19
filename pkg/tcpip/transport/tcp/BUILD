@@ -96,6 +96,7 @@ go_test(
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/link/sniffer",

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -876,7 +875,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 	}
 
 	e.segmentQueue.ep = e
-	e.TSOffset = timeStampOffset(e.stack.Rand())
+
 	e.acceptCond = sync.NewCond(&e.acceptMu)
 	e.keepalive.timer.init(e.stack.Clock(), &e.keepalive.waker)
 
@@ -2929,17 +2928,22 @@ func tcpTimeStamp(curTime tcpip.MonotonicTime, offset uint32) uint32 {
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending
 // timestamp values in a timestamp option for a TCP segment.
-func timeStampOffset(rng *rand.Rand) uint32 {
+func timeStampOffset(secret uint32, src, dst tcpip.Address) uint32 {
 	// Initialize a random tsOffset that will be added to the recentTS
 	// everytime the timestamp is sent when the Timestamp option is enabled.
 	//
 	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
 	// why this is required.
 	//
-	// NOTE: This is not completely to spec as normally this should be
-	// initialized in a manner analogous to how sequence numbers are
-	// randomized per connection basis. But for now this is sufficient.
-	return rng.Uint32()
+	// TODO(https://gvisor.dev/issues/6473): This is not really secure as
+	// it does not use the recommended algorithm linked above.
+	h := jenkins.Sum32(secret)
+	// Per hash.Hash.Writer:
+	//
+	// It never returns an error.
+	_, _ = h.Write([]byte(src))
+	_, _ = h.Write([]byte(dst))
+	return h.Sum32()
 }
 
 // maybeEnableSACKPermitted marks the SACKPermitted option enabled for this endpoint

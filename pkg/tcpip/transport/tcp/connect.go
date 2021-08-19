@@ -117,6 +117,8 @@ func (e *endpoint) newHandshake() *handshake {
 	h.resetState()
 	// Store reference to handshake state in endpoint.
 	e.h = h
+	// By the time handshake is created, e.ID is already initialized.
+	e.TSOffset = timeStampOffset(e.protocol.tsOffsetSecret, e.ID.LocalAddress, e.ID.RemoteAddress)
 	return h
 }
 
