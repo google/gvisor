@@ -446,6 +446,51 @@ TEST(MqTest, ReadEmpty) {
   EXPECT_EQ(got, want);
 }
 
+// Test read(2) from queue containing messages.
+TEST(MqTest, Read) {
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  ASSERT_NO_ERRNO(MqSend(queue.fd(), "Message.", 8, 1));
+
+  const size_t msgSize = 60;
+  char queueRead[msgSize];
+  queueRead[msgSize - 1] = '\0';
+
+  ASSERT_THAT(read(queue.fd(), &queueRead[0], msgSize - 1), SyscallSucceeds());
+
+  std::string want(
+      "QSIZE:8          NOTIFY:0     SIGNO:0     NOTIFY_PID:0     ");
+  EXPECT_EQ(std::string(queueRead), want);
+}
+
+// Test read(2) from queue with a notification registeration.
+TEST(MqTest, ReadWithNotify) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_NONE;
+
+  ASSERT_NO_ERRNO(MqSend(queue.fd(), "Message.", 8, 1));
+  ASSERT_NO_ERRNO(MqNotify(queue.fd(), &event));
+
+  const size_t msgSize = 60;
+  char queueRead[msgSize];
+  queueRead[msgSize - 1] = '\0';
+
+  ASSERT_THAT(read(queue.fd(), &queueRead[0], msgSize - 1), SyscallSucceeds());
+
+  std::string want("QSIZE:8 *NOTIFY:1 +SIGNO:0 +NOTIFY_PID:" +
+                   std::to_string(getpid()) + " *");
+  EXPECT_THAT(std::string(queueRead), ::testing::ContainsRegex(want));
+}
+
 // Test poll(2) on an empty queue.
 TEST(MqTest, PollEmpty) {
   SKIP_IF(IsRunningWithVFS1());
