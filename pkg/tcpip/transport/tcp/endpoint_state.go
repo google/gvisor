@@ -170,6 +170,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		snd.probeTimer.init(s.Clock(), &snd.probeWaker)
 	}
 	e.stack = s
+	e.protocol = protocolFromStack(s)
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
 	epState := EndpointState(e.origEndpointState)

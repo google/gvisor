@@ -96,6 +96,9 @@ type protocol struct {
 	maxRetries                 uint32
 	synRetries                 uint8
 	dispatcher                 dispatcher
+	// The following secrets are initialized once and stay unchanged after.
+	seqnumSecret     uint32
+	portOffsetSecret uint32
 }
 
 // Number returns the tcp protocol number.
@@ -105,7 +108,7 @@ func (*protocol) Number() tcpip.TransportProtocolNumber {
 
 // NewEndpoint creates a new tcp endpoint.
 func (p *protocol) NewEndpoint(netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
-	return newEndpoint(p.stack, netProto, waiterQueue), nil
+	return newEndpoint(p.stack, p, netProto, waiterQueue), nil
 }
 
 // NewRawEndpoint creates a new raw TCP endpoint. Raw TCP sockets are currently
@@ -479,7 +482,14 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
 		recovery:                   tcpip.TCPRACKLossDetection,
+		seqnumSecret:               s.Rand().Uint32(),
+		portOffsetSecret:           s.Rand().Uint32(),
 	}
 	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
 	return &p
+}
+
+// protocolFromStack retrieves the tcp.protocol instance from stack s.
+func protocolFromStack(s *stack.Stack) *protocol {
+	return s.TransportProtocolInstance(ProtocolNumber).(*protocol)
 }

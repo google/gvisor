@@ -72,7 +72,8 @@ func encodeMSS(mss uint16) uint32 {
 // and must not be accessed or have its methods called concurrently as they
 // may mutate the stored objects.
 type listenContext struct {
-	stack *stack.Stack
+	stack    *stack.Stack
+	protocol *protocol
 
 	// rcvWnd is the receive window that is sent by this listening context
 	// in the initial SYN-ACK.
@@ -119,9 +120,10 @@ func timeStamp(clock tcpip.Clock) uint32 {
 }
 
 // newListenContext creates a new listen context.
-func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
+func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *endpoint, rcvWnd seqnum.Size, v6Only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
 		stack:            stk,
+		protocol:         protocol,
 		rcvWnd:           rcvWnd,
 		hasher:           sha1.New(),
 		v6Only:           v6Only,
@@ -213,7 +215,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 		return nil, err
 	}
 
-	n := newEndpoint(l.stack, netProto, queue)
+	n := newEndpoint(l.stack, l.protocol, netProto, queue)
 	n.ops.SetV6Only(l.v6Only)
 	n.TransportEndpointInfo.ID = s.id
 	n.boundNICID = s.nicID
@@ -247,7 +249,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*handshake, tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
-	isn := generateSecureISN(s.id, l.stack.Clock(), l.stack.Seed())
+	isn := generateSecureISN(s.id, l.stack.Clock(), l.protocol.seqnumSecret)
 	ep, err := l.createConnectingEndpoint(s, opts, queue)
 	if err != nil {
 		return nil, err
@@ -779,7 +781,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) {
 	e.mu.Lock()
 	v6Only := e.ops.GetV6Only()
-	ctx := newListenContext(e.stack, e, rcvWnd, v6Only, e.NetProto)
+	ctx := newListenContext(e.stack, e.protocol, e, rcvWnd, v6Only, e.NetProto)
 
 	defer func() {
 		// Mark endpoint as closed. This will prevent goroutines running
