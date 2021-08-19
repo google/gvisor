@@ -40,6 +40,14 @@ type View interface {
 	// Set sets the view's block flag. See mq_setattr(3).
 	Set(block bool)
 
+	// Register registers a task for async notification. SIGEV_THREAD option is not
+	// supported. See mq_notify(2).
+	Register(t Target, event *linux.Sigevent, pid int32) error
+
+	// Unregister removes currently registered notification subscriber. See
+	// mq_notify(2).
+	Unregister(pid int32)
+
 	// Queue returns the queue backing this view, which provides general queue
 	// functions.
 	Queue() *Queue
@@ -120,6 +128,16 @@ func (i *viewImpl) Set(block bool) {
 	defer i.q.mu.Unlock()
 
 	i.block = block
+}
+
+// Register implements View.Register.
+func (i *viewImpl) Register(t Target, event *linux.Sigevent, pid int32) error {
+	return i.q.Register(t, event, pid)
+}
+
+// Unregister implements View.Unregister.
+func (i *viewImpl) Unregister(pid int32) {
+	i.q.Unregister(pid)
 }
 
 // Queue implements View.Queue.

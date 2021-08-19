@@ -308,11 +308,24 @@ type Message struct {
 	Priority uint32
 }
 
+// Target is used by Subscriber to send a signal to a task when a message
+// arrives. kernel.Task is not directly used to prevent circular dependency.
+type Target interface {
+	SendSignal(info *linux.SignalInfo) error
+}
+
 // Subscriber represents a task registered for async notification from a Queue.
 //
 // +stateify savable
 type Subscriber struct {
-	// TODO: Add fields when mq_notify(2) is implemented.
+	// target represents a task registered to receive a signal.
+	target Target
+
+	// signal is the signal number to be sent.
+	signal linux.Signal
+
+	// method is the method of notification.
+	method int32
 
 	// pid is the PID of the registered task.
 	pid int32
@@ -397,6 +410,26 @@ func (q *Queue) push(ctx context.Context, msg Message) error {
 
 	q.messageCount++
 	q.byteCount += msg.Size
+
+	// Notify subscriber if this is the first message and there are no
+	// waiting receivers.
+	if q.subscriber != nil && q.receivers.IsEmpty() && q.messageCount == 1 {
+		if q.subscriber.target != nil {
+			pid, ok := context.ThreadGroupIDFromContext(ctx)
+			if !ok {
+				panic("mq.push: failed to get pid")
+			}
+
+			info := &linux.SignalInfo{
+				Signo: int32(q.subscriber.signal),
+				Code:  linux.SI_MESGQ,
+			}
+			info.SetPID(pid)
+			info.SetUID(int32(fs.FileOwnerFromContext(ctx).UID))
+			q.subscriber.target.SendSignal(info)
+		}
+		q.subscriber = nil
+	}
 
 	// Notify waiting receivers.
 	q.receivers.Notify(waiter.EventIn)
@@ -483,6 +516,59 @@ func (q *Queue) Attr(block bool) *linux.MqAttr {
 	}
 }
 
+// Register implements View.Register.
+func (q *Queue) Register(t Target, event *linux.Sigevent, pid int32) error {
+	if invalidEvent(event) {
+		// "sevp->sigev_notify is not one of the permitted values; or
+		//  sevp->sigev_notify is SIGEV_SIGNAL and sevp->sigev_signo is not a
+		//  valid signal number."
+		return linuxerr.EINVAL
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.subscriber != nil {
+		// "Another process has already registered to receive notification for
+		//  this message queue."
+		return linuxerr.EBUSY
+	}
+
+	switch event.Notify {
+	case linux.SIGEV_NONE:
+		q.subscriber = &Subscriber{
+			signal: linux.Signal(event.Signo),
+			method: event.Notify,
+			pid:    pid,
+		}
+	case linux.SIGEV_SIGNAL:
+		q.subscriber = &Subscriber{
+			target: t,
+			signal: linux.Signal(event.Signo),
+			method: event.Notify,
+			pid:    pid,
+		}
+	case linux.SIGEV_THREAD:
+		return linuxerr.EOPNOTSUPP
+	}
+	return nil
+}
+
+// Unregister implements View.Unregister.
+func (q *Queue) Unregister(pid int32) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.subscriber != nil && pid == q.subscriber.pid {
+		q.subscriber = nil
+	}
+}
+
+// invalidEvent return true if given event is invalid.
+func invalidEvent(event *linux.Sigevent) bool {
+	return event.Notify != linux.SIGEV_NONE && (event.Notify != linux.SIGEV_SIGNAL || (event.Notify == linux.SIGEV_SIGNAL && !linux.Signal(event.Signo).IsValid())) && event.Notify != linux.SIGEV_THREAD
+}
+
 // Generate implements vfs.DynamicBytesSource.Generate. Queue is used as a
 // DynamicBytesSource for mqfs's QueueInode.
 func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
@@ -490,18 +576,19 @@ func (q *Queue) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	defer q.mu.Unlock()
 
 	var (
-		pid       int32
-		method    int
-		sigNumber int
+		pid    int32
+		method int32
+		signal linux.Signal
 	)
 	if q.subscriber != nil {
 		pid = q.subscriber.pid
-		// TODO: add method and sigNumber when mq_notify(2) is implemented.
+		method = q.subscriber.method
+		signal = q.subscriber.signal
 	}
 
 	buf.WriteString(
 		fmt.Sprintf("QSIZE:%-10d NOTIFY:%-5d SIGNO:%-5d NOTIFY_PID:%-6d\n",
-			q.byteCount, method, sigNumber, pid),
+			q.byteCount, method, signal, pid),
 	)
 	return nil
 }
