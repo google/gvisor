@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <mqueue.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -46,6 +47,7 @@ constexpr int maxMsgSize = 8192;
 constexpr size_t maxMsgCount = 10;
 
 constexpr int kInterruptSignal = SIGALRM;
+constexpr int notificationSignal = SIGALRM;
 
 // PosixQueue is a RAII class used to automatically clean POSIX message queues.
 class PosixQueue {
@@ -184,6 +186,15 @@ PosixError MqSetAttr(mqd_t fd, const struct mq_attr* newattr,
   int err = mq_setattr(fd, newattr, oldattr);
   if (err == -1) {
     return PosixError(errno, absl::StrFormat("mq_setattr(%d)", fd));
+  }
+  return NoError();
+}
+
+// MqNotify wraps mq_notify(3).
+PosixError MqNotify(mqd_t fd, const struct sigevent* sevp) {
+  int err = mq_notify(fd, sevp);
+  if (err == -1) {
+    return PosixError(errno, absl::StrFormat("mq_notify(%d)", fd));
   }
   return NoError();
 }
@@ -1052,6 +1063,221 @@ TEST(MqTest, AttrInvalid) {
   attr.mq_flags = O_NONBLOCK;
   EXPECT_THAT(MqSetAttr(queue.fd(), &attr, nullptr), PosixErrorIs(EBADF));
   EXPECT_THAT(MqGetAttr(queue.fd(), &attr), PosixErrorIs(EBADF));
+}
+
+// Test mq_notify using SIGEV_NONE.
+TEST(MqTest, NotifyNone) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue notifyQueue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+  PosixQueue blockQueue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  std::string msg = "A test message.";
+
+  char buf[msg.length() + 1];
+  buf[msg.length()] = '\0';
+
+  absl::Notification exit;
+
+  // Thread registers for a null notification in notifyQueue and and does a
+  // blocking receive on blockQueue. When a message is sent through notifyQueue,
+  // the thread should not receive a signal, and should remain blocked on
+  // blockQueue. To test that we send a message through notifyQueue, then send
+  // another through blockQueue. mq_receive(2) should succeed, meaning that the
+  // thread didn't receive a notification.
+  ScopedThread t([&] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = empty_sighandler;
+    sigfillset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    auto cleanup_sigaction =
+        ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(notificationSignal, sa));
+    auto sa_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSignalMask(SIG_UNBLOCK, notificationSignal));
+
+    struct sigevent event = {};
+    event.sigev_notify = SIGEV_NONE;
+
+    EXPECT_NO_ERRNO(MqNotify(notifyQueue.fd(), &event));
+
+    EXPECT_NO_ERRNO(MqReceive(blockQueue.fd(), &buf[0], maxMsgSize, nullptr));
+    EXPECT_EQ(std::string(buf), msg);
+
+    exit.WaitForNotification();
+  });
+
+  const DisableSave ds;  // Too many syscalls.
+
+  // Wait a bit so the thread can block.
+  absl::SleepFor(absl::Milliseconds(250));
+
+  ASSERT_NO_ERRNO(MqSend(blockQueue.fd(), msg.c_str(), msg.length(), 1));
+
+  exit.Notify();
+  t.Join();
+}
+
+// Test mq_notify using SIGEV_SIGNAL.
+TEST(MqTest, NotifySignal) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue notifyQueue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+  PosixQueue blockQueue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  std::string msg = "A test message.";
+
+  char buf[msg.length() + 1];
+  buf[msg.length()] = '\0';
+
+  absl::Notification done, exit;
+
+  // Thread registers for a notification in notifyQueue, and blocks on
+  // blockQueue. A message is sent through notifyQueue, which should interrupt
+  // the receive.
+  ScopedThread t([&] {
+    struct sigaction sa = {};
+    sa.sa_sigaction = empty_sighandler;
+    sigfillset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    auto cleanup_sigaction =
+        ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(notificationSignal, sa));
+    auto sa_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSignalMask(SIG_UNBLOCK, notificationSignal));
+
+    struct sigevent event = {};
+    event.sigev_notify = SIGEV_SIGNAL;
+    event.sigev_signo = notificationSignal;
+
+    EXPECT_NO_ERRNO(MqNotify(notifyQueue.fd(), &event));
+
+    EXPECT_THAT(MqReceive(blockQueue.fd(), &buf[0], maxMsgSize, nullptr),
+                PosixErrorIs(EINTR));
+
+    done.Notify();
+    exit.WaitForNotification();
+  });
+
+  const DisableSave ds;  // Too many syscalls.
+
+  // Wait a bit so the thread can block.
+  absl::SleepFor(absl::Milliseconds(250));
+
+  // We want the signal to arrive while mq_receive is blocking, but not after
+  // the thread has exited. If the thread receives notification before blocking,
+  // it will block indefinitely. To avoid that, interrupt the thread if it's not
+  // done after send.
+  ASSERT_NO_ERRNO(MqSend(notifyQueue.fd(), msg.c_str(), msg.length(), 1));
+  while (!done.HasBeenNotified()) {
+    EXPECT_THAT(kill(getpid(), kInterruptSignal), SyscallSucceeds());
+    absl::SleepFor(absl::Milliseconds(100));  // Rate limit.
+  }
+
+  exit.Notify();
+  t.Join();
+}
+
+// Test registering 2 processes for notification.
+TEST(MqTest, NotifyBusy) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_NONE;
+
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+  EXPECT_THAT(MqNotify(queue.fd(), &event), PosixErrorIs(EBUSY));
+}
+
+// Test removing a notification.
+TEST(MqTest, RemoveNotification) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_NONE;
+
+  // Calling mq_notify with NULL removes previously registered notifications
+  // allowing us to re-register another.
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), nullptr));
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+}
+
+// Test notification if queue is not empty.
+TEST(MqTest, NotifyNotEmpty) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_NONE;
+
+  // Notification should arrive only if a message arrives in an empty queue. If
+  // the queue is not empty, the notification registeration remains in effect.
+  // To test that, register for notification on a non-empty queue, send a
+  // message, and try to register again, which should fail as the original
+  // registeration still exists.
+  EXPECT_NO_ERRNO(MqSend(queue.fd(), "", 0, 1));
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+  EXPECT_NO_ERRNO(MqSend(queue.fd(), "", 0, 1));
+  EXPECT_THAT(MqNotify(queue.fd(), &event), PosixErrorIs(EBUSY));
+}
+
+// Test that a registered process is only notified once.
+TEST(MqTest, NotifyOnce) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_NONE;
+
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+  EXPECT_NO_ERRNO(MqSend(queue.fd(), "", 0, 1));
+
+  // Notification is removed, registeration should work.
+  EXPECT_NO_ERRNO(MqNotify(queue.fd(), &event));
+}
+
+// Test invalid values for mq_notify.
+TEST(MqTest, NotifyInvalid) {
+  GTEST_SKIP();
+  SKIP_IF(IsRunningWithVFS1());
+
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0777, nullptr));
+
+  struct sigevent event = {};
+  event.sigev_notify = SIGEV_THREAD_ID;
+
+  EXPECT_THAT(MqNotify(queue.fd(), &event), PosixErrorIs(EINVAL));
+
+  event.sigev_notify = SIGEV_SIGNAL;
+  event.sigev_signo = 70;
+
+  EXPECT_THAT(MqNotify(queue.fd(), &event), PosixErrorIs(EINVAL));
+
+  ASSERT_NO_ERRNO(MqUnlink(queue.name()));
+  ASSERT_NO_ERRNO(MqClose(queue.release()));
+
+  event.sigev_notify = SIGEV_NONE;
+  EXPECT_THAT(MqNotify(queue.fd(), &event), PosixErrorIs(EBADF));
 }
 
 }  // namespace
