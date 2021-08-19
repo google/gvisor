@@ -44,7 +44,7 @@ func TestIsValidUnicastEthernetAddress(t *testing.T) {
 		},
 		{
 			"Unspecified",
-			unspecifiedEthernetAddress,
+			UnspecifiedEthernetAddress,
 			false,
 		},
 		{
@@ -91,7 +91,7 @@ func TestIsMulticastEthernetAddress(t *testing.T) {
 		},
 		{
 			"Unspecified",
-			unspecifiedEthernetAddress,
+			UnspecifiedEthernetAddress,
 			false,
 		},
 		{

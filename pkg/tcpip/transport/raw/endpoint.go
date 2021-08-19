@@ -321,28 +321,26 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 	defer route.Release()
 
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: int(route.MaxHeaderLength()),
+		Data:               buffer.View(payloadBytes).ToVectorisedView(),
+	})
+	pkt.Owner = owner
+
 	if e.ops.GetHeaderIncluded() {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.View(payloadBytes).ToVectorisedView(),
-		})
 		if err := route.WriteHeaderIncludedPacket(pkt); err != nil {
 			return 0, err
 		}
-	} else {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(route.MaxHeaderLength()),
-			Data:               buffer.View(payloadBytes).ToVectorisedView(),
-		})
-		pkt.Owner = owner
-		if err := route.WritePacket(stack.NetworkHeaderParams{
-			Protocol: e.TransProto,
-			TTL:      route.DefaultTTL(),
-			TOS:      stack.DefaultTOS,
-		}, pkt); err != nil {
-			return 0, err
-		}
+		return int64(len(payloadBytes)), nil
 	}
 
+	if err := route.WritePacket(stack.NetworkHeaderParams{
+		Protocol: e.TransProto,
+		TTL:      route.DefaultTTL(),
+		TOS:      stack.DefaultTOS,
+	}, pkt); err != nil {
+		return 0, err
+	}
 	return int64(len(payloadBytes)), nil
 }
 

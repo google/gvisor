@@ -97,6 +97,7 @@ go_library(
         "//pkg/sentry/watchdog",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/link/packetsocket",

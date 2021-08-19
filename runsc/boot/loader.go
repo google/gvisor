@@ -58,6 +58,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
@@ -1174,7 +1175,7 @@ func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	n := &Network{Stack: s.(*netstack.Stack).Stack}
 	nicID := tcpip.NICID(f.uniqueID.UniqueID())
 	link := DefaultLoopbackLink
-	linkEP := loopback.New()
+	linkEP := ethernet.New(loopback.New())
 	if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
 		return nil, err
 	}
