@@ -207,6 +207,35 @@ func MqGetSetAttr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	return 0, nil, nil
 }
 
+// MqNotify implements mq_notify(2).
+func MqNotify(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	eventAddr := args[1].Pointer()
+
+	file := t.GetFileVFS2(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	qFD, ok := file.Impl().(*mqfs.QueueFD)
+	if !ok {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	if eventAddr != 0 {
+		var event linux.Sigevent
+		if _, err := event.CopyIn(t, eventAddr); err != nil {
+			return 0, nil, err
+		}
+
+		return 0, nil, qFD.Queue().Register(t, &event, int32(t.ThreadGroup().ID()))
+	}
+
+	qFD.Queue().Unregister(int32(t.ThreadGroup().ID()))
+	return 0, nil, nil
+}
+
 func openOpts(name string, rOnly, wOnly, readWrite, create, exclusive, block bool) mq.OpenOpts {
 	var access mq.AccessType
 	switch {

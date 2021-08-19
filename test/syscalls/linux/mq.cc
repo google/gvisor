@@ -468,7 +468,6 @@ TEST(MqTest, Read) {
 
 // Test read(2) from queue with a notification registeration.
 TEST(MqTest, ReadWithNotify) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1112,7 +1111,6 @@ TEST(MqTest, AttrInvalid) {
 
 // Test mq_notify using SIGEV_NONE.
 TEST(MqTest, NotifyNone) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue notifyQueue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1167,7 +1165,6 @@ TEST(MqTest, NotifyNone) {
 
 // Test mq_notify using SIGEV_SIGNAL.
 TEST(MqTest, NotifySignal) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue notifyQueue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1229,7 +1226,6 @@ TEST(MqTest, NotifySignal) {
 
 // Test registering 2 processes for notification.
 TEST(MqTest, NotifyBusy) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1244,7 +1240,6 @@ TEST(MqTest, NotifyBusy) {
 
 // Test removing a notification.
 TEST(MqTest, RemoveNotification) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1262,7 +1257,6 @@ TEST(MqTest, RemoveNotification) {
 
 // Test notification if queue is not empty.
 TEST(MqTest, NotifyNotEmpty) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1284,7 +1278,6 @@ TEST(MqTest, NotifyNotEmpty) {
 
 // Test that a registered process is only notified once.
 TEST(MqTest, NotifyOnce) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1302,7 +1295,6 @@ TEST(MqTest, NotifyOnce) {
 
 // Test invalid values for mq_notify.
 TEST(MqTest, NotifyInvalid) {
-  GTEST_SKIP();
   SKIP_IF(IsRunningWithVFS1());
 
   PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
