@@ -160,6 +160,10 @@ type Stack struct {
 	// This is required to prevent potential ACK loops.
 	// Setting this to 0 will disable all rate limiting.
 	tcpInvalidRateLimit time.Duration
+
+	// tsOffsetSecret is the secret key for generating timestamp offsets
+	// initialized at stack startup.
+	tsOffsetSecret uint32
 }
 
 // UniqueID is an abstract generator of unique identifiers.
@@ -383,6 +387,7 @@ func New(opts Options) *Stack {
 			Max:     DefaultMaxBufferSize,
 		},
 		tcpInvalidRateLimit: defaultTCPInvalidRateLimit,
+		tsOffsetSecret:      randomGenerator.Uint32(),
 	}
 
 	// Add specified network protocols.

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -8054,5 +8055,95 @@ func TestSendBufferTuning(t *testing.T) {
 				t.Fatalf("Wrong send buffer size, got %d want %d", newSz, outSz)
 			}
 		})
+	}
+}
+
+func TestTimestampSynCookies(t *testing.T) {
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      defaultMTU,
+		Clock:    clock,
+	})
+	defer c.Cleanup()
+	opt := tcpip.TCPAlwaysUseSynCookies(true)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, opt, opt, err)
+	}
+	wq := &waiter.Queue{}
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+	defer ep.Close()
+
+	tcpOpts := [12]byte{header.TCPOptionNOP, header.TCPOptionNOP}
+	header.EncodeTSOption(42, 0, tcpOpts[2:])
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+	if err := ep.Listen(10); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+	iss := seqnum.Value(context.TestInitialSequenceNumber)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		RcvWnd:  seqnum.Size(512),
+		SeqNum:  iss,
+		TCPOpts: tcpOpts[:],
+	})
+	// Get the TSVal of SYN-ACK.
+	b := c.GetPacket()
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+	initialTSVal := tcpHdr.ParsedOptions().TSVal
+
+	header.EncodeTSOption(420, initialTSVal, tcpOpts[2:])
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		RcvWnd:  seqnum.Size(512),
+		SeqNum:  iss + 1,
+		AckNum:  c.IRS + 1,
+		TCPOpts: tcpOpts[:],
+	})
+	c.EP, _, err = ep.Accept(nil)
+	// Try to accept the connection.
+	we, ch := waiter.NewChannelEntry(nil)
+	wq.EventRegister(&we, waiter.ReadableEvents)
+	defer wq.EventUnregister(&we)
+	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			c.EP, _, err = ep.Accept(nil)
+			if err != nil {
+				t.Fatalf("Accept failed: %s", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	} else if err != nil {
+		t.Fatalf("failed to accept: %s", err)
+	}
+
+	const elapsed = 200 * time.Millisecond
+	clock.Advance(elapsed)
+	data := []byte{1, 2, 3}
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	// The endpoint should have a correct TSOffset so that the received TSVal
+	// should match our expectation.
+	if got, want := header.TCP(header.IPv4(c.GetPacket()).Payload()).ParsedOptions().TSVal, initialTSVal+uint32(elapsed.Milliseconds()); got != want {
+		t.Fatalf("got TSVal = %d, want %d", got, want)
 	}
 }

@@ -99,6 +99,7 @@ type protocol struct {
 	// The following secrets are initialized once and stay unchanged after.
 	seqnumSecret     uint32
 	portOffsetSecret uint32
+	tsOffsetSecret   uint32
 }
 
 // Number returns the tcp protocol number.
@@ -484,6 +485,7 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		recovery:                   tcpip.TCPRACKLossDetection,
 		seqnumSecret:               s.Rand().Uint32(),
 		portOffsetSecret:           s.Rand().Uint32(),
+		tsOffsetSecret:             s.Rand().Uint32(),
 	}
 	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
 	return &p

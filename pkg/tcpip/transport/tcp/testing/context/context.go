@@ -122,6 +122,9 @@ type Options struct {
 
 	// MTU indicates the maximum transmission unit on the link layer.
 	MTU uint32
+
+	// Clock that is used by Stack.
+	Clock tcpip.Clock
 }
 
 // Context provides an initialized Network stack and a link layer endpoint
@@ -182,6 +185,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 
 	stackOpts := stack.Options{
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		Clock:              opts.Clock,
 	}
 	if opts.EnableV4 {
 		stackOpts.NetworkProtocols = append(stackOpts.NetworkProtocols, ipv4.NewProtocol)
