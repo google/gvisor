@@ -602,7 +602,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		synOpts := header.TCPSynOptions{
 			WS:    -1,
 			TS:    opts.TS,
-			TSVal: tcpTimeStamp(e.stack.Clock().NowMonotonic(), timeStampOffset(e.stack.Rand())),
+			TSVal: tcpTimeStamp(e.stack.Clock().NowMonotonic(), timeStampOffset(e.protocol.tsOffsetSecret, s.dstAddr, s.srcAddr)),
 			TSEcr: opts.TSVal,
 			MSS:   calculateAdvertisedMSS(e.userMSS, route),
 		}
@@ -728,11 +728,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		n.isRegistered = true
 
-		// clear the tsOffset for the newly created
-		// endpoint as the Timestamp was already
-		// randomly offset when the original SYN-ACK was
-		// sent above.
-		n.TSOffset = 0
+		// Reset the tsOffset for the newly created endpoint to the one
+		// that we have used in SYN-ACK in order to calculate RTT.
+		n.TSOffset = timeStampOffset(e.protocol.tsOffsetSecret, s.dstAddr, s.srcAddr)
 
 		// Switch state to connected.
 		n.isConnectNotified = true
