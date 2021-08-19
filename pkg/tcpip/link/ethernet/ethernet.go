@@ -42,6 +42,14 @@ type Endpoint struct {
 	nested.Endpoint
 }
 
+// LinkAddress implements stack.LinkEndpoint.
+func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
+	if l := e.Endpoint.LinkAddress(); len(l) != 0 {
+		return l
+	}
+	return header.UnspecifiedEthernetAddress
+}
+
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (e *Endpoint) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
@@ -57,18 +65,22 @@ func (e *Endpoint) DeliverNetworkPacket(_, _ tcpip.LinkAddress, _ tcpip.NetworkP
 
 // Capabilities implements stack.LinkEndpoint.
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return stack.CapabilityResolutionRequired | e.Endpoint.Capabilities()
+	c := e.Endpoint.Capabilities()
+	if c&stack.CapabilityLoopback == 0 {
+		c |= stack.CapabilityResolutionRequired
+	}
+	return c
 }
 
 // WritePacket implements stack.LinkEndpoint.
 func (e *Endpoint) WritePacket(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.AddHeader(e.Endpoint.LinkAddress(), r.RemoteLinkAddress, proto, pkt)
+	e.AddHeader(e.LinkAddress(), r.RemoteLinkAddress, proto, pkt)
 	return e.Endpoint.WritePacket(r, proto, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.
 func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	linkAddr := e.Endpoint.LinkAddress()
+	linkAddr := e.LinkAddress()
 
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.AddHeader(linkAddr, r.RemoteLinkAddress, proto, pkt)
@@ -83,7 +95,10 @@ func (e *Endpoint) MaxHeaderLength() uint16 {
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.
-func (*Endpoint) ARPHardwareType() header.ARPHardwareType {
+func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
+	if a := e.Endpoint.ARPHardwareType(); a != header.ARPHardwareNone {
+		return a
+	}
 	return header.ARPHardwareEther
 }
 
