@@ -124,11 +124,8 @@ require (
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83 // indirect
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
 	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602 // indirect
-	golang.org/x/sys v0.0.0-20210314195730-07df6a141424 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
-	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/api v0.42.0 // indirect
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8 // indirect
 	google.golang.org/grpc v1.39.0-dev.0.20210518002758-2713b77e8526 // indirect
@@ -137,7 +134,7 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
-	honnef.co/go/tools v0.1.1 // indirect
+	honnef.co/go/tools v0.3.0-0.dev.0.20210801021341-453cb28c0b15 // indirect
 	k8s.io/api v0.16.13 // indirect
 	k8s.io/apimachinery v0.16.14-rc.0 // indirect
 	k8s.io/client-go v0.16.13 // indirect
