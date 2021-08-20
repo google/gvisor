@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // handle represents a remote "open file descriptor", consisting of an opened
@@ -129,4 +130,44 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 		return uint64(n), err
 	}
 	return uint64(n), cperr
+}
+
+type handleReadWriter struct {
+	ctx context.Context
+	h   *handle
+	off uint64
+}
+
+var handleReadWriterPool = sync.Pool{
+	New: func() interface{} {
+		return &handleReadWriter{}
+	},
+}
+
+func getHandleReadWriter(ctx context.Context, h *handle, offset int64) *handleReadWriter {
+	rw := handleReadWriterPool.Get().(*handleReadWriter)
+	rw.ctx = ctx
+	rw.h = h
+	rw.off = uint64(offset)
+	return rw
+}
+
+func putHandleReadWriter(rw *handleReadWriter) {
+	rw.ctx = nil
+	rw.h = nil
+	handleReadWriterPool.Put(rw)
+}
+
+// ReadToBlocks implements safemem.Reader.ReadToBlocks.
+func (rw *handleReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+	n, err := rw.h.readToBlocksAt(rw.ctx, dsts, rw.off)
+	rw.off += n
+	return n, err
+}
+
+// WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
+func (rw *handleReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
+	n, err := rw.h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
+	rw.off += n
+	return n, err
 }
