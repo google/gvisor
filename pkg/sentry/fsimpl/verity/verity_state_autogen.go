@@ -6,6 +6,62 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (l *dentryList) StateTypeName() string {
+	return "pkg/sentry/fsimpl/verity.dentryList"
+}
+
+func (l *dentryList) StateFields() []string {
+	return []string{
+		"head",
+		"tail",
+	}
+}
+
+func (l *dentryList) beforeSave() {}
+
+// +checklocksignore
+func (l *dentryList) StateSave(stateSinkObject state.Sink) {
+	l.beforeSave()
+	stateSinkObject.Save(0, &l.head)
+	stateSinkObject.Save(1, &l.tail)
+}
+
+func (l *dentryList) afterLoad() {}
+
+// +checklocksignore
+func (l *dentryList) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &l.head)
+	stateSourceObject.Load(1, &l.tail)
+}
+
+func (e *dentryEntry) StateTypeName() string {
+	return "pkg/sentry/fsimpl/verity.dentryEntry"
+}
+
+func (e *dentryEntry) StateFields() []string {
+	return []string{
+		"next",
+		"prev",
+	}
+}
+
+func (e *dentryEntry) beforeSave() {}
+
+// +checklocksignore
+func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
+	e.beforeSave()
+	stateSinkObject.Save(0, &e.next)
+	stateSinkObject.Save(1, &e.prev)
+}
+
+func (e *dentryEntry) afterLoad() {}
+
+// +checklocksignore
+func (e *dentryEntry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &e.next)
+	stateSourceObject.Load(1, &e.prev)
+}
+
 func (fstype *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/verity.FilesystemType"
 }
@@ -41,6 +97,10 @@ func (fs *filesystem) StateFields() []string {
 		"alg",
 		"action",
 		"opts",
+		"cachedDentries",
+		"cachedDentriesLen",
+		"maxCachedDentries",
+		"released",
 	}
 }
 
@@ -57,6 +117,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fs.alg)
 	stateSinkObject.Save(6, &fs.action)
 	stateSinkObject.Save(7, &fs.opts)
+	stateSinkObject.Save(8, &fs.cachedDentries)
+	stateSinkObject.Save(9, &fs.cachedDentriesLen)
+	stateSinkObject.Save(10, &fs.maxCachedDentries)
+	stateSinkObject.Save(11, &fs.released)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -71,6 +135,10 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &fs.alg)
 	stateSourceObject.Load(6, &fs.action)
 	stateSourceObject.Load(7, &fs.opts)
+	stateSourceObject.Load(8, &fs.cachedDentries)
+	stateSourceObject.Load(9, &fs.cachedDentriesLen)
+	stateSourceObject.Load(10, &fs.maxCachedDentries)
+	stateSourceObject.Load(11, &fs.released)
 }
 
 func (i *InternalFilesystemOptions) StateTypeName() string {
@@ -132,6 +200,8 @@ func (d *dentry) StateFields() []string {
 		"lowerMerkleVD",
 		"symlinkTarget",
 		"hash",
+		"cached",
+		"dentryEntry",
 	}
 }
 
@@ -156,6 +226,8 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &d.lowerMerkleVD)
 	stateSinkObject.Save(14, &d.symlinkTarget)
 	stateSinkObject.Save(15, &d.hash)
+	stateSinkObject.Save(16, &d.cached)
+	stateSinkObject.Save(17, &d.dentryEntry)
 }
 
 // +checklocksignore
@@ -176,6 +248,8 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &d.lowerMerkleVD)
 	stateSourceObject.Load(14, &d.symlinkTarget)
 	stateSourceObject.Load(15, &d.hash)
+	stateSourceObject.Load(16, &d.cached)
+	stateSourceObject.Load(17, &d.dentryEntry)
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 
@@ -232,6 +306,8 @@ func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
+	state.Register((*dentryList)(nil))
+	state.Register((*dentryEntry)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*InternalFilesystemOptions)(nil))
