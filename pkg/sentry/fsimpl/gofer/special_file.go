@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -229,23 +228,13 @@ func (fd *specialFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		}
 	}
 
-	// Going through dst.CopyOutFrom() would hold MM locks around file
-	// operations of unknown duration. For regularFileFD, doing so is necessary
-	// to support mmap due to lock ordering; MM locks precede dentry.dataMu.
-	// That doesn't hold here since specialFileFD doesn't client-cache data.
-	// Just buffer the read instead.
-	buf := make([]byte, dst.NumBytes())
-	n, err := fd.handle.readToBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), uint64(offset))
+	rw := getHandleReadWriter(ctx, &fd.handle, offset)
+	n, err := dst.CopyOutFrom(ctx, rw)
+	putHandleReadWriter(rw)
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock
 	}
-	if n == 0 {
-		return bufN, err
-	}
-	if cp, cperr := dst.CopyOut(ctx, buf[:n]); cperr != nil {
-		return bufN + int64(cp), cperr
-	}
-	return bufN + int64(n), err
+	return bufN + n, err
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -316,20 +305,15 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		}
 	}
 
-	// Do a buffered write. See rationale in PRead.
-	buf := make([]byte, src.NumBytes())
-	copied, copyErr := src.CopyIn(ctx, buf)
-	if copied == 0 && copyErr != nil {
-		// Only return the error if we didn't get any data.
-		return 0, offset, copyErr
-	}
-	n, err := fd.handle.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf[:copied])), uint64(offset))
+	rw := getHandleReadWriter(ctx, &fd.handle, offset)
+	n, err := src.CopyInTo(ctx, rw)
+	putHandleReadWriter(rw)
 	if linuxerr.Equals(linuxerr.EAGAIN, err) {
 		err = linuxerr.ErrWouldBlock
 	}
 	// Update offset if the offset is valid.
 	if offset >= 0 {
-		offset += int64(n)
+		offset += n
 	}
 	// Update file size for regular files.
 	if fd.isRegularFile {
@@ -340,10 +324,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 			atomic.StoreUint64(&d.size, uint64(offset))
 		}
 	}
-	if err != nil {
-		return int64(n), offset, err
-	}
-	return int64(n), offset, copyErr
+	return int64(n), offset, err
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
