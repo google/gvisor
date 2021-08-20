@@ -409,29 +409,24 @@ func Verify(params *VerifyParams) (int64, error) {
 	firstDataBlock := params.ReadOffset / layout.blockSize
 	lastDataBlock := (params.ReadOffset + params.ReadSize - 1) / layout.blockSize
 
-	buf := make([]byte, layout.blockSize)
-	var readErr error
-	total := int64(0)
+	size := (lastDataBlock - firstDataBlock + 1) * layout.blockSize
+	retBuf := make([]byte, size)
+	n, err := params.File.ReadAt(retBuf, firstDataBlock*layout.blockSize)
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+	total := int64(n)
+	bytesRead := int64(0)
+
 	for i := firstDataBlock; i <= lastDataBlock; i++ {
+		// Reach the end of file during verification.
+		if total <= 0 {
+			return bytesRead, io.EOF
+		}
 		// Read a block that includes all or part of target range in
 		// input data.
-		bytesRead, err := params.File.ReadAt(buf, i*layout.blockSize)
-		readErr = err
-		// If at the end of input data and all previous blocks are
-		// verified, return the verified input data and EOF.
-		if readErr == io.EOF && bytesRead == 0 {
-			break
-		}
-		if readErr != nil && readErr != io.EOF {
-			return 0, fmt.Errorf("read from data failed: %w", err)
-		}
-		// If this is the end of file, zero the remaining bytes in buf,
-		// otherwise they are still from the previous block.
-		if bytesRead < len(buf) {
-			for j := bytesRead; j < len(buf); j++ {
-				buf[j] = 0
-			}
-		}
+		buf := retBuf[(i-firstDataBlock)*layout.blockSize : (i-firstDataBlock+1)*layout.blockSize]
+
 		descriptor := VerityDescriptor{
 			Name:          params.Name,
 			FileSize:      params.Size,
@@ -442,7 +437,7 @@ func Verify(params *VerifyParams) (int64, error) {
 			Children:      params.Children,
 		}
 		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected); err != nil {
-			return 0, err
+			return bytesRead, err
 		}
 
 		// startOff is the beginning of the read range within the
@@ -459,22 +454,24 @@ func Verify(params *VerifyParams) (int64, error) {
 		if i == lastDataBlock {
 			endOff = (params.ReadOffset+params.ReadSize-1)%layout.blockSize + 1
 		}
+
 		// If the provided size exceeds the end of input data, we should
 		// only copy the parts in buf that's part of input data.
-		if startOff > int64(bytesRead) {
-			startOff = int64(bytesRead)
+		if startOff > total {
+			startOff = total
 		}
-		if endOff > int64(bytesRead) {
-			endOff = int64(bytesRead)
+		if endOff > total {
+			endOff = total
 		}
+
 		n, err := params.Out.Write(buf[startOff:endOff])
 		if err != nil {
-			return total, err
+			return bytesRead, err
 		}
-		total += int64(n)
-
+		bytesRead += int64(n)
+		total -= endOff
 	}
-	return total, readErr
+	return bytesRead, nil
 }
 
 // verifyBlock verifies a block against tree. index is the number of block in
