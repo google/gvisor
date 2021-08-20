@@ -32,8 +32,9 @@ will need to be added to the appropriate `BUILD` files, and the `:gopath` target
 will need to be re-run to generate appropriate symlinks in the `GOPATH`
 directory tree.
 
-Dependencies can be added by using `go mod get`. In order to keep the
-`WORKSPACE` file in sync, run `tools/go_mod.sh` in place of `go mod`.
+Dependencies can be added by using `go get`. In order to keep the
+`WORKSPACE` file in sync, run `bazel run //:gazelle -- update-repos -from_file=go.mod`
+in place of `go mod`.
 
 ### Coding Guidelines
 
