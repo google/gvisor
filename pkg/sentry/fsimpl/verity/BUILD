@@ -1,10 +1,24 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
+
+go_template_instance(
+    name = "dentry_list",
+    out = "dentry_list.go",
+    package = "verity",
+    prefix = "dentry",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*dentry",
+        "Linker": "*dentry",
+    },
+)
 
 go_library(
     name = "verity",
     srcs = [
+        "dentry_list.go",
         "filesystem.go",
         "save_restore.go",
         "verity.go",

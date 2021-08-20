@@ -66,40 +66,23 @@ func putDentrySlice(ds *[]*dentry) {
 	dentrySlicePool.Put(ds)
 }
 
-// renameMuRUnlockAndCheckDrop calls fs.renameMu.RUnlock(), then calls
-// dentry.checkDropLocked on all dentries in *ds with fs.renameMu locked for
+// renameMuRUnlockAndCheckCaching calls fs.renameMu.RUnlock(), then calls
+// dentry.checkCachingLocked on all dentries in *ds with fs.renameMu locked for
 // writing.
 //
 // ds is a pointer-to-pointer since defer evaluates its arguments immediately,
 // but dentry slices are allocated lazily, and it's much easier to say "defer
-// fs.renameMuRUnlockAndCheckDrop(&ds)" than "defer func() {
-// fs.renameMuRUnlockAndCheckDrop(ds) }()" to work around this.
+// fs.renameMuRUnlockAndCheckCaching(&ds)" than "defer func() {
+// fs.renameMuRUnlockAndCheckCaching(ds) }()" to work around this.
 // +checklocksrelease:fs.renameMu
-func (fs *filesystem) renameMuRUnlockAndCheckDrop(ctx context.Context, ds **[]*dentry) {
+func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, ds **[]*dentry) {
 	fs.renameMu.RUnlock()
 	if *ds == nil {
 		return
 	}
-	if len(**ds) != 0 {
-		fs.renameMu.Lock()
-		for _, d := range **ds {
-			d.checkDropLocked(ctx)
-		}
-		fs.renameMu.Unlock()
-	}
-	putDentrySlice(*ds)
-}
-
-// +checklocksrelease:fs.renameMu
-func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*dentry) {
-	if *ds == nil {
-		fs.renameMu.Unlock()
-		return
-	}
 	for _, d := range **ds {
-		d.checkDropLocked(ctx)
+		d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 	}
-	fs.renameMu.Unlock()
 	putDentrySlice(*ds)
 }
 
@@ -700,7 +683,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	}
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return err
@@ -712,7 +695,7 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
@@ -733,7 +716,7 @@ func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPath) (*vfs.Dentry, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	start := rp.Start().Impl().(*dentry)
 	d, err := fs.walkParentDirLocked(ctx, rp, start, &ds)
 	if err != nil {
@@ -770,7 +753,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 
 	start := rp.Start().Impl().(*dentry)
 	if rp.Done() {
@@ -952,7 +935,7 @@ func (d *dentry) openLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vf
 func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return "", err
@@ -982,7 +965,7 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return linux.Statx{}, err
@@ -1028,7 +1011,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.BoundEndpointOptions) (transport.BoundEndpoint, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	if _, err := fs.resolveLocked(ctx, rp, &ds); err != nil {
 		return nil, err
 	}
@@ -1039,7 +1022,7 @@ func (fs *filesystem) BoundEndpointAt(ctx context.Context, rp *vfs.ResolvingPath
 func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, size uint64) ([]string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return nil, err
@@ -1055,7 +1038,7 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
 func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetXattrOptions) (string, error) {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
-	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	d, err := fs.resolveLocked(ctx, rp, &ds)
 	if err != nil {
 		return "", err
