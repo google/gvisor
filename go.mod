@@ -27,7 +27,7 @@ require (
 	github.com/containerd/btrfs v1.0.0 // indirect
 	github.com/containerd/cgroups v0.0.0-20201119153540-4cbc285b3327 // indirect
 	github.com/containerd/console v1.0.1 // indirect
-	github.com/containerd/containerd v1.3.9 // indirect
+	github.com/containerd/containerd v1.4.9 // indirect
 	github.com/containerd/continuity v0.1.0 // indirect
 	github.com/containerd/fifo v0.0.0-20191213151349-ff969a566b00 // indirect
 	github.com/containerd/go-cni v1.0.2 // indirect

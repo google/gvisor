@@ -1215,6 +1215,20 @@ go_repository(
     version = "v0.27.0",
 )
 
+go_repository(
+    name = "com_github_google_go_github_v32",
+    importpath = "github.com/google/go-github/v32",
+    sum = "h1:GWkQOdXqviCPx7Q7Fj+KyPoGm4SwHRh8rheoPhd27II=",
+    version = "v32.1.0",
+)
+
+go_repository(
+    name = "com_github_jonboulle_clockwork",
+    importpath = "github.com/jonboulle/clockwork",
+    sum = "h1:VKV+ZcuP6l3yW9doeqz6ziZGgcynBVQO+obU0+0hcPo=",
+    version = "v0.1.0",
+)
+
 rules_proto_dependencies()
 
 rules_proto_toolchains()
@@ -1256,7 +1270,7 @@ http_archive(
     strip_prefix = "abseil-cpp-278e0a071885a22dcd2fd1b5576cc44757299343",
     urls = [
         "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz",
-        "https://github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz"
+        "https://github.com/abseil/abseil-cpp/archive/278e0a071885a22dcd2fd1b5576cc44757299343.tar.gz",
     ],
 )
 
@@ -1277,7 +1291,6 @@ grpc_deps()
 load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
 
 grpc_extra_deps()
-
 
 http_archive(
     name = "com_google_googletest",
@@ -1305,7 +1318,9 @@ http_archive(
     strip_prefix = "protobuf-3.17.3",
     urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.17.3.zip"],
 )
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
 protobuf_deps()
 
 # Schemas for testing.
@@ -1338,8 +1353,8 @@ go_repository(
     name = "com_github_containerd_containerd",
     build_file_proto_mode = "disable",
     importpath = "github.com/containerd/containerd",
-    sum = "h1:K2U/F4jGAMBqeUssfgJRbFuomLcS2Fxo1vR3UM/Mbh8=",
-    version = "v1.3.9",
+    sum = "h1:JIw9mjVw4LsGmnA/Bqg9j9e+XB7soOJufrKUpA6n2Ns=",
+    version = "v1.4.9",
 )
 
 go_repository(
@@ -1633,9 +1648,9 @@ go_repository(
 go_repository(
     name = "co_honnef_go_tools",
     importpath = "honnef.co/go/tools",
-    sum = "h1:Tyybiul3hjaq0dkv+kcf5/MPTfo+ZBiEWrkhgxMPH54=",
-    version = "v0.3.0-0.dev.0.20210801021341-453cb28c0b15",
- )
+    sum = "h1:EVDuO03OCZwpV2t/tLLxPmPiomagMoBOgfPt0FM+4IY=",
+    version = "v0.1.1",
+)
 
 go_repository(
     name = "com_github_burntsushi_toml",
