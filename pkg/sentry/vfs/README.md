@@ -1,9 +1,5 @@
 # The gVisor Virtual Filesystem
 
-THIS PACKAGE IS CURRENTLY EXPERIMENTAL AND NOT READY OR ENABLED FOR PRODUCTION
-USE. For the filesystem implementation currently used by gVisor, see the `fs`
-package.
-
 ## Implementation Notes
 
 ### Reference Counting
