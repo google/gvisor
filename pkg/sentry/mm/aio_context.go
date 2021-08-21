@@ -77,15 +77,6 @@ func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64)
 		return nil
 	}
 
-	// Only unmaps after it assured that the address is a valid aio context to
-	// prevent random memory from been unmapped.
-	//
-	// Note: It's possible to unmap this address and map something else into
-	// the same address. Then it would be unmapping memory that it doesn't own.
-	// This is, however, the way Linux implements AIO. Keeps the same [weird]
-	// semantics in case anyone relies on it.
-	mm.MUnmap(ctx, hostarch.Addr(id), aioRingBufferSize)
-
 	delete(mm.aioManager.contexts, id)
 	aioCtx.destroy()
 	return aioCtx
@@ -410,6 +401,15 @@ func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOC
 	if !mm.isValidAddr(ctx, id) {
 		return nil
 	}
+
+	// Only unmaps after it assured that the address is a valid aio context to
+	// prevent random memory from been unmapped.
+	//
+	// Note: It's possible to unmap this address and map something else into
+	// the same address. Then it would be unmapping memory that it doesn't own.
+	// This is, however, the way Linux implements AIO. Keeps the same [weird]
+	// semantics in case anyone relies on it.
+	mm.MUnmap(ctx, hostarch.Addr(id), aioRingBufferSize)
 
 	mm.aioManager.mu.Lock()
 	defer mm.aioManager.mu.Unlock()
