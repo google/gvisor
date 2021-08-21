@@ -1242,13 +1242,14 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 	}
 
 	parent := l.file.FD()
+	closeParent := func() {
+		if parent != l.file.FD() {
+			_ = unix.Close(parent)
+		}
+	}
+	defer closeParent()
 	for _, name := range names {
 		child, err := unix.Openat(parent, name, openFlags|unix.O_PATH, 0)
-		if parent != l.file.FD() {
-			// Parent is no longer needed.
-			_ = unix.Close(parent)
-			parent = -1
-		}
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
 				// No pont in continuing any further.
@@ -1256,10 +1257,11 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 			}
 			return nil, err
 		}
+		closeParent()
+		parent = child
 
 		var stat unix.Stat_t
 		if err := unix.Fstat(child, &stat); err != nil {
-			_ = unix.Close(child)
 			return nil, err
 		}
 		valid, attr := l.fillAttr(&stat)
@@ -1271,13 +1273,9 @@ func (l *localFile) MultiGetAttr(names []string) ([]p9.FullStat, error) {
 		if (stat.Mode & unix.S_IFMT) != unix.S_IFDIR {
 			// Doesn't need to continue if entry is not a dir. Including symlinks
 			// that cannot be followed.
-			_ = unix.Close(child)
 			break
 		}
 		parent = child
-	}
-	if parent != -1 && parent != l.file.FD() {
-		_ = unix.Close(parent)
 	}
 	return stats, nil
 }

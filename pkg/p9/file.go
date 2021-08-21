@@ -325,6 +325,12 @@ func (*DisallowServerCalls) Renamed(File, string) {
 func DefaultMultiGetAttr(start File, names []string) ([]FullStat, error) {
 	stats := make([]FullStat, 0, len(names))
 	parent := start
+	closeParent := func() {
+		if parent != start {
+			_ = parent.Close()
+		}
+	}
+	defer closeParent()
 	mask := AttrMaskAll()
 	for i, name := range names {
 		if len(name) == 0 && i == 0 {
@@ -340,15 +346,14 @@ func DefaultMultiGetAttr(start File, names []string) ([]FullStat, error) {
 			continue
 		}
 		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
-		if parent != start {
-			_ = parent.Close()
-		}
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
 				return stats, nil
 			}
 			return nil, err
 		}
+		closeParent()
+		parent = child
 		stats = append(stats, FullStat{
 			QID:   qids[0],
 			Valid: valid,
@@ -357,13 +362,8 @@ func DefaultMultiGetAttr(start File, names []string) ([]FullStat, error) {
 		if attr.Mode.FileType() != ModeDirectory {
 			// Doesn't need to continue if entry is not a dir. Including symlinks
 			// that cannot be followed.
-			_ = child.Close()
 			break
 		}
-		parent = child
-	}
-	if parent != start {
-		_ = parent.Close()
 	}
 	return stats, nil
 }
