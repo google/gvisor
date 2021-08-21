@@ -158,6 +158,10 @@ func (d *dentryPlatformFile) afterLoad() {
 // afterLoad is invoked by stateify.
 func (fd *specialFileFD) afterLoad() {
 	fd.handle.fd = -1
+	if fd.hostFileMapper.IsInited() {
+		// Ensure that we don't call fd.hostFileMapper.Init() again.
+		fd.hostFileMapperInitOnce.Do(func() {})
+	}
 }
 
 // CompleteRestore implements

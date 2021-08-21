@@ -22,9 +22,13 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -74,6 +78,16 @@ type specialFileFD struct {
 	bufMu   sync.Mutex `state:"nosave"`
 	haveBuf uint32
 	buf     []byte
+
+	// If handle.fd >= 0, hostFileMapper caches mappings of handle.fd, and
+	// hostFileMapperInitOnce is used to initialize it on first use.
+	hostFileMapperInitOnce sync.Once `state:"nosave"`
+	hostFileMapper         fsutil.HostFileMapper
+
+	// If handle.fd >= 0, fileRefs counts references on memmap.File offsets.
+	// fileRefs is protected by fileRefsMu.
+	fileRefsMu sync.Mutex `state:"nosave"`
+	fileRefs   fsutil.FrameRefSet
 }
 
 func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*specialFileFD, error) {
@@ -391,4 +405,86 @@ func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error
 		ctx.Debugf("gofer.specialFileFD.sync: syncing non-writable or non-regular-file FD failed: %v", err)
 	}
 	return nil
+}
+
+// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+func (fd *specialFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	if fd.handle.fd < 0 || fd.filesystem().opts.forcePageCache {
+		return linuxerr.ENODEV
+	}
+	// After this point, fd may be used as a memmap.Mappable and memmap.File.
+	fd.hostFileMapperInitOnce.Do(fd.hostFileMapper.Init)
+	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
+}
+
+// AddMapping implements memmap.Mappable.AddMapping.
+func (fd *specialFileFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	fd.hostFileMapper.IncRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
+	return nil
+}
+
+// RemoveMapping implements memmap.Mappable.RemoveMapping.
+func (fd *specialFileFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	fd.hostFileMapper.DecRefOn(memmap.MappableRange{offset, offset + uint64(ar.Length())})
+}
+
+// CopyMapping implements memmap.Mappable.CopyMapping.
+func (fd *specialFileFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+	return fd.AddMapping(ctx, ms, dstAR, offset, writable)
+}
+
+// Translate implements memmap.Mappable.Translate.
+func (fd *specialFileFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	mr := optional
+	if fd.filesystem().opts.limitHostFDTranslation {
+		mr = maxFillRange(required, optional)
+	}
+	return []memmap.Translation{
+		{
+			Source: mr,
+			File:   fd,
+			Offset: mr.Start,
+			Perms:  hostarch.AnyAccess,
+		},
+	}, nil
+}
+
+// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
+func (fd *specialFileFD) InvalidateUnsavable(ctx context.Context) error {
+	return nil
+}
+
+// IncRef implements memmap.File.IncRef.
+func (fd *specialFileFD) IncRef(fr memmap.FileRange) {
+	fd.fileRefsMu.Lock()
+	defer fd.fileRefsMu.Unlock()
+	fd.fileRefs.IncRefAndAccount(fr)
+}
+
+// DecRef implements memmap.File.DecRef.
+func (fd *specialFileFD) DecRef(fr memmap.FileRange) {
+	fd.fileRefsMu.Lock()
+	defer fd.fileRefsMu.Unlock()
+	fd.fileRefs.DecRefAndAccount(fr)
+}
+
+// MapInternal implements memmap.File.MapInternal.
+func (fd *specialFileFD) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	fd.requireHostFD()
+	return fd.hostFileMapper.MapInternal(fr, int(fd.handle.fd), at.Write)
+}
+
+// FD implements memmap.File.FD.
+func (fd *specialFileFD) FD() int {
+	fd.requireHostFD()
+	return int(fd.handle.fd)
+}
+
+func (fd *specialFileFD) requireHostFD() {
+	if fd.handle.fd < 0 {
+		// This is possible if fd was successfully mmapped before saving, then
+		// was restored without a host FD. This is unrecoverable: without a
+		// host FD, we can't mmap this file post-restore.
+		panic("gofer.specialFileFD can no longer be memory-mapped without a host FD")
+	}
 }
