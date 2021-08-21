@@ -560,6 +560,8 @@ func (fd *specialFileFD) StateFields() []string {
 		"off",
 		"haveBuf",
 		"buf",
+		"hostFileMapper",
+		"fileRefs",
 	}
 }
 
@@ -575,6 +577,8 @@ func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.off)
 	stateSinkObject.Save(5, &fd.haveBuf)
 	stateSinkObject.Save(6, &fd.buf)
+	stateSinkObject.Save(7, &fd.hostFileMapper)
+	stateSinkObject.Save(8, &fd.fileRefs)
 }
 
 // +checklocksignore
@@ -586,6 +590,8 @@ func (fd *specialFileFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fd.off)
 	stateSourceObject.Load(5, &fd.haveBuf)
 	stateSourceObject.Load(6, &fd.buf)
+	stateSourceObject.Load(7, &fd.hostFileMapper)
+	stateSourceObject.Load(8, &fd.fileRefs)
 	stateSourceObject.AfterLoad(fd.afterLoad)
 }
 
