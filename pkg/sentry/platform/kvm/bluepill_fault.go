@@ -55,11 +55,7 @@ func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virt
 		}
 
 		// Adjust the block to match our size.
-		physicalStart = alignedPhysical & faultBlockMask
-		if physicalStart < pr.physical {
-			// Bound the starting point to the start of the region.
-			physicalStart = pr.physical
-		}
+		physicalStart = pr.physical + (alignedPhysical - pr.physical) & faultBlockMask
 		virtualStart = pr.virtual + (physicalStart - pr.physical)
 		physicalEnd := physicalStart + faultBlockSize
 		if physicalEnd > end {
