@@ -384,6 +384,14 @@ func verifyMetadata(params *VerifyParams, layout *Layout) error {
 	return descriptor.verify(params.Expected, params.HashAlgorithms)
 }
 
+// cachedHashes stores verified hashes from a previous hash step.
+type cachedHashes struct {
+	// offset is the offset of cached hash in each level.
+	offset []int64
+	// hash is the verified cache for each level from previous hash steps.
+	hash [][]byte
+}
+
 // Verify verifies the content read from data with offset. The content is
 // verified against tree. If content spans across multiple blocks, each block is
 // verified. Verification fails if the hash of the data does not match the tree
@@ -418,6 +426,14 @@ func Verify(params *VerifyParams) (int64, error) {
 	total := int64(n)
 	bytesRead := int64(0)
 
+	// Only cache hash results if reading more than a block.
+	var ch *cachedHashes
+	if lastDataBlock > firstDataBlock {
+		ch = &cachedHashes{
+			offset: make([]int64, layout.numLevels()),
+			hash:   make([][]byte, layout.numLevels()),
+		}
+	}
 	for i := firstDataBlock; i <= lastDataBlock; i++ {
 		// Reach the end of file during verification.
 		if total <= 0 {
@@ -436,7 +452,7 @@ func Verify(params *VerifyParams) (int64, error) {
 			SymlinkTarget: params.SymlinkTarget,
 			Children:      params.Children,
 		}
-		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected); err != nil {
+		if err := verifyBlock(params.Tree, &descriptor, &layout, buf, i, params.HashAlgorithms, params.Expected, ch); err != nil {
 			return bytesRead, err
 		}
 
@@ -479,7 +495,7 @@ func Verify(params *VerifyParams) (int64, error) {
 // fails if the calculated hash from block is different from any level of
 // hashes stored in tree. And the final root hash is compared with
 // expected.
-func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout, dataBlock []byte, blockIndex int64, hashAlgorithms int, expected []byte) error {
+func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout, dataBlock []byte, blockIndex int64, hashAlgorithms int, expected []byte, ch *cachedHashes) error {
 	if len(dataBlock) != int(layout.blockSize) {
 		return fmt.Errorf("incorrect block size")
 	}
@@ -488,6 +504,12 @@ func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout,
 	treeBlock := make([]byte, layout.blockSize)
 	var digest []byte
 	for level := 0; level < layout.numLevels(); level++ {
+		// No need to verify remaining levels if the current block has
+		// been verified in a previous call and cached.
+		if ch != nil && ch.offset[level] == layout.digestOffset(level, blockIndex) && ch.hash[level] != nil {
+			break
+		}
+
 		// Calculate hash.
 		if level == 0 {
 			h, err := hashData(dataBlock, hashAlgorithms)
@@ -518,11 +540,19 @@ func verifyBlock(tree io.ReaderAt, descriptor *VerityDescriptor, layout *Layout,
 		if !bytes.Equal(digest, expectedDigest) {
 			return fmt.Errorf("verification failed")
 		}
+		if ch != nil {
+			ch.offset[level] = layout.digestOffset(level, blockIndex)
+			ch.hash[level] = expectedDigest
+		}
 		blockIndex = blockIndex / layout.hashesPerBlock()
 	}
 
 	// Verification for the tree succeeded. Now hash the descriptor with
 	// the root hash and compare it with expected.
-	descriptor.RootHash = digest
+	if ch != nil {
+		descriptor.RootHash = ch.hash[layout.rootLevel()]
+	} else {
+		descriptor.RootHash = digest
+	}
 	return descriptor.verify(expected, hashAlgorithms)
 }
