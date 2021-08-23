@@ -181,35 +181,17 @@ endif
 
 # build_paths extracts the built binary from the bazel stderr output.
 #
-# This could be alternately done by parsing the bazel build event stream, but
-# this is a complex schema, and begs the question: what will build the thing
-# that parses the output? Bazel? Do we need a separate bootstrapping build
-# command here? Yikes, let's just stick with the ugly shell pipeline.
-#
 # The last line is used to prevent terminal shenanigans.
 build_paths = \
   (set -euo pipefail; \
-  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) 2>&1 \
-  | tee /dev/fd/2 \
-  | sed -n -e '/^Target/,$$p' \
-  | sed -n -e '/^  \($(subst /,\/,$(subst $(SPACE),\|,$(BUILD_ROOTS)))\)/p' \
-  | sed -e 's/ /\n/g' \
-  | awk '{$$1=$$1};1' \
-  | strings \
-  | xargs -r -n 1 -I {} readlink -f "{}" \
-  | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
-
-debian_paths = \
-  (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
-  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=debian/show_paths.bzl) \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=tools/show_paths.bzl) \
   | xargs -r -n 1 -I {} readlink -f "{}" \
   | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
 copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
-deb_copy = $(call header,COPY $(1) $(2)) && $(call debian_paths,$(1),cp -fa {} $(2))
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))

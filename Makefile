@@ -444,7 +444,7 @@ $(RELEASE_ARTIFACTS)/%:
 	@mkdir -p $@
 	@$(call copy,//runsc:runsc,$@)
 	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
-	@$(call deb_copy,//debian:debian,$@)
+	@$(call copy,//debian:debian,$@)
 
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 	@mkdir -p $(RELEASE_ROOT)
