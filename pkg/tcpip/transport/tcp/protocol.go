@@ -96,6 +96,7 @@ type protocol struct {
 	maxRetries                 uint32
 	synRetries                 uint8
 	dispatcher                 dispatcher
+
 	// The following secrets are initialized once and stay unchanged after.
 	seqnumSecret     uint32
 	portOffsetSecret uint32
@@ -296,22 +297,26 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 
 	case *tcpip.TCPMinRTOOption:
 		p.mu.Lock()
+		defer p.mu.Unlock()
 		if *v < 0 {
 			p.minRTO = MinRTO
+		} else if minRTO := time.Duration(*v); minRTO <= p.maxRTO {
+			p.minRTO = minRTO
 		} else {
-			p.minRTO = time.Duration(*v)
+			return &tcpip.ErrInvalidOptionValue{}
 		}
-		p.mu.Unlock()
 		return nil
 
 	case *tcpip.TCPMaxRTOOption:
 		p.mu.Lock()
+		defer p.mu.Unlock()
 		if *v < 0 {
 			p.maxRTO = MaxRTO
+		} else if maxRTO := time.Duration(*v); maxRTO >= p.minRTO {
+			p.maxRTO = maxRTO
 		} else {
-			p.maxRTO = time.Duration(*v)
+			return &tcpip.ErrInvalidOptionValue{}
 		}
-		p.mu.Unlock()
 		return nil
 
 	case *tcpip.TCPMaxRetriesOption:

@@ -734,16 +734,18 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		// Switch state to connected.
 		n.isConnectNotified = true
-		n.transitionToStateEstablishedLocked(&handshake{
-			ep:          n,
-			iss:         iss,
-			ackNum:      irs + 1,
-			rcvWnd:      seqnum.Size(n.initialReceiveWindow()),
-			sndWnd:      s.window,
-			rcvWndScale: e.rcvWndScaleForHandshake(),
-			sndWndScale: rcvdSynOptions.WS,
-			mss:         rcvdSynOptions.MSS,
-		})
+		h := &handshake{
+			ep:                  n,
+			iss:                 iss,
+			ackNum:              irs + 1,
+			rcvWnd:              seqnum.Size(n.initialReceiveWindow()),
+			sndWnd:              s.window,
+			rcvWndScale:         e.rcvWndScaleForHandshake(),
+			sndWndScale:         rcvdSynOptions.WS,
+			mss:                 rcvdSynOptions.MSS,
+			sampleRTTWithTSOnly: true,
+		}
+		h.transitionToStateEstablishedLocked(s)
 
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.

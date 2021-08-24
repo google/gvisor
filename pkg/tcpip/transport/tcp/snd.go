@@ -382,6 +382,9 @@ func (s *sender) updateRTO(rtt time.Duration) {
 	if s.RTO < s.minRTO {
 		s.RTO = s.minRTO
 	}
+	if s.RTO > s.maxRTO {
+		s.RTO = s.maxRTO
+	}
 }
 
 // resendSegment resends the first unacknowledged segment.
