@@ -489,11 +489,6 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
 
-	// TODO(gvisor.dev/issue/6148): "If tcsetpgrp() is called by a member of a
-	// background process group in its session, and the calling process is not
-	// blocking or ignoring SIGTTOU, a SIGTTOU signal is sent to all members of
-	// this background process group."
-
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
 		return -1, linuxerr.ENOTTY
@@ -514,6 +509,16 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	// pg must be part of this process's session.
 	if tg.processGroup.session != pg.session {
 		return -1, linuxerr.EPERM
+	}
+
+	signalAction := tg.signalHandlers.actions[linux.SIGTTOU]
+	// If the calling process is a member of a background group, a SIGTTOU
+	// signal is sent to all members of this background process group.
+	// We need also need to check whether it is ignoring or blocking SIGTTOU.
+	ignored := signalAction.Handler == linux.SIG_IGN
+	blocked := tg.leader.signalMask == linux.SignalSetOf(linux.SIGTTOU)
+	if tg.processGroup.id != tg.processGroup.session.foreground.id && !ignored && !blocked {
+		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU), true)
 	}
 
 	tg.processGroup.session.foreground.id = pgid
