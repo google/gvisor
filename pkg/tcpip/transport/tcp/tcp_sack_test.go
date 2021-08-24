@@ -35,13 +35,13 @@ import (
 // SACKPermitted option enabled if the stack in the context has the SACK support
 // enabled.
 func createConnectedWithSACKPermittedOption(c *context.Context) *context.RawEndpoint {
-	return c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled()})
+	return c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: c.SACKEnabled()})
 }
 
 // createConnectedWithSACKAndTS creates and connects c.ep with the SACK & TS
 // option enabled if the stack in the context has SACK and TS enabled.
 func createConnectedWithSACKAndTS(c *context.Context) *context.RawEndpoint {
-	return c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true})
+	return c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true})
 }
 
 func setStackSACKPermitted(t *testing.T, c *context.Context, enable bool) {
@@ -108,7 +108,7 @@ func TestSackDisabledConnect(t *testing.T) {
 			setStackSACKPermitted(t, c, sackEnabled)
 			setStackTCPRecovery(t, c, 0)
 
-			rep := c.CreateConnectedWithOptions(header.TCPSynOptions{})
+			rep := c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
 
 			data := []byte{1, 2, 3}
 
@@ -170,7 +170,7 @@ func TestSackPermittedAccept(t *testing.T) {
 					setStackSACKPermitted(t, c, sackEnabled)
 					setStackTCPRecovery(t, c, 0)
 
-					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
+					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, SACKPermitted: tc.sackPermitted})
 					//  Now verify no SACK blocks are
 					//  received when sack is disabled.
 					data := []byte{1, 2, 3}
@@ -244,7 +244,7 @@ func TestSackDisabledAccept(t *testing.T) {
 					setStackSACKPermitted(t, c, sackEnabled)
 					setStackTCPRecovery(t, c, 0)
 
-					rep := c.AcceptWithOptions(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
+					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
 
 					//  Now verify no SACK blocks are
 					//  received when sack is disabled.

@@ -32,7 +32,7 @@ import (
 // createConnectedWithTimestampOption creates and connects c.ep with the
 // timestamp option enabled.
 func createConnectedWithTimestampOption(c *context.Context) *context.RawEndpoint {
-	return c.CreateConnectedWithOptions(header.TCPSynOptions{TS: true, TSVal: 1})
+	return c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{TS: true, TSVal: 1})
 }
 
 // TestTimeStampEnabledConnect tests that netstack sends the timestamp option on
@@ -131,7 +131,7 @@ func TestTimeStampDisabledConnect(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnectedWithOptions(header.TCPSynOptions{})
+	c.CreateConnectedWithOptionsNoDelay(header.TCPSynOptions{})
 }
 
 func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndSize uint16) {
@@ -147,7 +147,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
 	tsVal := rand.Uint32()
-	c.AcceptWithOptions(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, TS: true, TSVal: tsVal})
+	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS, TS: true, TSVal: tsVal})
 
 	// Now send some data and validate that timestamp is echoed correctly in the ACK.
 	data := []byte{1, 2, 3}
@@ -209,7 +209,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	}
 
 	t.Logf("Test w/ CookieEnabled = %v", cookieEnabled)
-	c.AcceptWithOptions(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
+	c.AcceptWithOptionsNoDelay(wndScale, header.TCPSynOptions{MSS: defaultIPv4MSS})
 
 	// Now send some data with the accepted connection endpoint and validate
 	// that no timestamp option is sent in the TCP segment.

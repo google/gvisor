@@ -33,7 +33,6 @@ const (
 	tsOptionSize     = 12
 	maxTCPOptionSize = 40
 	mtu              = header.TCPMinimumSize + header.IPv4MinimumSize + maxTCPOptionSize + maxPayload
-	latency          = 5 * time.Millisecond
 )
 
 func setStackTCPRecovery(t *testing.T, c *context.Context, recovery int) {
@@ -163,7 +162,10 @@ func sendAndReceiveWithSACK(t *testing.T, c *context.Context, numPackets int, en
 	if !enableRACK {
 		setStackTCPRecovery(t, c, 0)
 	}
-	createConnectedWithSACKAndTS(c)
+	// The delay should be below initial RTO (1s) otherwise retransimission
+	// will start. Choose a relatively large value so that estimated RTT
+	// keeps high even after a few rounds of undelayed RTT samples.
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 800*time.Millisecond /* delay */)
 
 	data := make([]byte, numPackets*maxPayload)
 	for i := range data {
@@ -181,9 +183,6 @@ func sendAndReceiveWithSACK(t *testing.T, c *context.Context, numPackets int, en
 	for i := 0; i < numPackets; i++ {
 		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
 		bytesRead += maxPayload
-		// This delay is added to increase RTT as low RTT can cause TLP
-		// before sending ACK.
-		time.Sleep(latency)
 	}
 
 	return data

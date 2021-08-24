@@ -105,6 +105,11 @@ type handshake struct {
 
 	// sendSYNOpts is the cached values for the SYN options to be sent.
 	sendSYNOpts header.TCPSynOptions
+
+	// sampleRTTWithTSOnly is true when the segment was retransmitted or we can't
+	// tell; then RTT can only be sampled when the incoming segment has timestamp
+	// options enabled.
+	sampleRTTWithTSOnly bool
 }
 
 func (e *endpoint) newHandshake() *handshake {
@@ -268,8 +273,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// and the handshake is completed.
 	if s.flags.Contains(header.TCPFlagAck) {
 		h.state = handshakeCompleted
-
-		h.ep.transitionToStateEstablishedLocked(h)
+		h.transitionToStateEstablishedLocked(s)
 
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
 		return nil
@@ -404,9 +408,10 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		if h.ep.SendTSOk && s.parsedOptions.TS {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
+
 		h.state = handshakeCompleted
 
-		h.ep.transitionToStateEstablishedLocked(h)
+		h.transitionToStateEstablishedLocked(s)
 
 		// Requeue the segment if the ACK completing the handshake has more info
 		// to be procesed by the newly established endpoint.
@@ -559,6 +564,10 @@ func (h *handshake) complete() tcpip.Error {
 					ack:    h.ackNum,
 					rcvWnd: h.rcvWnd,
 				}, h.sendSYNOpts)
+				// If we have ever retransmitted the SYN-ACK or
+				// SYN segment, we should only measure RTT if
+				// TS option is present.
+				h.sampleRTTWithTSOnly = true
 			}
 
 		case wakerForNotification:
@@ -600,6 +609,38 @@ func (h *handshake) complete() tcpip.Error {
 	}
 
 	return nil
+}
+
+// transitionToStateEstablisedLocked transitions the endpoint of the handshake
+// to an established state given the last segment received from peer. It also
+// initializes sender/receiver.
+func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
+	// Transfer handshake state to TCP connection. We disable
+	// receive window scaling if the peer doesn't support it
+	// (indicated by a negative send window scale).
+	h.ep.snd = newSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
+
+	var rtt time.Duration
+	if h.ep.SendTSOk && s.parsedOptions.TSEcr != 0 {
+		rtt = time.Duration(h.ep.timestamp()-s.parsedOptions.TSEcr) * time.Millisecond
+	}
+	if !h.sampleRTTWithTSOnly && rtt == 0 {
+		rtt = h.ep.stack.Clock().NowMonotonic().Sub(h.startTime)
+	}
+
+	if rtt > 0 {
+		h.ep.snd.updateRTO(rtt)
+	}
+
+	h.ep.rcvQueueInfo.rcvQueueMu.Lock()
+	h.ep.rcv = newReceiver(h.ep, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
+	// Bootstrap the auto tuning algorithm. Starting at zero will
+	// result in a really large receive window after the first auto
+	// tuning adjustment.
+	h.ep.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = int(h.rcvWnd)
+	h.ep.rcvQueueInfo.rcvQueueMu.Unlock()
+
+	h.ep.setEndpointState(StateEstablished)
 }
 
 type backoffTimer struct {
@@ -965,26 +1006,6 @@ func (e *endpoint) completeWorkerLocked() {
 	if e.workerCleanup {
 		e.cleanupLocked()
 	}
-}
-
-// transitionToStateEstablisedLocked transitions a given endpoint
-// to an established state using the handshake parameters provided.
-// It also initializes sender/receiver.
-func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
-	// Transfer handshake state to TCP connection. We disable
-	// receive window scaling if the peer doesn't support it
-	// (indicated by a negative send window scale).
-	e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
-
-	e.rcvQueueInfo.rcvQueueMu.Lock()
-	e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
-	// Bootstrap the auto tuning algorithm. Starting at zero will
-	// result in a really large receive window after the first auto
-	// tuning adjustment.
-	e.rcvQueueInfo.RcvAutoParams.PrevCopiedBytes = int(h.rcvWnd)
-	e.rcvQueueInfo.rcvQueueMu.Unlock()
-
-	e.setEndpointState(StateEstablished)
 }
 
 // transitionToStateCloseLocked ensures that the endpoint is
