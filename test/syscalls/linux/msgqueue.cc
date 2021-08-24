@@ -731,8 +731,9 @@ TEST(MsgqueueTest, MsgCtlIpcStat) {
   absl::SleepFor(absl::Seconds(1));
   auto pre_send = absl::Now();
 
-  msgbuf buf;
-  ASSERT_THAT(msgsnd(queue.get(), &buf, msgSize, 0), SyscallSucceeds());
+  msgbuf buf{1, "A message."};
+  ASSERT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+              SyscallSucceeds());
 
   ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
 
@@ -749,7 +750,7 @@ TEST(MsgqueueTest, MsgCtlIpcStat) {
   absl::SleepFor(absl::Seconds(1));
   auto pre_receive = absl::Now();
 
-  ASSERT_THAT(msgrcv(queue.get(), &buf, msgSize, 0, 0),
+  ASSERT_THAT(msgrcv(queue.get(), &buf, sizeof(buf.mtext), 0, 0),
               SyscallSucceedsWithValue(msgSize));
 
   ASSERT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
@@ -850,8 +851,9 @@ TEST(MsgqueueTest, MsgCtlMsgInfo) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
   ASSERT_THAT(queue.get(), SyscallSucceeds());
 
-  msgbuf buf;
-  ASSERT_THAT(msgsnd(queue.get(), &buf, msgSize, 0), SyscallSucceeds());
+  msgbuf buf{1, "A message."};
+  ASSERT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
+              SyscallSucceeds());
 
   ASSERT_THAT(msgctl(0, MSG_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
               SyscallSucceeds());
