@@ -8221,6 +8221,11 @@ func TestSendBufferTuning(t *testing.T) {
 
 func TestTimestampSynCookies(t *testing.T) {
 	clock := faketime.NewManualClock()
+	tsNow := func() uint32 {
+		return uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Milliseconds())
+	}
+	// Advance the clock so that NowMonotonic is non-zero.
+	clock.Advance(time.Second)
 	c := context.NewWithOpts(t, context.Options{
 		EnableV4: true,
 		EnableV6: true,
@@ -8261,6 +8266,8 @@ func TestTimestampSynCookies(t *testing.T) {
 	tcpHdr := header.TCP(header.IPv4(b).Payload())
 	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
 	initialTSVal := tcpHdr.ParsedOptions().TSVal
+	// derive the tsOffset.
+	tsOffset := initialTSVal - tsNow()
 
 	header.EncodeTSOption(420, initialTSVal, tcpOpts[2:])
 	c.SendPacket(nil, &context.Headers{
@@ -8293,8 +8300,8 @@ func TestTimestampSynCookies(t *testing.T) {
 		t.Fatalf("failed to accept: %s", err)
 	}
 
-	const elapsed = 200 * time.Millisecond
-	clock.Advance(elapsed)
+	// Advance the clock again so that we expect the next TSVal to change.
+	clock.Advance(time.Second)
 	data := []byte{1, 2, 3}
 	var r bytes.Reader
 	r.Reset(data)
@@ -8304,7 +8311,7 @@ func TestTimestampSynCookies(t *testing.T) {
 
 	// The endpoint should have a correct TSOffset so that the received TSVal
 	// should match our expectation.
-	if got, want := header.TCP(header.IPv4(c.GetPacket()).Payload()).ParsedOptions().TSVal, initialTSVal+uint32(elapsed.Milliseconds()); got != want {
+	if got, want := header.TCP(header.IPv4(c.GetPacket()).Payload()).ParsedOptions().TSVal, tsNow()+tsOffset; got != want {
 		t.Fatalf("got TSVal = %d, want %d", got, want)
 	}
 }
