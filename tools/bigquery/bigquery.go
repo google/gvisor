@@ -39,11 +39,92 @@ type Suite struct {
 	Timestamp  time.Time    `bq:"timestamp"`
 }
 
+func (s *Suite) String() string {
+	conditions := make([]string, 0, len(s.Conditions))
+	for _, c := range s.Conditions {
+		conditions = append(conditions, c.String())
+	}
+	benchmarks := make([]string, 0, len(s.Benchmarks))
+	for _, b := range s.Benchmarks {
+		benchmarks = append(benchmarks, b.String())
+	}
+
+	format := `Suite:
+Name: %s
+Conditions: %s
+Benchmarks: %s
+Official: %t
+Timestamp: %s
+`
+
+	return fmt.Sprintf(format,
+		s.Name,
+		strings.Join(conditions, "\n"),
+		strings.Join(benchmarks, "\n"),
+		s.Official,
+		s.Timestamp)
+}
+
 // Benchmark represents an individual benchmark in a suite.
 type Benchmark struct {
 	Name      string       `bq:"name"`
-	Condition []*Condition `bq:"condition"`
+	Condition []*Condition `bq:"cond"`
 	Metric    []*Metric    `bq:"metric"`
+}
+
+// String implements the String method for Benchmark
+func (bm *Benchmark) String() string {
+	conditions := make([]string, 0, len(bm.Condition))
+	for _, c := range bm.Condition {
+		conditions = append(conditions, c.String())
+	}
+	metrics := make([]string, 0, len(bm.Metric))
+	for _, m := range bm.Metric {
+		metrics = append(metrics, m.String())
+	}
+
+	format := `Condition:
+Name: %s
+Conditions: %s
+Metrics: %s
+`
+
+	return fmt.Sprintf(format,
+		bm.Name,
+		strings.Join(conditions, "\n"),
+		strings.Join(metrics, "\n"))
+}
+
+// AddMetric adds a metric to an existing Benchmark.
+func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
+	m := &Metric{
+		Name:   metricName,
+		Unit:   unit,
+		Sample: sample,
+	}
+	bm.Metric = append(bm.Metric, m)
+}
+
+// AddCondition adds a condition to an existing Benchmark.
+func (bm *Benchmark) AddCondition(name, value string) {
+	bm.Condition = append(bm.Condition, &Condition{
+		Name:  name,
+		Value: value,
+	})
+}
+
+// NewBenchmark initializes a new benchmark.
+func NewBenchmark(name string, iters int) *Benchmark {
+	return &Benchmark{
+		Name:   name,
+		Metric: make([]*Metric, 0),
+		Condition: []*Condition{
+			{
+				Name:  "iterations",
+				Value: strconv.Itoa(iters),
+			},
+		},
+	}
 }
 
 // Condition represents qualifiers for the benchmark or suite. For example:
@@ -55,11 +136,19 @@ type Condition struct {
 	Value string `bq:"value"`
 }
 
+func (c *Condition) String() string {
+	return fmt.Sprintf("Condition:\nName: %s Value: %s\n", c.Name, c.Value)
+}
+
 // Metric holds the actual metric data and unit information for this benchmark.
 type Metric struct {
 	Name   string  `bq:"name"`
 	Unit   string  `bq:"unit"`
 	Sample float64 `bq:"sample"`
+}
+
+func (m *Metric) String() string {
+	return fmt.Sprintf("Metric:\nName: %s Unit: %s Sample: %e\n", m.Name, m.Unit, m.Sample)
 }
 
 // InitBigQuery initializes a BigQuery dataset/table in the project. If the dataset/table already exists, it is not duplicated.
@@ -85,38 +174,6 @@ func InitBigQuery(ctx context.Context, projectID, datasetID, tableID string, opt
 		return fmt.Errorf("failed to create table: %s: %v", tableID, err)
 	}
 	return nil
-}
-
-// AddCondition adds a condition to an existing Benchmark.
-func (bm *Benchmark) AddCondition(name, value string) {
-	bm.Condition = append(bm.Condition, &Condition{
-		Name:  name,
-		Value: value,
-	})
-}
-
-// AddMetric adds a metric to an existing Benchmark.
-func (bm *Benchmark) AddMetric(metricName, unit string, sample float64) {
-	m := &Metric{
-		Name:   metricName,
-		Unit:   unit,
-		Sample: sample,
-	}
-	bm.Metric = append(bm.Metric, m)
-}
-
-// NewBenchmark initializes a new benchmark.
-func NewBenchmark(name string, iters int) *Benchmark {
-	return &Benchmark{
-		Name:   name,
-		Metric: make([]*Metric, 0),
-		Condition: []*Condition{
-			{
-				Name:  "iterations",
-				Value: strconv.Itoa(iters),
-			},
-		},
-	}
 }
 
 // NewBenchmarkWithMetric creates a new sending to BigQuery, initialized with a
