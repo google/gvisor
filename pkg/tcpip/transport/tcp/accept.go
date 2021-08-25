@@ -734,7 +734,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 
 		// Switch state to connected.
 		n.isConnectNotified = true
-		h := &handshake{
+		h := handshake{
 			ep:                  n,
 			iss:                 iss,
 			ackNum:              irs + 1,
