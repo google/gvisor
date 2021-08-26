@@ -123,7 +123,7 @@ func (e *endpoint) newHandshake() *handshake {
 	// Store reference to handshake state in endpoint.
 	e.h = h
 	// By the time handshake is created, e.ID is already initialized.
-	e.TSOffset = timeStampOffset(e.protocol.tsOffsetSecret, e.ID.LocalAddress, e.ID.RemoteAddress)
+	e.TSOffset = e.protocol.tsOffset(e.ID.LocalAddress, e.ID.RemoteAddress)
 	return h
 }
 
@@ -292,7 +292,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	synOpts := header.TCPSynOptions{
 		WS:    int(h.effectiveRcvWndScale()),
 		TS:    rcvSynOpts.TS,
-		TSVal: h.ep.timestamp(),
+		TSVal: h.ep.tsValNow(),
 		TSEcr: h.ep.recentTimestamp(),
 
 		// We only send SACKPermitted if the other side indicated it
@@ -362,7 +362,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		synOpts := header.TCPSynOptions{
 			WS:            h.rcvWndScale,
 			TS:            h.ep.SendTSOk,
-			TSVal:         h.ep.timestamp(),
+			TSVal:         h.ep.tsValNow(),
 			TSEcr:         h.ep.recentTimestamp(),
 			SACKPermitted: h.ep.SACKPermitted,
 			MSS:           h.ep.amss,
@@ -490,7 +490,7 @@ func (h *handshake) start() {
 	synOpts := header.TCPSynOptions{
 		WS:            h.rcvWndScale,
 		TS:            true,
-		TSVal:         h.ep.timestamp(),
+		TSVal:         h.ep.tsValNow(),
 		TSEcr:         h.ep.recentTimestamp(),
 		SACKPermitted: bool(sackEnabled),
 		MSS:           h.ep.amss,
@@ -623,12 +623,14 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 	// (indicated by a negative send window scale).
 	h.ep.snd = newSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
+	now := h.ep.stack.Clock().NowMonotonic()
+
 	var rtt time.Duration
 	if h.ep.SendTSOk && s.parsedOptions.TSEcr != 0 {
-		rtt = time.Duration(h.ep.timestamp()-s.parsedOptions.TSEcr) * time.Millisecond
+		rtt = h.ep.elapsed(now, s.parsedOptions.TSEcr)
 	}
 	if !h.sampleRTTWithTSOnly && rtt == 0 {
-		rtt = h.ep.stack.Clock().NowMonotonic().Sub(h.startTime)
+		rtt = now.Sub(h.startTime)
 	}
 
 	if rtt > 0 {
@@ -919,7 +921,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 		// Ref: https://tools.ietf.org/html/rfc7323#section-5.4.
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
-		offset += header.EncodeTSOption(e.timestamp(), e.recentTimestamp(), options[offset:])
+		offset += header.EncodeTSOption(e.tsValNow(), e.recentTimestamp(), options[offset:])
 	}
 	if e.SACKPermitted && len(sackBlocks) > 0 {
 		offset += header.EncodeNOP(options[offset:])

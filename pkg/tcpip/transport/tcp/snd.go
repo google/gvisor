@@ -1345,10 +1345,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
 		if s.ep.SendTSOk && rcvdSeg.parsedOptions.TSEcr != 0 {
-			// TSVal/Ecr values sent by Netstack are at a millisecond
-			// granularity.
-			elapsed := time.Duration(s.ep.timestamp()-rcvdSeg.parsedOptions.TSEcr) * time.Millisecond
-			s.updateRTO(elapsed)
+			s.updateRTO(s.ep.elapsed(s.ep.stack.Clock().NowMonotonic(), rcvdSeg.parsedOptions.TSEcr))
 		}
 
 		if s.shouldSchedulePTO() {

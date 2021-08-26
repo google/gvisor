@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -48,10 +49,6 @@ const (
 
 	// MaxBufferSize is the largest size a receive/send buffer can grow to.
 	MaxBufferSize = 4 << 20 // 4MB
-
-	// MaxUnprocessedSegments is the maximum number of unprocessed segments
-	// that can be queued for a given endpoint.
-	MaxUnprocessedSegments = 300
 
 	// DefaultTCPLingerTimeout is the amount of time that sockets linger in
 	// FIN_WAIT_2 state before being marked closed.
@@ -159,6 +156,24 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 	}
 
 	return stack.UnknownDestinationPacketHandled
+}
+
+func (p *protocol) tsOffset(src, dst tcpip.Address) uint32 {
+	// Initialize a random tsOffset that will be added to the recentTS
+	// everytime the timestamp is sent when the Timestamp option is enabled.
+	//
+	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
+	// why this is required.
+	//
+	// TODO(https://gvisor.dev/issues/6473): This is not really secure as
+	// it does not use the recommended algorithm linked above.
+	h := jenkins.Sum32(p.tsOffsetSecret)
+	// Per hash.Hash.Writer:
+	//
+	// It never returns an error.
+	_, _ = h.Write([]byte(src))
+	_, _ = h.Write([]byte(dst))
+	return h.Sum32()
 }
 
 // replyWithReset replies to the given segment with a reset segment.
