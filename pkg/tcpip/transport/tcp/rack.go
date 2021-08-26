@@ -80,7 +80,6 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	rtt := rc.snd.ep.stack.Clock().NowMonotonic().Sub(seg.xmitTime)
-	tsOffset := rc.snd.ep.TSOffset
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
 	// spurious inference which is determined by below checks:
@@ -92,7 +91,7 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// step 2
 	if seg.xmitCount > 1 {
 		if ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
-			if ackSeg.parsedOptions.TSEcr < tcpTimeStamp(seg.xmitTime, tsOffset) {
+			if ackSeg.parsedOptions.TSEcr < rc.snd.ep.tsVal(seg.xmitTime) {
 				return
 			}
 		}
