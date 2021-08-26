@@ -602,9 +602,18 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		synOpts := header.TCPSynOptions{
 			WS:    -1,
 			TS:    opts.TS,
-			TSVal: tcpTimeStamp(e.stack.Clock().NowMonotonic(), timeStampOffset(e.protocol.tsOffsetSecret, s.dstAddr, s.srcAddr)),
 			TSEcr: opts.TSVal,
 			MSS:   calculateAdvertisedMSS(e.userMSS, route),
+		}
+		if opts.TS {
+			// Create a barely-sufficient endpoint to calculate the TSVal.
+			pseudoEndpoint := endpoint{
+				TCPEndpointStateInner: stack.TCPEndpointStateInner{
+					TSOffset: e.protocol.tsOffset(s.dstAddr, s.srcAddr),
+				},
+				stack: e.stack,
+			}
+			synOpts.TSVal = pseudoEndpoint.tsValNow()
 		}
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
@@ -727,10 +736,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 
 		n.isRegistered = true
-
-		// Reset the tsOffset for the newly created endpoint to the one
-		// that we have used in SYN-ACK in order to calculate RTT.
-		n.TSOffset = timeStampOffset(e.protocol.tsOffsetSecret, s.dstAddr, s.srcAddr)
+		n.TSOffset = n.protocol.tsOffset(s.dstAddr, s.srcAddr)
 
 		// Switch state to connected.
 		n.isConnectNotified = true

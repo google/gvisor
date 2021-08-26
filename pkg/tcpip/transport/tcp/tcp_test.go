@@ -4959,7 +4959,7 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 												t.Fatalf("got s.SetPortRange(%d, %d) = %s, want = nil", start, end, err)
 											}
 											for i := start; i <= end; i++ {
-												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}); err != nil {
+												if err := makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}); err != nil {
 													t.Fatalf("Bind(%d) failed: %s", i, err)
 												}
 											}
@@ -8033,7 +8033,7 @@ func TestHandshakeRTT(t *testing.T) {
 			if err := c.EP.GetSockOpt(&info); err != nil {
 				t.Fatalf("c.EP.GetSockOpt(&%T) = %s", info, err)
 			}
-			if got := time.Duration(info.RTT).Round(tt.wantRTT); got != tt.wantRTT {
+			if got := info.RTT.Round(tt.wantRTT); got != tt.wantRTT {
 				t.Fatalf("got info.RTT=%s, expect %s", got, tt.wantRTT)
 			}
 			if info.RTTVar != 0 && tt.wantRTT == 0 {
@@ -8209,7 +8209,7 @@ func TestSendBufferTuning(t *testing.T) {
 				if err := c.EP.GetSockOpt(&info); err != nil {
 					t.Fatalf("GetSockOpt failed: %v", err)
 				}
-				outSz = (int64(info.SndCwnd) * packetOverheadFactor * (maxPayload))
+				outSz = int64(info.SndCwnd) * packetOverheadFactor * maxPayload
 			}
 
 			if newSz := c.EP.SocketOptions().GetSendBufferSize(); newSz != outSz {

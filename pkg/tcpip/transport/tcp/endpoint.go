@@ -2912,38 +2912,16 @@ func (e *endpoint) maybeEnableTimestamp(synOpts header.TCPSynOptions) {
 	}
 }
 
-// timestamp returns the timestamp value to be used in the TSVal field of the
-// timestamp option for outgoing TCP segments for a given endpoint.
-func (e *endpoint) timestamp() uint32 {
-	return tcpTimeStamp(e.stack.Clock().NowMonotonic(), e.TSOffset)
+func (e *endpoint) tsVal(now tcpip.MonotonicTime) uint32 {
+	return uint32(now.Sub(tcpip.MonotonicTime{}).Milliseconds()) + e.TSOffset
 }
 
-// tcpTimeStamp returns a timestamp offset by the provided offset. This is
-// not inlined above as it's used when SYN cookies are in use and endpoint
-// is not created at the time when the SYN cookie is sent.
-func tcpTimeStamp(curTime tcpip.MonotonicTime, offset uint32) uint32 {
-	d := curTime.Sub(tcpip.MonotonicTime{})
-	return uint32(d.Milliseconds()) + offset
+func (e *endpoint) tsValNow() uint32 {
+	return e.tsVal(e.stack.Clock().NowMonotonic())
 }
 
-// timeStampOffset returns a randomized timestamp offset to be used when sending
-// timestamp values in a timestamp option for a TCP segment.
-func timeStampOffset(secret uint32, src, dst tcpip.Address) uint32 {
-	// Initialize a random tsOffset that will be added to the recentTS
-	// everytime the timestamp is sent when the Timestamp option is enabled.
-	//
-	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
-	// why this is required.
-	//
-	// TODO(https://gvisor.dev/issues/6473): This is not really secure as
-	// it does not use the recommended algorithm linked above.
-	h := jenkins.Sum32(secret)
-	// Per hash.Hash.Writer:
-	//
-	// It never returns an error.
-	_, _ = h.Write([]byte(src))
-	_, _ = h.Write([]byte(dst))
-	return h.Sum32()
+func (e *endpoint) elapsed(now tcpip.MonotonicTime, tsEcr uint32) time.Duration {
+	return time.Duration(e.tsVal(now)-tsEcr) * time.Millisecond
 }
 
 // maybeEnableSACKPermitted marks the SACKPermitted option enabled for this endpoint
