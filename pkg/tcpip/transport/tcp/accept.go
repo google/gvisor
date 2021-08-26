@@ -203,7 +203,7 @@ func (l *listenContext) useSynCookies() bool {
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
 // the connection parameters given by the arguments.
-func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header.TCPSynOptions, queue *waiter.Queue) (*endpoint, tcpip.Error) {
+func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts header.TCPSynOptions, queue *waiter.Queue) (*endpoint, tcpip.Error) {
 	// Create a new endpoint.
 	netProto := l.netProto
 	if netProto == 0 {
@@ -246,7 +246,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, rcvdSynOpts *header
 // On success, a handshake h is returned with h.ep.mu held.
 //
 // Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*handshake, tcpip.Error) {
+func (l *listenContext) startHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*handshake, tcpip.Error) {
 	// Create new endpoint.
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Clock(), l.protocol.seqnumSecret)
@@ -325,7 +325,7 @@ func (l *listenContext) startHandshake(s *segment, opts *header.TCPSynOptions, q
 // established endpoint is returned with e.mu held.
 //
 // Precondition: if l.listenEP != nil, l.listenEP.mu must be locked.
-func (l *listenContext) performHandshake(s *segment, opts *header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, tcpip.Error) {
+func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, queue *waiter.Queue, owner tcpip.PacketOwner) (*endpoint, tcpip.Error) {
 	h, err := l.startHandshake(s, opts, queue, owner)
 	if err != nil {
 		return nil, err
@@ -497,7 +497,7 @@ func (e *endpoint) notifyAborted() {
 // cookies to accept connections.
 //
 // Precondition: if ctx.listenEP != nil, ctx.listenEP.mu must be locked.
-func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) tcpip.Error {
+func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts header.TCPSynOptions) tcpip.Error {
 	defer s.decRef()
 
 	h, err := ctx.startHandshake(s, opts, &waiter.Queue{}, e.owner)
@@ -583,7 +583,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		if !ctx.useSynCookies() {
 			s.incRef()
 			atomic.AddInt32(&e.synRcvdCount, 1)
-			return e.handleSynSegment(ctx, s, &opts)
+			return e.handleSynSegment(ctx, s, opts)
 		}
 		route, err := e.stack.FindRoute(s.nicID, s.dstAddr, s.srcAddr, s.netProto, false /* multicastLoop */)
 		if err != nil {
@@ -672,7 +672,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		}
 		e.stack.Stats().TCP.ListenOverflowSynCookieRcvd.Increment()
 		// Create newly accepted endpoint and deliver it.
-		rcvdSynOptions := &header.TCPSynOptions{
+		rcvdSynOptions := header.TCPSynOptions{
 			MSS: mssTable[data],
 			// Disable Window scaling as original SYN is
 			// lost.
