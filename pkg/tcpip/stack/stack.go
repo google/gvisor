@@ -1653,7 +1653,25 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Data:               payload,
 	})
+	pkt.NetworkProtocolNumber = netProto
 	return nic.WritePacketToRemote(remote, netProto, pkt)
+}
+
+// WriteRawPacket writes data directly to the specified NIC without adding any
+// headers.
+func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) tcpip.Error {
+	s.mu.Lock()
+	nic, ok := s.nics[nicID]
+	s.mu.Unlock()
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+
+	pkt := NewPacketBuffer(PacketBufferOptions{
+		Data: payload,
+	})
+	pkt.NetworkProtocolNumber = proto
+	return nic.WriteRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the

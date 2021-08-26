@@ -82,6 +82,9 @@ func (*stubLinkEndpoint) WritePacket(stack.RouteInfo, tcpip.NetworkProtocolNumbe
 
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
+func (*stubLinkEndpoint) AddHeader(_, _ tcpip.LinkAddress, _ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
+}
+
 type stubDispatcher struct {
 	stack.TransportDispatcher
 }

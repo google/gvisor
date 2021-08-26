@@ -218,6 +218,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			L3HdrLen:   l3HdrLen,
 		}
 	}
+	c.ep.AddHeader(laddr, raddr, proto, pkt)
 	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
@@ -333,6 +334,7 @@ func TestPreserveSrcAddress(t *testing.T) {
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 		Data:               buffer.VectorisedView{},
 	})
+	c.ep.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, proto, pkt)
 	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}

@@ -511,10 +511,6 @@ func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	if e.hdrSize > 0 {
-		e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
-	}
-
 	fd := e.fds[pkt.Hash%uint32(len(e.fds))]
 	var vnetHdrBuf []byte
 	if e.gsoKind == stack.HWGSOSupported {
@@ -572,10 +568,6 @@ func (e *endpoint) sendBatch(batchFD int, pkts []*stack.PacketBuffer) (int, tcpi
 		batch := pkts[packets:]
 		syscallHeaderBytes := uintptr(0)
 		for _, pkt := range batch {
-			if e.hdrSize > 0 {
-				e.AddHeader(pkt.EgressRoute.LocalLinkAddress, pkt.EgressRoute.RemoteLinkAddress, pkt.NetworkProtocolNumber, pkt)
-			}
-
 			var vnetHdrBuf []byte
 			if e.gsoKind == stack.HWGSOSupported {
 				vnetHdr := virtioNetHdr{}

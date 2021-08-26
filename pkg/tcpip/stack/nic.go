@@ -72,9 +72,16 @@ type nic struct {
 		sync.RWMutex
 		spoofing    bool
 		promiscuous bool
-		// packetEPs is protected by mu, but the contained packetEndpointList are
-		// not.
-		packetEPs map[tcpip.NetworkProtocolNumber]*packetEndpointList
+	}
+
+	packetEPs struct {
+		mu struct {
+			sync.RWMutex
+
+			// eps is protected by the mutex, but the contained packetEndpointList are
+			// not.
+			eps map[tcpip.NetworkProtocolNumber]*packetEndpointList
+		}
 	}
 }
 
@@ -143,17 +150,21 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, ctx NICC
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 	}
 	nic.linkResQueue.init(nic)
-	nic.mu.packetEPs = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
+
+	nic.packetEPs.mu.Lock()
+	defer nic.packetEPs.mu.Unlock()
+
+	nic.packetEPs.mu.eps = make(map[tcpip.NetworkProtocolNumber]*packetEndpointList)
 
 	resolutionRequired := ep.Capabilities()&CapabilityResolutionRequired != 0
 
 	// Register supported packet and network endpoint protocols.
 	for _, netProto := range header.Ethertypes {
-		nic.mu.packetEPs[netProto] = new(packetEndpointList)
+		nic.packetEPs.mu.eps[netProto] = new(packetEndpointList)
 	}
 	for _, netProto := range stack.networkProtocols {
 		netNum := netProto.Number()
-		nic.mu.packetEPs[netNum] = new(packetEndpointList)
+		nic.packetEPs.mu.eps[netNum] = new(packetEndpointList)
 
 		netEP := netProto.NewEndpoint(nic, nic)
 		nic.networkEndpoints[netNum] = netEP
@@ -365,6 +376,11 @@ func (n *nic) writePacket(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt
 
 	pkt.EgressRoute = r
 	pkt.NetworkProtocolNumber = protocol
+	local := n.LinkAddress()
+	remote := r.RemoteLinkAddress
+	n.LinkEndpoint.AddHeader(local, remote, protocol, pkt)
+	n.DeliverOutboundPacket(local, remote, protocol, pkt)
+
 	if err := n.LinkEndpoint.WritePacket(r, protocol, pkt); err != nil {
 		return err
 	}
@@ -380,9 +396,14 @@ func (n *nic) WritePackets(r *Route, pkts PacketBufferList, protocol tcpip.Netwo
 }
 
 func (n *nic) writePackets(r RouteInfo, protocol tcpip.NetworkProtocolNumber, pkts PacketBufferList) (int, tcpip.Error) {
+	local := n.LinkAddress()
+	remote := r.RemoteLinkAddress
+
 	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		pkt.EgressRoute = r
 		pkt.NetworkProtocolNumber = protocol
+		n.LinkEndpoint.AddHeader(local, remote, protocol, pkt)
+		n.DeliverOutboundPacket(local, remote, protocol, pkt)
 	}
 
 	writtenPackets, err := n.LinkEndpoint.WritePackets(r, pkts, protocol)
@@ -699,12 +720,9 @@ func (n *nic) isInGroup(addr tcpip.Address) bool {
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
 func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	n.mu.RLock()
 	enabled := n.Enabled()
 	// If the NIC is not yet enabled, don't receive any packets.
 	if !enabled {
-		n.mu.RUnlock()
-
 		n.stats.disabledRx.packets.Increment()
 		n.stats.disabledRx.bytes.IncrementBy(uint64(pkt.Data().Size()))
 		return
@@ -715,7 +733,6 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 
 	networkEndpoint, ok := n.networkEndpoints[protocol]
 	if !ok {
-		n.mu.RUnlock()
 		n.stats.unknownL3ProtocolRcvdPackets.Increment()
 		return
 	}
@@ -727,17 +744,36 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	}
 	pkt.RXTransportChecksumValidated = n.LinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
+	n.packetEPs.mu.Lock()
 	// Are any packet type sockets listening for this network protocol?
-	protoEPs := n.mu.packetEPs[protocol]
+	protoEPs := n.packetEPs.mu.eps[protocol]
 	// Other packet type sockets that are listening for all protocols.
-	anyEPs := n.mu.packetEPs[header.EthernetProtocolAll]
-	n.mu.RUnlock()
+	anyEPs := n.packetEPs.mu.eps[header.EthernetProtocolAll]
+	n.packetEPs.mu.Unlock()
 
 	// Deliver to interested packet endpoints without holding NIC lock.
+	var packetEPPkt *PacketBuffer
 	deliverPacketEPs := func(ep PacketEndpoint) {
-		p := pkt.Clone()
-		p.PktType = tcpip.PacketHost
-		ep.HandlePacket(n.id, local, protocol, p)
+		if packetEPPkt == nil {
+			// Packet endpoints hold the full packet.
+			//
+			// We perform a deep copy because higher-level endpoints may point to
+			// the middle of a view that is held by a packet endpoint. Save/Restore
+			// does not support overlapping slices and will panic in this case.
+			//
+			// TODO(https://gvisor.dev/issue/6517): Avoid this copy once S/R supports
+			// overlapping slices.
+			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
+				Data: PayloadSince(pkt.LinkHeader()).ToVectorisedView(),
+			})
+			// If a link header was populated in the original packet buffer, then
+			// populate it in the packet buffer we provide to packet endpoints as
+			// packet endpoints inspect link headers.
+			packetEPPkt.LinkHeader().Consume(pkt.LinkHeader().View().Size())
+			packetEPPkt.PktType = tcpip.PacketHost
+		}
+
+		ep.HandlePacket(n.id, local, protocol, packetEPPkt.Clone())
 	}
 	if protoEPs != nil {
 		protoEPs.forEach(deliverPacketEPs)
@@ -750,21 +786,39 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 }
 
 // DeliverOutboundPacket implements NetworkDispatcher.DeliverOutboundPacket.
-func (n *nic) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	n.mu.RLock()
+func (n *nic) DeliverOutboundPacket(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	n.packetEPs.mu.RLock()
+	defer n.packetEPs.mu.RUnlock()
 	// We do not deliver to protocol specific packet endpoints as on Linux
 	// only ETH_P_ALL endpoints get outbound packets.
 	// Add any other packet sockets that maybe listening for all protocols.
-	eps := n.mu.packetEPs[header.EthernetProtocolAll]
-	n.mu.RUnlock()
+	eps, ok := n.packetEPs.mu.eps[header.EthernetProtocolAll]
+	if !ok {
+		return
+	}
 
+	var packetEPPkt *PacketBuffer
 	eps.forEach(func(ep PacketEndpoint) {
-		p := pkt.Clone()
-		p.PktType = tcpip.PacketOutgoing
-		// Add the link layer header as outgoing packets are intercepted
-		// before the link layer header is created.
-		n.LinkEndpoint.AddHeader(local, remote, protocol, p)
-		ep.HandlePacket(n.id, local, protocol, p)
+		if packetEPPkt == nil {
+			// Packet endpoints hold the full packet.
+			//
+			// We perform a deep copy because higher-level endpoints may point to
+			// the middle of a view that is held by a packet endpoint. Save/Restore
+			// does not support overlapping slices and will panic in this case.
+			//
+			// TODO(https://gvisor.dev/issue/6517): Avoid this copy once S/R supports
+			// overlapping slices.
+			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
+				Data: PayloadSince(pkt.LinkHeader()).ToVectorisedView(),
+			})
+			// If a link header was populated in pkt, then populate it in the packet
+			// buffer we provide to packet endpoints. Packet endpoints never inspect
+			// headers above the link header so we leave the other headers alone.
+			packetEPPkt.LinkHeader().Consume(pkt.LinkHeader().View().Size())
+			packetEPPkt.PktType = tcpip.PacketOutgoing
+		}
+
+		ep.HandlePacket(n.id, local, protocol, packetEPPkt.Clone())
 	})
 }
 
@@ -917,10 +971,10 @@ func (n *nic) setNUDConfigs(protocol tcpip.NetworkProtocolNumber, c NUDConfigura
 }
 
 func (n *nic) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) tcpip.Error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.packetEPs.mu.Lock()
+	defer n.packetEPs.mu.Unlock()
 
-	eps, ok := n.mu.packetEPs[netProto]
+	eps, ok := n.packetEPs.mu.eps[netProto]
 	if !ok {
 		return &tcpip.ErrNotSupported{}
 	}
@@ -930,10 +984,10 @@ func (n *nic) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep Pa
 }
 
 func (n *nic) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.packetEPs.mu.Lock()
+	defer n.packetEPs.mu.Unlock()
 
-	eps, ok := n.mu.packetEPs[netProto]
+	eps, ok := n.packetEPs.mu.eps[netProto]
 	if !ok {
 		return
 	}
