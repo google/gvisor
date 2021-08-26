@@ -1594,9 +1594,9 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
 // - creates a child process in a new process group
 // - sets that child as the foreground process group
 // - kills its child and sets itself as the foreground process group.
-// TODO(gvisor.dev/issue/5357): Fix and enable.
-TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
+TEST_F(JobControlTest, SetForegroundProcessGroup) {
   auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
     // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
@@ -1634,7 +1634,7 @@ TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
 
     // Set ourself as the foreground process.
     pid_t pgid;
-    TEST_PCHECK(pgid = getpgid(0) == 0);
+    TEST_PCHECK((pgid = getpgid(0)) >= 0);
     TEST_PCHECK(!tcsetpgrp(replica_.get(), pgid));
   });
   ASSERT_NO_ERRNO(res);
@@ -1735,9 +1735,9 @@ TEST_F(JobControlTest, SetForegroundProcessGroupNegPgid) {
   ASSERT_NO_ERRNO(ret);
 }
 
-// TODO(gvisor.dev/issue/5357): Fix and enable.
-TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroupEmptyProcessGroup) {
+TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
   auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
     // Create a new process, put it in a new process group, make that group the
