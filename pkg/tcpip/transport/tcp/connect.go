@@ -164,13 +164,16 @@ func (h *handshake) resetState() {
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
 func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uint32) seqnum.Value {
 	isnHasher := jenkins.Sum32(seed)
-	isnHasher.Write([]byte(id.LocalAddress))
-	isnHasher.Write([]byte(id.RemoteAddress))
+	// Per hash.Hash.Writer:
+	//
+	// It never returns an error.
+	_, _ = isnHasher.Write([]byte(id.LocalAddress))
+	_, _ = isnHasher.Write([]byte(id.RemoteAddress))
 	portBuf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(portBuf, id.LocalPort)
-	isnHasher.Write(portBuf)
+	_, _ = isnHasher.Write(portBuf)
 	binary.LittleEndian.PutUint16(portBuf, id.RemotePort)
-	isnHasher.Write(portBuf)
+	_, _ = isnHasher.Write(portBuf)
 	// The time period here is 64ns. This is similar to what linux uses
 	// generate a sequence number that overlaps less than one
 	// time per MSL (2 minutes).
