@@ -1309,7 +1309,7 @@ func (e *endpoint) disableKeepaliveTimer() {
 
 // protocolMainLoopDone is called at the end of protocolMainLoop.
 // +checklocksrelease:e.mu
-func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer, closeWaker *sleep.Waker) {
+func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer) {
 	if e.snd != nil {
 		e.snd.resendTimer.cleanup()
 		e.snd.probeTimer.cleanup()
@@ -1354,7 +1354,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 			e.hardError = err
 
 			e.workerCleanup = true
-			e.protocolMainLoopDone(closeTimer, &closeWaker)
+			e.protocolMainLoopDone(closeTimer)
 			return err
 		}
 	}
@@ -1582,7 +1582,7 @@ loop:
 			// just want to terminate the loop and cleanup the
 			// endpoint.
 			cleanupOnError(nil)
-			e.protocolMainLoopDone(closeTimer, &closeWaker)
+			e.protocolMainLoopDone(closeTimer)
 			return nil
 		case StateTimeWait:
 			fallthrough
@@ -1591,7 +1591,7 @@ loop:
 		default:
 			if err := funcs[v].f(); err != nil {
 				cleanupOnError(err)
-				e.protocolMainLoopDone(closeTimer, &closeWaker)
+				e.protocolMainLoopDone(closeTimer)
 				return nil
 			}
 		}
@@ -1615,13 +1615,13 @@ loop:
 	// Handle any StateError transition from StateTimeWait.
 	if e.EndpointState() == StateError {
 		cleanupOnError(nil)
-		e.protocolMainLoopDone(closeTimer, &closeWaker)
+		e.protocolMainLoopDone(closeTimer)
 		return nil
 	}
 
 	e.transitionToStateCloseLocked()
 
-	e.protocolMainLoopDone(closeTimer, &closeWaker)
+	e.protocolMainLoopDone(closeTimer)
 
 	// A new SYN was received during TIME_WAIT and we need to abort
 	// the timewait and redirect the segment to the listener queue
