@@ -127,7 +127,7 @@ func (e *endpoint) newHandshake() *handshake {
 	return h
 }
 
-func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) *handshake {
+func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) *handshake {
 	h := e.newHandshake()
 	h.resetToSynRcvd(isn, irs, opts, deferAccept)
 	return h
@@ -197,7 +197,7 @@ func (h *handshake) effectiveRcvWndScale() uint8 {
 
 // resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
 // state.
-func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) {
+func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) {
 	h.active = false
 	h.state = handshakeSynRcvd
 	h.flags = header.TCPFlagSyn | header.TCPFlagAck
@@ -258,10 +258,10 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	rcvSynOpts := parseSynSegmentOptions(s)
 
 	// Remember if the Timestamp option was negotiated.
-	h.ep.maybeEnableTimestamp(&rcvSynOpts)
+	h.ep.maybeEnableTimestamp(rcvSynOpts)
 
 	// Remember if the SACKPermitted option was negotiated.
-	h.ep.maybeEnableSACKPermitted(&rcvSynOpts)
+	h.ep.maybeEnableSACKPermitted(rcvSynOpts)
 
 	// Remember the sequence we'll ack from now on.
 	h.ackNum = s.sequenceNumber + 1

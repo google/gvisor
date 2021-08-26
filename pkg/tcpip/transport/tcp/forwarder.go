@@ -152,7 +152,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	}
 
 	f := r.forwarder
-	ep, err := f.listen.performHandshake(r.segment, &header.TCPSynOptions{
+	ep, err := f.listen.performHandshake(r.segment, header.TCPSynOptions{
 		MSS:           r.synOptions.MSS,
 		WS:            r.synOptions.WS,
 		TS:            r.synOptions.TS,

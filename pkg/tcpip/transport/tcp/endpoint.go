@@ -2905,7 +2905,7 @@ func (e *endpoint) updateRecentTimestamp(tsVal uint32, maxSentAck seqnum.Value, 
 // maybeEnableTimestamp marks the timestamp option enabled for this endpoint if
 // the SYN options indicate that timestamp option was negotiated. It also
 // initializes the recentTS with the value provided in synOpts.TSval.
-func (e *endpoint) maybeEnableTimestamp(synOpts *header.TCPSynOptions) {
+func (e *endpoint) maybeEnableTimestamp(synOpts header.TCPSynOptions) {
 	if synOpts.TS {
 		e.SendTSOk = true
 		e.setRecentTimestamp(synOpts.TSVal)
@@ -2949,7 +2949,7 @@ func timeStampOffset(secret uint32, src, dst tcpip.Address) uint32 {
 // maybeEnableSACKPermitted marks the SACKPermitted option enabled for this endpoint
 // if the SYN options indicate that the SACK option was negotiated and the TCP
 // stack is configured to enable TCP SACK option.
-func (e *endpoint) maybeEnableSACKPermitted(synOpts *header.TCPSynOptions) {
+func (e *endpoint) maybeEnableSACKPermitted(synOpts header.TCPSynOptions) {
 	var v tcpip.TCPSACKEnabled
 	if err := e.stack.TransportProtocolOption(ProtocolNumber, &v); err != nil {
 		// Stack doesn't support SACK. So just return.
