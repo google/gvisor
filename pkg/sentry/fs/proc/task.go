@@ -41,10 +41,24 @@ import (
 
 // LINT.IfChange
 
-// getTaskMM returns t's MemoryManager. If getTaskMM succeeds, the MemoryManager's
-// users count is incremented, and must be decremented by the caller when it is
-// no longer in use.
-func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
+// getTaskMM gets the kernel task's MemoryManager. No additional reference is
+// taken on mm here. This is safe because MemoryManager.destroy is required to
+// leave the MemoryManager in a state where it's still usable as a
+// DynamicBytesSource.
+func getTaskMM(t *kernel.Task) *mm.MemoryManager {
+	var tmm *mm.MemoryManager
+	t.WithMuLocked(func(t *kernel.Task) {
+		if mm := t.MemoryManager(); mm != nil {
+			tmm = mm
+		}
+	})
+	return tmm
+}
+
+// getTaskMMIncRef returns t's MemoryManager. If getTaskMMIncRef succeeds, the
+// MemoryManager's users count is incremented, and must be decremented by the
+// caller when it is no longer in use.
+func getTaskMMIncRef(t *kernel.Task) (*mm.MemoryManager, error) {
 	if t.ExitState() == kernel.TaskExitDead {
 		return nil, linuxerr.ESRCH
 	}
@@ -269,21 +283,18 @@ func (e *exe) executable() (file fsbridge.File, err error) {
 	if err := checkTaskState(e.t); err != nil {
 		return nil, err
 	}
-	e.t.WithMuLocked(func(t *kernel.Task) {
-		mm := t.MemoryManager()
-		if mm == nil {
-			err = linuxerr.EACCES
-			return
-		}
+	mm := getTaskMM(e.t)
+	if mm == nil {
+		return nil, linuxerr.EACCES
+	}
 
-		// The MemoryManager may be destroyed, in which case
-		// MemoryManager.destroy will simply set the executable to nil
-		// (with locks held).
-		file = mm.Executable()
-		if file == nil {
-			err = linuxerr.ESRCH
-		}
-	})
+	// The MemoryManager may be destroyed, in which case
+	// MemoryManager.destroy will simply set the executable to nil
+	// (with locks held).
+	file = mm.Executable()
+	if file == nil {
+		err = linuxerr.ESRCH
+	}
 	return
 }
 
@@ -463,7 +474,7 @@ func (m *memDataFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
-	mm, err := getTaskMM(m.t)
+	mm, err := getTaskMMIncRef(m.t)
 	if err != nil {
 		return 0, nil
 	}
@@ -494,22 +505,9 @@ func newMaps(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Inod
 	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &mapsData{t}), msrc, fs.SpecialFile, t)
 }
 
-func (md *mapsData) mm() *mm.MemoryManager {
-	var tmm *mm.MemoryManager
-	md.t.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			// No additional reference is taken on mm here. This is safe
-			// because MemoryManager.destroy is required to leave the
-			// MemoryManager in a state where it's still usable as a SeqSource.
-			tmm = mm
-		}
-	})
-	return tmm
-}
-
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
 func (md *mapsData) NeedsUpdate(generation int64) bool {
-	if mm := md.mm(); mm != nil {
+	if mm := getTaskMM(md.t); mm != nil {
 		return mm.NeedsUpdate(generation)
 	}
 	return true
@@ -517,7 +515,7 @@ func (md *mapsData) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
 func (md *mapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	if mm := md.mm(); mm != nil {
+	if mm := getTaskMM(md.t); mm != nil {
 		return mm.ReadMapsSeqFileData(ctx, h)
 	}
 	return []seqfile.SeqData{}, 0
@@ -534,22 +532,9 @@ func newSmaps(ctx context.Context, t *kernel.Task, msrc *fs.MountSource) *fs.Ino
 	return newProcInode(ctx, seqfile.NewSeqFile(ctx, &smapsData{t}), msrc, fs.SpecialFile, t)
 }
 
-func (sd *smapsData) mm() *mm.MemoryManager {
-	var tmm *mm.MemoryManager
-	sd.t.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			// No additional reference is taken on mm here. This is safe
-			// because MemoryManager.destroy is required to leave the
-			// MemoryManager in a state where it's still usable as a SeqSource.
-			tmm = mm
-		}
-	})
-	return tmm
-}
-
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
 func (sd *smapsData) NeedsUpdate(generation int64) bool {
-	if mm := sd.mm(); mm != nil {
+	if mm := getTaskMM(sd.t); mm != nil {
 		return mm.NeedsUpdate(generation)
 	}
 	return true
@@ -557,7 +542,7 @@ func (sd *smapsData) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
 func (sd *smapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	if mm := sd.mm(); mm != nil {
+	if mm := getTaskMM(sd.t); mm != nil {
 		return mm.ReadSmapsSeqFileData(ctx, h)
 	}
 	return []seqfile.SeqData{}, 0
@@ -627,12 +612,10 @@ func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle)
 	fmt.Fprintf(&buf, "%d ", linux.ClockTFromDuration(s.t.StartTime().Sub(s.t.Kernel().Timekeeper().BootTime())))
 
 	var vss, rss uint64
-	s.t.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-		}
-	})
+	if mm := getTaskMM(s.t); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+	}
 	fmt.Fprintf(&buf, "%d %d ", vss, rss/hostarch.PageSize)
 
 	// rsslim.
@@ -677,12 +660,10 @@ func (s *statmData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([
 	}
 
 	var vss, rss uint64
-	s.t.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-		}
-	})
+	if mm := getTaskMM(s.t); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+	}
 
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%d %d 0 0 0 0 0\n", vss/hostarch.PageSize, rss/hostarch.PageSize)
@@ -734,12 +715,13 @@ func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) (
 		if fdTable := t.FDTable(); fdTable != nil {
 			fds = fdTable.CurrentMaxFDs()
 		}
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-			data = mm.VirtualDataSize()
-		}
 	})
+
+	if mm := getTaskMM(s.t); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+		data = mm.VirtualDataSize()
+	}
 	fmt.Fprintf(&buf, "FDSize:\t%d\n", fds)
 	fmt.Fprintf(&buf, "VmSize:\t%d kB\n", vss>>10)
 	fmt.Fprintf(&buf, "VmRSS:\t%d kB\n", rss>>10)
@@ -925,7 +907,7 @@ func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequenc
 		return 0, linuxerr.EINVAL
 	}
 
-	m, err := getTaskMM(f.t)
+	m, err := getTaskMMIncRef(f.t)
 	if err != nil {
 		return 0, err
 	}

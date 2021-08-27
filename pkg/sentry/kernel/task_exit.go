@@ -230,9 +230,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Lock()
 	t.updateRSSLocked()
 	t.tg.pidns.owner.mu.Unlock()
+
+	// Release the task image resources. Accessing these fields must be
+	// done with t.mu held, but the mm.DecUsers() call must be done outside
+	// of that lock.
 	t.mu.Lock()
-	t.image.release()
+	mm := t.image.MemoryManager
+	t.image.MemoryManager = nil
+	t.image.fu = nil
 	t.mu.Unlock()
+	mm.DecUsers(t)
 
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
