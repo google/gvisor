@@ -222,9 +222,15 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
 	t.updateCredsForExecLocked()
-	t.image.release()
+	oldImage := t.image
 	t.image = *r.image
 	t.mu.Unlock()
+
+	// Don't hold t.mu while calling t.image.release(), that may
+	// attempt to acquire TaskImage.MemoryManager.mappingMu, a lock order
+	// violation.
+	oldImage.release()
+
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
 	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
