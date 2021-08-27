@@ -80,6 +80,11 @@ func (e *countedEndpoint) WritePackets(_ stack.RouteInfo, pkts stack.PacketBuffe
 	return pkts.Len(), nil
 }
 
+// WriteRawPacket implements stack.LinkEndpoint.
+func (*countedEndpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
+}
+
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (*countedEndpoint) ARPHardwareType() header.ARPHardwareType {
 	panic("unimplemented")
