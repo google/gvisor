@@ -1823,6 +1823,13 @@ func (s *Stack) SetNUDConfigurations(id tcpip.NICID, proto tcpip.NetworkProtocol
 	return nic.setNUDConfigs(proto, c)
 }
 
+// Seed returns a 32 bit value that can be used as a seed value.
+//
+// NOTE: The seed is generated once during stack initialization only.
+func (s *Stack) Seed() uint32 {
+	return s.seed
+}
+
 // Rand returns a reference to a pseudo random generator that can be used
 // to generate random numbers as required.
 func (s *Stack) Rand() *rand.Rand {
