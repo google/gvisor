@@ -342,6 +342,10 @@ func (e *fwdTestLinkEndpoint) WritePackets(r RouteInfo, pkts PacketBufferList, p
 	return n, nil
 }
 
+func (*fwdTestLinkEndpoint) WriteRawPacket(*PacketBuffer) tcpip.Error {
+	return &tcpip.ErrNotSupported{}
+}
+
 // Wait implements stack.LinkEndpoint.Wait.
 func (*fwdTestLinkEndpoint) Wait() {}
 

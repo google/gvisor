@@ -155,3 +155,6 @@ func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.lower.AddHeader(local, remote, protocol, pkt)
 }
+
+// WriteRawPacket implements stack.LinkEndpoint.
+func (*Endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
