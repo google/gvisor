@@ -846,6 +846,14 @@ type LinkEndpoint interface {
 	// offload is enabled. If it will be used for something else, syscall filters
 	// may need to be updated.
 	WritePackets(RouteInfo, PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error)
+
+	// WriteRawPacket writes a packet directly to the link.
+	//
+	// If the link-layer has its own header, the payload must already include the
+	// header.
+	//
+	// WriteRawPacket takes ownership of the packet.
+	WriteRawPacket(*PacketBuffer) tcpip.Error
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
