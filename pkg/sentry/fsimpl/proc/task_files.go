@@ -40,7 +40,7 @@ import (
 // Linux 3.18, the limit is five lines." - user_namespaces(7)
 const maxIDMapLines = 5
 
-// mm gets the kernel task's MemoryManager. No additional reference is taken on
+// getMM gets the kernel task's MemoryManager. No additional reference is taken on
 // mm here. This is safe because MemoryManager.destroy is required to leave the
 // MemoryManager in a state where it's still usable as a DynamicBytesSource.
 func getMM(task *kernel.Task) *mm.MemoryManager {
@@ -608,12 +608,10 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTime().Sub(s.task.Kernel().Timekeeper().BootTime())))
 
 	var vss, rss uint64
-	s.task.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-		}
-	})
+	if mm := getMM(s.task); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+	}
 	fmt.Fprintf(buf, "%d %d ", vss, rss/hostarch.PageSize)
 
 	// rsslim.
@@ -649,13 +647,10 @@ var _ dynamicInode = (*statmData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var vss, rss uint64
-	s.task.WithMuLocked(func(t *kernel.Task) {
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-		}
-	})
-
+	if mm := getMM(s.task); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+	}
 	fmt.Fprintf(buf, "%d %d 0 0 0 0 0\n", vss/hostarch.PageSize, rss/hostarch.PageSize)
 	return nil
 }
@@ -779,12 +774,12 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		if fdTable := t.FDTable(); fdTable != nil {
 			fds = fdTable.CurrentMaxFDs()
 		}
-		if mm := t.MemoryManager(); mm != nil {
-			vss = mm.VirtualMemorySize()
-			rss = mm.ResidentSetSize()
-			data = mm.VirtualDataSize()
-		}
 	})
+	if mm := getMM(s.task); mm != nil {
+		vss = mm.VirtualMemorySize()
+		rss = mm.ResidentSetSize()
+		data = mm.VirtualDataSize()
+	}
 	// Filesystem user/group IDs aren't implemented; effective UID/GID are used
 	// instead.
 	fmt.Fprintf(buf, "Uid:\t%d\t%d\t%d\t%d\n", ruid, euid, suid, euid)
@@ -945,25 +940,17 @@ func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDent
 		return vfs.VirtualDentry{}, "", err
 	}
 
-	var err error
-	var exec fsbridge.File
-	s.task.WithMuLocked(func(t *kernel.Task) {
-		mm := t.MemoryManager()
-		if mm == nil {
-			err = linuxerr.EACCES
-			return
-		}
+	mm := getMM(s.task)
+	if mm == nil {
+		return vfs.VirtualDentry{}, "", linuxerr.EACCES
+	}
 
-		// The MemoryManager may be destroyed, in which case
-		// MemoryManager.destroy will simply set the executable to nil
-		// (with locks held).
-		exec = mm.Executable()
-		if exec == nil {
-			err = linuxerr.ESRCH
-		}
-	})
-	if err != nil {
-		return vfs.VirtualDentry{}, "", err
+	// The MemoryManager may be destroyed, in which case
+	// MemoryManager.destroy will simply set the executable to nil
+	// (with locks held).
+	exec := mm.Executable()
+	if exec == nil {
+		return vfs.VirtualDentry{}, "", linuxerr.ESRCH
 	}
 	defer exec.DecRef(ctx)
 

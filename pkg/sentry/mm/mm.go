@@ -28,6 +28,7 @@
 //                 memmap.File locks
 //         mm.aioManager.mu
 //           mm.AIOContext.mu
+//         kernel.TaskSet.mu
 //
 // Only mm.MemoryManager.Fork is permitted to lock mm.MemoryManager.activeMu in
 // multiple mm.MemoryManagers, as it does so in a well-defined order (forked

@@ -107,7 +107,7 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 		return 0, linuxerr.EINVAL
 	}
 
-	m, err := getTaskMM(f.t)
+	m, err := getTaskMMIncRef(f.t)
 	if err != nil {
 		return 0, err
 	}
