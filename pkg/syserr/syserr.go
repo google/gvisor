@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/safecopy"
 )
 
 // Error represents an internal error.
@@ -278,15 +279,18 @@ func FromError(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	if errno, ok := err.(unix.Errno); ok {
-		return FromHost(errno)
+
+	switch e := err.(type) {
+	case unix.Errno:
+		return FromHost(e)
+	case *errors.Error:
+		return FromHost(unix.Errno(e.Errno()))
+	case safecopy.SegvError, safecopy.BusError, safecopy.AlignmentError:
+		return FromHost(unix.EFAULT)
 	}
 
-	if linuxErr, ok := err.(*errors.Error); ok {
-		return FromHost(unix.Errno(linuxErr.Errno()))
-	}
-
-	panic("unknown error: " + err.Error())
+	msg := fmt.Sprintf("err: %s type: %T", err.Error(), err)
+	panic(msg)
 }
 
 // ConvertIntr converts the provided error code (err) to another one (intr) if

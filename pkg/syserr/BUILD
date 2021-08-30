@@ -14,6 +14,7 @@ go_library(
         "//pkg/abi/linux/errno",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
+        "//pkg/safecopy",
         "//pkg/tcpip",
         "@org_golang_x_sys//unix:go_default_library",
     ],
