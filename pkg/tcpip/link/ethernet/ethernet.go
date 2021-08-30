@@ -74,18 +74,11 @@ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 
 // WritePacket implements stack.LinkEndpoint.
 func (e *Endpoint) WritePacket(r stack.RouteInfo, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.AddHeader(e.LinkAddress(), r.RemoteLinkAddress, proto, pkt)
 	return e.Endpoint.WritePacket(r, proto, pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.
 func (e *Endpoint) WritePackets(r stack.RouteInfo, pkts stack.PacketBufferList, proto tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	linkAddr := e.LinkAddress()
-
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
-		e.AddHeader(linkAddr, r.RemoteLinkAddress, proto, pkt)
-	}
-
 	return e.Endpoint.WritePackets(r, pkts, proto)
 }
 

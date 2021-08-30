@@ -208,8 +208,6 @@ func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
-
 	views := pkt.Views()
 	// Transmit the packet.
 	e.mu.Lock()

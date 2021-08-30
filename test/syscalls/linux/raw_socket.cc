@@ -917,6 +917,104 @@ TEST(RawSocketTest, IPv6SendMsg) {
   ASSERT_THAT(sendmsg(sock, &msg, 0), SyscallFailsWithErrno(EINVAL));
 }
 
+// Test that a packet may be sent by a local raw socket and received by both
+// a local raw socket and UDP socket.
+TEST(RawSocketTest, SendAndReceiveOnRawAndUDPSocket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+  constexpr char payload[] = "abcdefgh";
+  constexpr in_port_t port = 40000;
+
+  FileDescriptor raw_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, SOL_UDP));
+
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  const struct sockaddr_in addr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+
+  struct sockaddr_in bind_addr = addr;
+  bind_addr.sin_port = htons(port);
+  ASSERT_THAT(
+      bind(udp_sock.get(), reinterpret_cast<struct sockaddr*>(&bind_addr),
+           sizeof(bind_addr)),
+      SyscallSucceeds());
+
+  // Send a UDP packet through the raw socket. The packet should be
+  // received by both the raw socket and the UDP socket as the raw socket
+  // is interested in all UDP packets, and the UDP socket is bound to the
+  // destination of the packet.
+  char send_buf[sizeof(udphdr) + sizeof(payload)];
+  struct udphdr* udphdr = reinterpret_cast<struct udphdr*>(send_buf);
+  udphdr->source = htons(port);
+  udphdr->dest = htons(port);
+  udphdr->len = htons(sizeof(udphdr) + sizeof(payload));
+  udphdr->check = 0;  // Checksum is optional for UDP on IPv4.
+  memcpy(send_buf + sizeof(udphdr), payload, sizeof(payload));
+  ASSERT_THAT(
+      sendto(raw_sock.get(), send_buf, sizeof(send_buf), 0,
+             reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Wait for the packet to become available on both sockets.
+  const int kInfinitePollTimeout = -1;
+  struct pollfd pfd = {};
+  pfd.fd = udp_sock.get();
+  pfd.events = POLLIN;
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kInfinitePollTimeout),
+              SyscallSucceedsWithValue(1));
+  pfd.fd = raw_sock.get();
+  pfd.events = POLLIN;
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kInfinitePollTimeout),
+              SyscallSucceedsWithValue(1));
+
+  // Receive the whole IPv4 packet on the raw socket.
+  const size_t kExtraUnusedSpace = 1;
+  constexpr size_t ip_packet_size =
+      sizeof(iphdr) + sizeof(udphdr) + sizeof(payload);
+  char read_raw_ip_buf[ip_packet_size + kExtraUnusedSpace] = {};
+  struct sockaddr_in peer;
+  socklen_t peerlen = sizeof(peer);
+  ASSERT_EQ(recvfrom(raw_sock.get(), read_raw_ip_buf, sizeof(read_raw_ip_buf),
+                     0, reinterpret_cast<struct sockaddr*>(&peer), &peerlen),
+            ssize_t(ip_packet_size))
+      << strerror(errno);
+  ASSERT_EQ(peerlen, sizeof(peer));
+  iphdr* ip = reinterpret_cast<iphdr*>(read_raw_ip_buf);
+  EXPECT_EQ(ip->version, static_cast<unsigned int>(IPVERSION));
+  // IHL holds the number of header bytes in 4 byte units.
+  EXPECT_EQ(ip->ihl, sizeof(iphdr) / 4);
+  EXPECT_EQ(ntohs(ip->tot_len),
+            sizeof(iphdr) + sizeof(udphdr) + sizeof(payload));
+  EXPECT_EQ(ntohs(ip->frag_off) & IP_OFFMASK, 0);
+  EXPECT_EQ(ip->protocol, SOL_UDP);
+  EXPECT_EQ(ip->saddr, htonl(INADDR_LOOPBACK));
+  EXPECT_EQ(ip->daddr, htonl(INADDR_LOOPBACK));
+  char* read_raw_udp_buf = &read_raw_ip_buf[sizeof(iphdr)];
+  for (size_t i = 0; i < sizeof(send_buf); i++) {
+    EXPECT_EQ(read_raw_udp_buf[i], send_buf[i]) << "byte mismatch @ idx=" << i;
+  }
+  EXPECT_EQ(peer.sin_family, AF_INET);
+  EXPECT_EQ(peer.sin_port, 0);
+  EXPECT_EQ(ntohl(peer.sin_addr.s_addr), INADDR_LOOPBACK);
+
+  // Receive just the message on the UDP socket.
+  char recv_payload[sizeof(payload) + kExtraUnusedSpace] = {};
+  ASSERT_THAT(
+      recvfrom(udp_sock.get(), recv_payload, sizeof(recv_payload), MSG_DONTWAIT,
+               reinterpret_cast<struct sockaddr*>(&peer), &peerlen),
+      SyscallSucceedsWithValue(sizeof(payload)));
+  for (size_t i = 0; i < sizeof(payload); i++) {
+    EXPECT_EQ(recv_payload[i], payload[i]) << "byte mismatch @ idx=" << i;
+  }
+  EXPECT_EQ(peer.sin_family, AF_INET);
+  EXPECT_EQ(ntohs(peer.sin_port), port);
+  EXPECT_EQ(ntohl(peer.sin_addr.s_addr), INADDR_LOOPBACK);
+}
+
 TEST_P(RawSocketTest, ConnectOnIPv6Socket) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 

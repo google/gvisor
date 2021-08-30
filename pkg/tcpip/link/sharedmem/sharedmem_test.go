@@ -282,6 +282,7 @@ func TestSimpleSend(t *testing.T) {
 			copy(pkt.NetworkHeader().Push(hdrLen), hdrBuf)
 
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
+			c.ep.AddHeader(localLinkAddr, remoteLinkAddr, proto, pkt)
 			if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 				t.Fatalf("WritePacket failed: %v", err)
 			}
@@ -352,6 +353,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	})
 
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
+	c.ep.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, proto, pkt)
 	if err := c.ep.WritePacket(r, proto, pkt); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
@@ -567,6 +569,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buf.ToVectorisedView(),
 		})
+		c.ep.AddHeader(localLinkAddr, remoteLinkAddr, header.IPv4ProtocolNumber, pkt)
 		if err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
@@ -582,6 +585,7 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
 			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
 		})
+		c.ep.AddHeader(localLinkAddr, remoteLinkAddr, header.IPv4ProtocolNumber, pkt)
 		err := c.ep.WritePacket(r, header.IPv4ProtocolNumber, pkt)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})

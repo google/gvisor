@@ -274,13 +274,26 @@ TEST_F(TuntapTest, WriteToDownDevice) {
   EXPECT_THAT(write(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EIO));
 }
 
-PosixErrorOr<FileDescriptor> OpenAndAttachTap(const std::string& dev_name,
-                                              const in_addr_t dev_addr) {
+struct TunTapInterface {
+  FileDescriptor fd;
+  Link link;
+};
+
+PosixErrorOr<TunTapInterface> OpenAndAttachTunTap(const std::string& dev_name,
+                                                  const in_addr_t dev_addr,
+                                                  bool tap, bool no_pi) {
   // Interface creation.
   ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(kDevNetTun, O_RDWR));
 
   struct ifreq ifr_set = {};
-  ifr_set.ifr_flags = IFF_TAP;
+  if (tap) {
+    ifr_set.ifr_flags |= IFF_TAP;
+  } else {
+    ifr_set.ifr_flags |= IFF_TUN;
+  }
+  if (no_pi) {
+    ifr_set.ifr_flags |= IFF_NO_PI;
+  }
   strncpy(ifr_set.ifr_name, dev_name.c_str(), IFNAMSIZ);
   if (ioctl(fd.get(), TUNSETIFF, &ifr_set) < 0) {
     return PosixError(errno);
@@ -296,13 +309,15 @@ PosixErrorOr<FileDescriptor> OpenAndAttachTap(const std::string& dev_name,
   if (!IsRunningOnGvisor()) {
     // FIXME(b/110961832): gVisor doesn't support setting MAC address on
     // interfaces yet.
-    RETURN_IF_ERRNO(LinkSetMacAddr(link.index, kMacA, sizeof(kMacA)));
+    if (tap) {
+      RETURN_IF_ERRNO(LinkSetMacAddr(link.index, kMacA, sizeof(kMacA)));
+    }
 
     // FIXME(b/110961832): gVisor always creates enabled/up'd interfaces.
     RETURN_IF_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
   }
 
-  return fd;
+  return TunTapInterface{.fd = std::move(fd), .link = std::move(link)};
 }
 
 // This test sets up a TAP device and pings kernel by sending ICMP echo request.
@@ -322,8 +337,9 @@ PosixErrorOr<FileDescriptor> OpenAndAttachTap(const std::string& dev_name,
 TEST_F(TuntapTest, PingKernel) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
+
   ping_pkt ping_req =
       CreatePingPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
   std::string arp_rep =
@@ -378,8 +394,8 @@ TEST_F(TuntapTest, PingKernel) {
 TEST_F(TuntapTest, SendUdpTriggersArpResolution) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
 
   // Send a UDP packet to remote.
   int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
@@ -465,8 +481,8 @@ TEST_F(TuntapTest, TCPBlockingConnectFailsArpResolution) {
   FileDescriptor sender =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
 
   sockaddr_in connect_addr = {
       .sin_family = AF_INET,
@@ -487,8 +503,8 @@ TEST_F(TuntapTest, TCPNonBlockingConnectFailsArpResolution) {
   FileDescriptor sender = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
 
   sockaddr_in connect_addr = {
       .sin_family = AF_INET,
@@ -518,8 +534,8 @@ TEST_F(TuntapTest, TCPNonBlockingConnectFailsArpResolution) {
 TEST_F(TuntapTest, WriteHangBug155928773) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
-  FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTap(kTapName, kTapIPAddr));
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
 
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
   ASSERT_THAT(sock, SyscallSucceeds());
@@ -532,6 +548,81 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
   // Return values do not matter in this test.
   connect(sock, AsSockAddr(&remote), sizeof(remote));
   write(sock, "hello", 5);
+}
+
+TEST_F(TuntapTest, RawPacketSocket) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  auto [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTunName, kTapIPAddr, false /* tap */, true /* no_pi */));
+  FileDescriptor packet_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP)));
+
+  constexpr size_t packet_size = sizeof(ping_pkt) - offsetof(ping_pkt, ip);
+
+  {
+    const ping_pkt ping_req =
+        CreatePingPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
+    ASSERT_THAT(write(fd.get(), &ping_req.ip, packet_size),
+                SyscallSucceedsWithValue(packet_size));
+    // Wait for the packet socket to become readable.
+    struct pollfd pfd = {};
+    pfd.fd = packet_sock.get();
+    pfd.events = POLLIN;
+    ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 2000), SyscallSucceedsWithValue(1));
+
+    char read_buf[packet_size + 1];
+    struct sockaddr_ll src = {};
+    socklen_t src_len = sizeof(src);
+    ASSERT_THAT(recvfrom(packet_sock.get(), read_buf, sizeof(read_buf), 0,
+                         reinterpret_cast<struct sockaddr*>(&src), &src_len),
+                SyscallSucceedsWithValue(packet_size));
+    EXPECT_EQ(memcmp(read_buf, &ping_req.ip, packet_size), 0);
+    EXPECT_EQ(src.sll_family, AF_PACKET);
+    EXPECT_EQ(ntohs(src.sll_protocol), ETH_P_IP);
+    EXPECT_EQ(src.sll_ifindex, link.index);
+    EXPECT_EQ(src.sll_pkttype, PACKET_HOST);
+    if (IsRunningOnGvisor()) {
+      EXPECT_EQ(src.sll_hatype, 0);
+      EXPECT_EQ(src.sll_halen, ETH_ALEN);
+      return;
+    } else {
+      EXPECT_EQ(src.sll_hatype, ARPHRD_NONE);
+      EXPECT_EQ(src.sll_halen, 0);
+    }
+  }
+
+  {
+    const struct sockaddr_ll dest = {
+        .sll_family = AF_PACKET,
+        .sll_protocol = htons(ETH_P_IP),
+        .sll_ifindex = link.index,
+        .sll_halen = 0,
+    };
+    const ping_pkt ping_req =
+        CreatePingPacket(kMacA, kTapIPAddr, kMacB, kTapPeerIPAddr);
+    EXPECT_THAT(
+        sendto(packet_sock.get(), &ping_req.ip, packet_size, 0,
+               reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+        SyscallSucceedsWithValue(packet_size));
+
+    while (true) {
+      // Wait for the TUN interface to become readable.
+      struct pollfd pfd = {};
+      pfd.fd = fd.get();
+      pfd.events = POLLIN;
+      ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 2000), SyscallSucceedsWithValue(1));
+
+      char read_buf[packet_size + 1] = {};
+      int n = read(fd.get(), &read_buf, sizeof(read_buf));
+      ASSERT_GT(n, 0) << strerror(errno);
+      if (n == packet_size &&
+          memcmp(read_buf, &ping_req.ip, packet_size) == 0) {
+        break;
+      }
+    }
+  }
 }
 
 }  // namespace testing
