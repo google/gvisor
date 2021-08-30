@@ -28,10 +28,10 @@
 #include <iostream>
 #include <unordered_map>
 
+#include "absl/strings/str_format.h"
 #include "include/grpcpp/security/server_credentials.h"
 #include "include/grpcpp/server_builder.h"
 #include "include/grpcpp/server_context.h"
-#include "absl/strings/str_format.h"
 #include "test/packetimpact/proto/posix_server.grpc.pb.h"
 #include "test/packetimpact/proto/posix_server.pb.h"
 
