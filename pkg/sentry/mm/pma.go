@@ -324,20 +324,37 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 							panic(fmt.Sprintf("pma %v needs to be copied for writing, but is not readable: %v", pseg.Range(), oldpma))
 						}
 					}
-					// The majority of copy-on-write breaks on executable pages
-					// come from:
-					//
-					// - The ELF loader, which must zero out bytes on the last
-					// page of each segment after the end of the segment.
-					//
-					// - gdb's use of ptrace to insert breakpoints.
-					//
-					// Neither of these cases has enough spatial locality to
-					// benefit from copying nearby pages, so if the vma is
-					// executable, only copy the pages required.
 					var copyAR hostarch.AddrRange
-					if vseg.ValuePtr().effectivePerms.Execute {
+					if vma := vseg.ValuePtr(); vma.effectivePerms.Execute {
+						// The majority of copy-on-write breaks on executable
+						// pages come from:
+						//
+						// - The ELF loader, which must zero out bytes on the
+						// last page of each segment after the end of the
+						// segment.
+						//
+						// - gdb's use of ptrace to insert breakpoints.
+						//
+						// Neither of these cases has enough spatial locality
+						// to benefit from copying nearby pages, so if the vma
+						// is executable, only copy the pages required.
 						copyAR = pseg.Range().Intersect(ar)
+					} else if vma.growsDown {
+						// In most cases, the new process will not use most of
+						// its stack before exiting or invoking execve(); it is
+						// especially unlikely to return very far down its call
+						// stack, since async-signal-safety concerns in
+						// multithreaded programs prevent the new process from
+						// being able to do much. So only copy up to one page
+						// before and after the pages required.
+						stackMaskAR := ar
+						if newStart := stackMaskAR.Start - hostarch.PageSize; newStart < stackMaskAR.Start {
+							stackMaskAR.Start = newStart
+						}
+						if newEnd := stackMaskAR.End + hostarch.PageSize; newEnd > stackMaskAR.End {
+							stackMaskAR.End = newEnd
+						}
+						copyAR = pseg.Range().Intersect(stackMaskAR)
 					} else {
 						copyAR = pseg.Range().Intersect(maskAR)
 					}
