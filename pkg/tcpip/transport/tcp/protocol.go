@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
+	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
@@ -158,7 +159,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 	return stack.UnknownDestinationPacketHandled
 }
 
-func (p *protocol) tsOffset(src, dst tcpip.Address) uint32 {
+func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 	// Initialize a random tsOffset that will be added to the recentTS
 	// everytime the timestamp is sent when the Timestamp option is enabled.
 	//
@@ -173,7 +174,7 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) uint32 {
 	// It never returns an error.
 	_, _ = h.Write([]byte(src))
 	_, _ = h.Write([]byte(dst))
-	return h.Sum32()
+	return tcp.NewTSOffset(h.Sum32())
 }
 
 // replyWithReset replies to the given segment with a reset segment.
