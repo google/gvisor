@@ -995,7 +995,7 @@ func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	if d.writeFD < 0 {
 		d.handleMu.RUnlock()
 		// Ask the gofer if we don't have a host FD.
-		return d.updateFromGetattrLocked(ctx)
+		return d.updateFromGetattrLocked(ctx, p9file{})
 	}
 
 	var stat unix.Statx_t
@@ -1014,33 +1014,35 @@ func (d *dentry) updateFromGetattr(ctx context.Context) error {
 	// updating stale attributes in d.updateFromP9AttrsLocked().
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
-	return d.updateFromGetattrLocked(ctx)
+	return d.updateFromGetattrLocked(ctx, p9file{})
 }
 
 // Preconditions:
 // * !d.isSynthetic().
 // * d.metadataMu is locked.
 // +checklocks:d.metadataMu
-func (d *dentry) updateFromGetattrLocked(ctx context.Context) error {
-	// Use d.readFile or d.writeFile, which represent 9P FIDs that have been
-	// opened, in preference to d.file, which represents a 9P fid that has not.
-	// This may be significantly more efficient in some implementations. Prefer
-	// d.writeFile over d.readFile since some filesystem implementations may
-	// update a writable handle's metadata after writes to that handle, without
-	// making metadata updates immediately visible to read-only handles
-	// representing the same file.
-	d.handleMu.RLock()
-	handleMuRLocked := true
-	var file p9file
-	switch {
-	case !d.writeFile.isNil():
-		file = d.writeFile
-	case !d.readFile.isNil():
-		file = d.readFile
-	default:
-		file = d.file
-		d.handleMu.RUnlock()
-		handleMuRLocked = false
+func (d *dentry) updateFromGetattrLocked(ctx context.Context, file p9file) error {
+	handleMuRLocked := false
+	if file.isNil() {
+		// Use d.readFile or d.writeFile, which represent 9P FIDs that have
+		// been opened, in preference to d.file, which represents a 9P fid that
+		// has not. This may be significantly more efficient in some
+		// implementations. Prefer d.writeFile over d.readFile since some
+		// filesystem implementations may update a writable handle's metadata
+		// after writes to that handle, without making metadata updates
+		// immediately visible to read-only handles representing the same file.
+		d.handleMu.RLock()
+		switch {
+		case !d.writeFile.isNil():
+			file = d.writeFile
+			handleMuRLocked = true
+		case !d.readFile.isNil():
+			file = d.readFile
+			handleMuRLocked = true
+		default:
+			file = d.file
+			d.handleMu.RUnlock()
+		}
 	}
 
 	_, attrMask, attr, err := file.getAttr(ctx, dentryAttrMask())
@@ -2044,9 +2046,17 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	d := fd.dentry()
 	const validMask = uint32(linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_SIZE | linux.STATX_BLOCKS | linux.STATX_BTIME)
 	if !d.cachedMetadataAuthoritative() && opts.Mask&validMask != 0 && opts.Sync != linux.AT_STATX_DONT_SYNC {
-		// TODO(jamieliu): Use specialFileFD.handle.file for the getattr if
-		// available?
-		if err := d.updateFromGetattr(ctx); err != nil {
+		// Use specialFileFD.handle.file for the getattr if available, for the
+		// same reason that we try to use open file handles in
+		// dentry.updateFromGetattrLocked().
+		var file p9file
+		if sffd, ok := fd.vfsfd.Impl().(*specialFileFD); ok {
+			file = sffd.handle.file
+		}
+		d.metadataMu.Lock()
+		err := d.updateFromGetattrLocked(ctx, file)
+		d.metadataMu.Unlock()
+		if err != nil {
 			return linux.Statx{}, err
 		}
 	}
