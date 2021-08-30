@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
@@ -402,7 +403,7 @@ type TCPSndBufState struct {
 type TCPEndpointStateInner struct {
 	// TSOffset is a randomized offset added to the value of the TSVal
 	// field in the timestamp option.
-	TSOffset uint32
+	TSOffset tcp.TSOffset
 
 	// SACKPermitted is set to true if the peer sends the TCPSACKPermitted
 	// option in the SYN/SYN-ACK.
