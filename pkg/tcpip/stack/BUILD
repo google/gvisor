@@ -85,6 +85,7 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/hash/jenkins",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/internal/tcp",
         "//pkg/tcpip/ports",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/transport/tcpconntrack",

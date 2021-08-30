@@ -606,14 +606,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			MSS:   calculateAdvertisedMSS(e.userMSS, route),
 		}
 		if opts.TS {
-			// Create a barely-sufficient endpoint to calculate the TSVal.
-			pseudoEndpoint := endpoint{
-				TCPEndpointStateInner: stack.TCPEndpointStateInner{
-					TSOffset: e.protocol.tsOffset(s.dstAddr, s.srcAddr),
-				},
-				stack: e.stack,
-			}
-			synOpts.TSVal = pseudoEndpoint.tsValNow()
+			offset := e.protocol.tsOffset(s.dstAddr, s.srcAddr)
+			now := e.stack.Clock().NowMonotonic()
+			synOpts.TSVal = offset.TSVal(now)
 		}
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
