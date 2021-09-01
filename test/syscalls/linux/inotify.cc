@@ -1849,34 +1849,6 @@ TEST(Inotify, SpliceOnWatchTarget) {
                       }));
 }
 
-TEST(Inotify, SpliceOnInotifyFD) {
-  int pipefds[2];
-  ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
-
-  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  const TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      root.path(), "some content", TempPath::kDefaultFileMode));
-
-  const FileDescriptor file1_fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDONLY));
-  const int watcher = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
-
-  char buf;
-  EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
-
-  EXPECT_THAT(splice(fd.get(), nullptr, pipefds[1], nullptr,
-                     sizeof(struct inotify_event) + 1, SPLICE_F_NONBLOCK),
-              SyscallSucceedsWithValue(sizeof(struct inotify_event)));
-
-  const FileDescriptor read_fd(pipefds[0]);
-  const std::vector<Event> events =
-      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(read_fd.get()));
-  ASSERT_THAT(events, Are({Event(IN_ACCESS, watcher)}));
-}
-
 // Watches on a parent should not be triggered by actions on a hard link to one
 // of its children that has a different parent.
 TEST(Inotify, LinkOnOtherParent) {
