@@ -170,3 +170,18 @@ const (
 	KCOV_MODE_TRACE_PC  = 2
 	KCOV_MODE_TRACE_CMP = 3
 )
+
+// Attestation ioctls.
+var (
+	SIGN_ATTESTATION_REPORT = IOC(_IOC_READ, 's', 1, 65)
+)
+
+// SizeOfQuoteInputData is the number of bytes in the input data of ioctl call
+// to get quote.
+const SizeOfQuoteInputData = 64
+
+// SignReport is a struct that gets signed quote from input data.
+type SignReport struct {
+	data  [64]byte
+	quote []byte
+}
