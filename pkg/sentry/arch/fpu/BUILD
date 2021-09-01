@@ -9,6 +9,7 @@ go_library(
         "fpu_amd64.go",
         "fpu_amd64.s",
         "fpu_arm64.go",
+        "fpu_unsafe.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
