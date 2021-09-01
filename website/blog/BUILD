@@ -49,6 +49,16 @@ doc(
     permalink = "/blog/2020/10/22/platform-portability/",
 )
 
+doc(
+    name = "gvisor-rack",
+    src = "2021-08-31-gvisor-rack.md",
+    authors = [
+        "nybidari",
+    ],
+    layout = "post",
+    permalink = "/blog/2021/08/31/gvisor-rack/",
+)
+
 docs(
     name = "posts",
     deps = [
