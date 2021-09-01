@@ -19,7 +19,6 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/context"
@@ -175,27 +174,6 @@ type VDSO struct {
 
 	// phdrs are the VDSO ELF phdrs.
 	phdrs []elf.ProgHeader `state:".([]elfProgHeader)"`
-}
-
-// getSymbolValueFromVDSO returns the specific symbol value in vdso.so.
-func getSymbolValueFromVDSO(symbol string) (uint64, error) {
-	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
-	if err != nil {
-		return 0, err
-	}
-	syms, err := f.Symbols()
-	if err != nil {
-		return 0, err
-	}
-
-	for _, sym := range syms {
-		if elf.ST_BIND(sym.Info) != elf.STB_LOCAL && sym.Section != elf.SHN_UNDEF {
-			if strings.Contains(sym.Name, symbol) {
-				return sym.Value, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("no %v in vdso.so", symbol)
 }
 
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
@@ -388,3 +366,21 @@ func (v *VDSO) Release(ctx context.Context) {
 	v.ParamPage.DecRef(ctx)
 	v.vdso.DecRef(ctx)
 }
+
+var vdsoSigreturnOffset = func() uint64 {
+	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse vdso.so as ELF file: %v", err))
+	}
+	syms, err := f.Symbols()
+	if err != nil {
+		panic(fmt.Sprintf("failed to read symbols from vdso.so: %v", err))
+	}
+	const sigreturnSymbol = "__kernel_rt_sigreturn"
+	for _, sym := range syms {
+		if elf.ST_BIND(sym.Info) != elf.STB_LOCAL && sym.Section != elf.SHN_UNDEF && sym.Name == sigreturnSymbol {
+			return sym.Value
+		}
+	}
+	panic(fmt.Sprintf("no symbol %q in vdso.so", sigreturnSymbol))
+}()
