@@ -36,6 +36,10 @@ func (d *dentry) isCopiedUp() bool {
 //
 // Preconditions: filesystem.renameMu must be locked.
 func (d *dentry) copyUpLocked(ctx context.Context) error {
+	return d.copyUpMaybeSyntheticMountpointLocked(ctx, false /* forSyntheticMountpoint */)
+}
+
+func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSyntheticMountpoint bool) error {
 	// Fast path.
 	if d.isCopiedUp() {
 		return nil
@@ -59,7 +63,7 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 		// d is a filesystem root with no upper layer.
 		return linuxerr.EROFS
 	}
-	if err := d.parent.copyUpLocked(ctx); err != nil {
+	if err := d.parent.copyUpMaybeSyntheticMountpointLocked(ctx, forSyntheticMountpoint); err != nil {
 		return err
 	}
 
@@ -168,7 +172,8 @@ func (d *dentry) copyUpLocked(ctx context.Context) error {
 
 	case linux.S_IFDIR:
 		if err := vfsObj.MkdirAt(ctx, d.fs.creds, &newpop, &vfs.MkdirOptions{
-			Mode: linux.FileMode(d.mode &^ linux.S_IFMT),
+			Mode:                   linux.FileMode(d.mode &^ linux.S_IFMT),
+			ForSyntheticMountpoint: forSyntheticMountpoint,
 		}); err != nil {
 			return err
 		}
