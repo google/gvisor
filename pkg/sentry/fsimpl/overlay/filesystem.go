@@ -462,13 +462,21 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 	return d, nil
 }
 
+type createType int
+
+const (
+	createNonDirectory createType = iota
+	createDirectory
+	createSyntheticMountpoint
+)
+
 // doCreateAt checks that creating a file at rp is permitted, then invokes
 // create to do so.
 //
 // Preconditions:
 // * !rp.Done().
 // * For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, create func(parent *dentry, name string, haveUpperWhiteout bool) error) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct createType, create func(parent *dentry, name string, haveUpperWhiteout bool) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -504,7 +512,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		return linuxerr.EEXIST
 	}
 
-	if !dir && rp.MustBeDir() {
+	if ct == createNonDirectory && rp.MustBeDir() {
 		return linuxerr.ENOENT
 	}
 
@@ -518,7 +526,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	// Ensure that the parent directory is copied-up so that we can create the
 	// new file in the upper layer.
-	if err := parent.copyUpLocked(ctx); err != nil {
+	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, ct == createSyntheticMountpoint); err != nil {
 		return err
 	}
 
@@ -529,7 +537,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 
 	parent.dirents = nil
 	ev := linux.IN_CREATE
-	if dir {
+	if ct != createNonDirectory {
 		ev |= linux.IN_ISDIR
 	}
 	parent.watches.Notify(ctx, name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
@@ -618,7 +626,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		if rp.Mount() != vd.Mount() {
 			return linuxerr.EXDEV
 		}
@@ -671,7 +679,11 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	ct := createDirectory
+	if opts.ForSyntheticMountpoint {
+		ct = createSyntheticMountpoint
+	}
+	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
@@ -722,7 +734,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		// Disallow attempts to create whiteouts.
 		if opts.Mode&linux.S_IFMT == linux.S_IFCHR && opts.DevMajor == 0 && opts.DevMinor == 0 {
 			return linuxerr.EPERM
@@ -1476,7 +1488,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
