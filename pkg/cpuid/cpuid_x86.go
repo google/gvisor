@@ -627,6 +627,17 @@ type FeatureSet struct {
 	CacheLine uint32
 }
 
+// Clone returns a copy of fs.
+func (fs *FeatureSet) Clone() *FeatureSet {
+	fs2 := *fs
+	fs2.Set = make(map[Feature]bool)
+	for f, b := range fs.Set {
+		fs2.Set[f] = b
+	}
+	fs2.Caches = append([]Cache(nil), fs.Caches...)
+	return &fs2
+}
+
 // FlagsString prints out supported CPU flags. If cpuinfoOnly is true, it is
 // equivalent to the "flags" field in /proc/cpuinfo.
 func (fs *FeatureSet) FlagsString(cpuinfoOnly bool) string {
@@ -961,13 +972,13 @@ func (fs *FeatureSet) UseXsaveopt() bool {
 // HostID executes a native CPUID instruction.
 func HostID(axArg, cxArg uint32) (ax, bx, cx, dx uint32)
 
-// HostFeatureSet uses cpuid to get host values and construct a feature set
+// getHostFeatureSet uses cpuid to get host values and construct a feature set
 // that matches that of the host machine. Note that there are several places
 // where there appear to be some unnecessary assignments between register names
 // (ax, bx, cx, or dx) and featureBlockN variables. This is to explicitly show
 // where the different feature blocks come from, to make the code easier to
 // inspect and read.
-func HostFeatureSet() *FeatureSet {
+func getHostFeatureSet() *FeatureSet {
 	// eax=0 gets max supported feature and vendor ID.
 	_, bx, cx, dx := HostID(0, 0)
 	vendorID := vendorIDFromRegs(bx, cx, dx)

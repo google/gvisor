@@ -230,6 +230,16 @@ type FeatureSet struct {
 	CPURevision uint8
 }
 
+// Clone returns a copy of fs.
+func (fs *FeatureSet) Clone() *FeatureSet {
+	fs2 := *fs
+	fs2.Set = make(map[Feature]bool)
+	for f, b := range fs.Set {
+		fs2.Set[f] = b
+	}
+	return &fs2
+}
+
 // CheckHostCompatible returns nil if fs is a subset of the host feature set.
 // Noop on arm64.
 func (fs *FeatureSet) CheckHostCompatible() error {
@@ -292,9 +302,9 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu uint, b *bytes.Buffer) {
 	fmt.Fprintln(b, "") // The /proc/cpuinfo file ends with an extra newline.
 }
 
-// HostFeatureSet uses hwCap to get host values and construct a feature set
+// getHostFeatureSet uses hwCap to get host values and construct a feature set
 // that matches that of the host machine.
-func HostFeatureSet() *FeatureSet {
+func getHostFeatureSet() *FeatureSet {
 	s := make(map[Feature]bool)
 
 	for f := range arm64FeatureStrings {

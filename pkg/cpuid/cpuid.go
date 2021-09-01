@@ -37,6 +37,14 @@ package cpuid
 // arch/arm64/include/uapi/asm/hwcap.h
 type Feature int
 
+// HostFeatureSet returns a FeatureSet that matches that of the host machine.
+// Callers must not mutate the returned FeatureSet.
+func HostFeatureSet() *FeatureSet {
+	return hostFeatureSet
+}
+
+var hostFeatureSet = getHostFeatureSet()
+
 // ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
 // subset of the host feature set.
 type ErrIncompatible struct {
