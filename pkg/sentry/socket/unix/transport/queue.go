@@ -133,7 +133,7 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 	free := q.limit - q.used
 
 	if l > free && truncate {
-		if free == 0 {
+		if free <= 0 {
 			// Message can't fit right now.
 			q.mu.Unlock()
 			return 0, false, syserr.ErrWouldBlock
