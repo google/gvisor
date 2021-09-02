@@ -36,17 +36,11 @@ func (p *udpPacket) loadReceivedAt(nsec int64) {
 
 // saveData saves udpPacket.data field.
 func (p *udpPacket) saveData() buffer.VectorisedView {
-	// We cannot save p.data directly as p.data.views may alias to p.views,
-	// which is not allowed by state framework (in-struct pointer).
 	return p.data.Clone(nil)
 }
 
 // loadData loads udpPacket.data field.
 func (p *udpPacket) loadData(data buffer.VectorisedView) {
-	// NOTE: We cannot do the p.data = data.Clone(p.views[:]) optimization
-	// here because data.views is not guaranteed to be loaded by now. Plus,
-	// data.views will be allocated anyway so there really is little point
-	// of utilizing p.views for data.views.
 	p.data = data
 }
 

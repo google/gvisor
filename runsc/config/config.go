@@ -86,6 +86,9 @@ type Config struct {
 	// capabilities.
 	EnableRaw bool `flag:"net-raw"`
 
+	// AllowPacketEndpointWrite enables write operations on packet endpoints.
+	AllowPacketEndpointWrite bool `flag:"TESTONLY-allow-packet-endpoint-write"`
+
 	// HardwareGSO indicates that hardware segmentation offload is enabled.
 	HardwareGSO bool `flag:"gso"`
 

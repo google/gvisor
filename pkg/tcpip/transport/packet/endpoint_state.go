@@ -34,17 +34,11 @@ func (p *packet) loadReceivedAt(nsec int64) {
 
 // saveData saves packet.data field.
 func (p *packet) saveData() buffer.VectorisedView {
-	// We cannot save p.data directly as p.data.views may alias to p.views,
-	// which is not allowed by state framework (in-struct pointer).
 	return p.data.Clone(nil)
 }
 
 // loadData loads packet.data field.
 func (p *packet) loadData(data buffer.VectorisedView) {
-	// NOTE: We cannot do the p.data = data.Clone(p.views[:]) optimization
-	// here because data.views is not guaranteed to be loaded by now. Plus,
-	// data.views will be allocated anyway so there really is little point
-	// of utilizing p.views for data.views.
 	p.data = data
 }
 

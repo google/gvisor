@@ -76,19 +76,8 @@ func (*endpoint) Wait() {}
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	// Construct data as the unparsed portion for the loopback packet.
-	data := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-
-	// Because we're immediately turning around and writing the packet back
-	// to the rx path, we intentionally don't preserve the remote and local
-	// link addresses from the stack.Route we're passed.
-	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: data,
-	})
-	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, protocol, newPkt)
-
-	return nil
+func (e *endpoint) WritePacket(_ stack.RouteInfo, _ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+	return e.WriteRawPacket(pkt)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
@@ -105,4 +94,17 @@ func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.Net
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.
-func (*endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
+func (e *endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
+	// Construct data as the unparsed portion for the loopback packet.
+	data := buffer.NewVectorisedView(pkt.Size(), pkt.Views())
+
+	// Because we're immediately turning around and writing the packet back
+	// to the rx path, we intentionally don't preserve the remote and local
+	// link addresses from the stack.Route we're passed.
+	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Data: data,
+	})
+	e.dispatcher.DeliverNetworkPacket("" /* remote */, "" /* local */, pkt.NetworkProtocolNumber, newPkt)
+
+	return nil
+}

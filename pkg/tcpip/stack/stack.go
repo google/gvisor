@@ -72,7 +72,8 @@ type Stack struct {
 
 	// rawFactory creates raw endpoints. If nil, raw endpoints are
 	// disabled. It is set during Stack creation and is immutable.
-	rawFactory RawFactory
+	rawFactory                   RawFactory
+	packetEndpointWriteSupported bool
 
 	demux *transportDemuxer
 
@@ -218,6 +219,10 @@ type Options struct {
 	// this is non-nil.
 	RawFactory RawFactory
 
+	// AllowPacketEndpointWrite determines if packet endpoints support write
+	// operations.
+	AllowPacketEndpointWrite bool
+
 	// RandSource is an optional source to use to generate random
 	// numbers. If omitted it defaults to a Source seeded by the data
 	// returned by the stack secure RNG.
@@ -359,23 +364,24 @@ func New(opts Options) *Stack {
 	opts.NUDConfigs.resetInvalidFields()
 
 	s := &Stack{
-		transportProtocols:       make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
-		networkProtocols:         make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		nics:                     make(map[tcpip.NICID]*nic),
-		defaultForwardingEnabled: make(map[tcpip.NetworkProtocolNumber]struct{}),
-		cleanupEndpoints:         make(map[TransportEndpoint]struct{}),
-		PortManager:              ports.NewPortManager(),
-		clock:                    clock,
-		stats:                    opts.Stats.FillIn(),
-		handleLocal:              opts.HandleLocal,
-		tables:                   opts.IPTables,
-		icmpRateLimiter:          NewICMPRateLimiter(),
-		seed:                     seed,
-		nudConfigs:               opts.NUDConfigs,
-		uniqueIDGenerator:        opts.UniqueID,
-		nudDisp:                  opts.NUDDisp,
-		randomGenerator:          randomGenerator,
-		secureRNG:                opts.SecureRNG,
+		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
+		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
+		nics:                         make(map[tcpip.NICID]*nic),
+		packetEndpointWriteSupported: opts.AllowPacketEndpointWrite,
+		defaultForwardingEnabled:     make(map[tcpip.NetworkProtocolNumber]struct{}),
+		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
+		PortManager:                  ports.NewPortManager(),
+		clock:                        clock,
+		stats:                        opts.Stats.FillIn(),
+		handleLocal:                  opts.HandleLocal,
+		tables:                       opts.IPTables,
+		icmpRateLimiter:              NewICMPRateLimiter(),
+		seed:                         seed,
+		nudConfigs:                   opts.NUDConfigs,
+		uniqueIDGenerator:            opts.UniqueID,
+		nudDisp:                      opts.NUDDisp,
+		randomGenerator:              randomGenerator,
+		secureRNG:                    opts.SecureRNG,
 		sendBufferSize: tcpip.SendBufferSizeOption{
 			Min:     MinBufferSize,
 			Default: DefaultBufferSize,
@@ -1653,7 +1659,25 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 		ReserveHeaderBytes: int(nic.MaxHeaderLength()),
 		Data:               payload,
 	})
+	pkt.NetworkProtocolNumber = netProto
 	return nic.WritePacketToRemote(remote, netProto, pkt)
+}
+
+// WriteRawPacket writes data directly to the specified NIC without adding any
+// headers.
+func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) tcpip.Error {
+	s.mu.RLock()
+	nic, ok := s.nics[nicID]
+	s.mu.RUnlock()
+	if !ok {
+		return &tcpip.ErrUnknownNICID{}
+	}
+
+	pkt := NewPacketBuffer(PacketBufferOptions{
+		Data: payload,
+	})
+	pkt.NetworkProtocolNumber = proto
+	return nic.WriteRawPacket(pkt)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the
@@ -1946,4 +1970,10 @@ func (s *Stack) IsSubnetBroadcast(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	}
 
 	return false
+}
+
+// PacketEndpointWriteSupported returns true iff packet endpoints support write
+// operations.
+func (s *Stack) PacketEndpointWriteSupported() bool {
+	return s.packetEndpointWriteSupported
 }

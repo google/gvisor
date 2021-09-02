@@ -285,14 +285,6 @@ TEST_P(CookedPacketTest, Send) {
   memcpy(send_buf + sizeof(iphdr), &udphdr, sizeof(udphdr));
   memcpy(send_buf + sizeof(iphdr) + sizeof(udphdr), kMessage, sizeof(kMessage));
 
-  // We don't implement writing to packet sockets on gVisor.
-  if (IsRunningOnGvisor()) {
-    ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
-                       reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
-                SyscallFailsWithErrno(EINVAL));
-    GTEST_SKIP();
-  }
-
   // Send it.
   ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),

@@ -207,8 +207,52 @@ func (ep *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResul
 	return res, nil
 }
 
-func (*endpoint) Write(tcpip.Payloader, tcpip.WriteOptions) (int64, tcpip.Error) {
-	return 0, &tcpip.ErrInvalidOptionValue{}
+func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
+	if !ep.stack.PacketEndpointWriteSupported() {
+		return 0, &tcpip.ErrNotSupported{}
+	}
+
+	ep.mu.Lock()
+	closed := ep.closed
+	nicID := ep.boundNIC
+	ep.mu.Unlock()
+	if closed {
+		return 0, &tcpip.ErrClosedForSend{}
+	}
+
+	var remote tcpip.LinkAddress
+	proto := ep.netProto
+	if to := opts.To; to != nil {
+		remote = tcpip.LinkAddress(to.Addr)
+
+		if n := to.NIC; n != 0 {
+			nicID = n
+		}
+
+		if p := to.Port; p != 0 {
+			proto = tcpip.NetworkProtocolNumber(p)
+		}
+	}
+
+	if nicID == 0 {
+		return 0, &tcpip.ErrInvalidOptionValue{}
+	}
+
+	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
+	payloadBytes := make(buffer.View, p.Len())
+	if _, err := io.ReadFull(p, payloadBytes); err != nil {
+		return 0, &tcpip.ErrBadBuffer{}
+	}
+
+	if err := func() tcpip.Error {
+		if ep.cooked {
+			return ep.stack.WritePacketToRemote(nicID, remote, proto, payloadBytes.ToVectorisedView())
+		}
+		return ep.stack.WriteRawPacket(nicID, proto, payloadBytes.ToVectorisedView())
+	}(); err != nil {
+		return 0, err
+	}
+	return int64(len(payloadBytes)), nil
 }
 
 // Disconnect implements tcpip.Endpoint.Disconnect. Packet sockets cannot be
