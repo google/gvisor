@@ -528,7 +528,7 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 	}
 
 	// Send the request and receive the server's response.
-	rsz, err := ch.send(t)
+	rsz, err := ch.send(t, false /* isServer */)
 	if err != nil {
 		// See above.
 		c.channelsMu.Lock()
