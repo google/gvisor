@@ -155,7 +155,7 @@ func testRecv(ctx context.Context, t *testing.T, d testData) {
 
 // testSendTo tests observing the ICMP error through the send syscall. If
 // wantErrno is non-zero, the first send should fail and a subsequent send
-// should suceed; while if wantErrno is zero then the first send should just
+// should succeed; while if wantErrno is zero then the first send should just
 // succeed.
 func testSendTo(ctx context.Context, t *testing.T, d testData) {
 	// Check that sending on the clean socket works.

@@ -16,7 +16,7 @@ Packetimpact aims to provide:
 *   A **multi-platform** solution that can test both Linux and gVisor.
 *   **Conciseness** on par with packetdrill scripts.
 *   **Control-flow** like for loops, conditionals, and variables.
-*   **Flexibilty** to specify every byte in a packet or use multiple sockets.
+*   **Flexibility** to specify every byte in a packet or use multiple sockets.
 
 ## How to run packetimpact tests?
 
@@ -177,7 +177,7 @@ message SocketResponse {
 The test bench does most of the work in a test. It is a Go program that compiles
 on the host and is copied by the script into test bench's container. It is a
 regular [go unit test](https://golang.org/pkg/testing/) that imports the test
-bench framework. The test bench framwork is based on three basic utilities:
+bench framework. The test bench framework is based on three basic utilities:
 
 *   Commanding the DUT to run POSIX commands and return responses.
 *   Sending raw packets to the DUT on the test network.
@@ -475,9 +475,9 @@ type layerState interface {
     // as it was sent is available.
     sent(sent Layer) error
 
-    // received updates the layerState based on a Layer that is receieved. The
+    // received updates the layerState based on a Layer that is received. The
     // input is a Layer with all prev and next pointers populated so that the
-    // entire frame as it was receieved is available.
+    // entire frame as it was received is available.
     received(received Layer) error
 
     // close frees associated resources held by the LayerState.
