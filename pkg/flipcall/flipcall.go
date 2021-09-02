@@ -223,6 +223,23 @@ func (ep *Endpoint) RecvFirst() (uint32, error) {
 // * If ep is a client Endpoint, ep.Connect() has previously been called and
 //   returned nil.
 func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
+	return ep.sendRecv(dataLen, false /* mayRetainP */)
+}
+
+// SendRecvFast is equivalent to SendRecv, but may prevent the caller's runtime
+// P from being released, in which case the calling goroutine continues to
+// count against GOMAXPROCS while waiting for the peer Endpoint to return
+// control to the caller.
+//
+// SendRecvFast is appropriate if the peer Endpoint is expected to consistently
+// return control in a short amount of time (less than ~10ms).
+//
+// Preconditions: As for SendRecv.
+func (ep *Endpoint) SendRecvFast(dataLen uint32) (uint32, error) {
+	return ep.sendRecv(dataLen, true /* mayRetainP */)
+}
+
+func (ep *Endpoint) sendRecv(dataLen uint32, mayRetainP bool) (uint32, error) {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
 	}
@@ -233,7 +250,7 @@ func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 	// they can only shoot themselves in the foot.
 	*ep.dataLen() = dataLen
 	raceBecomeInactive()
-	if err := ep.ctrlRoundTrip(); err != nil {
+	if err := ep.ctrlRoundTrip(mayRetainP); err != nil {
 		return 0, err
 	}
 	raceBecomeActive()

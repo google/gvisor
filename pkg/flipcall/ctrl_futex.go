@@ -121,7 +121,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	return ep.futexWaitUntilActive()
 }
 
-func (ep *Endpoint) ctrlRoundTrip() error {
+func (ep *Endpoint) ctrlRoundTrip(mayRetainP bool) error {
 	if err := ep.enterFutexWait(); err != nil {
 		return err
 	}
@@ -133,6 +133,9 @@ func (ep *Endpoint) ctrlRoundTrip() error {
 	if err := ep.futexWakePeer(); err != nil {
 		return err
 	}
+	// Since we don't know if the peer Endpoint is in the same process as this
+	// one (in which case it may need our P to run), we allow our P to be
+	// retaken regardless of mayRetainP.
 	return ep.futexWaitUntilActive()
 }
 
