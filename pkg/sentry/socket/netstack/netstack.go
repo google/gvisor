@@ -59,8 +59,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -2045,7 +2045,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.SocketOps, ep commonEndpoint, name 
 
 		if isTCPSocket(skType, skProto) && tcp.EndpointState(ep.State()) != tcp.StateInitial {
 			return syserr.ErrInvalidEndpointState
-		} else if isUDPSocket(skType, skProto) && udp.EndpointState(ep.State()) != udp.StateInitial {
+		} else if isUDPSocket(skType, skProto) && transport.DatagramEndpointState(ep.State()) != transport.DatagramEndpointStateInitial {
 			return syserr.ErrInvalidEndpointState
 		}
 
@@ -3331,10 +3331,10 @@ func (s *socketOpsCommon) State() uint32 {
 		}
 	case isUDPSocket(s.skType, s.protocol):
 		// UDP socket.
-		switch udp.EndpointState(s.Endpoint.State()) {
-		case udp.StateInitial, udp.StateBound, udp.StateClosed:
+		switch transport.DatagramEndpointState(s.Endpoint.State()) {
+		case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateBound, transport.DatagramEndpointStateClosed:
 			return linux.TCP_CLOSE
-		case udp.StateConnected:
+		case transport.DatagramEndpointStateConnected:
 			return linux.TCP_ESTABLISHED
 		default:
 			return 0
