@@ -366,6 +366,7 @@ func (e *endpoint) prepareForWrite(p tcpip.Payloader, opts tcpip.WriteOptions) (
 		return udpPacketInfo{}, err
 	}
 
+	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
 		ctx.Release()

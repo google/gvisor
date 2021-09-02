@@ -281,6 +281,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 			return nil, nil, nil, &tcpip.ErrInvalidEndpointState{}
 		}
 
+		// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 		payloadBytes := make([]byte, p.Len())
 		if _, err := io.ReadFull(p, payloadBytes); err != nil {
 			return nil, nil, nil, &tcpip.ErrBadBuffer{}
@@ -600,6 +601,9 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	// We copy headers' underlying bytes because pkt.*Header may point to
 	// the middle of a slice, and another struct may point to the "outer"
 	// slice. Save/restore doesn't support overlapping slices and will fail.
+	//
+	// TODO(https://gvisor.dev/issue/6517): Avoid the copy once S/R supports
+	// overlapping slices.
 	var combinedVV buffer.VectorisedView
 	if e.TransportEndpointInfo.NetProto == header.IPv4ProtocolNumber {
 		network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()

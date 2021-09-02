@@ -1089,13 +1089,14 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
-		s, err := newEmptySandboxNetworkStack(clock, uniqueID)
+		s, err := newEmptySandboxNetworkStack(clock, uniqueID, conf.AllowPacketEndpointWrite)
 		if err != nil {
 			return nil, err
 		}
 		creator := &sandboxNetstackCreator{
-			clock:    clock,
-			uniqueID: uniqueID,
+			clock:                    clock,
+			uniqueID:                 uniqueID,
+			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		}
 		return inet.NewRootNamespace(s, creator), nil
 
@@ -1105,7 +1106,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 
 }
 
-func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
+func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID, allowPacketEndpointWrite bool) (inet.Stack, error) {
 	netProtos := []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol}
 	transProtos := []stack.TransportProtocolFactory{
 		tcp.NewProtocol,
@@ -1121,9 +1122,10 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 		HandleLocal:        true,
 		// Enable raw sockets for users with sufficient
 		// privileges.
-		RawFactory:      raw.EndpointFactory{},
-		UniqueID:        uniqueID,
-		DefaultIPTables: netfilter.DefaultLinuxTables,
+		RawFactory:               raw.EndpointFactory{},
+		AllowPacketEndpointWrite: allowPacketEndpointWrite,
+		UniqueID:                 uniqueID,
+		DefaultIPTables:          netfilter.DefaultLinuxTables,
 	})}
 
 	// Enable SACK Recovery.
@@ -1160,13 +1162,14 @@ func newEmptySandboxNetworkStack(clock tcpip.Clock, uniqueID stack.UniqueID) (in
 //
 // +stateify savable
 type sandboxNetstackCreator struct {
-	clock    tcpip.Clock
-	uniqueID stack.UniqueID
+	clock                    tcpip.Clock
+	uniqueID                 stack.UniqueID
+	allowPacketEndpointWrite bool
 }
 
 // CreateStack implements kernel.NetworkStackCreator.CreateStack.
 func (f *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
-	s, err := newEmptySandboxNetworkStack(f.clock, f.uniqueID)
+	s, err := newEmptySandboxNetworkStack(f.clock, f.uniqueID, f.allowPacketEndpointWrite)
 	if err != nil {
 		return nil, err
 	}

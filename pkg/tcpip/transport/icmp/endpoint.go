@@ -329,6 +329,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		route = r
 	}
 
+	// TODO(https://gvisor.dev/issue/6538): Avoid this allocation.
 	v := make([]byte, p.Len())
 	if _, err := io.ReadFull(p, v); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
