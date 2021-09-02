@@ -734,10 +734,29 @@ func (n *nic) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcp
 	n.mu.RUnlock()
 
 	// Deliver to interested packet endpoints without holding NIC lock.
+	var packetEPPkt *PacketBuffer
 	deliverPacketEPs := func(ep PacketEndpoint) {
-		p := pkt.Clone()
-		p.PktType = tcpip.PacketHost
-		ep.HandlePacket(n.id, local, protocol, p)
+		if packetEPPkt == nil {
+			// Packet endpoints hold the full packet.
+			//
+			// We perform a deep copy because higher-level endpoints may point to
+			// the middle of a view that is held by a packet endpoint. Save/Restore
+			// does not support overlapping slices and will panic in this case.
+			//
+			// TODO(https://gvisor.dev/issue/6517): Avoid this copy once S/R supports
+			// overlapping slices (e.g. by passing a shallow copy of pkt to the packet
+			// endpoint).
+			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
+				Data: PayloadSince(pkt.LinkHeader()).ToVectorisedView(),
+			})
+			// If a link header was populated in the original packet buffer, then
+			// populate it in the packet buffer we provide to packet endpoints as
+			// packet endpoints inspect link headers.
+			packetEPPkt.LinkHeader().Consume(pkt.LinkHeader().View().Size())
+			packetEPPkt.PktType = tcpip.PacketHost
+		}
+
+		ep.HandlePacket(n.id, local, protocol, packetEPPkt.Clone())
 	}
 	if protoEPs != nil {
 		protoEPs.forEach(deliverPacketEPs)
@@ -758,13 +777,30 @@ func (n *nic) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tc
 	eps := n.mu.packetEPs[header.EthernetProtocolAll]
 	n.mu.RUnlock()
 
+	var packetEPPkt *PacketBuffer
 	eps.forEach(func(ep PacketEndpoint) {
-		p := pkt.Clone()
-		p.PktType = tcpip.PacketOutgoing
-		// Add the link layer header as outgoing packets are intercepted
-		// before the link layer header is created.
-		n.LinkEndpoint.AddHeader(local, remote, protocol, p)
-		ep.HandlePacket(n.id, local, protocol, p)
+		if packetEPPkt == nil {
+			// Packet endpoints hold the full packet.
+			//
+			// We perform a deep copy because higher-level endpoints may point to
+			// the middle of a view that is held by a packet endpoint. Save/Restore
+			// does not support overlapping slices and will panic in this case.
+			//
+			// TODO(https://gvisor.dev/issue/6517): Avoid this copy once S/R supports
+			// overlapping slices (e.g. by passing a shallow copy of pkt to the packet
+			// endpoint).
+			packetEPPkt = NewPacketBuffer(PacketBufferOptions{
+				ReserveHeaderBytes: pkt.AvailableHeaderBytes(),
+				Data:               PayloadSince(pkt.NetworkHeader()).ToVectorisedView(),
+			})
+			// Add the link layer header as outgoing packets are intercepted before
+			// the link layer header is created and packet endpoints are interested
+			// in the link header.
+			n.LinkEndpoint.AddHeader(local, remote, protocol, packetEPPkt)
+			packetEPPkt.PktType = tcpip.PacketOutgoing
+		}
+
+		ep.HandlePacket(n.id, local, protocol, packetEPPkt.Clone())
 	})
 }
 
