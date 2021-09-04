@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -872,5 +873,25 @@ func (t *Task) ResetKcov() {
 	if t.kcov != nil {
 		t.kcov.OnTaskExit()
 		t.kcov = nil
+	}
+}
+
+// Preconditions: The TaskSet mutex must be locked.
+func (t *Task) loadSeccheckInfoLocked(req seccheck.TaskFieldSet, mask *seccheck.TaskFieldSet, info *seccheck.TaskInfo) {
+	if req.Contains(seccheck.TaskFieldThreadID) {
+		info.ThreadID = int32(t.k.tasks.Root.tids[t])
+		mask.Add(seccheck.TaskFieldThreadID)
+	}
+	if req.Contains(seccheck.TaskFieldThreadStartTime) {
+		info.ThreadStartTime = t.startTime
+		mask.Add(seccheck.TaskFieldThreadStartTime)
+	}
+	if req.Contains(seccheck.TaskFieldThreadGroupID) {
+		info.ThreadGroupID = int32(t.k.tasks.Root.tgids[t.tg])
+		mask.Add(seccheck.TaskFieldThreadGroupID)
+	}
+	if req.Contains(seccheck.TaskFieldThreadGroupStartTime) {
+		info.ThreadGroupStartTime = t.tg.leader.startTime
+		mask.Add(seccheck.TaskFieldThreadGroupStartTime)
 	}
 }

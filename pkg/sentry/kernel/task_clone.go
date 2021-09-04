@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -235,7 +236,23 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// nt that it must receive before its task goroutine starts running.
 	tid := nt.k.tasks.Root.IDOfTask(nt)
 	defer nt.Start(tid)
-	t.traceCloneEvent(tid)
+
+	if seccheck.Global.Enabled(seccheck.PointClone) {
+		mask, info := getCloneSeccheckInfo(t, nt, args)
+		if err := seccheck.Global.Clone(t, mask, &info); err != nil {
+			// nt has been visible to the rest of the system since NewTask, so
+			// it may be blocking execve or a group stop, have been notified
+			// for group signal delivery, had children reparented to it, etc.
+			// Thus we can't just drop it on the floor. Instead, instruct the
+			// task goroutine to exit immediately, as quietly as possible.
+			nt.exitTracerNotified = true
+			nt.exitTracerAcked = true
+			nt.exitParentNotified = true
+			nt.exitParentAcked = true
+			nt.runState = (*runExitMain)(nil)
+			return 0, nil, err
+		}
+	}
 
 	// "If fork/clone and execve are allowed by @prog, any child processes will
 	// be constrained to the same filters and system call ABI as the parent." -
@@ -260,6 +277,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		ntid.CopyOut(t, hostarch.Addr(args.ParentTID))
 	}
 
+	t.traceCloneEvent(tid)
 	kind := ptraceCloneKindClone
 	if args.Flags&linux.CLONE_VFORK != 0 {
 		kind = ptraceCloneKindVfork
@@ -277,6 +295,22 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		return ntid, &SyscallControl{next: &runSyscallAfterVforkStop{childTID: ntid}}, nil
 	}
 	return ntid, nil, nil
+}
+
+func getCloneSeccheckInfo(t, nt *Task, args *linux.CloneArgs) (seccheck.CloneFieldSet, seccheck.CloneInfo) {
+	req := seccheck.Global.CloneReq()
+	info := seccheck.CloneInfo{
+		Credentials: t.Credentials(),
+		Args:        *args,
+	}
+	var mask seccheck.CloneFieldSet
+	mask.Add(seccheck.CloneFieldCredentials)
+	mask.Add(seccheck.CloneFieldArgs)
+	t.k.tasks.mu.RLock()
+	defer t.k.tasks.mu.RUnlock()
+	t.loadSeccheckInfoLocked(req.Invoker, &mask.Invoker, &info.Invoker)
+	nt.loadSeccheckInfoLocked(req.Created, &mask.Created, &info.Created)
+	return mask, info
 }
 
 // maybeBeginVforkStop checks if a previously-started vfork child is still
