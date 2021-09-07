@@ -1342,7 +1342,7 @@ func (e *endpoint) protocolMainLoopDone(closeTimer tcpip.Timer) {
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
 // goroutine and is responsible for sending segments and handling received
 // segments.
-func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) tcpip.Error {
+func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) {
 	var (
 		closeTimer tcpip.Timer
 		closeWaker sleep.Waker
@@ -1360,7 +1360,7 @@ func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{
 
 			e.workerCleanup = true
 			e.protocolMainLoopDone(closeTimer)
-			return err
+			return
 		}
 	}
 
@@ -1588,7 +1588,7 @@ loop:
 			// endpoint.
 			cleanupOnError(nil)
 			e.protocolMainLoopDone(closeTimer)
-			return nil
+			return
 		case StateTimeWait:
 			fallthrough
 		case StateClose:
@@ -1597,7 +1597,7 @@ loop:
 			if err := funcs[v].f(); err != nil {
 				cleanupOnError(err)
 				e.protocolMainLoopDone(closeTimer)
-				return nil
+				return
 			}
 		}
 	}
@@ -1621,7 +1621,7 @@ loop:
 	if e.EndpointState() == StateError {
 		cleanupOnError(nil)
 		e.protocolMainLoopDone(closeTimer)
-		return nil
+		return
 	}
 
 	e.transitionToStateCloseLocked()
@@ -1633,8 +1633,6 @@ loop:
 	if reuseTW != nil {
 		reuseTW()
 	}
-
-	return nil
 }
 
 // handleTimeWaitSegments processes segments received during TIME_WAIT
