@@ -47,9 +47,12 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"hostname": fs.newInode(ctx, root, 0444, &hostnameData{}),
 			"sem":      fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\t%d\t%d\t%d\n", linux.SEMMSL, linux.SEMMNS, linux.SEMOPM, linux.SEMMNI))),
-			"shmall":   fs.newInode(ctx, root, 0444, shmData(linux.SHMALL)),
-			"shmmax":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMAX)),
-			"shmmni":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMNI)),
+			"shmall":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMALL)),
+			"shmmax":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMMAX)),
+			"shmmni":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMMNI)),
+			"msgmni":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNI)),
+			"msgmax":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMAX)),
+			"msgmnb":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNB)),
 			"yama": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
 			}),
