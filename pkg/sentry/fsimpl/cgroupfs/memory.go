@@ -31,22 +31,34 @@ import (
 type memoryController struct {
 	controllerCommon
 
-	limitBytes int64
+	limitBytes            int64
+	softLimitBytes        int64
+	moveChargeAtImmigrate int64
 }
 
 var _ controller = (*memoryController)(nil)
 
 func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryController {
 	c := &memoryController{
-		// Linux sets this to (PAGE_COUNTER_MAX * PAGE_SIZE) by default, which
-		// is ~ 2**63 on a 64-bit system. So essentially, inifinity. The exact
-		// value isn't very important.
-		limitBytes: math.MaxInt64,
+		// Linux sets these limits to (PAGE_COUNTER_MAX * PAGE_SIZE) by default,
+		// which is ~ 2**63 on a 64-bit system. So essentially, inifinity. The
+		// exact value isn't very important.
+
+		limitBytes:     math.MaxInt64,
+		softLimitBytes: math.MaxInt64,
 	}
-	if val, ok := defaults["memory.limit_in_bytes"]; ok {
-		c.limitBytes = val
-		delete(defaults, "memory.limit_in_bytes")
+
+	consumeDefault := func(name string, valPtr *int64) {
+		if val, ok := defaults[name]; ok {
+			*valPtr = val
+			delete(defaults, name)
+		}
 	}
+
+	consumeDefault("memory.limit_in_bytes", &c.limitBytes)
+	consumeDefault("memory.soft_limit_in_bytes", &c.softLimitBytes)
+	consumeDefault("memory.move_charge_at_immigrate", &c.moveChargeAtImmigrate)
+
 	c.controllerCommon.init(controllerMemory, fs)
 	return c
 }
@@ -55,6 +67,8 @@ func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryContr
 func (c *memoryController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents["memory.usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryUsageInBytesData{})
 	contents["memory.limit_in_bytes"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.limitBytes))
+	contents["memory.soft_limit_in_bytes"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.softLimitBytes))
+	contents["memory.move_charge_at_immigrate"] = c.fs.newStaticControllerFile(ctx, creds, linux.FileMode(0644), fmt.Sprintf("%d\n", c.moveChargeAtImmigrate))
 }
 
 // +stateify savable
