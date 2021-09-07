@@ -57,7 +57,19 @@ Creator<FileDescriptor> SyscallSocketCreator(int domain, int type,
 
 PosixErrorOr<struct sockaddr_un> UniqueUnixAddr(bool abstract, int domain) {
   struct sockaddr_un addr = {};
+
+#ifdef ANDROID
+  // Using NewTempAbsPath() can cause the tmp directory path to exceed the max
+  // length (i.e., sizeof(addr.sun_path)).
+  //
+  // However, existing systems that are built with the ANDROID configuration
+  // have their temp directory in a different location, and must respect the
+  // TEST_TMPDIR.
+  std::string path = NewTempAbsPath();
+#else
   std::string path = NewTempAbsPathInDir("/tmp");
+#endif  // ANDROID
+
   if (path.size() >= sizeof(addr.sun_path)) {
     return PosixError(EINVAL,
                       "Unable to generate a temp path of appropriate length");
