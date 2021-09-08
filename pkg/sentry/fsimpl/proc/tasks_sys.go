@@ -63,6 +63,15 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
 		}),
 		"net": fs.newSysNetDir(ctx, root, k),
+		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"mqueue": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+				"msg_default":     fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprint(linux.DFLT_MSG))),
+				"msg_max":         fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprint(linux.DFLT_MSGMAX))),
+				"msgsize_default": fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprint(linux.DFLT_MSGSIZE))),
+				"msgsize_max":     fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprint(linux.DFLT_MSGSIZEMAX))),
+				"queues_max":      fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprint(linux.DFLT_QUEUESMAX))),
+			}),
+		}),
 	})
 }
 
