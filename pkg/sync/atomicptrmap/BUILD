@@ -19,6 +19,7 @@ go_template(
         "Key",
         "Value",
     ],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/gohacks",
         "//pkg/sync",
