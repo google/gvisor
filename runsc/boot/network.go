@@ -210,7 +210,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		linkEP, err := fdbased.New(&fdbased.Options{
 			FDs:                FDs,
 			MTU:                uint32(link.MTU),
-			EthernetHeader:     true,
+			EthernetHeader:     mac != "",
 			Address:            mac,
 			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
