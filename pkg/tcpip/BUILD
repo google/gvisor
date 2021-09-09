@@ -69,7 +69,6 @@ deps_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/loopback",
-        "//pkg/tcpip/link/packetsocket",
         "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/arp",
