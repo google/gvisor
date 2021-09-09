@@ -627,6 +627,8 @@ func (c *memoryController) StateFields() []string {
 	return []string{
 		"controllerCommon",
 		"limitBytes",
+		"softLimitBytes",
+		"moveChargeAtImmigrate",
 	}
 }
 
@@ -637,6 +639,8 @@ func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.limitBytes)
+	stateSinkObject.Save(2, &c.softLimitBytes)
+	stateSinkObject.Save(3, &c.moveChargeAtImmigrate)
 }
 
 func (c *memoryController) afterLoad() {}
@@ -645,6 +649,8 @@ func (c *memoryController) afterLoad() {}
 func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.limitBytes)
+	stateSourceObject.Load(2, &c.softLimitBytes)
+	stateSourceObject.Load(3, &c.moveChargeAtImmigrate)
 }
 
 func (d *memoryUsageInBytesData) StateTypeName() string {
