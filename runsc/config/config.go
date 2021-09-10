@@ -404,7 +404,7 @@ func (c *controlConfig) Get() interface{} {
 // String implements flag.Value.
 func (c *controlConfig) String() string {
 	v := ""
-	for _, control := range c.Controls.AllowedControls {
+	for _, control := range c.Controls.GetAllowedControls() {
 		if len(v) > 0 {
 			v += ","
 		}
