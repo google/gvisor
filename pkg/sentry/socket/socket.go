@@ -743,6 +743,8 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 		a.UnmarshalUnsafe(addr[:sockAddrLinkSize])
+		// TODO(https://gvisor.dev/issue/6530): Do not assume all interfaces have
+		// an ethernet address.
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
