@@ -25,7 +25,6 @@
 package packet
 
 import (
-	"fmt"
 	"io"
 	"time"
 
@@ -424,76 +423,39 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	wasEmpty := ep.rcvBufSize == 0
 
-	// Push new packet into receive list and increment the buffer size.
-	var packet packet
+	rcvdPkt := packet{
+		packetInfo: tcpip.LinkPacketInfo{
+			Protocol: netProto,
+			PktType:  pkt.PktType,
+		},
+		senderAddr: tcpip.FullAddress{
+			NIC: nicID,
+		},
+		receivedAt: ep.stack.Clock().Now(),
+	}
+
 	if !pkt.LinkHeader().View().IsEmpty() {
-		// Get info directly from the ethernet header.
 		hdr := header.Ethernet(pkt.LinkHeader().View())
-		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicID,
-			Addr: tcpip.Address(hdr.SourceAddress()),
-		}
-		packet.packetInfo.Protocol = netProto
-		packet.packetInfo.PktType = pkt.PktType
-	} else {
-		// Guess the would-be ethernet header.
-		packet.senderAddr = tcpip.FullAddress{
-			NIC:  nicID,
-			Addr: tcpip.Address(localAddr),
-		}
-		packet.packetInfo.Protocol = netProto
-		packet.packetInfo.PktType = pkt.PktType
+		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
 	}
 
 	if ep.cooked {
-		// Cooked packets can simply be queued.
-		switch pkt.PktType {
-		case tcpip.PacketHost:
-			packet.data = pkt.Data().ExtractVV()
-		case tcpip.PacketOutgoing:
-			// Strip Link Header.
-			var combinedVV buffer.VectorisedView
-			if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
-				combinedVV.AppendView(v)
-			}
-			if v := pkt.TransportHeader().View(); !v.IsEmpty() {
-				combinedVV.AppendView(v)
-			}
-			combinedVV.Append(pkt.Data().ExtractVV())
-			packet.data = combinedVV
-		default:
-			panic(fmt.Sprintf("unexpected PktType in pkt: %+v", pkt))
+		// Cooked packet endpoints don't include the link-headers in received
+		// packets.
+		if v := pkt.NetworkHeader().View(); !v.IsEmpty() {
+			rcvdPkt.data.AppendView(v)
 		}
+		if v := pkt.TransportHeader().View(); !v.IsEmpty() {
+			rcvdPkt.data.AppendView(v)
+		}
+		rcvdPkt.data.Append(pkt.Data().ExtractVV())
 	} else {
-		// Raw packets need their ethernet headers prepended before
-		// queueing.
-		var linkHeader buffer.View
-		if pkt.PktType != tcpip.PacketOutgoing {
-			if pkt.LinkHeader().View().IsEmpty() {
-				// We weren't provided with an actual ethernet header,
-				// so fake one.
-				ethFields := header.EthernetFields{
-					SrcAddr: tcpip.LinkAddress([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
-					DstAddr: localAddr,
-					Type:    netProto,
-				}
-				fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
-				fakeHeader.Encode(&ethFields)
-				linkHeader = buffer.View(fakeHeader)
-			} else {
-				linkHeader = append(buffer.View(nil), pkt.LinkHeader().View()...)
-			}
-			combinedVV := linkHeader.ToVectorisedView()
-			combinedVV.Append(pkt.Data().ExtractVV())
-			packet.data = combinedVV
-		} else {
-			packet.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
-		}
+		// Raw packet endpoints include link-headers in received packets.
+		rcvdPkt.data = buffer.NewVectorisedView(pkt.Size(), pkt.Views())
 	}
-	packet.receivedAt = ep.stack.Clock().Now()
 
-	ep.rcvList.PushBack(&packet)
-	ep.rcvBufSize += packet.data.Size()
+	ep.rcvList.PushBack(&rcvdPkt)
+	ep.rcvBufSize += rcvdPkt.data.Size()
 
 	ep.rcvMu.Unlock()
 	ep.stats.PacketsReceived.Increment()
