@@ -28,7 +28,9 @@ import (
 
 // PacketInfo holds all the information about an outbound packet.
 type PacketInfo struct {
-	Pkt   *stack.PacketBuffer
+	Pkt *stack.PacketBuffer
+
+	// TODO(https://gvisor.dev/issue/6537): Remove these fields.
 	Proto tcpip.NetworkProtocolNumber
 	Route stack.RouteInfo
 }
@@ -244,7 +246,10 @@ func (e *Endpoint) WritePacket(r stack.RouteInfo, protocol tcpip.NetworkProtocol
 		Route: r,
 	}
 
-	e.q.Write(p)
+	// Write returns false if the queue is full. A full queue is not an error
+	// from the perspective of a LinkEndpoint so we ignore Write's return
+	// value and always return nil from this method.
+	_ = e.q.Write(p)
 
 	return nil
 }
@@ -292,4 +297,16 @@ func (*Endpoint) AddHeader(tcpip.LinkAddress, tcpip.LinkAddress, tcpip.NetworkPr
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.
-func (*Endpoint) WriteRawPacket(*stack.PacketBuffer) tcpip.Error { return &tcpip.ErrNotSupported{} }
+func (e *Endpoint) WriteRawPacket(pkt *stack.PacketBuffer) tcpip.Error {
+	p := PacketInfo{
+		Pkt:   pkt,
+		Proto: pkt.NetworkProtocolNumber,
+	}
+
+	// Write returns false if the queue is full. A full queue is not an error
+	// from the perspective of a LinkEndpoint so we ignore Write's return
+	// value and always return nil from this method.
+	_ = e.q.Write(p)
+
+	return nil
+}
