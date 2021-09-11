@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package proc implements a partial in-memory file system for profs.
+// Package proc implements a partial in-memory file system for procfs.
 package proc
 
 import (
