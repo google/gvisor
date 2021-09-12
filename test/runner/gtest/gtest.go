@@ -133,17 +133,28 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 	}
 
 	// Run again to extract benchmarks.
-	args = append([]string{listBenchmarkFlag}, extraArgs...)
-	cmd = exec.Command(testBin, args...)
-	out, err = cmd.Output()
+	tb, err := ParseBenchmarks(testBin, extraArgs...)
+	if err != nil {
+		return nil, err
+	}
+	t = append(t, tb...)
+	return t, nil
+}
+
+// ParseBenchmarks returns each benchmark in a third_party/benchmark binary's list as a single test case.
+func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
+	var t []TestCase
+	args := append([]string{listBenchmarkFlag}, extraArgs...)
+	cmd := exec.Command(binary, args...)
+	out, err := cmd.Output()
 	if err != nil {
 		// We were able to enumerate tests above, but not benchmarks?
 		// We requested them, so we return an error in this case.
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
-			return nil, fmt.Errorf("could not enumerate gtest benchmarks: %v", err)
+			return nil, fmt.Errorf("could not enumerate benchmarks: %v", err)
 		}
-		return nil, fmt.Errorf("could not enumerate gtest benchmarks: %v\nstderr\n%s", err, exitErr.Stderr)
+		return nil, fmt.Errorf("could not enumerate benchmarks: %v\nstderr\n%s", err, exitErr.Stderr)
 	}
 
 	benches := strings.Trim(string(out), "\n")
