@@ -90,6 +90,13 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	var c *container.Container
 	conf := args[0].(*config.Config)
 
+	if conf.ProfileBlock != "" || conf.ProfileCPU != "" || conf.ProfileHeap != "" || conf.ProfileMutex != "" {
+		return Errorf("global -profile-{block,cpu,heap,mutex} flags have no effect on runsc debug. Pass runsc debug -profile-{block,cpu,heap,mutex} instead")
+	}
+	if conf.TraceFile != "" {
+		return Errorf("global -trace flag has no effect on runsc debug. Pass runsc debug -trace instead")
+	}
+
 	if d.pid == 0 {
 		// No pid, container ID must have been provided.
 		if f.NArg() != 1 {

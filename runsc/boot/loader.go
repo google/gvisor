@@ -120,6 +120,10 @@ type Loader struct {
 	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
 
+	// stopProfiling stops profiling started at container creation. It
+	// should be called when a sandbox is destroyed.
+	stopProfiling func()
+
 	// restore is set to true if we are restoring a container.
 	restore bool
 
@@ -199,6 +203,21 @@ type Args struct {
 	TotalMem uint64
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
+	// ProfileBlockFD is the file descriptor to write a block profile to.
+	// Valid if >=0.
+	ProfileBlockFD int
+	// ProfileCPUFD is the file descriptor to write a CPU profile to.
+	// Valid if >=0.
+	ProfileCPUFD int
+	// ProfileHeapFD is the file descriptor to write a heap profile to.
+	// Valid if >=0.
+	ProfileHeapFD int
+	// ProfileMutexFD is the file descriptor to write a mutex profile to.
+	// Valid if >=0.
+	ProfileMutexFD int
+	// TraceFD is the file descriptor to write a Go execution trace to.
+	// Valid if >=0.
+	TraceFD int
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -207,6 +226,8 @@ const startingStdioFD = 256
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
+	stopProfiling := startProfiling(args)
+
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
@@ -400,12 +421,13 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		k:          k,
-		watchdog:   dog,
-		sandboxID:  args.ID,
-		processes:  map[execID]*execProcess{eid: {}},
-		mountHints: mountHints,
-		root:       info,
+		k:             k,
+		watchdog:      dog,
+		sandboxID:     args.ID,
+		processes:     map[execID]*execProcess{eid: {}},
+		mountHints:    mountHints,
+		root:          info,
+		stopProfiling: stopProfiling,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -498,6 +520,8 @@ func (l *Loader) Destroy() {
 	for _, f := range l.root.goferFDs {
 		_ = f.Close()
 	}
+
+	l.stopProfiling()
 }
 
 func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {

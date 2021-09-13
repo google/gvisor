@@ -79,6 +79,26 @@ type Boot struct {
 	// sandbox (e.g. gofer) and sent through this FD.
 	mountsFD int
 
+	// profileBlockFD is the file descriptor to write a block profile to.
+	// Valid if >= 0.
+	profileBlockFD int
+
+	// profileCPUFD is the file descriptor to write a CPU profile to.
+	// Valid if >= 0.
+	profileCPUFD int
+
+	// profileHeapFD is the file descriptor to write a heap profile to.
+	// Valid if >= 0.
+	profileHeapFD int
+
+	// profileMutexFD is the file descriptor to write a mutex profile to.
+	// Valid if >= 0.
+	profileMutexFD int
+
+	// traceFD is the file descriptor to write a Go execution trace to.
+	// Valid if >= 0.
+	traceFD int
+
 	// pidns is set if the sandbox is in its own pid namespace.
 	pidns bool
 
@@ -119,6 +139,11 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.IntVar(&b.profileBlockFD, "profile-block-fd", -1, "file descriptor to write block profile to. -1 disables profiling.")
+	f.IntVar(&b.profileCPUFD, "profile-cpu-fd", -1, "file descriptor to write CPU profile to. -1 disables profiling.")
+	f.IntVar(&b.profileHeapFD, "profile-heap-fd", -1, "file descriptor to write heap profile to. -1 disables profiling.")
+	f.IntVar(&b.profileMutexFD, "profile-mutex-fd", -1, "file descriptor to write mutex profile to. -1 disables profiling.")
+	f.IntVar(&b.traceFD, "trace-fd", -1, "file descriptor to write Go execution trace to. -1 disables tracing.")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 }
 
@@ -213,16 +238,21 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:           f.Arg(0),
-		Spec:         spec,
-		Conf:         conf,
-		ControllerFD: b.controllerFD,
-		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
-		GoferFDs:     b.ioFDs.GetArray(),
-		StdioFDs:     b.stdioFDs.GetArray(),
-		NumCPU:       b.cpuNum,
-		TotalMem:     b.totalMem,
-		UserLogFD:    b.userLogFD,
+		ID:             f.Arg(0),
+		Spec:           spec,
+		Conf:           conf,
+		ControllerFD:   b.controllerFD,
+		Device:         os.NewFile(uintptr(b.deviceFD), "platform device"),
+		GoferFDs:       b.ioFDs.GetArray(),
+		StdioFDs:       b.stdioFDs.GetArray(),
+		NumCPU:         b.cpuNum,
+		TotalMem:       b.totalMem,
+		UserLogFD:      b.userLogFD,
+		ProfileBlockFD: b.profileBlockFD,
+		ProfileCPUFD:   b.profileCPUFD,
+		ProfileHeapFD:  b.profileHeapFD,
+		ProfileMutexFD: b.profileMutexFD,
+		TraceFD:        b.traceFD,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
