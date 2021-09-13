@@ -17,7 +17,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/magic.h>
-#include <linux/sem.h>
 #include <sched.h>
 #include <signal.h>
 #include <stddef.h>
@@ -47,8 +46,6 @@
 #include <utility>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -62,6 +59,8 @@
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
@@ -2451,54 +2450,6 @@ TEST(ProcFilesystems, Bug65172365) {
   std::string proc_filesystems =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/filesystems"));
   ASSERT_FALSE(proc_filesystems.empty());
-}
-
-TEST(ProcFilesystems, PresenceOfShmMaxMniAll) {
-  uint64_t shmmax = 0;
-  uint64_t shmall = 0;
-  uint64_t shmmni = 0;
-  std::string proc_file;
-  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/shmmax"));
-  ASSERT_FALSE(proc_file.empty());
-  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &shmmax));
-  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/shmall"));
-  ASSERT_FALSE(proc_file.empty());
-  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &shmall));
-  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/shmmni"));
-  ASSERT_FALSE(proc_file.empty());
-  ASSERT_TRUE(absl::SimpleAtoi(proc_file, &shmmni));
-
-  ASSERT_GT(shmmax, 0);
-  ASSERT_GT(shmall, 0);
-  ASSERT_GT(shmmni, 0);
-  ASSERT_LE(shmall, shmmax);
-
-  // These values should never be higher than this by default, for more
-  // information see uapi/linux/shm.h
-  ASSERT_LE(shmmax, ULONG_MAX - (1UL << 24));
-  ASSERT_LE(shmall, ULONG_MAX - (1UL << 24));
-}
-
-TEST(ProcFilesystems, PresenceOfSem) {
-  uint32_t semmsl = 0;
-  uint32_t semmns = 0;
-  uint32_t semopm = 0;
-  uint32_t semmni = 0;
-  std::string proc_file;
-  proc_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/sem"));
-  ASSERT_FALSE(proc_file.empty());
-  std::vector<absl::string_view> sem_limits =
-      absl::StrSplit(proc_file, absl::ByAnyChar("\t"), absl::SkipWhitespace());
-  ASSERT_EQ(sem_limits.size(), 4);
-  ASSERT_TRUE(absl::SimpleAtoi(sem_limits[0], &semmsl));
-  ASSERT_TRUE(absl::SimpleAtoi(sem_limits[1], &semmns));
-  ASSERT_TRUE(absl::SimpleAtoi(sem_limits[2], &semopm));
-  ASSERT_TRUE(absl::SimpleAtoi(sem_limits[3], &semmni));
-
-  ASSERT_EQ(semmsl, SEMMSL);
-  ASSERT_EQ(semmns, SEMMNS);
-  ASSERT_EQ(semopm, SEMOPM);
-  ASSERT_EQ(semmni, SEMMNI);
 }
 
 // Check that /proc/mounts is a symlink to self/mounts.
