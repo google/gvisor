@@ -29,8 +29,11 @@
 // Only limited use of the context is done in the assembly stub below, most is
 // done in the Go handlers.
 #define SIGINFO_SIGNO 0x0
+#define SIGINFO_CODE 0x8
 #define CONTEXT_PC  0x1B8
 #define CONTEXT_R0 0xB8
+
+#define SYS_MMAP 222
 
 // getTLS returns the value of TPIDR_EL0 register.
 TEXT ·getTLS(SB),NOSPLIT,$0-8
@@ -95,6 +98,37 @@ fallback:
 // func addrOfSighandler() uintptr
 TEXT ·addrOfSighandler(SB), $0-8
 	MOVD	$·sighandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
+// The arguments are the following:
+//
+// 	R0 - The signal number.
+// 	R1 - Pointer to siginfo_t structure.
+// 	R2 - Pointer to ucontext structure.
+//
+TEXT ·sigsysHandler(SB),NOSPLIT,$0
+	// si_code should be SYS_SECCOMP.
+	MOVD	SIGINFO_CODE(R1), R7
+	CMPW	$1, R7
+	BNE	fallback
+
+	CMPW	$SYS_MMAP, R8
+	BNE	fallback
+
+	MOVD	R2, 8(RSP)
+	BL	·seccompMmapHandler(SB)   // Call the handler.
+
+	RET
+
+fallback:
+	// Jump to the previous signal handler.
+	MOVD	·savedHandler(SB), R7
+	B	(R7)
+
+// func addrOfSighandler() uintptr
+TEXT ·addrOfSigsysHandler(SB), $0-8
+	MOVD	$·sigsysHandler(SB), R0
 	MOVD	R0, ret+0(FP)
 	RET
 
