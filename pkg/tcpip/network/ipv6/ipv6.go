@@ -1127,11 +1127,12 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 }
 
 func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer, inNICName string) {
+	pkt.NICID = e.nic.ID()
+
 	// Raw socket packets are delivered based solely on the transport protocol
 	// number. We only require that the packet be valid IPv6.
 	e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
 
-	pkt.NICID = e.nic.ID()
 	stats := e.stats.ip
 	stats.ValidPacketsReceived.Increment()
 
