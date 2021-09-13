@@ -14,6 +14,7 @@ func (p *udpPacket) StateTypeName() string {
 func (p *udpPacket) StateFields() []string {
 	return []string{
 		"udpPacketEntry",
+		"netProto",
 		"senderAddress",
 		"destinationAddress",
 		"packetInfo",
@@ -30,15 +31,16 @@ func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	var dataValue buffer.VectorisedView
 	dataValue = p.saveData()
-	stateSinkObject.SaveValue(4, dataValue)
+	stateSinkObject.SaveValue(5, dataValue)
 	var receivedAtValue int64
 	receivedAtValue = p.saveReceivedAt()
-	stateSinkObject.SaveValue(5, receivedAtValue)
+	stateSinkObject.SaveValue(6, receivedAtValue)
 	stateSinkObject.Save(0, &p.udpPacketEntry)
-	stateSinkObject.Save(1, &p.senderAddress)
-	stateSinkObject.Save(2, &p.destinationAddress)
-	stateSinkObject.Save(3, &p.packetInfo)
-	stateSinkObject.Save(6, &p.tos)
+	stateSinkObject.Save(1, &p.netProto)
+	stateSinkObject.Save(2, &p.senderAddress)
+	stateSinkObject.Save(3, &p.destinationAddress)
+	stateSinkObject.Save(4, &p.packetInfo)
+	stateSinkObject.Save(7, &p.tos)
 }
 
 func (p *udpPacket) afterLoad() {}
@@ -46,12 +48,13 @@ func (p *udpPacket) afterLoad() {}
 // +checklocksignore
 func (p *udpPacket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.udpPacketEntry)
-	stateSourceObject.Load(1, &p.senderAddress)
-	stateSourceObject.Load(2, &p.destinationAddress)
-	stateSourceObject.Load(3, &p.packetInfo)
-	stateSourceObject.Load(6, &p.tos)
-	stateSourceObject.LoadValue(4, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
-	stateSourceObject.LoadValue(5, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
+	stateSourceObject.Load(1, &p.netProto)
+	stateSourceObject.Load(2, &p.senderAddress)
+	stateSourceObject.Load(3, &p.destinationAddress)
+	stateSourceObject.Load(4, &p.packetInfo)
+	stateSourceObject.Load(7, &p.tos)
+	stateSourceObject.LoadValue(5, new(buffer.VectorisedView), func(y interface{}) { p.loadData(y.(buffer.VectorisedView)) })
+	stateSourceObject.LoadValue(6, new(int64), func(y interface{}) { p.loadReceivedAt(y.(int64)) })
 }
 
 func (e *endpoint) StateTypeName() string {

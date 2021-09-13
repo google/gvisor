@@ -33,6 +33,7 @@ import (
 // +stateify savable
 type udpPacket struct {
 	udpPacketEntry
+	netProto           tcpip.NetworkProtocolNumber
 	senderAddress      tcpip.FullAddress
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
@@ -235,14 +236,21 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		HasTimestamp: true,
 		Timestamp:    p.receivedAt.UnixNano(),
 	}
-	if e.ops.GetReceiveTOS() {
-		cm.HasTOS = true
-		cm.TOS = p.tos
-	}
-	if e.ops.GetReceiveTClass() {
-		cm.HasTClass = true
-		// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
-		cm.TClass = uint32(p.tos)
+
+	switch p.netProto {
+	case header.IPv4ProtocolNumber:
+		if e.ops.GetReceiveTOS() {
+			cm.HasTOS = true
+			cm.TOS = p.tos
+		}
+	case header.IPv6ProtocolNumber:
+		if e.ops.GetReceiveTClass() {
+			cm.HasTClass = true
+			// Although TClass is an 8-bit value it's read in the CMsg as a uint32.
+			cm.TClass = uint32(p.tos)
+		}
+	default:
+		panic(fmt.Sprintf("unrecognized network protocol = %d", p.netProto))
 	}
 	if e.ops.GetReceivePacketInfo() {
 		cm.HasIPPacketInfo = true
@@ -888,6 +896,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 
 	// Push new packet into receive list and increment the buffer size.
 	packet := &udpPacket{
+		netProto: pkt.NetworkProtocolNumber,
 		senderAddress: tcpip.FullAddress{
 			NIC:  pkt.NICID,
 			Addr: id.RemoteAddress,

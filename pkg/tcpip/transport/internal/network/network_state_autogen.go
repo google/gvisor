@@ -25,7 +25,8 @@ func (e *Endpoint) StateFields() []string {
 		"multicastTTL",
 		"multicastAddr",
 		"multicastNICID",
-		"sendTOS",
+		"ipv4TOS",
+		"ipv6TClass",
 	}
 }
 
@@ -47,7 +48,8 @@ func (e *Endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &e.multicastTTL)
 	stateSinkObject.Save(11, &e.multicastAddr)
 	stateSinkObject.Save(12, &e.multicastNICID)
-	stateSinkObject.Save(13, &e.sendTOS)
+	stateSinkObject.Save(13, &e.ipv4TOS)
+	stateSinkObject.Save(14, &e.ipv6TClass)
 }
 
 func (e *Endpoint) afterLoad() {}
@@ -67,7 +69,8 @@ func (e *Endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &e.multicastTTL)
 	stateSourceObject.Load(11, &e.multicastAddr)
 	stateSourceObject.Load(12, &e.multicastNICID)
-	stateSourceObject.Load(13, &e.sendTOS)
+	stateSourceObject.Load(13, &e.ipv4TOS)
+	stateSourceObject.Load(14, &e.ipv6TClass)
 }
 
 func (m *multicastMembership) StateTypeName() string {
