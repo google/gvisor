@@ -60,10 +60,8 @@ type Endpoint struct {
 	multicastAddr tcpip.Address
 	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
 	multicastNICID tcpip.NICID
-	// sendTOS represents IPv4 TOS or IPv6 TrafficClass,
-	// applied while sending packets. Defaults to 0 as on Linux.
-	// TODO(https://gvisor.dev/issue/6389): Use different fields for IPv4/IPv6.
-	sendTOS uint8
+	ipv4TOS        uint8
+	ipv6TClass     uint8
 }
 
 // +stateify savable
@@ -267,11 +265,21 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		return WriteContext{}, &tcpip.ErrBroadcastDisabled{}
 	}
 
+	var tos uint8
+	switch netProto := route.NetProto(); netProto {
+	case header.IPv4ProtocolNumber:
+		tos = e.ipv4TOS
+	case header.IPv6ProtocolNumber:
+		tos = e.ipv6TClass
+	default:
+		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
+	}
+
 	return WriteContext{
 		transProto: e.transProto,
 		route:      route,
 		ttl:        calculateTTL(route, e.ttl, e.multicastTTL),
-		tos:        e.sendTOS,
+		tos:        tos,
 		owner:      e.owner,
 	}, nil
 }
@@ -533,12 +541,12 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 
 	case tcpip.IPv4TOSOption:
 		e.mu.Lock()
-		e.sendTOS = uint8(v)
+		e.ipv4TOS = uint8(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv6TrafficClassOption:
 		e.mu.Lock()
-		e.sendTOS = uint8(v)
+		e.ipv6TClass = uint8(v)
 		e.mu.Unlock()
 	}
 
@@ -566,13 +574,13 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 
 	case tcpip.IPv4TOSOption:
 		e.mu.RLock()
-		v := int(e.sendTOS)
+		v := int(e.ipv4TOS)
 		e.mu.RUnlock()
 		return v, nil
 
 	case tcpip.IPv6TrafficClassOption:
 		e.mu.RLock()
-		v := int(e.sendTOS)
+		v := int(e.ipv6TClass)
 		e.mu.RUnlock()
 		return v, nil
 

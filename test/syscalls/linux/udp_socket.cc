@@ -18,6 +18,8 @@
 #include <netinet/ip_icmp.h>
 
 #include <ctime>
+#include <utility>
+#include <vector>
 
 #ifdef __linux__
 #include <linux/errqueue.h>
@@ -1683,6 +1685,148 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   ASSERT_THAT(ioctl(bind_.get(), SIOCGSTAMP, &tv2), SyscallSucceeds());
   ASSERT_EQ(tv.tv_sec, tv2.tv_sec);
   ASSERT_EQ(tv.tv_usec, tv2.tv_usec);
+}
+
+// TOS and TCLASS values may be different but IPv6 sockets with IPv4-mapped-IPv6
+// addresses use TOS (IPv4), not TCLASS (IPv6).
+TEST_P(UdpSocketTest, DifferentTOSAndTClass) {
+  const int kFamily = GetFamily();
+  constexpr int kToS = IPTOS_LOWDELAY;
+  constexpr int kTClass = IPTOS_THROUGHPUT;
+  ASSERT_NE(kToS, kTClass);
+
+  if (kFamily == AF_INET6) {
+    ASSERT_THAT(setsockopt(sock_.get(), SOL_IPV6, IPV6_TCLASS, &kTClass,
+                           sizeof(kTClass)),
+                SyscallSucceeds());
+
+    // Marking an IPv6 socket as IPv6 only should not affect the ability to
+    // configure IPv4 socket options as the V6ONLY flag may later be disabled so
+    // that applications may use the socket to send/receive IPv4 packets.
+    constexpr int on = 1;
+    ASSERT_THAT(setsockopt(sock_.get(), SOL_IPV6, IPV6_V6ONLY, &on, sizeof(on)),
+                SyscallSucceeds());
+  }
+
+  ASSERT_THAT(setsockopt(sock_.get(), SOL_IP, IP_TOS, &kToS, sizeof(kToS)),
+              SyscallSucceeds());
+
+  if (kFamily == AF_INET6) {
+    int got_tclass;
+    socklen_t got_tclass_len = sizeof(got_tclass);
+    ASSERT_THAT(getsockopt(sock_.get(), SOL_IPV6, IPV6_TCLASS, &got_tclass,
+                           &got_tclass_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_tclass_len, sizeof(got_tclass));
+    EXPECT_EQ(got_tclass, kTClass);
+  }
+
+  {
+    int got_tos;
+    socklen_t got_tos_len = sizeof(got_tos);
+    ASSERT_THAT(getsockopt(sock_.get(), SOL_IP, IP_TOS, &got_tos, &got_tos_len),
+                SyscallSucceeds());
+    ASSERT_EQ(got_tos_len, sizeof(got_tos));
+    EXPECT_EQ(got_tos, kToS);
+  }
+
+  auto test_send = [this](sockaddr_storage addr,
+                          std::function<void(const cmsghdr*)> cb) {
+    FileDescriptor bind = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(addr.ss_family, SOCK_DGRAM, IPPROTO_UDP));
+    ASSERT_NO_ERRNO(BindSocket(bind.get(), reinterpret_cast<sockaddr*>(&addr)));
+    ASSERT_THAT(setsockopt(bind.get(), SOL_IP, IP_RECVTOS, &kSockOptOn,
+                           sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    if (addr.ss_family == AF_INET6) {
+      ASSERT_THAT(setsockopt(bind.get(), SOL_IPV6, IPV6_RECVTCLASS, &kSockOptOn,
+                             sizeof(kSockOptOn)),
+                  SyscallSucceeds());
+    }
+
+    char sent_data[1024];
+    iovec sent_iov = {
+        .iov_base = sent_data,
+        .iov_len = sizeof(sent_data),
+    };
+    msghdr sent_msg = {
+        .msg_name = &addr,
+        .msg_namelen = sizeof(addr),
+        .msg_iov = &sent_iov,
+        .msg_iovlen = 1,
+    };
+    ASSERT_THAT(RetryEINTR(sendmsg)(sock_.get(), &sent_msg, 0),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+
+    char received_data[sizeof(sent_data) + 1];
+    iovec received_iov = {
+        .iov_base = received_data,
+        .iov_len = sizeof(received_data),
+    };
+    std::vector<char> received_cmsgbuf(CMSG_SPACE(sizeof(int8_t)));
+    msghdr received_msg = {
+        .msg_iov = &received_iov,
+        .msg_iovlen = 1,
+        .msg_control = received_cmsgbuf.data(),
+        .msg_controllen = static_cast<socklen_t>(received_cmsgbuf.size()),
+    };
+    ASSERT_THAT(RetryEINTR(recvmsg)(bind.get(), &received_msg, 0),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&received_msg);
+    ASSERT_NE(cmsg, nullptr);
+    ASSERT_NO_FATAL_FAILURE(cb(cmsg));
+    EXPECT_EQ(CMSG_NXTHDR(&received_msg, cmsg), nullptr);
+  };
+
+  if (kFamily == AF_INET6) {
+    SCOPED_TRACE(
+        "Send IPv4 loopback packet using IPv6 socket via IPv4-mapped-IPv6");
+
+    constexpr int off = 0;
+    ASSERT_THAT(
+        setsockopt(sock_.get(), SOL_IPV6, IPV6_V6ONLY, &off, sizeof(off)),
+        SyscallSucceeds());
+
+    // Send a packet and make sure that the ToS value in the IPv4 header is
+    // the configured IPv4 ToS Value and not the IPv6 Traffic Class value even
+    // though we use an IPv6 socket to send an IPv4 packet.
+    ASSERT_NO_FATAL_FAILURE(
+        test_send(V4MappedLoopback().addr, [kToS](const cmsghdr* cmsg) {
+          EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int8_t)));
+          EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
+          EXPECT_EQ(cmsg->cmsg_type, IP_TOS);
+          int8_t received;
+          memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
+          EXPECT_EQ(received, kToS);
+        }));
+  }
+
+  {
+    SCOPED_TRACE("Send loopback packet");
+
+    ASSERT_NO_FATAL_FAILURE(test_send(
+        InetLoopbackAddr(), [kFamily, kTClass, kToS](const cmsghdr* cmsg) {
+          switch (kFamily) {
+            case AF_INET: {
+              EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int8_t)));
+              EXPECT_EQ(cmsg->cmsg_level, SOL_IP);
+              EXPECT_EQ(cmsg->cmsg_type, IP_TOS);
+              int8_t received;
+              memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
+              EXPECT_EQ(received, kToS);
+            } break;
+            case AF_INET6: {
+              EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int32_t)));
+              EXPECT_EQ(cmsg->cmsg_level, SOL_IPV6);
+              EXPECT_EQ(cmsg->cmsg_type, IPV6_TCLASS);
+              int32_t received;
+              memcpy(&received, CMSG_DATA(cmsg), sizeof(received));
+              EXPECT_EQ(received, kTClass);
+            } break;
+          }
+        }));
+  }
 }
 
 // Test that a socket with IP_TOS or IPV6_TCLASS set will set the TOS byte on
