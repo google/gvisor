@@ -522,3 +522,7 @@ func (m *machine) getNewVCPU() *vCPU {
 	}
 	return nil
 }
+
+func archPhysicalRegions(physicalRegions []physicalRegion) ([]physicalRegion) {
+	return physicalRegions
+}
