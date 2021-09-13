@@ -90,12 +90,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// Find all struct declarations and export relevant facts.
 	pc.forAllTypes(func(ts *ast.TypeSpec) {
 		if ss, ok := ts.Type.(*ast.StructType); ok {
-			pc.exportLockFieldFacts(ts, ss)
+			structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
+			pc.exportLockFieldFacts(structType, ss)
 		}
 	})
 	pc.forAllTypes(func(ts *ast.TypeSpec) {
 		if ss, ok := ts.Type.(*ast.StructType); ok {
-			pc.exportLockGuardFacts(ts, ss)
+			structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
+			pc.exportLockGuardFacts(structType, ss)
 		}
 	})
 

@@ -6,6 +6,7 @@ go_library(
     name = "test",
     srcs = [
         "alignment.go",
+        "anon.go",
         "atomics.go",
         "basics.go",
         "branches.go",

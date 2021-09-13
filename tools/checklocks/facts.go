@@ -399,13 +399,12 @@ var (
 )
 
 // exportLockFieldFacts finds all struct fields that are mutexes, and ensures
-// that they are annotated approperly.
+// that they are annotated properly.
 //
 // This information is consumed subsequently by exportLockGuardFacts, and this
 // function must be called first on all structures.
-func (pc *passContext) exportLockFieldFacts(ts *ast.TypeSpec, ss *ast.StructType) {
-	structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
-	for i := range ss.Fields.List {
+func (pc *passContext) exportLockFieldFacts(structType *types.Struct, ss *ast.StructType) {
+	for i, field := range ss.Fields.List {
 		lff := &lockFieldFacts{
 			FieldNumber: i,
 		}
@@ -426,6 +425,13 @@ func (pc *passContext) exportLockFieldFacts(ts *ast.TypeSpec, ss *ast.StructType
 		// We must always export the lockFieldFacts, since traversal
 		// can take place along any object in the struct.
 		pc.pass.ExportObjectFact(fieldObj, lff)
+		// If this is an anonymous type, then we won't discover it via
+		// the AST global declarations. We can recurse from here.
+		if ss, ok := field.Type.(*ast.StructType); ok {
+			if st, ok := fieldObj.Type().(*types.Struct); ok {
+				pc.exportLockFieldFacts(st, ss)
+			}
+		}
 	}
 }
 
@@ -433,59 +439,63 @@ func (pc *passContext) exportLockFieldFacts(ts *ast.TypeSpec, ss *ast.StructType
 //
 // This function requires exportLockFieldFacts be called first on all
 // structures.
-func (pc *passContext) exportLockGuardFacts(ts *ast.TypeSpec, ss *ast.StructType) {
-	structType := pc.pass.TypesInfo.TypeOf(ts.Name).Underlying().(*types.Struct)
+func (pc *passContext) exportLockGuardFacts(structType *types.Struct, ss *ast.StructType) {
 	for i, field := range ss.Fields.List {
-		if field.Doc == nil {
-			continue
-		}
-		var (
-			lff lockFieldFacts
-			lgf lockGuardFacts
-		)
-		pc.pass.ImportObjectFact(structType.Field(i), &lff)
 		fieldObj := structType.Field(i)
-		for _, l := range field.Doc.List {
-			pc.extractAnnotations(l.Text, map[string]func(string){
-				checkAtomicAnnotation: func(string) {
-					switch lgf.AtomicDisposition {
-					case atomicRequired:
-						pc.maybeFail(fieldObj.Pos(), "annotation is redundant, already atomic required")
-					case atomicIgnore:
-						pc.maybeFail(fieldObj.Pos(), "annotation is contradictory, already atomic ignored")
-					}
-					lgf.AtomicDisposition = atomicRequired
-				},
-				checkLocksIgnore: func(string) {
-					switch lgf.AtomicDisposition {
-					case atomicIgnore:
-						pc.maybeFail(fieldObj.Pos(), "annotation is redundant, already atomic ignored")
-					case atomicRequired:
-						pc.maybeFail(fieldObj.Pos(), "annotation is contradictory, already atomic required")
-					}
-					lgf.AtomicDisposition = atomicIgnore
-				},
-				checkLocksAnnotation: func(guardName string) {
-					// Check for a duplicate annotation.
-					if _, ok := lgf.GuardedBy[guardName]; ok {
-						pc.maybeFail(fieldObj.Pos(), "annotation %s specified more than once", guardName)
-						return
-					}
-					fl, ok := pc.resolveField(fieldObj.Pos(), structType, strings.Split(guardName, "."))
-					if ok {
-						// If we successfully resolved
-						// the field, then save it.
-						if lgf.GuardedBy == nil {
-							lgf.GuardedBy = make(map[string]fieldList)
+		if field.Doc != nil {
+			var (
+				lff lockFieldFacts
+				lgf lockGuardFacts
+			)
+			pc.pass.ImportObjectFact(structType.Field(i), &lff)
+			for _, l := range field.Doc.List {
+				pc.extractAnnotations(l.Text, map[string]func(string){
+					checkAtomicAnnotation: func(string) {
+						switch lgf.AtomicDisposition {
+						case atomicRequired:
+							pc.maybeFail(fieldObj.Pos(), "annotation is redundant, already atomic required")
+						case atomicIgnore:
+							pc.maybeFail(fieldObj.Pos(), "annotation is contradictory, already atomic ignored")
 						}
-						lgf.GuardedBy[guardName] = fl
-					}
-				},
-			})
+						lgf.AtomicDisposition = atomicRequired
+					},
+					checkLocksIgnore: func(string) {
+						switch lgf.AtomicDisposition {
+						case atomicIgnore:
+							pc.maybeFail(fieldObj.Pos(), "annotation is redundant, already atomic ignored")
+						case atomicRequired:
+							pc.maybeFail(fieldObj.Pos(), "annotation is contradictory, already atomic required")
+						}
+						lgf.AtomicDisposition = atomicIgnore
+					},
+					checkLocksAnnotation: func(guardName string) {
+						// Check for a duplicate annotation.
+						if _, ok := lgf.GuardedBy[guardName]; ok {
+							pc.maybeFail(fieldObj.Pos(), "annotation %s specified more than once", guardName)
+							return
+						}
+						fl, ok := pc.resolveField(fieldObj.Pos(), structType, strings.Split(guardName, "."))
+						if ok {
+							// If we successfully resolved
+							// the field, then save it.
+							if lgf.GuardedBy == nil {
+								lgf.GuardedBy = make(map[string]fieldList)
+							}
+							lgf.GuardedBy[guardName] = fl
+						}
+					},
+				})
+			}
+			// Save only if there is something meaningful.
+			if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != atomicDisallow {
+				pc.pass.ExportObjectFact(structType.Field(i), &lgf)
+			}
 		}
-		// Save only if there is something meaningful.
-		if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != atomicDisallow {
-			pc.pass.ExportObjectFact(structType.Field(i), &lgf)
+		// See above, for anonymous structure fields.
+		if ss, ok := field.Type.(*ast.StructType); ok {
+			if st, ok := fieldObj.Type().(*types.Struct); ok {
+				pc.exportLockGuardFacts(st, ss)
+			}
 		}
 	}
 }
