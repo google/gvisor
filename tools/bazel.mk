@@ -186,8 +186,8 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
   $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=tools/show_paths.bzl) \
-  | xargs -r -n 1 -I {} readlink -f "{}" \
-  | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
+  | xargs -r -n 1 -I {} bash -c 'test -e "{}" || exit 0; readlink -f "{}"' \
+  | xargs -r -n 1 -I {} bash -c 'set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})

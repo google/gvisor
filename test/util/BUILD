@@ -352,7 +352,6 @@ cc_library(
 cc_library(
     name = "benchmark_main",
     testonly = 1,
-    srcs = ["benchmark_main.cc"],
     linkstatic = 1,
     deps = [
         ":test_util",

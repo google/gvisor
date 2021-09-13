@@ -2,6 +2,8 @@
 
 def format(target):
     provider_map = providers(target)
+    if not provider_map:
+        return ""
     outputs = dict()
 
     # Try to resolve in order.

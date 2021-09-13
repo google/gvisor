@@ -169,6 +169,11 @@ steps:
     label: ":mechanical_arm: ARM"
     command: make arm-qemu-smoke-test
 
+  # Build everything.
+  - <<: *common
+    label: ":world_map: Build everything"
+    command: "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
     label: ":fire: Benchmarks smoke test"
