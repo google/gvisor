@@ -41,17 +41,6 @@ func (l *linkResolver) confirmReachable(addr tcpip.Address) {
 
 var _ NetworkInterface = (*nic)(nil)
 
-// TODO(https://gvisor.dev/issue/6558): Use an anonymous struct in nic for this
-// once copylocks supports anonymous structs.
-type packetEPs struct {
-	mu sync.RWMutex
-
-	// eps is protected by the mutex, but the values contained in it are not.
-	//
-	// +checklocks:mu
-	eps map[tcpip.NetworkProtocolNumber]*packetEndpointList
-}
-
 // nic represents a "network interface card" to which the networking stack is
 // attached.
 type nic struct {
@@ -85,7 +74,14 @@ type nic struct {
 		promiscuous bool
 	}
 
-	packetEPs packetEPs
+	packetEPs struct {
+		mu sync.RWMutex
+
+		// eps is protected by the mutex, but the values contained in it are not.
+		//
+		// +checklocks:mu
+		eps map[tcpip.NetworkProtocolNumber]*packetEndpointList
+	}
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
