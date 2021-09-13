@@ -15,6 +15,7 @@ go_library(
         "limits.go",
         "loader.go",
         "network.go",
+        "profile.go",
         "strace.go",
         "vfs.go",
     ],
