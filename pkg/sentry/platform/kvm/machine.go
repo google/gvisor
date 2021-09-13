@@ -192,6 +192,10 @@ func (m *machine) newVCPU() *vCPU {
 	return c // Done.
 }
 
+// readOnlyGuestRegions contains regions that have to be mapped read-only into
+// the guest physical address space. Right now, it is used on arm64 only.
+var readOnlyGuestRegions []region
+
 // newMachine returns a new VM context.
 func newMachine(vm int) (*machine, error) {
 	// Create the machine.
@@ -241,32 +245,11 @@ func newMachine(vm int) (*machine, error) {
 		return true // Keep iterating.
 	})
 
-	var physicalRegionsReadOnly []physicalRegion
-	var physicalRegionsAvailable []physicalRegion
-
-	physicalRegionsReadOnly = rdonlyRegionsForSetMem()
-	physicalRegionsAvailable = availableRegionsForSetMem()
-
-	// Map all read-only regions.
-	for _, r := range physicalRegionsReadOnly {
-		m.mapPhysical(r.physical, r.length, physicalRegionsReadOnly, _KVM_MEM_READONLY)
-	}
-
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
 	// faults, however it should guarantee that everything is available to
 	// ensure successful vCPU entry.
-	applyVirtualRegions(func(vr virtualRegion) {
-		if excludeVirtualRegion(vr) {
-			return // skip region.
-		}
-
-		for _, r := range physicalRegionsReadOnly {
-			if vr.virtual == r.virtual {
-				return
-			}
-		}
-
+	mapRegion := func(vr region, flags uint32) {
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
 			physical, length, ok := translateToPhysical(virtual)
 			if !ok {
@@ -280,9 +263,26 @@ func newMachine(vm int) (*machine, error) {
 			}
 
 			// Ensure the physical range is mapped.
-			m.mapPhysical(physical, length, physicalRegionsAvailable, _KVM_MEM_FLAGS_NONE)
+			m.mapPhysical(physical, length, physicalRegions, flags)
 			virtual += length
 		}
+	}
+
+	for _, vr := range(readOnlyGuestRegions) {
+		mapRegion(vr, _KVM_MEM_READONLY)
+	}
+
+	applyVirtualRegions(func(vr virtualRegion) {
+		if excludeVirtualRegion(vr) {
+			return // skip region.
+		}
+		for _, r := range readOnlyGuestRegions {
+			if vr.virtual == r.virtual {
+				return
+			}
+		}
+		mapRegion(vr.region, 0)
+
 	})
 
 	// Initialize architecture state.
