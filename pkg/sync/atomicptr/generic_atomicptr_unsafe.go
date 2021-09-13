@@ -37,6 +37,8 @@ func (p *AtomicPtr) loadPtr(v *Value) {
 
 // Load returns the value set by the most recent Store. It returns nil if there
 // has been no previous call to Store.
+//
+//go:nosplit
 func (p *AtomicPtr) Load() *Value {
 	return (*Value)(atomic.LoadPointer(&p.ptr))
 }

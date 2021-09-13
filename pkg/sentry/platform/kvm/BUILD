@@ -1,6 +1,18 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
+
+go_template_instance(
+    name = "atomicptr_machine",
+    out = "atomicptr_machine_unsafe.go",
+    package = "kvm",
+    prefix = "machine",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "machine",
+    },
+)
 
 go_library(
     name = "kvm",
@@ -8,6 +20,7 @@ go_library(
         "address_space.go",
         "address_space_amd64.go",
         "address_space_arm64.go",
+        "atomicptr_machine_unsafe.go",
         "bluepill.go",
         "bluepill_allocator.go",
         "bluepill_amd64.go",
@@ -90,6 +103,12 @@ go_test(
         "//pkg/sentry/time",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+    # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
+    nogo = False,
+    # cgo has to be disabled. We have seen libc that blocks all signals and
+    # calls mmap from pthread_create, but we use SIGSYS to trap mmap system
+    # calls.
+    pure = True,
 )
 
 genrule(
