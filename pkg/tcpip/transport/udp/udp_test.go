@@ -290,6 +290,7 @@ type testContext struct {
 	t      *testing.T
 	linkEP *channel.Endpoint
 	s      *stack.Stack
+	nicID  tcpip.NICID
 
 	ep tcpip.Endpoint
 	wq waiter.Queue
@@ -301,6 +302,8 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 }
 
 func newDualTestContextWithHandleLocal(t *testing.T, mtu uint32, handleLocal bool) *testContext {
+	const nicID = 1
+
 	t.Helper()
 
 	options := stack.Options{
@@ -316,32 +319,33 @@ func newDualTestContextWithHandleLocal(t *testing.T, mtu uint32, handleLocal boo
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, wep); err != nil {
-		t.Fatalf("CreateNIC failed: %s", err)
+	if err := s.CreateNIC(nicID, wep); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress failed: %s", err)
+	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
+		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, stackAddr, err)
 	}
 
-	if err := s.AddAddress(1, ipv6.ProtocolNumber, stackV6Addr); err != nil {
-		t.Fatalf("AddAddress failed: %s", err)
+	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
+		t.Fatalf("AddAddress((%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, stackV6Addr, err)
 	}
 
 	s.SetRouteTable([]tcpip.Route{
 		{
 			Destination: header.IPv4EmptySubnet,
-			NIC:         1,
+			NIC:         nicID,
 		},
 		{
 			Destination: header.IPv6EmptySubnet,
-			NIC:         1,
+			NIC:         nicID,
 		},
 	})
 
 	return &testContext{
 		t:      t,
 		s:      s,
+		nicID:  nicID,
 		linkEP: ep,
 	}
 }
@@ -1644,8 +1648,10 @@ func TestSetTTL(t *testing.T) {
 	}
 }
 
+var v4PacketFlows = [...]testFlow{unicastV4, multicastV4, broadcast, unicastV4in6, multicastV4in6, broadcastIn6}
+
 func TestSetTOS(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4, multicastV4, broadcast} {
+	for _, flow := range v4PacketFlows {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
 			defer c.cleanup()
@@ -1680,8 +1686,10 @@ func TestSetTOS(t *testing.T) {
 	}
 }
 
+var v6PacketFlows = [...]testFlow{unicastV6, unicastV6Only, multicastV6}
+
 func TestSetTClass(t *testing.T) {
-	for _, flow := range []testFlow{unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, broadcastIn6} {
+	for _, flow := range v6PacketFlows {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
 			c := newDualTestContext(t, defaultMTU)
 			defer c.cleanup()
@@ -1725,8 +1733,14 @@ func TestReceiveTosTClass(t *testing.T) {
 		name  string
 		tests []testFlow
 	}{
-		{RcvTOSOpt, []testFlow{unicastV4, broadcast}},
-		{RcvTClassOpt, []testFlow{unicastV4in6, unicastV6, unicastV6Only, broadcastIn6}},
+		{
+			name:  RcvTOSOpt,
+			tests: v4PacketFlows[:],
+		},
+		{
+			name:  RcvTClassOpt,
+			tests: v6PacketFlows[:],
+		},
 	}
 	for _, testCase := range testCases {
 		for _, flow := range testCase.tests {
@@ -1736,6 +1750,14 @@ func TestReceiveTosTClass(t *testing.T) {
 
 				c.createEndpointForFlow(flow)
 				name := testCase.name
+
+				if flow.isMulticast() {
+					netProto := flow.netProto()
+					addr := flow.getMcastAddr()
+					if err := c.s.JoinGroup(netProto, c.nicID, addr); err != nil {
+						c.t.Fatalf("JoinGroup(%d, %d, %s): %s", netProto, c.nicID, addr, err)
+					}
+				}
 
 				var optionGetter func() bool
 				var optionSetter func(bool)
