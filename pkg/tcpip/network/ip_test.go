@@ -15,6 +15,7 @@
 package ip_test
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -32,8 +33,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const nicID = 1
@@ -2028,6 +2031,96 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestSetNICIDBeforeDeliveringToRawEndpoint(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name          string
+		proto         tcpip.NetworkProtocolNumber
+		addr          tcpip.AddressWithPrefix
+		payloadOffset int
+	}{
+		{
+			name:          "IPv4",
+			proto:         header.IPv4ProtocolNumber,
+			addr:          localIPv4AddrWithPrefix,
+			payloadOffset: header.IPv4MinimumSize,
+		},
+		{
+			name:          "IPv6",
+			proto:         header.IPv6ProtocolNumber,
+			addr:          localIPv6AddrWithPrefix,
+			payloadOffset: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{
+					ipv4.NewProtocol,
+					ipv6.NewProtocol,
+				},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+				RawFactory:         raw.EndpointFactory{},
+			})
+			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			if err := s.AddAddressWithPrefix(nicID, test.proto, test.addr); err != nil {
+				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID, test.proto, test.addr, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: test.addr.Subnet(),
+					NIC:         nicID,
+				},
+			})
+
+			var wq waiter.Queue
+			we, ch := waiter.NewChannelEntry(nil)
+			wq.EventRegister(&we, waiter.ReadableEvents)
+			ep, err := s.NewRawEndpoint(udp.ProtocolNumber, test.proto, &wq, true /* associated */)
+			if err != nil {
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.proto, err)
+			}
+			defer ep.Close()
+
+			writeOpts := tcpip.WriteOptions{
+				To: &tcpip.FullAddress{
+					Addr: test.addr.Address,
+				},
+			}
+			data := []byte{1, 2, 3, 4}
+			var r bytes.Reader
+			r.Reset(data)
+			if n, err := ep.Write(&r, writeOpts); err != nil {
+				t.Fatalf("ep.Write(_, _): %s", err)
+			} else if want := int64(len(data)); n != want {
+				t.Fatalf("got ep.Write(_, _) = (%d, nil), want = (%d, nil)", n, want)
+			}
+
+			// Wait for the endpoint to become readable.
+			<-ch
+
+			var w bytes.Buffer
+			rr, err := ep.Read(&w, tcpip.ReadOptions{
+				NeedRemoteAddr: true,
+			})
+			if err != nil {
+				t.Fatalf("ep.Read(...): %s", err)
+			}
+			if diff := cmp.Diff(data, w.Bytes()[test.payloadOffset:]); diff != "" {
+				t.Errorf("payload mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tcpip.FullAddress{Addr: test.addr.Address, NIC: nicID}, rr.RemoteAddr); diff != "" {
+				t.Errorf("remote addr mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
