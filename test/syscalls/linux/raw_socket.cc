@@ -950,7 +950,7 @@ void TestRawSocketMaybeBindReceive(bool do_bind) {
   };
 
   FileDescriptor udp_sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, SOL_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
   sockaddr_in udp_sock_bind_addr = addr;
   socklen_t udp_sock_bind_addr_len = sizeof(udp_sock_bind_addr);
   ASSERT_THAT(bind(udp_sock.get(),
@@ -964,7 +964,7 @@ void TestRawSocketMaybeBindReceive(bool do_bind) {
   ASSERT_EQ(udp_sock_bind_addr_len, sizeof(udp_sock_bind_addr));
 
   FileDescriptor raw_sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, SOL_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_UDP));
 
   auto test_recv = [&](const char* scope, uint32_t expected_destination) {
     SCOPED_TRACE(scope);
