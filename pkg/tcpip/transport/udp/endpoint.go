@@ -547,7 +547,7 @@ func (e *endpoint) Disconnect() tcpip.Error {
 	info := e.net.Info()
 	info.ID.LocalPort = e.localPort
 	info.ID.RemotePort = e.remotePort
-	if info.BindNICID != 0 || info.ID.LocalAddress == "" {
+	if e.net.WasBound() {
 		var err tcpip.Error
 		id = stack.TransportEndpointID{
 			LocalPort:    info.ID.LocalPort,
