@@ -27,7 +27,7 @@ TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
 	MOVD	$0x0, R3  // sigmask parameter which isn't used here
 	MOVD	$0x49, R8 // SYS_PPOLL
 	SVC
-	CMP	$0xfffffffffffff002, R0
+	CMP	$0xfffffffffffff001, R0
 	BLS	ok
 	MOVD	$-1, R1
 	MOVD	R1, n+24(FP)

@@ -27,7 +27,7 @@ TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
 	MOVQ	$0x0, R10  // sigmask parameter which isn't used here
 	MOVQ	$0x10f, AX // SYS_PPOLL
 	SYSCALL
-	CMPQ	AX, $0xfffffffffffff002
+	CMPQ	AX, $0xfffffffffffff001
 	JLS	ok
 	MOVQ	$-1, n+24(FP)
 	NEGQ	AX

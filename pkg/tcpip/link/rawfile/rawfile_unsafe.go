@@ -181,9 +181,7 @@ func BlockingReadvUntilStopped(efd int, fd int, iovecs []unix.Iovec) (int, tcpip
 		if e == 0 {
 			return int(n), nil
 		}
-		if e != 0 && e != unix.EWOULDBLOCK {
-			return 0, TranslateErrno(e)
-		}
+
 		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
 		if stopped {
 			return -1, nil
@@ -204,10 +202,6 @@ func BlockingRecvMMsgUntilStopped(efd int, fd int, msgHdrs []MMsgHdr) (int, tcpi
 		n, _, e := unix.RawSyscall6(unix.SYS_RECVMMSG, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), unix.MSG_DONTWAIT, 0, 0)
 		if e == 0 {
 			return int(n), nil
-		}
-
-		if e != 0 && e != unix.EWOULDBLOCK {
-			return 0, TranslateErrno(e)
 		}
 
 		stopped, e := BlockingPollUntilStopped(efd, fd, unix.POLLIN)
@@ -234,13 +228,5 @@ func BlockingPollUntilStopped(efd int, fd int, events int16) (bool, unix.Errno) 
 		},
 	}
 	_, errno := BlockingPoll(&pevents[0], len(pevents), nil)
-	if errno != 0 {
-		return pevents[0].Revents&unix.POLLIN != 0, errno
-	}
-
-	if pevents[1].Revents&unix.POLLHUP != 0 || pevents[1].Revents&unix.POLLERR != 0 {
-		errno = unix.ECONNRESET
-	}
-
 	return pevents[0].Revents&unix.POLLIN != 0, errno
 }
