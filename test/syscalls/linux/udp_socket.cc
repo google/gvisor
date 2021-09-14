@@ -602,6 +602,67 @@ TEST_P(UdpSocketTest, DisconnectAfterBind) {
               SyscallFailsWithErrno(ENOTCONN));
 }
 
+void ConnectThenDisconnect(const FileDescriptor& sock,
+                           const sockaddr* bind_addr,
+                           const socklen_t expected_addrlen) {
+  // Connect the bound socket.
+  ASSERT_THAT(connect(sock.get(), bind_addr, expected_addrlen),
+              SyscallSucceeds());
+
+  // Disconnect.
+  {
+    sockaddr_storage unspec = {.ss_family = AF_UNSPEC};
+    ASSERT_THAT(connect(sock.get(), AsSockAddr(&unspec), sizeof(unspec)),
+                SyscallSucceeds());
+  }
+  {
+    // Check that we're not in a bound state.
+    sockaddr_storage addr;
+    socklen_t addrlen = sizeof(addr);
+    ASSERT_THAT(getsockname(sock.get(), AsSockAddr(&addr), &addrlen),
+                SyscallSucceeds());
+    ASSERT_EQ(addrlen, expected_addrlen);
+    // Everything should be the zero value except the address family.
+    sockaddr_storage expected = {
+        .ss_family = bind_addr->sa_family,
+    };
+    EXPECT_EQ(memcmp(&expected, &addr, expected_addrlen), 0);
+  }
+
+  {
+    // We are not connected so we have no peer.
+    sockaddr_storage addr;
+    socklen_t addrlen = sizeof(addr);
+    EXPECT_THAT(getpeername(sock.get(), AsSockAddr(&addr), &addrlen),
+                SyscallFailsWithErrno(ENOTCONN));
+  }
+}
+
+TEST_P(UdpSocketTest, DisconnectAfterBindToUnspecAndConnect) {
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  sockaddr_storage unspec = {.ss_family = AF_UNSPEC};
+  int bind_res = bind(sock_.get(), AsSockAddr(&unspec), sizeof(unspec));
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    // TODO(https://gvisor.dev/issue/6575): Match Linux's behaviour.
+    ASSERT_THAT(bind_res, SyscallFailsWithErrno(EINVAL));
+  } else if (GetFamily() == AF_INET) {
+    // Linux allows this for undocumented compatibility reasons:
+    // https://github.com/torvalds/linux/commit/29c486df6a208432b370bd4be99ae1369ede28d8.
+    ASSERT_THAT(bind_res, SyscallSucceeds());
+  } else {
+    ASSERT_THAT(bind_res, SyscallFailsWithErrno(EAFNOSUPPORT));
+  }
+
+  ASSERT_NO_FATAL_FAILURE(ConnectThenDisconnect(sock_, bind_addr_, addrlen_));
+}
+
+TEST_P(UdpSocketTest, DisconnectAfterConnectWithoutBind) {
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  ASSERT_NO_FATAL_FAILURE(ConnectThenDisconnect(sock_, bind_addr_, addrlen_));
+}
+
 TEST_P(UdpSocketTest, BindToAnyConnnectToLocalhost) {
   ASSERT_NO_ERRNO(BindAny());
 

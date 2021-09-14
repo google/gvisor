@@ -15,6 +15,7 @@
 package network_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -24,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -33,17 +35,15 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-func TestEndpointStateTransitions(t *testing.T) {
-	const (
-		nicID = 1
-	)
+var (
+	ipv4NICAddr    = testutil.MustParse4("1.2.3.4")
+	ipv6NICAddr    = testutil.MustParse6("a::1")
+	ipv4RemoteAddr = testutil.MustParse4("6.7.8.9")
+	ipv6RemoteAddr = testutil.MustParse6("b::1")
+)
 
-	var (
-		ipv4NICAddr    = testutil.MustParse4("1.2.3.4")
-		ipv6NICAddr    = testutil.MustParse6("a::1")
-		ipv4RemoteAddr = testutil.MustParse4("6.7.8.9")
-		ipv6RemoteAddr = testutil.MustParse6("b::1")
-	)
+func TestEndpointStateTransitions(t *testing.T) {
+	const nicID = 1
 
 	data := buffer.View([]byte{1, 2, 4, 5})
 	v4Checker := func(t *testing.T, b buffer.View) {
@@ -139,6 +139,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			var ops tcpip.SocketOptions
 			var ep network.Endpoint
 			ep.Init(s, test.netProto, udp.ProtocolNumber, &ops)
+			defer ep.Close()
 			if state := ep.State(); state != transport.DatagramEndpointStateInitial {
 				t.Fatalf("got ep.State() = %s, want = %s", state, transport.DatagramEndpointStateInitial)
 			}
@@ -203,6 +204,97 @@ func TestEndpointStateTransitions(t *testing.T) {
 			ep.Close()
 			if state := ep.State(); state != transport.DatagramEndpointStateClosed {
 				t.Fatalf("got ep.State() = %s, want = %s", state, transport.DatagramEndpointStateClosed)
+			}
+		})
+	}
+}
+
+func TestBindNICID(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name     string
+		netProto tcpip.NetworkProtocolNumber
+		bindAddr tcpip.Address
+		unicast  bool
+	}{
+		{
+			name:     "IPv4 multicast",
+			netProto: ipv4.ProtocolNumber,
+			bindAddr: header.IPv4AllSystems,
+			unicast:  false,
+		},
+		{
+			name:     "IPv6 multicast",
+			netProto: ipv6.ProtocolNumber,
+			bindAddr: header.IPv6AllNodesMulticastAddress,
+			unicast:  false,
+		},
+		{
+			name:     "IPv4 unicast",
+			netProto: ipv4.ProtocolNumber,
+			bindAddr: ipv4NICAddr,
+			unicast:  true,
+		},
+		{
+			name:     "IPv6 unicast",
+			netProto: ipv6.ProtocolNumber,
+			bindAddr: ipv6NICAddr,
+			unicast:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, testBindNICID := range []tcpip.NICID{0, nicID} {
+				t.Run(fmt.Sprintf("BindNICID=%d", testBindNICID), func(t *testing.T) {
+					s := stack.New(stack.Options{
+						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+						Clock:              &faketime.NullClock{},
+					})
+					if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+					}
+
+					if err := s.AddAddress(nicID, ipv4.ProtocolNumber, ipv4NICAddr); err != nil {
+						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, ipv4NICAddr, err)
+					}
+					if err := s.AddAddress(nicID, ipv6.ProtocolNumber, ipv6NICAddr); err != nil {
+						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, ipv6NICAddr, err)
+					}
+
+					var ops tcpip.SocketOptions
+					var ep network.Endpoint
+					ep.Init(s, test.netProto, udp.ProtocolNumber, &ops)
+					defer ep.Close()
+					if ep.WasBound() {
+						t.Fatal("got ep.WasBound() = true, want = false")
+					}
+					wantInfo := stack.TransportEndpointInfo{NetProto: test.netProto, TransProto: udp.ProtocolNumber}
+					if diff := cmp.Diff(wantInfo, ep.Info()); diff != "" {
+						t.Fatalf("ep.Info() mismatch (-want +got):\n%s", diff)
+					}
+
+					bindAddr := tcpip.FullAddress{Addr: test.bindAddr, NIC: testBindNICID}
+					if err := ep.Bind(bindAddr); err != nil {
+						t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
+					}
+					if !ep.WasBound() {
+						t.Error("got ep.WasBound() = false, want = true")
+					}
+					wantInfo.ID = stack.TransportEndpointID{LocalAddress: bindAddr.Addr}
+					wantInfo.BindAddr = bindAddr.Addr
+					wantInfo.BindNICID = bindAddr.NIC
+					if test.unicast {
+						wantInfo.RegisterNICID = nicID
+					} else {
+						wantInfo.RegisterNICID = bindAddr.NIC
+					}
+					if diff := cmp.Diff(wantInfo, ep.Info()); diff != "" {
+						t.Errorf("ep.Info() mismatch (-want +got):\n%s", diff)
+					}
+				})
 			}
 		})
 	}

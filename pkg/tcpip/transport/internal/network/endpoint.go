@@ -44,8 +44,9 @@ type Endpoint struct {
 	state uint32
 
 	// The following fields are protected by mu.
-	mu   sync.RWMutex `state:"nosave"`
-	info stack.TransportEndpointInfo
+	mu       sync.RWMutex `state:"nosave"`
+	wasBound bool
+	info     stack.TransportEndpointInfo
 	// owner is the owner of transmitted packets.
 	owner                tcpip.PacketOwner
 	writeShutdown        bool
@@ -248,6 +249,9 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 
 			nicID = e.info.BindNICID
 		}
+		if nicID == 0 {
+			nicID = e.info.RegisterNICID
+		}
 
 		dst, netProto, err := e.checkV4MappedLocked(*opts.To)
 		if err != nil {
@@ -294,9 +298,9 @@ func (e *Endpoint) Disconnect() {
 	}
 
 	// Exclude ephemerally bound endpoints.
-	if e.info.BindNICID != 0 || e.info.ID.LocalAddress == "" {
+	if e.wasBound {
 		e.info.ID = stack.TransportEndpointID{
-			LocalAddress: e.info.ID.LocalAddress,
+			LocalAddress: e.info.BindAddr,
 		}
 		e.setEndpointState(transport.DatagramEndpointStateBound)
 	} else {
@@ -477,15 +481,24 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 		return err
 	}
 
+	e.wasBound = true
+
 	e.info.ID = stack.TransportEndpointID{
 		LocalAddress: addr.Addr,
 	}
-	e.info.BindNICID = nicID
+	e.info.BindNICID = addr.NIC
 	e.info.RegisterNICID = nicID
 	e.info.BindAddr = addr.Addr
 	e.effectiveNetProto = netProto
 	e.setEndpointState(transport.DatagramEndpointStateBound)
 	return nil
+}
+
+// WasBound returns true iff the endpoint was ever bound.
+func (e *Endpoint) WasBound() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.wasBound
 }
 
 // GetLocalAddress returns the address that the endpoint is bound to.
