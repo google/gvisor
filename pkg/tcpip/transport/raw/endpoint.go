@@ -562,8 +562,6 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		return
 	}
 
-	remoteAddr := pkt.Network().SourceAddress()
-
 	if e.bound {
 		// If bound to a NIC, only accept data for that NIC.
 		if e.BindNICID != 0 && e.BindNICID != pkt.NICID {
@@ -572,16 +570,17 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			return
 		}
 		// If bound to an address, only accept data for that address.
-		if e.BindAddr != "" && e.BindAddr != remoteAddr {
+		if e.BindAddr != "" && e.BindAddr != pkt.Network().DestinationAddress() {
 			e.rcvMu.Unlock()
 			e.mu.RUnlock()
 			return
 		}
 	}
 
+	srcAddr := pkt.Network().SourceAddress()
 	// If connected, only accept packets from the remote address we
 	// connected to.
-	if e.connected && e.route.RemoteAddress() != remoteAddr {
+	if e.connected && e.route.RemoteAddress() != srcAddr {
 		e.rcvMu.Unlock()
 		e.mu.RUnlock()
 		return
@@ -593,7 +592,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	packet := &rawPacket{
 		senderAddr: tcpip.FullAddress{
 			NIC:  pkt.NICID,
-			Addr: remoteAddr,
+			Addr: srcAddr,
 		},
 	}
 
