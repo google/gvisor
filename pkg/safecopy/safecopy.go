@@ -83,7 +83,7 @@ var (
 	// when we get a SIGSEGV that is not interesting to us.
 	savedSigSegVHandler uintptr
 
-	// same a above, but for SIGBUS signals.
+	// Same as above, but for SIGBUS signals.
 	savedSigBusHandler uintptr
 )
 
