@@ -17,6 +17,8 @@
 #ifndef GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 #define GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 
+#include "test/util/posix_error.h"
+
 #if defined(__Fuchsia__)
 // Nothing to include.
 #elif defined(__linux__)

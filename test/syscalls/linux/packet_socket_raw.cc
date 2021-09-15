@@ -105,44 +105,6 @@ void RawPacketTest::SetUp() {
     GTEST_SKIP();
   }
 
-  if (!IsRunningOnGvisor()) {
-    // Ensure that looped back packets aren't rejected by the kernel.
-    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDWR));
-    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
-        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDWR));
-    char enabled;
-    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    if (enabled != '1') {
-      enabled = '1';
-      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(write(acceptLocal.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_THAT(lseek(acceptLocal.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_EQ(enabled, '1');
-    }
-
-    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                SyscallSucceedsWithValue(1));
-    if (enabled != '1') {
-      enabled = '1';
-      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(write(routeLocalnet.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_THAT(lseek(routeLocalnet.get(), 0, SEEK_SET),
-                  SyscallSucceedsWithValue(0));
-      ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
-                  SyscallSucceedsWithValue(1));
-      ASSERT_EQ(enabled, '1');
-    }
-  }
-
   ASSERT_THAT(s_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
               SyscallSucceeds());
 }
@@ -292,6 +254,43 @@ TEST_P(RawPacketTest, Send) {
   memcpy(send_buf + sizeof(ethhdr) + sizeof(iphdr), &udphdr, sizeof(udphdr));
   memcpy(send_buf + sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr), kMessage,
          sizeof(kMessage));
+
+  if (!IsRunningOnGvisor()) {
+    // Some of these tests involve sending packets via AF_PACKET sockets and the
+    // loopback interface. Because AF_PACKET circumvents so much of the
+    // networking stack, Linux sees these packets as "martian", i.e. they claim
+    // to be to/from localhost but don't have the usual associated data. Thus
+    // Linux drops them by default. You can see where this happens by following
+    // the code at:
+    //
+    // - net/ipv4/ip_input.c:ip_rcv_finish, which calls
+    // - net/ipv4/route.c:ip_route_input_noref, which calls
+    // - net/ipv4/route.c:ip_route_input_slow, which finds and drops martian
+    //   packets.
+    //
+    // To tell Linux not to drop these packets, you need to tell it to accept
+    // our funny packets (which are completely valid and correct, but lack
+    // associated in-kernel data because we use AF_PACKET):
+    //
+    // echo 1 >> /proc/sys/net/ipv4/conf/lo/accept_local
+    // echo 1 >> /proc/sys/net/ipv4/conf/lo/route_localnet
+    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
+    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
+    char enabled;
+    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    if (enabled != '1') {
+      GTEST_SKIP() << "acceptLocal not set";
+    }
+    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(enabled, '1');
+    if (enabled != '1') {
+      GTEST_SKIP() << "routeLocalNet not set";
+    }
+  }
 
   // Send it.
   ASSERT_THAT(sendto(s_, send_buf, sizeof(send_buf), 0,

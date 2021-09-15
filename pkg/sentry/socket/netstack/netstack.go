@@ -672,13 +672,10 @@ func (s *socketOpsCommon) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 		a.UnmarshalBytes(sockaddr[:sockAddrLinkSize])
 
-		if a.Protocol != uint16(s.protocol) {
-			return syserr.ErrInvalidArgument
-		}
-
 		addr = tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
 			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+			Port: socket.Ntohs(a.Protocol),
 		}
 	} else {
 		if s.minSockAddrLen() > len(sockaddr) {
