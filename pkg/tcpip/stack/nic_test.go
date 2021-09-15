@@ -127,11 +127,6 @@ func (*testIPv6Protocol) MinimumPacketSize() int {
 	return header.IPv6MinimumSize
 }
 
-// DefaultPrefixLen implements NetworkProtocol.DefaultPrefixLen.
-func (*testIPv6Protocol) DefaultPrefixLen() int {
-	return header.IPv6AddressSize * 8
-}
-
 // ParseAddresses implements NetworkProtocol.ParseAddresses.
 func (*testIPv6Protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	h := header.IPv6(v)

@@ -47,7 +47,10 @@ func TestLocalPing(t *testing.T) {
 		// request/reply packets.
 		icmpDataOffset = 8
 	)
-	ipv4Loopback := testutil.MustParse4("127.0.0.1")
+	ipv4Loopback := tcpip.AddressWithPrefix{
+		Address:   testutil.MustParse4("127.0.0.1"),
+		PrefixLen: 8,
+	}
 
 	channelEP := func() stack.LinkEndpoint { return channel.New(1, header.IPv6MinimumMTU, "") }
 	channelEPCheck := func(t *testing.T, e stack.LinkEndpoint) {
@@ -82,7 +85,7 @@ func TestLocalPing(t *testing.T) {
 		transProto         tcpip.TransportProtocolNumber
 		netProto           tcpip.NetworkProtocolNumber
 		linkEndpoint       func() stack.LinkEndpoint
-		localAddr          tcpip.Address
+		localAddr          tcpip.AddressWithPrefix
 		icmpBuf            func(*testing.T) buffer.View
 		expectedConnectErr tcpip.Error
 		checkLinkEndpoint  func(t *testing.T, e stack.LinkEndpoint)
@@ -101,7 +104,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber6,
 			netProto:          ipv6.ProtocolNumber,
 			linkEndpoint:      loopback.New,
-			localAddr:         header.IPv6Loopback,
+			localAddr:         header.IPv6Loopback.WithPrefix(),
 			icmpBuf:           ipv6ICMPBuf,
 			checkLinkEndpoint: func(*testing.T, stack.LinkEndpoint) {},
 		},
@@ -110,7 +113,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber4,
 			netProto:          ipv4.ProtocolNumber,
 			linkEndpoint:      channelEP,
-			localAddr:         utils.Ipv4Addr.Address,
+			localAddr:         utils.Ipv4Addr,
 			icmpBuf:           ipv4ICMPBuf,
 			checkLinkEndpoint: channelEPCheck,
 		},
@@ -119,7 +122,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber6,
 			netProto:          ipv6.ProtocolNumber,
 			linkEndpoint:      channelEP,
-			localAddr:         utils.Ipv6Addr.Address,
+			localAddr:         utils.Ipv6Addr,
 			icmpBuf:           ipv6ICMPBuf,
 			checkLinkEndpoint: channelEPCheck,
 		},
@@ -182,9 +185,13 @@ func TestLocalPing(t *testing.T) {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
 
-					if len(test.localAddr) != 0 {
-						if err := s.AddAddress(nicID, test.netProto, test.localAddr); err != nil {
-							t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, test.netProto, test.localAddr, err)
+					if len(test.localAddr.Address) != 0 {
+						protocolAddr := tcpip.ProtocolAddress{
+							Protocol:          test.netProto,
+							AddressWithPrefix: test.localAddr,
+						}
+						if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+							t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 						}
 					}
 
@@ -197,7 +204,7 @@ func TestLocalPing(t *testing.T) {
 					}
 					defer ep.Close()
 
-					connAddr := tcpip.FullAddress{Addr: test.localAddr}
+					connAddr := tcpip.FullAddress{Addr: test.localAddr.Address}
 					if err := ep.Connect(connAddr); err != test.expectedConnectErr {
 						t.Fatalf("got ep.Connect(%#v) = %s, want = %s", connAddr, err, test.expectedConnectErr)
 					}
@@ -229,8 +236,8 @@ func TestLocalPing(t *testing.T) {
 					if diff := cmp.Diff(buffer.View(w.Bytes()[icmpDataOffset:]), payload[icmpDataOffset:]); diff != "" {
 						t.Errorf("received data mismatch (-want +got):\n%s", diff)
 					}
-					if rr.RemoteAddr.Addr != test.localAddr {
-						t.Errorf("got addr.Addr = %s, want = %s", rr.RemoteAddr.Addr, test.localAddr)
+					if rr.RemoteAddr.Addr != test.localAddr.Address {
+						t.Errorf("got addr.Addr = %s, want = %s", rr.RemoteAddr.Addr, test.localAddr.Address)
 					}
 
 					test.checkLinkEndpoint(t, e)
@@ -302,11 +309,12 @@ func TestLocalUDP(t *testing.T) {
 					}
 
 					if subTest.addAddress {
-						if err := s.AddProtocolAddressWithOptions(nicID, test.canBePrimaryAddr, stack.CanBePrimaryEndpoint); err != nil {
-							t.Fatalf("s.AddProtocolAddressWithOptions(%d, %#v, %d): %s", nicID, test.canBePrimaryAddr, stack.FirstPrimaryEndpoint, err)
+						if err := s.AddProtocolAddress(nicID, test.canBePrimaryAddr, stack.AddressProperties{}); err != nil {
+							t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, test.canBePrimaryAddr, err)
 						}
-						if err := s.AddProtocolAddressWithOptions(nicID, test.firstPrimaryAddr, stack.FirstPrimaryEndpoint); err != nil {
-							t.Fatalf("s.AddProtocolAddressWithOptions(%d, %#v, %d): %s", nicID, test.firstPrimaryAddr, stack.FirstPrimaryEndpoint, err)
+						properties := stack.AddressProperties{PEB: stack.FirstPrimaryEndpoint}
+						if err := s.AddProtocolAddress(nicID, test.firstPrimaryAddr, properties); err != nil {
+							t.Fatalf("s.AddProtocolAddress(%d, %+v, %+v): %s", nicID, test.firstPrimaryAddr, properties, err)
 						}
 					}
 

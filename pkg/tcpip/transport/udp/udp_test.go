@@ -323,12 +323,20 @@ func newDualTestContextWithHandleLocal(t *testing.T, mtu uint32, handleLocal boo
 		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 	}
 
-	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, stackAddr, err)
+	protocolAddrV4 := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.Address(stackAddr).WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddrV4, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddrV4, err)
 	}
 
-	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, stackV6Addr); err != nil {
-		t.Fatalf("AddAddress((%d, %d, %s): %s", nicID, ipv6.ProtocolNumber, stackV6Addr, err)
+	protocolAddrV6 := tcpip.ProtocolAddress{
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: tcpip.Address(stackV6Addr).WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddrV6, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddrV6, err)
 	}
 
 	s.SetRouteTable([]tcpip.Route{
@@ -2504,8 +2512,8 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			if err := s.CreateNIC(nicID1, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 			}
-			if err := s.AddProtocolAddress(nicID1, test.nicAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID1, test.nicAddr, err)
+			if err := s.AddProtocolAddress(nicID1, test.nicAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID1, test.nicAddr, err)
 			}
 
 			s.SetRouteTable(test.routes)

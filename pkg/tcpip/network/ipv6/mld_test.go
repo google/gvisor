@@ -75,8 +75,12 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 	// The stack will join an address's solicited node multicast address when
 	// an address is added. An MLD report message should be sent for the
 	// solicited-node group.
-	if err := s.AddAddress(nicID, ipv6.ProtocolNumber, linkLocalAddr); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ipv6.ProtocolNumber, linkLocalAddr, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: linkLocalAddr.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 	if p, ok := e.Read(); !ok {
 		t.Fatal("expected a report message to be sent")
@@ -216,8 +220,13 @@ func TestSendQueuedMLDReports(t *testing.T) {
 			// Note, we will still expect to send a report for the global address's
 			// solicited node address from the unspecified address as per  RFC 3590
 			// section 4.
-			if err := s.AddAddressWithOptions(nicID, ipv6.ProtocolNumber, globalAddr, stack.FirstPrimaryEndpoint); err != nil {
-				t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s", nicID, ipv6.ProtocolNumber, globalAddr, stack.FirstPrimaryEndpoint, err)
+			properties := stack.AddressProperties{PEB: stack.FirstPrimaryEndpoint}
+			globalProtocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: globalAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, globalProtocolAddr, properties); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, %+v): %s", nicID, globalProtocolAddr, properties, err)
 			}
 			reportCounter++
 			if got := reportStat.Value(); got != reportCounter {
@@ -252,8 +261,12 @@ func TestSendQueuedMLDReports(t *testing.T) {
 
 			// Adding a link-local address should send a report for its solicited node
 			// address and globalMulticastAddr.
-			if err := s.AddAddressWithOptions(nicID, ipv6.ProtocolNumber, linkLocalAddr, stack.CanBePrimaryEndpoint); err != nil {
-				t.Fatalf("AddAddressWithOptions(%d, %d, %s, %d): %s", nicID, ipv6.ProtocolNumber, linkLocalAddr, stack.CanBePrimaryEndpoint, err)
+			linkLocalProtocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: linkLocalAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, linkLocalProtocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, linkLocalProtocolAddr, err)
 			}
 			if dadResolutionTime != 0 {
 				reportCounter++
@@ -567,8 +580,12 @@ func TestMLDSkipProtocol(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ipv6.ProtocolNumber, linkLocalAddr); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ipv6.ProtocolNumber, linkLocalAddr, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: linkLocalAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			if p, ok := e.Read(); !ok {
 				t.Fatal("expected a report message to be sent")

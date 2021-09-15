@@ -318,8 +318,7 @@ type PrimaryEndpointBehavior int
 
 const (
 	// CanBePrimaryEndpoint indicates the endpoint can be used as a primary
-	// endpoint for new connections with no local address. This is the
-	// default when calling NIC.AddAddress.
+	// endpoint for new connections with no local address.
 	CanBePrimaryEndpoint PrimaryEndpointBehavior = iota
 
 	// FirstPrimaryEndpoint indicates the endpoint should be the first
@@ -331,6 +330,19 @@ const (
 	// primary endpoint.
 	NeverPrimaryEndpoint
 )
+
+func (peb PrimaryEndpointBehavior) String() string {
+	switch peb {
+	case CanBePrimaryEndpoint:
+		return "CanBePrimaryEndpoint"
+	case FirstPrimaryEndpoint:
+		return "FirstPrimaryEndpoint"
+	case NeverPrimaryEndpoint:
+		return "NeverPrimaryEndpoint"
+	default:
+		panic(fmt.Sprintf("unknown primary endpoint behavior: %d", peb))
+	}
+}
 
 // AddressConfigType is the method used to add an address.
 type AddressConfigType int
@@ -350,6 +362,14 @@ const (
 	// to be valid (or preferred) forever; hence the term temporary.
 	AddressConfigSlaacTemp
 )
+
+// AddressProperties contains additional properties that can be configured when
+// adding an address.
+type AddressProperties struct {
+	PEB        PrimaryEndpointBehavior
+	ConfigType AddressConfigType
+	Deprecated bool
+}
 
 // AssignableAddressEndpoint is a reference counted address endpoint that may be
 // assigned to a NetworkEndpoint.
@@ -457,7 +477,7 @@ type AddressableEndpoint interface {
 	// Returns *tcpip.ErrDuplicateAddress if the address exists.
 	//
 	// Acquires and returns the AddressEndpoint for the added address.
-	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, configType AddressConfigType, deprecated bool) (AddressEndpoint, tcpip.Error)
+	AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties AddressProperties) (AddressEndpoint, tcpip.Error)
 
 	// RemovePermanentAddress removes the passed address if it is a permanent
 	// address.
@@ -684,9 +704,6 @@ type NetworkProtocol interface {
 	// network protocol. The stack automatically drops any packets smaller
 	// than this targeted at this protocol.
 	MinimumPacketSize() int
-
-	// DefaultPrefixLen returns the protocol's default prefix length.
-	DefaultPrefixLen() int
 
 	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.

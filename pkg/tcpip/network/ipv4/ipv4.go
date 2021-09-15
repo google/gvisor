@@ -240,7 +240,7 @@ func (e *endpoint) Enable() tcpip.Error {
 	}
 
 	// Create an endpoint to receive broadcast packets on this interface.
-	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.NeverPrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */)
+	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(ipv4BroadcastAddr, stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint})
 	if err != nil {
 		return err
 	}
@@ -1075,11 +1075,11 @@ func (e *endpoint) Close() {
 }
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, tcpip.Error) {
+func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+	ep, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
 	if err == nil {
 		e.mu.igmp.sendQueuedReports()
 	}
@@ -1224,11 +1224,6 @@ func (p *protocol) Number() tcpip.NetworkProtocolNumber {
 // MinimumPacketSize returns the minimum valid ipv4 packet size.
 func (p *protocol) MinimumPacketSize() int {
 	return header.IPv4MinimumSize
-}
-
-// DefaultPrefixLen returns the IPv4 default prefix length.
-func (p *protocol) DefaultPrefixLen() int {
-	return header.IPv4AddressSize * 8
 }
 
 // ParseAddresses implements stack.NetworkProtocol.

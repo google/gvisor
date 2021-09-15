@@ -153,8 +153,12 @@ func makeTestContext(t *testing.T, eventDepth int, packetDepth int) testContext 
 		t.Fatalf("CreateNIC failed: %s", err)
 	}
 
-	if err := tc.s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress for ipv4 failed: %s", err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: stackAddr.WithPrefix(),
+	}
+	if err := tc.s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 
 	tc.s.SetRouteTable([]tcpip.Route{{
@@ -569,8 +573,12 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			if len(test.nicAddr) != 0 {
-				if err := s.AddAddress(nicID, ipv4.ProtocolNumber, test.nicAddr); err != nil {
-					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, test.nicAddr, err)
+				protocolAddr := tcpip.ProtocolAddress{
+					Protocol:          ipv4.ProtocolNumber,
+					AddressWithPrefix: test.nicAddr.WithPrefix(),
+				}
+				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 			}
 

@@ -208,8 +208,12 @@ func newNetstackImpl(mode string) (impl, error) {
 	if err := s.CreateNIC(nicID, fifo.New(ep, runtime.GOMAXPROCS(0), 1000)); err != nil {
 		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
-	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, parsedAddr); err != nil {
-		return nil, fmt.Errorf("error adding IP address to %q: %v", *iface, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: parsedAddr.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		return nil, fmt.Errorf("error adding IP address %+v to %q: %w", protocolAddr, *iface, err)
 	}
 
 	subnet, err := tcpip.NewSubnet(parsedDest, parsedMask)

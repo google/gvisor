@@ -233,7 +233,13 @@ func buildIPv4Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 	})
 	s.CreateNIC(nicID, loopback.New())
-	s.AddAddress(nicID, ipv4.ProtocolNumber, local)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: local.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		return nil, err
+	}
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,
 		Gateway:     ipv4Gateway,
@@ -249,7 +255,13 @@ func buildIPv6Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
 	})
 	s.CreateNIC(nicID, loopback.New())
-	s.AddAddress(nicID, ipv6.ProtocolNumber, local)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: local.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		return nil, err
+	}
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     ipv6Gateway,
@@ -272,13 +284,13 @@ func buildDummyStackWithLinkEndpoint(t *testing.T, mtu uint32) (*stack.Stack, *c
 	}
 
 	v4Addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: localIPv4AddrWithPrefix}
-	if err := s.AddProtocolAddress(nicID, v4Addr); err != nil {
-		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v4Addr, err)
+	if err := s.AddProtocolAddress(nicID, v4Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}) = %s", nicID, v4Addr, err)
 	}
 
 	v6Addr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: localIPv6AddrWithPrefix}
-	if err := s.AddProtocolAddress(nicID, v6Addr); err != nil {
-		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v6Addr, err)
+	if err := s.AddProtocolAddress(nicID, v6Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}) = %s", nicID, v6Addr, err)
 	}
 
 	return s, e
@@ -713,8 +725,8 @@ func TestReceive(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected network endpoint with number = %d to implement stack.AddressableEndpoint", test.protoNum)
 			}
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(test.epAddr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", test.epAddr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(test.epAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", test.epAddr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -885,8 +897,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
 			}
 			addr := localIPv4Addr.WithPrefix()
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -971,8 +983,8 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
 	}
 	addr := localIPv4Addr.WithPrefix()
-	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 	} else {
 		ep.DecRef()
 	}
@@ -1237,8 +1249,8 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				t.Fatal("expected IPv6 network endpoint to implement stack.AddressableEndpoint")
 			}
 			addr := localIPv6Addr.WithPrefix()
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -1304,7 +1316,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 		name         string
 		protoFactory stack.NetworkProtocolFactory
 		protoNum     tcpip.NetworkProtocolNumber
-		nicAddr      tcpip.Address
+		nicAddr      tcpip.AddressWithPrefix
 		remoteAddr   tcpip.Address
 		pktGen       func(*testing.T, tcpip.Address) buffer.VectorisedView
 		checker      func(*testing.T, *stack.PacketBuffer, tcpip.Address)
@@ -1314,7 +1326,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				totalLen := header.IPv4MinimumSize + len(data)
@@ -1355,7 +1367,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with IHL too small",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				totalLen := header.IPv4MinimumSize + len(data)
@@ -1379,7 +1391,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 too small",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize))
@@ -1397,7 +1409,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 minimum size",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize))
@@ -1433,7 +1445,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with options",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ipHdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
@@ -1478,7 +1490,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with options and data across views",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.Length()))
@@ -1519,7 +1531,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				totalLen := header.IPv6MinimumSize + len(data)
@@ -1559,7 +1571,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 with extension header",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				totalLen := header.IPv6MinimumSize + len(ipv6FragmentExtHdr) + len(data)
@@ -1604,7 +1616,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 minimum size",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
@@ -1639,7 +1651,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 too small",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
 			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
@@ -1663,11 +1675,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			}{
 				{
 					name:    "unspecified source",
-					srcAddr: tcpip.Address(strings.Repeat("\x00", len(test.nicAddr))),
+					srcAddr: tcpip.Address(strings.Repeat("\x00", len(test.nicAddr.Address))),
 				},
 				{
 					name:    "random source",
-					srcAddr: tcpip.Address(strings.Repeat("\xab", len(test.nicAddr))),
+					srcAddr: tcpip.Address(strings.Repeat("\xab", len(test.nicAddr.Address))),
 				},
 			}
 
@@ -1680,15 +1692,19 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
-					if err := s.AddAddress(nicID, test.protoNum, test.nicAddr); err != nil {
-						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, test.protoNum, test.nicAddr, err)
+					protocolAddr := tcpip.ProtocolAddress{
+						Protocol:          test.protoNum,
+						AddressWithPrefix: test.nicAddr,
+					}
+					if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 					}
 
 					s.SetRouteTable([]tcpip.Route{{Destination: test.remoteAddr.WithPrefix().Subnet(), NIC: nicID}})
 
-					r, err := s.FindRoute(nicID, test.nicAddr, test.remoteAddr, test.protoNum, false /* multicastLoop */)
+					r, err := s.FindRoute(nicID, test.nicAddr.Address, test.remoteAddr, test.protoNum, false /* multicastLoop */)
 					if err != nil {
-						t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, test.remoteAddr, test.nicAddr, test.protoNum, err)
+						t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, test.remoteAddr, test.nicAddr.Address, test.protoNum, err)
 					}
 					defer r.Release()
 
@@ -2072,8 +2088,12 @@ func TestSetNICIDBeforeDeliveringToRawEndpoint(t *testing.T) {
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddAddressWithPrefix(nicID, test.proto, test.addr); err != nil {
-				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID, test.proto, test.addr, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          test.proto,
+				AddressWithPrefix: test.addr,
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{

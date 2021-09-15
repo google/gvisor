@@ -181,10 +181,6 @@ func (*fwdTestNetworkProtocol) MinimumPacketSize() int {
 	return fwdTestNetHeaderLen
 }
 
-func (*fwdTestNetworkProtocol) DefaultPrefixLen() int {
-	return fwdTestNetDefaultPrefixLen
-}
-
 func (*fwdTestNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
 }
@@ -384,8 +380,15 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatal("CreateNIC #1 failed:", err)
 	}
-	if err := s.AddAddress(1, fwdTestNetNumber, "\x01"); err != nil {
-		t.Fatal("AddAddress #1 failed:", err)
+	protocolAddr1 := tcpip.ProtocolAddress{
+		Protocol: fwdTestNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x01",
+			PrefixLen: fwdTestNetDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr1, AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr1, err)
 	}
 
 	// NIC 2 has the link address "b", and added the network address 2.
@@ -397,8 +400,15 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatal("CreateNIC #2 failed:", err)
 	}
-	if err := s.AddAddress(2, fwdTestNetNumber, "\x02"); err != nil {
-		t.Fatal("AddAddress #2 failed:", err)
+	protocolAddr2 := tcpip.ProtocolAddress{
+		Protocol: fwdTestNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x02",
+			PrefixLen: fwdTestNetDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(2, protocolAddr2, AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 2, protocolAddr2, err)
 	}
 
 	nic, ok := s.nics[2]

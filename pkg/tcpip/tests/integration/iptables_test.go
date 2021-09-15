@@ -49,10 +49,10 @@ const (
 	nicName        = "nic1"
 	anotherNicName = "nic2"
 	linkAddr       = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
-	srcAddrV4      = "\x0a\x00\x00\x01"
-	dstAddrV4      = "\x0a\x00\x00\x02"
-	srcAddrV6      = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	dstAddrV6      = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	srcAddrV4      = tcpip.Address("\x0a\x00\x00\x01")
+	dstAddrV4      = tcpip.Address("\x0a\x00\x00\x02")
+	srcAddrV6      = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+	dstAddrV6      = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 	payloadSize    = 20
 )
 
@@ -66,8 +66,12 @@ func genStackV6(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
 		t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, nicOpts, err)
 	}
-	if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, dstAddrV6); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, dstAddrV6, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: dstAddrV6.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 	return s, e
 }
@@ -82,8 +86,12 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
 		t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, nicOpts, err)
 	}
-	if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, dstAddrV4); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, dstAddrV4, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: dstAddrV4.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 	return s, e
 }
@@ -601,11 +609,19 @@ func TestIPTableWritePackets(t *testing.T) {
 			if err := s.CreateNIC(nicID, &e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, srcAddrV6); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, srcAddrV6, err)
+			protocolAddrV6 := tcpip.ProtocolAddress{
+				Protocol:          header.IPv6ProtocolNumber,
+				AddressWithPrefix: srcAddrV6.WithPrefix(),
 			}
-			if err := s.AddAddress(nicID, header.IPv4ProtocolNumber, srcAddrV4); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv4ProtocolNumber, srcAddrV4, err)
+			if err := s.AddProtocolAddress(nicID, protocolAddrV6, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddrV6, err)
+			}
+			protocolAddrV4 := tcpip.ProtocolAddress{
+				Protocol:          header.IPv4ProtocolNumber,
+				AddressWithPrefix: srcAddrV4.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddrV4, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddrV4, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -856,11 +872,19 @@ func TestForwardingHook(t *testing.T) {
 						t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", nicID2, err)
 					}
 
-					if err := s.AddAddress(nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address); err != nil {
-						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv4.ProtocolNumber, utils.Ipv4Addr.Address, err)
+					protocolAddrV4 := tcpip.ProtocolAddress{
+						Protocol:          ipv4.ProtocolNumber,
+						AddressWithPrefix: utils.Ipv4Addr.Address.WithPrefix(),
 					}
-					if err := s.AddAddress(nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address); err != nil {
-						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, utils.Ipv6Addr.Address, err)
+					if err := s.AddProtocolAddress(nicID2, protocolAddrV4, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV4, err)
+					}
+					protocolAddrV6 := tcpip.ProtocolAddress{
+						Protocol:          ipv6.ProtocolNumber,
+						AddressWithPrefix: utils.Ipv6Addr.Address.WithPrefix(),
+					}
+					if err := s.AddProtocolAddress(nicID2, protocolAddrV6, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV6, err)
 					}
 
 					if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
@@ -1037,22 +1061,22 @@ func TestInputHookWithLocalForwarding(t *testing.T) {
 					if err := s.CreateNICWithOptions(nicID1, e1, stack.NICOptions{Name: nic1Name}); err != nil {
 						t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", nicID1, err)
 					}
-					if err := s.AddProtocolAddress(nicID1, utils.Ipv4Addr1); err != nil {
-						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID1, utils.Ipv4Addr1, err)
+					if err := s.AddProtocolAddress(nicID1, utils.Ipv4Addr1, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID1, utils.Ipv4Addr1, err)
 					}
-					if err := s.AddProtocolAddress(nicID1, utils.Ipv6Addr1); err != nil {
-						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID1, utils.Ipv6Addr1, err)
+					if err := s.AddProtocolAddress(nicID1, utils.Ipv6Addr1, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID1, utils.Ipv6Addr1, err)
 					}
 
 					e2 := channel.New(1, header.IPv6MinimumMTU, "")
 					if err := s.CreateNICWithOptions(nicID2, e2, stack.NICOptions{Name: nic2Name}); err != nil {
 						t.Fatalf("s.CreateNICWithOptions(%d, _, _): %s", nicID2, err)
 					}
-					if err := s.AddProtocolAddress(nicID2, utils.Ipv4Addr2); err != nil {
-						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID2, utils.Ipv4Addr2, err)
+					if err := s.AddProtocolAddress(nicID2, utils.Ipv4Addr2, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID2, utils.Ipv4Addr2, err)
 					}
-					if err := s.AddProtocolAddress(nicID2, utils.Ipv6Addr2); err != nil {
-						t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID2, utils.Ipv6Addr2, err)
+					if err := s.AddProtocolAddress(nicID2, utils.Ipv6Addr2, stack.AddressProperties{}); err != nil {
+						t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID2, utils.Ipv6Addr2, err)
 					}
 
 					if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {

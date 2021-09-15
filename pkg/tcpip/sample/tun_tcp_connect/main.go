@@ -146,8 +146,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, addr); err != nil {
-		log.Fatal(err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: addr.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
 	// Add default route.

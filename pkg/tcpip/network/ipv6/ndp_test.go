@@ -144,8 +144,12 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + len(test.optsBuf)
@@ -406,8 +410,12 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, nicAddr); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, nicAddr, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: nicAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -602,8 +610,12 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + len(test.optsBuf)
@@ -831,8 +843,12 @@ func TestNDPValidation(t *testing.T) {
 							t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 						}
 
-						if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-							t.Fatalf("AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, lladdr0, err)
+						protocolAddr := tcpip.ProtocolAddress{
+							Protocol:          ProtocolNumber,
+							AddressWithPrefix: lladdr0.WithPrefix(),
+						}
+						if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+							t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 						}
 
 						ep, err := s.GetNetworkEndpoint(nicID, ProtocolNumber)
@@ -962,8 +978,12 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize
@@ -1283,8 +1303,12 @@ func TestCheckDuplicateAddress(t *testing.T) {
 				checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[dadPacketsSent])}),
 			))
 	}
-	if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: lladdr0.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 	checkDADMsg()
 
