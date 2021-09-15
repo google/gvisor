@@ -282,12 +282,15 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkE
 
 	for _, addr := range addrs {
 		proto, tcpipAddr := ipToAddressAndProto(addr.Address)
-		ap := tcpip.AddressWithPrefix{
-			Address:   tcpipAddr,
-			PrefixLen: addr.PrefixLen,
+		protocolAddr := tcpip.ProtocolAddress{
+			Protocol: proto,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpipAddr,
+				PrefixLen: addr.PrefixLen,
+			},
 		}
-		if err := n.Stack.AddAddressWithPrefix(id, proto, ap); err != nil {
-			return fmt.Errorf("AddAddress(%v, %v, %v) failed: %v", id, proto, tcpipAddr, err)
+		if err := n.Stack.AddProtocolAddress(id, protocolAddr, stack.AddressProperties{}); err != nil {
+			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %s", id, protocolAddr, err)
 		}
 	}
 	return nil

@@ -916,46 +916,9 @@ type NICStateFlags struct {
 	Loopback bool
 }
 
-// AddAddress adds a new network-layer address to the specified NIC.
-func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
-	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
-}
-
-// AddAddressWithPrefix is the same as AddAddress, but allows you to specify
-// the address prefix.
-func (s *Stack) AddAddressWithPrefix(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.AddressWithPrefix) tcpip.Error {
-	ap := tcpip.ProtocolAddress{
-		Protocol:          protocol,
-		AddressWithPrefix: addr,
-	}
-	return s.AddProtocolAddressWithOptions(id, ap, CanBePrimaryEndpoint)
-}
-
-// AddProtocolAddress adds a new network-layer protocol address to the
-// specified NIC.
-func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) tcpip.Error {
-	return s.AddProtocolAddressWithOptions(id, protocolAddress, CanBePrimaryEndpoint)
-}
-
-// AddAddressWithOptions is the same as AddAddress, but allows you to specify
-// whether the new endpoint can be primary or not.
-func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) tcpip.Error {
-	netProto, ok := s.networkProtocols[protocol]
-	if !ok {
-		return &tcpip.ErrUnknownProtocol{}
-	}
-	return s.AddProtocolAddressWithOptions(id, tcpip.ProtocolAddress{
-		Protocol: protocol,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   addr,
-			PrefixLen: netProto.DefaultPrefixLen(),
-		},
-	}, peb)
-}
-
-// AddProtocolAddressWithOptions is the same as AddProtocolAddress, but allows
-// you to specify whether the new endpoint can be primary or not.
-func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) tcpip.Error {
+// AddProtocolAddress adds an address to the specified NIC, possibly with extra
+// properties.
+func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, properties AddressProperties) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -964,7 +927,7 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 		return &tcpip.ErrUnknownNICID{}
 	}
 
-	return nic.addAddress(protocolAddress, peb)
+	return nic.addAddress(protocolAddress, properties)
 }
 
 // RemoveAddress removes an existing network-layer address from the specified

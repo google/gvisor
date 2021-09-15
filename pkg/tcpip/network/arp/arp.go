@@ -272,7 +272,6 @@ type protocol struct {
 
 func (p *protocol) Number() tcpip.NetworkProtocolNumber { return ProtocolNumber }
 func (p *protocol) MinimumPacketSize() int              { return header.ARPSize }
-func (p *protocol) DefaultPrefixLen() int               { return 0 }
 
 func (*protocol) ParseAddresses(buffer.View) (src, dst tcpip.Address) {
 	return "", ""

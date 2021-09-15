@@ -19,7 +19,7 @@
 // The starting point is the creation and configuration of a stack. A stack can
 // be created by calling the New() function of the tcpip/stack/stack package;
 // configuring a stack involves creating NICs (via calls to Stack.CreateNIC()),
-// adding network addresses (via calls to Stack.AddAddress()), and
+// adding network addresses (via calls to Stack.AddProtocolAddress()), and
 // setting a route table (via a call to Stack.SetRouteTable()).
 //
 // Once a stack is configured, endpoints can be created by calling
