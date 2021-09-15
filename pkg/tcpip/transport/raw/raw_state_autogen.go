@@ -51,18 +51,15 @@ func (e *endpoint) StateTypeName() string {
 
 func (e *endpoint) StateFields() []string {
 	return []string{
-		"TransportEndpointInfo",
 		"DefaultSocketOptionsHandler",
+		"transProto",
 		"waiterQueue",
 		"associated",
+		"net",
+		"ops",
 		"rcvList",
 		"rcvBufSize",
 		"rcvClosed",
-		"closed",
-		"connected",
-		"bound",
-		"owner",
-		"ops",
 		"frozen",
 	}
 }
@@ -70,36 +67,30 @@ func (e *endpoint) StateFields() []string {
 // +checklocksignore
 func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
-	stateSinkObject.Save(0, &e.TransportEndpointInfo)
-	stateSinkObject.Save(1, &e.DefaultSocketOptionsHandler)
+	stateSinkObject.Save(0, &e.DefaultSocketOptionsHandler)
+	stateSinkObject.Save(1, &e.transProto)
 	stateSinkObject.Save(2, &e.waiterQueue)
 	stateSinkObject.Save(3, &e.associated)
-	stateSinkObject.Save(4, &e.rcvList)
-	stateSinkObject.Save(5, &e.rcvBufSize)
-	stateSinkObject.Save(6, &e.rcvClosed)
-	stateSinkObject.Save(7, &e.closed)
-	stateSinkObject.Save(8, &e.connected)
-	stateSinkObject.Save(9, &e.bound)
-	stateSinkObject.Save(10, &e.owner)
-	stateSinkObject.Save(11, &e.ops)
-	stateSinkObject.Save(12, &e.frozen)
+	stateSinkObject.Save(4, &e.net)
+	stateSinkObject.Save(5, &e.ops)
+	stateSinkObject.Save(6, &e.rcvList)
+	stateSinkObject.Save(7, &e.rcvBufSize)
+	stateSinkObject.Save(8, &e.rcvClosed)
+	stateSinkObject.Save(9, &e.frozen)
 }
 
 // +checklocksignore
 func (e *endpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.TransportEndpointInfo)
-	stateSourceObject.Load(1, &e.DefaultSocketOptionsHandler)
+	stateSourceObject.Load(0, &e.DefaultSocketOptionsHandler)
+	stateSourceObject.Load(1, &e.transProto)
 	stateSourceObject.Load(2, &e.waiterQueue)
 	stateSourceObject.Load(3, &e.associated)
-	stateSourceObject.Load(4, &e.rcvList)
-	stateSourceObject.Load(5, &e.rcvBufSize)
-	stateSourceObject.Load(6, &e.rcvClosed)
-	stateSourceObject.Load(7, &e.closed)
-	stateSourceObject.Load(8, &e.connected)
-	stateSourceObject.Load(9, &e.bound)
-	stateSourceObject.Load(10, &e.owner)
-	stateSourceObject.Load(11, &e.ops)
-	stateSourceObject.Load(12, &e.frozen)
+	stateSourceObject.Load(4, &e.net)
+	stateSourceObject.Load(5, &e.ops)
+	stateSourceObject.Load(6, &e.rcvList)
+	stateSourceObject.Load(7, &e.rcvBufSize)
+	stateSourceObject.Load(8, &e.rcvClosed)
+	stateSourceObject.Load(9, &e.frozen)
 	stateSourceObject.AfterLoad(e.afterLoad)
 }
 
