@@ -14,14 +14,12 @@
 
 #include <arpa/inet.h>
 #include <net/ethernet.h>
-#include <net/if.h>
 #include <net/if_arp.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netpacket/packet.h>
 #include <poll.h>
-#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -29,6 +27,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
@@ -156,11 +155,9 @@ void RawPacketTest::TearDown() {
 }
 
 int RawPacketTest::GetLoopbackIndex() {
-  struct ifreq ifr;
-  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
-  EXPECT_THAT(ioctl(s_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
-  EXPECT_NE(ifr.ifr_ifindex, 0);
-  return ifr.ifr_ifindex;
+  int v = EXPECT_NO_ERRNO_AND_VALUE(gvisor::testing::GetLoopbackIndex());
+  EXPECT_NE(v, 0);
+  return v;
 }
 
 // Receive via a packet socket.
