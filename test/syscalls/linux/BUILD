@@ -1446,6 +1446,7 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
+        ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1465,6 +1466,7 @@ cc_binary(
     srcs = ["packet_socket.cc"],
     linkstatic = 1,
     deps = [
+        ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -4132,12 +4134,10 @@ cc_binary(
     srcs = ["network_namespace.cc"],
     linkstatic = 1,
     deps = [
-        "//test/util:socket_util",
         gtest,
+        ":ip_socket_test_util",
         "//test/util:capability_util",
-        "//test/util:posix_error",
         "//test/util:test_main",
-        "//test/util:test_util",
         "//test/util:thread_util",
     ],
 )

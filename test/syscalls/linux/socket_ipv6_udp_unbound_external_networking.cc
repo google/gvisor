@@ -39,7 +39,7 @@ TEST_P(IPv6UDPUnboundExternalNetworkingSocketTest, TestJoinLeaveMulticast) {
       .ipv6mr_multiaddr =
           reinterpret_cast<sockaddr_in6*>(&multicast_addr.addr)->sin6_addr,
       .ipv6mr_interface = static_cast<decltype(ipv6_mreq::ipv6mr_interface)>(
-          ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"))),
+          ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex())),
   };
   ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
                          &group_req, sizeof(group_req)),

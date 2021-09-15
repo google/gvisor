@@ -29,6 +29,7 @@
 
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
@@ -156,11 +157,9 @@ void CookedPacketTest::TearDown() {
 }
 
 int CookedPacketTest::GetLoopbackIndex() {
-  struct ifreq ifr;
-  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
-  EXPECT_THAT(ioctl(socket_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
-  EXPECT_NE(ifr.ifr_ifindex, 0);
-  return ifr.ifr_ifindex;
+  int v = EXPECT_NO_ERRNO_AND_VALUE(gvisor::testing::GetLoopbackIndex());
+  EXPECT_NE(v, 0);
+  return v;
 }
 
 // Receive and verify the message via packet socket on interface.
