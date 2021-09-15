@@ -156,6 +156,14 @@ SocketKind ICMPv6UnboundSocket(int type) {
       UnboundSocketCreator(AF_INET6, type | SOCK_DGRAM, IPPROTO_ICMPV6)};
 }
 
+SocketKind IPv4RawUDPUnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "IPv4 Raw UDP socket");
+  return SocketKind{
+      description, AF_INET, type | SOCK_RAW, IPPROTO_UDP,
+      UnboundSocketCreator(AF_INET, type | SOCK_RAW, IPPROTO_UDP)};
+}
+
 SocketKind IPv4UDPUnboundSocket(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
