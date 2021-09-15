@@ -44,12 +44,16 @@ func (p *packet) loadData(data buffer.VectorisedView) {
 
 // beforeSave is invoked by stateify.
 func (ep *endpoint) beforeSave() {
-	ep.freeze()
+	ep.rcvMu.Lock()
+	defer ep.rcvMu.Unlock()
+	ep.rcvDisabled = true
 }
 
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad() {
-	ep.thaw()
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+
 	ep.stack = stack.StackFromEnv
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 
@@ -57,4 +61,8 @@ func (ep *endpoint) afterLoad() {
 	if err := ep.stack.RegisterPacketEndpoint(0, ep.netProto, ep); err != nil {
 		panic(err)
 	}
+
+	ep.rcvMu.Lock()
+	ep.rcvDisabled = false
+	ep.rcvMu.Unlock()
 }

@@ -59,15 +59,15 @@ func (ep *endpoint) StateFields() []string {
 		"netProto",
 		"waiterQueue",
 		"cooked",
+		"ops",
 		"rcvList",
 		"rcvBufSize",
 		"rcvClosed",
+		"rcvDisabled",
 		"closed",
 		"bound",
 		"boundNIC",
 		"lastError",
-		"ops",
-		"frozen",
 	}
 }
 
@@ -79,15 +79,15 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &ep.netProto)
 	stateSinkObject.Save(3, &ep.waiterQueue)
 	stateSinkObject.Save(4, &ep.cooked)
-	stateSinkObject.Save(5, &ep.rcvList)
-	stateSinkObject.Save(6, &ep.rcvBufSize)
-	stateSinkObject.Save(7, &ep.rcvClosed)
-	stateSinkObject.Save(8, &ep.closed)
-	stateSinkObject.Save(9, &ep.bound)
-	stateSinkObject.Save(10, &ep.boundNIC)
-	stateSinkObject.Save(11, &ep.lastError)
-	stateSinkObject.Save(12, &ep.ops)
-	stateSinkObject.Save(13, &ep.frozen)
+	stateSinkObject.Save(5, &ep.ops)
+	stateSinkObject.Save(6, &ep.rcvList)
+	stateSinkObject.Save(7, &ep.rcvBufSize)
+	stateSinkObject.Save(8, &ep.rcvClosed)
+	stateSinkObject.Save(9, &ep.rcvDisabled)
+	stateSinkObject.Save(10, &ep.closed)
+	stateSinkObject.Save(11, &ep.bound)
+	stateSinkObject.Save(12, &ep.boundNIC)
+	stateSinkObject.Save(13, &ep.lastError)
 }
 
 // +checklocksignore
@@ -97,15 +97,15 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &ep.netProto)
 	stateSourceObject.Load(3, &ep.waiterQueue)
 	stateSourceObject.Load(4, &ep.cooked)
-	stateSourceObject.Load(5, &ep.rcvList)
-	stateSourceObject.Load(6, &ep.rcvBufSize)
-	stateSourceObject.Load(7, &ep.rcvClosed)
-	stateSourceObject.Load(8, &ep.closed)
-	stateSourceObject.Load(9, &ep.bound)
-	stateSourceObject.Load(10, &ep.boundNIC)
-	stateSourceObject.Load(11, &ep.lastError)
-	stateSourceObject.Load(12, &ep.ops)
-	stateSourceObject.Load(13, &ep.frozen)
+	stateSourceObject.Load(5, &ep.ops)
+	stateSourceObject.Load(6, &ep.rcvList)
+	stateSourceObject.Load(7, &ep.rcvBufSize)
+	stateSourceObject.Load(8, &ep.rcvClosed)
+	stateSourceObject.Load(9, &ep.rcvDisabled)
+	stateSourceObject.Load(10, &ep.closed)
+	stateSourceObject.Load(11, &ep.bound)
+	stateSourceObject.Load(12, &ep.boundNIC)
+	stateSourceObject.Load(13, &ep.lastError)
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 

@@ -68,31 +68,31 @@ type endpoint struct {
 	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
 	cooked      bool
+	ops         tcpip.SocketOptions
+	stats       tcpip.TransportEndpointStats `state:"nosave"`
 
-	// The following fields are used to manage the receive queue and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvList    packetList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvList packetList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// +checklocks:rcvMu
+	rcvDisabled bool
 
-	// The following fields are protected by mu.
-	mu       sync.RWMutex `state:"nosave"`
-	closed   bool
-	stats    tcpip.TransportEndpointStats `state:"nosave"`
-	bound    bool
+	mu sync.RWMutex `state:"nosave"`
+	// +checklocks:mu
+	closed bool
+	// +checklocks:mu
+	bound bool
+	// +checklocks:mu
 	boundNIC tcpip.NICID
 
-	// lastErrorMu protects lastError.
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
-
-	// ops is used to get socket level options.
-	ops tcpip.SocketOptions
-
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
 }
 
 // NewEndpoint returns a new packet endpoint.
@@ -414,7 +414,7 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, localAddr tcpip.LinkAddress,
 	}
 
 	rcvBufSize := ep.ops.GetReceiveBufferSize()
-	if ep.frozen || ep.rcvBufSize >= int(rcvBufSize) {
+	if ep.rcvDisabled || ep.rcvBufSize >= int(rcvBufSize) {
 		ep.rcvMu.Unlock()
 		ep.stack.Stats().DroppedPackets.Increment()
 		ep.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
@@ -490,19 +490,4 @@ func (*endpoint) SetOwner(tcpip.PacketOwner) {}
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (ep *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &ep.ops
-}
-
-// freeze prevents any more packets from being delivered to the endpoint.
-func (ep *endpoint) freeze() {
-	ep.mu.Lock()
-	ep.frozen = true
-	ep.mu.Unlock()
-}
-
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
-func (ep *endpoint) thaw() {
-	ep.mu.Lock()
-	ep.frozen = false
-	ep.mu.Unlock()
 }
