@@ -26,6 +26,7 @@ exports_files(
         "socket_ip_udp_loopback_blocking.cc",
         "socket_ip_udp_loopback_nonblock.cc",
         "socket_ip_unbound.cc",
+        "socket_ipv4_datagram_based_socket_unbound_loopback.cc",
         "socket_ipv4_udp_unbound_external_networking_test.cc",
         "socket_ipv6_udp_unbound_external_networking_test.cc",
         "socket_ipv4_udp_unbound_loopback.cc",
@@ -2534,6 +2535,24 @@ cc_library(
 )
 
 cc_library(
+    name = "socket_ipv4_datagram_based_socket_unbound_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_datagram_based_socket_unbound.cc",
+    ],
+    hdrs = [
+        "socket_ipv4_datagram_based_socket_unbound.h",
+    ],
+    deps = [
+        ":ip_socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:socket_util",
+        gtest,
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
     name = "socket_ipv4_udp_unbound_test_cases",
     testonly = 1,
     srcs = [
@@ -2547,9 +2566,6 @@ cc_library(
         "//test/util:socket_util",
         "@com_google_absl//absl/memory",
         gtest,
-        "//test/util:posix_error",
-        "//test/util:save_util",
-        "//test/util:test_util",
     ],
     alwayslink = 1,
 )
@@ -2956,9 +2972,21 @@ cc_binary(
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_test_cases",
-        "//test/util:socket_util",
         "//test/util:test_main",
-        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_ipv4_datagram_based_socket_unbound_loopback_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_datagram_based_socket_unbound_loopback.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_ipv4_datagram_based_socket_unbound_test_cases",
+        "//test/util:test_main",
     ],
 )
 

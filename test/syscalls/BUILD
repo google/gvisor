@@ -707,6 +707,11 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    test = "//test/syscalls/linux:socket_ipv4_datagram_based_socket_unbound_loopback_test",
+)
+
+syscall_test(
+    size = "medium",
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 

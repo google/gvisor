@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
+#ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_DATAGRAM_BASED_SOCKET_UNBOUND_H_
+#define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_DATAGRAM_BASED_SOCKET_UNBOUND_H_
+
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {
 
-INSTANTIATE_TEST_SUITE_P(
-    IPv4UDPSockets, IPv4UDPUnboundSocketTest,
-    ::testing::ValuesIn(ApplyVec<SocketKind>(IPv4UDPUnboundSocket,
-                                             AllBitwiseCombinations(List<int>{
-                                                 0, SOCK_NONBLOCK}))));
+// Test fixture for tests that apply to IPv4 datagram-based sockets.
+class IPv4DatagramBasedUnboundSocketTest : public SimpleSocketTest {
+  void SetUp() override;
+};
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_DATAGRAM_BASED_SOCKET_UNBOUND_H_

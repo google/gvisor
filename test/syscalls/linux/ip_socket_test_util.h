@@ -95,6 +95,10 @@ SocketKind ICMPUnboundSocket(int type);
 // created with AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6, and the given type.
 SocketKind ICMPv6UnboundSocket(int type);
 
+// IPv4RawUDPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET, SOCK_RAW, IPPROTO_UDP, and the given type.
+SocketKind IPv4RawUDPUnboundSocket(int type);
+
 // IPv4UDPUnboundSocket returns a SocketKind that represents a SimpleSocket
 // created with AF_INET, SOCK_DGRAM, IPPROTO_UDP, and the given type.
 SocketKind IPv4UDPUnboundSocket(int type);

@@ -13,16 +13,16 @@
 // limitations under the License.
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
+#include "test/syscalls/linux/socket_ipv4_datagram_based_socket_unbound.h"
 
 namespace gvisor {
 namespace testing {
 
-INSTANTIATE_TEST_SUITE_P(
-    IPv4UDPSockets, IPv4UDPUnboundSocketTest,
-    ::testing::ValuesIn(ApplyVec<SocketKind>(IPv4UDPUnboundSocket,
-                                             AllBitwiseCombinations(List<int>{
-                                                 0, SOCK_NONBLOCK}))));
+INSTANTIATE_TEST_SUITE_P(IPv4Sockets, IPv4DatagramBasedUnboundSocketTest,
+                         ::testing::ValuesIn(ApplyVecToVec<SocketKind>(
+                             {IPv4UDPUnboundSocket, IPv4RawUDPUnboundSocket},
+                             AllBitwiseCombinations(List<int>{
+                                 0, SOCK_NONBLOCK}))));
 
 }  // namespace testing
 }  // namespace gvisor
