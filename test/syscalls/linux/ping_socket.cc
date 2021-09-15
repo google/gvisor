@@ -155,43 +155,33 @@ std::vector<std::tuple<SocketKind, BindTestCase>> ICMPTestCases() {
               .bind_to = V4AddrStr("IPv4UnknownUnicast", "192.168.1.1"),
               .want = EADDRNOTAVAIL,
           },
-          // TODO(gvisor.dev/issue/6021): Remove want_gvisor from all the test
-          // cases below once ICMP sockets return EAFNOSUPPORT when binding to
-          // IPv6 addresses.
           {
               .bind_to = V6Any(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6Loopback(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6Multicast(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6MulticastInterfaceLocalAllNodes(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6MulticastLinkLocalAllNodes(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6MulticastLinkLocalAllRouters(),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
           {
               .bind_to = V6AddrStr("IPv6UnknownUnicast", "fc00::1"),
               .want = EAFNOSUPPORT,
-              .want_gvisor = EINVAL,
           },
       });
 }

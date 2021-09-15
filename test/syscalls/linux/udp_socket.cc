@@ -643,12 +643,12 @@ TEST_P(UdpSocketTest, DisconnectAfterBindToUnspecAndConnect) {
 
   sockaddr_storage unspec = {.ss_family = AF_UNSPEC};
   int bind_res = bind(sock_.get(), AsSockAddr(&unspec), sizeof(unspec));
-  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-    // TODO(https://gvisor.dev/issue/6575): Match Linux's behaviour.
-    ASSERT_THAT(bind_res, SyscallFailsWithErrno(EINVAL));
-  } else if (GetFamily() == AF_INET) {
+  if ((!IsRunningOnGvisor() || IsRunningWithHostinet()) &&
+      GetFamily() == AF_INET) {
     // Linux allows this for undocumented compatibility reasons:
     // https://github.com/torvalds/linux/commit/29c486df6a208432b370bd4be99ae1369ede28d8.
+    //
+    // TODO(https://gvisor.dev/issue/6575): Match Linux's behaviour.
     ASSERT_THAT(bind_res, SyscallSucceeds());
   } else {
     ASSERT_THAT(bind_res, SyscallFailsWithErrno(EAFNOSUPPORT));
