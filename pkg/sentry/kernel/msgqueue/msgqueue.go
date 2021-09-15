@@ -129,6 +129,16 @@ type Message struct {
 	Size uint64
 }
 
+func (m *Message) makeCopy() *Message {
+	new := &Message{
+		Type: m.Type,
+		Size: m.Size,
+	}
+	new.Text = make([]byte, len(m.Text))
+	copy(new.Text, m.Text)
+	return new
+}
+
 // Blocker is used for blocking Queue.Send, and Queue.Receive calls that serves
 // as an abstracted version of kernel.Task. kernel.Task is not directly used to
 // prevent circular dependencies.
@@ -455,7 +465,7 @@ func (q *Queue) Copy(mType int64) (*Message, error) {
 	if msg == nil {
 		return nil, linuxerr.ENOMSG
 	}
-	return msg, nil
+	return msg.makeCopy(), nil
 }
 
 // msgOfType returns the first message with the specified type, nil if no
