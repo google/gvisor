@@ -41,6 +41,7 @@ go_library(
         "linux.go",
         "membarrier.go",
         "mm.go",
+        "mqueue.go",
         "msgqueue.go",
         "netdevice.go",
         "netfilter.go",
