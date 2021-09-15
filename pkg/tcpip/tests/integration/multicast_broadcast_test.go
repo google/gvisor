@@ -119,12 +119,12 @@ func TestPingMulticastBroadcast(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
 			ipv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
-			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv4ProtoAddr, err)
+			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, ipv4ProtoAddr, err)
 			}
 			ipv6ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: utils.Ipv6Addr}
-			if err := s.AddProtocolAddress(nicID, ipv6ProtoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv6ProtoAddr, err)
+			if err := s.AddProtocolAddress(nicID, ipv6ProtoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, ipv6ProtoAddr, err)
 			}
 
 			// Default routes for IPv4 and IPv6 so ICMP can find a route to the remote
@@ -396,8 +396,8 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
 			protoAddr := tcpip.ProtocolAddress{Protocol: test.proto, AddressWithPrefix: test.localAddr}
-			if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+			if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 			}
 
 			var wq waiter.Queue
@@ -474,8 +474,8 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					PrefixLen: 8,
 				},
 			}
-			if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+			if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -642,8 +642,8 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 						t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 					}
 					protoAddr := tcpip.ProtocolAddress{Protocol: test.proto, AddressWithPrefix: test.localAddr}
-					if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-						t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+					if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 					}
 
 					// Set the route table so that UDP can find a NIC that is

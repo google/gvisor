@@ -225,8 +225,8 @@ func TestICMPCounts(t *testing.T) {
 		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
 	}
 	addr := lladdr0.WithPrefix()
-	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 	} else {
 		ep.DecRef()
 	}
@@ -407,8 +407,12 @@ func newTestContext(t *testing.T) *testContext {
 	if err := c.s0.CreateNIC(nicID, wrappedEP0); err != nil {
 		t.Fatalf("CreateNIC s0: %v", err)
 	}
-	if err := c.s0.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-		t.Fatalf("AddAddress lladdr0: %v", err)
+	llProtocolAddr0 := tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: lladdr0.WithPrefix(),
+	}
+	if err := c.s0.AddProtocolAddress(nicID, llProtocolAddr0, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, llProtocolAddr0, err)
 	}
 
 	c.linkEP1 = channel.New(defaultChannelSize, defaultMTU, linkAddr1)
@@ -416,8 +420,12 @@ func newTestContext(t *testing.T) *testContext {
 	if err := c.s1.CreateNIC(nicID, wrappedEP1); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
-	if err := c.s1.AddAddress(nicID, ProtocolNumber, lladdr1); err != nil {
-		t.Fatalf("AddAddress lladdr1: %v", err)
+	llProtocolAddr1 := tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: lladdr1.WithPrefix(),
+	}
+	if err := c.s1.AddProtocolAddress(nicID, llProtocolAddr1, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, llProtocolAddr1, err)
 	}
 
 	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -690,8 +698,12 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 					t.Fatalf("CreateNIC(_, _) = %s", err)
 				}
 
-				if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-					t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+				protocolAddr := tcpip.ProtocolAddress{
+					Protocol:          ProtocolNumber,
+					AddressWithPrefix: lladdr0.WithPrefix(),
+				}
+				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 				{
 					subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -883,8 +895,12 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				t.Fatalf("CreateNIC(_, _) = %s", err)
 			}
 
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
 				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -1065,8 +1081,12 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
 
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
 				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -1240,8 +1260,12 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			if len(test.nicAddr) != 0 {
-				if err := s.AddAddress(nicID, ProtocolNumber, test.nicAddr); err != nil {
-					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ProtocolNumber, test.nicAddr, err)
+				protocolAddr := tcpip.ProtocolAddress{
+					Protocol:          ProtocolNumber,
+					AddressWithPrefix: test.nicAddr.WithPrefix(),
+				}
+				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 			}
 
@@ -1415,8 +1439,8 @@ func TestPacketQueing(t *testing.T) {
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddProtocolAddress(nicID, host1IPv6Addr); err != nil {
-				t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, host1IPv6Addr, err)
+			if err := s.AddProtocolAddress(nicID, host1IPv6Addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, host1IPv6Addr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -1669,8 +1693,12 @@ func TestCallsToNeighborCache(t *testing.T) {
 				if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 					t.Fatalf("CreateNIC(_, _) = %s", err)
 				}
-				if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-					t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+				protocolAddr := tcpip.ProtocolAddress{
+					Protocol:          ProtocolNumber,
+					AddressWithPrefix: lladdr0.WithPrefix(),
+				}
+				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 			}
 			{
@@ -1704,8 +1732,8 @@ func TestCallsToNeighborCache(t *testing.T) {
 				t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
 			}
 			addr := lladdr0.WithPrefix()
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}

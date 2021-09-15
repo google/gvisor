@@ -124,13 +124,13 @@ func main() {
 		log.Fatalf("Bad IP address: %v", addrName)
 	}
 
-	var addr tcpip.Address
+	var addrWithPrefix tcpip.AddressWithPrefix
 	var proto tcpip.NetworkProtocolNumber
 	if parsedAddr.To4() != nil {
-		addr = tcpip.Address(parsedAddr.To4())
+		addrWithPrefix = tcpip.Address(parsedAddr.To4()).WithPrefix()
 		proto = ipv4.ProtocolNumber
 	} else if parsedAddr.To16() != nil {
-		addr = tcpip.Address(parsedAddr.To16())
+		addrWithPrefix = tcpip.Address(parsedAddr.To16()).WithPrefix()
 		proto = ipv6.ProtocolNumber
 	} else {
 		log.Fatalf("Unknown IP type: %v", addrName)
@@ -176,11 +176,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := s.AddAddress(1, proto, addr); err != nil {
-		log.Fatal(err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          proto,
+		AddressWithPrefix: addrWithPrefix,
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
-	subnet, err := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", len(addr))), tcpip.AddressMask(strings.Repeat("\x00", len(addr))))
+	subnet, err := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", len(addrWithPrefix.Address))), tcpip.AddressMask(strings.Repeat("\x00", len(addrWithPrefix.Address))))
 	if err != nil {
 		log.Fatal(err)
 	}

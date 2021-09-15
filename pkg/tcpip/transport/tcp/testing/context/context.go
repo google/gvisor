@@ -243,8 +243,8 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 			Protocol:          ipv4.ProtocolNumber,
 			AddressWithPrefix: StackAddrWithPrefix,
 		}
-		if err := s.AddProtocolAddress(1, v4ProtocolAddr); err != nil {
-			t.Fatalf("AddProtocolAddress(1, %#v): %s", v4ProtocolAddr, err)
+		if err := s.AddProtocolAddress(1, v4ProtocolAddr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("AddProtocolAddress(1, %+v, {}): %s", v4ProtocolAddr, err)
 		}
 		routeTable = append(routeTable, tcpip.Route{
 			Destination: header.IPv4EmptySubnet,
@@ -257,8 +257,8 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 			Protocol:          ipv6.ProtocolNumber,
 			AddressWithPrefix: StackV6AddrWithPrefix,
 		}
-		if err := s.AddProtocolAddress(1, v6ProtocolAddr); err != nil {
-			t.Fatalf("AddProtocolAddress(1, %#v): %s", v6ProtocolAddr, err)
+		if err := s.AddProtocolAddress(1, v6ProtocolAddr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("AddProtocolAddress(1, %+v, {}): %s", v6ProtocolAddr, err)
 		}
 		routeTable = append(routeTable, tcpip.Route{
 			Destination: header.IPv6EmptySubnet,

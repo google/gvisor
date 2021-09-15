@@ -1628,12 +1628,12 @@ func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 }
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, tcpip.Error) {
+func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
 	// TODO(b/169350103): add checks here after making sure we no longer receive
 	// an empty address.
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.addAndAcquirePermanentAddressLocked(addr, peb, configType, deprecated)
+	return e.addAndAcquirePermanentAddressLocked(addr, properties)
 }
 
 // addAndAcquirePermanentAddressLocked is like AddAndAcquirePermanentAddress but
@@ -1643,8 +1643,8 @@ func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, p
 // solicited-node multicast group and start duplicate address detection.
 //
 // Precondition: e.mu must be write locked.
-func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPrefix, peb stack.PrimaryEndpointBehavior, configType stack.AddressConfigType, deprecated bool) (stack.AddressEndpoint, tcpip.Error) {
-	addressEndpoint, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, peb, configType, deprecated)
+func (e *endpoint) addAndAcquirePermanentAddressLocked(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
+	addressEndpoint, err := e.mu.addressableEndpointState.AddAndAcquirePermanentAddress(addr, properties)
 	if err != nil {
 		return nil, err
 	}
@@ -2009,11 +2009,6 @@ func (p *protocol) Number() tcpip.NetworkProtocolNumber {
 // MinimumPacketSize returns the minimum valid ipv6 packet size.
 func (p *protocol) MinimumPacketSize() int {
 	return header.IPv6MinimumSize
-}
-
-// DefaultPrefixLen returns the IPv6 default prefix length.
-func (p *protocol) DefaultPrefixLen() int {
-	return header.IPv6AddressSize * 8
 }
 
 // ParseAddresses implements stack.NetworkProtocol.
