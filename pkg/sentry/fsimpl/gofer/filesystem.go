@@ -853,6 +853,21 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if d.nlink == math.MaxUint32 {
 			return nil, linuxerr.EMLINK
 		}
+
+		// TODO(gvisor.dev/issue/6739): Hard links are not supported correctly.
+		// Allow hard link creation of synthetic dentries over here but these
+		// will behave incorrectly as described in the issue.
+		if d.isSynthetic() {
+			parent.createSyntheticChildLocked(&createSyntheticOpts{
+				name:     childName,
+				mode:     mode,
+				kuid:     uid,
+				kgid:     gid,
+				endpoint: d.endpoint,
+				pipe:     d.pipe,
+			})
+			return nil, nil
+		}
 		if fs.opts.lisaEnabled {
 			return parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
 		}

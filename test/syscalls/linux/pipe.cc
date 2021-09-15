@@ -271,6 +271,29 @@ TEST(NamedPipeTest, Truncate) {
   ASSERT_THAT(ftruncate(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
+// Tests create hard link for synthetic named pipe file.
+TEST(NamedPipeTest, LinkPipe) {
+  std::string oldfifo = "/oldfifo_" + std::to_string(absl::ToUnixNanos(absl::Now()));
+  std::string newfifo = "/newfifo_" + std::to_string(absl::ToUnixNanos(absl::Now()));
+  FileDescriptor fds[2];
+
+  EXPECT_THAT(mkfifo(oldfifo.c_str(), 0644), SyscallSucceeds());
+
+  fds[1] = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(oldfifo.c_str(), O_NONBLOCK | O_RDONLY));
+
+  ASSERT_THAT(link(oldfifo.c_str(), newfifo.c_str()),
+              SyscallSucceeds());
+
+  fds[0] = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(newfifo.c_str(), O_NONBLOCK | O_WRONLY));
+
+  int buf = kTestValue;
+  ASSERT_THAT(write(fds[0].get(), &buf, sizeof(buf)), SyscallSucceeds());
+  ASSERT_THAT(read(fds[1].get(), &buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
 TEST_P(PipeTest, Seek) {
   SKIP_IF(!CreateBlocking());
 

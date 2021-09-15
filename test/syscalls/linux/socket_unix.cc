@@ -26,6 +26,8 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"
@@ -51,6 +53,25 @@ TEST_P(UnixSocketPairTest, InvalidGetSockOpt) {
   socklen_t optlen = sizeof(opt);
   EXPECT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, -1, &opt, &optlen),
               SyscallFailsWithErrno(ENOPROTOOPT));
+}
+
+TEST_P(UnixSocketPairTest, LinkSyntheticSocketFile) {
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  std::string sock_path = "/old.sock_" + std::to_string(absl::ToUnixNanos(absl::Now()));
+  std::string new_path = "/new.sock_" + std::to_string(absl::ToUnixNanos(absl::Now()));
+  sockaddr_un sockaddr;
+  sockaddr.sun_family = AF_LOCAL;
+  memcpy(sockaddr.sun_path, sock_path.c_str(), sock_path.length());
+
+  EXPECT_THAT(
+      bind(pair->first_fd(), reinterpret_cast<struct sockaddr*>(&sockaddr),
+           sizeof(sockaddr)),
+      SyscallSucceeds());
+
+  ASSERT_THAT(link(sock_path.c_str(), new_path.c_str()),
+              SyscallSucceeds());
 }
 
 TEST_P(UnixSocketPairTest, BindToBadName) {
