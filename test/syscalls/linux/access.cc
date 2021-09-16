@@ -126,6 +126,16 @@ TEST_F(AccessTest, InvalidName) {
               SyscallFailsWithErrno(EFAULT));
 }
 
+TEST_F(AccessTest, NoAccess) {
+  const std::string filename = CreateTempFile(0);
+
+  EXPECT_THAT(access(filename.c_str(), R_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), W_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
+}
+
 TEST_F(AccessTest, UsrReadOnly) {
   // Drop capabilities that allow us to override permissions. We must drop
   // PERMITTED because access() checks those instead of EFFECTIVE.
@@ -136,6 +146,7 @@ TEST_F(AccessTest, UsrReadOnly) {
   EXPECT_THAT(access(filename.c_str(), R_OK), SyscallSucceeds());
   EXPECT_THAT(access(filename.c_str(), W_OK), SyscallFailsWithErrno(EACCES));
   EXPECT_THAT(access(filename.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
@@ -148,6 +159,7 @@ TEST_F(AccessTest, UsrReadExec) {
   const std::string filename = CreateTempFile(0500);
   EXPECT_THAT(access(filename.c_str(), R_OK | X_OK), SyscallSucceeds());
   EXPECT_THAT(access(filename.c_str(), W_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
@@ -155,12 +167,14 @@ TEST_F(AccessTest, UsrReadWrite) {
   const std::string filename = CreateTempFile(0600);
   EXPECT_THAT(access(filename.c_str(), R_OK | W_OK), SyscallSucceeds());
   EXPECT_THAT(access(filename.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(filename.c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
 TEST_F(AccessTest, UsrReadWriteExec) {
   const std::string filename = CreateTempFile(0700);
   EXPECT_THAT(access(filename.c_str(), R_OK | W_OK | X_OK), SyscallSucceeds());
+  EXPECT_THAT(access(filename.c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }
 
