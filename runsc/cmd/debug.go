@@ -37,9 +37,9 @@ type Debug struct {
 	pid          int
 	stacks       bool
 	signal       int
-	profileHeap  string
-	profileCPU   string
 	profileBlock string
+	profileCPU   string
+	profileHeap  string
 	profileMutex string
 	trace        string
 	strace       string
@@ -70,9 +70,9 @@ func (*Debug) Usage() string {
 func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&d.pid, "pid", 0, "sandbox process ID. Container ID is not necessary if this is set")
 	f.BoolVar(&d.stacks, "stacks", false, "if true, dumps all sandbox stacks to the log")
-	f.StringVar(&d.profileHeap, "profile-heap", "", "writes heap profile to the given file.")
-	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
 	f.StringVar(&d.profileBlock, "profile-block", "", "writes block profile to the given file.")
+	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
+	f.StringVar(&d.profileHeap, "profile-heap", "", "writes heap profile to the given file.")
 	f.StringVar(&d.profileMutex, "profile-mutex", "", "writes mutex profile to the given file.")
 	f.DurationVar(&d.delay, "delay", time.Hour, "amount of time to delay for collecting heap and goroutine profiles.")
 	f.DurationVar(&d.duration, "duration", time.Hour, "amount of time to wait for CPU and trace profiles.")
@@ -89,6 +89,13 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	var c *container.Container
 	conf := args[0].(*config.Config)
+
+	if conf.ProfileBlock != "" || conf.ProfileCPU != "" || conf.ProfileHeap != "" || conf.ProfileMutex != "" {
+		return Errorf("global -profile-{block,cpu,heap,mutex} flags have no effect on runsc debug. Pass runsc debug -profile-{block,cpu,heap,mutex} instead")
+	}
+	if conf.TraceFile != "" {
+		return Errorf("global -trace flag has no effect on runsc debug. Pass runsc debug -trace instead")
+	}
 
 	if d.pid == 0 {
 		// No pid, container ID must have been provided.
@@ -219,19 +226,19 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// Open profiling files.
 	var (
-		heapFile  *os.File
-		cpuFile   *os.File
-		traceFile *os.File
 		blockFile *os.File
+		cpuFile   *os.File
+		heapFile  *os.File
 		mutexFile *os.File
+		traceFile *os.File
 	)
-	if d.profileHeap != "" {
-		f, err := os.OpenFile(d.profileHeap, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if d.profileBlock != "" {
+		f, err := os.OpenFile(d.profileBlock, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			return Errorf("error opening heap profile output: %v", err)
+			return Errorf("error opening blocking profile output: %v", err)
 		}
 		defer f.Close()
-		heapFile = f
+		blockFile = f
 	}
 	if d.profileCPU != "" {
 		f, err := os.OpenFile(d.profileCPU, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -241,20 +248,13 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		defer f.Close()
 		cpuFile = f
 	}
-	if d.trace != "" {
-		f, err := os.OpenFile(d.trace, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if d.profileHeap != "" {
+		f, err := os.OpenFile(d.profileHeap, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			return Errorf("error opening trace profile output: %v", err)
-		}
-		traceFile = f
-	}
-	if d.profileBlock != "" {
-		f, err := os.OpenFile(d.profileBlock, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return Errorf("error opening blocking profile output: %v", err)
+			return Errorf("error opening heap profile output: %v", err)
 		}
 		defer f.Close()
-		blockFile = f
+		heapFile = f
 	}
 	if d.profileMutex != "" {
 		f, err := os.OpenFile(d.profileMutex, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -264,21 +264,28 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		defer f.Close()
 		mutexFile = f
 	}
+	if d.trace != "" {
+		f, err := os.OpenFile(d.trace, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return Errorf("error opening trace profile output: %v", err)
+		}
+		traceFile = f
+	}
 
 	// Collect profiles.
 	var (
 		wg       sync.WaitGroup
-		heapErr  error
-		cpuErr   error
-		traceErr error
 		blockErr error
+		cpuErr   error
+		heapErr  error
 		mutexErr error
+		traceErr error
 	)
-	if heapFile != nil {
+	if blockFile != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			heapErr = c.Sandbox.HeapProfile(heapFile, d.delay)
+			blockErr = c.Sandbox.BlockProfile(blockFile, d.duration)
 		}()
 	}
 	if cpuFile != nil {
@@ -288,18 +295,11 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			cpuErr = c.Sandbox.CPUProfile(cpuFile, d.duration)
 		}()
 	}
-	if traceFile != nil {
+	if heapFile != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			traceErr = c.Sandbox.Trace(traceFile, d.duration)
-		}()
-	}
-	if blockFile != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			blockErr = c.Sandbox.BlockProfile(blockFile, d.duration)
+			heapErr = c.Sandbox.HeapProfile(heapFile, d.delay)
 		}()
 	}
 	if mutexFile != nil {
@@ -307,6 +307,13 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		go func() {
 			defer wg.Done()
 			mutexErr = c.Sandbox.MutexProfile(mutexFile, d.duration)
+		}()
+	}
+	if traceFile != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			traceErr = c.Sandbox.Trace(traceFile, d.duration)
 		}()
 	}
 
@@ -339,30 +346,30 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// Collect all errors.
 	errorCount := 0
-	if heapErr != nil {
+	if blockErr != nil {
 		errorCount++
-		log.Infof("error collecting heap profile: %v", heapErr)
-		os.Remove(heapFile.Name())
+		log.Infof("error collecting block profile: %v", blockErr)
+		os.Remove(blockFile.Name())
 	}
 	if cpuErr != nil {
 		errorCount++
 		log.Infof("error collecting cpu profile: %v", cpuErr)
 		os.Remove(cpuFile.Name())
 	}
-	if traceErr != nil {
+	if heapErr != nil {
 		errorCount++
-		log.Infof("error collecting trace profile: %v", traceErr)
-		os.Remove(traceFile.Name())
-	}
-	if blockErr != nil {
-		errorCount++
-		log.Infof("error collecting block profile: %v", blockErr)
-		os.Remove(blockFile.Name())
+		log.Infof("error collecting heap profile: %v", heapErr)
+		os.Remove(heapFile.Name())
 	}
 	if mutexErr != nil {
 		errorCount++
 		log.Infof("error collecting mutex profile: %v", mutexErr)
 		os.Remove(mutexFile.Name())
+	}
+	if traceErr != nil {
+		errorCount++
+		log.Infof("error collecting trace profile: %v", traceErr)
+		os.Remove(traceFile.Name())
 	}
 
 	if errorCount > 0 {

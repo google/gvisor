@@ -140,6 +140,26 @@ type Config struct {
 	// ProfileEnable is set to prepare the sandbox to be profiled.
 	ProfileEnable bool `flag:"profile"`
 
+	// ProfileBlock collects a block profile to the passed file for the
+	// duration of the container execution. Requires ProfileEnabled.
+	ProfileBlock string `flag:"profile-block"`
+
+	// ProfileCPU collects a CPU profile to the passed file for the
+	// duration of the container execution. Requires ProfileEnabled.
+	ProfileCPU string `flag:"profile-cpu"`
+
+	// ProfileHeap collects a heap profile to the passed file for the
+	// duration of the container execution. Requires ProfileEnabled.
+	ProfileHeap string `flag:"profile-heap"`
+
+	// ProfileMutex collects a mutex profile to the passed file for the
+	// duration of the container execution. Requires ProfileEnabled.
+	ProfileMutex string `flag:"profile-mutex"`
+
+	// TraceFile collects a Go runtime execution trace to the passed file
+	// for the duration of the container execution.
+	TraceFile string `flag:"trace"`
+
 	// Controls defines the controls that may be enabled.
 	Controls controlConfig `flag:"controls"`
 
@@ -206,6 +226,21 @@ func (c *Config) validate() error {
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
+	}
+	// Require profile flags to explicitly opt-in to profiling with
+	// -profile rather than implying it since these options have security
+	// implications.
+	if c.ProfileBlock != "" && !c.ProfileEnable {
+		return fmt.Errorf("profile-block flag requires enabling profiling with profile flag")
+	}
+	if c.ProfileCPU != "" && !c.ProfileEnable {
+		return fmt.Errorf("profile-cpu flag requires enabling profiling with profile flag")
+	}
+	if c.ProfileHeap != "" && !c.ProfileEnable {
+		return fmt.Errorf("profile-heap flag requires enabling profiling with profile flag")
+	}
+	if c.ProfileMutex != "" && !c.ProfileEnable {
+		return fmt.Errorf("profile-mutex flag requires enabling profiling with profile flag")
 	}
 	return nil
 }
