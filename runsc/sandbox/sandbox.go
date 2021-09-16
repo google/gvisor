@@ -490,6 +490,61 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args = append(cmd.Args, "--start-sync-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
+	if conf.ProfileBlock != "" {
+		blockFile, err := os.OpenFile(conf.ProfileBlock, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening block profiling file %q: %v", conf.ProfileBlock, err)
+		}
+		defer blockFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, blockFile)
+		cmd.Args = append(cmd.Args, "--profile-block-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	if conf.ProfileCPU != "" {
+		cpuFile, err := os.OpenFile(conf.ProfileCPU, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening cpu profiling file %q: %v", conf.ProfileCPU, err)
+		}
+		defer cpuFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, cpuFile)
+		cmd.Args = append(cmd.Args, "--profile-cpu-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	if conf.ProfileHeap != "" {
+		heapFile, err := os.OpenFile(conf.ProfileHeap, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening heap profiling file %q: %v", conf.ProfileHeap, err)
+		}
+		defer heapFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, heapFile)
+		cmd.Args = append(cmd.Args, "--profile-heap-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	if conf.ProfileMutex != "" {
+		mutexFile, err := os.OpenFile(conf.ProfileMutex, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening mutex profiling file %q: %v", conf.ProfileMutex, err)
+		}
+		defer mutexFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, mutexFile)
+		cmd.Args = append(cmd.Args, "--profile-mutex-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	if conf.TraceFile != "" {
+		traceFile, err := os.OpenFile(conf.TraceFile, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening trace file %q: %v", conf.TraceFile, err)
+		}
+		defer traceFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, traceFile)
+		cmd.Args = append(cmd.Args, "--trace-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
 	// If there is a gofer, sends all socket ends to the sandbox.
 	for _, f := range args.IOFiles {
 		defer f.Close()

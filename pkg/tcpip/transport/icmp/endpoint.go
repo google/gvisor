@@ -688,9 +688,20 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	return nil
 }
 
+func (e *endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, addr tcpip.Address) bool {
+	return addr == header.IPv4Broadcast ||
+		header.IsV4MulticastAddress(addr) ||
+		header.IsV6MulticastAddress(addr) ||
+		e.stack.IsSubnetBroadcast(nicID, e.NetProto, addr)
+}
+
 // Bind binds the endpoint to a specific local address and port.
 // Specifying a NIC is optional.
 func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
+	if len(addr.Addr) != 0 && e.isBroadcastOrMulticast(addr.NIC, addr.Addr) {
+		return &tcpip.ErrBadLocalAddress{}
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
