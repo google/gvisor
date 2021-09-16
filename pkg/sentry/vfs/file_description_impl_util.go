@@ -17,6 +17,7 @@ package vfs
 import (
 	"bytes"
 	"io"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -399,6 +400,9 @@ func (fd *DynamicBytesFileDescriptionImpl) Write(ctx context.Context, src userme
 // GenericConfigureMMap may be used by most implementations of
 // FileDescriptionImpl.ConfigureMMap.
 func GenericConfigureMMap(fd *FileDescription, m memmap.Mappable, opts *memmap.MMapOpts) error {
+	if opts.Offset+opts.Length > math.MaxInt64 {
+		return linuxerr.EOVERFLOW
+	}
 	opts.Mappable = m
 	opts.MappingIdentity = fd
 	fd.IncRef()

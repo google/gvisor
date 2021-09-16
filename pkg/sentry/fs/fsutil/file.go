@@ -16,6 +16,7 @@ package fsutil
 
 import (
 	"io"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -210,6 +211,9 @@ func (FileNoMMap) ConfigureMMap(context.Context, *fs.File, *memmap.MMapOpts) err
 // GenericConfigureMMap implements fs.FileOperations.ConfigureMMap for most
 // filesystems that support memory mapping.
 func GenericConfigureMMap(file *fs.File, m memmap.Mappable, opts *memmap.MMapOpts) error {
+	if opts.Offset+opts.Length > math.MaxInt64 {
+		return linuxerr.EOVERFLOW
+	}
 	opts.Mappable = m
 	opts.MappingIdentity = file
 	file.IncRef()

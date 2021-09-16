@@ -16,6 +16,7 @@ package fs
 
 import (
 	"io"
+	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -360,10 +361,13 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 		return linuxerr.ENODEV
 	}
 
-	// FIXME(jamieliu): This is a copy/paste of fsutil.GenericConfigureMMap,
-	// which we can't use because the overlay implementation is in package fs,
-	// so depending on fs/fsutil would create a circular dependency. Move
-	// overlay to fs/overlay.
+	// TODO(gvisor.dev/issue/1624): This is a copy/paste of
+	// fsutil.GenericConfigureMMap, which we can't use because the overlay
+	// implementation is in package fs, so depending on fs/fsutil would create
+	// a circular dependency. VFS2 overlay doesn't have this issue.
+	if opts.Offset+opts.Length > math.MaxInt64 {
+		return linuxerr.EOVERFLOW
+	}
 	opts.Mappable = o
 	opts.MappingIdentity = file
 	file.IncRef()
