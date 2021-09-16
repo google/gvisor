@@ -35,7 +35,7 @@ func (e *Endpoint) Resume(s *stack.Stack) {
 		}
 	}
 
-	switch state := e.State(); state {
+	switch e.state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
 	case transport.DatagramEndpointStateBound:
 		if len(e.info.ID.LocalAddress) != 0 && !e.isBroadcastOrMulticast(e.info.RegisterNICID, e.effectiveNetProto, e.info.ID.LocalAddress) {
@@ -51,6 +51,6 @@ func (e *Endpoint) Resume(s *stack.Stack) {
 			panic(fmt.Sprintf("e.stack.FindRoute(%d, %s, %s, %d, %t): %s", e.info.RegisterNICID, e.info.ID.LocalAddress, e.info.ID.RemoteAddress, e.effectiveNetProto, multicastLoop, err))
 		}
 	default:
-		panic(fmt.Sprintf("unhandled state = %s", state))
+		panic(fmt.Sprintf("unhandled state = %s", e.state))
 	}
 }
