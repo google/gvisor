@@ -243,11 +243,16 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if args.Spec.Linux.CgroupsPath == "" && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			args.Spec.Linux.CgroupsPath = "/" + args.ID
 		}
-		// Create and join cgroup before processes are created to ensure they are
-		// part of the cgroup from the start (and all their children processes).
-		parentCgroup, subCgroup, err := c.setupCgroupForRoot(conf, args.Spec)
-		if err != nil {
-			return nil, err
+		var subCgroup, parentCgroup cgroup.Cgroup
+		if !conf.IgnoreCgroups {
+			var err error
+
+			// Create and join cgroup before processes are created to ensure they are
+			// part of the cgroup from the start (and all their children processes).
+			parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec)
+			if err != nil {
+				return nil, err
+			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 		if err := runInCgroup(parentCgroup, func() error {

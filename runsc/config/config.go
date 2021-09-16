@@ -208,6 +208,9 @@ type Config struct {
 	// Mounts the cgroup filesystem backed by the sentry's cgroupfs.
 	Cgroupfs bool `flag:"cgroupfs"`
 
+	// Don't configure cgroups.
+	IgnoreCgroups bool `flag:"ignore-cgroups"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
