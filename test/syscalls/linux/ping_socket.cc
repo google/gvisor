@@ -128,9 +128,6 @@ std::vector<std::tuple<SocketKind, BindTestCase>> ICMPTestCases() {
           {
               .bind_to = V4Broadcast(),
               .want = EADDRNOTAVAIL,
-              // TODO(gvisor.dev/issue/5711): Remove want_gvisor once ICMP
-              // sockets are no longer allowed to bind to broadcast addresses.
-              .want_gvisor = 0,
           },
           {
               .bind_to = V4Loopback(),
@@ -139,9 +136,6 @@ std::vector<std::tuple<SocketKind, BindTestCase>> ICMPTestCases() {
           {
               .bind_to = V4LoopbackSubnetBroadcast(),
               .want = EADDRNOTAVAIL,
-              // TODO(gvisor.dev/issue/5711): Remove want_gvisor once ICMP
-              // sockets are no longer allowed to bind to broadcast addresses.
-              .want_gvisor = 0,
           },
           {
               .bind_to = V4Multicast(),
