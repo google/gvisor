@@ -89,7 +89,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		}
 		// Offset + length must not overflow.
 		if end := opts.Offset + opts.Length; end < opts.Offset {
-			return 0, linuxerr.ENOMEM
+			return 0, linuxerr.EOVERFLOW
 		}
 	} else {
 		opts.Offset = 0

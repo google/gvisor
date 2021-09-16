@@ -93,7 +93,8 @@ func NewHostFileMapper() *HostFileMapper {
 func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
-	for chunkStart := mr.Start &^ chunkMask; chunkStart < mr.End; chunkStart += chunkSize {
+	chunkStart := mr.Start &^ chunkMask
+	for {
 		refs := f.refs[chunkStart]
 		pgs := pagesInChunk(mr, chunkStart)
 		if refs+pgs < refs {
@@ -101,6 +102,10 @@ func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 			panic(fmt.Sprintf("HostFileMapper.IncRefOn(%v): adding %d page references to chunk %#x, which has %d page references", mr, pgs, chunkStart, refs))
 		}
 		f.refs[chunkStart] = refs + pgs
+		chunkStart += chunkSize
+		if chunkStart >= mr.End || chunkStart == 0 {
+			break
+		}
 	}
 }
 
@@ -112,7 +117,8 @@ func (f *HostFileMapper) IncRefOn(mr memmap.MappableRange) {
 func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 	f.refsMu.Lock()
 	defer f.refsMu.Unlock()
-	for chunkStart := mr.Start &^ chunkMask; chunkStart < mr.End; chunkStart += chunkSize {
+	chunkStart := mr.Start &^ chunkMask
+	for {
 		refs := f.refs[chunkStart]
 		pgs := pagesInChunk(mr, chunkStart)
 		switch {
@@ -127,6 +133,10 @@ func (f *HostFileMapper) DecRefOn(mr memmap.MappableRange) {
 			f.mapsMu.Unlock()
 		case refs < pgs:
 			panic(fmt.Sprintf("HostFileMapper.DecRefOn(%v): removing %d page references from chunk %#x, which has %d page references", mr, pgs, chunkStart, refs))
+		}
+		chunkStart += chunkSize
+		if chunkStart >= mr.End || chunkStart == 0 {
+			break
 		}
 	}
 }
@@ -161,7 +171,8 @@ func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, 
 	if write {
 		prot |= unix.PROT_WRITE
 	}
-	for chunkStart := fr.Start &^ chunkMask; chunkStart < fr.End; chunkStart += chunkSize {
+	chunkStart := fr.Start &^ chunkMask
+	for {
 		m, ok := f.mappings[chunkStart]
 		if !ok {
 			addr, _, errno := unix.Syscall6(
@@ -201,6 +212,10 @@ func (f *HostFileMapper) forEachMappingBlockLocked(fr memmap.FileRange, fd int, 
 			endOff = fr.End - chunkStart
 		}
 		fn(f.unsafeBlockFromChunkMapping(m.addr).TakeFirst64(endOff).DropFirst64(startOff))
+		chunkStart += chunkSize
+		if chunkStart >= fr.End || chunkStart == 0 {
+			break
+		}
 	}
 	return nil
 }
