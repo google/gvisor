@@ -112,7 +112,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Check that sandbox and gofer have the proper capabilities.
-	if err := checkProcessCaps(c.Sandbox.Pid, spec.Process.Capabilities); err != nil {
+	if err := checkProcessCaps(c.Sandbox.Getpid(), spec.Process.Capabilities); err != nil {
 		t.Error(err)
 	}
 	if err := checkProcessCaps(c.GoferPid, goferCaps); err != nil {
