@@ -2829,3 +2829,46 @@ func TestStream(t *testing.T) {
 		t.Errorf("out got %s, want include %s", buf, want)
 	}
 }
+
+// TestProfile checks that profiling options generate profiles.
+func TestProfile(t *testing.T) {
+	// Perform a non-trivial amount of work so we actually capture
+	// something in the profiles.
+	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", "true")
+	conf := testutil.TestConfig(t)
+	conf.ProfileEnable = true
+	conf.ProfileBlock = filepath.Join(t.TempDir(), "block.pprof")
+	conf.ProfileCPU = filepath.Join(t.TempDir(), "cpu.pprof")
+	conf.ProfileHeap = filepath.Join(t.TempDir(), "heap.pprof")
+	conf.ProfileMutex = filepath.Join(t.TempDir(), "mutex.pprof")
+	conf.TraceFile = filepath.Join(t.TempDir(), "trace.out")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		Attached:  true,
+	}
+
+	_, err = Run(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+
+	// Basic test; simply assert that the profiles are not empty.
+	for _, name := range []string{conf.ProfileBlock, conf.ProfileCPU, conf.ProfileHeap, conf.ProfileMutex, conf.TraceFile} {
+		fi, err := os.Stat(name)
+		if err != nil {
+			t.Fatalf("Unable to stat profile file %s: %v", name, err)
+		}
+		if fi.Size() == 0 {
+			t.Errorf("Profile file %s is empty: %+v", name, fi)
+		}
+	}
+}
