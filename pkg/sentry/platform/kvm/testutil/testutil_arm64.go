@@ -30,8 +30,8 @@ import (
 func TLSWorks() bool
 
 // SetTestTarget sets the rip appropriately.
-func SetTestTarget(regs *arch.Registers, fn func()) {
-	regs.Pc = uint64(reflect.ValueOf(fn).Pointer())
+func SetTestTarget(regs *arch.Registers, fn uintptr) {
+	regs.Pc = uint64(fn)
 }
 
 // SetTouchTarget sets rax appropriately.
