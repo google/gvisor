@@ -18,6 +18,7 @@ package network
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -39,11 +40,7 @@ type Endpoint struct {
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
-	state transport.DatagramEndpointState
-	// +checklocks:mu
 	wasBound bool
-	// +checklocks:mu
-	info stack.TransportEndpointInfo
 	// owner is the owner of transmitted packets.
 	//
 	// +checklocks:mu
@@ -72,6 +69,34 @@ type Endpoint struct {
 	ipv4TOS uint8
 	// +checklocks:mu
 	ipv6TClass uint8
+
+	// Lock ordering: mu > infoMu.
+	infoMu sync.RWMutex `state:"nosave"`
+	// info has a dedicated mutex so that we can avoid lock ordering violations
+	// when reading the endpoint's info. If we used mu, we need to guarantee
+	// that any lock taken while mu is held is not held when calling Info()
+	// which is not true as of writing (we hold mu while registering transport
+	// endpoints (taking the transport demuxer lock but we also hold the demuxer
+	// lock when delivering packets/errors to endpoints).
+	//
+	// Writes must be performed through setInfo.
+	//
+	// +checklocks:infoMu
+	info stack.TransportEndpointInfo
+
+	// state holds a transport.DatagramBasedEndpointState.
+	//
+	// state must be accessed with atomics so that we can avoid lock ordering
+	// violations when reading the state. If we used mu, we need to guarantee
+	// that any lock taken while mu is held is not held when calling State()
+	// which is not true as of writing (we hold mu while registering transport
+	// endpoints (taking the transport demuxer lock but we also hold the demuxer
+	// lock when delivering packets/errors to endpoints).
+	//
+	// Writes must be performed through setEndpointState.
+	//
+	// +checkatomics
+	state uint32
 }
 
 // +stateify savable
@@ -101,7 +126,6 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 		netProto:   netProto,
 		transProto: transProto,
 
-		state: transport.DatagramEndpointStateInitial,
 		info: stack.TransportEndpointInfo{
 			NetProto:   netProto,
 			TransProto: transProto,
@@ -111,6 +135,10 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 		multicastTTL:         1,
 		multicastMemberships: make(map[multicastMembership]struct{}),
 	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.setEndpointState(transport.DatagramEndpointStateInitial)
 }
 
 // NetProto returns the network protocol the endpoint was initialized with.
@@ -118,11 +146,19 @@ func (e *Endpoint) NetProto() tcpip.NetworkProtocolNumber {
 	return e.netProto
 }
 
+// setEndpointState sets the state of the endpoint.
+//
+// e.mu must be held to synchronize changes to state with the rest of the
+// endpoint.
+//
+// +checklocks:e.mu
+func (e *Endpoint) setEndpointState(state transport.DatagramEndpointState) {
+	atomic.StoreUint32(&e.state, uint32(state))
+}
+
 // State returns the state of the endpoint.
 func (e *Endpoint) State() transport.DatagramEndpointState {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.state
+	return transport.DatagramEndpointState(atomic.LoadUint32(&e.state))
 }
 
 // Close cleans the endpoint's resources and leaves the endpoint in a closed
@@ -131,7 +167,7 @@ func (e *Endpoint) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.state == transport.DatagramEndpointStateClosed {
+	if e.State() == transport.DatagramEndpointStateClosed {
 		return
 	}
 
@@ -145,7 +181,7 @@ func (e *Endpoint) Close() {
 		e.connectedRoute = nil
 	}
 
-	e.state = transport.DatagramEndpointStateClosed
+	e.setEndpointState(transport.DatagramEndpointStateClosed)
 }
 
 // SetOwner sets the owner of transmitted packets.
@@ -226,7 +262,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		return WriteContext{}, &tcpip.ErrInvalidOptionValue{}
 	}
 
-	if e.state == transport.DatagramEndpointStateClosed {
+	if e.State() == transport.DatagramEndpointStateClosed {
 		return WriteContext{}, &tcpip.ErrInvalidEndpointState{}
 	}
 
@@ -238,7 +274,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	if opts.To == nil {
 		// If the user doesn't specify a destination, they should have
 		// connected to another address.
-		if e.state != transport.DatagramEndpointStateConnected {
+		if e.State() != transport.DatagramEndpointStateConnected {
 			return WriteContext{}, &tcpip.ErrDestinationRequired{}
 		}
 
@@ -250,18 +286,19 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		if nicID == 0 {
 			nicID = tcpip.NICID(e.ops.GetBindToDevice())
 		}
-		if e.info.BindNICID != 0 {
-			if nicID != 0 && nicID != e.info.BindNICID {
+		info := e.Info()
+		if info.BindNICID != 0 {
+			if nicID != 0 && nicID != info.BindNICID {
 				return WriteContext{}, &tcpip.ErrNoRoute{}
 			}
 
-			nicID = e.info.BindNICID
+			nicID = info.BindNICID
 		}
 		if nicID == 0 {
-			nicID = e.info.RegisterNICID
+			nicID = info.RegisterNICID
 		}
 
-		dst, netProto, err := e.checkV4MappedRLocked(*opts.To)
+		dst, netProto, err := e.checkV4Mapped(*opts.To)
 		if err != nil {
 			return WriteContext{}, err
 		}
@@ -301,20 +338,22 @@ func (e *Endpoint) Disconnect() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.state != transport.DatagramEndpointStateConnected {
+	if e.State() != transport.DatagramEndpointStateConnected {
 		return
 	}
 
+	info := e.Info()
 	// Exclude ephemerally bound endpoints.
 	if e.wasBound {
-		e.info.ID = stack.TransportEndpointID{
-			LocalAddress: e.info.BindAddr,
+		info.ID = stack.TransportEndpointID{
+			LocalAddress: info.BindAddr,
 		}
-		e.state = transport.DatagramEndpointStateBound
+		e.setEndpointState(transport.DatagramEndpointStateBound)
 	} else {
-		e.info.ID = stack.TransportEndpointID{}
-		e.state = transport.DatagramEndpointStateInitial
+		info.ID = stack.TransportEndpointID{}
+		e.setEndpointState(transport.DatagramEndpointStateInitial)
 	}
+	e.setInfo(info)
 
 	e.connectedRoute.Release()
 	e.connectedRoute = nil
@@ -327,7 +366,7 @@ func (e *Endpoint) Disconnect() {
 // TODO(https://gvisor.dev/issue/6590): Annotate read lock requirement.
 // +checklocks:e.mu
 func (e *Endpoint) connectRouteRLocked(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (*stack.Route, tcpip.NICID, tcpip.Error) {
-	localAddr := e.info.ID.LocalAddress
+	localAddr := e.Info().ID.LocalAddress
 	if e.isBroadcastOrMulticast(nicID, netProto, localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
 		localAddr = ""
@@ -370,24 +409,25 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	info := e.Info()
 	nicID := addr.NIC
-	switch e.state {
+	switch e.State() {
 	case transport.DatagramEndpointStateInitial:
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
-		if e.info.BindNICID == 0 {
+		if info.BindNICID == 0 {
 			break
 		}
 
-		if nicID != 0 && nicID != e.info.BindNICID {
+		if nicID != 0 && nicID != info.BindNICID {
 			return &tcpip.ErrInvalidEndpointState{}
 		}
 
-		nicID = e.info.BindNICID
+		nicID = info.BindNICID
 	default:
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	addr, netProto, err := e.checkV4MappedRLocked(addr)
+	addr, netProto, err := e.checkV4Mapped(addr)
 	if err != nil {
 		return err
 	}
@@ -398,14 +438,14 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 	}
 
 	id := stack.TransportEndpointID{
-		LocalAddress:  e.info.ID.LocalAddress,
+		LocalAddress:  info.ID.LocalAddress,
 		RemoteAddress: r.RemoteAddress(),
 	}
-	if e.state == transport.DatagramEndpointStateInitial {
+	if e.State() == transport.DatagramEndpointStateInitial {
 		id.LocalAddress = r.LocalAddress()
 	}
 
-	if err := f(r.NetProto(), e.info.ID, id); err != nil {
+	if err := f(r.NetProto(), info.ID, id); err != nil {
 		return err
 	}
 
@@ -414,10 +454,11 @@ func (e *Endpoint) ConnectAndThen(addr tcpip.FullAddress, f func(netProto tcpip.
 		e.connectedRoute.Release()
 	}
 	e.connectedRoute = r
-	e.info.ID = id
-	e.info.RegisterNICID = nicID
+	info.ID = id
+	info.RegisterNICID = nicID
+	e.setInfo(info)
 	e.effectiveNetProto = netProto
-	e.state = transport.DatagramEndpointStateConnected
+	e.setEndpointState(transport.DatagramEndpointStateConnected)
 	return nil
 }
 
@@ -426,7 +467,7 @@ func (e *Endpoint) Shutdown() tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	switch state := e.state; state {
+	switch state := e.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
 		return &tcpip.ErrNotConnected{}
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
@@ -439,11 +480,9 @@ func (e *Endpoint) Shutdown() tcpip.Error {
 
 // checkV4MappedRLocked determines the effective network protocol and converts
 // addr to its canonical form.
-//
-// TODO(https://gvisor.dev/issue/6590): Annotate read lock requirement.
-// +checklocks:e.mu
-func (e *Endpoint) checkV4MappedRLocked(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
-	unwrapped, netProto, err := e.info.AddrNetProtoLocked(addr, e.ops.GetV6Only())
+func (e *Endpoint) checkV4Mapped(addr tcpip.FullAddress) (tcpip.FullAddress, tcpip.NetworkProtocolNumber, tcpip.Error) {
+	info := e.Info()
+	unwrapped, netProto, err := info.AddrNetProtoLocked(addr, e.ops.GetV6Only())
 	if err != nil {
 		return tcpip.FullAddress{}, 0, err
 	}
@@ -474,11 +513,11 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
-	if e.state != transport.DatagramEndpointStateInitial {
+	if e.State() != transport.DatagramEndpointStateInitial {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	addr, netProto, err := e.checkV4MappedRLocked(addr)
+	addr, netProto, err := e.checkV4Mapped(addr)
 	if err != nil {
 		return err
 	}
@@ -497,14 +536,16 @@ func (e *Endpoint) BindAndThen(addr tcpip.FullAddress, f func(tcpip.NetworkProto
 
 	e.wasBound = true
 
-	e.info.ID = stack.TransportEndpointID{
+	info := e.Info()
+	info.ID = stack.TransportEndpointID{
 		LocalAddress: addr.Addr,
 	}
-	e.info.BindNICID = addr.NIC
-	e.info.RegisterNICID = nicID
-	e.info.BindAddr = addr.Addr
+	info.BindNICID = addr.NIC
+	info.RegisterNICID = nicID
+	info.BindAddr = addr.Addr
+	e.setInfo(info)
 	e.effectiveNetProto = netProto
-	e.state = transport.DatagramEndpointStateBound
+	e.setEndpointState(transport.DatagramEndpointStateBound)
 	return nil
 }
 
@@ -520,13 +561,14 @@ func (e *Endpoint) GetLocalAddress() tcpip.FullAddress {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	addr := e.info.BindAddr
-	if e.state == transport.DatagramEndpointStateConnected {
+	info := e.Info()
+	addr := info.BindAddr
+	if e.State() == transport.DatagramEndpointStateConnected {
 		addr = e.connectedRoute.LocalAddress()
 	}
 
 	return tcpip.FullAddress{
-		NIC:  e.info.RegisterNICID,
+		NIC:  info.RegisterNICID,
 		Addr: addr,
 	}
 }
@@ -536,13 +578,13 @@ func (e *Endpoint) GetRemoteAddress() (tcpip.FullAddress, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	if e.state != transport.DatagramEndpointStateConnected {
+	if e.State() != transport.DatagramEndpointStateConnected {
 		return tcpip.FullAddress{}, false
 	}
 
 	return tcpip.FullAddress{
 		Addr: e.connectedRoute.RemoteAddress(),
-		NIC:  e.info.RegisterNICID,
+		NIC:  e.Info().RegisterNICID,
 	}, true
 }
 
@@ -624,7 +666,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		defer e.mu.Unlock()
 
 		fa := tcpip.FullAddress{Addr: v.InterfaceAddr}
-		fa, netProto, err := e.checkV4MappedRLocked(fa)
+		fa, netProto, err := e.checkV4Mapped(fa)
 		if err != nil {
 			return err
 		}
@@ -648,7 +690,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 			}
 		}
 
-		if e.info.BindNICID != 0 && e.info.BindNICID != nic {
+		if info := e.Info(); info.BindNICID != 0 && info.BindNICID != nic {
 			return &tcpip.ErrInvalidEndpointState{}
 		}
 
@@ -751,7 +793,19 @@ func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 
 // Info returns a copy of the endpoint info.
 func (e *Endpoint) Info() stack.TransportEndpointInfo {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.infoMu.RLock()
+	defer e.infoMu.RUnlock()
 	return e.info
+}
+
+// setInfo sets the endpoint's info.
+//
+// e.mu must be held to synchronize changes to info with the rest of the
+// endpoint.
+//
+// +checklocks:e.mu
+func (e *Endpoint) setInfo(info stack.TransportEndpointInfo) {
+	e.infoMu.Lock()
+	defer e.infoMu.Unlock()
+	e.info = info
 }

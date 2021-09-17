@@ -54,9 +54,7 @@ func (ep *endpoint) StateTypeName() string {
 
 func (ep *endpoint) StateFields() []string {
 	return []string{
-		"TransportEndpointInfo",
 		"DefaultSocketOptionsHandler",
-		"netProto",
 		"waiterQueue",
 		"cooked",
 		"ops",
@@ -64,6 +62,7 @@ func (ep *endpoint) StateFields() []string {
 		"rcvBufSize",
 		"rcvClosed",
 		"rcvDisabled",
+		"netProto",
 		"closed",
 		"bound",
 		"boundNIC",
@@ -74,38 +73,36 @@ func (ep *endpoint) StateFields() []string {
 // +checklocksignore
 func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	ep.beforeSave()
-	stateSinkObject.Save(0, &ep.TransportEndpointInfo)
-	stateSinkObject.Save(1, &ep.DefaultSocketOptionsHandler)
-	stateSinkObject.Save(2, &ep.netProto)
-	stateSinkObject.Save(3, &ep.waiterQueue)
-	stateSinkObject.Save(4, &ep.cooked)
-	stateSinkObject.Save(5, &ep.ops)
-	stateSinkObject.Save(6, &ep.rcvList)
-	stateSinkObject.Save(7, &ep.rcvBufSize)
-	stateSinkObject.Save(8, &ep.rcvClosed)
-	stateSinkObject.Save(9, &ep.rcvDisabled)
-	stateSinkObject.Save(10, &ep.closed)
-	stateSinkObject.Save(11, &ep.bound)
-	stateSinkObject.Save(12, &ep.boundNIC)
-	stateSinkObject.Save(13, &ep.lastError)
+	stateSinkObject.Save(0, &ep.DefaultSocketOptionsHandler)
+	stateSinkObject.Save(1, &ep.waiterQueue)
+	stateSinkObject.Save(2, &ep.cooked)
+	stateSinkObject.Save(3, &ep.ops)
+	stateSinkObject.Save(4, &ep.rcvList)
+	stateSinkObject.Save(5, &ep.rcvBufSize)
+	stateSinkObject.Save(6, &ep.rcvClosed)
+	stateSinkObject.Save(7, &ep.rcvDisabled)
+	stateSinkObject.Save(8, &ep.netProto)
+	stateSinkObject.Save(9, &ep.closed)
+	stateSinkObject.Save(10, &ep.bound)
+	stateSinkObject.Save(11, &ep.boundNIC)
+	stateSinkObject.Save(12, &ep.lastError)
 }
 
 // +checklocksignore
 func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &ep.TransportEndpointInfo)
-	stateSourceObject.Load(1, &ep.DefaultSocketOptionsHandler)
-	stateSourceObject.Load(2, &ep.netProto)
-	stateSourceObject.Load(3, &ep.waiterQueue)
-	stateSourceObject.Load(4, &ep.cooked)
-	stateSourceObject.Load(5, &ep.ops)
-	stateSourceObject.Load(6, &ep.rcvList)
-	stateSourceObject.Load(7, &ep.rcvBufSize)
-	stateSourceObject.Load(8, &ep.rcvClosed)
-	stateSourceObject.Load(9, &ep.rcvDisabled)
-	stateSourceObject.Load(10, &ep.closed)
-	stateSourceObject.Load(11, &ep.bound)
-	stateSourceObject.Load(12, &ep.boundNIC)
-	stateSourceObject.Load(13, &ep.lastError)
+	stateSourceObject.Load(0, &ep.DefaultSocketOptionsHandler)
+	stateSourceObject.Load(1, &ep.waiterQueue)
+	stateSourceObject.Load(2, &ep.cooked)
+	stateSourceObject.Load(3, &ep.ops)
+	stateSourceObject.Load(4, &ep.rcvList)
+	stateSourceObject.Load(5, &ep.rcvBufSize)
+	stateSourceObject.Load(6, &ep.rcvClosed)
+	stateSourceObject.Load(7, &ep.rcvDisabled)
+	stateSourceObject.Load(8, &ep.netProto)
+	stateSourceObject.Load(9, &ep.closed)
+	stateSourceObject.Load(10, &ep.bound)
+	stateSourceObject.Load(11, &ep.boundNIC)
+	stateSourceObject.Load(12, &ep.lastError)
 	stateSourceObject.AfterLoad(ep.afterLoad)
 }
 
