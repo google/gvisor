@@ -1166,8 +1166,8 @@ func (ep *multiPortEndpoint) StateFields() []string {
 		"demux",
 		"netProto",
 		"transProto",
-		"endpoints",
 		"flags",
+		"endpoints",
 	}
 }
 
@@ -1179,8 +1179,8 @@ func (ep *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &ep.demux)
 	stateSinkObject.Save(1, &ep.netProto)
 	stateSinkObject.Save(2, &ep.transProto)
-	stateSinkObject.Save(3, &ep.endpoints)
-	stateSinkObject.Save(4, &ep.flags)
+	stateSinkObject.Save(3, &ep.flags)
+	stateSinkObject.Save(4, &ep.endpoints)
 }
 
 func (ep *multiPortEndpoint) afterLoad() {}
@@ -1190,8 +1190,8 @@ func (ep *multiPortEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.demux)
 	stateSourceObject.Load(1, &ep.netProto)
 	stateSourceObject.Load(2, &ep.transProto)
-	stateSourceObject.Load(3, &ep.endpoints)
-	stateSourceObject.Load(4, &ep.flags)
+	stateSourceObject.Load(3, &ep.flags)
+	stateSourceObject.Load(4, &ep.endpoints)
 }
 
 func (l *tupleList) StateTypeName() string {
