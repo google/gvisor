@@ -7,6 +7,7 @@ package(
 
 exports_files(
     [
+        "packet_socket.cc",
         "packet_socket_dgram.cc",
         "packet_socket_raw.cc",
         "raw_socket.cc",
@@ -1477,6 +1478,20 @@ cc_binary(
         gtest,
         "//test/util:test_main",
         "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "packet_socket_test",
+    testonly = 1,
+    srcs = ["packet_socket.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:socket_util",
+        gtest,
+        "//test/util:test_main",
     ],
 )
 
