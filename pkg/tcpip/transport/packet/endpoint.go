@@ -59,13 +59,11 @@ type packet struct {
 //
 // +stateify savable
 type endpoint struct {
-	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
 	// The following fields are initialized at creation time and are
 	// immutable.
 	stack       *stack.Stack `state:"manual"`
-	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
 	cooked      bool
 	ops         tcpip.SocketOptions
@@ -84,6 +82,8 @@ type endpoint struct {
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
+	netProto tcpip.NetworkProtocolNumber
+	// +checklocks:mu
 	closed bool
 	// +checklocks:mu
 	bound bool
@@ -98,10 +98,7 @@ type endpoint struct {
 // NewEndpoint returns a new packet endpoint.
 func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	ep := &endpoint{
-		stack: s,
-		TransportEndpointInfo: stack.TransportEndpointInfo{
-			NetProto: netProto,
-		},
+		stack:       s,
 		cooked:      cooked,
 		netProto:    netProto,
 		waiterQueue: waiterQueue,
@@ -214,13 +211,13 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 	ep.mu.Lock()
 	closed := ep.closed
 	nicID := ep.boundNIC
+	proto := ep.netProto
 	ep.mu.Unlock()
 	if closed {
 		return 0, &tcpip.ErrClosedForSend{}
 	}
 
 	var remote tcpip.LinkAddress
-	proto := ep.netProto
 	if to := opts.To; to != nil {
 		remote = tcpip.LinkAddress(to.Addr)
 
@@ -296,7 +293,8 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	if ep.bound && ep.boundNIC == addr.NIC {
+	netProto := tcpip.NetworkProtocolNumber(addr.Port)
+	if ep.bound && ep.boundNIC == addr.NIC && ep.netProto == netProto {
 		// If the NIC being bound is the same then just return success.
 		return nil
 	}
@@ -306,12 +304,13 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
 	ep.bound = false
 
 	// Bind endpoint to receive packets from specific interface.
-	if err := ep.stack.RegisterPacketEndpoint(addr.NIC, ep.netProto, ep); err != nil {
+	if err := ep.stack.RegisterPacketEndpoint(addr.NIC, netProto, ep); err != nil {
 		return err
 	}
 
 	ep.bound = true
 	ep.boundNIC = addr.NIC
+	ep.netProto = netProto
 
 	return nil
 }
@@ -473,10 +472,8 @@ func (*endpoint) State() uint32 {
 // Info returns a copy of the endpoint info.
 func (ep *endpoint) Info() tcpip.EndpointInfo {
 	ep.mu.RLock()
-	// Make a copy of the endpoint info.
-	ret := ep.TransportEndpointInfo
-	ep.mu.RUnlock()
-	return &ret
+	defer ep.mu.RUnlock()
+	return &stack.TransportEndpointInfo{NetProto: ep.netProto}
 }
 
 // Stats returns a pointer to the endpoint stats.
