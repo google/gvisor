@@ -58,20 +58,22 @@ type endpoint struct {
 	stats tcpip.TransportEndpointStats `state:"nosave"`
 	ops   tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvReady   bool
-	rcvList    icmpPacketList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvReady bool
+	// +checklocks:rcvMu
+	rcvList icmpPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// +checklocks:rcvMu
+	rcvDisabled bool
 
-	// The following fields are protected by the mu mutex.
 	mu sync.RWMutex `state:"nosave"`
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
-	frozen bool
-	ident  uint16
+	// +checklocks:mu
+	ident uint16
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
@@ -442,14 +444,18 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	defer e.mu.Unlock()
 
 	err := e.net.ConnectAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID) tcpip.Error {
-		nextID.LocalPort = e.ident
+		// TODO(https://gvisor.dev/issue/6606): Remove the checklocksforce
+		// annotation.
+		nextID.LocalPort = e.ident // +checklocksforce
 
 		nextID, err := e.registerWithStack(netProto, nextID)
 		if err != nil {
 			return err
 		}
 
-		e.ident = nextID.LocalPort
+		// TODO(https://gvisor.dev/issue/6606): Remove the checklocksforce
+		// annotation.
+		e.ident = nextID.LocalPort // +checklocksforce
 		return nil
 	})
 	if err != nil {
@@ -554,7 +560,9 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 			return err
 		}
 
-		e.ident = id.LocalPort
+		// TODO(https://gvisor.dev/issue/6606): Remove the checklocksforce
+		// annotation.
+		e.ident = id.LocalPort // +checklocksforce
 		return nil
 	})
 	if err != nil {
@@ -660,7 +668,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 	}
 
 	rcvBufSize := e.ops.GetReceiveBufferSize()
-	if e.frozen || e.rcvBufSize >= int(rcvBufSize) {
+	if e.rcvDisabled || e.rcvBufSize >= int(rcvBufSize) {
 		e.rcvMu.Unlock()
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
@@ -728,19 +736,4 @@ func (*endpoint) LastError() tcpip.Error {
 // SocketOptions implements tcpip.Endpoint.SocketOptions.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops
-}
-
-// freeze prevents any more packets from being delivered to the endpoint.
-func (e *endpoint) freeze() {
-	e.mu.Lock()
-	e.frozen = true
-	e.mu.Unlock()
-}
-
-// thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
-// new packets to be delivered again.
-func (e *endpoint) thaw() {
-	e.mu.Lock()
-	e.frozen = false
-	e.mu.Unlock()
 }

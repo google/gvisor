@@ -57,13 +57,13 @@ func (e *endpoint) afterLoad() {
 
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
-	e.freeze()
+	e.rcvMu.Lock()
+	defer e.rcvMu.Unlock()
+	e.rcvDisabled = true
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
 func (e *endpoint) Resume(s *stack.Stack) {
-	e.thaw()
-
 	e.net.Resume(s)
 
 	e.stack = s
@@ -72,6 +72,9 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	switch state := e.net.State(); state {
 	case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateClosed:
 	case transport.DatagramEndpointStateBound, transport.DatagramEndpointStateConnected:
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
 		var err tcpip.Error
 		info := e.net.Info()
 		info.ID.LocalPort = e.ident
@@ -83,4 +86,8 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
 	}
+
+	e.rcvMu.Lock()
+	defer e.rcvMu.Unlock()
+	e.rcvDisabled = false
 }
