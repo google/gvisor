@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -44,8 +45,9 @@ type Boot struct {
 	// control server that is donated to this process.
 	controllerFD int
 
-	// deviceFD is the file descriptor for the platform device file.
-	deviceFD int
+	// deviceFDs are the file descriptor for the platform device file. This
+	// is a string in simple, comma-separated form.
+	deviceFDs string
 
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs intFlags
@@ -128,7 +130,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
-	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
+	f.StringVar(&b.deviceFDs, "device-fds", "", "FDs for the platform device files (comma-separated)")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
@@ -136,7 +138,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
-	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
+	f.IntVar(&b.userLogFD, "user-log-fd", -1, "file descriptor to write user logs")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.profileBlockFD, "profile-block-fd", -1, "file descriptor to write block profile to. -1 disables profiling.")
@@ -213,6 +215,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			caps.Effective = append(caps.Effective, c)
 			caps.Permitted = append(caps.Permitted, c)
 		}
+		if gPlatform.Requirements().RequiresSeccompDisabled && !conf.DisableSeccomp {
+			Fatalf("platform %v requires seccomp filters disabled. Use --disable-seccomp", conf.Platform)
+		}
 
 		// Remove --apply-caps and --setup-root arg to call myself. Both have
 		// already been done.
@@ -236,13 +241,25 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	mountsFile.Close()
 	spec.Mounts = cleanMounts
 
+	// Extract all device files.
+	var deviceFiles []*os.File
+	if b.deviceFDs != "" {
+		for _, fdStr := range strings.Split(b.deviceFDs, ",") {
+			fd, err := strconv.Atoi(fdStr)
+			if err != nil {
+				Fatalf("invalid device fd %q: %v", fdStr, err)
+			}
+			deviceFiles = append(deviceFiles, os.NewFile(uintptr(fd), "device"))
+		}
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:             f.Arg(0),
 		Spec:           spec,
 		Conf:           conf,
 		ControllerFD:   b.controllerFD,
-		Device:         os.NewFile(uintptr(b.deviceFD), "platform device"),
+		DeviceFiles:    deviceFiles,
 		GoferFDs:       b.ioFDs.GetArray(),
 		StdioFDs:       b.stdioFDs.GetArray(),
 		NumCPU:         b.cpuNum,

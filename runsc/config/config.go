@@ -128,7 +128,7 @@ type Config struct {
 
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
-	DisableSeccomp bool
+	DisableSeccomp bool `flag:"disable-seccomp"`
 
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action `flag:"watchdog-action"`

@@ -53,11 +53,11 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %v", err)
 	}
-	deviceFile, err := platformCtr.OpenDevice()
+	deviceFiles, err := platformCtr.OpenDevices()
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
-	plat, err := platformCtr.New(deviceFile)
+	plat, err := platformCtr.New(deviceFiles)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}

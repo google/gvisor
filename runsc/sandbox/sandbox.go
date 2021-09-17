@@ -283,13 +283,15 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *config.Config, fil
 		SandboxID: s.ID,
 	}
 
-	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+	// Collect all required device files.
+	deviceFiles, err := deviceFilesForPlatform(conf.Platform)
+	if err != nil {
 		return err
-	} else if deviceFile != nil {
-		defer deviceFile.Close()
-		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile)
 	}
+	for _, f := range deviceFiles {
+		defer f.Close()
+	}
+	opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFiles...)
 
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -558,14 +560,23 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 
-	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
-		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
-	} else if deviceFile != nil {
-		defer deviceFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
-		cmd.Args = append(cmd.Args, "--device-fd="+strconv.Itoa(nextFD))
-		nextFD++
+	deviceFiles, err := gPlatform.OpenDevices()
+	if err != nil {
+		return fmt.Errorf("opening device files for platform %q: %v", conf.Platform, err)
 	}
+
+	var (
+		deviceFilesFds []uintptr
+		deviceFilesStr []string
+	)
+	for _, f := range deviceFiles {
+		deviceFilesFds = append(deviceFilesFds, uintptr(nextFD))
+		deviceFilesStr = append(deviceFilesStr, strconv.Itoa(nextFD))
+		nextFD++
+		defer f.Close()
+	}
+	cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFiles...)
+	cmd.Args = append(cmd.Args, "--device-fds="+strings.Join(deviceFilesStr, ","))
 
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
 	// isn't set.
@@ -825,6 +836,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		log.Debugf("Donating FD %d: %q", i+3, f.Name())
 	}
 
+	// Allow the platform to tweak the command at the last moment.
+	if err := preExecForPlatform(conf.Platform, cmd, deviceFilesFds); err != nil {
+		return fmt.Errorf("error calling preExec for platform: %v", err)
+	}
+
+	// Perform the exec.
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
@@ -1360,17 +1377,27 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 	return nil
 }
 
-// deviceFileForPlatform opens the device file for the given platform. If the
-// platform does not need a device file, then nil is returned.
-func deviceFileForPlatform(name string) (*os.File, error) {
+// preExecForPlatform calls the PreExec hook on the platform constructor.
+func preExecForPlatform(name string, cmd *exec.Cmd, deviceFiles []uintptr) error {
+	p, err := platform.Lookup(name)
+	if err != nil {
+		return err
+	}
+
+	return p.PreExec(cmd, deviceFiles)
+}
+
+// deviceFilesForPlatform opens the device file for the given platform. If the
+// platform does not need a device files, then nil is returned.
+func deviceFilesForPlatform(name string) ([]*os.File, error) {
 	p, err := platform.Lookup(name)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := p.OpenDevice()
+	f, err := p.OpenDevices()
 	if err != nil {
-		return nil, fmt.Errorf("opening device file for platform %q: %w", name, err)
+		return nil, fmt.Errorf("opening device files for platform %q: %v", name, err)
 	}
 	return f, nil
 }

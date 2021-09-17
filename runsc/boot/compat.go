@@ -63,7 +63,7 @@ func newCompatEmitter(logFD int) (*compatEmitter, error) {
 		trackers: make(map[uint64]syscallTracker),
 	}
 
-	if logFD > 0 {
+	if logFD >= 0 {
 		f := os.NewFile(uintptr(logFD), "user log file")
 		target := &log.MultiEmitter{c.sink, log.K8sJSONEmitter{&log.Writer{Next: f}}}
 		c.sink = &log.BasicLogger{Level: log.Info, Emitter: target}

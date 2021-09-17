@@ -21,7 +21,6 @@ import (
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
@@ -387,35 +386,27 @@ type RestoreOpts struct {
 }
 
 // Restore loads a container from a statefile.
+//
 // The container's current kernel is destroyed, a restore environment is
 // created, and the kernel is recreated with the restore state file. The
 // container then sends the signal to start.
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
-	var specFile, deviceFile *os.File
-	switch numFiles := len(o.Files); numFiles {
-	case 2:
-		// The device file is donated to the platform.
-		// Can't take ownership away from os.File. dup them to get a new FD.
-		fd, err := unix.Dup(int(o.Files[1].Fd()))
-		if err != nil {
-			return fmt.Errorf("failed to dup file: %v", err)
-		}
-		deviceFile = os.NewFile(uintptr(fd), "platform device")
-		fallthrough
-	case 1:
-		specFile = o.Files[0]
-	case 0:
+	var (
+		specFile    *os.File
+		deviceFiles []*os.File
+	)
+	if len(o.FilePayload.Files) < 1 {
 		return fmt.Errorf("at least one file must be passed to Restore")
-	default:
-		return fmt.Errorf("at most two files may be passed to Restore")
 	}
+	specFile = o.FilePayload.Files[0]
+	deviceFiles = o.FilePayload.Files[1:]
 
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.root.conf, deviceFile)
+	p, err := createPlatform(cm.l.root.conf, deviceFiles)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}

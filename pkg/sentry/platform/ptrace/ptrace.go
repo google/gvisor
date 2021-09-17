@@ -46,6 +46,7 @@ package ptrace
 
 import (
 	"os"
+	"os/exec"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
@@ -250,17 +251,25 @@ func (*PTrace) NewContext() platform.Context {
 	return &context{}
 }
 
+// constructor is a platform.Constructor.
 type constructor struct{}
 
-func (*constructor) New(*os.File) (platform.Platform, error) {
-	return New()
+// New implements platform.Constructor.New.
+func (*constructor) New([]*os.File) (platform.Platform, error) {
+	return New() // No devices.
 }
 
-func (*constructor) OpenDevice() (*os.File, error) {
-	return nil, nil
+// PreExec implements platform.Constructor.PreExec.
+func (*constructor) PreExec(*exec.Cmd, []uintptr) error {
+	return nil // Nothing to do.
 }
 
-// Flags implements platform.Constructor.Flags().
+// OpenDevices implements platform.Constructor.OpenDevices.
+func (*constructor) OpenDevices() ([]*os.File, error) {
+	return nil, nil // No devices.
+}
+
+// Requirements implements platform.Constructor.Requirements().
 func (*constructor) Requirements() platform.Requirements {
 	// TODO(b/75837838): Also set a new PID namespace so that we limit
 	// access to other host processes.

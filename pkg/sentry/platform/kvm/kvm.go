@@ -18,6 +18,7 @@ package kvm
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -175,14 +176,26 @@ func (k *KVM) NewContext() platform.Context {
 	}
 }
 
+// constructor is a platform.Constructor.
 type constructor struct{}
 
-func (*constructor) New(f *os.File) (platform.Platform, error) {
-	return New(f)
+// New implements platform.Constructor.New.
+func (*constructor) New(deviceFiles []*os.File) (platform.Platform, error) {
+	return New(deviceFiles[0]) // Must be exactly one device.
 }
 
-func (*constructor) OpenDevice() (*os.File, error) {
-	return OpenDevice()
+// PreExec implements platform.Constructor.PreExec.
+func (*constructor) PreExec(*exec.Cmd, []uintptr) error {
+	return nil // Don't do anything.
+}
+
+// OpenDevices implements platform.Constructor.OpenDevices.
+func (*constructor) OpenDevices() ([]*os.File, error) {
+	f, err := OpenDevice()
+	if err != nil {
+		return nil, err
+	}
+	return []*os.File{f}, nil // One device.
 }
 
 // Flags implements platform.Constructor.Flags().

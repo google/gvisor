@@ -20,6 +20,7 @@ package platform
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -423,6 +424,9 @@ type Requirements struct {
 	// RequiresCapSysPtrace indicates that the sandbox has to be started with
 	// the CAP_SYS_PTRACE capability.
 	RequiresCapSysPtrace bool
+	// RequireSeccompDisabled indicates that the sandbox has to be started with
+	// seccomp filtering disabled.
+	RequiresSeccompDisabled bool
 }
 
 // Constructor represents a platform type.
@@ -431,12 +435,21 @@ type Constructor interface {
 	//
 	// Arguments:
 	//
-	// * deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
-	New(deviceFile *os.File) (Platform, error)
-	OpenDevice() (*os.File, error)
+	// * deviceFiles - the device files (e.g. /dev/kvm for the KVM platform).
+	New(deviceFiles []*os.File) (Platform, error)
+
+	// OpenDevices opens device files if needed. This will be done before
+	// execve (which will enter a chroot and apply various namespaces).
+	OpenDevices() ([]*os.File, error)
 
 	// Requirements returns platform specific requirements.
 	Requirements() Requirements
+
+	// PreExec is called before executing in the new namespaces.
+	//
+	// The passed slice are the new file descriptors for all the device
+	// files being passed to the new process, specified in order.
+	PreExec(*exec.Cmd, []uintptr) error
 }
 
 // platforms contains all available platform types.

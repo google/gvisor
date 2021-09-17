@@ -187,9 +187,10 @@ type Args struct {
 	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
 	// of this FD and may close it at any time.
 	ControllerFD int
-	// Device is an optional argument that is passed to the platform. The Loader
-	// takes ownership of this file and may close it at any time.
-	Device *os.File
+	// DeviceFiles are optional files passed to the platform. The Loader
+	// may take ownership of these files and close them at any time.
+	DeviceFiles []*os.File
+
 	// GoferFDs is an array of FDs used to connect with the Gofer. The Loader
 	// takes ownership of these FDs and may close them at any time.
 	GoferFDs []int
@@ -276,7 +277,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.Device)
+	p, err := createPlatform(args.Conf, args.DeviceFiles)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -524,13 +525,13 @@ func (l *Loader) Destroy() {
 	l.stopProfiling()
 }
 
-func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
+func createPlatform(conf *config.Config, deviceFiles []*os.File) (platform.Platform, error) {
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
 		panic(fmt.Sprintf("invalid platform %s: %s", conf.Platform, err))
 	}
 	log.Infof("Platform: %s", conf.Platform)
-	return p.New(deviceFile)
+	return p.New(deviceFiles)
 }
 
 func createMemoryFile() (*pgalloc.MemoryFile, error) {
