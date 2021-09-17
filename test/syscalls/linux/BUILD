@@ -7,7 +7,7 @@ package(
 
 exports_files(
     [
-        "packet_socket.cc",
+        "packet_socket_dgram.cc",
         "packet_socket_raw.cc",
         "raw_socket.cc",
         "raw_socket_hdrincl.cc",
@@ -1441,10 +1441,9 @@ cc_binary(
 )
 
 cc_binary(
-    name = "packet_socket_raw_test",
+    name = "packet_socket_dgram_test",
     testonly = 1,
-    srcs = ["packet_socket_raw.cc"],
-    defines = select_system(),
+    srcs = ["packet_socket_dgram.cc"],
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",
@@ -1462,9 +1461,9 @@ cc_binary(
 )
 
 cc_binary(
-    name = "packet_socket_test",
+    name = "packet_socket_raw_test",
     testonly = 1,
-    srcs = ["packet_socket.cc"],
+    srcs = ["packet_socket_raw.cc"],
     linkstatic = 1,
     deps = [
         ":ip_socket_test_util",

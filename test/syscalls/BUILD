@@ -359,11 +359,11 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:packet_socket_raw_test",
+    test = "//test/syscalls/linux:packet_socket_dgram_test",
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:packet_socket_test",
+    test = "//test/syscalls/linux:packet_socket_raw_test",
 )
 
 syscall_test(
