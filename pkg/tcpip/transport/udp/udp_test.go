@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -313,6 +314,9 @@ func newDualTestContextWithHandleLocal(t *testing.T, mtu uint32, handleLocal boo
 		Clock:              &faketime.NullClock{},
 	}
 	s := stack.New(options)
+	// Disable ICMP rate limiter because we're using Null clock, which never advances time and thus
+	// never allows ICMP messages.
+	s.SetICMPLimit(rate.Inf)
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
