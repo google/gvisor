@@ -375,7 +375,7 @@ func New(opts Options) *Stack {
 		stats:                        opts.Stats.FillIn(),
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
-		icmpRateLimiter:              NewICMPRateLimiter(),
+		icmpRateLimiter:              NewICMPRateLimiter(clock),
 		seed:                         seed,
 		nudConfigs:                   opts.NUDConfigs,
 		uniqueIDGenerator:            opts.UniqueID,

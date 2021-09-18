@@ -63,5 +63,6 @@ go_test(
         "//pkg/tcpip/transport/icmp",
         "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
