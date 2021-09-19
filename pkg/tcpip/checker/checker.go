@@ -324,6 +324,19 @@ func ReceiveIPPacketInfo(want tcpip.IPPacketInfo) ControlMessagesChecker {
 	}
 }
 
+// ReceiveIPv6PacketInfo creates a checker that checks the IPv6PacketInfo field
+// in ControlMessages.
+func ReceiveIPv6PacketInfo(want tcpip.IPv6PacketInfo) ControlMessagesChecker {
+	return func(t *testing.T, cm tcpip.ControlMessages) {
+		t.Helper()
+		if !cm.HasIPv6PacketInfo {
+			t.Errorf("got cm.HasIPv6PacketInfo = %t, want = true", cm.HasIPv6PacketInfo)
+		} else if diff := cmp.Diff(want, cm.IPv6PacketInfo); diff != "" {
+			t.Errorf("IPv6PacketInfo mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
 // ReceiveOriginalDstAddr creates a checker that checks the OriginalDstAddress
 // field in ControlMessages.
 func ReceiveOriginalDstAddr(want tcpip.FullAddress) ControlMessagesChecker {
