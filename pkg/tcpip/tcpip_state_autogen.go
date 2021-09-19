@@ -898,6 +898,7 @@ func (so *SocketOptions) StateFields() []string {
 		"receiveTOSEnabled",
 		"receiveTClassEnabled",
 		"receivePacketInfoEnabled",
+		"receiveIPv6PacketInfoEnabled",
 		"hdrIncludedEnabled",
 		"v6OnlyEnabled",
 		"quickAckEnabled",
@@ -929,18 +930,19 @@ func (so *SocketOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &so.receiveTOSEnabled)
 	stateSinkObject.Save(9, &so.receiveTClassEnabled)
 	stateSinkObject.Save(10, &so.receivePacketInfoEnabled)
-	stateSinkObject.Save(11, &so.hdrIncludedEnabled)
-	stateSinkObject.Save(12, &so.v6OnlyEnabled)
-	stateSinkObject.Save(13, &so.quickAckEnabled)
-	stateSinkObject.Save(14, &so.delayOptionEnabled)
-	stateSinkObject.Save(15, &so.corkOptionEnabled)
-	stateSinkObject.Save(16, &so.receiveOriginalDstAddress)
-	stateSinkObject.Save(17, &so.recvErrEnabled)
-	stateSinkObject.Save(18, &so.errQueue)
-	stateSinkObject.Save(19, &so.bindToDevice)
-	stateSinkObject.Save(20, &so.sendBufferSize)
-	stateSinkObject.Save(21, &so.receiveBufferSize)
-	stateSinkObject.Save(22, &so.linger)
+	stateSinkObject.Save(11, &so.receiveIPv6PacketInfoEnabled)
+	stateSinkObject.Save(12, &so.hdrIncludedEnabled)
+	stateSinkObject.Save(13, &so.v6OnlyEnabled)
+	stateSinkObject.Save(14, &so.quickAckEnabled)
+	stateSinkObject.Save(15, &so.delayOptionEnabled)
+	stateSinkObject.Save(16, &so.corkOptionEnabled)
+	stateSinkObject.Save(17, &so.receiveOriginalDstAddress)
+	stateSinkObject.Save(18, &so.recvErrEnabled)
+	stateSinkObject.Save(19, &so.errQueue)
+	stateSinkObject.Save(20, &so.bindToDevice)
+	stateSinkObject.Save(21, &so.sendBufferSize)
+	stateSinkObject.Save(22, &so.receiveBufferSize)
+	stateSinkObject.Save(23, &so.linger)
 }
 
 func (so *SocketOptions) afterLoad() {}
@@ -958,18 +960,19 @@ func (so *SocketOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &so.receiveTOSEnabled)
 	stateSourceObject.Load(9, &so.receiveTClassEnabled)
 	stateSourceObject.Load(10, &so.receivePacketInfoEnabled)
-	stateSourceObject.Load(11, &so.hdrIncludedEnabled)
-	stateSourceObject.Load(12, &so.v6OnlyEnabled)
-	stateSourceObject.Load(13, &so.quickAckEnabled)
-	stateSourceObject.Load(14, &so.delayOptionEnabled)
-	stateSourceObject.Load(15, &so.corkOptionEnabled)
-	stateSourceObject.Load(16, &so.receiveOriginalDstAddress)
-	stateSourceObject.Load(17, &so.recvErrEnabled)
-	stateSourceObject.Load(18, &so.errQueue)
-	stateSourceObject.Load(19, &so.bindToDevice)
-	stateSourceObject.Load(20, &so.sendBufferSize)
-	stateSourceObject.Load(21, &so.receiveBufferSize)
-	stateSourceObject.Load(22, &so.linger)
+	stateSourceObject.Load(11, &so.receiveIPv6PacketInfoEnabled)
+	stateSourceObject.Load(12, &so.hdrIncludedEnabled)
+	stateSourceObject.Load(13, &so.v6OnlyEnabled)
+	stateSourceObject.Load(14, &so.quickAckEnabled)
+	stateSourceObject.Load(15, &so.delayOptionEnabled)
+	stateSourceObject.Load(16, &so.corkOptionEnabled)
+	stateSourceObject.Load(17, &so.receiveOriginalDstAddress)
+	stateSourceObject.Load(18, &so.recvErrEnabled)
+	stateSourceObject.Load(19, &so.errQueue)
+	stateSourceObject.Load(20, &so.bindToDevice)
+	stateSourceObject.Load(21, &so.sendBufferSize)
+	stateSourceObject.Load(22, &so.receiveBufferSize)
+	stateSourceObject.Load(23, &so.linger)
 }
 
 func (l *LocalSockError) StateTypeName() string {
@@ -1136,6 +1139,8 @@ func (c *ControlMessages) StateFields() []string {
 		"TClass",
 		"HasIPPacketInfo",
 		"PacketInfo",
+		"HasIPv6PacketInfo",
+		"IPv6PacketInfo",
 		"HasOriginalDstAddress",
 		"OriginalDstAddress",
 		"SockErr",
@@ -1157,9 +1162,11 @@ func (c *ControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &c.TClass)
 	stateSinkObject.Save(8, &c.HasIPPacketInfo)
 	stateSinkObject.Save(9, &c.PacketInfo)
-	stateSinkObject.Save(10, &c.HasOriginalDstAddress)
-	stateSinkObject.Save(11, &c.OriginalDstAddress)
-	stateSinkObject.Save(12, &c.SockErr)
+	stateSinkObject.Save(10, &c.HasIPv6PacketInfo)
+	stateSinkObject.Save(11, &c.IPv6PacketInfo)
+	stateSinkObject.Save(12, &c.HasOriginalDstAddress)
+	stateSinkObject.Save(13, &c.OriginalDstAddress)
+	stateSinkObject.Save(14, &c.SockErr)
 }
 
 func (c *ControlMessages) afterLoad() {}
@@ -1176,9 +1183,11 @@ func (c *ControlMessages) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &c.TClass)
 	stateSourceObject.Load(8, &c.HasIPPacketInfo)
 	stateSourceObject.Load(9, &c.PacketInfo)
-	stateSourceObject.Load(10, &c.HasOriginalDstAddress)
-	stateSourceObject.Load(11, &c.OriginalDstAddress)
-	stateSourceObject.Load(12, &c.SockErr)
+	stateSourceObject.Load(10, &c.HasIPv6PacketInfo)
+	stateSourceObject.Load(11, &c.IPv6PacketInfo)
+	stateSourceObject.Load(12, &c.HasOriginalDstAddress)
+	stateSourceObject.Load(13, &c.OriginalDstAddress)
+	stateSourceObject.Load(14, &c.SockErr)
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {
@@ -1268,6 +1277,34 @@ func (i *IPPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.DestinationAddr)
 }
 
+func (i *IPv6PacketInfo) StateTypeName() string {
+	return "pkg/tcpip.IPv6PacketInfo"
+}
+
+func (i *IPv6PacketInfo) StateFields() []string {
+	return []string{
+		"Addr",
+		"NIC",
+	}
+}
+
+func (i *IPv6PacketInfo) beforeSave() {}
+
+// +checklocksignore
+func (i *IPv6PacketInfo) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.Addr)
+	stateSinkObject.Save(1, &i.NIC)
+}
+
+func (i *IPv6PacketInfo) afterLoad() {}
+
+// +checklocksignore
+func (i *IPv6PacketInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.Addr)
+	stateSourceObject.Load(1, &i.NIC)
+}
+
 func init() {
 	state.Register((*ErrAborted)(nil))
 	state.Register((*ErrAddressFamilyNotSupported)(nil))
@@ -1320,4 +1357,5 @@ func init() {
 	state.Register((*LinkPacketInfo)(nil))
 	state.Register((*LingerOption)(nil))
 	state.Register((*IPPacketInfo)(nil))
+	state.Register((*IPv6PacketInfo)(nil))
 }

@@ -204,6 +204,34 @@ func (c *ControlMessageIPPacketInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &c.DestinationAddr)
 }
 
+func (c *ControlMessageIPv6PacketInfo) StateTypeName() string {
+	return "pkg/abi/linux.ControlMessageIPv6PacketInfo"
+}
+
+func (c *ControlMessageIPv6PacketInfo) StateFields() []string {
+	return []string{
+		"Addr",
+		"NIC",
+	}
+}
+
+func (c *ControlMessageIPv6PacketInfo) beforeSave() {}
+
+// +checklocksignore
+func (c *ControlMessageIPv6PacketInfo) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Addr)
+	stateSinkObject.Save(1, &c.NIC)
+}
+
+func (c *ControlMessageIPv6PacketInfo) afterLoad() {}
+
+// +checklocksignore
+func (c *ControlMessageIPv6PacketInfo) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Addr)
+	stateSourceObject.Load(1, &c.NIC)
+}
+
 func (t *KernelTermios) StateTypeName() string {
 	return "pkg/abi/linux.KernelTermios"
 }
@@ -285,6 +313,7 @@ func init() {
 	state.Register((*SignalStack)(nil))
 	state.Register((*SignalInfo)(nil))
 	state.Register((*ControlMessageIPPacketInfo)(nil))
+	state.Register((*ControlMessageIPv6PacketInfo)(nil))
 	state.Register((*KernelTermios)(nil))
 	state.Register((*WindowSize)(nil))
 }

@@ -20,6 +20,7 @@ var _ marshal.Marshallable = (*ClockT)(nil)
 var _ marshal.Marshallable = (*ControlMessageCredentials)(nil)
 var _ marshal.Marshallable = (*ControlMessageHeader)(nil)
 var _ marshal.Marshallable = (*ControlMessageIPPacketInfo)(nil)
+var _ marshal.Marshallable = (*ControlMessageIPv6PacketInfo)(nil)
 var _ marshal.Marshallable = (*DigestMetadata)(nil)
 var _ marshal.Marshallable = (*ElfHeader64)(nil)
 var _ marshal.Marshallable = (*ElfProg64)(nil)
@@ -12125,6 +12126,135 @@ func (c *ControlMessageIPPacketInfo) CopyIn(cc marshal.CopyContext, addr hostarc
 func (c *ControlMessageIPPacketInfo) WriteTo(writer io.Writer) (int64, error) {
     if !c.DestinationAddr.Packed() && c.LocalAddr.Packed() {
         // Type ControlMessageIPPacketInfo doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, c.SizeBytes())
+        c.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (c *ControlMessageIPv6PacketInfo) SizeBytes() int {
+    return 4 +
+        (*Inet6Addr)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (c *ControlMessageIPv6PacketInfo) MarshalBytes(dst []byte) {
+    c.Addr.MarshalBytes(dst[:c.Addr.SizeBytes()])
+    dst = dst[c.Addr.SizeBytes():]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(c.NIC))
+    dst = dst[4:]
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (c *ControlMessageIPv6PacketInfo) UnmarshalBytes(src []byte) {
+    c.Addr.UnmarshalBytes(src[:c.Addr.SizeBytes()])
+    src = src[c.Addr.SizeBytes():]
+    c.NIC = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (c *ControlMessageIPv6PacketInfo) Packed() bool {
+    return c.Addr.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (c *ControlMessageIPv6PacketInfo) MarshalUnsafe(dst []byte) {
+    if c.Addr.Packed() {
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(c),  uintptr(c.SizeBytes()))
+    } else {
+        // Type ControlMessageIPv6PacketInfo doesn't have a packed layout in memory, fallback to MarshalBytes.
+        c.MarshalBytes(dst)
+    }
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (c *ControlMessageIPv6PacketInfo) UnmarshalUnsafe(src []byte) {
+    if c.Addr.Packed() {
+        gohacks.Memmove(unsafe.Pointer(c), unsafe.Pointer(&src[0]), uintptr(c.SizeBytes()))
+    } else {
+        // Type ControlMessageIPv6PacketInfo doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+        c.UnmarshalBytes(src)
+    }
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (c *ControlMessageIPv6PacketInfo) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !c.Addr.Packed() {
+        // Type ControlMessageIPv6PacketInfo doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(c.SizeBytes()) // escapes: okay.
+        c.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+//go:nosplit
+func (c *ControlMessageIPv6PacketInfo) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return c.CopyOutN(cc, addr, c.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+//go:nosplit
+func (c *ControlMessageIPv6PacketInfo) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    if !c.Addr.Packed() {
+        // Type ControlMessageIPv6PacketInfo doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(c.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        c.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(c)))
+    hdr.Len = c.SizeBytes()
+    hdr.Cap = c.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that c
+    // must live until the use above.
+    runtime.KeepAlive(c) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (c *ControlMessageIPv6PacketInfo) WriteTo(writer io.Writer) (int64, error) {
+    if !c.Addr.Packed() {
+        // Type ControlMessageIPv6PacketInfo doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, c.SizeBytes())
         c.MarshalBytes(buf)
         length, err := writer.Write(buf)
